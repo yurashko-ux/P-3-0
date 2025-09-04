@@ -1,32 +1,21 @@
-// БЕЗ "use client" — це серверний layout, тут можна export const metadata
-import type { ReactNode } from 'react';
-import NavClient from './nav-client';
-
-export const metadata = { title: 'Campaigns Admin' };
-
-const links = [
-  { href: '/admin', label: 'Адмінка' },
-  { href: '/admin/logs', label: 'Логи' },
-  { href: '/admin/payloads', label: 'Payloads' },
-  { href: '/admin/playground', label: 'Playground' },
-  { href: '/admin/mappings', label: 'Mappings' },
-  { href: '/admin/dedupe', label: 'Dedupe' },
-  { href: '/campaigns', label: 'Campaigns' },
-];
+import type { ReactNode } from "react";
+import NavClient from "./nav-client";
 
 export default function CampaignsLayout({ children }: { children: ReactNode }) {
+  const links = [
+    { href: "/campaigns",       label: "Кампанії" },
+    { href: "/campaigns/saved", label: "Збережені" },
+  ];
+
   return (
-    <div className="admin-root">
-      <nav className="admin-nav">
-        <div className="admin-nav__inner">
-          <div className="admin-nav__links">
-            <NavClient links={links} />
-          </div>
-          <div className="admin-nav__brand"><code>Proect_2_0</code></div>
+    <section className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <NavClient links={links} />
+          <code className="text-xs text-slate-500">Campaigns</code>
         </div>
-      </nav>
-      <main data-admin className="admin-shell">{children}</main>
-      <footer className="admin-footer">© {new Date().getFullYear()} Admin</footer>
-    </div>
+      </div>
+      {children}
+    </section>
   );
 }
