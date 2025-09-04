@@ -8,11 +8,11 @@ export default function CampaignsLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <section className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="flex items-center justify-between">
+    <section className="space-y-16">
+      <div className="card">
+        <div className="admin-nav__inner" style={{ padding: 0 }}>
           <NavClient links={links} />
-          <code className="text-xs text-slate-500">Campaigns</code>
+          <code className="muted">Campaigns</code>
         </div>
       </div>
       {children}
