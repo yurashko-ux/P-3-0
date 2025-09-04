@@ -36,6 +36,7 @@ const fmt = (v?: string | number) => {
 };
 
 export default function CampaignsPage() {
+  // метадані
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const statusesByPipeline = useMemo(() => {
@@ -47,10 +48,12 @@ export default function CampaignsPage() {
     }
     return m;
   }, [statuses]);
+
   const pipeLabel = (id: number | "") => (id === "" ? "" : pipelines.find(p => p.id === id)?.title ?? String(id));
   const statusLabel = (pid: number | "", sid: number | "") =>
     pid === "" || sid === "" ? String(sid) : (statusesByPipeline.get(Number(pid))?.find(s => s.id === sid)?.title ?? String(sid));
 
+  // список
   const [items, setItems] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,19 +77,20 @@ export default function CampaignsPage() {
       try {
         const [pl, st, list] = await Promise.all([
           j<any>("/api/keycrm/pipelines").catch(() => ({ data: [] })),
-          j<any>("/api/keycrm/pipelines/[pipelineId]/statuses").catch(() => ({ data: [] })), // якщо є універсальний
+          j<any>("/api/keycrm/statuses").catch(() => ({ data: [] })),
           j<any>("/api/campaigns"),
         ]);
+
         const pp: Pipeline[] = (pl?.data || pl?.items || []).map((p: any) => ({
           id: Number(p.id ?? p.pipeline_id ?? p.value ?? p?.pipeline?.id),
           title: String(p.title ?? p.name ?? p.label ?? p?.pipeline?.title),
         }));
-        const ssRaw = st?.data || st?.items || [];
-        const ss: Status[] = ssRaw.map((s: any) => ({
+        const ss: Status[] = (st?.data || st?.items || []).map((s: any) => ({
           id: Number(s.id),
           title: String(s.title ?? s.name ?? s.label),
           pipeline_id: Number(s.pipeline_id ?? s.pipeline?.id),
         }));
+
         setPipelines(pp.filter(p => Number.isFinite(p.id)));
         setStatuses(ss.filter(s => Number.isFinite(s.id) && Number.isFinite(s.pipeline_id)));
         setItems(Array.isArray(list?.items) ? list.items : []);
@@ -117,7 +121,8 @@ export default function CampaignsPage() {
         to_pipeline_label: pipeLabel(expPipe),
         to_status_label: statusLabel(expPipe, expStatus),
       } : undefined,
-      // сумісність зі старим форматом (не завадить)
+
+      // сумісність зі старим форматом
       toPipelineId: v1Pipe || v2Pipe || expPipe || "",
       toStatusId: v1Status || v2Status || expStatus || "",
       expiresDays: Number(expDays) || null,
@@ -186,6 +191,7 @@ export default function CampaignsPage() {
         <h2 className="text-xl font-extrabold mb-4">Змінні пишемо прямо в рядках зі своїми воронками/статусами.</h2>
 
         <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Рядок 1 */}
           <div>
             <div className="text-sm text-slate-500 mb-1">Змінна №1 (значення з Manychat)</div>
             <input value={var1} onChange={(e)=>setVar1(e.target.value)} className="w-full rounded-xl border px-3 py-2" />
@@ -205,6 +211,7 @@ export default function CampaignsPage() {
             </select>
           </div>
 
+          {/* Рядок 2 */}
           <div>
             <div className="text-sm text-slate-500 mb-1">Змінна №2 (значення з Manychat)</div>
             <input value={var2} onChange={(e)=>setVar2(e.target.value)} className="w-full rounded-xl border px-3 py-2" />
@@ -224,6 +231,7 @@ export default function CampaignsPage() {
             </select>
           </div>
 
+          {/* Рядок 3 — expire */}
           <div>
             <div className="text-sm text-slate-500 mb-1">Змінна №3 — Expires (days)</div>
             <input value={expDays} onChange={(e)=>setExpDays(e.target.value)} className="w-full rounded-xl border px-3 py-2" />
@@ -251,6 +259,7 @@ export default function CampaignsPage() {
         </form>
       </div>
 
+      {/* список */}
       <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
         <div className="grid grid-cols-12 px-6 py-3 text-slate-600 text-sm font-semibold bg-slate-50">
           <div className="col-span-3">Створено</div>
