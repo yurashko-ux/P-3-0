@@ -42,9 +42,14 @@ function normalize(body: any): Campaign {
 }
 
 export async function GET() {
-  const map = await kv.hgetall<Campaign>(BUCKET);
-  const items = map ? Object.values(map) : [];
-  items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // ВАЖЛИВО: hgetall<T> очікує T як Record<string, V>, інакше Object.values()
+  // перетворить Campaign у union полів (string | number | Rule | ...).
+  const map = await kv.hgetall<Record<string, Campaign>>(BUCKET);
+  const items: Campaign[] = map ? Object.values(map) : [];
+  items.sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
   return NextResponse.json({ ok: true, items });
 }
 
@@ -53,4 +58,38 @@ export async function POST(req: Request) {
   const item = normalize(body);
   await kv.hset(BUCKET, { [item.id]: item });
   return NextResponse.json({ ok: true, item });
+}
+
+export async function PATCH(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const { id, ...patch } = body || {};
+  if (!id)
+    return NextResponse.json(
+      { ok: false, error: "missing_id" },
+      { status: 400 }
+    );
+
+  const existing = await kv.hget<Campaign>(BUCKET, id);
+  if (!existing)
+    return NextResponse.json(
+      { ok: false, error: "not_found" },
+      { status: 404 }
+    );
+
+  const updated: Campaign = { ...existing, ...patch };
+  await kv.hset(BUCKET, { [id]: updated });
+  return NextResponse.json({ ok: true, item: updated });
+}
+
+export async function DELETE(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const id = body?.id as string | undefined;
+  if (!id)
+    return NextResponse.json(
+      { ok: false, error: "missing_id" },
+      { status: 400 }
+    );
+
+  await kv.hdel(BUCKET, id);
+  return NextResponse.json({ ok: true });
 }
