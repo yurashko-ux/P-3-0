@@ -5,18 +5,18 @@ import { usePathname } from "next/navigation";
 
 type Tab = { href: string; label: string };
 
-// Дві вкладки в межах кампаній: форма створення і список збережених
-const TABS: Tab[] = [
+const DEFAULT_TABS: Tab[] = [
   { href: "/campaigns",       label: "Кампанії" },
   { href: "/campaigns/saved", label: "Збережені" },
 ];
 
-export default function CampaignsNav() {
+export default function NavClient({ links }: { links?: Tab[] }) {
+  const tabs = links?.length ? links : DEFAULT_TABS;
   const pathname = usePathname();
 
   return (
     <nav className="flex gap-2 items-center">
-      {TABS.map(({ href, label }) => {
+      {tabs.map(({ href, label }) => {
         const active =
           pathname === href || (pathname?.startsWith(href + "/") ?? false);
 
