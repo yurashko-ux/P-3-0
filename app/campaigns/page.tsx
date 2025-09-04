@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 type Pipeline = { id: string; title: string };
@@ -80,12 +81,6 @@ export default function CampaignsPage() {
     setErr(null); setMsg(null);
   }
 
-  const tabs = useMemo(() => ([
-    { id: 'pull', label: 'Підтягнути воронки', onClick: fetchPipelines, kind: 'primary' as const },
-    { id: 'settings', label: 'Налаштування', onClick: () => {}, kind: 'tab' as const },
-    { id: 'campaigns', label: 'Кампанії', onClick: () => {}, kind: 'tab' as const, active: true },
-  ]), []);
-
   return (
     <div className="page">
       <h1>Campaigns Admin</h1>
@@ -103,15 +98,19 @@ export default function CampaignsPage() {
         </div>
 
         <div className="toolbar" style={{ marginTop: 12 }}>
-          {tabs.map((t) => (
-            <button key={t.id} onClick={t.onClick} className={t.kind === 'primary' ? 'btn btn-primary' : `btn btn-tab${t.active ? ' active' : ''}`} disabled={loading}>
-              {t.label}
-            </button>
-          ))}
+          {/* лишається кнопкою */}
+          <button onClick={fetchPipelines} className="btn btn-primary" disabled={loading}>Підтягнути воронки</button>
+
+          {/* вкладка як посилання (blue tab) */}
+          <Link href="/admin/logs" className="btn btn-tab">Налаштування</Link>
+          <Link href="/campaigns" className="btn btn-tab active" aria-current="page">Кампанії</Link>
+
           {err ? <span className="error-inline"> {err}</span> : null}
           {msg ? <span className="ok-inline"> {msg}</span> : null}
         </div>
       </section>
+
+      {/* ... решта сторінки без змін ... */}
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>Змінні пишемо прямо в рядках зі своїми воронками/статусами.</h2>
@@ -156,25 +155,6 @@ export default function CampaignsPage() {
           <button className="btn" onClick={onReset} disabled={loading}>Очистити</button>
         </div>
       </section>
-
-      <style jsx>{`
-        .page { max-width: 1100px; margin: 0 auto; padding: 16px; }
-        h1 { font-size: 40px; line-height: 1.1; font-weight: 800; margin: 4px 0 18px; letter-spacing: -0.02em; }
-        h2 { font-size: 20px; font-weight: 700; margin: 0 0 10px; }
-        .grid { display: grid; gap: 12px; }
-        .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
-        .label { color: #64748b; font-size: 13px; margin-bottom: 6px; }
-        input, select { width: 100%; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 12px; background: #fff; outline: none; }
-        input:focus, select:focus { border-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.18); }
-        .rows { display: flex; flex-direction: column; gap: 14px; }
-        .row { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 12px; }
-        @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
-        .col { display: flex; flex-direction: column; }
-        .select-wrap { position: relative; }
-        .select-wrap select { appearance: none; padding-right: 34px; }
-        .chev { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #64748b; }
-      `}</style>
     </div>
   );
 }
