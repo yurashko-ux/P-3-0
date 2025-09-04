@@ -12,6 +12,7 @@ type Campaign = {
   rule2?: { value: string; to_pipeline_id: number; to_status_id: number; to_pipeline_label?: string; to_status_label?: string; };
   expire_days?: number;
   expire_to?: { to_pipeline_id: number; to_status_id: number; to_pipeline_label?: string; to_status_label?: string; };
+  // legacy сумісність
   fromPipelineId?: number | string;
   fromStatusId?: number | string;
   toPipelineId?: number | string;
@@ -23,11 +24,32 @@ type Campaign = {
   toStatusLabel?: string;
 };
 
+function buildAuthHeaders(extra?: HeadersInit): HeadersInit {
+  // читаємо із localStorage кожного разу, щоб не тримати секрет у стейті довго
+  let login = "";
+  let pass = "";
+  try {
+    login = localStorage.getItem("ADMIN_LOGIN") || "";
+    pass = localStorage.getItem("ADMIN_PASS") || "";
+  } catch {}
+  const headers: Record<string, string> = {
+    ...(extra ? Object.fromEntries(new Headers(extra)) : {}),
+  };
+  if (login && pass) {
+    headers["Authorization"] = "Basic " + btoa(`${login}:${pass}`);
+  }
+  return headers;
+}
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { cache: "no-store", ...init });
+  const r = await fetch(url, {
+    cache: "no-store",
+    ...init,
+    headers: buildAuthHeaders(init?.headers),
+  });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
+
 const fmt = (v?: string | number) => {
   if (!v) return "—";
   const d = new Date(typeof v === "string" ? v : Number(v));
@@ -35,6 +57,28 @@ const fmt = (v?: string | number) => {
 };
 
 export default function CampaignsPage() {
+  // ——— Auth box ———
+  const [adminLogin, setAdminLogin] = useState("");
+  const [adminPass, setAdminPass] = useState("");
+  const [authSaved, setAuthSaved] = useState(false);
+
+  useEffect(() => {
+    try {
+      setAdminLogin(localStorage.getItem("ADMIN_LOGIN") || "");
+      setAdminPass(localStorage.getItem("ADMIN_PASS") || "");
+    } catch {}
+  }, []);
+  function saveAuth(e?: React.FormEvent) {
+    e?.preventDefault();
+    try {
+      localStorage.setItem("ADMIN_LOGIN", adminLogin.trim());
+      localStorage.setItem("ADMIN_PASS", adminPass);
+      setAuthSaved(true);
+      setTimeout(() => setAuthSaved(false), 1500);
+    } catch {}
+  }
+
+  // ——— Pipelines/statuses ———
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const statusesByPipeline = useMemo(() => {
@@ -51,6 +95,7 @@ export default function CampaignsPage() {
   const statusLabel = (pid: number | "", sid: number | "") =>
     pid === "" || sid === "" ? String(sid) : (statusesByPipeline.get(Number(pid))?.find(s => s.id === sid)?.title ?? String(sid));
 
+  // ——— Campaigns list/form ———
   const [items, setItems] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -118,7 +163,8 @@ export default function CampaignsPage() {
         to_pipeline_label: pipeLabel(expPipe),
         to_status_label: statusLabel(expPipe, expStatus),
       } : undefined,
-      // legacy
+
+      // legacy для списку
       toPipelineId: v1Pipe || v2Pipe || expPipe || "",
       toStatusId: v1Status || v2Status || expStatus || "",
       expiresDays: Number(expDays) || null,
@@ -169,8 +215,33 @@ export default function CampaignsPage() {
     return "—";
   };
 
+  const expiresCol = (c: Campaign) =>
+    c.expire_days != null ? `${c.expire_days}d` : c.expiresDays != null ? `${c.expiresDays}d` : "—";
+
   return (
     <div className="space-y-16">
+      {/* Auth card */}
+      <section className="card">
+        <div className="admin-nav__inner" style={{padding:0}}>
+          <form onSubmit={saveAuth} className="form-grid" style={{gridTemplateColumns:"2fr 2fr 1fr"}}>
+            <div>
+              <label className="label">Логін</label>
+              <input className="input" value={adminLogin} onChange={(e)=>setAdminLogin(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Пароль</label>
+              <input className="input" type="password" value={adminPass} onChange={(e)=>setAdminPass(e.target.value)} />
+            </div>
+            <div style={{alignSelf:"end"}}>
+              <button className="btn-primary" type="submit">Зберегти</button>
+              {authSaved && <span className="muted" style={{marginLeft:8}}>Збережено ✅</span>}
+            </div>
+          </form>
+          <code className="muted">Campaigns</code>
+        </div>
+      </section>
+
+      {/* Form */}
       <section className="card">
         <h1 className="h1">Campaigns Admin</h1>
         {flash && <p className="lead" style={{color:"#059669"}}>Збережено ✅</p>}
@@ -267,7 +338,7 @@ export default function CampaignsPage() {
                   <td>{renderCond(c)}</td>
                   <td>{c.expire_days!=null ? `${c.expire_days}d` : c.expiresDays!=null ? `${c.expiresDays}d` : "—"}</td>
                   <td className="actions">
-                    {c.id && <button onClick={()=>removeCampaign(c.id!)} className="btn-link" style={{color:"#dc2626", background:"none", border:"none", cursor:"pointer"}}>Видалити</button>}
+                    {c.id && <button onClick={()=>removeCampaign(c.id!)} className="btn-link" style={{color:"#dc2626"}}>Видалити</button>}
                   </td>
                 </tr>
               ))
