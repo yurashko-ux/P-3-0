@@ -15,22 +15,18 @@ type Campaign = {
   id: string;
   createdAt: string;
 
-  // SCOPE — обовʼязково
   base_pipeline_id: number;
   base_status_id: number;
   base_pipeline_label?: string;
   base_status_label?: string;
 
-  // Правила
   rule1?: Rule;
   rule2?: Rule;
 
-  // Expire
   expire_days?: number;
   expire_to?: Omit<Rule, "value">;
 };
 
-// --- helpers
 function bad(msg: string, code = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status: code });
 }
@@ -38,24 +34,20 @@ function isNum(x: any): x is number {
   return typeof x === "number" && Number.isFinite(x);
 }
 
-// --- GET: list
+// GET: list
 export async function GET() {
-  const map = await kv.hgetall<string>(BUCKET);
+  // ✅ головне виправлення — дженерик цілий Record, а не <string>
+  const map = await kv.hgetall<Record<string, string>>(BUCKET);
   const items: Campaign[] = map
-    ? Object.values(map).map((v) =>
-        typeof v === "string" ? (JSON.parse(v) as Campaign) : (v as any as Campaign)
-      )
+    ? Object.values(map).map((v) => JSON.parse(v) as Campaign)
     : [];
-
   items.sort(
-    (a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
-
   return NextResponse.json({ ok: true, items });
 }
 
-// --- POST: create
+// POST: create
 export async function POST(req: Request) {
   let body: any;
   try {
@@ -64,35 +56,43 @@ export async function POST(req: Request) {
     return bad("Invalid JSON");
   }
 
-  // валідація scope
   const base_pipeline_id = Number(body.base_pipeline_id);
   const base_status_id = Number(body.base_status_id);
   if (!Number.isFinite(base_pipeline_id) || !Number.isFinite(base_status_id)) {
     return bad("Scope required: base_pipeline_id & base_status_id");
   }
 
-  // приберемо порожні правила
-  const rule1 = body.rule1 && isNum(Number(body.rule1?.to_pipeline_id)) && isNum(Number(body.rule1?.to_status_id)) && String(body.rule1?.value || "").trim()
-    ? {
-        value: String(body.rule1.value).trim(),
-        to_pipeline_id: Number(body.rule1.to_pipeline_id),
-        to_status_id: Number(body.rule1.to_status_id),
-        to_pipeline_label: body.rule1.to_pipeline_label,
-        to_status_label: body.rule1.to_status_label,
-      }
-    : undefined;
+  const rule1 =
+    body.rule1 &&
+    isNum(Number(body.rule1?.to_pipeline_id)) &&
+    isNum(Number(body.rule1?.to_status_id)) &&
+    String(body.rule1?.value || "").trim()
+      ? {
+          value: String(body.rule1.value).trim(),
+          to_pipeline_id: Number(body.rule1.to_pipeline_id),
+          to_status_id: Number(body.rule1.to_status_id),
+          to_pipeline_label: body.rule1.to_pipeline_label,
+          to_status_label: body.rule1.to_status_label,
+        }
+      : undefined;
 
-  const rule2 = body.rule2 && isNum(Number(body.rule2?.to_pipeline_id)) && isNum(Number(body.rule2?.to_status_id)) && String(body.rule2?.value || "").trim()
-    ? {
-        value: String(body.rule2.value).trim(),
-        to_pipeline_id: Number(body.rule2.to_pipeline_id),
-        to_status_id: Number(body.rule2.to_status_id),
-        to_pipeline_label: body.rule2.to_pipeline_label,
-        to_status_label: body.rule2.to_status_label,
-      }
-    : undefined;
+  const rule2 =
+    body.rule2 &&
+    isNum(Number(body.rule2?.to_pipeline_id)) &&
+    isNum(Number(body.rule2?.to_status_id)) &&
+    String(body.rule2?.value || "").trim()
+      ? {
+          value: String(body.rule2.value).trim(),
+          to_pipeline_id: Number(body.rule2.to_pipeline_id),
+          to_status_id: Number(body.rule2.to_status_id),
+          to_pipeline_label: body.rule2.to_pipeline_label,
+          to_status_label: body.rule2.to_status_label,
+        }
+      : undefined;
 
-  const expire_days = body.expire_days != null ? Number(body.expire_days) : undefined;
+  const expire_days =
+    body.expire_days != null ? Number(body.expire_days) : undefined;
+
   const expire_to =
     body.expire_to &&
     isNum(Number(body.expire_to?.to_pipeline_id)) &&
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
     expire_to,
   };
 
-  // збереження (рядком — найнадійніше для KV)
+  // зберігаємо рядком
   await kv.hset(BUCKET, { [item.id]: JSON.stringify(item) });
 
   return NextResponse.json({ ok: true, item });
