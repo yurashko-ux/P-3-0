@@ -10,11 +10,11 @@ type Rule = {
   to_pipeline_label?: string;
   to_status_label?: string;
 };
-
 type Campaign = {
   id: string;
   createdAt: string;
 
+  // SCOPE
   base_pipeline_id: number;
   base_status_id: number;
   base_pipeline_label?: string;
@@ -33,21 +33,35 @@ function bad(msg: string, code = 400) {
 function isNum(x: any): x is number {
   return typeof x === "number" && Number.isFinite(x);
 }
+function parseKV(v: unknown): Campaign | null {
+  try {
+    if (typeof v === "string") return JSON.parse(v) as Campaign;
+    if (v && typeof v === "object") return v as Campaign;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
-// GET: list
+// GET: list (терпимо до змішаних форматів у KV)
 export async function GET() {
-  // ✅ головне виправлення — дженерик цілий Record, а не <string>
-  const map = await kv.hgetall<Record<string, string>>(BUCKET);
+  const map = await kv.hgetall(BUCKET).catch(() => null);
   const items: Campaign[] = map
-    ? Object.values(map).map((v) => JSON.parse(v) as Campaign)
+    ? Object.values(map)
+        .map(parseKV)
+        .filter((x): x is Campaign => !!x)
     : [];
-  items.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+
+  items.sort((a, b) => {
+    const ta = new Date(a.createdAt ?? 0).getTime() || 0;
+    const tb = new Date(b.createdAt ?? 0).getTime() || 0;
+    return tb - ta;
+  });
+
   return NextResponse.json({ ok: true, items });
 }
 
-// POST: create
+// POST: create (усі нові записи зберігаємо як рядок)
 export async function POST(req: Request) {
   let body: any;
   try {
@@ -122,7 +136,6 @@ export async function POST(req: Request) {
     expire_to,
   };
 
-  // зберігаємо рядком
   await kv.hset(BUCKET, { [item.id]: JSON.stringify(item) });
 
   return NextResponse.json({ ok: true, item });
