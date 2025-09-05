@@ -1,9 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  experimental: { appDir: true },
-  // важливо: тут НЕ має бути `output: 'export'`, бо тоді /api/* не існують
+  // без `output: 'export'` і без experimental.appDir — щоб API працювали
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true }
+  eslint: { ignoreDuringBuilds: true },
 };
 module.exports = nextConfig;
