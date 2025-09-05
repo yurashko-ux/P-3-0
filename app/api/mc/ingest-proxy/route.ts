@@ -32,7 +32,7 @@ async function lookupLeadId(usernameRaw: string, req: NextRequest): Promise<numb
 
 async function upsertKV(usernameRaw: string, lead_id: number, req: NextRequest): Promise<void> {
   const admin = String(process.env.ADMIN_PASS ?? process.env.ADMIN_PASSWORD ?? "");
-  if (!admin) return; // тихо пропускаємо, якщо немає пароля
+  if (!admin) return; // пропускаємо, якщо немає пароля
   const b64 = Buffer.from(admin, "utf8").toString("base64");
 
   const body = { username: String(usernameRaw || "").trim().toLowerCase(), card_id: lead_id };
@@ -54,7 +54,7 @@ function adminHeaders(): { headers: Record<string,string>, err?: string } {
   const admin = String(process.env.ADMIN_PASS ?? process.env.ADMIN_PASSWORD ?? "");
   if (!admin) return { headers: {}, err: "Server is missing ADMIN_PASS/ADMIN_PASSWORD env" };
   const b64 = Buffer.from(admin, "utf8").toString("base64");
-  // Підставляємо відразу кілька поширених варіантів — що б там не перевіряв /api/mc/ingest
+  // підставляємо кілька варіантів на випадок різних перевірок у /api/mc/ingest
   return {
     headers: {
       "content-type": "application/json",
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     const uname = String(body?.instagram_username ?? body?.username ?? "").trim().toLowerCase() || "";
     let lead_id: number | null = Number.isFinite(Number(body?.lead_id)) ? Number(body.lead_id) : null;
 
-    // 1) Якщо немає lead_id — пробуємо знайти через KV
+    // 1) якщо немає lead_id — шукаємо в KV за username
     if (!lead_id && uname) {
       lead_id = await lookupLeadId(uname, req);
     }
@@ -96,18 +96,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2) Якщо маємо username — синхронно/асинхронно закинемо мапу в KV (не блокує потік)
+    // 2) якщо маємо username — оновимо кеш KV (не блокує)
     if (uname) {
       upsertKV(uname, lead_id, req).catch(()=>{});
     }
 
-    // 3) Підготовка заголовків із серверного ENV
+    // 3) адмін-хедери з ENV
     const ah = adminHeaders();
     if (ah.err) {
       return NextResponse.json({ ok:false, error: ah.err }, { status:500, headers: withCORS() });
     }
 
-    // 4) Проксі у твій існуючий /api/mc/ingest
+    // 4) проксування в існуючий /api/mc/ingest
     const upstream = await fetch(`${baseUrl(req)}/api/mc/ingest`, {
       method: "POST",
       headers: ah.headers,
