@@ -1,0 +1,9 @@
+/* web/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* дрібні дефолти */
+html, body {
+  height: 100%;
+}
