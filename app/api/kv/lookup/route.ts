@@ -1,6 +1,6 @@
 // app/api/kv/lookup/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { store } from "../../../../lib/kvStore"; // якщо є alias "@", можна: import { store } from "@/lib/kvStore";
+import { store } from "../../../../lib/kvStore"; // якщо маєш alias "@", можеш: import { store } from "@/lib/kvStore";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
