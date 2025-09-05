@@ -30,6 +30,26 @@ async function lookupLeadId(usernameRaw: string, req: NextRequest): Promise<numb
   return Number.isFinite(id) ? id : null;
 }
 
+async function upsertKV(usernameRaw: string, lead_id: number, req: NextRequest): Promise<void> {
+  const admin = String(process.env.ADMIN_PASS ?? process.env.ADMIN_PASSWORD ?? "");
+  if (!admin) return; // тихо пропускаємо, якщо немає пароля
+  const b64 = Buffer.from(admin, "utf8").toString("base64");
+
+  const body = { username: String(usernameRaw || "").trim().toLowerCase(), card_id: lead_id };
+  try {
+    await fetch(`${baseUrl(req)}/api/kv/lookup`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-admin-pass-b64": b64,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // не блокуємо основний потік через помилку кешування
+  }
+}
+
 function adminHeaders(): { headers: Record<string,string>, err?: string } {
   const admin = String(process.env.ADMIN_PASS ?? process.env.ADMIN_PASSWORD ?? "");
   if (!admin) return { headers: {}, err: "Server is missing ADMIN_PASS/ADMIN_PASSWORD env" };
@@ -61,12 +81,14 @@ export async function POST(req: NextRequest) {
     let body: AnyObj = {};
     try { body = await req.json(); } catch { body = {}; }
 
-    // 1) Визначаємо lead_id
+    const uname = String(body?.instagram_username ?? body?.username ?? "").trim().toLowerCase() || "";
     let lead_id: number | null = Number.isFinite(Number(body?.lead_id)) ? Number(body.lead_id) : null;
-    const uname = body?.instagram_username ?? body?.username ?? "";
+
+    // 1) Якщо немає lead_id — пробуємо знайти через KV
     if (!lead_id && uname) {
-      lead_id = await lookupLeadId(String(uname), req);
+      lead_id = await lookupLeadId(uname, req);
     }
+
     if (!lead_id) {
       return NextResponse.json(
         { ok:false, error:"Provide lead_id (number) OR instagram_username (resolves via /api/kv/lookup)" },
@@ -74,13 +96,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2) Підготовка заголовків із серверного ENV
+    // 2) Якщо маємо username — синхронно/асинхронно закинемо мапу в KV (не блокує потік)
+    if (uname) {
+      upsertKV(uname, lead_id, req).catch(()=>{});
+    }
+
+    // 3) Підготовка заголовків із серверного ENV
     const ah = adminHeaders();
     if (ah.err) {
       return NextResponse.json({ ok:false, error: ah.err }, { status:500, headers: withCORS() });
     }
 
-    // 3) Проксі у твій існуючий /api/mc/ingest
+    // 4) Проксі у твій існуючий /api/mc/ingest
     const upstream = await fetch(`${baseUrl(req)}/api/mc/ingest`, {
       method: "POST",
       headers: ah.headers,
