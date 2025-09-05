@@ -1,18 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Увімкнута сувора перевірка React
   reactStrictMode: true,
-
-  // Використовуємо App Router. НІЯКОГО "output: 'export'".
-  experimental: {
-    appDir: true,
-  },
-
-  // На Vercel API-роути мають працювати з коробки.
-  // Якщо раніше тут було `output: 'export'` — ми це повністю прибрали.
-  // Додатково знімаємо блокери білду, якщо є типові помилки TS/ESLint:
+  experimental: { appDir: true },
+  // важливо: тут НЕ має бути `output: 'export'`, бо тоді /api/* не існують
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
+  eslint: { ignoreDuringBuilds: true }
 };
-
 module.exports = nextConfig;
