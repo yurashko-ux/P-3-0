@@ -1,190 +1,93 @@
-import { NextResponse } from "next/server";
-import { kv } from "@vercel/kv";
+// app/api/mc/ingest/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
-const ADMIN_USER = "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || "";
-const MC_TOKEN = process.env.MC_TOKEN || "";
-const KEYCRM_API_URL = (process.env.KEYCRM_API_URL || "").replace(/\/+$/, "");
-const KEYCRM_BEARER = process.env.KEYCRM_BEARER || "";
-const ENABLE = (process.env.ENABLE_OBOYMA || "1") !== "0";
-const BUCKET = "campaigns";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-type Rule = {
-  value: string;
-  to_pipeline_id: number;
-  to_status_id: number;
-  to_pipeline_label?: string;
-  to_status_label?: string;
-};
-type Campaign = {
-  id: string;
-  createdAt: string;
-  base_pipeline_id: number;
-  base_status_id: number;
-  base_pipeline_label?: string;
-  base_status_label?: string;
-  rule1?: Rule;
-  rule2?: Rule;
-  expire_days?: number;
-  expire_to?: Omit<Rule, "value">;
-};
-
-function json(data: unknown, status = 200) {
-  return NextResponse.json(data, { status });
-}
-function unauthorized(msg = "Unauthorized") {
-  return json({ ok: false, error: msg }, 401);
-}
-function bad(msg: string) {
-  return json({ ok: false, error: msg }, 400);
-}
-function fromBasic(auth?: string): { user: string; pass: string } | null {
-  if (!auth?.startsWith("Basic ")) return null;
-  try {
-    const txt = Buffer.from(auth.slice(6), "base64").toString("utf8");
-    const [user, pass] = txt.split(":");
-    return { user, pass };
-  } catch {
-    return null;
-  }
-}
-function bearerOK(auth?: string) {
-  return !!MC_TOKEN && !!auth && auth === `Bearer ${MC_TOKEN}`;
-}
-async function kfetch(path: string, init?: RequestInit) {
-  if (!KEYCRM_API_URL || !KEYCRM_BEARER) throw new Error("KEYCRM_NOT_CONFIGURED");
-  const url = `${KEYCRM_API_URL}${path}`;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${KEYCRM_BEARER}`,
-    ...(init?.headers as Record<string, string> | undefined),
-  };
-  const res = await fetch(url, { ...init, headers });
-  const text = await res.text();
-  let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  return { res, body };
+function withCORS(init?: ResponseInit) {
+  const h = new Headers(init?.headers);
+  h.set("Access-Control-Allow-Origin", "*");
+  h.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-mc-pass");
+  return h;
 }
 
-async function getEntity(id: number) {
-  // 1) deals/<id>
-  let tried: Array<{kind:"deal"|"lead"; status:number; body:any}> = [];
-  let r = await kfetch(`/deals/${id}`, { method: "GET" });
-  if (r.res.ok) return { kind: "deal" as const, entity: r.body?.data || r.body, tried };
-  tried.push({ kind: "deal", status: r.res.status, body: r.body });
-
-  // 2) leads/<id> (fallback)
-  r = await kfetch(`/leads/${id}`, { method: "GET" });
-  if (r.res.ok) return { kind: "lead" as const, entity: r.body?.data || r.body, tried };
-  tried.push({ kind: "lead", status: r.res.status, body: r.body });
-
-  return { kind: null as null, entity: null, tried };
+function unauthorized() {
+  return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: withCORS() });
 }
 
-async function patchEntity(kind: "deal" | "lead", id: number, data: { pipeline_id: number; status_id: number; }) {
-  const path = kind === "deal" ? `/deals/${id}` : `/leads/${id}`;
-  return kfetch(path, { method: "PATCH", body: JSON.stringify(data) });
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: withCORS() });
 }
 
-function parseKV(v: unknown): Campaign | null {
-  try {
-    if (typeof v === "string") return JSON.parse(v) as Campaign;
-    if (v && typeof v === "object") return v as Campaign;
-    return null;
-  } catch {
-    return null;
-  }
-}
+export async function POST(req: NextRequest) {
+  // 1) Авторизація: дозволяємо Bearer MC_TOKEN або Basic admin:ADMIN_PASS або x-mc-pass
+  const MC_TOKEN = (process.env.MC_TOKEN || "").trim();
+  const ADMIN_PASS = (process.env.ADMIN_PASS || "").trim();
+  const ADMIN_USER = (process.env.ADMIN_USER || "admin").trim();
 
-export async function POST(req: Request) {
-  if (!ENABLE) return json({ ok: false, error: "DISABLED" }, 503);
+  const authZ = req.headers.get("authorization") || "";
+  const xmc = (req.headers.get("x-mc-pass") || "").trim();
 
-  // ── Auth
-  const auth = req.headers.get("authorization") || "";
-  const b = fromBasic(auth);
-  const okBasic = !!b && b.user === ADMIN_USER && b.pass === ADMIN_PASS;
-  const okBearer = bearerOK(auth);
-  if (!okBasic && !okBearer) return unauthorized();
+  let okAuth = false;
 
-  // ── Input
-  let body: any;
-  try { body = await req.json(); } catch { return bad("Invalid JSON"); }
-
-  const lead_id = Number(body.lead_id ?? body.deal_id ?? body.id);
-  const incomingValue = String(
-    body.var ?? body.value ?? body.change ?? body.mc_value ?? ""
-  ).trim();
-
-  if (!Number.isFinite(lead_id)) return bad("lead_id required (number)");
-  if (!incomingValue) return bad("variable value required");
-
-  // ── Read entity (deal or lead)
-  let got;
-  try {
-    got = await getEntity(lead_id);
-  } catch (e: any) {
-    return json({ ok: false, step: "get_entity", error: e?.message || String(e) }, 502);
-  }
-  if (!got.kind) {
-    return json({ ok: false, step: "get_entity", not_found: true, tried: got.tried }, 502);
+  // Bearer
+  if (MC_TOKEN) {
+    const bearer = authZ.startsWith("Bearer ") ? authZ.slice(7) : "";
+    if (bearer && bearer === MC_TOKEN) okAuth = true;
+    if (!okAuth && xmc && xmc === MC_TOKEN) okAuth = true;
   }
 
-  const kind = got.kind; // "deal" | "lead"
-  const current = got.entity;
-  const curPipeline = Number(current?.pipeline_id);
-  const curStatus = Number(current?.status_id);
+  // Basic admin:pass
+  if (!okAuth && ADMIN_PASS) {
+    if (authZ.startsWith("Basic ")) {
+      const b64 = authZ.slice(6);
+      try {
+        const decoded = Buffer.from(b64, "base64").toString("utf8");
+        const [u, p] = decoded.split(":");
+        if (u === ADMIN_USER && p === ADMIN_PASS) okAuth = true;
+      } catch {}
+    }
+  }
 
-  // ── Load campaigns
-  const cmap = await kv.hgetall(BUCKET).catch(() => null);
-  const campaigns: Campaign[] = cmap
-    ? (Object.values(cmap).map(parseKV).filter(Boolean) as Campaign[])
-    : [];
+  if (!okAuth) return unauthorized();
 
-  // scope = базова воронка/статус повинен збігатись з поточними
-  const scoped = campaigns.filter(
-    (c) =>
-      Number(c.base_pipeline_id) === curPipeline &&
-      Number(c.base_status_id) === curStatus
-  );
+  // 2) Тіло запиту
+  let body: any = {};
+  try { body = await req.json(); } catch {}
+  const lead_id = Number(body?.lead_id);
+  const text = String(body?.text ?? "").trim();
+  const instagram_username = String(body?.instagram_username ?? body?.username ?? "").trim().toLowerCase();
 
-  if (!scoped.length) {
-    return json({
+  if (!Number.isFinite(lead_id) || !text) {
+    return NextResponse.json(
+      { ok: false, error: "lead_id (number) and text (string) are required" },
+      { status: 400, headers: withCORS() }
+    );
+  }
+
+  // 3) KEYCRM — НЕ ОБОВʼЯЗКОВО
+  const KEYCRM_API_URL = String(process.env.KEYCRM_API_URL ?? "").replace(/\/+$/, "");
+  const KEYCRM_BEARER   = String(process.env.KEYCRM_BEARER   ?? "").trim();
+
+  // Якщо чогось із пари немає — просто приймаємо подію і нічого не форвардимо
+  if (!KEYCRM_API_URL || !KEYCRM_BEARER) {
+    return NextResponse.json({
       ok: true,
-      moved: false,
-      reason: "scope_mismatch",
-      entity: kind,
-      current: { pipeline_id: curPipeline, status_id: curStatus },
-      received: { value: incomingValue },
-    });
+      accepted: { lead_id, instagram_username, text },
+      mode: "noop",
+      reason: "KEYCRM disabled (missing KEYCRM_API_URL or KEYCRM_BEARER)"
+    }, { status: 200, headers: withCORS() });
   }
 
-  // rule match
-  let chosen: { campaign: Campaign; rule: Rule } | null = null;
-  for (const c of scoped) {
-    if (c.rule1 && String(c.rule1.value) === incomingValue) { chosen = { campaign: c, rule: c.rule1 }; break; }
-    if (c.rule2 && String(c.rule2.value) === incomingValue) { chosen = { campaign: c, rule: c.rule2 }; break; }
-  }
-  if (!chosen) {
-    return json({
-      ok: true, moved: false, reason: "no_rule_match",
-      campaigns_considered: scoped.map(c => c.id), received: { value: incomingValue }
-    });
-  }
+  // 4) Якщо обидва задані — тут вставиш свій реальний форвард у KeyCRM
+  // Приклад-заглушка (щоб не ламати збірку і не вгадувати endpoint):
+  // const resp = await fetch(`${KEYCRM_API_URL}/your-endpoint`, { ... });
+  // const data = await resp.json().catch(()=> ({}));
 
-  const to = { pipeline_id: Number(chosen.rule.to_pipeline_id), status_id: Number(chosen.rule.to_status_id) };
-
-  // ── Move
-  try {
-    const { res, body } = await patchEntity(kind, lead_id, to);
-    if (!res.ok) return json({ ok: false, step: "move_entity", status: res.status, body, tried_to: to, entity: kind }, 502);
-  } catch (e:any) {
-    return json({ ok: false, step: "move_entity", error: e?.message || String(e), tried_to: to, entity: kind }, 502);
-  }
-
-  return json({
-    ok: true, moved: true, entity: kind,
-    campaign: chosen.campaign.id,
-    from: { pipeline_id: curPipeline, status_id: curStatus },
-    to, value: incomingValue,
-  });
+  return NextResponse.json({
+    ok: true,
+    accepted: { lead_id, instagram_username, text },
+    mode: "keycrm:skipped_stub"
+  }, { status: 200, headers: withCORS() });
 }
