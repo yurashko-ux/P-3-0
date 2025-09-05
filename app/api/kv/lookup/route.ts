@@ -1,15 +1,11 @@
 // app/api/kv/lookup/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { store } from "../../../../lib/kvStore"; // якщо є alias "@", можна: import { store } from "@/lib/kvStore";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type AnyObj = { [k: string]: any };
-
-// Просте in-memory KV (скидається при кожному деплої)
-declare global { var __KV__: Map<string, AnyObj> | undefined; }
-const KV: Map<string, AnyObj> = (globalThis as any).__KV__ ?? new Map();
-(globalThis as any).__KV__ = KV;
 
 function keyFor(usernameRaw: string) {
   const username = (usernameRaw || "").trim().toLowerCase();
@@ -36,14 +32,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "username required" }, { status: 400, headers: withCORS() });
   }
   const k = keyFor(username);
-  const payload = KV.get(k);
+  const payload = await store.get<AnyObj>(k);
   if (!payload) {
     return NextResponse.json({ ok: false, found: false, key: k }, { status: 404, headers: withCORS() });
   }
   return NextResponse.json({ ok: true, key: k, payload }, { status: 200, headers: withCORS() });
 }
 
-// POST /api/kv/lookup  (створити/оновити запис)
+// POST створює/оновлює запис (з простою авторизацією)
 export async function POST(req: NextRequest) {
   try {
     const adminPassEnv = String(process.env.ADMIN_PASS ?? process.env.ADMIN_PASSWORD ?? "");
@@ -98,10 +94,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    KV.set(k, payload);
+    await store.set(k, payload);
     return NextResponse.json({ ok: true, saved: true, key: k, payload }, { status: 200, headers: withCORS() });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message ?? "Unknown error" },
-      { status: 500, headers: withCORS() });
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? "Unknown error" },
+      { status: 500, headers: withCORS() }
+    );
   }
 }
