@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-// OPTIONS — не ловити 405/префлайти
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -40,7 +39,7 @@ export async function POST(req: NextRequest) {
   const KEYCRM_API_URL = (process.env.KEYCRM_API_URL || '').trim();
   const ADMIN_PASS = (process.env.ADMIN_PASS || process.env.ADMIN_PASSWORD || '').trim();
 
-  // Якщо KEYCRM_API_URL немає — підтверджуємо прийом (нічого не ламаємо)
+  // Якщо KEYCRM_API_URL немає — просто підтверджуємо прийом
   if (!KEYCRM_API_URL) {
     return NextResponse.json({ ok: true, mode: 'keycrm:skipped_stub', accepted: payload });
   }
@@ -53,7 +52,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(ADMIN_PASS ? { 'x-admin-pass': ADMIN_PASS } : {}), // пройти middleware
+        ...(ADMIN_PASS ? { 'x-admin-pass': ADMIN_PASS } : {}),
         'x-forwarded-by': 'public-ingest-proxy',
       },
       body: JSON.stringify(payload),
