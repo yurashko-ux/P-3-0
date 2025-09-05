@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest) {
   });
 }
 
-// не обов'язково, але хай не буде 405 на префлайтах
+// Щоб не ловити 405 на префлайтах
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
