@@ -54,8 +54,8 @@ export default function CampaignsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="text-left p-2">Створено</th>
-                  <th className="text-left p-2">Умова</th>
-                  <th className="text-left p-2">Дія</th>
+                  <th className="text-left p-2">Звідки</th>
+                  <th className="text-left p-2">Куди</th>
                   <th className="text-left p-2">Статус</th>
                 </tr>
               </thead>
@@ -63,12 +63,8 @@ export default function CampaignsPage() {
                 {items.map((c) => (
                   <tr key={c.id} className="border-t">
                     <td className="p-2">{new Date(c.created_at).toLocaleString()}</td>
-                    <td className="p-2">
-                      {c.from_pipeline_id} / {c.from_status_id}
-                    </td>
-                    <td className="p-2">
-                      → {c.to_pipeline_id} / {c.to_status_id}
-                    </td>
+                    <td className="p-2">{c.from_pipeline_id} / {c.from_status_id}</td>
+                    <td className="p-2">→ {c.to_pipeline_id} / {c.to_status_id}</td>
                     <td className="p-2">{c.enabled ? 'enabled' : 'disabled'}</td>
                   </tr>
                 ))}
