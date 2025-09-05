@@ -23,7 +23,7 @@ function withCORS(init?: ResponseInit) {
   return h;
 }
 
-/** Повертає всі наявні секрети (в порядку пріоритету) */
+// збираємо можливі секрети (MC_TOKEN/ADMIN_PASS тощо)
 function getSecretCandidates(): Array<{ name: string; value: string }> {
   const names = [
     "MC_TOKEN", "MANYCHAT_TOKEN",
@@ -40,18 +40,26 @@ function getSecretCandidates(): Array<{ name: string; value: string }> {
   return res;
 }
 
-function buildHeaders(secret: string): Record<string, string> {
-  const b64 = Buffer.from(secret, "utf8").toString("base64");
-  return {
+function b64(u: string) {
+  return Buffer.from(u, "utf8").toString("base64");
+}
+
+// формуємо набір хедерів для кожної СХЕМИ авторизації
+function headerSets(secret: string, user: string) {
+  const common: Record<string, string> = {
     "content-type": "application/json",
     "x-admin-pass": secret,
-    "x-admin-pass-b64": b64,
-    authorization: `Bearer ${secret}`,
+    "x-admin-pass-b64": b64(secret),
     "x-api-key": secret,
     "x-ingest-pass": secret,
     "x-mc-pass": secret,
     "x-token": secret,
   };
+
+  return [
+    { scheme: "bearer", headers: { ...common, authorization: `Bearer ${secret}` } },
+    { scheme: "basic",  headers: { ...common, authorization: `Basic ${b64(`${user}:${secret}`)}` } },
+  ] as const;
 }
 
 async function lookupLeadId(usernameRaw: string, req: NextRequest): Promise<number | null> {
@@ -65,16 +73,14 @@ async function lookupLeadId(usernameRaw: string, req: NextRequest): Promise<numb
 }
 
 async function upsertKV(usernameRaw: string, lead_id: number, req: NextRequest): Promise<void> {
-  // upsert для кешу username→lead_id; використовує перший доступний секрет (будь-який)
+  // upsert для кешу username→lead_id; використовує будь-який доступний секрет
   const candidates = getSecretCandidates();
   if (!candidates.length) return;
-  const b64 = Buffer.from(candidates[0].value, "utf8").toString("base64");
-  const body = { username: String(usernameRaw || "").trim().toLowerCase(), card_id: lead_id };
   try {
     await fetch(`${baseUrl(req)}/api/kv/lookup`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-admin-pass-b64": b64 },
-      body: JSON.stringify(body),
+      headers: { "content-type": "application/json", "x-admin-pass-b64": b64(candidates[0].value) },
+      body: JSON.stringify({ username: String(usernameRaw || "").trim().toLowerCase(), card_id: lead_id }),
     });
   } catch {}
 }
@@ -111,46 +117,45 @@ export async function POST(req: NextRequest) {
     const candidates = getSecretCandidates();
     if (!candidates.length) {
       return NextResponse.json(
-        { ok: false, error: "No admin secret set (MC_TOKEN / MANYCHAT_TOKEN / ADMIN_PASS / ...)" },
+        { ok: false, error: "No admin secret set (MC_TOKEN / ADMIN_PASS / ...)" },
         { status: 500, headers: withCORS() }
       );
     }
 
+    const adminUser = String(process.env.ADMIN_USER ?? "admin");
     const upstreamUrl = `${baseUrl(req)}/api/mc/ingest`;
-    const attempts: Array<{ name: string; status: number }> = [];
+    const attempts: Array<{ name: string; scheme: string; status: number }> = [];
 
     for (const cand of candidates) {
-      const hdrs = buildHeaders(cand.value);
-      const upstream = await fetch(upstreamUrl, {
-        method: "POST",
-        headers: hdrs,
-        body: JSON.stringify({ ...body, lead_id }),
-      });
+      for (const set of headerSets(cand.value, adminUser)) {
+        const upstream = await fetch(upstreamUrl, {
+          method: "POST",
+          headers: set.headers,
+          body: JSON.stringify({ ...body, lead_id }),
+        });
 
-      const ct = upstream.headers.get("content-type") || "";
-      const payload = ct.includes("application/json")
-        ? await upstream.json().catch(() => ({}))
-        : await upstream.text();
+        const ct = upstream.headers.get("content-type") || "";
+        const payload = ct.includes("application/json")
+          ? await upstream.json().catch(() => ({}))
+          : await upstream.text();
 
-      attempts.push({ name: cand.name, status: upstream.status });
+        attempts.push({ name: cand.name, scheme: set.scheme, status: upstream.status });
 
-      if (upstream.ok) {
-        return NextResponse.json(
-          { ok: true, status: upstream.status, source: cand.name, upstream: payload },
-          { status: upstream.status, headers: withCORS() }
-        );
+        if (upstream.ok) {
+          return NextResponse.json(
+            { ok: true, status: upstream.status, source: cand.name, schemeTried: set.scheme, upstream: payload },
+            { status: upstream.status, headers: withCORS() }
+          );
+        }
+        if (![401, 403].includes(upstream.status)) {
+          return NextResponse.json(
+            { ok: false, status: upstream.status, sourceTried: cand.name, schemeTried: set.scheme, upstream: payload },
+            { status: upstream.status, headers: withCORS() }
+          );
+        }
       }
-      if (![401, 403].includes(upstream.status)) {
-        // інші помилки не пов’язані з авторизацією — повертаємо відразу
-        return NextResponse.json(
-          { ok: false, status: upstream.status, sourceTried: cand.name, upstream: payload },
-          { status: upstream.status, headers: withCORS() }
-        );
-      }
-      // 401/403 → пробуємо наступний секрет
     }
 
-    // всі спроби дали 401/403
     return NextResponse.json(
       { ok: false, status: 401, error: "All auth attempts failed", attempts },
       { status: 401, headers: withCORS() }
