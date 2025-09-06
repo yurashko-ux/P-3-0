@@ -109,7 +109,6 @@ export default function NewCampaignPage() {
         setLoading(false);
         return;
       }
-      // успіх → назад або на список
       alert('Збережено');
       router.back();
     } catch (e: any) {
@@ -123,7 +122,7 @@ export default function NewCampaignPage() {
       <h1 className="text-3xl font-semibold mb-6">Нова кампанія</h1>
 
       <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Блок зліва */}
+        {/* Зліва: База */}
         <div className="rounded-2xl border p-5">
           <label className="block text-sm mb-2">Назва</label>
           <input
@@ -169,7 +168,7 @@ export default function NewCampaignPage() {
           </div>
         </div>
 
-        {/* Блок справа */}
+        {/* Справа: Куди */}
         <div className="rounded-2xl border p-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
