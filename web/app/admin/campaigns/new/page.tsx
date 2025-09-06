@@ -15,6 +15,7 @@ function asArray(x: any): any[] {
   }
   return [];
 }
+
 function toItems(arr: any[]): Item[] {
   const out: Item[] = [];
   for (const p of arr) {
@@ -26,10 +27,11 @@ function toItems(arr: any[]): Item[] {
   for (const it of out) uniq.set(it.id, it);
   return Array.from(uniq.values());
 }
+
 async function fetchItems(url: string): Promise<Item[]> {
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) return [];
-  const j = await r.json();
+  const j = await r.json().catch(() => ({}));
   return toItems(asArray(j?.items ?? j?.data ?? j?.result ?? j));
 }
 
@@ -81,7 +83,6 @@ export default function NewCampaignPage() {
       !!v1ToStatusId;
 
     const v2Ok = !v2Enabled || (!!v2ToPipelineId && !!v2ToStatusId);
-
     const expOk = !expToPipelineId || !!expToStatusId; // якщо обрана воронка, статус теж обов'язковий
 
     return baseOk && v1Ok && v2Ok && expOk;
@@ -150,14 +151,14 @@ export default function NewCampaignPage() {
         base_pipeline_id: basePipelineId,
         base_status_id: baseStatusId,
 
-        // Варіант №1 — обов'язковий: шукаємо text contains v1Value
+        // Варіант №1 — обов'язковий
         v1_field: 'text',
         v1_op: 'contains',
         v1_value: v1Value.trim(),
         v1_to_pipeline_id: v1ToPipelineId,
         v1_to_status_id: v1ToStatusId,
 
-        // Варіант №2 — опційний: тільки якщо задано значення
+        // Варіант №2 — опційний (тільки якщо задано значення)
         v2_enabled: v2Enabled,
         v2_field: 'text',
         v2_op: 'contains',
@@ -176,17 +177,28 @@ export default function NewCampaignPage() {
       const targets = ['/api/campaigns', '/api/campaigns/create'];
       let ok = false, lastErr = '';
       for (const u of targets) {
-        const res = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok) { ok = true; break; }
-        lastErr = j?.error ?? String(res.status);
+        const res = await fetch(u, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const text = await res.text(); // інколи API повертає HTML
+        let j: any = {};
+        try { j = JSON.parse(text); } catch {}
+        if (res.ok && (j?.ok ?? true)) { ok = true; break; }
+        lastErr = j?.error ?? `${res.status} ${res.statusText}`;
       }
       if (!ok) throw new Error(lastErr || 'save failed');
 
       alert('Кампанію збережено');
-      router.push('/admin/campaigns');
+
+      // Надійний редірект на список (PRG)
+      window.location.href = '/admin/campaigns?created=1';
+      return;
     } catch (e: any) {
-      alert(`Помилка: ${e?.message ?? 'network'}`);
+      console.error(e);
+      alert(`Помилка збереження: ${e?.message ?? 'unknown'}`);
+    } finally {
       setSaving(false);
     }
   }
@@ -201,8 +213,9 @@ export default function NewCampaignPage() {
     <div className="mx-auto max-w-6xl p-6 space-y-6">
       <h1 className="text-3xl font-semibold">Нова кампанія</h1>
 
-      {/* Блок 1: Назва / Базова воронка / Базовий статус */}
+      {/* Форма */}
       <form onSubmit={onSubmit} className="space-y-6">
+        {/* Блок 1: Назва / Базова воронка / Базовий статус */}
         <div className="rounded-2xl border p-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
