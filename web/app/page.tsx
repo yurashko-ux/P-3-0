@@ -1,0 +1,1 @@
+export default function Home(){return(<div className='space-y-4'><h1 className='text-2xl font-semibold'>P‑3‑0</h1><p>Перейдіть до <a className='text-blue-600 underline' href='/admin'>адмінки</a>.</p></div>)}

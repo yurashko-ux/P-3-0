@@ -1,0 +1,2 @@
+import { NextResponse } from 'next/server';import { redis } from '../../../lib/redis'
+export async function GET(req:Request){const url=new URL(req.url);const days=Number(url.searchParams.get('days')||'3');const now=Date.now();const from=now-days*24*60*60*1000;const ids=await redis.zrange<string[]>('logs:index',from,now,{byScore:true});const items:any[]=[];for(const id of ids){const raw=await redis.get<string>(`logs:${id}`);if(raw)try{items.push(JSON.parse(raw))}catch{}}items.sort((a,b)=>a.ts>b.ts?-1:1);return NextResponse.json({ok:true,items})}

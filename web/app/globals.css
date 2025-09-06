@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,body{@apply bg-white text-slate-900}
+.btn{@apply inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition}
+.btn-primary{@apply bg-primary text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary-ring disabled:opacity-50}
+.btn-outline{@apply border border-primary text-primary bg-white hover:bg-blue-50}
+.card{@apply rounded-2xl border border-gray-200 bg-white shadow-sm p-6}
+.input,.select,.textarea{@apply w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500}
+.table{@apply w-full text-sm}
+.table thead th{@apply bg-gray-50 text-left font-medium px-3 py-2}
+.table tbody td{@apply border-t border-gray-200 px-3 py-2}
