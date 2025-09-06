@@ -1,3 +1,4 @@
+// web/app/admin/campaigns/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -37,6 +38,12 @@ export default function CampaignsPage() {
         </Link>
       </div>
 
+      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('created') && (
+        <div className="rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-sm">
+          Кампанію створено успішно.
+        </div>
+      )}
+
       {err && (
         <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm">
           Не вдалося завантажити список ({err}). Сторінка працює, можна створювати нові.
@@ -54,8 +61,8 @@ export default function CampaignsPage() {
               <tr className="text-left">
                 <th className="py-2 pr-4">Назва</th>
                 <th className="py-2 pr-4">База</th>
-                <th className="py-2 pr-4">Куди</th>
-                <th className="py-2 pr-4">Expire</th>
+                <th className="py-2 pr-4">Куди (V1)</th>
+                <th className="py-2 pr-4">Expire (дні)</th>
               </tr>
             </thead>
             <tbody>
