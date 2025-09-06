@@ -23,7 +23,6 @@ async function loadByIndex(): Promise<Any[]> {
 }
 
 async function scanFallbackAndHealIndex(): Promise<Any[]> {
-  // шукаємо всі campaigns:* (окрім самого індексу)
   const keys = (await redis.keys('campaigns:*')) as string[];
   const docKeys = (keys || []).filter((k) => k !== INDEX_KEY && !k.endsWith(':index'));
   if (!docKeys.length) return [];
@@ -35,25 +34,25 @@ async function scanFallbackAndHealIndex(): Promise<Any[]> {
     })
     .filter(Boolean) as Any[];
 
-  // відбудуємо індекс, якщо він порожній
   if (items.length) {
     const members = items
       .filter((it) => it?.id)
       .map((it) => ({ score: Number(it.created_at) || Date.now(), member: String(it.id) }));
+
     if (members.length) {
-      await redis.zadd(INDEX_KEY, ...members);
+      // ⬇⬇⬇ Головний фікс типів для upstash-redis zadd
+      const [first, ...rest] = members;
+      await redis.zadd(INDEX_KEY, first, ...rest);
     }
   }
-  // повертаємо у зворотному порядку (новіші зверху)
+
   return items.sort((a, b) => (Number(b?.created_at || 0) - Number(a?.created_at || 0)));
 }
 
 export async function GET() {
   try {
     let items = await loadByIndex();
-
     if (!items.length) {
-      // fallback + самовідновлення індексу
       items = await scanFallbackAndHealIndex();
     }
 
