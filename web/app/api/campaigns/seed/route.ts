@@ -1,6 +1,6 @@
 // web/app/api/campaigns/seed/route.ts
 import { NextResponse } from 'next/server';
-import { redis } from '../../../../lib/redis'; // <- шлях для web/app/.../seed
+import { redis } from '../../../../lib/redis';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
