@@ -16,35 +16,87 @@ type Campaign = Any & {
   exp_days?: number;
 };
 
-function arr(x: any): any[] {
+type FetchMeta = {
+  url: string;
+  ok: boolean;
+  status: number;
+  text: string;
+  json: any;
+};
+
+const LIST_URLS = [
+  '/api/campaigns',
+  '/api/admin/campaigns',
+  '/api/campaigns/list',
+  '/api/list/campaigns',
+  '/api/campaign/list',
+];
+
+function normalizeArray(x: any): any[] {
+  // прямий масив
   if (Array.isArray(x)) return x;
-  if (x && typeof x === 'object') {
-    for (const k of ['items', 'data', 'result', 'rows', 'list']) {
-      if (Array.isArray((x as any)[k])) return (x as any)[k];
+
+  // поширені обгортки
+  const tryKeys = [
+    'items', 'data', 'result', 'rows', 'list', 'campaigns',
+    ['data', 'items'],
+    ['data', 'result'],
+    ['data', 'list'],
+    ['data', 'rows'],
+    ['data', 'campaigns'],
+  ];
+
+  for (const k of tryKeys) {
+    if (Array.isArray(k)) {
+      let cur: any = x;
+      for (const seg of k) cur = cur?.[seg];
+      if (Array.isArray(cur)) return cur;
+    } else {
+      const v = x?.[k];
+      if (Array.isArray(v)) return v;
     }
   }
+
+  // словник {id: {...}, id2: {...}}
+  if (x && typeof x === 'object') {
+    const vals = Object.values(x);
+    if (vals.length && vals.every(v => v && typeof v === 'object')) return vals as any[];
+  }
+
   return [];
 }
 
-async function tryJson(urls: string | string[]) {
-  const list = Array.isArray(urls) ? urls : [urls];
-  for (const u of list) {
-    try {
-      const r = await fetch(u, { cache: 'no-store' });
-      if (!r.ok) continue;
-      const t = await r.text();
-      try { return JSON.parse(t); } catch {}
-    } catch {}
+async function fetchWithMeta(url: string): Promise<FetchMeta> {
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    const text = await r.text();
+    let json: any = null;
+    try { json = JSON.parse(text); } catch {}
+    return { url, ok: r.ok, status: r.status, text, json };
+  } catch {
+    return { url, ok: false, status: 0, text: '', json: null };
   }
-  return null;
 }
 
-// ✅ без змішування && та ?? — компілюється стабільно
+async function loadList(): Promise<{ items: Campaign[]; meta: FetchMeta[] }> {
+  const meta: FetchMeta[] = [];
+  for (const u of LIST_URLS) {
+    const m = await fetchWithMeta(u);
+    meta.push(m);
+    if (m.ok && (Array.isArray(m.json) || (m.json && typeof m.json === 'object'))) {
+      const arr = normalizeArray(m.json);
+      if (Array.isArray(arr)) return { items: arr as Campaign[], meta };
+    }
+  }
+  return { items: [], meta };
+}
+
+// ------- утиліти для лічильників -------
+
 const pickNum = (o: Any | null, keys: string[], d = 0): number => {
   const val = o ? keys.map(k => o[k]).find(v => Number.isFinite(+v)) : undefined;
   return (val ?? d) as number;
 };
-
 const pickDate = (o: Any | null, keys: string[]) => {
   if (!o) return '';
   for (const k of keys) {
@@ -53,30 +105,29 @@ const pickDate = (o: Any | null, keys: string[]) => {
   }
   return '';
 };
-
 const idOf = (c: Campaign) => String(c?.id ?? c?._id ?? c?.uuid ?? '');
+
+// ------- сторінка -------
 
 export default function CampaignsPage() {
   const [all, setAll] = useState<Campaign[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [meta, setMeta] = useState<FetchMeta[] | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   // toolbar
   const [q, setQ] = useState('');
   const [onlyEnabled, setOnlyEnabled] = useState<'all' | 'on' | 'off'>('all');
   const [sort, setSort] = useState<'name' | 'updated' | 'created'>('name');
 
-  // load list
   useEffect(() => {
     (async () => {
-      try {
-        const j = await tryJson(['/api/campaigns', '/api/campaigns/list']);
-        const list = arr(j);
-        setAll(list);
-        if (!Array.isArray(list)) throw new Error('500');
-      } catch (e: any) {
-        setErr(e?.message || '500');
-        setAll([]); // все одно рендеримо
-      }
+      const res = await loadList();
+      setMeta(res.meta);
+      setAll(res.items);
+      // якщо всі відповіді неок або json не містить список — покажемо err тільки якщо була явна 5xx
+      const first = res.meta.find(m => m.ok || m.status);
+      if (!res.items.length && first && first.status >= 500) setErr(String(first.status));
     })();
   }, []);
 
@@ -104,6 +155,13 @@ export default function CampaignsPage() {
     return new URLSearchParams(window.location.search).get('created') ? 'Кампанію створено успішно.' : '';
   }, []);
 
+  // чи є підозра, що бек віддає не той формат
+  const maybeWrongShape = useMemo(() => {
+    if (!meta) return false;
+    // якщо був бодай один 200/201/204 але масиву не дістали — показати підказку
+    return !items.length && meta.some(m => m.ok);
+  }, [meta, items.length]);
+
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -119,7 +177,12 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* toolbar */}
+      {err && (
+        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm">
+          Не вдалося завантажити список ({err}). Сторінка працює, можна створювати нові.
+        </div>
+      )}
+
       <div className="rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
         <input
           className="rounded-xl border px-3 py-2"
@@ -147,9 +210,35 @@ export default function CampaignsPage() {
         </select>
       </div>
 
-      {err && (
-        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm">
-          Не вдалося завантажити список ({err}). Сторінка працює, можна створювати нові.
+      {/* підказка, якщо відповідь є, але формат не список */}
+      {maybeWrongShape && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
+          Отримали відповідь від API, але не змогли знайти список кампаній у полі
+          <code className="mx-1">items / data.items / campaigns / rows</code>.  
+          Можеш натиснути “Показати debug”, щоб побачити сирі відповіді.
+          <button
+            className="ml-3 rounded-xl border px-3 py-1"
+            onClick={() => setShowDebug(v => !v)}
+          >
+            {showDebug ? 'Сховати debug' : 'Показати debug'}
+          </button>
+        </div>
+      )}
+
+      {showDebug && meta && (
+        <div className="rounded-2xl border p-4 text-xs space-y-3 overflow-auto">
+          {meta.map((m, i) => (
+            <div key={i} className="border rounded-lg p-3">
+              <div><b>URL:</b> {m.url}</div>
+              <div><b>Status:</b> {m.status} {m.ok ? 'OK' : ''}</div>
+              <div className="mt-2">
+                <b>Body:</b>
+                <pre className="whitespace-pre-wrap break-words">
+                  {m.text?.slice(0, 2000) || '(empty)'}
+                </pre>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -166,6 +255,7 @@ export default function CampaignsPage() {
   );
 }
 
+// ---- картка кампанії ----
 function CampaignCard({ campaign }: { campaign: Campaign }) {
   const [stats, setStats] = useState<Any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -176,13 +266,15 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
     let live = true;
     (async () => {
       setLoading(true);
-      const s = await tryJson([
-        `/api/campaigns/${encodeURIComponent(cid)}/stats`,
-        `/api/campaigns/stats?id=${encodeURIComponent(cid)}`,
-        `/api/campaigns/stats?campaign_id=${encodeURIComponent(cid)}`,
-        `/api/stats/campaign?id=${encodeURIComponent(cid)}`,
+      const meta = await Promise.all([
+        fetchWithMeta(`/api/campaigns/${encodeURIComponent(cid)}/stats`),
+        fetchWithMeta(`/api/campaigns/stats?id=${encodeURIComponent(cid)}`),
+        fetchWithMeta(`/api/campaigns/stats?campaign_id=${encodeURIComponent(cid)}`),
+        fetchWithMeta(`/api/stats/campaign?id=${encodeURIComponent(cid)}`),
       ]);
-      if (live) { setStats(s); setLoading(false); }
+      const ok = meta.find(m => m.ok);
+      const parsed = ok?.json ?? null;
+      if (live) { setStats(parsed); setLoading(false); }
     })();
     return () => { live = false; };
   }, [cid]);
