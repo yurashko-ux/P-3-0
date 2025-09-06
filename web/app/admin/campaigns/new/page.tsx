@@ -6,10 +6,35 @@ import { useRouter } from 'next/navigation';
 
 type Item = { id: string; title: string };
 
-async function getJSON<T>(url: string): Promise<T> {
+function asArray(x: any): any[] {
+  if (Array.isArray(x)) return x;
+  if (x && typeof x === 'object') {
+    const cands = [x.items, x.data, x.result, x.list, x.rows];
+    for (const c of cands) if (Array.isArray(c)) return c;
+  }
+  return [];
+}
+
+function toItems(arr: any[]): Item[] {
+  const out: Item[] = [];
+  for (const p of arr) {
+    const id =
+      p?.id ?? p?.value ?? p?.key ?? p?.pipeline_id ?? p?.status_id ?? p?.uuid;
+    const title =
+      p?.title ?? p?.name ?? p?.label ?? p?.alias ?? (id != null ? `#${id}` : '');
+    if (id != null) out.push({ id: String(id), title: String(title) });
+  }
+  // унікалізація
+  const uniq = new Map<string, Item>();
+  for (const it of out) uniq.set(it.id, it);
+  return Array.from(uniq.values());
+}
+
+async function fetchItems(url: string): Promise<Item[]> {
   const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
-  return r.json();
+  if (!r.ok) return [];
+  const j = await r.json();
+  return toItems(asArray(j?.items ?? j?.data ?? j?.result ?? j));
 }
 
 export default function NewCampaignPage() {
@@ -25,26 +50,22 @@ export default function NewCampaignPage() {
   const [name, setName] = useState('');
   const [basePipelineId, setBasePipelineId] = useState('');
   const [baseStatusId, setBaseStatusId] = useState('');
-
   const [toPipelineId, setToPipelineId] = useState('');
   const [toStatusId, setToStatusId] = useState('');
-
   const [expDays, setExpDays] = useState<number>(7);
   const [expToPipelineId, setExpToPipelineId] = useState('');
   const [expToStatusId, setExpToStatusId] = useState('');
-
   const [saving, setSaving] = useState(false);
 
   const canSubmit = useMemo(() => {
     return (
       name.trim().length > 0 &&
-      basePipelineId &&
-      baseStatusId &&
-      toPipelineId &&
-      toStatusId &&
+      !!basePipelineId &&
+      !!baseStatusId &&
+      !!toPipelineId &&
+      !!toStatusId &&
       Number.isFinite(expDays) &&
       expDays >= 0
-      // expTo* опційні — можна лишити порожніми
     );
   }, [name, basePipelineId, baseStatusId, toPipelineId, toStatusId, expDays]);
 
@@ -52,10 +73,10 @@ export default function NewCampaignPage() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await getJSON<{ ok: boolean; items: Item[] }>('/api/keycrm/pipelines');
-        if (data.ok) setPipelines(data.items);
+        setPipelines(await fetchItems('/api/keycrm/pipelines'));
       } catch (e) {
         console.error('pipelines load failed', e);
+        setPipelines([]);
       }
     })();
   }, []);
@@ -67,12 +88,12 @@ export default function NewCampaignPage() {
       setBaseStatusId('');
       if (!basePipelineId) return;
       try {
-        const data = await getJSON<{ ok: boolean; items: Item[] }>(
-          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(basePipelineId)}`
+        setBaseStatuses(
+          await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(basePipelineId)}`)
         );
-        if (data.ok) setBaseStatuses(data.items);
       } catch (e) {
         console.error('base statuses failed', e);
+        setBaseStatuses([]);
       }
     })();
   }, [basePipelineId]);
@@ -84,12 +105,12 @@ export default function NewCampaignPage() {
       setToStatusId('');
       if (!toPipelineId) return;
       try {
-        const data = await getJSON<{ ok: boolean; items: Item[] }>(
-          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(toPipelineId)}`
+        setToStatuses(
+          await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(toPipelineId)}`)
         );
-        if (data.ok) setToStatuses(data.items);
       } catch (e) {
         console.error('to statuses failed', e);
+        setToStatuses([]);
       }
     })();
   }, [toPipelineId]);
@@ -101,12 +122,12 @@ export default function NewCampaignPage() {
       setExpToStatusId('');
       if (!expToPipelineId) return;
       try {
-        const data = await getJSON<{ ok: boolean; items: Item[] }>(
-          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(expToPipelineId)}`
+        setExpToStatuses(
+          await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(expToPipelineId)}`)
         );
-        if (data.ok) setExpToStatuses(data.items);
       } catch (e) {
         console.error('exp to statuses failed', e);
+        setExpToStatuses([]);
       }
     })();
   }, [expToPipelineId]);
@@ -116,20 +137,18 @@ export default function NewCampaignPage() {
     if (!canSubmit || saving) return;
     setSaving(true);
     try {
-      // Формуємо payload, сумісний з існуючим /api/campaigns (старі "варіанти" заповнюємо дефолтами)
       const payload = {
         name: name.trim(),
         base_pipeline_id: basePipelineId,
         base_status_id: baseStatusId,
 
-        // Variant #1 — завжди (any/always) → переносимо в "Куди"
+        // робимо простий сценарій: завжди переносити у "Куди"
         v1_field: 'any',
         v1_op: 'always',
         v1_value: '',
         v1_to_pipeline_id: toPipelineId,
         v1_to_status_id: toStatusId,
 
-        // Variant #2 вимкнено
         v2_enabled: false,
         v2_field: 'text',
         v2_op: 'contains',
@@ -137,14 +156,11 @@ export default function NewCampaignPage() {
         v2_to_pipeline_id: null,
         v2_to_status_id: null,
 
-        // Expiration
         exp_days: Number(expDays),
         exp_to_pipeline_id: expToPipelineId || null,
         exp_to_status_id: expToStatusId || null,
 
-        // Загальні прапори
         enabled: true,
-        // note опускаємо
       };
 
       const res = await fetch('/api/campaigns', {
@@ -167,6 +183,11 @@ export default function NewCampaignPage() {
       setSaving(false);
     }
   }
+
+  const pipelinesSafe = Array.isArray(pipelines) ? pipelines : [];
+  const baseStatusesSafe = Array.isArray(baseStatuses) ? baseStatuses : [];
+  const toStatusesSafe = Array.isArray(toStatuses) ? toStatuses : [];
+  const expToStatusesSafe = Array.isArray(expToStatuses) ? expToStatuses : [];
 
   return (
     <div className="mx-auto max-w-5xl p-6 space-y-6">
@@ -194,7 +215,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setBasePipelineId(e.target.value)}
               >
                 <option value="">— Оберіть воронку —</option>
-                {pipelines.map((p) => (
+                {pipelinesSafe.map((p) => (
                   <option key={p.id} value={p.id}>{p.title}</option>
                 ))}
               </select>
@@ -206,10 +227,10 @@ export default function NewCampaignPage() {
                 className="w-full rounded-xl border px-3 py-2"
                 value={baseStatusId}
                 onChange={(e) => setBaseStatusId(e.target.value)}
-                disabled={!basePipelineId || baseStatuses.length === 0}
+                disabled={!basePipelineId || baseStatusesSafe.length === 0}
               >
                 <option value="">{basePipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {baseStatuses.map((s) => (
+                {baseStatusesSafe.map((s) => (
                   <option key={s.id} value={s.id}>{s.title}</option>
                 ))}
               </select>
@@ -228,7 +249,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setToPipelineId(e.target.value)}
               >
                 <option value="">— Оберіть воронку —</option>
-                {pipelines.map((p) => (
+                {pipelinesSafe.map((p) => (
                   <option key={p.id} value={p.id}>{p.title}</option>
                 ))}
               </select>
@@ -240,10 +261,10 @@ export default function NewCampaignPage() {
                 className="w-full rounded-xl border px-3 py-2"
                 value={toStatusId}
                 onChange={(e) => setToStatusId(e.target.value)}
-                disabled={!toPipelineId || toStatuses.length === 0}
+                disabled={!toPipelineId || toStatusesSafe.length === 0}
               >
                 <option value="">{toPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {toStatuses.map((s) => (
+                {toStatusesSafe.map((s) => (
                   <option key={s.id} value={s.id}>{s.title}</option>
                 ))}
               </select>
@@ -273,7 +294,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setExpToPipelineId(e.target.value)}
               >
                 <option value="">— Не переносити —</option>
-                {pipelines.map((p) => (
+                {pipelinesSafe.map((p) => (
                   <option key={p.id} value={p.id}>{p.title}</option>
                 ))}
               </select>
@@ -285,10 +306,10 @@ export default function NewCampaignPage() {
                 className="w-full rounded-xl border px-3 py-2"
                 value={expToStatusId}
                 onChange={(e) => setExpToStatusId(e.target.value)}
-                disabled={!expToPipelineId || expToStatuses.length === 0}
+                disabled={!expToPipelineId || expToStatusesSafe.length === 0}
               >
                 <option value="">{expToPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {expToStatuses.map((s) => (
+                {expToStatusesSafe.map((s) => (
                   <option key={s.id} value={s.id}>{s.title}</option>
                 ))}
               </select>
