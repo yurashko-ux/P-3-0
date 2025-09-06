@@ -16,24 +16,22 @@ function genId() {
 }
 
 async function scanAll(match: string, count = 200): Promise<string[]> {
-  let cursor = 0;
-  const acc: string[] = [];
+  let cursor = 0; const acc: string[] = [];
   while (true) {
     const res: any = await (redis as any).scan(cursor, { match, count });
     const next = Array.isArray(res) ? Number(res[0]) : Number(res?.cursor ?? 0);
     const keys = Array.isArray(res) ? (res[1] as string[]) : ((res?.keys as string[]) ?? []);
     if (keys?.length) acc.push(...keys);
-    cursor = next;
-    if (!cursor) break;
+    cursor = next; if (!cursor) break;
   }
   return acc;
 }
 
-// ===================== GET =====================
+// ---------- GET ----------
 export async function GET(_req: Request, ctx: { params: { id: string } }) {
   const id = ctx.params?.id;
 
-  // --- /api/campaigns/seed ---
+  // /api/campaigns/seed  → створює тестову кампанію
   if (id === 'seed') {
     try {
       const now = Date.now();
@@ -52,6 +50,7 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
         v1_to_pipeline_id: null,
         v1_to_status_id: null,
       };
+
       await redis.set(ITEM_KEY(newId), JSON.stringify(item));
       await redis.zadd(INDEX_KEY, { score: now, member: newId });
 
@@ -65,7 +64,7 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
     }
   }
 
-  // --- /api/campaigns/debug ---
+  // /api/campaigns/debug → показує стан KV/індексу
   if (id === 'debug') {
     try {
       const env = {
@@ -85,9 +84,8 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
       }
 
       let indexIds: string[] = [];
-      try { indexIds = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[]; } catch (e: any) {
-        writeError ||= `zrange: ${e?.message || String(e)}`;
-      }
+      try { indexIds = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[]; }
+      catch (e: any) { writeError ||= `zrange: ${e?.message || String(e)}`; }
 
       let keys: string[] = [];
       try { keys = await scanAll('campaigns:*'); } catch {}
@@ -110,19 +108,15 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
     }
   }
 
-  // --- /api/campaigns/[id] (звичайне читання одного елемента) ---
+  // /api/campaigns/[id] → звичайне читання
   if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
   const raw = await redis.get<string>(ITEM_KEY(id));
   if (!raw) return NextResponse.json({ ok: false, error: 'NOT_FOUND' }, { status: 404 });
-  try {
-    const item = JSON.parse(raw);
-    return NextResponse.json({ ok: true, item }, { headers: { 'Cache-Control': 'no-store' } });
-  } catch {
-    return NextResponse.json({ ok: false, error: 'CORRUPTED_ITEM' }, { status: 500 });
-  }
+  try { return NextResponse.json({ ok: true, item: JSON.parse(raw) }, { headers: { 'Cache-Control': 'no-store' } }); }
+  catch { return NextResponse.json({ ok: false, error: 'CORRUPTED_ITEM' }, { status: 500 }); }
 }
 
-// ===================== PUT =====================
+// ---------- PUT ----------
 export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const id = ctx.params?.id;
   if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
@@ -131,15 +125,14 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
   if (!raw) return NextResponse.json({ ok: false, error: 'NOT_FOUND' }, { status: 404 });
 
   const patch = (await req.json()) as Any;
-  let item: Any;
-  try { item = JSON.parse(raw); } catch { return NextResponse.json({ ok: false, error: 'CORRUPTED_ITEM' }, { status: 500 }); }
+  let item: Any; try { item = JSON.parse(raw); } catch { return NextResponse.json({ ok: false, error: 'CORRUPTED_ITEM' }, { status: 500 }); }
 
   const updated = { ...item, ...patch, id, updated_at: Date.now(), name: (patch.name ?? item.name ?? '').toString().trim() };
   await redis.set(ITEM_KEY(id), JSON.stringify(updated));
   return NextResponse.json({ ok: true, item: updated });
 }
 
-// ===================== DELETE =====================
+// ---------- DELETE ----------
 export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   const id = ctx.params?.id;
   if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
@@ -150,7 +143,7 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   return NextResponse.json({ ok: true });
 }
 
-// Захист від випадкового POST у /[id]
+// Безпечна відповідь на випадковий POST
 export async function POST() {
   return NextResponse.json({ ok: false, error: 'UNSUPPORTED' }, { status: 400 });
 }
