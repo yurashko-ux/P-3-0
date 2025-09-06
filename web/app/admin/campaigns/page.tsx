@@ -25,6 +25,7 @@ function arr(x: any): any[] {
   }
   return [];
 }
+
 async function tryJson(urls: string | string[]) {
   const list = Array.isArray(urls) ? urls : [urls];
   for (const u of list) {
@@ -37,8 +38,13 @@ async function tryJson(urls: string | string[]) {
   }
   return null;
 }
-const pickNum = (o: Any | null, keys: string[], d = 0) =>
-  (o && keys.map(k => o[k]).find(v => Number.isFinite(+v)) ?? d) as number;
+
+// ✅ без змішування && та ?? — компілюється стабільно
+const pickNum = (o: Any | null, keys: string[], d = 0): number => {
+  const val = o ? keys.map(k => o[k]).find(v => Number.isFinite(+v)) : undefined;
+  return (val ?? d) as number;
+};
+
 const pickDate = (o: Any | null, keys: string[]) => {
   if (!o) return '';
   for (const k of keys) {
@@ -47,6 +53,7 @@ const pickDate = (o: Any | null, keys: string[]) => {
   }
   return '';
 };
+
 const idOf = (c: Campaign) => String(c?.id ?? c?._id ?? c?.uuid ?? '');
 
 export default function CampaignsPage() {
