@@ -13,19 +13,18 @@ const ITEM_KEY = (id: string) => `campaigns:${id}`;
 
 export async function GET() {
   try {
-    // Повертаємо всі кампанії, від нових до старих
-    const ids = await redis.zrange<string[]>(INDEX_KEY, 0, -1, { rev: true });
+    // Всі кампанії від нових до старих
+    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
     if (!ids || ids.length === 0) {
       return NextResponse.json({ ok: true, items: [] });
     }
     const keys = ids.map(ITEM_KEY);
-    const raws = await redis.mget<string[]>(...keys);
+    const raws = (await redis.mget(...keys)) as (string | null)[];
     const items = (raws || [])
-      .map((raw, i) => {
+      .map((raw) => {
         try {
           return raw ? JSON.parse(raw) : null;
         } catch {
-          // якщо десь зіпсутий JSON — пропустимо елемент, але список повернемо
           return null;
         }
       })
@@ -40,7 +39,6 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Any;
 
-    // Лояльний парсинг: приймаємо рядки/числа, обрізаємо пробіли
     const name = (body.name ?? '').toString().trim();
     if (!name) {
       return NextResponse.json({ ok: false, error: 'NAME_REQUIRED' }, { status: 400 });
@@ -49,36 +47,31 @@ export async function POST(req: Request) {
     const now = Date.now();
     const id = genId();
 
+    // Спочатку розгортаємо тіло, а СИСТЕМНІ поля задаємо ОДИН раз наприкінці
     const item: Any = {
-      id,
-      name,
-      // Поля логіки воронок: просто зберігаємо як прийшли (щоб не ламати фронт)
-      base_pipeline_id: body.base_pipeline_id ?? null,
-      base_status_id: body.base_status_id ?? null,
-      v1_to_pipeline_id: body.v1_to_pipeline_id ?? null,
-      v1_to_status_id: body.v1_to_status_id ?? null,
-      v2_to_pipeline_id: body.v2_to_pipeline_id ?? null,
-      v2_to_status_id: body.v2_to_status_id ?? null,
-      // Додаткові поля (умови, прапор активності, лічильники тощо) — теж пропускаємо як є
-      enabled: body.enabled ?? true,
-      exp_days: body.exp_days != null ? Number(body.exp_days) : null,
-      lastRun: null,
-      v1_count: 0,
-      v2_count: 0,
-      exp_count: 0,
-      // таймстемпи
-      created_at: now,
-      updated_at: now,
-      // щоб не загубити нічого з тіла — кладемо решту поверх
       ...body,
-      // але гарантуємо системні поля
       id,
+      name,
       created_at: now,
       updated_at: now,
-      name,
     };
 
-    // Запис у KV + індекс
+    // Лояльні дефолти / приведення типів
+    if (item.enabled === undefined) item.enabled = true;
+    if (item.exp_days != null) item.exp_days = Number(item.exp_days);
+    if (item.lastRun === undefined) item.lastRun = null;
+    if (item.v1_count == null) item.v1_count = 0;
+    if (item.v2_count == null) item.v2_count = 0;
+    if (item.exp_count == null) item.exp_count = 0;
+
+    // Порожні значення для ID воронок/статусів — як null (щоб фронту було простіше)
+    item.base_pipeline_id = item.base_pipeline_id ?? null;
+    item.base_status_id = item.base_status_id ?? null;
+    item.v1_to_pipeline_id = item.v1_to_pipeline_id ?? null;
+    item.v1_to_status_id = item.v1_to_status_id ?? null;
+    item.v2_to_pipeline_id = item.v2_to_pipeline_id ?? null;
+    item.v2_to_status_id = item.v2_to_status_id ?? null;
+
     await redis.set(ITEM_KEY(id), JSON.stringify(item));
     await redis.zadd(INDEX_KEY, { score: now, member: id });
 
