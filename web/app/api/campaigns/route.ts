@@ -2,6 +2,10 @@
 import { NextResponse } from 'next/server';
 import { redis } from '../../../lib/redis';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type Any = Record<string, any>;
 
 function genId() {
@@ -11,6 +15,7 @@ function genId() {
 const INDEX_KEY = 'campaigns:index';
 const ITEM_KEY = (id: string) => `campaigns:${id}`;
 
+// -------- helpers --------
 async function loadByIndex(): Promise<Any[]> {
   const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
   if (!ids?.length) return [];
@@ -22,9 +27,24 @@ async function loadByIndex(): Promise<Any[]> {
     .filter(Boolean) as Any[];
 }
 
+async function scanAllKeys(match: string, count = 200): Promise<string[]> {
+  let cursor = 0;
+  const acc: string[] = [];
+  while (true) {
+    // Upstash може повертати як масив [cursor, keys], так і об'єкт { cursor, keys }
+    const res: any = await redis.scan(cursor, { match, count });
+    const next = Array.isArray(res) ? Number(res[0]) : Number(res?.cursor ?? 0);
+    const keys = Array.isArray(res) ? (res[1] as string[]) : ((res?.keys as string[]) ?? []);
+    if (keys?.length) acc.push(...keys);
+    cursor = next;
+    if (!cursor) break;
+  }
+  return acc;
+}
+
 async function scanFallbackAndHealIndex(): Promise<Any[]> {
-  const keys = (await redis.keys('campaigns:*')) as string[];
-  const docKeys = (keys || []).filter((k) => k !== INDEX_KEY && !k.endsWith(':index'));
+  const docKeys = (await scanAllKeys('campaigns:*'))
+    .filter((k) => k !== INDEX_KEY && !k.endsWith(':index'));
   if (!docKeys.length) return [];
 
   const raws = (await redis.mget(...docKeys)) as (string | null)[];
@@ -34,28 +54,28 @@ async function scanFallbackAndHealIndex(): Promise<Any[]> {
     })
     .filter(Boolean) as Any[];
 
+  // відбудова індексу, якщо він пустий
   if (items.length) {
     const members = items
       .filter((it) => it?.id)
       .map((it) => ({ score: Number(it.created_at) || Date.now(), member: String(it.id) }));
-
     if (members.length) {
-      // ⬇⬇⬇ Головний фікс типів для upstash-redis zadd
       const [first, ...rest] = members;
       await redis.zadd(INDEX_KEY, first, ...rest);
     }
   }
 
+  // новіші зверху
   return items.sort((a, b) => (Number(b?.created_at || 0) - Number(a?.created_at || 0)));
 }
 
+// -------- routes --------
 export async function GET() {
   try {
     let items = await loadByIndex();
     if (!items.length) {
       items = await scanFallbackAndHealIndex();
     }
-
     const payload = {
       ok: true,
       items,
@@ -64,7 +84,7 @@ export async function GET() {
       rows: items,
       count: items.length,
     };
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'GET_FAILED' }, { status: 500 });
   }
@@ -88,6 +108,7 @@ export async function POST(req: Request) {
       updated_at: now,
     };
 
+    // дефолти / приведення типів
     if (item.enabled === undefined) item.enabled = true;
     if (item.exp_days != null) item.exp_days = Number(item.exp_days);
     if (item.lastRun === undefined) item.lastRun = null;
@@ -105,7 +126,7 @@ export async function POST(req: Request) {
     await redis.set(ITEM_KEY(id), JSON.stringify(item));
     await redis.zadd(INDEX_KEY, { score: now, member: id });
 
-    return NextResponse.json({ ok: true, item });
+    return NextResponse.json({ ok: true, item }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'POST_FAILED' }, { status: 500 });
   }
