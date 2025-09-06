@@ -1,3 +1,319 @@
-'use client'
-import { useState } from 'react'
-export default function NewCampaignPage(){const [form,setForm]=useState({name:'',base_pipeline_id:'',base_status_id:'',v1_field:'text',v1_op:'contains',v1_value:'',v1_to_pipeline_id:'',v1_to_status_id:'',v2_enabled:false,v2_field:'text',v2_op:'contains',v2_value:'',v2_to_pipeline_id:'',v2_to_status_id:'',exp_days:7,exp_to_pipeline_id:'',exp_to_status_id:'',enabled:true,note:''});const [msg,setMsg]=useState('');const u=(k:string,v:any)=>setForm(s=>({...s,[k]:v}));async function save(){setMsg('');const payload:any={name:form.name,base_pipeline_id:form.base_pipeline_id,base_status_id:form.base_status_id,v1_condition:{field:form.v1_field as any,op:form.v1_op as any,value:form.v1_value},v1_to_pipeline_id:form.v1_to_pipeline_id||null,v1_to_status_id:form.v1_to_status_id||null,v2_condition:form.v2_enabled?{field:form.v2_field as any,op:form.v2_op as any,value:form.v2_value}:null,v2_to_pipeline_id:form.v2_enabled?(form.v2_to_pipeline_id||null):null,v2_to_status_id:form.v2_enabled?(form.v2_to_status_id||null):null,exp_days:Number(form.exp_days||0),exp_to_pipeline_id:form.exp_to_pipeline_id||null,exp_to_status_id:form.exp_to_status_id||null,note:form.note||null,enabled:form.enabled};const res=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await res.json();if(res.ok){location.href='/admin/campaigns'}else{setMsg(j.error||'Помилка')}}return(<div className='space-y-4'><h1 className='text-2xl font-semibold'>Нова кампанія</h1>{msg&&<div className='text-red-600'>{msg}</div>}<div className='grid md:grid-cols-2 gap-4'><div className='card space-y-3'><div><label className='text-sm'>Назва</label><input className='input' value={form.name} onChange={e=>u('name',e.target.value)} /></div><div className='grid grid-cols-2 gap-3'><div><label className='text-sm'>База: pipeline</label><input className='input' value={form.base_pipeline_id} onChange={e=>u('base_pipeline_id',e.target.value)} /></div><div><label className='text-sm'>База: статус</label><input className='input' value={form.base_status_id} onChange={e=>u('base_status_id',e.target.value)} /></div></div><div className='flex items-center gap-3'><input id='enabled' type='checkbox' checked={form.enabled} onChange={e=>u('enabled',e.target.checked)} /><label htmlFor='enabled'>Enabled</label></div><div><label className='text-sm'>Note</label><textarea className='textarea' value={form.note} onChange={e=>u('note',e.target.value)} /></div></div><div className='card space-y-3'><h3 className='font-medium'>Variant #1</h3><div className='grid grid-cols-3 gap-3'><select className='select' value={form.v1_field} onChange={e=>u('v1_field',e.target.value)}><option value='text'>text</option><option value='any'>any</option></select><select className='select' value={form.v1_op} onChange={e=>u('v1_op',e.target.value)}><option value='contains'>contains</option><option value='equals'>equals</option></select><input className='input' placeholder='value' value={form.v1_value} onChange={e=>u('v1_value',e.target.value)} /></div><div className='grid grid-cols-2 gap-3'><input className='input' placeholder='to pipeline' value={form.v1_to_pipeline_id} onChange={e=>u('v1_to_pipeline_id',e.target.value)} /><input className='input' placeholder='to status' value={form.v1_to_status_id} onChange={e=>u('v1_to_status_id',e.target.value)} /></div></div><div className='card space-y-3'><div className='flex items-center justify-between'><h3 className='font-medium'>Variant #2</h3><label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={form.v2_enabled} onChange={e=>u('v2_enabled',e.target.checked)} /> вкл.</label></div><div className='grid grid-cols-3 gap-3'><select className='select' value={form.v2_field} onChange={e=>u('v2_field',e.target.value)}><option value='text'>text</option><option value='any'>any</option></select><select className='select' value={form.v2_op} onChange={e=>u('v2_op',e.target.value)}><option value='contains'>contains</option><option value='equals'>equals</option></select><input className='input' placeholder='value' value={form.v2_value} onChange={e=>u('v2_value',e.target.value)} /></div><div className='grid grid-cols-2 gap-3'><input className='input' placeholder='to pipeline' value={form.v2_to_pipeline_id} onChange={e=>u('v2_to_pipeline_id',e.target.value)} /><input className='input' placeholder='to status' value={form.v2_to_status_id} onChange={e=>u('v2_to_status_id',e.target.value)} /></div></div><div className='card space-y-3'><h3 className='font-medium'>Variant #3 (Expiration)</h3><div className='grid grid-cols-3 gap-3'><div><label className='text-sm'>Днів</label><input className='input' type='number' value={form.exp_days} onChange={e=>u('exp_days',e.target.value)} /></div><input className='input' placeholder='to pipeline' value={form.exp_to_pipeline_id} onChange={e=>u('exp_to_pipeline_id',e.target.value)} /><input className='input' placeholder='to status' value={form.exp_to_status_id} onChange={e=>u('exp_to_status_id',e.target.value)} /></div></div></div><div className='flex gap-3'><button className='btn btn-primary' onClick={save}>Зберегти</button><a href='/admin/campaigns' className='btn btn-outline'>Скасувати</a></div></div>)}
+// web/app/admin/campaigns/new/page.tsx
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+type Item = { id: string; title: string };
+
+async function getJSON<T>(url: string): Promise<T> {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
+  return r.json();
+}
+
+export default function NewCampaignPage() {
+  const router = useRouter();
+
+  // dropdown data
+  const [pipelines, setPipelines] = useState<Item[]>([]);
+  const [baseStatuses, setBaseStatuses] = useState<Item[]>([]);
+  const [toStatuses, setToStatuses] = useState<Item[]>([]);
+  const [expToStatuses, setExpToStatuses] = useState<Item[]>([]);
+
+  // form state
+  const [name, setName] = useState('');
+  const [basePipelineId, setBasePipelineId] = useState('');
+  const [baseStatusId, setBaseStatusId] = useState('');
+
+  const [toPipelineId, setToPipelineId] = useState('');
+  const [toStatusId, setToStatusId] = useState('');
+
+  const [expDays, setExpDays] = useState<number>(7);
+  const [expToPipelineId, setExpToPipelineId] = useState('');
+  const [expToStatusId, setExpToStatusId] = useState('');
+
+  const [saving, setSaving] = useState(false);
+
+  const canSubmit = useMemo(() => {
+    return (
+      name.trim().length > 0 &&
+      basePipelineId &&
+      baseStatusId &&
+      toPipelineId &&
+      toStatusId &&
+      Number.isFinite(expDays) &&
+      expDays >= 0
+      // expTo* опційні — можна лишити порожніми
+    );
+  }, [name, basePipelineId, baseStatusId, toPipelineId, toStatusId, expDays]);
+
+  // load pipelines once
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await getJSON<{ ok: boolean; items: Item[] }>('/api/keycrm/pipelines');
+        if (data.ok) setPipelines(data.items);
+      } catch (e) {
+        console.error('pipelines load failed', e);
+      }
+    })();
+  }, []);
+
+  // load statuses when base pipeline changes
+  useEffect(() => {
+    (async () => {
+      setBaseStatuses([]);
+      setBaseStatusId('');
+      if (!basePipelineId) return;
+      try {
+        const data = await getJSON<{ ok: boolean; items: Item[] }>(
+          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(basePipelineId)}`
+        );
+        if (data.ok) setBaseStatuses(data.items);
+      } catch (e) {
+        console.error('base statuses failed', e);
+      }
+    })();
+  }, [basePipelineId]);
+
+  // load statuses when "to" pipeline changes
+  useEffect(() => {
+    (async () => {
+      setToStatuses([]);
+      setToStatusId('');
+      if (!toPipelineId) return;
+      try {
+        const data = await getJSON<{ ok: boolean; items: Item[] }>(
+          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(toPipelineId)}`
+        );
+        if (data.ok) setToStatuses(data.items);
+      } catch (e) {
+        console.error('to statuses failed', e);
+      }
+    })();
+  }, [toPipelineId]);
+
+  // load statuses when "expiration to" pipeline changes
+  useEffect(() => {
+    (async () => {
+      setExpToStatuses([]);
+      setExpToStatusId('');
+      if (!expToPipelineId) return;
+      try {
+        const data = await getJSON<{ ok: boolean; items: Item[] }>(
+          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(expToPipelineId)}`
+        );
+        if (data.ok) setExpToStatuses(data.items);
+      } catch (e) {
+        console.error('exp to statuses failed', e);
+      }
+    })();
+  }, [expToPipelineId]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    try {
+      // Формуємо payload, сумісний з існуючим /api/campaigns (старі "варіанти" заповнюємо дефолтами)
+      const payload = {
+        name: name.trim(),
+        base_pipeline_id: basePipelineId,
+        base_status_id: baseStatusId,
+
+        // Variant #1 — завжди (any/always) → переносимо в "Куди"
+        v1_field: 'any',
+        v1_op: 'always',
+        v1_value: '',
+        v1_to_pipeline_id: toPipelineId,
+        v1_to_status_id: toStatusId,
+
+        // Variant #2 вимкнено
+        v2_enabled: false,
+        v2_field: 'text',
+        v2_op: 'contains',
+        v2_value: '',
+        v2_to_pipeline_id: null,
+        v2_to_status_id: null,
+
+        // Expiration
+        exp_days: Number(expDays),
+        exp_to_pipeline_id: expToPipelineId || null,
+        exp_to_status_id: expToStatusId || null,
+
+        // Загальні прапори
+        enabled: true,
+        // note опускаємо
+      };
+
+      const res = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json?.ok) {
+        alert(`Помилка: ${json?.error ?? res.status}`);
+        setSaving(false);
+        return;
+      }
+
+      alert('Кампанію збережено');
+      router.push('/admin/campaigns');
+    } catch (e: any) {
+      alert(`Помилка мережі: ${e?.message ?? 'unknown'}`);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl p-6 space-y-6">
+      <h1 className="text-3xl font-semibold">Нова кампанія</h1>
+
+      <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Зліва: База */}
+        <div className="rounded-2xl border p-5 space-y-4">
+          <div>
+            <label className="block text-sm mb-2">Назва</label>
+            <input
+              className="w-full rounded-xl border px-3 py-2"
+              placeholder="Напр. Розсилка → Відповіла"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm mb-2">База: воронка</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={basePipelineId}
+                onChange={(e) => setBasePipelineId(e.target.value)}
+              >
+                <option value="">— Оберіть воронку —</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-2">База: статус</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={baseStatusId}
+                onChange={(e) => setBaseStatusId(e.target.value)}
+                disabled={!basePipelineId || baseStatuses.length === 0}
+              >
+                <option value="">{basePipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
+                {baseStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Справа: Куди */}
+        <div className="rounded-2xl border p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm mb-2">Куди: воронка</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={toPipelineId}
+                onChange={(e) => setToPipelineId(e.target.value)}
+              >
+                <option value="">— Оберіть воронку —</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-2">Куди: статус</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={toStatusId}
+                onChange={(e) => setToStatusId(e.target.value)}
+                disabled={!toPipelineId || toStatuses.length === 0}
+              >
+                <option value="">{toPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
+                {toStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 pt-2">
+            <div>
+              <label className="block text-sm mb-2">Expiration (дні)</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full rounded-xl border px-3 py-2"
+                value={expDays}
+                onChange={(e) => setExpDays(Number(e.target.value))}
+              />
+            </div>
+            <div />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm mb-2">Після експірації: воронка</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={expToPipelineId}
+                onChange={(e) => setExpToPipelineId(e.target.value)}
+              >
+                <option value="">— Не переносити —</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-2">Після експірації: статус</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={expToStatusId}
+                onChange={(e) => setExpToStatusId(e.target.value)}
+                disabled={!expToPipelineId || expToStatuses.length === 0}
+              >
+                <option value="">{expToPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
+                {expToStatuses.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Кнопки */}
+        <div className="md:col-span-2 flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={!canSubmit || saving}
+            className="rounded-xl px-5 py-2 border bg-blue-600 text-white disabled:opacity-50"
+          >
+            {saving ? 'Збереження…' : 'Зберегти'}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="rounded-xl px-5 py-2 border"
+          >
+            Скасувати
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
