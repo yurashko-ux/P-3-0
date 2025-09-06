@@ -1,37 +1,7 @@
 // web/app/admin/login/page.tsx
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export default function AdminLoginPage({
   searchParams,
 }: { searchParams?: { err?: string } }) {
-  // ⬇️ Працює без будь-якого клієнтського JS (чистий HTML submit)
-  async function login(formData: FormData) {
-    'use server';
-    const input = String(formData.get('password') || '').trim();
-    const adminPass = (process.env.ADMIN_PASS || process.env.ADMIN_PASSWORD || '').trim();
-
-    if (!adminPass) {
-      redirect('/admin/login?err=env');
-    }
-
-    if (input && input === adminPass) {
-      cookies().set('admin_ok', '1', {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: true,
-        path: '/',
-        maxAge: 60 * 60 * 24 * 30, // 30 днів
-      });
-      redirect('/admin');
-    }
-
-    redirect('/admin/login?err=1');
-  }
-
   const err = searchParams?.err;
   const errMsg =
     err === 'env'
@@ -48,8 +18,8 @@ export default function AdminLoginPage({
         </div>
       )}
 
-      {/* Server Action: форма напряму викликає login() на сервері */}
-      <form action={login} className="space-y-4">
+      {/* Класичний HTML POST у стабільний API */}
+      <form method="post" action="/api/admin/login" className="space-y-4">
         <div>
           <label className="block text-sm mb-2">Пароль адміністратора</label>
           <input
@@ -62,10 +32,7 @@ export default function AdminLoginPage({
           />
         </div>
 
-        <button
-          type="submit"
-          className="rounded-xl px-5 py-2 border bg-blue-600 text-white"
-        >
+        <button type="submit" className="rounded-xl px-5 py-2 border bg-blue-600 text-white">
           Увійти
         </button>
       </form>
