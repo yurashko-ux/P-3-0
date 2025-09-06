@@ -1,41 +1,7 @@
 // web/app/admin/login/page.tsx
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export default function AdminLoginPage({
   searchParams,
-}: {
-  searchParams?: { err?: string };
-}) {
-  // Server Action — викликається при submit форми
-  async function login(formData: FormData) {
-    'use server';
-    const input = String(formData.get('password') || '').trim();
-    const adminPass = (process.env.ADMIN_PASS || process.env.ADMIN_PASSWORD || '').trim();
-
-    if (!adminPass) {
-      // немає пароля в ENV
-      redirect('/admin/login?err=env');
-    }
-
-    if (input && input === adminPass) {
-      cookies().set('admin_ok', '1', {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: true,
-        path: '/',
-        maxAge: 60 * 60 * 24 * 30, // 30 днів
-      });
-      redirect('/admin');
-    }
-
-    // невірний пароль
-    redirect('/admin/login?err=1');
-  }
-
+}: { searchParams?: { err?: string } }) {
   const hasError = Boolean(searchParams?.err);
   const errMsg =
     searchParams?.err === 'env'
@@ -52,7 +18,8 @@ export default function AdminLoginPage({
         </div>
       )}
 
-      <form action={login} className="space-y-4">
+      {/* Класичний HTML POST — працює навіть без JS */}
+      <form method="post" action="/admin/login" className="space-y-4">
         <div>
           <label className="block text-sm mb-2">Пароль адміністратора</label>
           <input
