@@ -1,4 +1,89 @@
-import { NextResponse } from 'next/server';import { redis } from '../../../lib/redis';import type { Campaign } from '../../../lib/types'
-function id(){return (Date.now().toString(36)+Math.random().toString(36).slice(2,8)).toUpperCase()}
-export async function GET(){try{const ids=await redis.zrange<string[]>('campaigns:index',0,-1);const res:Campaign[]=[];for(const cid of ids){const raw=await redis.get<string>(`campaigns:${cid}`);if(raw)res.push(JSON.parse(raw))}res.sort((a,b)=>a.created_at>b.created_at?-1:1);return NextResponse.json({ok:true,items:res})}catch(e:any){return NextResponse.json({ok:false,error:e.message},{status:500})}}
-export async function POST(req:Request){try{const body=await req.json();const item:Campaign={id:id(),created_at:new Date().toISOString(),name:body.name||'Без назви',base_pipeline_id:body.base_pipeline_id,base_status_id:body.base_status_id,v1_condition:body.v1_condition??null,v1_to_pipeline_id:body.v1_to_pipeline_id??null,v1_to_status_id:body.v1_to_status_id??null,v2_condition:body.v2_condition??null,v2_to_pipeline_id:body.v2_to_pipeline_id??null,v2_to_status_id:body.v2_to_status_id??null,exp_days:Number(body.exp_days||0),exp_to_pipeline_id:body.exp_to_pipeline_id??null,exp_to_status_id:body.exp_to_status_id??null,note:body.note??null,enabled:body.enabled??true,v1_count:0,v2_count:0,exp_count:0};await redis.set(`campaigns:${item.id}`,JSON.stringify(item));await redis.zadd('campaigns:index',{score:Date.now(),member:item.id});return NextResponse.json({ok:true,id:item.id,item})}catch(e:any){return NextResponse.json({ok:false,error:e.message},{status:500})}}
+// web/app/api/campaigns/route.ts
+import { NextResponse } from 'next/server';
+import { redis } from '../../../lib/redis';
+
+type Any = Record<string, any>;
+
+function genId() {
+  return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toUpperCase();
+}
+
+const INDEX_KEY = 'campaigns:index';
+const ITEM_KEY = (id: string) => `campaigns:${id}`;
+
+export async function GET() {
+  try {
+    // Повертаємо всі кампанії, від нових до старих
+    const ids = await redis.zrange<string[]>(INDEX_KEY, 0, -1, { rev: true });
+    if (!ids || ids.length === 0) {
+      return NextResponse.json({ ok: true, items: [] });
+    }
+    const keys = ids.map(ITEM_KEY);
+    const raws = await redis.mget<string[]>(...keys);
+    const items = (raws || [])
+      .map((raw, i) => {
+        try {
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          // якщо десь зіпсутий JSON — пропустимо елемент, але список повернемо
+          return null;
+        }
+      })
+      .filter(Boolean);
+    return NextResponse.json({ ok: true, items });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || 'GET_FAILED' }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as Any;
+
+    // Лояльний парсинг: приймаємо рядки/числа, обрізаємо пробіли
+    const name = (body.name ?? '').toString().trim();
+    if (!name) {
+      return NextResponse.json({ ok: false, error: 'NAME_REQUIRED' }, { status: 400 });
+    }
+
+    const now = Date.now();
+    const id = genId();
+
+    const item: Any = {
+      id,
+      name,
+      // Поля логіки воронок: просто зберігаємо як прийшли (щоб не ламати фронт)
+      base_pipeline_id: body.base_pipeline_id ?? null,
+      base_status_id: body.base_status_id ?? null,
+      v1_to_pipeline_id: body.v1_to_pipeline_id ?? null,
+      v1_to_status_id: body.v1_to_status_id ?? null,
+      v2_to_pipeline_id: body.v2_to_pipeline_id ?? null,
+      v2_to_status_id: body.v2_to_status_id ?? null,
+      // Додаткові поля (умови, прапор активності, лічильники тощо) — теж пропускаємо як є
+      enabled: body.enabled ?? true,
+      exp_days: body.exp_days != null ? Number(body.exp_days) : null,
+      lastRun: null,
+      v1_count: 0,
+      v2_count: 0,
+      exp_count: 0,
+      // таймстемпи
+      created_at: now,
+      updated_at: now,
+      // щоб не загубити нічого з тіла — кладемо решту поверх
+      ...body,
+      // але гарантуємо системні поля
+      id,
+      created_at: now,
+      updated_at: now,
+      name,
+    };
+
+    // Запис у KV + індекс
+    await redis.set(ITEM_KEY(id), JSON.stringify(item));
+    await redis.zadd(INDEX_KEY, { score: now, member: id });
+
+    return NextResponse.json({ ok: true, item });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || 'POST_FAILED' }, { status: 500 });
+  }
+}
