@@ -1,1 +1,7 @@
-export default function Home(){return(<div className='space-y-4'><h1 className='text-2xl font-semibold'>P‑3‑0</h1><p>Перейдіть до <a className='text-blue-600 underline' href='/admin'>адмінки</a>.</p></div>)}
+// web/app/page.tsx
+import { redirect } from 'next/navigation';
+
+export default function Home() {
+  // одразу ведемо на логін адмінки
+  redirect('/admin/login');
+}
