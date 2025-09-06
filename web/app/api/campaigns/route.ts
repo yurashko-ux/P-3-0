@@ -11,22 +11,52 @@ function genId() {
 const INDEX_KEY = 'campaigns:index';
 const ITEM_KEY = (id: string) => `campaigns:${id}`;
 
+async function loadByIndex(): Promise<Any[]> {
+  const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
+  if (!ids?.length) return [];
+  const raws = (await redis.mget(...ids.map(ITEM_KEY))) as (string | null)[];
+  return (raws || [])
+    .map((raw) => {
+      try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+    })
+    .filter(Boolean) as Any[];
+}
+
+async function scanFallbackAndHealIndex(): Promise<Any[]> {
+  // шукаємо всі campaigns:* (окрім самого індексу)
+  const keys = (await redis.keys('campaigns:*')) as string[];
+  const docKeys = (keys || []).filter((k) => k !== INDEX_KEY && !k.endsWith(':index'));
+  if (!docKeys.length) return [];
+
+  const raws = (await redis.mget(...docKeys)) as (string | null)[];
+  const items = (raws || [])
+    .map((raw) => {
+      try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+    })
+    .filter(Boolean) as Any[];
+
+  // відбудуємо індекс, якщо він порожній
+  if (items.length) {
+    const members = items
+      .filter((it) => it?.id)
+      .map((it) => ({ score: Number(it.created_at) || Date.now(), member: String(it.id) }));
+    if (members.length) {
+      await redis.zadd(INDEX_KEY, ...members);
+    }
+  }
+  // повертаємо у зворотному порядку (новіші зверху)
+  return items.sort((a, b) => (Number(b?.created_at || 0) - Number(a?.created_at || 0)));
+}
+
 export async function GET() {
   try {
-    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-    if (!ids || ids.length === 0) {
-      const payload = { ok: true, items: [] as Any[], data: { items: [] as Any[] }, campaigns: [] as Any[], rows: [] as Any[], count: 0 };
-      return NextResponse.json(payload);
-    }
-    const keys = ids.map(ITEM_KEY);
-    const raws = (await redis.mget(...keys)) as (string | null)[];
-    const items = (raws || [])
-      .map((raw) => {
-        try { return raw ? JSON.parse(raw) : null; } catch { return null; }
-      })
-      .filter(Boolean) as Any[];
+    let items = await loadByIndex();
 
-    // Сумісний формат для будь-якого фронту
+    if (!items.length) {
+      // fallback + самовідновлення індексу
+      items = await scanFallbackAndHealIndex();
+    }
+
     const payload = {
       ok: true,
       items,
