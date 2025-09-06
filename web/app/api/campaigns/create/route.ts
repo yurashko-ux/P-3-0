@@ -18,12 +18,9 @@ async function kvGet(key: string) {
     headers: { Authorization: `Bearer ${KV_TOKEN}` },
     cache: 'no-store',
   });
-  if (!r.ok) {
-    // if key is missing, Upstash returns 200 with null result; but on misconfig it can be !ok
-    throw new Error(`KV GET ${key} -> ${r.status}`);
-  }
+  if (!r.ok) throw new Error(`KV GET ${key} -> ${r.status}`);
   const j = await r.json();
-  return j?.result ?? null; // string | null
+  return j?.result ?? null;
 }
 
 async function kvSet(key: string, value: string) {
@@ -70,7 +67,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // read current list
     let raw = await kvGet('campaigns');
     let items: any[] = [];
     if (typeof raw === 'string' && raw.length) {
