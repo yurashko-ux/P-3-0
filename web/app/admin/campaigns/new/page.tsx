@@ -39,133 +39,133 @@ export default function NewCampaignPage() {
   // dropdown data
   const [pipelines, setPipelines] = useState<Item[]>([]);
   const [baseStatuses, setBaseStatuses] = useState<Item[]>([]);
-  const [toStatuses, setToStatuses] = useState<Item[]>([]);
-  const [expToStatuses, setExpToStatuses] = useState<Item[]>([]);
+  const [v1ToStatuses, setV1ToStatuses] = useState<Item[]>([]);
   const [v2ToStatuses, setV2ToStatuses] = useState<Item[]>([]);
+  const [expToStatuses, setExpToStatuses] = useState<Item[]>([]);
 
-  // form state
+  // БЛОК 1: Назва + База
   const [name, setName] = useState('');
   const [basePipelineId, setBasePipelineId] = useState('');
   const [baseStatusId, setBaseStatusId] = useState('');
 
-  const [toPipelineId, setToPipelineId] = useState('');
-  const [toStatusId, setToStatusId] = useState('');
+  // БЛОК 2: Варіант №1 (обов'язковий)
+  const [v1Value, setV1Value] = useState(''); // варіант відповіді з ManiChat
+  const [v1ToPipelineId, setV1ToPipelineId] = useState('');
+  const [v1ToStatusId, setV1ToStatusId] = useState('');
 
-  const [expDays, setExpDays] = useState<number>(7);
-  const [expToPipelineId, setExpToPipelineId] = useState('');
-  const [expToStatusId, setExpToStatusId] = useState('');
-
-  // Variant #2
-  const [v2Enabled, setV2Enabled] = useState(false);
-  const [v2Field, setV2Field] = useState<'text' | 'username'>('text');
-  const [v2Op, setV2Op] = useState<'contains' | 'equals'>('contains');
+  // БЛОК 3: Варіант №2 (опційний)
   const [v2Value, setV2Value] = useState('');
   const [v2ToPipelineId, setV2ToPipelineId] = useState('');
   const [v2ToStatusId, setV2ToStatusId] = useState('');
 
+  // БЛОК 4: Expire
+  const [expDays, setExpDays] = useState<number>(7);
+  const [expToPipelineId, setExpToPipelineId] = useState('');
+  const [expToStatusId, setExpToStatusId] = useState('');
+
   const [saving, setSaving] = useState(false);
+
+  const v2Enabled = v2Value.trim().length > 0;
 
   const canSubmit = useMemo(() => {
     const baseOk =
       name.trim().length > 0 &&
       !!basePipelineId &&
       !!baseStatusId &&
-      !!toPipelineId &&
-      !!toStatusId &&
       Number.isFinite(expDays) &&
       expDays >= 0;
 
-    const v2Ok = !v2Enabled || (v2Value.trim().length > 0 && !!v2ToPipelineId && !!v2ToStatusId);
-    return baseOk && v2Ok;
+    const v1Ok =
+      v1Value.trim().length > 0 &&
+      !!v1ToPipelineId &&
+      !!v1ToStatusId;
+
+    const v2Ok = !v2Enabled || (!!v2ToPipelineId && !!v2ToStatusId);
+
+    const expOk = !expToPipelineId || !!expToStatusId; // якщо обрана воронка, статус теж обов'язковий
+
+    return baseOk && v1Ok && v2Ok && expOk;
   }, [
-    name, basePipelineId, baseStatusId, toPipelineId, toStatusId,
-    expDays, v2Enabled, v2Value, v2ToPipelineId, v2ToStatusId,
+    name, basePipelineId, baseStatusId,
+    v1Value, v1ToPipelineId, v1ToStatusId,
+    v2Enabled, v2ToPipelineId, v2ToStatusId,
+    expDays, expToPipelineId, expToStatusId
   ]);
 
-  // load pipelines once
+  // завантаження воронок
   useEffect(() => {
     (async () => {
-      try {
-        const data = await fetchItems('/api/keycrm/pipelines');
-        setPipelines(data);
-      } catch (e) {
-        console.error('pipelines load failed', e);
-        setPipelines([]);
-      }
+      try { setPipelines(await fetchItems('/api/keycrm/pipelines')); }
+      catch { setPipelines([]); }
     })();
   }, []);
 
-  // helper to load statuses for any pipeline id
-  async function loadStatuses(pid: string): Promise<Item[]> {
-    // приймає і pipeline_id, і pipeline (бек підтримує обидва)
-    const u = `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(pid)}`;
-    return await fetchItems(u);
-  }
-
-  // base statuses
+  // статуси для базової воронки
   useEffect(() => {
     (async () => {
       setBaseStatuses([]); setBaseStatusId('');
       if (!basePipelineId) return;
-      try { setBaseStatuses(await loadStatuses(basePipelineId)); }
+      try { setBaseStatuses(await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(basePipelineId)}`)); }
       catch { setBaseStatuses([]); }
     })();
   }, [basePipelineId]);
 
-  // target statuses
+  // статуси для Варіанта 1 → "Куди"
   useEffect(() => {
     (async () => {
-      setToStatuses([]); setToStatusId('');
-      if (!toPipelineId) return;
-      try { setToStatuses(await loadStatuses(toPipelineId)); }
-      catch { setToStatuses([]); }
+      setV1ToStatuses([]); setV1ToStatusId('');
+      if (!v1ToPipelineId) return;
+      try { setV1ToStatuses(await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(v1ToPipelineId)}`)); }
+      catch { setV1ToStatuses([]); }
     })();
-  }, [toPipelineId]);
+  }, [v1ToPipelineId]);
 
-  // expiration to statuses
-  useEffect(() => {
-    (async () => {
-      setExpToStatuses([]); setExpToStatusId('');
-      if (!expToPipelineId) return;
-      try { setExpToStatuses(await loadStatuses(expToPipelineId)); }
-      catch { setExpToStatuses([]); }
-    })();
-  }, [expToPipelineId]);
-
-  // v2 to statuses
+  // статуси для Варіанта 2 → "Куди"
   useEffect(() => {
     (async () => {
       setV2ToStatuses([]); setV2ToStatusId('');
       if (!v2ToPipelineId) return;
-      try { setV2ToStatuses(await loadStatuses(v2ToPipelineId)); }
+      try { setV2ToStatuses(await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(v2ToPipelineId)}`)); }
       catch { setV2ToStatuses([]); }
     })();
   }, [v2ToPipelineId]);
+
+  // статуси для Expire → "Після експірації"
+  useEffect(() => {
+    (async () => {
+      setExpToStatuses([]); setExpToStatusId('');
+      if (!expToPipelineId) return;
+      try { setExpToStatuses(await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(expToPipelineId)}`)); }
+      catch { setExpToStatuses([]); }
+    })();
+  }, [expToPipelineId]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit || saving) return;
     setSaving(true);
     try {
-      // основний сценарій (Variant #1 — always → перенос у "Куди")
       const payload: any = {
         name: name.trim(),
         base_pipeline_id: basePipelineId,
         base_status_id: baseStatusId,
 
-        v1_field: 'any',
-        v1_op: 'always',
-        v1_value: '',
-        v1_to_pipeline_id: toPipelineId,
-        v1_to_status_id: toStatusId,
+        // Варіант №1 — обов'язковий: шукаємо text contains v1Value
+        v1_field: 'text',
+        v1_op: 'contains',
+        v1_value: v1Value.trim(),
+        v1_to_pipeline_id: v1ToPipelineId,
+        v1_to_status_id: v1ToStatusId,
 
+        // Варіант №2 — опційний: тільки якщо задано значення
         v2_enabled: v2Enabled,
-        v2_field: v2Field,
-        v2_op: v2Op,
+        v2_field: 'text',
+        v2_op: 'contains',
         v2_value: v2Value.trim(),
         v2_to_pipeline_id: v2Enabled ? v2ToPipelineId : null,
         v2_to_status_id: v2Enabled ? v2ToStatusId : null,
 
+        // Expire
         exp_days: Number(expDays),
         exp_to_pipeline_id: expToPipelineId || null,
         exp_to_status_id: expToStatusId || null,
@@ -173,7 +173,6 @@ export default function NewCampaignPage() {
         enabled: true,
       };
 
-      // пробуємо POST у /api/campaigns, якщо ні — fallback у /api/campaigns/create
       const targets = ['/api/campaigns', '/api/campaigns/create'];
       let ok = false, lastErr = '';
       for (const u of targets) {
@@ -194,44 +193,42 @@ export default function NewCampaignPage() {
 
   const pipelinesSafe = Array.isArray(pipelines) ? pipelines : [];
   const baseStatusesSafe = Array.isArray(baseStatuses) ? baseStatuses : [];
-  const toStatusesSafe = Array.isArray(toStatuses) ? toStatuses : [];
-  const expToStatusesSafe = Array.isArray(expToStatuses) ? expToStatuses : [];
+  const v1ToStatusesSafe = Array.isArray(v1ToStatuses) ? v1ToStatuses : [];
   const v2ToStatusesSafe = Array.isArray(v2ToStatuses) ? v2ToStatuses : [];
+  const expToStatusesSafe = Array.isArray(expToStatuses) ? expToStatuses : [];
 
   return (
-    <div className="mx-auto max-w-5xl p-6 space-y-6">
+    <div className="mx-auto max-w-6xl p-6 space-y-6">
       <h1 className="text-3xl font-semibold">Нова кампанія</h1>
 
-      <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Зліва: База */}
-        <div className="rounded-2xl border p-5 space-y-4">
-          <div>
-            <label className="block text-sm mb-2">Назва</label>
-            <input
-              className="w-full rounded-xl border px-3 py-2"
-              placeholder="Напр. Розсилка → Відповіла"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+      {/* Блок 1: Назва / Базова воронка / Базовий статус */}
+      <form onSubmit={onSubmit} className="space-y-6">
+        <div className="rounded-2xl border p-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="block text-sm mb-2">База: воронка</label>
+              <label className="block text-sm mb-2">Назва кампанії</label>
+              <input
+                className="w-full rounded-xl border px-3 py-2"
+                placeholder="Напр. Розсилка → Відповіла"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm mb-2">Базова воронка</label>
               <select
                 className="w-full rounded-xl border px-3 py-2"
                 value={basePipelineId}
                 onChange={(e) => setBasePipelineId(e.target.value)}
               >
                 <option value="">— Оберіть воронку —</option>
-                {pipelinesSafe.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
+                {pipelinesSafe.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm mb-2">База: статус</label>
+              <label className="block text-sm mb-2">Базовий статус</label>
               <select
                 className="w-full rounded-xl border px-3 py-2"
                 value={baseStatusId}
@@ -239,50 +236,97 @@ export default function NewCampaignPage() {
                 disabled={!basePipelineId || baseStatusesSafe.length === 0}
               >
                 <option value="">{basePipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {baseStatusesSafe.map((s) => (
-                  <option key={s.id} value={s.id}>{s.title}</option>
-                ))}
+                {baseStatusesSafe.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
             </div>
           </div>
         </div>
 
-        {/* Справа: Куди */}
-        <div className="rounded-2xl border p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+        {/* Блок 2: Варіант №1 */}
+        <div className="rounded-2xl border p-5">
+          <div className="text-lg font-medium mb-3">Варіант №1</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="block text-sm mb-2">Куди: воронка</label>
+              <label className="block text-sm mb-2">Значення</label>
+              <input
+                className="w-full rounded-xl border px-3 py-2"
+                placeholder="варіант відповіді з ManiChat"
+                value={v1Value}
+                onChange={(e) => setV1Value(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm mb-2">Воронка</label>
               <select
                 className="w-full rounded-xl border px-3 py-2"
-                value={toPipelineId}
-                onChange={(e) => setToPipelineId(e.target.value)}
+                value={v1ToPipelineId}
+                onChange={(e) => setV1ToPipelineId(e.target.value)}
               >
                 <option value="">— Оберіть воронку —</option>
-                {pipelinesSafe.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
+                {pipelinesSafe.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
               </select>
             </div>
-
             <div>
-              <label className="block text-sm mb-2">Куди: статус</label>
+              <label className="block text-sm mb-2">Статус</label>
               <select
                 className="w-full rounded-xl border px-3 py-2"
-                value={toStatusId}
-                onChange={(e) => setToStatusId(e.target.value)}
-                disabled={!toPipelineId || toStatusesSafe.length === 0}
+                value={v1ToStatusId}
+                onChange={(e) => setV1ToStatusId(e.target.value)}
+                disabled={!v1ToPipelineId || v1ToStatusesSafe.length === 0}
               >
-                <option value="">{toPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {toStatusesSafe.map((s) => (
-                  <option key={s.id} value={s.id}>{s.title}</option>
-                ))}
+                <option value="">{v1ToPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
+                {v1ToStatusesSafe.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
             </div>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2">
+        {/* Блок 3: Варіант №2 (опційний) */}
+        <div className="rounded-2xl border p-5">
+          <div className="text-lg font-medium mb-3">Варіант №2</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="block text-sm mb-2">Expiration (дні)</label>
+              <label className="block text-sm mb-2">Значення</label>
+              <input
+                className="w-full rounded-xl border px-3 py-2"
+                placeholder="опційно — значення з ManiChat"
+                value={v2Value}
+                onChange={(e) => setV2Value(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm mb-2">Воронка</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={v2ToPipelineId}
+                onChange={(e) => setV2ToPipelineId(e.target.value)}
+                disabled={!v2Enabled}
+              >
+                <option value="">{v2Enabled ? '— Оберіть воронку —' : 'Заповніть значення'}</option>
+                {pipelinesSafe.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm mb-2">Статус</label>
+              <select
+                className="w-full rounded-xl border px-3 py-2"
+                value={v2ToStatusId}
+                onChange={(e) => setV2ToStatusId(e.target.value)}
+                disabled={!v2Enabled || !v2ToPipelineId || v2ToStatusesSafe.length === 0}
+              >
+                <option value="">{v2ToPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
+                {v2ToStatusesSafe.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Блок 4: Expire */}
+        <div className="rounded-2xl border p-5">
+          <div className="text-lg font-medium mb-3">Expire</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm mb-2">Кількість днів до експірації</label>
               <input
                 type="number"
                 min={0}
@@ -291,26 +335,19 @@ export default function NewCampaignPage() {
                 onChange={(e) => setExpDays(Number(e.target.value))}
               />
             </div>
-            <div />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm mb-2">Після експірації: воронка</label>
+              <label className="block text-sm mb-2">Воронка</label>
               <select
                 className="w-full rounded-xl border px-3 py-2"
                 value={expToPipelineId}
                 onChange={(e) => setExpToPipelineId(e.target.value)}
               >
                 <option value="">— Не переносити —</option>
-                {pipelinesSafe.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
+                {pipelinesSafe.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
               </select>
             </div>
-
             <div>
-              <label className="block text-sm mb-2">Після експірації: статус</label>
+              <label className="block text-sm mb-2">Статус</label>
               <select
                 className="w-full rounded-xl border px-3 py-2"
                 value={expToStatusId}
@@ -318,96 +355,14 @@ export default function NewCampaignPage() {
                 disabled={!expToPipelineId || expToStatusesSafe.length === 0}
               >
                 <option value="">{expToPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {expToStatusesSafe.map((s) => (
-                  <option key={s.id} value={s.id}>{s.title}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Variant #2 */}
-        <div className="md:col-span-2 rounded-2xl border p-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-medium">Варіант #2</h2>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={v2Enabled} onChange={(e) => setV2Enabled(e.target.checked)} />
-              вкл.
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm mb-2">Поле</label>
-              <select
-                className="w-full rounded-xl border px-3 py-2"
-                value={v2Field}
-                onChange={(e) => setV2Field(e.target.value as any)}
-                disabled={!v2Enabled}
-              >
-                <option value="text">text</option>
-                <option value="username">username</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm mb-2">Умова</label>
-              <select
-                className="w-full rounded-xl border px-3 py-2"
-                value={v2Op}
-                onChange={(e) => setV2Op(e.target.value as any)}
-                disabled={!v2Enabled}
-              >
-                <option value="contains">contains</option>
-                <option value="equals">equals</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm mb-2">Значення</label>
-              <input
-                className="w-full rounded-xl border px-3 py-2"
-                placeholder="наприклад, 'ціна' "
-                value={v2Value}
-                onChange={(e) => setV2Value(e.target.value)}
-                disabled={!v2Enabled}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm mb-2">Куди (V2): воронка</label>
-              <select
-                className="w-full rounded-xl border px-3 py-2"
-                value={v2ToPipelineId}
-                onChange={(e) => setV2ToPipelineId(e.target.value)}
-                disabled={!v2Enabled}
-              >
-                <option value="">— Оберіть воронку —</option>
-                {pipelinesSafe.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-2">Куди (V2): статус</label>
-              <select
-                className="w-full rounded-xl border px-3 py-2"
-                value={v2ToStatusId}
-                onChange={(e) => setV2ToStatusId(e.target.value)}
-                disabled={!v2Enabled || !v2ToPipelineId || v2ToStatusesSafe.length === 0}
-              >
-                <option value="">{v2ToPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-                {v2ToStatusesSafe.map((s) => (
-                  <option key={s.id} value={s.id}>{s.title}</option>
-                ))}
+                {expToStatusesSafe.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
             </div>
           </div>
         </div>
 
         {/* Кнопки */}
-        <div className="md:col-span-2 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <button
             type="submit"
             disabled={!canSubmit || saving}
