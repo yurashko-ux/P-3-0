@@ -18,11 +18,11 @@ export default function AdminLoginPage({
         </div>
       )}
 
-      {/* Класичний HTML POST — працює навіть без JS */}
-      <form method="post" action="/admin/login" className="space-y-4">
+      {/* Класичний POST у стабільний API-роут */}
+      <form method="post" action="/api/admin/login" className="space-y-4">
         <div>
           <label className="block text-sm mb-2">Пароль адміністратора</label>
-          <input
+        <input
             type="password"
             name="password"
             autoComplete="current-password"
