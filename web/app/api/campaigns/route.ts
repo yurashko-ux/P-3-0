@@ -1,127 +1,136 @@
 // web/app/api/campaigns/route.ts
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const runtime = "nodejs";
+import { NextResponse } from 'next/server';
+import { kvGet, kvSet, kvZAdd, kvZRange, cuid } from '@/lib/kv';
 
-import { NextRequest, NextResponse } from "next/server";
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-// ---- Upstash KV helpers (REST) ----
-const KV_URL = process.env.KV_REST_API_URL || "";
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || "";
-const H: HeadersInit = KV_TOKEN ? { Authorization: `Bearer ${KV_TOKEN}` } : {};
+type Condition = { field: 'text'|'flow'|'tag'|'any'; op: 'contains'|'equals'; value: string };
+type Campaign = {
+  id: string;
+  created_at: string;
+  name: string;
 
-async function kvGet(key: string): Promise<string | null> {
-  if (!KV_URL || !KV_TOKEN) return null;
-  const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, { headers: H, cache: "no-store" });
-  if (!r.ok) return null;
-  const j = await r.json().catch(() => null as any);
-  return (j && typeof j.result === "string") ? j.result : null;
+  base_pipeline_id: string | null;
+  base_status_id: string | null;
+
+  v1_condition: Condition | null;
+  v1_to_pipeline_id: string | null;
+  v1_to_status_id: string | null;
+
+  v2_condition: Condition | null;
+  v2_to_pipeline_id: string | null;
+  v2_to_status_id: string | null;
+
+  exp_days: number | null;
+  exp_to_pipeline_id: string | null;
+  exp_to_status_id: string | null;
+
+  note?: string | null;
+  enabled: boolean;
+
+  v1_count: number;
+  v2_count: number;
+  exp_count: number;
+};
+
+const INDEX_KEY = 'campaigns:index';
+const ITEM_KEY = (id: string) => `campaigns:${id}`;
+
+function ok(data: any, init?: number) { return NextResponse.json(data, { status: init ?? 200 }); }
+function bad(message: string, code = 400) { return NextResponse.json({ ok: false, error: message }, { status: code }); }
+
+function toConditionFromFlat(input: any): Condition | null {
+  if (!input) return null;
+  const field = (input.field || input.v1_field || input.v2_field) as Condition['field'] | undefined;
+  const op = (input.op || input.v1_op || input.v2_op) as Condition['op'] | undefined;
+  const value = (input.value ?? input.v1_value ?? input.v2_value ?? '').toString();
+  if (!field || field === 'any') return { field: 'any', op: 'contains', value: '' };
+  if (!op) return { field, op: 'contains', value };
+  return { field, op, value };
 }
-async function kvSet(key: string, value: any) {
-  if (!KV_URL || !KV_TOKEN) throw new Error("KV not configured");
-  await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { ...H, "content-type": "application/json" },
-    body: JSON.stringify({ value: JSON.stringify(value) }),
+
+function normalizePayload(body: any): Campaign {
+  const id = body.id || cuid();
+  const created_at = new Date().toISOString();
+  const enabled = body.enabled !== false;
+
+  // приймаємо як нову форму (v1_field/op/value), так і стару (v1_condition)
+  const v1_condition = body.v1_condition ?? toConditionFromFlat({
+    field: body.v1_field, op: body.v1_op, value: body.v1_value,
   });
-}
-async function kvZadd(key: string, score: number, member: string) {
-  if (!KV_URL || !KV_TOKEN) throw new Error("KV not configured");
-  await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { ...H, "content-type": "application/json" },
-    body: JSON.stringify([{ score, member }]),
-  });
-}
-async function kvZrange(key: string, start = 0, stop = -1): Promise<string[]> {
-  if (!KV_URL || !KV_TOKEN) return [];
-  const r = await fetch(`${KV_URL}/zrange/${encodeURIComponent(key)}/${start}/${stop}`, {
-    headers: H,
-    cache: "no-store",
-  });
-  if (!r.ok) return [];
-  const j = await r.json().catch(() => null as any);
-  return Array.isArray(j?.result) ? j.result.map(String) : [];
+  const v2_enabled = body.v2_enabled ?? (body.v2_condition ? true : false);
+  const v2_condition = v2_enabled
+    ? (body.v2_condition ?? toConditionFromFlat({ field: body.v2_field, op: body.v2_op, value: body.v2_value }))
+    : null;
+
+  const item: Campaign = {
+    id,
+    created_at,
+    name: String(body.name || '').trim(),
+
+    base_pipeline_id: body.base_pipeline_id ? String(body.base_pipeline_id) : null,
+    base_status_id: body.base_status_id ? String(body.base_status_id) : null,
+
+    v1_condition,
+    v1_to_pipeline_id: body.v1_to_pipeline_id ? String(body.v1_to_pipeline_id) : null,
+    v1_to_status_id: body.v1_to_status_id ? String(body.v1_to_status_id) : null,
+
+    v2_condition,
+    v2_to_pipeline_id: v2_enabled && body.v2_to_pipeline_id ? String(body.v2_to_pipeline_id) : null,
+    v2_to_status_id: v2_enabled && body.v2_to_status_id ? String(body.v2_to_status_id) : null,
+
+    exp_days: Number.isFinite(Number(body.exp_days)) ? Number(body.exp_days) : null,
+    exp_to_pipeline_id: body.exp_to_pipeline_id ? String(body.exp_to_pipeline_id) : null,
+    exp_to_status_id: body.exp_to_status_id ? String(body.exp_to_status_id) : null,
+
+    note: body.note ? String(body.note) : null,
+    enabled,
+
+    v1_count: Number(body.v1_count ?? 0) || 0,
+    v2_count: Number(body.v2_count ?? 0) || 0,
+    exp_count: Number(body.exp_count ?? 0) || 0,
+  };
+  return item;
 }
 
-// ---- helpers ----
-type Cond = { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string } | null;
-function asCond(payload: any, prefix: "v1" | "v2"): Cond {
-  const c = payload?.[`${prefix}_condition`];
-  if (c && c.field && c.op) {
-    return { field: String(c.field), op: String(c.op) as any, value: String(c.value ?? "") } as any;
-  }
-  const field = payload?.[`${prefix}_field`];
-  const op = payload?.[`${prefix}_op`];
-  const value = payload?.[`${prefix}_value`];
-  const enabled = prefix === "v2" ? !!(payload?.v2_enabled || value) : true;
-  if (!enabled) return null;
-  return { field: (field ?? "any") as any, op: (op ?? "contains") as any, value: String(value ?? "") };
-}
-function strOrNull(v: any): string | null {
-  if (v === undefined || v === null || v === "") return null;
-  return String(v);
-}
-function numOr(v: any, d = 0): number {
-  const n = Number(v); return Number.isFinite(n) ? n : d;
-}
-function newId(): string {
-  // @ts-ignore
-  return (globalThis.crypto?.randomUUID?.() as string) || `c_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-}
-
-// ---- GET list ----
+/** GET /api/campaigns -> { ok:true, items: Campaign[] } */
 export async function GET() {
   try {
-    const ids = await kvZrange("campaigns:index", 0, -1);
-    const items: any[] = [];
-    for (const id of ids.reverse()) {
-      const raw = await kvGet(`campaigns:${id}`);
+    const ids = await kvZRange(INDEX_KEY, 0, -1);
+    const items: Campaign[] = [];
+    for (const id of ids) {
+      const raw = await kvGet(ITEM_KEY(id));
       if (!raw) continue;
       try { items.push(JSON.parse(raw)); } catch {}
     }
-    return NextResponse.json({ ok: true, items });
+    // newest first (на випадок, якщо KV повернув не відсортований)
+    items.sort((a, b) => (b.created_at > a.created_at ? 1 : -1));
+    return ok({ ok: true, items });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "kv error" }, { status: 500 });
+    return bad(e?.message || 'failed to list', 500);
   }
 }
 
-// ---- POST create ----
-export async function POST(req: NextRequest) {
+/** POST /api/campaigns -> створення */
+export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const id = newId();
-    const created_at = new Date().toISOString();
+    const draft = normalizePayload(body);
 
-    const item = {
-      id,
-      created_at,
-      name: String(body?.name ?? ""),
-      base_pipeline_id: String(body?.base_pipeline_id ?? ""),
-      base_status_id: String(body?.base_status_id ?? ""),
-      v1_condition: asCond(body, "v1"),
-      v1_to_pipeline_id: strOrNull(body?.v1_to_pipeline_id),
-      v1_to_status_id: strOrNull(body?.v1_to_status_id),
-      v2_condition: asCond(body, "v2"),
-      v2_to_pipeline_id: strOrNull(body?.v2_to_pipeline_id),
-      v2_to_status_id: strOrNull(body?.v2_to_status_id),
-      exp_days: numOr(body?.exp_days, 0),
-      exp_to_pipeline_id: strOrNull(body?.exp_to_pipeline_id),
-      exp_to_status_id: strOrNull(body?.exp_to_status_id),
-      note: body?.note ? String(body.note) : null,
-      enabled: body?.enabled !== false,
-      v1_count: 0, v2_count: 0, exp_count: 0,
-    };
+    // Валідація мінімуму згідно ТЗ
+    if (!draft.name) return bad('name is required', 400);
+    if (!draft.base_pipeline_id || !draft.base_status_id) return bad('base pipeline/status required', 400);
+    if (!draft.v1_to_pipeline_id || !draft.v1_to_status_id) return bad('v1 target required', 400);
+    if (draft.exp_days == null) return bad('exp_days required', 400);
 
-    if (!item.name || !item.base_pipeline_id || !item.base_status_id) {
-      return NextResponse.json({ ok: false, error: "missing required fields" }, { status: 400 });
-    }
+    // Зберігаємо
+    const json = JSON.stringify(draft);
+    await kvSet(ITEM_KEY(draft.id), json);
+    await kvZAdd(INDEX_KEY, Date.now(), draft.id);
 
-    await kvSet(`campaigns:${id}`, item);
-    await kvZadd("campaigns:index", Date.now(), id);
-
-    return NextResponse.json({ ok: true, id, item }, { status: 201 });
+    return ok({ ok: true, id: draft.id, item: draft }, 201);
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "save failed" }, { status: 500 });
+    return bad(e?.message || 'failed to create', 500);
   }
 }
