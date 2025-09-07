@@ -6,7 +6,7 @@ import { kvGet, kvZrevrange } from "../../../../lib/kv";
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const env = {
       KV_REST_API_URL: !!process.env.KV_REST_API_URL,
@@ -17,13 +17,7 @@ export async function GET(req: Request) {
     const first = ids[0] ? await kvGet(`campaigns:${ids[0]}`) : null;
 
     return NextResponse.json(
-      {
-        ok: true,
-        env,
-        indexCount: ids.length,
-        ids,
-        first,
-      },
+      { ok: true, env, indexCount: ids.length, ids, first },
       { status: 200 }
     );
   } catch (e: any) {
