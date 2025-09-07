@@ -14,6 +14,11 @@ function isAuthed(req: NextRequest): boolean {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // ✅ ЯВНИЙ БАЙПАС ДЛЯ API
+  if (pathname.startsWith("/api")) {
+    return NextResponse.next();
+  }
+
   // Дозволяємо сторінку логіну
   if (pathname === "/admin/login") return NextResponse.next();
 
@@ -30,7 +35,7 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-// Працюємо тільки на /admin/*
+// Працюємо тільки на /admin/* та (тепер безпечно ігноруємо /api/*)
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/api/:path*"],
 };
