@@ -9,7 +9,7 @@
     "lint": "echo 'no lint'"
   },
   "dependencies": {
-    "@vercel/kv": "^1.0.1"
+    "@vercel/kv": "^1.0.1",
     "@upstash/redis": "^1.31.6",
     "next": "14.2.7",
     "react": "18.2.0",
@@ -23,5 +23,8 @@
     "@types/node": "^20.11.28",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22"
+  },
+  "engines": {
+    "node": ">=18.18.0"
   }
 }
