@@ -1,15 +1,12 @@
 // web/lib/kv.ts
 /**
  * Легкий клієнт для Vercel KV (REST).
- * Використовує лише потрібні нам операції: get/set/del/zadd/zrem/zrange.
+ * Підтримує: get/set/del/zadd/zrem/zrange/zrevrange.
  */
 const KV_URL = process.env.KV_REST_API_URL?.replace(/\/+$/, '') || '';
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || '';
 
-const HEADERS: Record<string, string> =
-  KV_TOKEN
-    ? { Authorization: `Bearer ${KV_TOKEN}` }
-    : {};
+const HEADERS: Record<string, string> = KV_TOKEN ? { Authorization: `Bearer ${KV_TOKEN}` } : {};
 
 export type ZRangeOptions = { start: number; stop: number; withScores?: boolean };
 
@@ -57,22 +54,34 @@ export async function kvZRem(key: string, member: string): Promise<boolean> {
   return r.ok;
 }
 
-export async function kvZRange(key: string, start = 0, stop = -1): Promise<string[]> {
-  if (!KV_URL || !KV_TOKEN) return [];
-  const r = await fetch(`${KV_URL}/zrange/${encodeURIComponent(key)}/${start}/${stop}`, { headers: HEADERS, cache: 'no-store' });
-  if (!r.ok) return [];
-  const j = await r.json().catch(() => null as any);
+function parseZResult(j: any): string[] {
   const arr = (j && Array.isArray(j.result)) ? j.result : [];
-  // API повертає або [member, score, member, score...] або просто [member...]
   const out: string[] = [];
-  for (let i = 0; i < arr.length; i++) {
-    const v = arr[i];
-    if (typeof v === 'string') out.push(v);
-  }
+  for (const v of arr) if (typeof v === 'string') out.push(v);
   return out;
 }
 
+export async function kvZRange(key: string, start = 0, stop = -1): Promise<string[]> {
+  if (!KV_URL || !KV_TOKEN) return [];
+  const r = await fetch(`${KV_URL}/zrange/${encodeURIComponent(key)}/${start}/${stop}`, {
+    headers: HEADERS, cache: 'no-store'
+  });
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => null as any);
+  return parseZResult(j);
+}
+
+/** Сумісність із кодом, що очікує zrevrange */
+export async function kvZrevrange(key: string, start = 0, stop = -1): Promise<string[]> {
+  if (!KV_URL || !KV_TOKEN) return [];
+  const r = await fetch(`${KV_URL}/zrevrange/${encodeURIComponent(key)}/${start}/${stop}`, {
+    headers: HEADERS, cache: 'no-store'
+  });
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => null as any);
+  return parseZResult(j);
+}
+
 export function cuid(): string {
-  // простий читабельний id
   return Math.random().toString(36).slice(2).toUpperCase() + Date.now().toString(36).toUpperCase();
 }
