@@ -11,18 +11,26 @@ type Any = Record<string, any>;
 const INDEX_KEY = 'campaigns:index';
 const ITEM_KEY = (id: string) => `campaigns:${id}`;
 
+const NO_STORE = { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } };
+
 function genId() {
   return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toUpperCase();
 }
 
+// ---- helpers ---------------------------------------------------------------
+
+async function zrangeIds(): Promise<string[]> {
+  return (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
+}
+
 async function loadByIndex(): Promise<Any[]> {
-  const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-  if (!ids?.length) return [];
+  const ids = await zrangeIds();
+  if (!ids.length) return [];
   const raws = (await redis.mget(...ids.map(ITEM_KEY))) as (string | null)[];
   return (raws || []).map(r => { try { return r ? JSON.parse(r) : null; } catch { return null; } }).filter(Boolean) as Any[];
 }
 
-async function scanAllKeys(match: string, count = 200): Promise<string[]> {
+async function scanAll(match: string, count = 200): Promise<string[]> {
   let cursor = 0; const acc: string[] = [];
   while (true) {
     const res: any = await (redis as any).scan(cursor, { match, count });
@@ -34,59 +42,111 @@ async function scanAllKeys(match: string, count = 200): Promise<string[]> {
   return acc;
 }
 
-async function healIndexFromDocs(): Promise<Any[]> {
-  const keys = await scanAllKeys('campaigns:*');
-  const docKeys = keys.filter(k => k !== INDEX_KEY && !k.endsWith(':index'));
-  if (!docKeys.length) return [];
-  const raws = (await redis.mget(...docKeys)) as (string | null)[];
-  const items = (raws || []).map(r => { try { return r ? JSON.parse(r) : null; } catch { return null; } }).filter(Boolean) as Any[];
-  // відбудовуємо індекс
-  for (const it of items) {
-    if (it?.id) {
-      const score = Number(it.created_at) || Date.now();
-      await redis.zadd(INDEX_KEY, { score, member: String(it.id) });
-    }
-  }
-  return items.sort((a, b) => (Number(b?.created_at || 0) - Number(a?.created_at || 0)));
+function looksLikeDocKey(k: string) {
+  // пропускаємо службові ключі
+  if (k === INDEX_KEY) return false;
+  if (k.startsWith('campaigns:__probe__')) return false;
+  if (k.endsWith(':index')) return false;
+  return k.startsWith('campaigns:');
 }
 
-function noStore() {
-  return { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } };
+async function healIndexFromDocs(): Promise<number> {
+  const keys = await scanAll('campaigns:*');
+  const docKeys = keys.filter(looksLikeDocKey);
+  if (!docKeys.length) return 0;
+
+  const raws = (await redis.mget(...docKeys)) as (string | null)[];
+  let rebuilt = 0;
+  for (const raw of raws) {
+    if (!raw) continue;
+    try {
+      const item = JSON.parse(raw);
+      const id = item?.id; if (!id) continue;
+      const score = Number(item.created_at) || Date.now();
+      await redis.zadd(INDEX_KEY, { score, member: String(id) });
+      rebuilt++;
+    } catch { /* ignore */ }
+  }
+  return rebuilt;
 }
+
+// ---- handlers --------------------------------------------------------------
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const act =
     url.searchParams.get('__act') ||
     url.searchParams.get('act') ||
-    (url.searchParams.has('debug') ? 'debug' : url.searchParams.has('rebuild') ? 'rebuild' : '');
+    (url.searchParams.has('seed') ? 'seed' :
+     url.searchParams.has('debug') ? 'debug' :
+     url.searchParams.has('rebuild') ? 'rebuild' : '');
 
-  // --- діагностика ---
+  // seed: створюємо одну валідну кампанію
+  if (act === 'seed') {
+    const now = Date.now();
+    const id = 'SEED_' + genId();
+    const item: Any = {
+      id,
+      name: 'SEED TEST ' + new Date(now).toISOString(),
+      enabled: true,
+      created_at: now,
+      updated_at: now,
+      base_pipeline_id: null,
+      base_status_id: null,
+      v1_field: 'text',
+      v1_op: 'contains',
+      v1_value: 'yes',
+      v1_to_pipeline_id: null,
+      v1_to_status_id: null,
+    };
+    await redis.set(ITEM_KEY(id), JSON.stringify(item));
+    await redis.zadd(INDEX_KEY, { score: now, member: id });
+    const ids = await zrangeIds();
+    return NextResponse.json({ ok: true, created: id, indexCount: ids.length }, NO_STORE);
+  }
+
+  // debug: що реально лежить у KV / індексі
   if (act === 'debug') {
     const byIndex = await loadByIndex();
-    const keys = await scanAllKeys('campaigns:*');
+    const keys = await scanAll('campaigns:*');
+    const indexIds = await zrangeIds();
+    let sample: Any | null = null;
+    if (indexIds[0]) {
+      const raw = await redis.get<string>(ITEM_KEY(indexIds[0]));
+      try { sample = raw ? JSON.parse(raw) : null; } catch { sample = raw as any; }
+    }
     return NextResponse.json({
       ok: true,
+      env: {
+        KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+        KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
+        KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
+      },
+      canWrite: true,
       indexCount: byIndex.length,
       keysCount: keys.length,
-      indexSample: byIndex[0] ?? null,
-      keyPrefix: 'campaigns:*',
-      indexKey: INDEX_KEY,
-    }, noStore());
+      indexIds,
+      keys: keys.slice(0, 50),
+      sample
+    }, NO_STORE);
   }
 
-  // --- ручна відбудова індексу ---
+  // rebuild: відбудовуємо індекс із документів
   if (act === 'rebuild') {
-    const items = await healIndexFromDocs();
-    return NextResponse.json({ ok: true, rebuilt: items.length }, noStore());
+    const rebuilt = await healIndexFromDocs();
+    const ids = await zrangeIds();
+    return NextResponse.json({ ok: true, rebuilt, indexCount: ids.length }, NO_STORE);
   }
 
-  // --- звичайний список ---
+  // звичайний список
   let items = await loadByIndex();
-  if (!items.length) items = await healIndexFromDocs();
+  if (!items.length) {
+    const rebuilt = await healIndexFromDocs();
+    if (rebuilt) items = await loadByIndex();
+  }
   return NextResponse.json(
     { ok: true, items, data: { items }, campaigns: items, rows: items, count: items.length },
-    noStore()
+    NO_STORE
   );
 }
 
@@ -101,9 +161,9 @@ export async function POST(req: Request) {
     const item: Any = { ...body, id, name, created_at: now, updated_at: now };
 
     await redis.set(ITEM_KEY(id), JSON.stringify(item));
-    await redis.zadd(INDEX_KEY, { score: now, member: id }); // <- важливо!
+    await redis.zadd(INDEX_KEY, { score: now, member: id });
 
-    return NextResponse.json({ ok: true, item }, noStore());
+    return NextResponse.json({ ok: true, item }, NO_STORE);
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'POST_FAILED' }, { status: 500 });
   }
