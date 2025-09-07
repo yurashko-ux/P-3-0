@@ -1,65 +1,42 @@
 // web/app/api/campaigns/debug/route.ts
 import { NextResponse } from 'next/server';
-import { redis } from '../../../../lib/redis';
+import { kv } from '@vercel/kv';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
-const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
-type Any = Record<string, any>;
-
-async function scanAll(match: string, count = 200): Promise<string[]> {
-  let cursor = 0;
-  const acc: string[] = [];
-  while (true) {
-    const res: any = await (redis as any).scan(cursor, { match, count });
-    const next = Array.isArray(res) ? Number(res[0]) : Number(res?.cursor ?? 0);
-    const keys = Array.isArray(res) ? (res[1] as string[]) : ((res?.keys as string[]) ?? []);
-    if (keys?.length) acc.push(...keys);
-    cursor = next;
-    if (!cursor) break;
-  }
-  return acc;
+function auth(url: URL, req: Request) {
+  const pass = req.headers.get('x-admin-pass') ?? url.searchParams.get('pass') ?? '';
+  return pass && process.env.ADMIN_PASS && pass === process.env.ADMIN_PASS;
 }
 
-export async function GET() {
-  const env = {
-    KV_REST_API_URL: !!process.env.KV_REST_API_URL,
-    KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
-    KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
-  };
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  if (!auth(url, req)) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
 
-  let canWrite = false, writeError = '';
   try {
-    const probe = `campaigns:__probe__:${Date.now()}`;
-    await redis.set(probe, JSON.stringify({ t: Date.now() }));
-    await redis.del(probe);
-    canWrite = true;
+    const probeKey = 'debug:kv:probe';
+    const ts = Date.now();
+    await kv.set(probeKey, { ts });
+    const probe = await kv.get<{ ts: number }>(probeKey);
+
+    const ids = await kv.lrange<string>('campaign:ids', 0, -1);
+    const head = ids.slice(0, 10);
+    const sample = await Promise.all(head.map((id) => kv.get(`campaign:${id}`)));
+
+    return NextResponse.json({
+      ok: true,
+      env_seen: {
+        KV_REST_API_URL: Boolean(process.env.KV_REST_API_URL),
+        KV_REST_API_TOKEN: Boolean(process.env.KV_REST_API_TOKEN),
+        KV_REST_API_READ_ONLY_TOKEN: Boolean(process.env.KV_REST_API_READ_ONLY_TOKEN),
+      },
+      probe: { wrote: ts, read: probe?.ts ?? null },
+      list: { count: ids.length, head },
+      sample,
+    });
   } catch (e: any) {
-    canWrite = false; writeError = e?.message || String(e);
+    return NextResponse.json({ ok: false, error: e?.message ?? 'kv error' }, { status: 500 });
   }
-
-  let indexIds: string[] = [];
-  try { indexIds = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[]; } catch (e: any) {
-    writeError ||= `zrange: ${e?.message || String(e)}`;
-  }
-
-  let keys: string[] = [];
-  try { keys = await scanAll('campaigns:*'); } catch {}
-
-  let sample: Any | null = null;
-  if (indexIds?.[0]) {
-    const raw = await redis.get<string>(ITEM_KEY(indexIds[0]));
-    try { sample = raw ? JSON.parse(raw) : null; } catch { sample = raw as any; }
-  }
-
-  return NextResponse.json({
-    ok: true,
-    env, canWrite, writeError,
-    indexCount: indexIds.length, indexIds,
-    keysCount: keys.length, keys: keys.slice(0, 50),
-    sample,
-  }, { headers: { 'Cache-Control': 'no-store' } });
 }
