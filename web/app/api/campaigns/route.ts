@@ -43,7 +43,6 @@ async function scanAll(match: string, count = 200): Promise<string[]> {
 }
 
 function looksLikeDocKey(k: string) {
-  // пропускаємо службові ключі
   if (k === INDEX_KEY) return false;
   if (k.startsWith('campaigns:__probe__')) return false;
   if (k.endsWith(':index')) return false;
@@ -105,7 +104,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, created: id, indexCount: ids.length }, NO_STORE);
   }
 
-  // debug: що реально лежить у KV / індексі
+  // debug: стан KV / індексу
   if (act === 'debug') {
     const byIndex = await loadByIndex();
     const keys = await scanAll('campaigns:*');
