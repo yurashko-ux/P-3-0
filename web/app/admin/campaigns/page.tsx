@@ -5,7 +5,7 @@ import { DeleteButton } from './DeleteButton';
 
 export const dynamic = 'force-dynamic';
 
-// Локальні типи — файл самодостатній
+// Локальні типи
 type Status = { id: string; name: string };
 type Pipeline = { id: string; name: string; statuses: Status[] };
 
@@ -38,17 +38,24 @@ async function baseUrl() {
 }
 
 async function getCampaigns(): Promise<Campaign[]> {
-  const res = await fetch(`${await baseUrl()}/api/campaigns`, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to load campaigns');
-  return res.json();
+  try {
+    const res = await fetch(`${await baseUrl()}/api/campaigns`, { cache: 'no-store' });
+    if (!res.ok) return []; // не валимо сторінку
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 async function getPipelines(): Promise<Pipeline[]> {
-  // очікуємо [{ id, name, statuses: [{id, name}, ...] }, ...]
-  const res = await fetch(`${await baseUrl()}/api/keycrm/pipelines`, { cache: 'no-store' });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.pipelines ?? [];
+  try {
+    const res = await fetch(`${await baseUrl()}/api/keycrm/pipelines`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : data.pipelines ?? [];
+  } catch {
+    return [];
+  }
 }
 
 function findNames(pipes: Pipeline[], pipelineId?: string, statusId?: string) {
