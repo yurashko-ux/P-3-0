@@ -1,10 +1,13 @@
 // web/app/admin/login/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function AdminLogin() {
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
+
+function Inner() {
   const [pass, setPass] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
@@ -12,7 +15,6 @@ export default function AdminLogin() {
   const next = sp.get("next") || "/admin";
 
   useEffect(() => {
-    // Підтягнути з localStorage, якщо вже був логін
     const existing = localStorage.getItem("admin_pass") || "";
     if (existing) setPass(existing);
   }, []);
@@ -22,21 +24,16 @@ export default function AdminLogin() {
     document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax${secure}`;
   }
 
-  async function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-
     if (!pass) {
       setErr("Введи ADMIN_PASS");
       return;
     }
-
-    // Зберігаємо і як cookie, і в localStorage
     setCookie("admin_pass", pass);
-    setCookie("admin", "1"); // прапорець для зворотної сумісності
+    setCookie("admin", "1");
     localStorage.setItem("admin_pass", pass);
-
-    // Переходимо на потрібну сторінку
     router.push(next);
   }
 
@@ -68,5 +65,13 @@ export default function AdminLogin() {
         </p>
       </form>
     </div>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-500">Завантаження…</div>}>
+      <Inner />
+    </Suspense>
   );
 }
