@@ -5,7 +5,7 @@ import { DeleteButton } from './DeleteButton';
 
 export const dynamic = 'force-dynamic';
 
-// --- Типи (локально, щоб файл був самодостатнім) ---
+// Локальні типи (самодостатній файл)
 type Status = { id: string; name: string };
 type Pipeline = { id: string; name: string; statuses: Status[] };
 
@@ -30,7 +30,6 @@ type Campaign = {
   active: boolean;
 };
 
-// --- helpers ---
 async function baseUrl() {
   const h = headers();
   const proto = h.get('x-forwarded-proto') ?? 'https';
@@ -45,7 +44,7 @@ async function getCampaigns(): Promise<Campaign[]> {
 }
 
 async function getPipelines(): Promise<Pipeline[]> {
-  // очікуємо [{ id, name, statuses: [{id, name}, ...] }, ...]
+  // Очікуємо [{ id, name, statuses: [{id, name}, ...] }, ...]
   const res = await fetch(`${await baseUrl()}/api/keycrm/pipelines`, { cache: 'no-store' });
   if (!res.ok) return [];
   const data = await res.json();
@@ -66,7 +65,6 @@ function Badge({ children, className = '' }: { children: React.ReactNode; classN
   );
 }
 
-// --- page ---
 export default async function Page() {
   const [campaigns, pipelines] = await Promise.all([getCampaigns(), getPipelines()]);
 
