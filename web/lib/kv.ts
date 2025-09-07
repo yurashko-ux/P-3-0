@@ -1,75 +1,78 @@
 // web/lib/kv.ts
-// Простий REST-клієнт до Vercel KV (Upstash Redis REST API).
-// Потрібні ENV: KV_REST_API_URL, KV_REST_API_TOKEN
+/**
+ * Легкий клієнт для Vercel KV (REST).
+ * Використовує лише потрібні нам операції: get/set/del/zadd/zrem/zrange.
+ */
+const KV_URL = process.env.KV_REST_API_URL?.replace(/\/+$/, '') || '';
+const KV_TOKEN = process.env.KV_REST_API_TOKEN || '';
 
-const base = process.env.KV_REST_API_URL!;
-const token = process.env.KV_REST_API_TOKEN!;
+const HEADERS: Record<string, string> =
+  KV_TOKEN
+    ? { Authorization: `Bearer ${KV_TOKEN}` }
+    : {};
 
-function req(path: string, init?: RequestInit) {
-  if (!base || !token) throw new Error("KV env missing: KV_REST_API_URL / KV_REST_API_TOKEN");
-  return fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
+export type ZRangeOptions = { start: number; stop: number; withScores?: boolean };
+
+export async function kvGet(key: string): Promise<string | null> {
+  if (!KV_URL || !KV_TOKEN) return null;
+  const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, { headers: HEADERS, cache: 'no-store' });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null as any);
+  return (j && typeof j.result === 'string') ? j.result : null;
+}
+
+export async function kvSet(key: string, value: string): Promise<boolean> {
+  if (!KV_URL || !KV_TOKEN) return false;
+  const r = await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
   });
+  return r.ok;
 }
 
-async function assertOk(r: Response, label: string) {
-  if (!r.ok) throw new Error(`${label} failed: ${r.status} ${await r.text()}`);
+export async function kvDel(key: string): Promise<boolean> {
+  if (!KV_URL || !KV_TOKEN) return false;
+  const r = await fetch(`${KV_URL}/del/${encodeURIComponent(key)}`, { method: 'POST', headers: HEADERS });
+  return r.ok;
 }
 
-export async function kvSet(key: string, value: unknown) {
-  const r = await req(
-    `/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(value))}`,
-    { method: "POST" }
-  );
-  await assertOk(r, `KV SET ${key}`);
+export async function kvZAdd(key: string, score: number, member: string): Promise<boolean> {
+  if (!KV_URL || !KV_TOKEN) return false;
+  const r = await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ score, member }),
+  });
+  return r.ok;
 }
 
-export async function kvGet<T = unknown>(key: string): Promise<T | null> {
-  const r = await req(`/get/${encodeURIComponent(key)}`, { method: "GET" });
-  await assertOk(r, `KV GET ${key}`);
-  const { result } = await r.json();
-  if (result == null) return null;
-  try {
-    return JSON.parse(result) as T;
-  } catch {
-    return result as T;
+export async function kvZRem(key: string, member: string): Promise<boolean> {
+  if (!KV_URL || !KV_TOKEN) return false;
+  const r = await fetch(`${KV_URL}/zrem/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ member }),
+  });
+  return r.ok;
+}
+
+export async function kvZRange(key: string, start = 0, stop = -1): Promise<string[]> {
+  if (!KV_URL || !KV_TOKEN) return [];
+  const r = await fetch(`${KV_URL}/zrange/${encodeURIComponent(key)}/${start}/${stop}`, { headers: HEADERS, cache: 'no-store' });
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => null as any);
+  const arr = (j && Array.isArray(j.result)) ? j.result : [];
+  // API повертає або [member, score, member, score...] або просто [member...]
+  const out: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    if (typeof v === 'string') out.push(v);
   }
+  return out;
 }
 
-export async function kvDel(key: string) {
-  const r = await req(`/del/${encodeURIComponent(key)}`, { method: "POST" });
-  await assertOk(r, `KV DEL ${key}`);
+export function cuid(): string {
+  // простий читабельний id
+  return Math.random().toString(36).slice(2).toUpperCase() + Date.now().toString(36).toUpperCase();
 }
-
-export async function kvZadd(key: string, score: number, member: string) {
-  const r = await req(
-    `/zadd/${encodeURIComponent(key)}/${score}/${encodeURIComponent(member)}`,
-    { method: "POST" }
-  );
-  await assertOk(r, `KV ZADD ${key}`);
-}
-
-export async function kvZrem(key: string, member: string) {
-  const r = await req(
-    `/zrem/${encodeURIComponent(key)}/${encodeURIComponent(member)}`,
-    { method: "POST" }
-  );
-  await assertOk(r, `KV ZREM ${key}`);
-}
-
-export async function kvZrevrange(key: string, start = 0, stop = 199): Promise<string[]> {
-  const r = await req(
-    `/zrevrange/${encodeURIComponent(key)}/${start}/${stop}`,
-    { method: "GET" }
-  );
-  await assertOk(r, `KV ZREVRANGE ${key}`);
-  const { result } = await r.json();
-  return result ?? [];
-}
-
