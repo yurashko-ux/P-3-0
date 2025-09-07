@@ -16,9 +16,7 @@ const NO_STORE = {
 };
 
 function genId() {
-  return (
-    Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-  ).toUpperCase();
+  return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toUpperCase();
 }
 
 // ---- helpers ---------------------------------------------------------------
@@ -27,20 +25,22 @@ async function zrangeIds(): Promise<string[]> {
   return (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
 }
 
-// IMPORTANT: читаємо по одному (без mget), щоб бути сумісними з будь-яким SDK
+// ЧИТАЄМО ПОСЛІДОВНО, без паралельних get — щоб не втрапляти в ліміти
 async function loadByIndex(): Promise<Any[]> {
   const ids = await zrangeIds();
   if (!ids.length) return [];
-  const raws = await Promise.all(ids.map((id) => redis.get<string>(ITEM_KEY(id))));
-  return (raws || [])
-    .map((r) => {
-      try {
-        return r ? JSON.parse(r) : null;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as Any[];
+  const items: Any[] = [];
+  for (const id of ids) {
+    const raw = await redis.get<string>(ITEM_KEY(id));
+    if (!raw) continue;
+    try {
+      const obj = JSON.parse(raw);
+      if (obj) items.push(obj);
+    } catch {
+      // ignore broken json
+    }
+  }
+  return items;
 }
 
 async function scanAll(match: string, count = 200): Promise<string[]> {
@@ -49,9 +49,7 @@ async function scanAll(match: string, count = 200): Promise<string[]> {
   while (true) {
     const res: any = await (redis as any).scan(cursor, { match, count });
     const next = Array.isArray(res) ? Number(res[0]) : Number(res?.cursor ?? 0);
-    const keys = Array.isArray(res)
-      ? (res[1] as string[])
-      : ((res?.keys as string[]) ?? []);
+    const keys = Array.isArray(res) ? (res[1] as string[]) : ((res?.keys as string[]) ?? []);
     if (keys?.length) acc.push(...keys);
     cursor = next;
     if (!cursor) break;
@@ -66,20 +64,19 @@ function looksLikeDocKey(k: string) {
   return k.startsWith('campaigns:');
 }
 
-// IMPORTANT: теж без mget — читаємо get по кожному ключу
+// Так само послідовно читаємо всі документи і відбудовуємо індекс
 async function healIndexFromDocs(): Promise<number> {
   const keys = await scanAll('campaigns:*');
   const docKeys = keys.filter(looksLikeDocKey);
   if (!docKeys.length) return 0;
 
-  const raws = await Promise.all(docKeys.map((k) => redis.get<string>(k)));
   let rebuilt = 0;
-  for (const raw of raws) {
+  for (const k of docKeys) {
+    const raw = await redis.get<string>(k);
     if (!raw) continue;
     try {
       const item = JSON.parse(raw);
-      const id = item?.id;
-      if (!id) continue;
+      const id = item?.id; if (!id) continue;
       const score = Number(item.created_at) || Date.now();
       await redis.zadd(INDEX_KEY, { score, member: String(id) });
       rebuilt++;
@@ -97,12 +94,9 @@ export async function GET(req: Request) {
   const act =
     url.searchParams.get('__act') ||
     url.searchParams.get('act') ||
-    (url.searchParams.has('seed')
-      ? 'seed'
-      : url.searchParams.has('debug')
-      ? 'debug'
-      : url.searchParams.has('rebuild')
-      ? 'rebuild'
+    (url.searchParams.has('seed') ? 'seed'
+      : url.searchParams.has('debug') ? 'debug'
+      : url.searchParams.has('rebuild') ? 'rebuild'
       : '');
 
   // seed: створюємо одну валідну кампанію
@@ -126,10 +120,7 @@ export async function GET(req: Request) {
     await redis.set(ITEM_KEY(id), JSON.stringify(item));
     await redis.zadd(INDEX_KEY, { score: now, member: id });
     const ids = await zrangeIds();
-    return NextResponse.json(
-      { ok: true, created: id, indexCount: ids.length },
-      NO_STORE
-    );
+    return NextResponse.json({ ok: true, created: id, indexCount: ids.length }, NO_STORE);
   }
 
   // debug: стан KV / індексу
@@ -140,39 +131,29 @@ export async function GET(req: Request) {
     let sample: Any | null = null;
     if (indexIds[0]) {
       const raw = await redis.get<string>(ITEM_KEY(indexIds[0]));
-      try {
-        sample = raw ? JSON.parse(raw) : null;
-      } catch {
-        sample = raw as any;
-      }
+      try { sample = raw ? JSON.parse(raw) : null; } catch { sample = raw as any; }
     }
-    return NextResponse.json(
-      {
-        ok: true,
-        env: {
-          KV_REST_API_URL: !!process.env.KV_REST_API_URL,
-          KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
-          KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
-        },
-        canWrite: true,
-        indexCount: byIndex.length,
-        keysCount: keys.length,
-        indexIds,
-        keys: keys.slice(0, 50),
-        sample,
+    return NextResponse.json({
+      ok: true,
+      env: {
+        KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+        KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
+        KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
       },
-      NO_STORE
-    );
+      canWrite: true,
+      indexCount: byIndex.length,
+      keysCount: keys.length,
+      indexIds,
+      keys: keys.slice(0, 50),
+      sample
+    }, NO_STORE);
   }
 
   // rebuild: відбудовуємо індекс із документів
   if (act === 'rebuild') {
     const rebuilt = await healIndexFromDocs();
     const ids = await zrangeIds();
-    return NextResponse.json(
-      { ok: true, rebuilt, indexCount: ids.length },
-      NO_STORE
-    );
+    return NextResponse.json({ ok: true, rebuilt, indexCount: ids.length }, NO_STORE);
   }
 
   // звичайний список
