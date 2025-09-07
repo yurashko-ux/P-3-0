@@ -9,7 +9,7 @@ const kv = (path: string) =>
   fetch(`${KV_URL}/${path}`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }, cache: 'no-store' });
 
 export async function GET() {
-  // Очікується JSON у KV за ключем keycrm:pipelines:
+  // У KV очікується масив:
   // [{ id, name, statuses: [{ id, name }, ...] }, ...]
   const res = await kv('get/keycrm:pipelines');
   const json = await res.json();
