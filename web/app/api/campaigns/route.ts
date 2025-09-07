@@ -25,7 +25,7 @@ async function zrangeIds(): Promise<string[]> {
   return (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
 }
 
-// ПОСЛІДОВНЕ читання (без mget) — стабільно для serverless/Upstash
+// 1) Основний шлях: читаємо по індексу (ПОСЛІДОВНО, без mget)
 async function loadByIndex(): Promise<Any[]> {
   const ids = await zrangeIds();
   if (!ids.length) return [];
@@ -41,6 +41,7 @@ async function loadByIndex(): Promise<Any[]> {
   return items;
 }
 
+// 2) Повний скан ключів (fallback)
 async function scanAll(match: string, count = 200): Promise<string[]> {
   let cursor = 0;
   const acc: string[] = [];
@@ -62,22 +63,34 @@ function looksLikeDocKey(k: string) {
   return k.startsWith('campaigns:');
 }
 
-async function healIndexFromDocs(): Promise<number> {
-  const keys = await scanAll('campaigns:*');
+// 2a) Читання всіх документів через SCAN (повний fallback)
+async function loadByScan(): Promise<Any[]> {
+  const keys = await scanAll('campaigns:*', 500);
   const docKeys = keys.filter(looksLikeDocKey);
-  if (!docKeys.length) return 0;
-
-  let rebuilt = 0;
+  if (!docKeys.length) return [];
+  const items: Any[] = [];
   for (const k of docKeys) {
     const raw = await redis.get<string>(k);
     if (!raw) continue;
     try {
-      const item = JSON.parse(raw);
-      const id = item?.id; if (!id) continue;
-      const score = Number(item.created_at) || Date.now();
-      await redis.zadd(INDEX_KEY, { score, member: String(id) });
-      rebuilt++;
+      const obj = JSON.parse(raw);
+      if (obj) items.push(obj);
     } catch {}
+  }
+  // сортуємо новіші зверху
+  items.sort((a, b) => Number(b?.created_at ?? 0) - Number(a?.created_at ?? 0));
+  return items;
+}
+
+// Відбудова індексу з документів
+async function healIndexFromDocs(): Promise<number> {
+  const items = await loadByScan();
+  let rebuilt = 0;
+  for (const it of items) {
+    const id = it?.id; if (!id) continue;
+    const score = Number(it.created_at) || Date.now();
+    await redis.zadd(INDEX_KEY, { score, member: String(id) });
+    rebuilt++;
   }
   return rebuilt;
 }
@@ -118,11 +131,17 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, created: id, indexCount: ids.length }, NO_STORE);
   }
 
-  // debug: стан KV / індексу
+  // debug: розширений стан KV / індексу
   if (act === 'debug') {
     const byIndex = await loadByIndex();
-    const keys = await scanAll('campaigns:*');
     const indexIds = await zrangeIds();
+    const keys = await scanAll('campaigns:*', 500);
+    // Перевіримо перші 3 id напряму — чи існують
+    const peek: Record<string, boolean> = {};
+    for (const id of indexIds.slice(0, 3)) {
+      const raw = await redis.get<string>(ITEM_KEY(id));
+      peek[id] = !!raw;
+    }
     let sample: Any | null = null;
     if (indexIds[0]) {
       const raw = await redis.get<string>(ITEM_KEY(indexIds[0]));
@@ -140,6 +159,7 @@ export async function GET(req: Request) {
       keysCount: keys.length,
       indexIds,
       keys: keys.slice(0, 50),
+      peek,      // <- покаже, що get по id реально працює
       sample
     }, NO_STORE);
   }
@@ -153,10 +173,17 @@ export async function GET(req: Request) {
 
   // звичайний список
   let items = await loadByIndex();
+
+  // якщо чомусь порожньо — читаємо напряму через SCAN
   if (!items.length) {
-    const rebuilt = await healIndexFromDocs();
-    if (rebuilt) items = await loadByIndex();
+    items = await loadByScan();
   }
+
+  // останній шанс — спробуємо ще й перебудувати індекс, але повернемо результат вже зараз
+  if (!items.length) {
+    await healIndexFromDocs();
+  }
+
   return NextResponse.json(
     { ok: true, items, data: { items }, campaigns: items, rows: items, count: items.length },
     NO_STORE
