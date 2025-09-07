@@ -1,9 +1,9 @@
 // web/app/api/mc/ingest/route.ts
 // ManyChat → Campaigns matcher → KeyCRM move
-// Повна заміна: виправляє типи ('v1' | 'v2' | 'exp') і не вимагає 'redis' об'єкта.
+// Повна заміна: виправляє типи ('v1' | 'v2' | 'exp') і правильний шлях до lib/kv.
 
 import { NextResponse } from "next/server";
-import { kvGet, kvSet, kvZrevrange } from "../../../lib/kv";
+import { kvGet, kvSet, kvZrevrange } from "../../../../lib/kv"; // <-- виправлено
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
@@ -145,7 +145,6 @@ export async function POST(req: Request) {
     const card_id = await resolveCardIdByUsername(req, ig);
     if (!card_id) return err("card not found for username", 404, { username: ig });
 
-    // завантажити кампанії
     const campaigns = (await getAllCampaigns()).filter((c) => c.enabled);
 
     const actions: Array<{
@@ -154,16 +153,12 @@ export async function POST(req: Request) {
       moved_to: { pipeline_id: string; status_id: string };
     }> = [];
 
-    // Проста стратегія: перша релевантна кампанія переміщує
     for (const c of campaigns) {
-      // TODO: за потреби перевірити, що картка зараз у базовій воронці/статусі (через KeyCRM get-card)
       let selected: Variant | null = null;
       if (matchCondition(c.v1_condition, body)) selected = "v1";
       else if (matchCondition(c.v2_condition, body)) selected = "v2";
-      // Якщо жодна умова не спрацювала — тут не робимо 'exp', цим займеться cron або окремий шлях
       if (!selected) continue;
 
-      // Визначити куди рухати
       let to_pipeline = c.exp_to_pipeline_id;
       let to_status = c.exp_to_status_id;
       if (selected === "v1") {
@@ -173,12 +168,10 @@ export async function POST(req: Request) {
         to_pipeline = c.v2_to_pipeline_id;
         to_status = c.v2_to_status_id;
       }
-
       if (!to_pipeline || !to_status) continue;
 
       await moveCardViaProxy(req, String(card_id), String(to_pipeline), String(to_status));
 
-      // лічильники
       const fresh = await kvGet<Campaign>(`campaigns:${c.id}`);
       if (fresh) {
         if (selected === "v1") fresh.v1_count++;
