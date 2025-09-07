@@ -1,16 +1,14 @@
 // web/app/api/campaigns/route.ts
-// робимо роут динамічним (не статичний рендер)
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-// опційно форсимо звичайний runtime
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 
-// ---- Minimal Upstash KV helpers (REST) ----
+// ---- Upstash KV helpers (REST) ----
 const KV_URL = process.env.KV_REST_API_URL || "";
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || "";
-const H = KV_TOKEN ? { Authorization: `Bearer ${KV_TOKEN}` } : {};
+const H: HeadersInit = KV_TOKEN ? { Authorization: `Bearer ${KV_TOKEN}` } : {};
 
 async function kvGet(key: string): Promise<string | null> {
   if (!KV_URL || !KV_TOKEN) return null;
@@ -38,9 +36,8 @@ async function kvZadd(key: string, score: number, member: string) {
 async function kvZrange(key: string, start = 0, stop = -1): Promise<string[]> {
   if (!KV_URL || !KV_TOKEN) return [];
   const r = await fetch(`${KV_URL}/zrange/${encodeURIComponent(key)}/${start}/${stop}`, {
-    method: "POST",
-    headers: { ...H, "content-type": "application/json" },
-    body: JSON.stringify({ withscores: false }),
+    headers: H,
+    cache: "no-store",
   });
   if (!r.ok) return [];
   const j = await r.json().catch(() => null as any);
@@ -69,7 +66,6 @@ function numOr(v: any, d = 0): number {
   const n = Number(v); return Number.isFinite(n) ? n : d;
 }
 function newId(): string {
-  // crypto.randomUUID доступний на Vercel
   // @ts-ignore
   return (globalThis.crypto?.randomUUID?.() as string) || `c_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
 }
