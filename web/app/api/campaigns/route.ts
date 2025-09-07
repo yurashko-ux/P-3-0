@@ -19,13 +19,13 @@ function genId() {
   return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toUpperCase();
 }
 
-// ---- helpers ---------------------------------------------------------------
+/* ------------------------------------------------------------------ helpers */
 
 async function zrangeIds(): Promise<string[]> {
   return (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
 }
 
-// послідовне читання документів — без mget і без паралельщини
+// ПОСЛІДОВНЕ читання (без mget) — стабільно для serverless/Upstash
 async function loadByIndex(): Promise<Any[]> {
   const ids = await zrangeIds();
   if (!ids.length) return [];
@@ -82,7 +82,7 @@ async function healIndexFromDocs(): Promise<number> {
   return rebuilt;
 }
 
-// ---- handlers --------------------------------------------------------------
+/* ---------------------------------------------------------------- handlers */
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -94,7 +94,7 @@ export async function GET(req: Request) {
       : url.searchParams.has('rebuild') ? 'rebuild'
       : '');
 
-  // seed
+  // seed: створюємо одну валідну кампанію
   if (act === 'seed') {
     const now = Date.now();
     const id = 'SEED_' + genId();
@@ -118,7 +118,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, created: id, indexCount: ids.length }, NO_STORE);
   }
 
-  // debug
+  // debug: стан KV / індексу
   if (act === 'debug') {
     const byIndex = await loadByIndex();
     const keys = await scanAll('campaigns:*');
@@ -144,14 +144,14 @@ export async function GET(req: Request) {
     }, NO_STORE);
   }
 
-  // rebuild
+  // rebuild: відбудовуємо індекс із документів
   if (act === 'rebuild') {
     const rebuilt = await healIndexFromDocs();
     const ids = await zrangeIds();
     return NextResponse.json({ ok: true, rebuilt, indexCount: ids.length }, NO_STORE);
   }
 
-  // list
+  // звичайний список
   let items = await loadByIndex();
   if (!items.length) {
     const rebuilt = await healIndexFromDocs();
