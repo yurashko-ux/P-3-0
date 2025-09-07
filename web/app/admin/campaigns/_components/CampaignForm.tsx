@@ -4,9 +4,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Condition =
-  | { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string }
-  | null;
+// ---- Types ----
+type Cond = { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string };
+type Condition = Cond | null;
 
 type Pipeline = { id: string; title: string };
 type Status = { id: string; pipeline_id: string; title: string };
@@ -28,7 +28,8 @@ type CampaignDraft = {
   enabled: boolean;
 };
 
-const emptyCond: Condition = { field: "any", op: "contains", value: "" };
+const emptyCond: Cond = { field: "any", op: "contains", value: "" };
+const ensureCond = (c: Condition): Cond => (c ? { field: c.field, op: c.op, value: c.value } : { ...emptyCond });
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className="block text-sm font-medium text-slate-700 mb-1">{children}</label>;
@@ -65,6 +66,7 @@ function Select({
 export default function CampaignForm() {
   const router = useRouter();
 
+  // ---- Dictionaries ----
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [loadingDicts, setLoadingDicts] = useState(true);
@@ -97,6 +99,7 @@ export default function CampaignForm() {
     return map;
   }, [statuses]);
 
+  // ---- Form state ----
   const [draft, setDraft] = useState<CampaignDraft>({
     name: "",
     base_pipeline_id: "",
@@ -127,6 +130,7 @@ export default function CampaignForm() {
     setDraft((d) => ({ ...d, exp_to_pipeline_id: pid, exp_to_status_id: "" }));
   }
 
+  // ---- Validation ----
   const [errors, setErrors] = useState<string[]>([]);
   function validate(d: CampaignDraft): string[] {
     const e: string[] = [];
@@ -136,10 +140,8 @@ export default function CampaignForm() {
     if (!Number.isFinite(Number(d.exp_days)) || Number(d.exp_days) < 0) e.push("exp_days");
     if (!d.exp_to_pipeline_id) e.push("exp_to_pipeline_id");
     if (!d.exp_to_status_id) e.push("exp_to_status_id");
-    if (d.v1_condition && (d.v1_to_pipeline_id === "" || d.v1_to_status_id === ""))
-      e.push("v1_target");
-    if (d.v2_condition && (d.v2_to_pipeline_id === "" || d.v2_to_status_id === ""))
-      e.push("v2_target");
+    if (d.v1_condition && (d.v1_to_pipeline_id === "" || d.v1_to_status_id === "")) e.push("v1_target");
+    if (d.v2_condition && (d.v2_to_pipeline_id === "" || d.v2_to_status_id === "")) e.push("v2_target");
     return e;
   }
 
@@ -157,10 +159,10 @@ export default function CampaignForm() {
       name: draft.name.trim(),
       base_pipeline_id: draft.base_pipeline_id,
       base_status_id: draft.base_status_id,
-      v1_condition: draft.v1_condition,
+      v1_condition: draft.v1_condition ? ensureCond(draft.v1_condition) : null,
       v1_to_pipeline_id: draft.v1_to_pipeline_id || null,
       v1_to_status_id: draft.v1_to_status_id || null,
-      v2_condition: draft.v2_condition,
+      v2_condition: draft.v2_condition ? ensureCond(draft.v2_condition) : null,
       v2_to_pipeline_id: draft.v2_to_pipeline_id || null,
       v2_to_status_id: draft.v2_to_status_id || null,
       exp_days: Number(draft.exp_days),
@@ -198,7 +200,9 @@ export default function CampaignForm() {
       <div className="rounded-2xl border border-gray-200 bg-white p-6 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Основне</h2>
         <div>
-          <FieldLabel>Назва <ErrorMark id="name" /></FieldLabel>
+          <FieldLabel>
+            Назва <ErrorMark id="name" />
+          </FieldLabel>
           <input
             type="text"
             value={draft.name}
@@ -211,31 +215,39 @@ export default function CampaignForm() {
 
         <Row>
           <div>
-            <FieldLabel>Базова воронка <ErrorMark id="base_pipeline_id" /></FieldLabel>
+            <FieldLabel>
+              Базова воронка <ErrorMark id="base_pipeline_id" />
+            </FieldLabel>
             <Select value={draft.base_pipeline_id} onChange={onChangeBasePipeline} disabled={loadingDicts}>
               <option value="">— Обери воронку —</option>
               {pipelines.map((p) => (
-                <option key={p.id} value={p.id}>{p.title} ({p.id})</option>
+                <option key={p.id} value={p.id}>
+                  {p.title} ({p.id})
+                </option>
               ))}
             </Select>
           </div>
           <div>
-            <FieldLabel>Базовий статус <ErrorMark id="base_status_id" /></FieldLabel>
+            <FieldLabel>
+              Базовий статус <ErrorMark id="base_status_id" />
+            </FieldLabel>
             <Select
               value={draft.base_status_id}
               onChange={(v) => setDraft((d) => ({ ...d, base_status_id: v }))}
               disabled={!draft.base_pipeline_id}
             >
               <option value="">— Обери статус —</option>
-              {( (statusesByPipeline[draft.base_pipeline_id] || []) ).map((s) => (
-                <option key={s.id} value={s.id}>{s.title} ({s.id})</option>
+              {(statusesByPipeline[draft.base_pipeline_id] || []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title} ({s.id})
+                </option>
               ))}
             </Select>
           </div>
         </Row>
       </div>
 
-      {/* V1 */}
+      {/* Variant #1 */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Variant #1</h2>
         <Row>
@@ -243,8 +255,13 @@ export default function CampaignForm() {
             <FieldLabel>Умова</FieldLabel>
             <div className="grid grid-cols-3 gap-2">
               <Select
-                value={draft.v1_condition?.field ?? "any"}
-                onChange={(v) => setDraft((d) => ({ ...d, v1_condition: { ...(d.v1_condition ?? emptyCond), field: v as any } }))}
+                value={draft.v1_condition ? draft.v1_condition.field : "any"}
+                onChange={(v) =>
+                  setDraft((d) => ({
+                    ...d,
+                    v1_condition: { ...ensureCond(d.v1_condition), field: v as Cond["field"] },
+                  }))
+                }
               >
                 <option value="any">будь-що</option>
                 <option value="text">text</option>
@@ -252,8 +269,13 @@ export default function CampaignForm() {
                 <option value="tag">tag</option>
               </Select>
               <Select
-                value={draft.v1_condition?.op ?? "contains"}
-                onChange={(v) => setDraft((d) => ({ ...d, v1_condition: { ...(d.v1_condition ?? emptyCond), op: v as any } }))}
+                value={draft.v1_condition ? draft.v1_condition.op : "contains"}
+                onChange={(v) =>
+                  setDraft((d) => ({
+                    ...d,
+                    v1_condition: { ...ensureCond(d.v1_condition), op: v as Cond["op"] },
+                  }))
+                }
               >
                 <option value="contains">містить</option>
                 <option value="equals">дорівнює</option>
@@ -261,19 +283,30 @@ export default function CampaignForm() {
               <input
                 type="text"
                 placeholder="значення"
-                value={draft.v1_condition?.value ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, v1_condition: { ...(d.v1_condition ?? emptyCond), value: e.target.value } }))}
+                value={draft.v1_condition ? draft.v1_condition.value : ""}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    v1_condition: { ...ensureCond(d.v1_condition), value: e.target.value },
+                  }))
+                }
                 className="w-full rounded-2xl border border-gray-300 bg-white px-3 py-2 outline-none ring-1 ring-gray-300 focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <Hint>Якщо не потрібно — залиш «будь-що».</Hint>
           </div>
           <div>
-            <FieldLabel>Ціль (pipeline/status) <ErrorMark id="v1_target" /></FieldLabel>
+            <FieldLabel>
+              Ціль (pipeline/status) <ErrorMark id="v1_target" />
+            </FieldLabel>
             <div className="grid grid-cols-2 gap-2">
               <Select value={draft.v1_to_pipeline_id ?? ""} onChange={onChangeV1Pipeline}>
                 <option value="">— Воронка —</option>
-                {pipelines.map((p) => <option key={p.id} value={p.id}>{p.title} ({p.id})</option>)}
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.id})
+                  </option>
+                ))}
               </Select>
               <Select
                 value={draft.v1_to_status_id ?? ""}
@@ -282,7 +315,9 @@ export default function CampaignForm() {
               >
                 <option value="">— Статус —</option>
                 {(statusesByPipeline[draft.v1_to_pipeline_id ?? ""] || []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.title} ({s.id})</option>
+                  <option key={s.id} value={s.id}>
+                    {s.title} ({s.id})
+                  </option>
                 ))}
               </Select>
             </div>
@@ -290,7 +325,7 @@ export default function CampaignForm() {
         </Row>
       </div>
 
-      {/* V2 (optional) */}
+      {/* Variant #2 (optional) */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">Variant #2 (опційно)</h2>
@@ -311,8 +346,13 @@ export default function CampaignForm() {
               <FieldLabel>Умова</FieldLabel>
               <div className="grid grid-cols-3 gap-2">
                 <Select
-                  value={draft.v2_condition?.field ?? "any"}
-                  onChange={(v) => setDraft((d) => ({ ...d, v2_condition: { ...(d.v2_condition ?? emptyCond), field: v as any } }))}
+                  value={draft.v2_condition ? draft.v2_condition.field : "any"}
+                  onChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      v2_condition: { ...ensureCond(d.v2_condition), field: v as Cond["field"] },
+                    }))
+                  }
                 >
                   <option value="any">будь-що</option>
                   <option value="text">text</option>
@@ -320,8 +360,13 @@ export default function CampaignForm() {
                   <option value="tag">tag</option>
                 </Select>
                 <Select
-                  value={draft.v2_condition?.op ?? "contains"}
-                  onChange={(v) => setDraft((d) => ({ ...d, v2_condition: { ...(d.v2_condition ?? emptyCond), op: v as any } }))}
+                  value={draft.v2_condition ? draft.v2_condition.op : "contains"}
+                  onChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      v2_condition: { ...ensureCond(d.v2_condition), op: v as Cond["op"] },
+                    }))
+                  }
                 >
                   <option value="contains">містить</option>
                   <option value="equals">дорівнює</option>
@@ -329,19 +374,30 @@ export default function CampaignForm() {
                 <input
                   type="text"
                   placeholder="значення"
-                  value={draft.v2_condition?.value ?? ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, v2_condition: { ...(d.v2_condition ?? emptyCond), value: e.target.value } }))}
+                  value={draft.v2_condition ? draft.v2_condition.value : ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      v2_condition: { ...ensureCond(d.v2_condition), value: e.target.value },
+                    }))
+                  }
                   className="w-full rounded-2xl border border-gray-300 bg-white px-3 py-2 outline-none ring-1 ring-gray-300 focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
             <div>
-              <FieldLabel>Ціль (pipeline/status) <ErrorMark id="v2_target" /></FieldLabel>
+              <FieldLabel>
+                Ціль (pipeline/status) <ErrorMark id="v2_target" />
+              </FieldLabel>
               <div className="grid grid-cols-2 gap-2">
                 <Select value={draft.v2_to_pipeline_id ?? ""} onChange={onChangeV2Pipeline}>
                   <option value="">— Воронка —</option>
-                  {pipelines.map((p) => <option key={p.id} value={p.id}>{p.title} ({p.id})</option>)}
+                  {pipelines.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title} ({p.id})
+                    </option>
+                  ))}
                 </Select>
                 <Select
                   value={draft.v2_to_status_id ?? ""}
@@ -350,7 +406,9 @@ export default function CampaignForm() {
                 >
                   <option value="">— Статус —</option>
                   {(statusesByPipeline[draft.v2_to_pipeline_id ?? ""] || []).map((s) => (
-                    <option key={s.id} value={s.id}>{s.title} ({s.id})</option>
+                    <option key={s.id} value={s.id}>
+                      {s.title} ({s.id})
+                    </option>
                   ))}
                 </Select>
               </div>
@@ -364,20 +422,31 @@ export default function CampaignForm() {
         <h2 className="text-lg font-semibold text-slate-900">Variant #3 — Expiration</h2>
         <Row>
           <div>
-            <FieldLabel>К-сть днів у базовій воронці <ErrorMark id="exp_days" /></FieldLabel>
+            <FieldLabel>
+              К-сть днів у базовій воронці <ErrorMark id="exp_days" />
+            </FieldLabel>
             <input
-              type="number" min={0}
+              type="number"
+              min={0}
               value={draft.exp_days}
               onChange={(e) => setDraft((d) => ({ ...d, exp_days: Number(e.target.value) }))}
               className="w-full rounded-2xl border border-gray-300 bg-white px-4 py-2 outline-none ring-1 ring-gray-300 focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
           <div>
-            <FieldLabel>Ціль при експірації <ErrorMark id="exp_to_pipeline_id" /><ErrorMark id="exp_to_status_id" /></FieldLabel>
+            <FieldLabel>
+              Ціль при експірації <ErrorMark id="exp_to_pipeline_id" />
+              <ErrorMark id="exp_to_status_id" />
+            </FieldLabel>
             <div className="grid grid-cols-2 gap-2">
               <Select value={draft.exp_to_pipeline_id ?? ""} onChange={onChangeExpPipeline}>
                 <option value="">— Воронка —</option>
-                {pipelines.map((p) => <option key={p.id} value={p.id}>{p.title} ({p.id})</option>)}
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.id})
+                  </option>
+                ))}
               </Select>
               <Select
                 value={draft.exp_to_status_id ?? ""}
@@ -386,7 +455,9 @@ export default function CampaignForm() {
               >
                 <option value="">— Статус —</option>
                 {(statusesByPipeline[draft.exp_to_pipeline_id ?? ""] || []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.title} ({s.id})</option>
+                  <option key={s.id} value={s.id}>
+                    {s.title} ({s.id})
+                  </option>
                 ))}
               </Select>
             </div>
@@ -394,6 +465,7 @@ export default function CampaignForm() {
         </Row>
       </div>
 
+      {/* Footer */}
       <div className="flex items-center justify-between">
         <label className="inline-flex items-center gap-2 text-sm text-slate-700">
           <input
@@ -406,10 +478,17 @@ export default function CampaignForm() {
         </label>
 
         <div className="flex gap-3">
-          <a href="/admin/campaigns" className="px-4 py-2 rounded-2xl border border-gray-300 bg-white hover:bg-gray-50">
+          <a
+            href="/admin/campaigns"
+            className="px-4 py-2 rounded-2xl border border-gray-300 bg-white hover:bg-gray-50"
+          >
             Скасувати
           </a>
-          <button type="submit" disabled={submitting} className="px-5 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-5 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60"
+          >
             {submitting ? "Збереження…" : "Зберегти"}
           </button>
         </div>
