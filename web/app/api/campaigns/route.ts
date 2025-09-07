@@ -1,9 +1,10 @@
 // web/app/api/campaigns/route.ts
-import { kvGet, kvSet, kvZadd, kvZrevrange } from "@/lib/kv";
+// Fallback: відносний імпорт, щоб білд точно пройшов навіть без alias.
+import { kvGet, kvSet, kvZadd, kvZrevrange } from "../../../lib/kv";
 import { NextResponse } from "next/server";
 
-export const revalidate = 0;            // вимкнути кешування
-export const dynamic = "force-dynamic"; // примусово динамічний
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 type Condition =
   | { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string }
@@ -52,7 +53,6 @@ export async function POST(req: Request) {
   try {
     const b = await req.json();
 
-    // мінімальна валідація
     if (!b?.name || !b?.base_pipeline_id || !b?.base_status_id || b?.exp_days == null) {
       return NextResponse.json({ ok: false, error: "missing fields" }, { status: 400 });
     }
@@ -79,12 +79,10 @@ export async function POST(req: Request) {
       enabled: b.enabled ?? true,
       v1_count: 0,
       v2_count: 0,
-      exp_count: 0,
+      exp_count: 0
     };
 
-    // 1) зберегти сам об’єкт
     await kvSet(keyOf(id), item);
-    // 2) додати до індексу списку (за часом створення)
     await kvZadd(INDEX, Date.now(), id);
 
     return NextResponse.json({ ok: true, id, item }, { status: 201 });
