@@ -5,27 +5,51 @@ export const runtime = 'edge';
 const KV_URL = process.env.KV_REST_API_URL!;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN!;
 
-const kv = (path: string) =>
-  fetch(`${KV_URL}/${path}`, {
+function kv(path: string) {
+  return fetch(`${KV_URL}/${path}`, {
     headers: { Authorization: `Bearer ${KV_TOKEN}` },
     cache: 'no-store',
   });
+}
 
-export async function GET(req: Request) {
-  // 1) читаємо кеш з KV
+/**
+ * Повертаємо МАСИВ, сумісний зі старою формою.
+ * Фолбек: читаємо кілька можливих ключів у KV, щоб не зламати старі кеші.
+ */
+export async function GET() {
   try {
-    const res = await kv('get/keycrm:pipelines');
-    const json = await res.json();
-    const pipelines = json?.result ? JSON.parse(json.result) : [];
-    // Повертаємо формат, який зручно споживати і старій формі, і новій
-    // - якщо код очікує { pipelines }, отримає саме це
-    // - якщо код робить Array.isArray(response), то можна віддати масив напряму
-    const url = new URL(req.url);
-    const shape = url.searchParams.get('shape'); // optional: 'array' | 'object'
-    if (shape === 'array') return NextResponse.json(pipelines);
-    return NextResponse.json({ pipelines });
-  } catch (e) {
-    // у разі проблем — порожній список, щоб UI не падав
-    return NextResponse.json({ pipelines: [] });
+    // 1) Основний ключ
+    let res = await kv('get/keycrm:pipelines');
+    let json = await res.json();
+    let arr: any[] = json?.result ? JSON.parse(json.result) : [];
+
+    // 2) Фолбеки на випадок іншої назви ключа
+    if (!Array.isArray(arr) || arr.length === 0) {
+      const fallbacks = ['get/pipelines', 'get/keycrm:pipelines:all', 'get/keycrm:pipelines:v1'];
+      for (const key of fallbacks) {
+        res = await kv(key);
+        json = await res.json();
+        const maybe = json?.result ? JSON.parse(json.result) : [];
+        if (Array.isArray(maybe) && maybe.length) {
+          arr = maybe;
+          break;
+        }
+      }
+    }
+
+    // Нормалізація структури елементів (гарантуємо {id,name,statuses:[{id,name}]})
+    const pipelines = Array.isArray(arr)
+      ? arr.map((p: any) => ({
+          id: String(p.id),
+          name: String(p.name ?? p.title ?? 'Без назви'),
+          statuses: Array.isArray(p.statuses)
+            ? p.statuses.map((s: any) => ({ id: String(s.id), name: String(s.name ?? s.title ?? 'Без назви') }))
+            : [],
+        }))
+      : [];
+
+    return NextResponse.json(pipelines);
+  } catch {
+    return NextResponse.json([], { status: 200 });
   }
 }
