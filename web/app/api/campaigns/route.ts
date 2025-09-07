@@ -1,85 +1,94 @@
 // web/app/api/campaigns/route.ts
-import { NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
+import { kvGet, kvSet, kvZadd, kvZrevrange } from "@/lib/kv";
+import { NextResponse } from "next/server";
 
-export const runtime = 'nodejs'; // уникаємо edge-особливостей
+export const revalidate = 0;            // вимкнути кешування
+export const dynamic = "force-dynamic"; // примусово динамічний
+
+type Condition =
+  | { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string }
+  | null;
 
 type Campaign = {
   id: string;
-  title?: string;
-  source: { pipeline_id: string; status_id: string };
-  target: { pipeline_id: string; status_id: string };
-  expire_at?: number | null;
-  created_at: number;
+  created_at: string;
+  name: string;
+  base_pipeline_id: string;
+  base_status_id: string;
+  v1_condition: Condition;
+  v1_to_pipeline_id: string | null;
+  v1_to_status_id: string | null;
+  v2_condition: Condition;
+  v2_to_pipeline_id: string | null;
+  v2_to_status_id: string | null;
+  exp_days: number;
+  exp_to_pipeline_id: string | null;
+  exp_to_status_id: string | null;
+  note?: string | null;
+  enabled: boolean;
+  v1_count: number;
+  v2_count: number;
+  exp_count: number;
 };
 
-function unauthorized() {
-  return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401, headers: { 'cache-control': 'no-store' } });
-}
-function isAdmin(req: Request) {
-  const url = new URL(req.url);
-  const pass = req.headers.get('x-admin-pass') ?? url.searchParams.get('pass') ?? '';
-  const expected = process.env.ADMIN_PASS ?? '';
-  return expected.length > 0 && pass === expected;
-}
+const INDEX = "campaigns:index";
+const keyOf = (id: string) => `campaigns:${id}`;
 
-// GET /api/campaigns -> список (без кешу)
 export async function GET() {
   try {
-    const ids = await kv.lrange<string>('campaign:ids', 0, -1);
-    const raw = await Promise.all(ids.map((id) => kv.get<Campaign>(`campaign:${id}`)));
-    const items = (raw.filter(Boolean) as Campaign[]).sort((a, b) => b.created_at - a.created_at);
-    return NextResponse.json({ ok: true, items, count: items.length }, { headers: { 'cache-control': 'no-store' } });
+    const ids = await kvZrevrange(INDEX, 0, 199);
+    const items: Campaign[] = [];
+    for (const id of ids) {
+      const it = await kvGet<Campaign>(keyOf(id));
+      if (it) items.push(it);
+    }
+    return NextResponse.json({ ok: true, items }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'kv error' }, { status: 500, headers: { 'cache-control': 'no-store' } });
+    return NextResponse.json({ ok: false, error: e?.message ?? "KV error" }, { status: 500 });
   }
 }
 
-// POST /api/campaigns -> створення (адмін)
 export async function POST(req: Request) {
-  if (!isAdmin(req)) return unauthorized();
   try {
     const b = await req.json();
 
-    const id = String(await kv.incr('campaign:next_id'));
+    // мінімальна валідація
+    if (!b?.name || !b?.base_pipeline_id || !b?.base_status_id || b?.exp_days == null) {
+      return NextResponse.json({ ok: false, error: "missing fields" }, { status: 400 });
+    }
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
     const item: Campaign = {
       id,
-      title: String(b?.title ?? ''),
-      source: {
-        pipeline_id: String(b?.source?.pipeline_id ?? b?.pipeline_from ?? ''),
-        status_id: String(b?.source?.status_id ?? b?.status_from ?? ''),
-      },
-      target: {
-        pipeline_id: String(b?.target?.pipeline_id ?? b?.pipeline_to ?? ''),
-        status_id: String(b?.target?.status_id ?? b?.status_to ?? ''),
-      },
-      expire_at: b?.expire_at ? Number(b?.expire_at) : null,
-      created_at: Date.now(),
+      created_at: now,
+      name: String(b.name),
+      base_pipeline_id: String(b.base_pipeline_id),
+      base_status_id: String(b.base_status_id),
+      v1_condition: b.v1_condition ?? null,
+      v1_to_pipeline_id: b.v1_to_pipeline_id ?? null,
+      v1_to_status_id: b.v1_to_status_id ?? null,
+      v2_condition: b.v2_condition ?? null,
+      v2_to_pipeline_id: b.v2_to_pipeline_id ?? null,
+      v2_to_status_id: b.v2_to_status_id ?? null,
+      exp_days: Number(b.exp_days),
+      exp_to_pipeline_id: b.exp_to_pipeline_id ?? null,
+      exp_to_status_id: b.exp_to_status_id ?? null,
+      note: b.note ?? null,
+      enabled: b.enabled ?? true,
+      v1_count: 0,
+      v2_count: 0,
+      exp_count: 0,
     };
 
-    // уникаємо дублів і завжди кладемо зверху списку
-    await kv.lrem('campaign:ids', 0, id);
-    await kv.lpush('campaign:ids', id);
-    await kv.set(`campaign:${id}`, item);
+    // 1) зберегти сам об’єкт
+    await kvSet(keyOf(id), item);
+    // 2) додати до індексу списку (за часом створення)
+    await kvZadd(INDEX, Date.now(), id);
 
-    return NextResponse.json({ ok: true, item }, { headers: { 'cache-control': 'no-store' } });
+    return NextResponse.json({ ok: true, id, item }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'kv error' }, { status: 500, headers: { 'cache-control': 'no-store' } });
-  }
-}
-
-// DELETE /api/campaigns {id} -> видалення (адмін)
-export async function DELETE(req: Request) {
-  if (!isAdmin(req)) return unauthorized();
-  try {
-    const { id } = await req.json();
-    if (!id) return NextResponse.json({ ok: false, error: 'id required' }, { status: 400, headers: { 'cache-control': 'no-store' } });
-
-    await kv.del(`campaign:${String(id)}`);
-    await kv.lrem('campaign:ids', 0, String(id));
-
-    return NextResponse.json({ ok: true, deleted: String(id) }, { headers: { 'cache-control': 'no-store' } });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'kv error' }, { status: 500, headers: { 'cache-control': 'no-store' } });
+    return NextResponse.json({ ok: false, error: e?.message ?? "save failed" }, { status: 500 });
   }
 }
