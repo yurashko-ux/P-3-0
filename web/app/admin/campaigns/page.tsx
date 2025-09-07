@@ -95,7 +95,7 @@ export default async function CampaignsPage() {
                   <td className="p-3">
                     <div className="flex gap-2">
                       <a className="px-3 py-1 rounded-xl border border-gray-300" href={`/admin/campaigns/${c.id}/edit`}>Edit</a>
-                      {/* Delete функціонал підʼєднаємо після додавання /api/campaigns/[id] DELETE */}
+                      {/* Delete додамо після /api/campaigns/[id] DELETE в UI */}
                     </div>
                   </td>
                 </tr>
