@@ -1,149 +1,88 @@
 // web/app/api/campaigns/[id]/route.ts
-import { NextResponse } from 'next/server';
-import { redis } from '../../../../lib/redis';
+import { NextResponse } from "next/server";
+import { kvGet, kvSet, kvDel, kvZrem } from "../../../../lib/kv";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
-type Any = Record<string, any>;
+type Condition =
+  | { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string }
+  | null;
 
-const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
+type Campaign = {
+  id: string;
+  created_at: string;
+  name: string;
+  base_pipeline_id: string;
+  base_status_id: string;
+  v1_condition: Condition;
+  v1_to_pipeline_id: string | null;
+  v1_to_status_id: string | null;
+  v2_condition: Condition;
+  v2_to_pipeline_id: string | null;
+  v2_to_status_id: string | null;
+  exp_days: number;
+  exp_to_pipeline_id: string | null;
+  exp_to_status_id: string | null;
+  note?: string | null;
+  enabled: boolean;
+  v1_count: number;
+  v2_count: number;
+  exp_count: number;
+};
 
-function genId() {
-  return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toUpperCase();
+const INDEX = "campaigns:index";
+const keyOf = (id: string) => `campaigns:${id}`;
+
+export async function GET(_: Request, ctx: { params: { id: string } }) {
+  try {
+    const id = ctx.params.id;
+    const item = await kvGet<Campaign>(keyOf(id));
+    if (!item) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    return NextResponse.json({ ok: true, item }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "get failed" }, { status: 500 });
+  }
 }
 
-async function scanAll(match: string, count = 200): Promise<string[]> {
-  let cursor = 0; const acc: string[] = [];
-  while (true) {
-    const res: any = await (redis as any).scan(cursor, { match, count });
-    const next = Array.isArray(res) ? Number(res[0]) : Number(res?.cursor ?? 0);
-    const keys = Array.isArray(res) ? (res[1] as string[]) : ((res?.keys as string[]) ?? []);
-    if (keys?.length) acc.push(...keys);
-    cursor = next; if (!cursor) break;
-  }
-  return acc;
-}
-
-// ---------- GET ----------
-export async function GET(_req: Request, ctx: { params: { id: string } }) {
-  const id = ctx.params?.id;
-
-  // /api/campaigns/seed  → створює тестову кампанію
-  if (id === 'seed') {
-    try {
-      const now = Date.now();
-      const newId = 'SEED_' + genId();
-      const item: Any = {
-        id: newId,
-        name: 'SEED TEST ' + new Date(now).toISOString(),
-        enabled: true,
-        created_at: now,
-        updated_at: now,
-        base_pipeline_id: null,
-        base_status_id: null,
-        v1_field: 'text',
-        v1_op: 'contains',
-        v1_value: 'yes',
-        v1_to_pipeline_id: null,
-        v1_to_status_id: null,
-      };
-
-      await redis.set(ITEM_KEY(newId), JSON.stringify(item));
-      await redis.zadd(INDEX_KEY, { score: now, member: newId });
-
-      const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-      const raws = ids.length ? (await redis.mget(...ids.map(ITEM_KEY))) as (string | null)[] : [];
-      const items = (raws || []).map(r => { try { return r ? JSON.parse(r) : null; } catch { return null; } }).filter(Boolean);
-
-      return NextResponse.json({ ok: true, created: newId, count: items.length, items }, { headers: { 'Cache-Control': 'no-store' } });
-    } catch (e: any) {
-      return NextResponse.json({ ok: false, error: e?.message || 'SEED_FAILED' }, { status: 500 });
-    }
-  }
-
-  // /api/campaigns/debug → показує стан KV/індексу
-  if (id === 'debug') {
-    try {
-      const env = {
-        KV_REST_API_URL: !!process.env.KV_REST_API_URL,
-        KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
-        KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
-      };
-
-      let canWrite = false, writeError = '';
-      try {
-        const probe = `campaigns:__probe__:${Date.now()}`;
-        await redis.set(probe, JSON.stringify({ t: Date.now() }));
-        await redis.del(probe);
-        canWrite = true;
-      } catch (e: any) {
-        canWrite = false; writeError = e?.message || String(e);
-      }
-
-      let indexIds: string[] = [];
-      try { indexIds = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[]; }
-      catch (e: any) { writeError ||= `zrange: ${e?.message || String(e)}`; }
-
-      let keys: string[] = [];
-      try { keys = await scanAll('campaigns:*'); } catch {}
-
-      let sample: Any | null = null;
-      if (indexIds?.[0]) {
-        const raw = await redis.get<string>(ITEM_KEY(indexIds[0]));
-        try { sample = raw ? JSON.parse(raw) : null; } catch { sample = raw as any; }
-      }
-
-      return NextResponse.json({
-        ok: true,
-        env, canWrite, writeError,
-        indexCount: indexIds.length, indexIds,
-        keysCount: keys.length, keys: keys.slice(0, 50),
-        sample,
-      }, { headers: { 'Cache-Control': 'no-store' } });
-    } catch (e: any) {
-      return NextResponse.json({ ok: false, error: e?.message || 'DEBUG_FAILED' }, { status: 500 });
-    }
-  }
-
-  // /api/campaigns/[id] → звичайне читання
-  if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
-  const raw = await redis.get<string>(ITEM_KEY(id));
-  if (!raw) return NextResponse.json({ ok: false, error: 'NOT_FOUND' }, { status: 404 });
-  try { return NextResponse.json({ ok: true, item: JSON.parse(raw) }, { headers: { 'Cache-Control': 'no-store' } }); }
-  catch { return NextResponse.json({ ok: false, error: 'CORRUPTED_ITEM' }, { status: 500 }); }
-}
-
-// ---------- PUT ----------
 export async function PUT(req: Request, ctx: { params: { id: string } }) {
-  const id = ctx.params?.id;
-  if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
+  try {
+    const id = ctx.params.id;
+    const existing = await kvGet<Campaign>(keyOf(id));
+    if (!existing) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
-  const raw = await redis.get<string>(ITEM_KEY(id));
-  if (!raw) return NextResponse.json({ ok: false, error: 'NOT_FOUND' }, { status: 404 });
+    const b = await req.json().catch(() => ({} as Partial<Campaign>));
+    // Дозволимо оновлювати назву, enabled, умови/цілі, exp_days та note
+    const updated: Campaign = {
+      ...existing,
+      name: typeof b.name === "string" ? b.name : existing.name,
+      enabled: typeof b.enabled === "boolean" ? b.enabled : existing.enabled,
+      v1_condition: b.v1_condition ?? existing.v1_condition,
+      v1_to_pipeline_id: b.v1_to_pipeline_id ?? existing.v1_to_pipeline_id,
+      v1_to_status_id: b.v1_to_status_id ?? existing.v1_to_status_id,
+      v2_condition: b.v2_condition ?? existing.v2_condition,
+      v2_to_pipeline_id: b.v2_to_pipeline_id ?? existing.v2_to_pipeline_id,
+      v2_to_status_id: b.v2_to_status_id ?? existing.v2_to_status_id,
+      exp_days: typeof b.exp_days === "number" ? b.exp_days : existing.exp_days,
+      exp_to_pipeline_id: b.exp_to_pipeline_id ?? existing.exp_to_pipeline_id,
+      exp_to_status_id: b.exp_to_status_id ?? existing.exp_to_status_id,
+      note: b.note ?? existing.note,
+    };
 
-  const patch = (await req.json()) as Any;
-  let item: Any; try { item = JSON.parse(raw); } catch { return NextResponse.json({ ok: false, error: 'CORRUPTED_ITEM' }, { status: 500 }); }
-
-  const updated = { ...item, ...patch, id, updated_at: Date.now(), name: (patch.name ?? item.name ?? '').toString().trim() };
-  await redis.set(ITEM_KEY(id), JSON.stringify(updated));
-  return NextResponse.json({ ok: true, item: updated });
+    await kvSet(keyOf(id), updated);
+    return NextResponse.json({ ok: true, item: updated }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "update failed" }, { status: 500 });
+  }
 }
 
-// ---------- DELETE ----------
-export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
-  const id = ctx.params?.id;
-  if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
-
-  await redis.del(ITEM_KEY(id));
-  await redis.zrem(INDEX_KEY, id);
-
-  return NextResponse.json({ ok: true });
-}
-
-// Безпечна відповідь на випадковий POST
-export async function POST() {
-  return NextResponse.json({ ok: false, error: 'UNSUPPORTED' }, { status: 400 });
+export async function DELETE(_: Request, ctx: { params: { id: string } }) {
+  try {
+    const id = ctx.params.id;
+    await kvDel(keyOf(id));
+    await kvZrem(INDEX, id);
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "delete failed" }, { status: 500 });
+  }
 }
