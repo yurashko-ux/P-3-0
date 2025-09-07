@@ -5,7 +5,7 @@ import { DeleteButton } from './DeleteButton';
 
 export const dynamic = 'force-dynamic';
 
-// Локальні типи (самодостатній файл)
+// Локальні типи (щоб файл був самодостатній)
 type Status = { id: string; name: string };
 type Pipeline = { id: string; name: string; statuses: Status[] };
 
@@ -44,7 +44,7 @@ async function getCampaigns(): Promise<Campaign[]> {
 }
 
 async function getPipelines(): Promise<Pipeline[]> {
-  // Очікуємо [{ id, name, statuses: [{id, name}, ...] }, ...]
+  // очікуємо [{ id, name, statuses: [{id, name}, ...] }, ...]
   const res = await fetch(`${await baseUrl()}/api/keycrm/pipelines`, { cache: 'no-store' });
   if (!res.ok) return [];
   const data = await res.json();
@@ -118,7 +118,6 @@ export default async function Page() {
                           <Badge>v1: {c.counters?.v1 ?? 0}</Badge>
                         </div>
                       )}
-
                       {c.variant2 && (
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge className="text-purple-700">v2</Badge>
@@ -126,7 +125,6 @@ export default async function Page() {
                           <Badge>v2: {c.counters?.v2 ?? 0}</Badge>
                         </div>
                       )}
-
                       {typeof c.expirationDays === 'number' && (
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge>exp</Badge>
