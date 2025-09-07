@@ -1,178 +1,131 @@
-// web/app/api/keycrm/statuses/route.ts
+// web/app/api/campaigns/route.ts
+// робимо роут динамічним (не статичний рендер)
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+// опційно форсимо звичайний runtime
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 
-/** ---------- KV (Upstash/Vercel) helpers ---------- */
+// ---- Minimal Upstash KV helpers (REST) ----
 const KV_URL = process.env.KV_REST_API_URL || "";
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || "";
+const H = KV_TOKEN ? { Authorization: `Bearer ${KV_TOKEN}` } : {};
 
-async function kvGetStr(key: string): Promise<string | null> {
+async function kvGet(key: string): Promise<string | null> {
   if (!KV_URL || !KV_TOKEN) return null;
-  try {
-    const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${KV_TOKEN}` },
-      cache: "no-store",
-    });
-    if (!r.ok) return null;
-    const j = await r.json().catch(() => null as any);
-    return (j && typeof j.result === "string") ? j.result : null;
-  } catch {
-    return null;
-  }
-}
-async function kvSetJSON(key: string, value: any, ttlSec = 600) {
-  if (!KV_URL || !KV_TOKEN) return;
-  try {
-    await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${KV_TOKEN}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ value: JSON.stringify(value), expiration: ttlSec }),
-    });
-  } catch {}
-}
-
-/** ---------- Robust array extraction ---------- */
-function firstArrayDeep(x: any): any[] {
-  if (Array.isArray(x)) return x;
-  if (x && typeof x === "object") {
-    // breadth-first search up to a few levels
-    const q: any[] = [x];
-    const seen = new Set<any>([x]);
-    while (q.length) {
-      const cur = q.shift()!;
-      for (const v of Object.values(cur)) {
-        if (Array.isArray(v)) return v;
-        if (v && typeof v === "object" && !seen.has(v)) {
-          seen.add(v);
-          q.push(v);
-        }
-      }
-    }
-  }
-  return [];
-}
-
-/** ---------- Normalizers ---------- */
-type StatusItem = { id: string; pipeline_id: string; title: string };
-
-function normalizeStatuses(arr: any[], ctxPipelineId?: string): StatusItem[] {
-  const out: StatusItem[] = [];
-  for (const s of arr) {
-    const id = s?.id ?? s?.status_id ?? s?.value ?? s?.key ?? s?.uuid;
-    const pipeline_id =
-      s?.pipeline_id ?? s?.pipelineId ?? s?.pipeline ?? ctxPipelineId ?? "";
-    const title =
-      s?.title ?? s?.name ?? s?.label ?? (id != null ? `#${id}` : "");
-    if (id != null) {
-      out.push({
-        id: String(id),
-        pipeline_id: String(pipeline_id ?? ""),
-        title: String(title),
-      });
-    }
-  }
-  // de-dup by id
-  const uniq = new Map(out.map((i) => [i.id, i]));
-  return [...uniq.values()];
-}
-
-/** ---------- KeyCRM fetch helpers ---------- */
-const BASE = (process.env.KEYCRM_API_URL || "").replace(/\/+$/, "");
-const BEARER = process.env.KEYCRM_BEARER || "";
-
-async function fetchJSON(url: string) {
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${BEARER}` },
-    cache: "no-store",
-  });
+  const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, { headers: H, cache: "no-store" });
   if (!r.ok) return null;
+  const j = await r.json().catch(() => null as any);
+  return (j && typeof j.result === "string") ? j.result : null;
+}
+async function kvSet(key: string, value: any) {
+  if (!KV_URL || !KV_TOKEN) throw new Error("KV not configured");
+  await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { ...H, "content-type": "application/json" },
+    body: JSON.stringify({ value: JSON.stringify(value) }),
+  });
+}
+async function kvZadd(key: string, score: number, member: string) {
+  if (!KV_URL || !KV_TOKEN) throw new Error("KV not configured");
+  await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { ...H, "content-type": "application/json" },
+    body: JSON.stringify([{ score, member }]),
+  });
+}
+async function kvZrange(key: string, start = 0, stop = -1): Promise<string[]> {
+  if (!KV_URL || !KV_TOKEN) return [];
+  const r = await fetch(`${KV_URL}/zrange/${encodeURIComponent(key)}/${start}/${stop}`, {
+    method: "POST",
+    headers: { ...H, "content-type": "application/json" },
+    body: JSON.stringify({ withscores: false }),
+  });
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => null as any);
+  return Array.isArray(j?.result) ? j.result.map(String) : [];
+}
+
+// ---- helpers ----
+type Cond = { field: "text" | "flow" | "tag" | "any"; op: "contains" | "equals"; value: string } | null;
+function asCond(payload: any, prefix: "v1" | "v2"): Cond {
+  const c = payload?.[`${prefix}_condition`];
+  if (c && c.field && c.op) {
+    return { field: String(c.field), op: String(c.op) as any, value: String(c.value ?? "") } as any;
+  }
+  const field = payload?.[`${prefix}_field`];
+  const op = payload?.[`${prefix}_op`];
+  const value = payload?.[`${prefix}_value`];
+  const enabled = prefix === "v2" ? !!(payload?.v2_enabled || value) : true;
+  if (!enabled) return null;
+  return { field: (field ?? "any") as any, op: (op ?? "contains") as any, value: String(value ?? "") };
+}
+function strOrNull(v: any): string | null {
+  if (v === undefined || v === null || v === "") return null;
+  return String(v);
+}
+function numOr(v: any, d = 0): number {
+  const n = Number(v); return Number.isFinite(n) ? n : d;
+}
+function newId(): string {
+  // crypto.randomUUID доступний на Vercel
+  // @ts-ignore
+  return (globalThis.crypto?.randomUUID?.() as string) || `c_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+}
+
+// ---- GET list ----
+export async function GET() {
   try {
-    return await r.json();
-  } catch {
-    return null;
-  }
-}
-async function tryStatusesGlobal(): Promise<StatusItem[]> {
-  if (!BASE || !BEARER) return [];
-  const j = await fetchJSON(`${BASE}/statuses`);
-  return normalizeStatuses(firstArrayDeep(j));
-}
-async function tryStatusesByPipeline(pid: string): Promise<StatusItem[]> {
-  if (!BASE || !BEARER) return [];
-  // варіант 1: глобальний ендпоінт з query
-  const j1 = await fetchJSON(`${BASE}/statuses?pipeline_id=${encodeURIComponent(pid)}`);
-  const a1 = normalizeStatuses(firstArrayDeep(j1));
-  if (a1.length) return a1.map((s) => ({ ...s, pipeline_id: s.pipeline_id || pid }));
-
-  // варіант 2: вкладений ендпоінт
-  const j2 = await fetchJSON(`${BASE}/pipelines/${encodeURIComponent(pid)}/statuses`);
-  const a2 = normalizeStatuses(firstArrayDeep(j2), pid);
-  return a2;
-}
-async function tryAllPipelines(): Promise<{ id: string; title: string }[]> {
-  if (!BASE || !BEARER) return [];
-  const j = await fetchJSON(`${BASE}/pipelines`);
-  const arr = firstArrayDeep(j);
-  const out: { id: string; title: string }[] = [];
-  for (const p of arr) {
-    const id = p?.id ?? p?.value ?? p?.key ?? p?.uuid;
-    const title = p?.title ?? p?.name ?? p?.label ?? (id != null ? `#${id}` : "");
-    if (id != null) out.push({ id: String(id), title: String(title) });
-  }
-  const uniq = new Map(out.map((i) => [i.id, i]));
-  return [...uniq.values()];
-}
-
-/** ---------- Route ---------- */
-export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const filterPid = url.searchParams.get("pipeline_id") || undefined;
-
-  const CACHE_KEY = "keycrm:statuses";
-
-  // 1) якщо є pipeline_id — спробувати напряму по цьому pid
-  if (filterPid) {
-    const items = await tryStatusesByPipeline(filterPid);
-    if (items.length) return NextResponse.json(items, { status: 200 });
-
-    // fallback: з кешу
-    const cachedStr = await kvGetStr(CACHE_KEY);
-    if (cachedStr) {
-      try {
-        const cached = JSON.parse(cachedStr) as StatusItem[];
-        return NextResponse.json(cached.filter((s) => s.pipeline_id === String(filterPid)));
-      } catch {}
+    const ids = await kvZrange("campaigns:index", 0, -1);
+    const items: any[] = [];
+    for (const id of ids.reverse()) {
+      const raw = await kvGet(`campaigns:${id}`);
+      if (!raw) continue;
+      try { items.push(JSON.parse(raw)); } catch {}
     }
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ ok: true, items });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "kv error" }, { status: 500 });
   }
+}
 
-  // 2) без фільтра — спробуємо глобально
-  let all: StatusItem[] = await tryStatusesGlobal();
+// ---- POST create ----
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const id = newId();
+    const created_at = new Date().toISOString();
 
-  // 3) якщо глобально не віддало — пройдемося по всіх воронках
-  if (!all.length) {
-    const pipes = await tryAllPipelines();
-    const collected: StatusItem[] = [];
-    for (const p of pipes) {
-      const arr = await tryStatusesByPipeline(p.id);
-      for (const s of arr) collected.push({ ...s, pipeline_id: s.pipeline_id || p.id });
+    const item = {
+      id,
+      created_at,
+      name: String(body?.name ?? ""),
+      base_pipeline_id: String(body?.base_pipeline_id ?? ""),
+      base_status_id: String(body?.base_status_id ?? ""),
+      v1_condition: asCond(body, "v1"),
+      v1_to_pipeline_id: strOrNull(body?.v1_to_pipeline_id),
+      v1_to_status_id: strOrNull(body?.v1_to_status_id),
+      v2_condition: asCond(body, "v2"),
+      v2_to_pipeline_id: strOrNull(body?.v2_to_pipeline_id),
+      v2_to_status_id: strOrNull(body?.v2_to_status_id),
+      exp_days: numOr(body?.exp_days, 0),
+      exp_to_pipeline_id: strOrNull(body?.exp_to_pipeline_id),
+      exp_to_status_id: strOrNull(body?.exp_to_status_id),
+      note: body?.note ? String(body.note) : null,
+      enabled: body?.enabled !== false,
+      v1_count: 0, v2_count: 0, exp_count: 0,
+    };
+
+    if (!item.name || !item.base_pipeline_id || !item.base_status_id) {
+      return NextResponse.json({ ok: false, error: "missing required fields" }, { status: 400 });
     }
-    all = collected;
-  }
 
-  // 4) кешуємо та віддаємо
-  if (all.length) await kvSetJSON(CACHE_KEY, all, 600).catch(() => {});
-  else {
-    // fallback із кешу, якщо є
-    const cachedStr = await kvGetStr(CACHE_KEY);
-    if (cachedStr) {
-      try {
-        const cached = JSON.parse(cachedStr) as StatusItem[];
-        return NextResponse.json(cached);
-      } catch {}
-    }
+    await kvSet(`campaigns:${id}`, item);
+    await kvZadd("campaigns:index", Date.now(), id);
+
+    return NextResponse.json({ ok: true, id, item }, { status: 201 });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "save failed" }, { status: 500 });
   }
-  return NextResponse.json(all);
 }
