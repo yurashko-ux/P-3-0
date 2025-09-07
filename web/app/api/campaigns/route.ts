@@ -1,4 +1,5 @@
 // web/app/api/campaigns/route.ts
+// (нагадую) Толерантний POST + індекс; GET повертає список
 import { NextResponse } from "next/server";
 import { kvGet, kvSet, kvZadd, kvZrevrange } from "../../../lib/kv";
 
@@ -64,7 +65,6 @@ export async function POST(req: Request) {
   try {
     const b = (await req.json().catch(() => ({}))) as Record<string, any>;
 
-    // tolerant fields (snake_case / camelCase / nested)
     const name = pick<string>(b, ["name"]);
     const base_pipeline_id =
       pick<string>(b, ["base_pipeline_id", "basePipelineId"]) ??
@@ -100,7 +100,6 @@ export async function POST(req: Request) {
     const note = pick<string | null>(b, ["note"], null);
     const enabled = pick<boolean>(b, ["enabled"], true);
 
-    // validation
     const errors: string[] = [];
     if (!name) errors.push("name");
     if (!base_pipeline_id) errors.push("base_pipeline_id");
@@ -123,10 +122,10 @@ export async function POST(req: Request) {
       name: String(name),
       base_pipeline_id: String(base_pipeline_id),
       base_status_id: String(base_status_id),
-      v1_condition: v1_condition,
+      v1_condition,
       v1_to_pipeline_id: v1_to_pipeline_id ?? null,
       v1_to_status_id: v1_to_status_id ?? null,
-      v2_condition: v2_condition,
+      v2_condition,
       v2_to_pipeline_id: v2_to_pipeline_id ?? null,
       v2_to_status_id: v2_to_status_id ?? null,
       exp_days: Number(exp_days),
@@ -139,8 +138,8 @@ export async function POST(req: Request) {
       exp_count: 0,
     };
 
-    await kvSet(keyOf(id), item);        // store item
-    await kvZadd(INDEX, Date.now(), id); // add to index
+    await kvSet(keyOf(id), item);
+    await kvZadd(INDEX, Date.now(), id);
 
     return NextResponse.json({ ok: true, id, item }, { status: 201 });
   } catch (e: any) {
