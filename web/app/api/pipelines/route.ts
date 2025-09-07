@@ -1,16 +1,13 @@
 // web/app/api/pipelines/route.ts
 import { NextResponse } from 'next/server';
-
 export const runtime = 'edge';
 
 export async function GET(req: Request) {
-  // Проксі на новий ендпоїнт, зберігаємо форму відповіді
+  // Проксі на новий ендпоїнт; гарантуємо МАСИВ у відповіді
   const url = new URL(req.url);
-  // Дозволяємо формі, яка очікує масив, попросити shape=array
-  const shape = url.searchParams.get('shape') ?? 'object';
-  const r = await fetch(`${url.origin}/api/keycrm/pipelines${shape === 'array' ? '?shape=array' : ''}`, {
-    cache: 'no-store',
-  });
+  const r = await fetch(`${url.origin}/api/keycrm/pipelines`, { cache: 'no-store' });
   const data = await r.json();
-  return NextResponse.json(data, { status: r.status });
+  // Якщо з якоїсь причини прийшов об'єкт — дістанемо масив із відомих полів
+  const arr = Array.isArray(data) ? data : (data?.pipelines ?? data?.result ?? []);
+  return NextResponse.json(Array.isArray(arr) ? arr : [], { status: r.status });
 }
