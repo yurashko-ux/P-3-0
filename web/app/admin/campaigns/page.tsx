@@ -1,164 +1,139 @@
 // web/app/admin/campaigns/page.tsx
-import { headers } from 'next/headers';
-import Link from 'next/link';
-import { DeleteButton } from './DeleteButton';
-
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
-// Локальні типи
-type Status = { id: string; name: string };
-type Pipeline = { id: string; name: string; statuses: Status[] };
-
-type Variant = {
-  name: string;
-  toPipelineId: string;
-  toStatusId: string;
-  counterKey: 'v1' | 'v2' | 'exp';
-};
+import React from "react";
+import { headers } from "next/headers";
 
 type Campaign = {
   id: string;
+  created_at: string | number;
   name: string;
-  basePipelineId: string;
-  baseStatusId: string;
-  variant1?: Variant;
-  variant2?: Variant;
-  expirationDays?: number; // exp
-  counters?: Record<'v1' | 'v2' | 'exp', number>;
-  createdAt?: string;
-  updatedAt?: string;
-  active: boolean;
+  base_pipeline_id: string | null;
+  base_status_id: string | null;
+  v1_condition?: { field: string; op: string; value: string } | null;
+  v1_to_pipeline_id?: string | null;
+  v1_to_status_id?: string | null;
+  v2_condition?: { field: string; op: string; value: string } | null;
+  v2_to_pipeline_id?: string | null;
+  v2_to_status_id?: string | null;
+  exp_days?: number;
+  exp_to_pipeline_id?: string | null;
+  exp_to_status_id?: string | null;
+  enabled?: boolean;
+  v1_count?: number;
+  v2_count?: number;
+  exp_count?: number;
 };
 
-async function baseUrl() {
+function arr(x: any): any[] {
+  if (Array.isArray(x)) return x;
+  if (x && typeof x === "object") {
+    for (const k of ["items", "data", "result", "rows", "campaigns"]) {
+      const v = (x as any)[k];
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === "object" && Array.isArray((v as any).items)) {
+        return (v as any).items;
+      }
+    }
+  }
+  return [];
+}
+
+function ts(v: any): number {
+  if (typeof v === "number") return v;
+  const n = Date.parse(String(v ?? ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function essence(c: Campaign) {
+  const base = `${c.base_pipeline_id ?? "—"}/${c.base_status_id ?? "—"}`;
+  const v1 = `v1: —→ ${c.v1_to_pipeline_id ?? "—"}/${c.v1_to_status_id ?? "—"}`;
+  const v2 = `; v2: —→ ${c.v2_to_pipeline_id ?? "—"}/${c.v2_to_status_id ?? "—"}`;
+  const exp =
+    typeof c.exp_days === "number"
+      ? `; exp (${c.exp_days} д.): —→ ${c.exp_to_pipeline_id ?? "—"}/${c.exp_to_status_id ?? "—"}`
+      : "";
+  return `${base} — ${v1}${v2}${exp}`;
+}
+
+async function fetchCampaigns(): Promise<Campaign[]> {
+  // Надійно формуємо origin (Vercel/локально)
   const h = headers();
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  const host = h.get('host');
-  return `${proto}://${host}`;
+  const host =
+    h.get("x-forwarded-host") ??
+    h.get("host") ??
+    process.env.VERCEL_URL ??
+    "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
+  const origin = `${proto}://${host}`;
+
+  const r = await fetch(`${origin}/api/campaigns`, {
+    cache: "no-store",
+    // на всяк випадок
+    next: { revalidate: 0 },
+  }).catch(() => null as any);
+
+  if (!r || !r.ok) return [];
+  const j = await r.json().catch(() => ({}));
+  const items = arr(j);
+  items.sort((a: any, b: any) => ts(b?.created_at) - ts(a?.created_at));
+  return items as Campaign[];
 }
 
-async function getCampaigns(): Promise<Campaign[]> {
-  try {
-    const res = await fetch(`${await baseUrl()}/api/campaigns`, { cache: 'no-store' });
-    if (!res.ok) return []; // не валимо сторінку
-    return res.json();
-  } catch {
-    return [];
-  }
-}
-
-async function getPipelines(): Promise<Pipeline[]> {
-  try {
-    const res = await fetch(`${await baseUrl()}/api/keycrm/pipelines`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : data.pipelines ?? [];
-  } catch {
-    return [];
-  }
-}
-
-function findNames(pipes: Pipeline[], pipelineId?: string, statusId?: string) {
-  const p = pipes.find((x) => x.id === pipelineId);
-  const s = p?.statuses?.find((st) => st.id === statusId);
-  return { pipelineName: p?.name ?? '—', statusName: s?.name ?? '—' };
-}
-
-function Badge({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs leading-5 text-slate-600 ${className}`}>
-      {children}
-    </span>
-  );
-}
-
-export default async function Page() {
-  const [campaigns, pipelines] = await Promise.all([getCampaigns(), getPipelines()]);
+export default async function CampaignsPage() {
+  const items = await fetchCampaigns();
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Кампанії</h1>
-        <Link href="/admin/campaigns/new" className="rounded-2xl bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-3xl font-semibold">Кампанії</h1>
+        <a
+          href="/admin/campaigns/new"
+          className="rounded-2xl bg-blue-600 text-white px-4 py-2"
+        >
           Нова кампанія
-        </Link>
+        </a>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border">
-        <table className="min-w-full divide-y">
-          <thead>
-            <tr className="text-left text-sm text-slate-500">
-              <th className="px-4 py-3 w-[220px]">Дата</th>
-              <th className="px-4 py-3 w-[220px]">Назва</th>
-              <th className="px-4 py-3 w-[900px]">Сутність</th>
-              <th className="px-4 py-3 w-[160px]">Статус</th>
-              <th className="px-4 py-3 w-[120px]">Дії</th>
+      <div className="rounded-2xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="text-left px-4 py-3">Дата</th>
+              <th className="text-left px-4 py-3">Назва</th>
+              <th className="text-left px-4 py-3">Сутність</th>
+              <th className="text-left px-4 py-3">Статус</th>
+              <th className="text-left px-4 py-3">Дії</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
-            {campaigns.map((c) => {
-              const base = findNames(pipelines, c.basePipelineId, c.baseStatusId);
-              const v1 = c.variant1 ? findNames(pipelines, c.variant1.toPipelineId, c.variant1.toStatusId) : undefined;
-              const v2 = c.variant2 ? findNames(pipelines, c.variant2.toPipelineId, c.variant2.toStatusId) : undefined;
-
-              return (
-                <tr key={c.id} className="align-top">
-                  <td className="px-4 py-3 text-sm text-slate-500">
-                    {new Date(c.createdAt ?? c.updatedAt ?? Date.now()).toLocaleString()}
-                  </td>
-
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
+                  Поки що порожньо.
+                </td>
+              </tr>
+            ) : (
+              items.map((c) => (
+                <tr key={c.id} className="border-t">
                   <td className="px-4 py-3">
-                    <div className="font-medium">{c.name || c.id}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <Badge>база</Badge>
-                      <Badge>{base.pipelineName}</Badge>
-                      <Badge>{base.statusName}</Badge>
-                    </div>
+                    {new Date(ts(c.created_at)).toLocaleString()}
                   </td>
-
+                  <td className="px-4 py-3 font-medium">{c.name}</td>
+                  <td className="px-4 py-3">{essence(c)}</td>
+                  <td className="px-4 py-3">{c.enabled ? "yes" : "no"}</td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-col gap-2">
-                      {c.variant1 && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge className="text-purple-700">v1</Badge>
-                          <span className="text-sm">{v1?.pipelineName} → {v1?.statusName}</span>
-                          <Badge>v1: {c.counters?.v1 ?? 0}</Badge>
-                        </div>
-                      )}
-                      {c.variant2 && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge className="text-purple-700">v2</Badge>
-                          <span className="text-sm">{v2?.pipelineName} → {v2?.statusName}</span>
-                          <Badge>v2: {c.counters?.v2 ?? 0}</Badge>
-                        </div>
-                      )}
-                      {typeof c.expirationDays === 'number' && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge>exp</Badge>
-                          <span className="text-sm">через {c.expirationDays} д.</span>
-                          <Badge>exp: {c.counters?.exp ?? 0}</Badge>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3">
-                    {c.active ? (
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">ON</span>
-                    ) : (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">OFF</span>
-                    )}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <Link href={`/admin/campaigns/${c.id}`} className="rounded-xl border px-3 py-1 text-sm hover:bg-slate-50">Edit</Link>
-                      <DeleteButton id={c.id} />
-                    </div>
+                    <a
+                      href={`/admin/campaigns/${c.id}/edit`}
+                      className="underline"
+                    >
+                      Edit
+                    </a>
                   </td>
                 </tr>
-              );
-            })}
+              ))
+            )}
           </tbody>
         </table>
       </div>
