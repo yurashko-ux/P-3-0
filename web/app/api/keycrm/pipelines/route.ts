@@ -1,11 +1,18 @@
+// web/app/api/keycrm/pipelines/route.ts
 import { NextResponse } from 'next/server';
-import { listPipelines } from '../../../../lib/keycrm';
+export const runtime = 'edge';
+
+const KV_URL = process.env.KV_REST_API_URL!;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN!;
+
+const kv = (path: string) =>
+  fetch(`${KV_URL}/${path}`, { headers: { Authorization: `Bearer ${KV_TOKEN}` }, cache: 'no-store' });
 
 export async function GET() {
-  try {
-    const data = await listPipelines();
-    return NextResponse.json({ ok: true, items: data });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
-  }
+  // Очікується JSON у KV за ключем keycrm:pipelines:
+  // [{ id, name, statuses: [{ id, name }, ...] }, ...]
+  const res = await kv('get/keycrm:pipelines');
+  const json = await res.json();
+  const data = json?.result ? JSON.parse(json.result) : [];
+  return NextResponse.json({ pipelines: data });
 }
