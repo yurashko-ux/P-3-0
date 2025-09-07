@@ -1,42 +1,32 @@
 // web/app/api/campaigns/debug/route.ts
-import { NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
+// Швидка діагностика KV для кампаній
+import { NextResponse } from "next/server";
+import { kvGet, kvZrevrange } from "../../../../lib/kv";
 
-export const runtime = 'nodejs';
-
-function auth(url: URL, req: Request) {
-  const pass = req.headers.get('x-admin-pass') ?? url.searchParams.get('pass') ?? '';
-  return pass && process.env.ADMIN_PASS && pass === process.env.ADMIN_PASS;
-}
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  if (!auth(url, req)) {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
-  }
-
   try {
-    const probeKey = 'debug:kv:probe';
-    const ts = Date.now();
-    await kv.set(probeKey, { ts });
-    const probe = await kv.get<{ ts: number }>(probeKey);
+    const env = {
+      KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+      KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
+    };
 
-    const ids = await kv.lrange<string>('campaign:ids', 0, -1);
-    const head = ids.slice(0, 10);
-    const sample = await Promise.all(head.map((id) => kv.get(`campaign:${id}`)));
+    const ids = await kvZrevrange("campaigns:index", 0, 50);
+    const first = ids[0] ? await kvGet(`campaigns:${ids[0]}`) : null;
 
-    return NextResponse.json({
-      ok: true,
-      env_seen: {
-        KV_REST_API_URL: Boolean(process.env.KV_REST_API_URL),
-        KV_REST_API_TOKEN: Boolean(process.env.KV_REST_API_TOKEN),
-        KV_REST_API_READ_ONLY_TOKEN: Boolean(process.env.KV_REST_API_READ_ONLY_TOKEN),
+    return NextResponse.json(
+      {
+        ok: true,
+        env,
+        indexCount: ids.length,
+        ids,
+        first,
       },
-      probe: { wrote: ts, read: probe?.ts ?? null },
-      list: { count: ids.length, head },
-      sample,
-    });
+      { status: 200 }
+    );
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'kv error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message ?? "debug failed" }, { status: 500 });
   }
 }
