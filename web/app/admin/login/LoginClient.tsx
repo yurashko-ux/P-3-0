@@ -7,37 +7,44 @@ import { useRouter, useSearchParams } from "next/navigation";
 export default function LoginClient() {
   const [pass, setPass] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/admin";
 
   useEffect(() => {
-    const existing = localStorage.getItem("admin_pass") || "";
+    // допоміжно: автопідстановка якщо вже логінилися
+    const existing = typeof window !== "undefined" ? localStorage.getItem("admin_pass") || "" : "";
     if (existing) setPass(existing);
   }, []);
 
-  function setCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 90) {
-    const secure =
-      typeof window !== "undefined" && window.location.protocol === "https:" ? "; Secure" : "";
-    document.cookie = `${name}=${encodeURIComponent(
-      value
-    )}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax${secure}`;
-  }
-
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-
     if (!pass) {
       setErr("Введи ADMIN_PASS");
       return;
     }
-
-    setCookie("admin_pass", pass);
-    setCookie("admin", "1");
-    localStorage.setItem("admin_pass", pass);
-
-    router.push(next);
+    setLoading(true);
+    try {
+      const r = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pass }),
+        cache: "no-store",
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error || `login failed (${r.status})`);
+      }
+      // необов'язково: для UX збережемо в localStorage
+      localStorage.setItem("admin_pass", pass);
+      router.replace(next);
+    } catch (e: any) {
+      setErr(e?.message || "Помилка логіну");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -61,13 +68,14 @@ export default function LoginClient() {
 
         <button
           type="submit"
-          className="mt-6 w-full rounded-2xl bg-blue-600 hover:bg-blue-700 text-white py-3 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
+          disabled={loading}
+          className="mt-6 w-full rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-3 font-medium focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          Зберегти і перейти
+          {loading ? "Вхід…" : "Зберегти і перейти"}
         </button>
 
         <p className="mt-3 text-sm text-slate-500">
-          Пароль зберігається у <code>localStorage</code> і у cookie <code>admin_pass</code> (Path=/).
+          Сервер встановлює cookie <code>admin_pass</code> та <code>admin</code> (HttpOnly, Path=/).
         </p>
       </form>
     </div>
