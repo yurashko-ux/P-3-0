@@ -52,7 +52,6 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
     if (!existing) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
     const b = await req.json().catch(() => ({} as Partial<Campaign>));
-    // Дозволимо оновлювати назву, enabled, умови/цілі, exp_days та note
     const updated: Campaign = {
       ...existing,
       name: typeof b.name === "string" ? b.name : existing.name,
