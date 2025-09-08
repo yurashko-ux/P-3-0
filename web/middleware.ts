@@ -1,38 +1,38 @@
 // web/middleware.ts
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from 'next/server';
 
-function isAuthed(req: NextRequest): boolean {
-  const c = req.cookies;
-  const flag = c.get("admin")?.value === "1";
-  const passCookie = c.get("admin_pass")?.value || "";
-  const envPass = process.env.ADMIN_PASS || "";
-  const okByPass = !!passCookie && !!envPass && passCookie === envPass;
-  return flag || okByPass;
-}
-
+/**
+ * Доступ до /admin/*:
+ *  - дозволяємо, якщо cookie "admin=1" (старий механізм) АБО
+ *  - якщо cookie "admin_pass" збігається з ADMIN_PASS (новий механізм).
+ *  - /admin/login завжди дозволено.
+ *  - Якщо ADMIN_PASS порожній у ENV — не блокуємо (щоб не зачинити доступ випадково).
+ */
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
 
-  // Дозволяємо сторінку логіну
-  if (pathname === "/admin/login") return NextResponse.next();
+  // сторінка логіну без перевірок
+  if (pathname === '/admin/login') return NextResponse.next();
 
-  // Захищаємо /admin/*
-  if (pathname.startsWith("/admin")) {
-    if (isAuthed(req)) return NextResponse.next();
+  const envPass = process.env.ADMIN_PASS?.trim();
+  const cookieAdmin = req.cookies.get('admin')?.value; // старий флаг
+  const cookiePass = req.cookies.get('admin_pass')?.value?.trim(); // новий
 
-    const url = req.nextUrl.clone();
-    url.pathname = "/admin/login";
-    url.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
-    return NextResponse.redirect(url);
-  }
+  // якщо пароля в ENV нема — пускаємо всіх (режим налаштування)
+  if (!envPass) return NextResponse.next();
 
-  // Все інше, включно з /api/*, проходимо без змін
-  return NextResponse.next();
+  // приймаємо або старий, або новий механізм
+  const allowed = cookieAdmin === '1' || (cookiePass && cookiePass === envPass);
+  if (allowed) return NextResponse.next();
+
+  // редіректимо на логін зі збереженням next
+  const url = req.nextUrl.clone();
+  url.pathname = '/admin/login';
+  const next = pathname + (search || '');
+  url.search = `?next=${encodeURIComponent(next)}`;
+  return NextResponse.redirect(url);
 }
 
-// ВАЖЛИВО: перехоплюємо ЛИШЕ /admin/*
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ['/admin/:path*'],
 };
-
