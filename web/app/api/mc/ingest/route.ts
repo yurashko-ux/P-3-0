@@ -36,20 +36,14 @@ function deepParse<T = any>(raw: string): T | null {
       return first as T;
     const v = (first as any)?.value;
     if (typeof v === 'string') {
-      try {
-        return JSON.parse(v) as T;
-      } catch {
-        return null;
-      }
+      try { return JSON.parse(v) as T; } catch { return null; }
     }
     if (v && typeof v === 'object') return v as T;
     return null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-// ---- NEW: robust card_id resolver (supports various KV formats) ----
+// ---- robust card_id resolver (supports various KV formats) ----
 async function resolveCardId(
   req: NextRequest,
   username: string,
@@ -65,11 +59,6 @@ async function resolveCardId(
   const key = `map:ig:${String(username || '').trim().toLowerCase()}`;
   const raw = await kvGet(key);
   if (typeof raw === 'string' && raw) {
-    // Accept any of:
-    // a) "<CARD_ID>"
-    // b) '{"value":"<CARD_ID>"}'
-    // c) '{"id":"<CARD_ID>"}'
-    // d) '{"result":"<CARD_ID>"}'
     try {
       const obj = JSON.parse(raw);
       if (typeof obj === 'string') return obj.trim();
@@ -79,12 +68,11 @@ async function resolveCardId(
         if (typeof (obj as any).result === 'string') return (obj as any).result.trim();
       }
     } catch {
-      // not JSON -> treat as plain card id
-      return raw.trim();
+      return raw.trim(); // plain string
     }
   }
 
-  // 3) TODO: KeyCRM search by username (not implemented yet)
+  // 3) TODO: search KeyCRM by username
   return null;
 }
 
@@ -160,20 +148,37 @@ export async function POST(req: NextRequest) {
 
   if (!chosen) return ok({ applied: null });
 
-  // 3) move card via internal proxy
+  // 3) move card via internal proxy — ТЕПЕР З ДЕТАЛЯМИ ВІДПОВІДІ
   const origin = new URL(req.url).origin;
   const moveResp = await fetch(`${origin}/api/keycrm/card/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // NOTE: KeyCRM proxy should use env token on server side
     body: JSON.stringify({
       card_id,
       to_pipeline_id: chosen.to_pipeline_id,
       to_status_id: chosen.to_status_id,
     }),
   });
-  const move = await moveResp.json().catch(() => ({ ok: false }));
-  if (!move?.ok) return bad(502, 'keycrm move failed', { move });
+
+  const moveStatus = moveResp.status;
+  const moveText = await moveResp.text();
+  let moveJson: any = null;
+  try { moveJson = JSON.parse(moveText); } catch {}
+  const movePayload = moveJson ?? { text: moveText };
+
+  // Вважаємо помилкою будь-який !ok статус АБО експліцитне { ok:false } у json
+  const moveOk = moveResp.ok && (moveJson == null || moveJson.ok !== false);
+  if (!moveOk) {
+    return bad(502, 'keycrm move failed', {
+      status: moveStatus,
+      move: movePayload,
+      sent: {
+        card_id,
+        to_pipeline_id: chosen.to_pipeline_id,
+        to_status_id: chosen.to_status_id,
+      },
+    });
+  }
 
   // 4) increment counters
   const key = `campaigns:${chosen.id}`;
@@ -182,11 +187,7 @@ export async function POST(req: NextRequest) {
     const c = deepParse<any>(raw) || {};
     if (chosen.variant === 'v1') c.v1_count = (Number(c.v1_count) || 0) + 1;
     else c.v2_count = (Number(c.v2_count) || 0) + 1;
-    try {
-      await kvSet(key, JSON.stringify(c));
-    } catch {
-      // ignore write failure of counters
-    }
+    try { await kvSet(key, JSON.stringify(c)); } catch {}
   }
 
   return ok({ applied: chosen.variant, campaign_id: chosen.id });
