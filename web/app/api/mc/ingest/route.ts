@@ -5,70 +5,92 @@ import { kvGet, kvSet, kvZRange } from '@/lib/kv';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-function ok(data: any = {}) { return NextResponse.json({ ok: true, ...data }); }
-function bad(status: number, error: string, extra?: any) { return NextResponse.json({ ok: false, error, ...extra }, { status }); }
-
-function normalize(s: unknown): string {
-  return String(s ?? '').normalize('NFKC').toLowerCase().trim().replace(/\s+/g, ' ');
+// ---------- helpers ----------
+function ok(data: any = {}) {
+  return NextResponse.json({ ok: true, ...data });
 }
-function matchCond(text: string, cond: { op: 'contains'|'equals'; value: string } | null): boolean {
+function bad(status: number, error: string, extra?: any) {
+  return NextResponse.json({ ok: false, error, ...extra }, { status });
+}
+function normalize(s: unknown): string {
+  return String(s ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+function matchCond(
+  text: string,
+  cond: { op: 'contains' | 'equals'; value: string } | null
+): boolean {
   if (!cond) return false;
-  const t = normalize(text), v = normalize(cond.value);
+  const t = normalize(text);
+  const v = normalize(cond.value);
   if (!v) return false;
-  return cond.op === 'equals' ? (t === v) : t.includes(v);
+  return cond.op === 'equals' ? t === v : t.includes(v);
 }
 function deepParse<T = any>(raw: string): T | null {
   try {
     const first = JSON.parse(raw);
-    if (first && typeof first === 'object' && !('value' in (first as any))) return first as T;
+    if (first && typeof first === 'object' && !('value' in (first as any)))
+      return first as T;
     const v = (first as any)?.value;
-    if (typeof v === 'string') { try { return JSON.parse(v) as T; } catch { return null; } }
+    if (typeof v === 'string') {
+      try {
+        return JSON.parse(v) as T;
+      } catch {
+        return null;
+      }
+    }
     if (v && typeof v === 'object') return v as T;
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-// знайди функцію resolveCardId і заміни її повністю на цю версію
-async function resolveCardId(req: NextRequest, username: string, bodyCard?: string): Promise<string | null> {
-  // 1) явний card_id у запиті (для швидкого е2е тесту)
+// ---- NEW: robust card_id resolver (supports various KV formats) ----
+async function resolveCardId(
+  req: NextRequest,
+  username: string,
+  bodyCard?: string
+): Promise<string | null> {
+  // 1) explicit card_id in query/body (for quick tests)
   const url = new URL(req.url);
   const qCard = url.searchParams.get('card_id');
-  if (qCard) return qCard;
-  if (bodyCard) return bodyCard;
+  if (qCard) return qCard.trim();
+  if (bodyCard) return String(bodyCard).trim();
 
-  // 2) KV-мапа map:ig:{username} -> card_id (може зберігатись у різних форматах)
-  const raw = await kvGet(`map:ig:${username}`);
+  // 2) KV map: map:ig:{username} -> card_id
+  const key = `map:ig:${String(username || '').trim().toLowerCase()}`;
+  const raw = await kvGet(key);
   if (typeof raw === 'string' && raw) {
-    // спробуємо дістати card_id з різних можливих форматів
-    // a) чистий рядок "<CARD_ID>"
+    // Accept any of:
+    // a) "<CARD_ID>"
     // b) '{"value":"<CARD_ID>"}'
     // c) '{"id":"<CARD_ID>"}'
-    // d) '{"result":"<CARD_ID>"}' (на всякий)
+    // d) '{"result":"<CARD_ID>"}'
     try {
       const obj = JSON.parse(raw);
-      if (typeof obj === 'string') return obj;
+      if (typeof obj === 'string') return obj.trim();
       if (obj && typeof obj === 'object') {
-        if (typeof (obj as any).value === 'string') return (obj as any).value;
-        if (typeof (obj as any).id === 'string') return (obj as any).id;
-        if (typeof (obj as any).result === 'string') return (obj as any).result;
+        if (typeof (obj as any).value === 'string') return (obj as any).value.trim();
+        if (typeof (obj as any).id === 'string') return (obj as any).id.trim();
+        if (typeof (obj as any).result === 'string') return (obj as any).result.trim();
       }
     } catch {
-      // не JSON — повертаємо як є
-      return raw;
+      // not JSON -> treat as plain card id
+      return raw.trim();
     }
   }
 
-  // 3) TODO: окремий проксі до KeyCRM (не робимо зараз)
+  // 3) TODO: KeyCRM search by username (not implemented yet)
   return null;
 }
 
-
-  // 3) TODO: окремий проксі до KeyCRM (не робимо зараз)
-  return null;
-}
-
+// ---------- handler ----------
 export async function POST(req: NextRequest) {
-  // авторизація ManiChat токеном (Bearer або ?token=)
+  // Auth: ManiChat token (Bearer or ?token=)
   const header = req.headers.get('authorization') || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
   const token = bearer || new URL(req.url).searchParams.get('token') || '';
@@ -82,9 +104,15 @@ export async function POST(req: NextRequest) {
   if (!username) return bad(400, 'username required');
 
   const card_id = await resolveCardId(req, username, body.card_id);
-  if (!card_id) return ok({ applied: null, note: 'card not found by username (set map:ig:{username} or pass ?card_id=)' });
+  if (!card_id) {
+    return ok({
+      applied: null,
+      note:
+        'card not found by username (set map:ig:{username} via /api/map/ig or pass ?card_id=)',
+    });
+  }
 
-  // 1) зчитати кампанії
+  // 1) load campaigns
   const ids = await kvZRange('campaigns:index', 0, -1);
   const campaigns: any[] = [];
   for (const id of ids) {
@@ -94,23 +122,50 @@ export async function POST(req: NextRequest) {
     if (c?.enabled) campaigns.push(c);
   }
 
-  // 2) визначити спрацювання (V2 має пріоритет)
-  let chosen: { id: string; variant: 'v1'|'v2'; to_pipeline_id: string|null; to_status_id: string|null } | null = null;
+  // 2) choose match (V2 has priority)
+  let chosen:
+    | {
+        id: string;
+        variant: 'v1' | 'v2';
+        to_pipeline_id: string | null;
+        to_status_id: string | null;
+      }
+    | null = null;
+
   for (const c of campaigns) {
-    const v2hit = c.v2_enabled && matchCond(text, c.v2_value ? { op: c.v2_op || 'contains', value: c.v2_value } : null);
-    const v1hit = !v2hit && matchCond(text, c.v1_value ? { op: c.v1_op || 'contains', value: c.v1_value } : null);
-    if (v2hit) chosen = { id: c.id, variant: 'v2', to_pipeline_id: c.v2_to_pipeline_id, to_status_id: c.v2_to_status_id };
-    else if (v1hit) chosen = { id: c.id, variant: 'v1', to_pipeline_id: c.v1_to_pipeline_id, to_status_id: c.v1_to_status_id };
-    if (chosen) break; // перша релевантна кампанія
+    const v2hit =
+      c.v2_enabled &&
+      matchCond(text, c.v2_value ? { op: c.v2_op || 'contains', value: c.v2_value } : null);
+    const v1hit =
+      !v2hit &&
+      matchCond(text, c.v1_value ? { op: c.v1_op || 'contains', value: c.v1_value } : null);
+
+    if (v2hit)
+      chosen = {
+        id: c.id,
+        variant: 'v2',
+        to_pipeline_id: c.v2_to_pipeline_id,
+        to_status_id: c.v2_to_status_id,
+      };
+    else if (v1hit)
+      chosen = {
+        id: c.id,
+        variant: 'v1',
+        to_pipeline_id: c.v1_to_pipeline_id,
+        to_status_id: c.v1_to_status_id,
+      };
+
+    if (chosen) break; // first applicable campaign
   }
 
   if (!chosen) return ok({ applied: null });
 
-  // 3) рух картки через внутрішній проксі
+  // 3) move card via internal proxy
   const origin = new URL(req.url).origin;
   const moveResp = await fetch(`${origin}/api/keycrm/card/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // NOTE: KeyCRM proxy should use env token on server side
     body: JSON.stringify({
       card_id,
       to_pipeline_id: chosen.to_pipeline_id,
@@ -118,16 +173,20 @@ export async function POST(req: NextRequest) {
     }),
   });
   const move = await moveResp.json().catch(() => ({ ok: false }));
-  if (!move?.ok) return bad(502, 'keycrm move failed');
+  if (!move?.ok) return bad(502, 'keycrm move failed', { move });
 
-  // 4) інкремент лічильника
+  // 4) increment counters
   const key = `campaigns:${chosen.id}`;
   const raw = await kvGet(key);
   if (raw) {
     const c = deepParse<any>(raw) || {};
     if (chosen.variant === 'v1') c.v1_count = (Number(c.v1_count) || 0) + 1;
     else c.v2_count = (Number(c.v2_count) || 0) + 1;
-    try { await kvSet(key, JSON.stringify(c)); } catch {}
+    try {
+      await kvSet(key, JSON.stringify(c));
+    } catch {
+      // ignore write failure of counters
+    }
   }
 
   return ok({ applied: chosen.variant, campaign_id: chosen.id });
