@@ -1,7 +1,7 @@
 // web/app/admin/tools/ingest/page.tsx
 'use client';
 
-export const dynamic = 'force-dynamic'; // не даємо Next.js прибрати сторінку з білда
+export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useState } from 'react';
 
@@ -49,6 +49,12 @@ export default function ToolsIngestPage() {
   const [toStatus, setToStatus] = useState('');
   const [moveResp, setMoveResp] = useState<any>(null);
   const [moveLoading, setMoveLoading] = useState(false);
+
+  // Map username -> card_id
+  const [mapUser, setMapUser] = useState('');
+  const [mapCard, setMapCard] = useState('');
+  const [mapResp, setMapResp] = useState<any>(null);
+  const [mapLoading, setMapLoading] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('mc_token') || '';
@@ -105,6 +111,42 @@ export default function ToolsIngestPage() {
     }
   }
 
+  async function onMapSave(e: React.FormEvent) {
+    e.preventDefault();
+    setMapLoading(true);
+    setMapResp(null);
+    try {
+      const r = await fetch('/api/map/ig', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: mapUser, card_id: mapCard }),
+      });
+      const j = await r.json();
+      setMapResp(j);
+    } catch (err) {
+      setMapResp({ ok: false, error: String(err) });
+    } finally {
+      setMapLoading(false);
+    }
+  }
+
+  async function onMapGet() {
+    setMapLoading(true);
+    setMapResp(null);
+    try {
+      const r = await fetch(`/api/map/ig?username=${encodeURIComponent(mapUser)}`, {
+        credentials: 'include',
+      });
+      const j = await r.json();
+      setMapResp(j);
+    } catch (err) {
+      setMapResp({ ok: false, error: String(err) });
+    } finally {
+      setMapLoading(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between">
@@ -113,6 +155,46 @@ export default function ToolsIngestPage() {
       </div>
 
       <div className="grid gap-6">
+        {/* Map section */}
+        <Section title="Map username → card_id (/api/map/ig)">
+          <form onSubmit={onMapSave} className="grid gap-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="username (IG)" value={mapUser} setValue={setMapUser} placeholder="ig_login" />
+              <Field label="card_id" value={mapCard} setValue={setMapCard} placeholder="CARD_ID" />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={mapLoading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                Зберегти мапінг
+              </button>
+              <button
+                type="button"
+                onClick={onMapGet}
+                disabled={mapLoading || !mapUser}
+                className="rounded-lg border px-3 py-2 text-sm"
+              >
+                Перевірити мапінг
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-2 text-sm"
+                onClick={() => setMapResp(null)}
+              >
+                Очистити
+              </button>
+            </div>
+          </form>
+          {mapResp && (
+            <pre className="mt-3 overflow-auto rounded-lg border bg-gray-50 p-3 text-xs">
+              {JSON.stringify(mapResp, null, 2)}
+            </pre>
+          )}
+        </Section>
+
+        {/* Ingest section */}
         <Section title="ManiChat → /api/mc/ingest (POST)">
           <form onSubmit={onIngestSubmit} className="grid gap-3">
             <div className="grid gap-3 md:grid-cols-2">
@@ -124,11 +206,18 @@ export default function ToolsIngestPage() {
               <Field label="text" value={text} setValue={setText} placeholder="yes / ключове слово" />
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={ingestLoading}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+              <button
+                type="submit"
+                disabled={ingestLoading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
                 Відправити ingest
               </button>
-              <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setIngestResp(null)}>
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-2 text-sm"
+                onClick={() => setIngestResp(null)}
+              >
                 Очистити
               </button>
             </div>
@@ -140,6 +229,7 @@ export default function ToolsIngestPage() {
           )}
         </Section>
 
+        {/* Move section */}
         <Section title="KeyCRM Move → /api/keycrm/card/move (POST)">
           <form onSubmit={onMoveSubmit} className="grid gap-3">
             <div className="grid gap-3 md:grid-cols-3">
@@ -148,11 +238,18 @@ export default function ToolsIngestPage() {
               <Field label="to_status_id" value={toStatus} setValue={setToStatus} placeholder="SID" />
             </div>
             <div className="flex gap-2">
-              <button type="submit" disabled={moveLoading}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+              <button
+                type="submit"
+                disabled={moveLoading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
                 Тест move
               </button>
-              <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setMoveResp(null)}>
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-2 text-sm"
+                onClick={() => setMoveResp(null)}
+              >
                 Очистити
               </button>
             </div>
