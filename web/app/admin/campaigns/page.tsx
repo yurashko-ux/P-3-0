@@ -1,9 +1,7 @@
 // web/app/admin/campaigns/page.tsx
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+'use client';
 
-import React from "react";
-import { headers } from "next/headers";
+import React, { useEffect, useMemo, useState } from 'react';
 
 type Campaign = {
   id: string;
@@ -11,13 +9,11 @@ type Campaign = {
   name: string;
   base_pipeline_id: string | null;
   base_status_id: string | null;
-  v1_condition?: { field: string; op: string; value: string } | null;
   v1_to_pipeline_id?: string | null;
   v1_to_status_id?: string | null;
-  v2_condition?: { field: string; op: string; value: string } | null;
   v2_to_pipeline_id?: string | null;
   v2_to_status_id?: string | null;
-  exp_days?: number;
+  exp_days?: number | null;
   exp_to_pipeline_id?: string | null;
   exp_to_status_id?: string | null;
   enabled?: boolean;
@@ -26,74 +22,97 @@ type Campaign = {
   exp_count?: number;
 };
 
-function arr(x: any): any[] {
+function toArray(x: any): any[] {
   if (Array.isArray(x)) return x;
-  if (x && typeof x === "object") {
-    for (const k of ["items", "data", "result", "rows", "campaigns"]) {
-      const v = (x as any)[k];
-      if (Array.isArray(v)) return v;
-      if (v && typeof v === "object" && Array.isArray((v as any).items)) {
-        return (v as any).items;
-      }
-    }
+  if (x && typeof x === 'object') {
+    if (Array.isArray(x.items)) return x.items;
+    if (Array.isArray(x.data?.items)) return x.data.items;
+    if (Array.isArray(x.result)) return x.result;
   }
   return [];
 }
 
-function ts(v: any): number {
-  if (typeof v === "number") return v;
-  const n = Date.parse(String(v ?? ""));
+const ts = (v: any) => {
+  if (typeof v === 'number') return v;
+  const n = Date.parse(String(v ?? ''));
   return Number.isFinite(n) ? n : 0;
-}
+};
 
-function essence(c: Campaign) {
-  const base = `${c.base_pipeline_id ?? "—"}/${c.base_status_id ?? "—"}`;
-  const v1 = `v1: —→ ${c.v1_to_pipeline_id ?? "—"}/${c.v1_to_status_id ?? "—"}`;
-  const v2 = `; v2: —→ ${c.v2_to_pipeline_id ?? "—"}/${c.v2_to_status_id ?? "—"}`;
-  const exp =
-    typeof c.exp_days === "number"
-      ? `; exp (${c.exp_days} д.): —→ ${c.exp_to_pipeline_id ?? "—"}/${c.exp_to_status_id ?? "—"}`
-      : "";
+const essence = (c: Campaign) => {
+  const base = `${c.base_pipeline_id ?? '—'}/${c.base_status_id ?? '—'}`;
+  const v1 = `v1 → ${c.v1_to_pipeline_id ?? '—'}/${c.v1_to_status_id ?? '—'}`;
+  const v2 = `; v2 → ${c.v2_to_pipeline_id ?? '—'}/${c.v2_to_status_id ?? '—'}`;
+  const exp = typeof c.exp_days === 'number' && c.exp_days != null
+    ? `; exp(${c.exp_days}д) → ${c.exp_to_pipeline_id ?? '—'}/${c.exp_to_status_id ?? '—'}`
+    : '';
   return `${base} — ${v1}${v2}${exp}`;
-}
+};
 
-async function fetchCampaigns(): Promise<Campaign[]> {
-  // Надійно формуємо origin (Vercel/локально)
-  const h = headers();
-  const host =
-    h.get("x-forwarded-host") ??
-    h.get("host") ??
-    process.env.VERCEL_URL ??
-    "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  const origin = `${proto}://${host}`;
+export default function CampaignsPage() {
+  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Campaign[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [debug, setDebug] = useState<{ status?: number; text?: string } | null>(null);
 
-  const r = await fetch(`${origin}/api/campaigns`, {
-    cache: "no-store",
-    // на всяк випадок
-    next: { revalidate: 0 },
-  }).catch(() => null as any);
+  async function load() {
+    try {
+      setLoading(true);
+      setError(null);
+      setDebug(null);
+      const r = await fetch(`/api/campaigns?_=${Date.now()}`, { cache: 'no-store' });
+      const text = await r.text();
+      setDebug({ status: r.status, text });
+      if (!r.ok) throw new Error(`${r.status}`);
 
-  if (!r || !r.ok) return [];
-  const j = await r.json().catch(() => ({}));
-  const items = arr(j);
-  items.sort((a: any, b: any) => ts(b?.created_at) - ts(a?.created_at));
-  return items as Campaign[];
-}
+      // Підтримуємо і { ok, items }, і «просто масив»
+      let parsed: any = {};
+      try { parsed = JSON.parse(text); } catch {}
+      const arr: Campaign[] = Array.isArray(parsed) ? parsed : toArray(parsed);
+      arr.sort((a, b) => ts(b?.created_at) - ts(a?.created_at));
+      setItems(arr);
+    } catch (e: any) {
+      setError(e?.message ?? 'fetch failed');
+    } finally {
+      setLoading(false);
+    }
+  }
 
-export default async function CampaignsPage() {
-  const items = await fetchCampaigns();
+  useEffect(() => { load(); }, []);
+
+  const rows = useMemo(() => {
+    if (loading) return (
+      <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-500">Завантаження…</td></tr>
+    );
+    if (error) return (
+      <tr><td colSpan={6} className="px-4 py-10 text-center text-red-600">Помилка: {error}</td></tr>
+    );
+    if (items.length === 0) return (
+      <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-500">Поки що порожньо.</td></tr>
+    );
+    return items.map((c) => (
+      <tr key={c.id} className="border-t">
+        <td className="px-4 py-3">{new Date(ts(c.created_at)).toLocaleString()}</td>
+        <td className="px-4 py-3 font-medium">{c.name}</td>
+        <td className="px-4 py-3">{essence(c)}</td>
+        <td className="px-4 py-3 whitespace-nowrap">
+          v1:{c.v1_count ?? 0} · v2:{c.v2_count ?? 0} · exp:{c.exp_count ?? 0}
+        </td>
+        <td className="px-4 py-3">{c.enabled ? 'yes' : 'no'}</td>
+        <td className="px-4 py-3">
+          <a className="underline" href={`/admin/campaigns/${c.id}/edit`}>Edit</a>
+        </td>
+      </tr>
+    ));
+  }, [items, loading, error]);
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="mx-auto max-w-6xl p-6 space-y-4">
+      <div className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold">Кампанії</h1>
-        <a
-          href="/admin/campaigns/new"
-          className="rounded-2xl bg-blue-600 text-white px-4 py-2"
-        >
-          Нова кампанія
-        </a>
+        <div className="flex gap-3">
+          <button onClick={load} className="rounded-2xl border px-4 py-2">Оновити</button>
+          <a href="/admin/campaigns/new" className="rounded-2xl bg-blue-600 text-white px-4 py-2">Нова кампанія</a>
+        </div>
       </div>
 
       <div className="rounded-2xl border overflow-hidden">
@@ -103,40 +122,22 @@ export default async function CampaignsPage() {
               <th className="text-left px-4 py-3">Дата</th>
               <th className="text-left px-4 py-3">Назва</th>
               <th className="text-left px-4 py-3">Сутність</th>
+              <th className="text-left px-4 py-3">Лічильники</th>
               <th className="text-left px-4 py-3">Статус</th>
               <th className="text-left px-4 py-3">Дії</th>
             </tr>
           </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
-                  Поки що порожньо.
-                </td>
-              </tr>
-            ) : (
-              items.map((c) => (
-                <tr key={c.id} className="border-t">
-                  <td className="px-4 py-3">
-                    {new Date(ts(c.created_at)).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
-                  <td className="px-4 py-3">{essence(c)}</td>
-                  <td className="px-4 py-3">{c.enabled ? "yes" : "no"}</td>
-                  <td className="px-4 py-3">
-                    <a
-                      href={`/admin/campaigns/${c.id}/edit`}
-                      className="underline"
-                    >
-                      Edit
-                    </a>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
+          <tbody>{rows}</tbody>
         </table>
       </div>
+
+      <details className="rounded-2xl border p-4 bg-gray-50">
+        <summary className="cursor-pointer">Показати debug відповіді /api/campaigns</summary>
+        <div className="mt-3 text-sm">
+          <div className="mb-2">Status: {debug?.status ?? '—'}</div>
+          <pre className="whitespace-pre-wrap break-all">{debug?.text ?? '—'}</pre>
+        </div>
+      </details>
     </div>
   );
 }
