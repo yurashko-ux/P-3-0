@@ -28,6 +28,7 @@ function deepParse<T = any>(raw: string): T | null {
   } catch { return null; }
 }
 
+// знайди функцію resolveCardId і заміни її повністю на цю версію
 async function resolveCardId(req: NextRequest, username: string, bodyCard?: string): Promise<string | null> {
   // 1) явний card_id у запиті (для швидкого е2е тесту)
   const url = new URL(req.url);
@@ -35,18 +36,32 @@ async function resolveCardId(req: NextRequest, username: string, bodyCard?: stri
   if (qCard) return qCard;
   if (bodyCard) return bodyCard;
 
-  // 2) KV-мапа map:ig:{username} -> card_id (налаштуємо тулом на наступному кроці)
-  const mapped = await kvGet(`map:ig:${username}`);
-  if (typeof mapped === 'string' && mapped) {
+  // 2) KV-мапа map:ig:{username} -> card_id (може зберігатись у різних форматах)
+  const raw = await kvGet(`map:ig:${username}`);
+  if (typeof raw === 'string' && raw) {
+    // спробуємо дістати card_id з різних можливих форматів
+    // a) чистий рядок "<CARD_ID>"
+    // b) '{"value":"<CARD_ID>"}'
+    // c) '{"id":"<CARD_ID>"}'
+    // d) '{"result":"<CARD_ID>"}' (на всякий)
     try {
-      // допускаємо як plain string, так і {"value":"<id>"}
-      const v = deepParse<{ id?: string }>(mapped);
-      if (typeof v === 'string') return v;
-      if (v?.id) return v.id;
-      // якщо був просто рядок
-      return mapped;
-    } catch { return mapped; }
+      const obj = JSON.parse(raw);
+      if (typeof obj === 'string') return obj;
+      if (obj && typeof obj === 'object') {
+        if (typeof (obj as any).value === 'string') return (obj as any).value;
+        if (typeof (obj as any).id === 'string') return (obj as any).id;
+        if (typeof (obj as any).result === 'string') return (obj as any).result;
+      }
+    } catch {
+      // не JSON — повертаємо як є
+      return raw;
+    }
   }
+
+  // 3) TODO: окремий проксі до KeyCRM (не робимо зараз)
+  return null;
+}
+
 
   // 3) TODO: окремий проксі до KeyCRM (не робимо зараз)
   return null;
