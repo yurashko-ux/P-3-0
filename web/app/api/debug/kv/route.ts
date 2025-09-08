@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const env = {
     KV_REST_API_URL: Boolean(process.env.KV_REST_API_URL),
     KV_REST_API_TOKEN: Boolean(process.env.KV_REST_API_TOKEN),
-    // для діагностики старих назв:
+    // діагностика можливих старих назв
     KV_URL: Boolean(process.env.KV_URL),
     KV_TOKEN: Boolean(process.env.KV_TOKEN),
   };
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   try { zaddOk = await kvZAdd(testIndex, ts, String(ts)); } catch {}
   try { zrange = await kvZRange(testIndex, 0, -1); } catch {}
 
-  const ok = Boolean(env.KV_REST_API_URL && env.KV_REREST_API_TOKEN && setOk && getValue === 'ping');
+  const ok = Boolean(env.KV_REST_API_URL && env.KV_REST_API_TOKEN && setOk && getValue === 'ping');
   return NextResponse.json({
     ok,
     env,
