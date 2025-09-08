@@ -6,7 +6,6 @@ import { kvGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
 export const dynamic = 'force-dynamic';
 
 type Op = 'contains' | 'equals';
-
 const ADMIN = process.env.ADMIN_PASS ?? '';
 
 function okAuth(req: Request) {
@@ -23,26 +22,59 @@ function newId() {
   return (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, '');
 }
 
-// ----- GET: список кампаній -----
+/** ---- helpers: safe parse from KV (handles {value: "..."} wrapper) ---- */
+function deepParse<T = any>(raw: string): T | null {
+  try {
+    const first = JSON.parse(raw);
+    // case 1: plain object — ok
+    if (first && typeof first === 'object' && !('value' in (first as any))) return first as T;
+    // case 2: wrapped { value: "<json>" }
+    const v = (first as any)?.value;
+    if (typeof v === 'string') {
+      try { return JSON.parse(v) as T; } catch { return null; }
+    }
+    if (v && typeof v === 'object') return v as T;
+    return null;
+  } catch { return null; }
+}
+
+function toMs(created: any): number {
+  if (typeof created === 'number' && Number.isFinite(created)) return created;
+  if (typeof created === 'string') {
+    const t = Date.parse(created);
+    return Number.isFinite(t) ? t : 0;
+  }
+  return 0;
+}
+
+// ----- GET: список кампаній (robust parse + fix created_at) -----
 export async function GET() {
   try {
     const ids = await kvZRange('campaigns:index', 0, -1) as string[] | any;
-    const out: any[] = [];
+    const items: any[] = [];
     if (Array.isArray(ids)) {
       for (const id of ids) {
         const raw = await kvGet(`campaigns:${id}`);
-        if (raw) {
-          try { out.push(JSON.parse(raw)); } catch {}
-        }
+        if (!raw) continue;
+        const obj = deepParse<any>(raw);
+        if (!obj) continue;
+
+        // normalize created_at to ms (so UI doesn’t show 1970)
+        const ms = toMs(obj.created_at);
+        obj.created_at = ms || Date.now();
+
+        items.push(obj);
       }
     }
-    return NextResponse.json({ ok: true, items: out });
+    // новіші згори
+    items.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    return NextResponse.json({ ok: true, items });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? 'list failed' }, { status: 500 });
   }
 }
 
-// ----- POST: створення кампанії (з перевіркою KV) -----
+// ----- POST: створення кампанії -----
 export async function POST(req: Request) {
   if (!okAuth(req)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
@@ -52,12 +84,13 @@ export async function POST(req: Request) {
     const b = await req.json().catch(() => ({}));
 
     const id = str(b.id) || newId();
-    const now = new Date().toISOString();
+    const nowIso = new Date().toISOString();
 
     const item = {
       id,
-      created_at: now,
-      updated_at: now,
+      // залишаємо ISO при збереженні; GET нормалізує у мс
+      created_at: nowIso,
+      updated_at: nowIso,
 
       name: str(b.name),
       base_pipeline_id: str(b.base_pipeline_id),
@@ -94,18 +127,12 @@ export async function POST(req: Request) {
     const key = `campaigns:${id}`;
     const writeOk = await kvSet(key, JSON.stringify(item));
     const indexOk = await kvZAdd('campaigns:index', Date.now(), id);
-
-    // Перечитуємо назад, щоб переконатися
     const readBack = await kvGet(key);
 
     const ok = Boolean(writeOk && indexOk && typeof readBack === 'string' && readBack.length > 0);
     if (!ok) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: 'kv write or index failed',
-          details: { writeOk, indexOk, readBack: !!readBack }
-        },
+        { ok: false, error: 'kv write or index failed', details: { writeOk, indexOk, readBack: !!readBack } },
         { status: 500 }
       );
     }
