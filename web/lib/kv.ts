@@ -2,7 +2,7 @@
 /**
  * Легкий клієнт для Vercel KV (REST).
  * Підтримує: get/set/del/zadd/zrem/zrange/zrevrange.
- * ADD-ONLY: додано kvGetJSON / kvSetJSON (не змінює існуючу поведінку).
+ * ADD-ONLY: додано kvGetJSON / kvSetJSON.
  */
 const KV_URL = process.env.KV_REST_API_URL?.replace(/\/+$/, '') || '';
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || '';
@@ -35,12 +35,35 @@ export async function kvDel(key: string): Promise<boolean> {
   return r.ok;
 }
 
+/**
+ * ZADD із fallback-ланцюжком на різні REST-структури:
+ * 1) Vercel KV: POST /zadd/<key>  { score, member }
+ * 2) Upstash alt: POST /zadd/<key> { members: [{ score, member }] }
+ * 3) Path-варіант: POST /zadd/<key>/<score>/<member>
+ */
 export async function kvZAdd(key: string, score: number, member: string): Promise<boolean> {
   if (!KV_URL || !KV_TOKEN) return false;
-  const r = await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}`, {
+
+  // 1) Vercel формат
+  let r = await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { ...HEADERS, 'Content-Type': 'application/json' },
     body: JSON.stringify({ score, member }),
+  });
+  if (r.ok) return true;
+
+  // 2) Upstash масив елементів
+  r = await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ members: [{ score, member }] }),
+  });
+  if (r.ok) return true;
+
+  // 3) Path-варіант
+  r = await fetch(`${KV_URL}/zadd/${encodeURIComponent(key)}/${score}/${encodeURIComponent(member)}`, {
+    method: 'POST',
+    headers: HEADERS,
   });
   return r.ok;
 }
@@ -90,21 +113,12 @@ export function cuid(): string {
 /* =========================
    JSON HELPERS (ADD-ONLY)
    ========================= */
-
 export async function kvGetJSON<T = unknown>(key: string): Promise<T | null> {
   const raw = await kvGet(key);
   if (raw == null) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(raw) as T; } catch { return null; }
 }
 
 export async function kvSetJSON<T = unknown>(key: string, value: T): Promise<boolean> {
-  try {
-    return await kvSet(key, JSON.stringify(value));
-  } catch {
-    return false;
-  }
+  try { return await kvSet(key, JSON.stringify(value)); } catch { return false; }
 }
