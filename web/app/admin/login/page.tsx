@@ -1,28 +1,44 @@
 // web/app/admin/login/page.tsx
 'use client';
 
-import { useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+import { useMemo, useState } from 'react';
+
+function getNextFromLocation(defaultPath = '/admin') {
+  if (typeof window === 'undefined') return defaultPath;
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('next') || defaultPath;
+  } catch {
+    return defaultPath;
+  }
+}
+
+function setCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 30) {
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  document.cookie =
+    `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax;` +
+    (isHttps ? ' Secure;' : '');
+}
 
 export default function AdminLoginPage() {
-  const sp = useSearchParams();
   const [pass, setPass] = useState('');
-  const next = sp.get('next') || '/admin';
-
-  function setCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 30) {
-    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    document.cookie =
-      `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax;` +
-      (isHttps ? ' Secure;' : '');
-  }
+  // обчислюємо next без useSearchParams (щоб не ламати SSG)
+  const next = useMemo(() => getNextFromLocation('/admin'), []);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!pass) return;
+
     try { localStorage.setItem('admin_pass', pass); } catch {}
-    setCookie('admin_pass', pass); // новий механізм
-    setCookie('admin', '1');       // старий механізм (сумісність)
-    window.location.href = next;
+    // ставимо ОБИДВА куки для сумісності (старий і новий механізм)
+    setCookie('admin_pass', pass); // новий механізм (порівнюється з ADMIN_PASS)
+    setCookie('admin', '1');       // старий механізм (флаг)
+
+    // редіректимо туди, звідки прийшли
+    window.location.href = next || '/admin';
   }
 
   return (
@@ -41,11 +57,13 @@ export default function AdminLoginPage() {
               autoFocus
             />
           </label>
+
           <button type="submit" className="w-full rounded-2xl bg-blue-600 text-white py-3">
             Зайти
           </button>
+
           <p className="text-sm text-gray-600">
-            Ставимо куки <code>admin_pass</code> і <code>admin</code> (сумісність зі старим UI).
+            Ставимо куки <code>admin_pass</code> і <code>admin</code> (сумісність). Після логіну повернемося на: <code>{next}</code>
           </p>
         </form>
       </div>
