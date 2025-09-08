@@ -21,18 +21,14 @@ function bad(status: number, error: string, extra?: any) {
 }
 function ok(data: any = {}) { return NextResponse.json({ ok: true, ...data }); }
 
-function normUser(u: string) {
-  return String(u || '').trim().toLowerCase();
-}
+const norm = (s: string) => String(s || '').trim().toLowerCase();
 
 // POST: створити/оновити мапінг username -> card_id
 export async function POST(req: NextRequest) {
   if (!okAuth(req)) return bad(401, 'unauthorized');
-
   const b = await req.json().catch(() => ({}));
-  const username = normUser(b.username);
+  const username = norm(b.username);
   const card_id = String(b.card_id || '').trim();
-
   if (!username || !card_id) return bad(400, 'username and card_id required');
 
   const key = `map:ig:${username}`;
@@ -45,9 +41,8 @@ export async function POST(req: NextRequest) {
 // GET: прочитати мапінг
 export async function GET(req: NextRequest) {
   if (!okAuth(req)) return bad(401, 'unauthorized');
-
   const url = new URL(req.url);
-  const username = normUser(url.searchParams.get('username') || '');
+  const username = norm(url.searchParams.get('username') || '');
   if (!username) return bad(400, 'username required');
 
   const key = `map:ig:${username}`;
