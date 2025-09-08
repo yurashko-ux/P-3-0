@@ -1,41 +1,137 @@
 // web/app/api/keycrm/card/move/route.ts
-import { NextResponse } from 'next/server';
-import { moveCard } from '@/lib/keycrm';
+import { NextRequest, NextResponse } from 'next/server';
 
-function isAdmin(req: Request): boolean {
-  const cookie = req.headers.get('cookie') || '';
-  const m = cookie.match(/(?:^|;\s*)admin_pass=([^;]+)/);
-  const val = m?.[1] ? decodeURIComponent(m[1]) : '';
-  const ADMIN_PASS = process.env.ADMIN_PASS || '';
-  return !!ADMIN_PASS && val === ADMIN_PASS;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+type MoveBody = {
+  card_id: string;
+  to_pipeline_id: string | null;
+  to_status_id: string | null;
+};
+
+function bad(status: number, error: string, extra?: any) {
+  return NextResponse.json({ ok: false, error, ...extra }, { status });
+}
+function ok(data: any = {}) {
+  return NextResponse.json({ ok: true, ...data });
 }
 
-export async function POST(req: Request) {
-  try {
-    if (!isAdmin(req)) {
-      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+function join(base: string, path: string) {
+  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+}
+
+/**
+ * Деякі інсталяції KeyCRM мають різні шляхи для move:
+ * - POST /cards/{card_id}/move            body: { pipeline_id, status_id }
+ * - POST /pipelines/cards/move            body: { card_id, pipeline_id, status_id }
+ * Ми спробуємо обидва варіанти (у такому порядку), і повернемо перший успішний.
+ */
+async function tryMove(
+  baseUrl: string,
+  token: string,
+  body: MoveBody
+): Promise<{ ok: boolean; attempt: string; status: number; text: string; json?: any }> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // Кандидати (по черзі)
+  const attempts = [
+    {
+      url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
+      payload: {
+        pipeline_id: body.to_pipeline_id,
+        status_id: body.to_status_id,
+      },
+      name: 'cards/{id}/move',
+    },
+    {
+      url: join(baseUrl, `/pipelines/cards/move`),
+      payload: {
+        card_id: body.card_id,
+        pipeline_id: body.to_pipeline_id,
+        status_id: body.to_status_id,
+      },
+      name: 'pipelines/cards/move',
+    },
+  ];
+
+  let last: { ok: boolean; attempt: string; status: number; text: string; json?: any } = {
+    ok: false,
+    attempt: '',
+    status: 0,
+    text: '',
+  };
+
+  for (const a of attempts) {
+    try {
+      const r = await fetch(a.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(a.payload),
+        cache: 'no-store',
+      });
+
+      const text = await r.text();
+      let j: any = null;
+      try { j = JSON.parse(text); } catch {}
+
+      // вважаємо успіхом 2xx і (якщо є) ознаку ok/true в json
+      const success = r.ok && (j == null || j.ok === undefined || j.ok === true);
+      if (success) {
+        return { ok: true, attempt: a.name, status: r.status, text, json: j ?? undefined };
+      }
+
+      last = { ok: false, attempt: a.name, status: r.status, text, json: j ?? undefined };
+    } catch (e: any) {
+      last = { ok: false, attempt: a.name, status: 0, text: String(e) };
     }
-
-    const body = await req.json().catch(() => ({}));
-    const card_id = String(body?.card_id || '').trim();
-    const to_pipeline_id = String(body?.to_pipeline_id || '').trim();
-    const to_status_id = String(body?.to_status_id || '').trim();
-
-    if (!card_id || !to_pipeline_id || !to_status_id) {
-      return NextResponse.json(
-        { ok: false, error: 'missing card_id / to_pipeline_id / to_status_id' },
-        { status: 400 }
-      );
-    }
-
-    // Викликаємо ваш клієнт до KeyCRM
-    await moveCard(card_id, to_pipeline_id, to_status_id);
-
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || 'move failed' },
-      { status: 500 }
-    );
   }
+
+  return last;
+}
+
+export async function POST(req: NextRequest) {
+  const token = process.env.KEYCRM_API_TOKEN || '';
+  const base = process.env.KEYCRM_BASE_URL || ''; // напр., https://api.keycrm.app/v1
+  if (!token || !base) {
+    return bad(500, 'keycrm not configured', {
+      need: { KEYCRM_API_TOKEN: !!token, KEYCRM_BASE_URL: !!base },
+    });
+  }
+
+  const b = (await req.json().catch(() => ({}))) as Partial<MoveBody>;
+  const card_id = String(b.card_id || '').trim();
+  const to_pipeline_id = b.to_pipeline_id != null ? String(b.to_pipeline_id) : null;
+  const to_status_id = b.to_status_id != null ? String(b.to_status_id) : null;
+
+  if (!card_id) return bad(400, 'card_id required');
+
+  // dry-run для швидкої діагностики (не викликає KeyCRM)
+  const dry = new URL(req.url).searchParams.get('dry');
+  if (dry === '1') {
+    return ok({ dry: true, card_id, to_pipeline_id, to_status_id });
+  }
+
+  const res = await tryMove(base, token, { card_id, to_pipeline_id, to_status_id });
+
+  if (!res.ok) {
+    return bad(502, 'keycrm move failed', {
+      attempt: res.attempt,
+      status: res.status,
+      responseText: res.text,
+      responseJson: res.json ?? null,
+      sent: { card_id, to_pipeline_id, to_status_id },
+      base: base.replace(/.{20}$/, '********'), // трохи маскуємо
+    });
+  }
+
+  return ok({
+    moved: true,
+    via: res.attempt,
+    status: res.status,
+    response: res.json ?? res.text,
+  });
 }
