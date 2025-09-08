@@ -42,7 +42,7 @@ export async function GET() {
   }
 }
 
-// ----- POST: створення кампанії -----
+// ----- POST: створення кампанії (з перевіркою KV) -----
 export async function POST(req: Request) {
   if (!okAuth(req)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
@@ -91,8 +91,24 @@ export async function POST(req: Request) {
       exp_count: 0,
     };
 
-    await kvSet(`campaigns:${id}`, JSON.stringify(item));
-    await kvZAdd('campaigns:index', Date.now(), id);
+    const key = `campaigns:${id}`;
+    const writeOk = await kvSet(key, JSON.stringify(item));
+    const indexOk = await kvZAdd('campaigns:index', Date.now(), id);
+
+    // Перечитуємо назад, щоб переконатися
+    const readBack = await kvGet(key);
+
+    const ok = Boolean(writeOk && indexOk && typeof readBack === 'string' && readBack.length > 0);
+    if (!ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'kv write or index failed',
+          details: { writeOk, indexOk, readBack: !!readBack }
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true, id });
   } catch (e: any) {
