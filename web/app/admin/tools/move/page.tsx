@@ -1,91 +1,61 @@
 // web/app/admin/tools/move/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 type Item = { id: string; title: string };
-function asArray(x: any): any[] {
-  if (Array.isArray(x)) return x;
-  if (x && typeof x === 'object') {
-    for (const k of ['items','data','result','rows','list']) {
-      if (Array.isArray((x as any)[k])) return (x as any)[k];
-    }
-  }
-  return [];
-}
+
 async function fetchItems(url: string): Promise<Item[]> {
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) return [];
   const j = await r.json().catch(() => ({}));
-  const arr = asArray(j?.items ?? j?.data ?? j);
-  const out: Item[] = [];
-  for (const p of arr) {
-    const id = p?.id ?? p?.value ?? p?.key ?? p?.pipeline_id ?? p?.status_id;
-    const title = p?.title ?? p?.name ?? p?.label ?? (id != null ? `#${id}` : '');
-    if (id != null) out.push({ id: String(id), title: String(title) });
-  }
-  // uniq by id
-  const m = new Map(out.map((i) => [i.id, i]));
-  return Array.from(m.values());
+  const arr = Array.isArray(j?.items) ? j.items : Array.isArray(j) ? j : [];
+  return (arr as any[]).map((p: any) => ({
+    id: String(p?.id ?? p?.value ?? ''),
+    title: String(p?.title ?? p?.name ?? p?.label ?? p?.alias ?? p?.id ?? ''),
+  }));
 }
 
-export default function AdminToolsMovePage() {
-  const [pipelines, setPipelines] = useState<Item[]>([]);
-  const [statuses, setStatuses] = useState<Item[]>([]);
-  const [toPipelineId, setToPipelineId] = useState('');
-  const [toStatusId, setToStatusId] = useState('');
-
-  const [username, setUsername] = useState('');
+export default function MoveToolPage() {
   const [cardId, setCardId] = useState('');
-  const [resolving, setResolving] = useState(false);
-  const [moving, setMoving] = useState(false);
-  const [debug, setDebug] = useState<any>(null);
-  const [msg, setMsg] = useState<string>('');
+  const [pipelines, setPipelines] = useState<Item[]>([]);
+  const [toPipelineId, setToPipelineId] = useState('');
+  const [statuses, setStatuses] = useState<Item[]>([]);
+  const [toStatusId, setToStatusId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
+  // load pipelines
   useEffect(() => {
     (async () => {
-      try { setPipelines(await fetchItems('/api/keycrm/pipelines')); }
-      catch { setPipelines([]); }
+      setPipelines(await fetchItems('/api/keycrm/pipelines'));
     })();
   }, []);
 
+  // load statuses for selected pipeline
   useEffect(() => {
     (async () => {
-      setStatuses([]); setToStatusId('');
+      setStatuses([]);
+      setToStatusId('');
       if (!toPipelineId) return;
-      try {
-        setStatuses(await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(toPipelineId)}`));
-      } catch { setStatuses([]); }
+      setStatuses(
+        await fetchItems(
+          `/api/keycrm/statuses?pipeline_id=${encodeURIComponent(toPipelineId)}`
+        )
+      );
     })();
   }, [toPipelineId]);
 
-  async function resolveByUsername() {
-    setResolving(true); setMsg(''); setDebug(null);
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    if (!cardId || !toPipelineId || !toStatusId) {
+      setMsg('Заповни Card ID, Воронку та Статус.');
+      return;
+    }
+    setLoading(true);
     try {
-      const r = await fetch(`/api/keycrm/card/by-username?u=${encodeURIComponent(username.trim())}`, { cache: 'no-store' });
-      const txt = await r.text();
-      let j: any = {};
-      try { j = JSON.parse(txt); } catch {}
-      setDebug({ endpoint: 'by-username', status: r.status, body: j || txt });
-      if (!r.ok || !(j?.ok)) throw new Error(j?.error || `HTTP ${r.status}`);
-      setCardId(String(j.card_id || j.id || ''));
-      setMsg('✅ Знайшли card_id і заповнили поле.');
-    } catch (e: any) {
-      setMsg(`⚠️ Не вдалося знайти card_id: ${e?.message || 'error'}. Можеш ввести card_id вручну.`);
-    } finally { setResolving(false); }
-  }
-
-  const canMove = useMemo(
-    () => !!cardId && !!toPipelineId && !!toStatusId,
-    [cardId, toPipelineId, toStatusId],
-  );
-
-  async function doMove() {
-    if (!canMove || moving) return;
-    setMoving(true); setMsg(''); setDebug(null);
-    try {
-      const r = await fetch('/api/keycrm/card/move', {
+      const res = await fetch('/api/keycrm/card/move', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,101 +64,87 @@ export default function AdminToolsMovePage() {
           to_status_id: toStatusId,
         }),
       });
-      const txt = await r.text();
-      let j: any = {};
-      try { j = JSON.parse(txt); } catch {}
-      setDebug({ endpoint: 'move', status: r.status, body: j || txt });
-      if (!r.ok || !(j?.ok)) throw new Error(j?.error || `HTTP ${r.status}`);
-      setMsg('🎉 Карта переміщена успішно.');
-    } catch (e: any) {
-      setMsg(`❌ Помилка переміщення: ${e?.message || 'error'}`);
-    } finally { setMoving(false); }
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setMsg('✅ Перенесено успішно.');
+      } else {
+        setMsg(`❌ Помилка: ${j?.error || `${res.status} ${res.statusText}`}`);
+      }
+    } catch (err: any) {
+      setMsg(`❌ Помилка запиту: ${err?.message || 'unknown'}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Admin Tools · Move Card</h1>
-        <Link href="/admin/campaigns" className="text-blue-600">← до кампаній</Link>
-      </div>
+    <div className="mx-auto max-w-3xl p-6 space-y-6">
+      <h1 className="text-3xl font-semibold">Тест: Move Card у KeyCRM</h1>
+      <p className="text-sm text-gray-600">
+        Введи <b>Card ID</b> з KeyCRM і вибери цільову <b>воронку</b> та{' '}
+        <b>статус</b>. Ендпойнт вимагає адмін-куку <code>admin_pass</code>.
+      </p>
 
-      <div className="rounded-2xl border p-5 space-y-4">
-        <div className="text-sm text-gray-600">
-          Цей інструмент дозволяє вручну перевірити, що інтеграція з KeyCRM працює:
-          знайти <code>card_id</code> за IG username і виконати <em>move</em> у вибраний pipeline/status.
+      <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border p-5">
+        <div>
+          <label className="block text-sm mb-1">Card ID</label>
+          <input
+            className="w-full rounded-xl border px-3 py-2"
+            placeholder="напр. 123456"
+            value={cardId}
+            onChange={(e) => setCardId(e.target.value)}
+          />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-sm mb-1">IG username</label>
-            <input
-              className="w-full rounded-xl border px-3 py-2"
-              placeholder="наприклад, insta_user"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={resolveByUsername}
-              disabled={resolving || !username.trim()}
-              className="w-full rounded-xl px-4 py-2 border bg-blue-600 text-white disabled:opacity-50"
-            >
-              {resolving ? 'Пошук…' : 'Знайти card_id'}
-            </button>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm mb-1">card_id (можна вписати вручну)</label>
-            <input
-              className="w-full rounded-xl border px-3 py-2"
-              placeholder="наприклад, 12345"
-              value={cardId}
-              onChange={(e) => setCardId(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-sm mb-1">Куди → Воронка (pipeline)</label>
+            <label className="block text-sm mb-1">Цільова воронка</label>
             <select
               className="w-full rounded-xl border px-3 py-2"
               value={toPipelineId}
               onChange={(e) => setToPipelineId(e.target.value)}
             >
-              <option value="">— Оберіть воронку —</option>
-              {pipelines.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+              <option value="">— Обери воронку —</option>
+              {pipelines.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
             </select>
           </div>
+
           <div>
-            <label className="block text-sm mb-1">Куди → Статус</label>
+            <label className="block text-sm mb-1">Цільовий статус</label>
             <select
               className="w-full rounded-xl border px-3 py-2"
               value={toStatusId}
               onChange={(e) => setToStatusId(e.target.value)}
-              disabled={!toPipelineId}
+              disabled={!toPipelineId || statuses.length === 0}
             >
-              <option value="">{toPipelineId ? '— Оберіть статус —' : 'Спершу виберіть воронку'}</option>
-              {statuses.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              <option value="">
+                {toPipelineId ? '— Обери статус —' : 'Спершу вибери воронку'}
+              </option>
+              {statuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <button
-            onClick={doMove}
-            disabled={!canMove || moving}
+            type="submit"
+            disabled={loading}
             className="rounded-xl px-5 py-2 border bg-blue-600 text-white disabled:opacity-50"
           >
-            {moving ? 'Переміщуємо…' : 'Move'}
+            {loading ? 'Виконую…' : 'Перенести'}
           </button>
-          {msg && <div className="text-sm">{msg}</div>}
         </div>
 
-        {debug && (
-          <pre className="mt-3 text-xs bg-gray-50 rounded-xl p-3 overflow-x-auto">
-{JSON.stringify(debug, null, 2)}
-          </pre>
-        )}
-      </div>
+        {msg && <div className="text-sm">{msg}</div>}
+      </form>
     </div>
   );
 }
