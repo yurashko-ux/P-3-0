@@ -45,7 +45,7 @@ function fmtDate(v: string | number) {
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-sm text-gray-600">
+    <span className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-xs text-gray-600">
       {children}
     </span>
   );
@@ -79,80 +79,60 @@ export default function Page() {
   }
 
   return (
-    <div className="p-6">
+    <div className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-4xl font-extrabold tracking-tight">Кампанії</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={load}
-            className="rounded-full border px-4 py-2 text-lg"
+            className="rounded-full border px-3 py-1.5 text-sm"
             disabled={loading}
           >
             Оновити
           </button>
           <a
             href="/admin/campaigns/new"
-            className="rounded-full bg-blue-600 px-4 py-2 text-lg font-semibold text-white hover:bg-blue-700"
+            className="rounded-full bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
             Нова кампанія
           </a>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border">
-        <table className="min-w-full table-fixed">
+      <div className="overflow-hidden rounded-2xl border">
+        <table className="min-w-full table-auto text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="w-[220px] px-6 py-4 text-left text-sm font-semibold text-gray-700">Дата</th>
-              <th className="w-[180px] px-6 py-4 text-left text-sm font-semibold text-gray-700">Назва</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Сутність</th>
-              <th className="w-[180px] px-6 py-4 text-left text-sm font-semibold text-gray-700">Лічильники</th>
-              <th className="w-[100px] px-6 py-4 text-left text-sm font-semibold text-gray-700">Статус</th>
-              <th className="w-[140px] px-6 py-4 text-left text-sm font-semibold text-gray-700">Дії</th>
+              <th className="w-[180px] px-4 py-3 text-left font-semibold text-gray-700">Дата</th>
+              <th className="w-[160px] px-4 py-3 text-left font-semibold text-gray-700">Назва</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-700">Сутність</th>
+              <th className="w-[140px] px-4 py-3 text-left font-semibold text-gray-700">Лічильники</th>
+              <th className="w-[80px] px-4 py-3 text-left font-semibold text-gray-700">Статус</th>
+              <th className="w-[120px] px-4 py-3 text-left font-semibold text-gray-700">Дії</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {items.map((c) => (
               <tr key={c.id} className="align-top">
                 {/* Дата */}
-                <td className="px-6 py-6 text-gray-800">{fmtDate(c.created_at)}</td>
+                <td className="px-4 py-4 text-gray-800">{fmtDate(c.created_at)}</td>
 
                 {/* Назва */}
-                <td className="px-6 py-6 font-semibold text-gray-900">{c.name || '—'}</td>
+                <td className="px-4 py-4 font-semibold text-gray-900">{c.name || '—'}</td>
 
                 {/* Сутність */}
-                <td className="px-6 py-6">
-                  <div className="flex flex-col gap-2 text-gray-800">
-                    <div>
-                      <span className="font-semibold">База:</span>{' '}
-                      <span>
-                        {/* тут очікується, що назви воронок/статусів вже підтягуються у твоєму існуючому коді */}
-                        {/* Якщо відмальовуються id — залишаємо як є */}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">V1 →</span>{' '}
-                      <span>
-                        {c.v1_value ? c.v1_value : '—'}/{/* to status name в твоєму існуючому коді */}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">V2 →</span>{' '}
-                      <span>
-                        {c.v2_enabled ? (c.v2_value || '—') : '—'}/{/* to status name */}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">EXP({c.exp_days || 0}д) →</span>{' '}
-                      <span>{/* exp target назви */}</span>
-                    </div>
+                <td className="px-4 py-4">
+                  <div className="flex flex-col gap-1.5 text-gray-800">
+                    <div className="font-semibold">База:</div>
+                    <div><span className="font-semibold">V1 →</span> {c.v1_value ? c.v1_value : '—'}/</div>
+                    <div><span className="font-semibold">V2 →</span> {c.v2_enabled ? (c.v2_value || '—') : '—'}/</div>
+                    <div><span className="font-semibold">EXP({c.exp_days || 0}д) →</span> </div>
                   </div>
                 </td>
 
-                {/* Лічильники — тепер у 3 рядки навпроти V1/V2/EXP */}
-                <td className="px-6 py-6 align-top">
-                  <div className="grid grid-rows-[1.5rem,1fr,1fr,1fr] gap-2">
-                    {/* порожній рядок для вирівнювання під “База:” */}
+                {/* Лічильники — щільно вирівняні під V1/V2/EXP */}
+                <td className="px-4 py-4 align-top">
+                  <div className="grid grid-rows-[1rem,auto,auto,auto] gap-1">
                     <div aria-hidden />
                     <div><Chip>V1: {c.v1_count ?? 0}</Chip></div>
                     <div><Chip>V2: {c.v2_count ?? 0}</Chip></div>
@@ -161,11 +141,11 @@ export default function Page() {
                 </td>
 
                 {/* Статус */}
-                <td className="px-6 py-6">{c.enabled ? 'yes' : 'no'}</td>
+                <td className="px-4 py-4">{c.enabled ? 'yes' : 'no'}</td>
 
                 {/* Дії */}
-                <td className="px-6 py-6">
-                  <div className="flex items-center gap-4">
+                <td className="px-4 py-4">
+                  <div className="flex items-center gap-3">
                     <a className="text-blue-700 hover:underline" href={`/admin/campaigns/${c.id}/edit`}>Edit</a>
                     <button onClick={() => onDelete(c.id)} className="text-red-600 hover:underline">Delete</button>
                   </div>
@@ -174,7 +154,7 @@ export default function Page() {
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
                   {loading ? 'Завантаження…' : 'Кампаній поки немає'}
                 </td>
               </tr>
