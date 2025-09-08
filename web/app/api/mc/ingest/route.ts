@@ -5,8 +5,8 @@ import { kvGet, kvSet, kvZRange } from '@/lib/kv';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// ---------------- utils ----------------
-const ok = (data: any = {}) => NextResponse.json({ ok: true, ...data });
+// ---------- utils ----------
+const ok  = (data: any = {}) => NextResponse.json({ ok: true,  ...data });
 const bad = (status: number, error: string, extra?: any) =>
   NextResponse.json({ ok: false, error, ...extra }, { status });
 
@@ -48,17 +48,15 @@ async function resolveCardId(req: NextRequest, username: string, bodyCard?: stri
       if (typeof obj === 'string') return obj.trim();
       if (obj && typeof obj === 'object') {
         if (typeof (obj as any).value === 'string') return (obj as any).value.trim();
-        if (typeof (obj as any).id === 'string') return (obj as any).id.trim();
-        if (typeof (obj as any).result === 'string') return (obj as any).result.trim();
+        if (typeof (obj as any).id === 'string')    return (obj as any).id.trim();
+        if (typeof (obj as any).result === 'string')return (obj as any).result.trim();
       }
-    } catch {
-      return raw.trim();
-    }
+    } catch { return raw.trim(); }
   }
-  return null; // TODO: пошук у KeyCRM за username (не зараз)
+  return null;
 }
 
-// --- прямий виклик KeyCRM (2 варіанти endpoint) ---
+// ---- direct KeyCRM move (2 possible endpoints) ----
 function join(base: string, path: string) {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
@@ -70,7 +68,6 @@ async function tryKeycrmMove(
   to_status_id: string | null
 ) {
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
   const attempts = [
     {
       name: 'cards/{id}/move',
@@ -100,26 +97,26 @@ async function tryKeycrmMove(
   return last;
 }
 
-// ---------------- handler ----------------
+// ---------- handler ----------
 export async function POST(req: NextRequest) {
-  // 0) auth ManiChat
+  // ManiChat auth
   const header = req.headers.get('authorization') || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
-  const token = bearer || new URL(req.url).searchParams.get('token') || '';
+  const token  = bearer || new URL(req.url).searchParams.get('token') || '';
   if (!process.env.MC_TOKEN || token !== process.env.MC_TOKEN) {
     return bad(401, 'unauthorized');
   }
 
   const body = await req.json().catch(() => ({}));
   const username = String(body.username || '').trim();
-  const text = String(body.text || '');
+  const text     = String(body.text || '');
   if (!username) return bad(400, 'username required');
 
-  // 1) resolve card
+  // resolve card
   const card_id = await resolveCardId(req, username, body.card_id);
   if (!card_id) return ok({ applied: null, note: 'card not found by username (set map:ig:{username} via /api/map/ig or pass ?card_id=)' });
 
-  // 2) load enabled campaigns
+  // load enabled campaigns
   const ids = await kvZRange('campaigns:index', 0, -1);
   const campaigns: any[] = [];
   for (const id of ids) {
@@ -129,24 +126,33 @@ export async function POST(req: NextRequest) {
     if (c?.enabled) campaigns.push(c);
   }
 
-  // 3) match (V2 priority)
-  let chosen: { id: string; variant: 'v1'|'v2'; to_pipeline_id: string|null; to_status_id: string|null } | null = null;
+  // match (V2 first)
+  let chosen: { id: string; variant: 'v1' | 'v2'; to_pipeline_id: string | null; to_status_id: string | null } | null = null;
   for (const c of campaigns) {
     const v2hit = c.v2_enabled && matchCond(text, c.v2_value ? { op: c.v2_op || 'contains', value: c.v2_value } : null);
-    const v1hit = !v2hit && matchCond(text, c.v1_value ? { op: c.v1_op || 'contains', value: c.v1_value } : null);
-    if (v2hit) chosen = { id: c.id, variant: 'v2', to_pipeline_id: c.v2_to_pipeline_id, to_status_id: c.v2_to_status_id };
+    const v1hit = !v2hit     && matchCond(text, c.v1_value ? { op: c.v1_op || 'contains', value: c.v1_value } : null);
+    if (v2hit)      chosen = { id: c.id, variant: 'v2', to_pipeline_id: c.v2_to_pipeline_id, to_status_id: c.v2_to_status_id };
     else if (v1hit) chosen = { id: c.id, variant: 'v1', to_pipeline_id: c.v1_to_pipeline_id, to_status_id: c.v1_to_status_id };
     if (chosen) break;
   }
   if (!chosen) return ok({ applied: null });
 
-  // 4) DIRECT move in KeyCRM (no internal API call -> no Vercel 401)
-  const KEYCRM_TOKEN = process.env.KEYCRM_API_TOKEN || '';
-  const KEYCRM_BASE  = process.env.KEYCRM_BASE_URL || ''; // напр., https://api.keycrm.app/v1
+  // KeyCRM env (with fallbacks)
+  const KEYCRM_TOKEN =
+    process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
+  const KEYCRM_BASE =
+    process.env.KEYCRM_BASE_URL || process.env.KEYCRM_API_URL || process.env.KEYCRM_URL || '';
+
   if (!KEYCRM_TOKEN || !KEYCRM_BASE) {
-    return bad(500, 'keycrm not configured', { need: { KEYCRM_API_TOKEN: !!KEYCRM_TOKEN, KEYCRM_BASE_URL: !!KEYCRM_BASE } });
+    return bad(500, 'keycrm not configured', {
+      need: {
+        KEYCRM_API_TOKEN_or_BEARER: !!KEYCRM_TOKEN,
+        KEYCRM_BASE_URL_or_ALTS: !!KEYCRM_BASE,
+      },
+    });
   }
 
+  // move in KeyCRM
   const move = await tryKeycrmMove(KEYCRM_BASE, KEYCRM_TOKEN, card_id, chosen.to_pipeline_id, chosen.to_status_id);
   if (!move.ok) {
     return bad(502, 'keycrm move failed', {
@@ -157,13 +163,13 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 5) counters
+  // counters
   const key = `campaigns:${chosen.id}`;
   const raw = await kvGet(key);
   if (raw) {
     const c = deepParse<any>(raw) || {};
     if (chosen.variant === 'v1') c.v1_count = (Number(c.v1_count) || 0) + 1;
-    else c.v2_count = (Number(c.v2_count) || 0) + 1;
+    else                        c.v2_count = (Number(c.v2_count) || 0) + 1;
     try { await kvSet(key, JSON.stringify(c)); } catch {}
   }
 
