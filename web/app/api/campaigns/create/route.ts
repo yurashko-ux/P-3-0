@@ -1,6 +1,6 @@
 // web/app/api/campaigns/create/route.ts
 import { NextResponse } from 'next/server';
-import { kvSet, kvZadd } from '@/lib/kv';
+import { kvSet, kvZAdd } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +14,6 @@ function n(x: any, def = 0): number {
   return Number.isFinite(v) ? v : def;
 }
 function id(): string {
-  // crypto.randomUUID в edge/Node18
   return (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, '');
 }
 
@@ -62,10 +61,10 @@ export async function POST(req: Request) {
       exp_count: 0,
     };
 
-    // зберегти саму кампанію
+    // зберегти
     await kvSet(`campaigns:${_id}`, JSON.stringify(item));
-    // додати в індекс (сортуємо по часу)
-    await kvZadd('campaigns:index', Date.now(), _id);
+    // проіндексувати (за часом)
+    await kvZAdd('campaigns:index', Date.now(), _id);
 
     return NextResponse.json({ ok: true, id: _id });
   } catch (e: any) {
