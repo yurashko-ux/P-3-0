@@ -1,6 +1,8 @@
 // web/app/admin/tools/ingest/page.tsx
 'use client';
 
+export const dynamic = 'force-dynamic'; // не даємо Next.js прибрати сторінку з білда
+
 import React, { useEffect, useState } from 'react';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -115,25 +117,18 @@ export default function ToolsIngestPage() {
           <form onSubmit={onIngestSubmit} className="grid gap-3">
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="MC_TOKEN" value={mcToken} setValue={setMcToken} placeholder="секрет токен" />
-              <Field label="card_id (опц., для швидкого тесту)" value={cardId} setValue={setCardId} placeholder="CARD_ID" />
+              <Field label="card_id (опц., швидкий тест)" value={cardId} setValue={setCardId} placeholder="CARD_ID" />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="username (IG)" value={username} setValue={setUsername} placeholder="ig_login" />
               <Field label="text" value={text} setValue={setText} placeholder="yes / ключове слово" />
             </div>
             <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={ingestLoading}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
+              <button type="submit" disabled={ingestLoading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                 Відправити ingest
               </button>
-              <button
-                type="button"
-                className="rounded-lg border px-3 py-2 text-sm"
-                onClick={() => setIngestResp(null)}
-              >
+              <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setIngestResp(null)}>
                 Очистити
               </button>
             </div>
@@ -153,18 +148,11 @@ export default function ToolsIngestPage() {
               <Field label="to_status_id" value={toStatus} setValue={setToStatus} placeholder="SID" />
             </div>
             <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={moveLoading}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
+              <button type="submit" disabled={moveLoading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                 Тест move
               </button>
-              <button
-                type="button"
-                className="rounded-lg border px-3 py-2 text-sm"
-                onClick={() => setMoveResp(null)}
-              >
+              <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setMoveResp(null)}>
                 Очистити
               </button>
             </div>
