@@ -2,6 +2,7 @@
 /**
  * Легкий клієнт для Vercel KV (REST).
  * Підтримує: get/set/del/zadd/zrem/zrange/zrevrange.
+ * ADD-ONLY: додано kvGetJSON / kvSetJSON (не змінює існуючу поведінку).
  */
 const KV_URL = process.env.KV_REST_API_URL?.replace(/\/+$/, '') || '';
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || '';
@@ -84,4 +85,26 @@ export async function kvZrevrange(key: string, start = 0, stop = -1): Promise<st
 
 export function cuid(): string {
   return Math.random().toString(36).slice(2).toUpperCase() + Date.now().toString(36).toUpperCase();
+}
+
+/* =========================
+   JSON HELPERS (ADD-ONLY)
+   ========================= */
+
+export async function kvGetJSON<T = unknown>(key: string): Promise<T | null> {
+  const raw = await kvGet(key);
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function kvSetJSON<T = unknown>(key: string, value: T): Promise<boolean> {
+  try {
+    return await kvSet(key, JSON.stringify(value));
+  } catch {
+    return false;
+  }
 }
