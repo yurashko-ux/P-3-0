@@ -63,8 +63,8 @@ function coerceNumOrNull(x: any) {
 }
 
 /**
- * Пробуємо кілька відомих варіантів оновлення картки воронки.
- * Повертає { ok, via, status, response? } або деталізацію останньої спроби.
+ * Пробуємо кілька варіантів оновлення картки.
+ * ВАЖЛИВО: не зупиняємось на 405/404 — пробуємо наступні, зупиняємось лише на 2xx або 401/403/5xx.
  */
 async function tryKeycrmMove(
   baseUrl: string,
@@ -78,28 +78,20 @@ async function tryKeycrmMove(
     'Content-Type': 'application/json',
   };
 
-  // Багато інсталів KeyCRM приймають PATCH/PUT на ресурс картки (у просторі /pipelines)
-  const pid = to_pipeline_id ?? null;
-  const sid = to_status_id ?? null;
+  const pid = to_pipeline_id != null ? coerceNumOrNull(to_pipeline_id) : null;
+  const sid = to_status_id   != null ? coerceNumOrNull(to_status_id)   : null;
+  const body = { pipeline_id: pid, status_id: sid };
 
-  const body = {
-    // часто API очікує саме числа
-    pipeline_id: pid != null ? coerceNumOrNull(pid) : null,
-    status_id:   sid != null ? coerceNumOrNull(sid) : null,
-  };
-
-  // Список спроб (по спадаючій імовірності 404)
+  // Першим ставимо саме PUT pipelines/cards/{id} — за підказкою 405 Allowed: PUT.
   const attempts: Array<{name:string; url:string; method:'PATCH'|'PUT'|'POST'; body:any}> = [
-    { name: 'PATCH pipelines/cards/{id}', url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(card_id)}`), method: 'PATCH', body },
     { name: 'PUT pipelines/cards/{id}',   url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(card_id)}`), method: 'PUT',   body },
-    // інколи є сингуларний варіант
-    { name: 'PATCH pipelines/card/{id}',  url: join(baseUrl, `/pipelines/card/${encodeURIComponent(card_id)}`),  method: 'PATCH', body },
+    { name: 'PATCH pipelines/cards/{id}', url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(card_id)}`), method: 'PATCH', body },
     { name: 'PUT pipelines/card/{id}',    url: join(baseUrl, `/pipelines/card/${encodeURIComponent(card_id)}`),  method: 'PUT',   body },
-    // попередні (давали 404 у нас, але лишимо як запасні)
-    { name: 'POST pipelines/cards/move',  url: join(baseUrl, `/pipelines/cards/move`),                           method: 'POST',  body: { card_id, pipeline_id: body.pipeline_id, status_id: body.status_id } },
-    { name: 'POST cards/{id}/move',       url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}/move`),      method: 'POST',  body: { pipeline_id: body.pipeline_id, status_id: body.status_id } },
-    { name: 'PATCH cards/{id}',           url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}`),           method: 'PATCH', body },
+    { name: 'PATCH pipelines/card/{id}',  url: join(baseUrl, `/pipelines/card/${encodeURIComponent(card_id)}`),  method: 'PATCH', body },
+    { name: 'POST pipelines/cards/move',  url: join(baseUrl, `/pipelines/cards/move`),                           method: 'POST',  body: { card_id, pipeline_id: pid, status_id: sid } },
+    { name: 'POST cards/{id}/move',       url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}/move`),      method: 'POST',  body: { pipeline_id: pid, status_id: sid } },
     { name: 'PUT cards/{id}',             url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}`),           method: 'PUT',   body },
+    { name: 'PATCH cards/{id}',           url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}`),           method: 'PATCH', body },
   ];
 
   let last: any = { ok: false };
@@ -110,11 +102,14 @@ async function tryKeycrmMove(
       let j: any = null; try { j = JSON.parse(text); } catch {}
       const success = r.ok && (j == null || j.ok === undefined || j.ok === true);
       if (success) return { ok: true, via: a.name, status: r.status, response: j ?? text };
+
       last = { ok: false, via: a.name, status: r.status, responseText: text, responseJson: j ?? null };
-      // якщо це 404 — пробуємо наступний варіант; інші коди — зупиняємося
-      if (r.status !== 404) break;
+
+      // тільки для серйозних кодів зупиняємось; на 404/405/400 йдемо далі
+      if (r.status === 401 || r.status === 403 || r.status >= 500) break;
     } catch (e: any) {
       last = { ok: false, via: a.name, status: 0, error: String(e) };
+      break; // мережевий фейл — стоп
     }
   }
   return last;
@@ -162,7 +157,7 @@ export async function POST(req: NextRequest) {
   }
   if (!chosen) return ok({ applied: null });
 
-  // KeyCRM env (supports both API_TOKEN and BEARER; multiple base names)
+  // KeyCRM env (token/base with fallbacks)
   const KEYCRM_TOKEN =
     process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
   const KEYCRM_BASE =
