@@ -1,9 +1,6 @@
 // web/app/admin/login/page.tsx
 'use client';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { useMemo, useState } from 'react';
 
 function getNextFromLocation(defaultPath = '/admin') {
@@ -25,7 +22,6 @@ function setCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 30) {
 
 export default function AdminLoginPage() {
   const [pass, setPass] = useState('');
-  // обчислюємо next без useSearchParams (щоб не ламати SSG)
   const next = useMemo(() => getNextFromLocation('/admin'), []);
 
   function onSubmit(e: React.FormEvent) {
@@ -33,11 +29,10 @@ export default function AdminLoginPage() {
     if (!pass) return;
 
     try { localStorage.setItem('admin_pass', pass); } catch {}
-    // ставимо ОБИДВА куки для сумісності (старий і новий механізм)
+    // ставимо ОБИДВА куки для сумісності
     setCookie('admin_pass', pass); // новий механізм (порівнюється з ADMIN_PASS)
     setCookie('admin', '1');       // старий механізм (флаг)
 
-    // редіректимо туди, звідки прийшли
     window.location.href = next || '/admin';
   }
 
