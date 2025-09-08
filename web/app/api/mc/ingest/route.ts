@@ -5,7 +5,7 @@ import { kvGet, kvSet, kvZRange } from '@/lib/kv';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// ---------- utils ----------
+// ---------- small utils ----------
 const ok  = (data: any = {}) => NextResponse.json({ ok: true,  ...data });
 const bad = (status: number, error: string, extra?: any) =>
   NextResponse.json({ ok: false, error, ...extra }, { status });
@@ -13,10 +13,7 @@ const bad = (status: number, error: string, extra?: any) =>
 const normalize = (s: unknown) =>
   String(s ?? '').normalize('NFKC').toLowerCase().trim().replace(/\s+/g, ' ');
 
-const matchCond = (
-  text: string,
-  cond: { op: 'contains' | 'equals'; value: string } | null
-) => {
+const matchCond = (text: string, cond: { op: 'contains'|'equals'; value: string } | null) => {
   if (!cond) return false;
   const t = normalize(text), v = normalize(cond.value);
   if (!v) return false;
@@ -56,10 +53,19 @@ async function resolveCardId(req: NextRequest, username: string, bodyCard?: stri
   return null;
 }
 
-// ---- direct KeyCRM move (2 possible endpoints) ----
-function join(base: string, path: string) {
-  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+// ---- direct KeyCRM call helpers ----
+const join = (base: string, path: string) =>
+  `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+
+function coerceNumOrNull(x: any) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
 }
+
+/**
+ * Пробуємо кілька відомих варіантів оновлення картки воронки.
+ * Повертає { ok, via, status, response? } або деталізацію останньої спроби.
+ */
 async function tryKeycrmMove(
   baseUrl: string,
   token: string,
@@ -67,29 +73,46 @@ async function tryKeycrmMove(
   to_pipeline_id: string | null,
   to_status_id: string | null
 ) {
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  const attempts = [
-    {
-      name: 'cards/{id}/move',
-      url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}/move`),
-      body: { pipeline_id: to_pipeline_id, status_id: to_status_id },
-    },
-    {
-      name: 'pipelines/cards/move',
-      url: join(baseUrl, `/pipelines/cards/move`),
-      body: { card_id, pipeline_id: to_pipeline_id, status_id: to_status_id },
-    },
+  const headers: Record<string,string> = {
+    Authorization: token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // Багато інсталів KeyCRM приймають PATCH/PUT на ресурс картки (у просторі /pipelines)
+  const pid = to_pipeline_id ?? null;
+  const sid = to_status_id ?? null;
+
+  const body = {
+    // часто API очікує саме числа
+    pipeline_id: pid != null ? coerceNumOrNull(pid) : null,
+    status_id:   sid != null ? coerceNumOrNull(sid) : null,
+  };
+
+  // Список спроб (по спадаючій імовірності 404)
+  const attempts: Array<{name:string; url:string; method:'PATCH'|'PUT'|'POST'; body:any}> = [
+    { name: 'PATCH pipelines/cards/{id}', url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(card_id)}`), method: 'PATCH', body },
+    { name: 'PUT pipelines/cards/{id}',   url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(card_id)}`), method: 'PUT',   body },
+    // інколи є сингуларний варіант
+    { name: 'PATCH pipelines/card/{id}',  url: join(baseUrl, `/pipelines/card/${encodeURIComponent(card_id)}`),  method: 'PATCH', body },
+    { name: 'PUT pipelines/card/{id}',    url: join(baseUrl, `/pipelines/card/${encodeURIComponent(card_id)}`),  method: 'PUT',   body },
+    // попередні (давали 404 у нас, але лишимо як запасні)
+    { name: 'POST pipelines/cards/move',  url: join(baseUrl, `/pipelines/cards/move`),                           method: 'POST',  body: { card_id, pipeline_id: body.pipeline_id, status_id: body.status_id } },
+    { name: 'POST cards/{id}/move',       url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}/move`),      method: 'POST',  body: { pipeline_id: body.pipeline_id, status_id: body.status_id } },
+    { name: 'PATCH cards/{id}',           url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}`),           method: 'PATCH', body },
+    { name: 'PUT cards/{id}',             url: join(baseUrl, `/cards/${encodeURIComponent(card_id)}`),           method: 'PUT',   body },
   ];
 
   let last: any = { ok: false };
   for (const a of attempts) {
     try {
-      const r = await fetch(a.url, { method: 'POST', headers, body: JSON.stringify(a.body), cache: 'no-store' });
+      const r = await fetch(a.url, { method: a.method, headers, body: JSON.stringify(a.body), cache: 'no-store' });
       const text = await r.text();
       let j: any = null; try { j = JSON.parse(text); } catch {}
       const success = r.ok && (j == null || j.ok === undefined || j.ok === true);
       if (success) return { ok: true, via: a.name, status: r.status, response: j ?? text };
       last = { ok: false, via: a.name, status: r.status, responseText: text, responseJson: j ?? null };
+      // якщо це 404 — пробуємо наступний варіант; інші коди — зупиняємося
+      if (r.status !== 404) break;
     } catch (e: any) {
       last = { ok: false, via: a.name, status: 0, error: String(e) };
     }
@@ -114,7 +137,9 @@ export async function POST(req: NextRequest) {
 
   // resolve card
   const card_id = await resolveCardId(req, username, body.card_id);
-  if (!card_id) return ok({ applied: null, note: 'card not found by username (set map:ig:{username} via /api/map/ig or pass ?card_id=)' });
+  if (!card_id) {
+    return ok({ applied: null, note: 'card not found by username (set map:ig:{username} via /api/map/ig or pass ?card_id=)' });
+  }
 
   // load enabled campaigns
   const ids = await kvZRange('campaigns:index', 0, -1);
@@ -126,8 +151,8 @@ export async function POST(req: NextRequest) {
     if (c?.enabled) campaigns.push(c);
   }
 
-  // match (V2 first)
-  let chosen: { id: string; variant: 'v1' | 'v2'; to_pipeline_id: string | null; to_status_id: string | null } | null = null;
+  // pick first match (V2 priority)
+  let chosen: { id: string; variant: 'v1'|'v2'; to_pipeline_id: string|null; to_status_id: string|null } | null = null;
   for (const c of campaigns) {
     const v2hit = c.v2_enabled && matchCond(text, c.v2_value ? { op: c.v2_op || 'contains', value: c.v2_value } : null);
     const v1hit = !v2hit     && matchCond(text, c.v1_value ? { op: c.v1_op || 'contains', value: c.v1_value } : null);
@@ -137,7 +162,7 @@ export async function POST(req: NextRequest) {
   }
   if (!chosen) return ok({ applied: null });
 
-  // KeyCRM env (with fallbacks)
+  // KeyCRM env (supports both API_TOKEN and BEARER; multiple base names)
   const KEYCRM_TOKEN =
     process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
   const KEYCRM_BASE =
@@ -145,14 +170,11 @@ export async function POST(req: NextRequest) {
 
   if (!KEYCRM_TOKEN || !KEYCRM_BASE) {
     return bad(500, 'keycrm not configured', {
-      need: {
-        KEYCRM_API_TOKEN_or_BEARER: !!KEYCRM_TOKEN,
-        KEYCRM_BASE_URL_or_ALTS: !!KEYCRM_BASE,
-      },
+      need: { KEYCRM_API_TOKEN_or_BEARER: !!KEYCRM_TOKEN, KEYCRM_BASE_URL_or_ALTS: !!KEYCRM_BASE },
     });
   }
 
-  // move in KeyCRM
+  // move card
   const move = await tryKeycrmMove(KEYCRM_BASE, KEYCRM_TOKEN, card_id, chosen.to_pipeline_id, chosen.to_status_id);
   if (!move.ok) {
     return bad(502, 'keycrm move failed', {
