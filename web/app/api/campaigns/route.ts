@@ -1,136 +1,101 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from 'next/server';
-import { kvGet, kvSet, kvZAdd, kvZRange, cuid } from '@/lib/kv';
+import { cookies } from 'next/headers';
+import { kvGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
 
-export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Condition = { field: 'text'|'flow'|'tag'|'any'; op: 'contains'|'equals'; value: string };
-type Campaign = {
-  id: string;
-  created_at: string;
-  name: string;
+type Op = 'contains' | 'equals';
 
-  base_pipeline_id: string | null;
-  base_status_id: string | null;
+const ADMIN = process.env.ADMIN_PASS ?? '';
 
-  v1_condition: Condition | null;
-  v1_to_pipeline_id: string | null;
-  v1_to_status_id: string | null;
-
-  v2_condition: Condition | null;
-  v2_to_pipeline_id: string | null;
-  v2_to_status_id: string | null;
-
-  exp_days: number | null;
-  exp_to_pipeline_id: string | null;
-  exp_to_status_id: string | null;
-
-  note?: string | null;
-  enabled: boolean;
-
-  v1_count: number;
-  v2_count: number;
-  exp_count: number;
-};
-
-const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
-
-function ok(data: any, init?: number) { return NextResponse.json(data, { status: init ?? 200 }); }
-function bad(message: string, code = 400) { return NextResponse.json({ ok: false, error: message }, { status: code }); }
-
-function toConditionFromFlat(input: any): Condition | null {
-  if (!input) return null;
-  const field = (input.field || input.v1_field || input.v2_field) as Condition['field'] | undefined;
-  const op = (input.op || input.v1_op || input.v2_op) as Condition['op'] | undefined;
-  const value = (input.value ?? input.v1_value ?? input.v2_value ?? '').toString();
-  if (!field || field === 'any') return { field: 'any', op: 'contains', value: '' };
-  if (!op) return { field, op: 'contains', value };
-  return { field, op, value };
+function okAuth(req: Request) {
+  const bearer = req.headers.get('authorization') || '';
+  const token = bearer.startsWith('Bearer ') ? bearer.slice(7) : '';
+  const cookiePass = cookies().get('admin_pass')?.value || '';
+  const pass = token || cookiePass;
+  return !ADMIN || pass === ADMIN;
 }
 
-function normalizePayload(body: any): Campaign {
-  const id = body.id || cuid();
-  const created_at = new Date().toISOString();
-  const enabled = body.enabled !== false;
-
-  // приймаємо як нову форму (v1_field/op/value), так і стару (v1_condition)
-  const v1_condition = body.v1_condition ?? toConditionFromFlat({
-    field: body.v1_field, op: body.v1_op, value: body.v1_value,
-  });
-  const v2_enabled = body.v2_enabled ?? (body.v2_condition ? true : false);
-  const v2_condition = v2_enabled
-    ? (body.v2_condition ?? toConditionFromFlat({ field: body.v2_field, op: body.v2_op, value: body.v2_value }))
-    : null;
-
-  const item: Campaign = {
-    id,
-    created_at,
-    name: String(body.name || '').trim(),
-
-    base_pipeline_id: body.base_pipeline_id ? String(body.base_pipeline_id) : null,
-    base_status_id: body.base_status_id ? String(body.base_status_id) : null,
-
-    v1_condition,
-    v1_to_pipeline_id: body.v1_to_pipeline_id ? String(body.v1_to_pipeline_id) : null,
-    v1_to_status_id: body.v1_to_status_id ? String(body.v1_to_status_id) : null,
-
-    v2_condition,
-    v2_to_pipeline_id: v2_enabled && body.v2_to_pipeline_id ? String(body.v2_to_pipeline_id) : null,
-    v2_to_status_id: v2_enabled && body.v2_to_status_id ? String(body.v2_to_status_id) : null,
-
-    exp_days: Number.isFinite(Number(body.exp_days)) ? Number(body.exp_days) : null,
-    exp_to_pipeline_id: body.exp_to_pipeline_id ? String(body.exp_to_pipeline_id) : null,
-    exp_to_status_id: body.exp_to_status_id ? String(body.exp_to_status_id) : null,
-
-    note: body.note ? String(body.note) : null,
-    enabled,
-
-    v1_count: Number(body.v1_count ?? 0) || 0,
-    v2_count: Number(body.v2_count ?? 0) || 0,
-    exp_count: Number(body.exp_count ?? 0) || 0,
-  };
-  return item;
+function str(v: any, d = '') { return v == null ? d : String(v); }
+function num(v: any, d = 0) { const n = Number(v); return Number.isFinite(n) ? n : d; }
+function newId() {
+  return (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, '');
 }
 
-/** GET /api/campaigns -> { ok:true, items: Campaign[] } */
+// ----- GET: список кампаній -----
 export async function GET() {
   try {
-    const ids = await kvZRange(INDEX_KEY, 0, -1);
-    const items: Campaign[] = [];
-    for (const id of ids) {
-      const raw = await kvGet(ITEM_KEY(id));
-      if (!raw) continue;
-      try { items.push(JSON.parse(raw)); } catch {}
+    const ids = await kvZRange('campaigns:index', 0, -1) as string[] | any;
+    const out: any[] = [];
+    if (Array.isArray(ids)) {
+      for (const id of ids) {
+        const raw = await kvGet(`campaigns:${id}`);
+        if (raw) {
+          try { out.push(JSON.parse(raw)); } catch {}
+        }
+      }
     }
-    // newest first (на випадок, якщо KV повернув не відсортований)
-    items.sort((a, b) => (b.created_at > a.created_at ? 1 : -1));
-    return ok({ ok: true, items });
+    return NextResponse.json({ ok: true, items: out });
   } catch (e: any) {
-    return bad(e?.message || 'failed to list', 500);
+    return NextResponse.json({ ok: false, error: e?.message ?? 'list failed' }, { status: 500 });
   }
 }
 
-/** POST /api/campaigns -> створення */
+// ----- POST: створення кампанії -----
 export async function POST(req: Request) {
+  if (!okAuth(req)) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
+
   try {
-    const body = await req.json().catch(() => ({}));
-    const draft = normalizePayload(body);
+    const b = await req.json().catch(() => ({}));
 
-    // Валідація мінімуму згідно ТЗ
-    if (!draft.name) return bad('name is required', 400);
-    if (!draft.base_pipeline_id || !draft.base_status_id) return bad('base pipeline/status required', 400);
-    if (!draft.v1_to_pipeline_id || !draft.v1_to_status_id) return bad('v1 target required', 400);
-    if (draft.exp_days == null) return bad('exp_days required', 400);
+    const id = str(b.id) || newId();
+    const now = new Date().toISOString();
 
-    // Зберігаємо
-    const json = JSON.stringify(draft);
-    await kvSet(ITEM_KEY(draft.id), json);
-    await kvZAdd(INDEX_KEY, Date.now(), draft.id);
+    const item = {
+      id,
+      created_at: now,
+      updated_at: now,
 
-    return ok({ ok: true, id: draft.id, item: draft }, 201);
+      name: str(b.name),
+      base_pipeline_id: str(b.base_pipeline_id),
+      base_status_id: str(b.base_status_id),
+
+      // V1 (обов’язково)
+      v1_field: str(b.v1_field || 'text'),
+      v1_op: str(b.v1_op || 'contains') as Op,
+      v1_value: str(b.v1_value || ''),
+      v1_to_pipeline_id: b.v1_to_pipeline_id ?? null,
+      v1_to_status_id: b.v1_to_status_id ?? null,
+
+      // V2 (опційно)
+      v2_enabled: !!b.v2_enabled && !!str(b.v2_value),
+      v2_field: str(b.v2_field || 'text'),
+      v2_op: str(b.v2_op || 'contains') as Op,
+      v2_value: str(b.v2_value || ''),
+      v2_to_pipeline_id: (b.v2_enabled ? b.v2_to_pipeline_id : null) ?? null,
+      v2_to_status_id: (b.v2_enabled ? b.v2_to_status_id : null) ?? null,
+
+      // Expire
+      exp_days: num(b.exp_days, 7),
+      exp_to_pipeline_id: b.exp_to_pipeline_id ?? null,
+      exp_to_status_id: b.exp_to_status_id ?? null,
+
+      enabled: b.enabled !== false,
+
+      // лічильники
+      v1_count: 0,
+      v2_count: 0,
+      exp_count: 0,
+    };
+
+    await kvSet(`campaigns:${id}`, JSON.stringify(item));
+    await kvZAdd('campaigns:index', Date.now(), id);
+
+    return NextResponse.json({ ok: true, id });
   } catch (e: any) {
-    return bad(e?.message || 'failed to create', 500);
+    return NextResponse.json({ ok: false, error: e?.message ?? 'save failed' }, { status: 500 });
   }
 }
