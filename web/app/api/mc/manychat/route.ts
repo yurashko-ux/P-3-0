@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 const MC_TOKEN = process.env.MC_TOKEN || process.env.MANYCHAT_TOKEN || '';
+const BYPASS = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '';
 
 function firstStr(...vals: any[]): string | null {
   for (const v of vals) {
@@ -42,16 +43,12 @@ function getBaseUrl(req: Request) {
 async function parseBody(req: Request): Promise<any> {
   const ct = (req.headers.get('content-type') || '').toLowerCase();
   let raw = '';
-  try {
-    raw = await req.text();
-  } catch {}
+  try { raw = await req.text(); } catch {}
   if (!raw) return {};
 
-  // try JSON
   if (ct.includes('application/json')) {
     try { return JSON.parse(raw); } catch {}
   }
-  // try form-urlencoded
   if (ct.includes('application/x-www-form-urlencoded')) {
     try {
       const sp = new URLSearchParams(raw);
@@ -60,19 +57,23 @@ async function parseBody(req: Request): Promise<any> {
       return o;
     } catch {}
   }
-  // fallback: treat as query string
   try {
     const sp = new URLSearchParams(raw);
     const o: any = {};
     sp.forEach((v, k) => (o[k] = v));
     if (Object.keys(o).length) return o;
   } catch {}
-  // last resort: if it's at least valid JSON despite wrong header
   try { return JSON.parse(raw); } catch {}
   return {};
 }
 
-// Accept POST (ManyChat External Request/Webhook) and GET (quick test)
+async function parseJsonSafe(r: Response): Promise<any> {
+  try { return await r.json(); } catch {
+    try { return JSON.parse(await r.text()); } catch { return null; }
+  }
+}
+
+// Accept POST (ManyChat) and GET (quick test)
 export async function POST(req: Request) {
   const body = await parseBody(req);
 
@@ -121,31 +122,36 @@ export async function POST(req: Request) {
     );
   }
 
-  // forward to main ingest
+  // forward to main ingest (with protection bypass)
   const base = getBaseUrl(req);
   const url = new URL('/api/mc/ingest', base);
   if (MC_TOKEN) url.searchParams.set('token', MC_TOKEN);
 
   const resp = await fetch(url.toString(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MC_TOKEN}` },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${MC_TOKEN}`,
+      ...(BYPASS ? { 'x-vercel-protection-bypass': BYPASS } : {}),
+    },
     body: JSON.stringify({ username, text, ...(card_id ? { card_id } : {}) }),
+    // credentials не потрібні, це s2s
   }).catch((e) => ({ ok: false, status: 500, json: async () => ({ ok: false, error: String(e) }) } as any));
 
-  let ingest: any = null;
-  try { ingest = await (resp as any).json?.(); } catch {}
+  const ingest = await parseJsonSafe(resp as any);
 
-  const out = {
-    ok: Boolean(ingest?.ok),
-    via: 'manychat',
-    normalized: { username, text, ...(card_id ? { card_id } : {}) },
-    ingest,
-  };
-  return NextResponse.json(out, { status: 200 }); // ManyChat краще сприймає 200
+  return NextResponse.json(
+    {
+      ok: Boolean(ingest?.ok),
+      via: 'manychat',
+      normalized: { username, text, ...(card_id ? { card_id } : {}) },
+      ingest,
+    },
+    { status: 200 }
+  );
 }
 
 export async function GET(req: Request) {
-  // Quick ping: /api/mc/manychat?token=...&username=USER&text=hi[&card_id=...]
   const url = new URL(req.url);
   const q = Object.fromEntries(url.searchParams.entries());
   return POST(
