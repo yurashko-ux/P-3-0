@@ -24,6 +24,11 @@ type Campaign = {
   exp_days: number;
   exp_to_pipeline_id: string | null;
   exp_to_status_id: string | null;
+
+  // лічильники
+  v1_count?: number;
+  v2_count?: number;
+  exp_count?: number;
 };
 
 type Dict = Record<string, string>;
@@ -72,6 +77,12 @@ export default function Page() {
     </span>
   );
 
+  const Counter = ({ n }: { n?: number }) => (
+    <span className="inline-block rounded-full bg-gray-100 text-gray-800 px-2.5 py-1 text-sm font-medium">
+      {typeof n === "number" ? n : "—"}
+    </span>
+  );
+
   return (
     <div className="p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
@@ -93,7 +104,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Заголовок таблиці (стає як «легенда» зверху) */}
+        {/* Заголовок-легенда */}
         <div className="mb-2 overflow-x-auto">
           <table className="min-w-full table-fixed">
             <colgroup>
@@ -103,17 +114,19 @@ export default function Page() {
               <col />
               <col />
               <col className="w-[140px]" />
+              <col className="w-[120px]" />
               <col className="w-[80px]" />
               <col className="w-[120px]" />
             </colgroup>
             <thead>
-              <tr className="text-center text-gray-600">
+              <tr className="text-left text-gray-600">
                 <th className="py-2">Дата</th>
                 <th className="py-2">Назва</th>
                 <th className="py-2">Сутність</th>
                 <th className="py-2">Воронка</th>
                 <th className="py-2">Статус</th>
                 <th className="py-2">Тригер</th>
+                <th className="py-2">Лічильник</th>
                 <th className="py-2">Стан</th>
                 <th className="py-2">Дії</th>
               </tr>
@@ -121,27 +134,28 @@ export default function Page() {
           </table>
         </div>
 
-        {/* Кампанії у вигляді окремих «карток» з внутрішньою табличкою */}
+        {/* Картки кампаній */}
         <div className="space-y-3">
           {items.map((c) => {
-            // рядки сутностей
             const rows: {
               label: string;
               pipeline: string;
               status: string;
               trigger: string;
+              count?: number;
             }[] = [
               {
                 label: "База",
                 pipeline: pname(c.base_pipeline_id),
                 status: sname(c.base_pipeline_id, c.base_status_id),
-                trigger: "",
+                trigger: "—",
               },
               {
                 label: "V1",
                 pipeline: pname(c.v1_to_pipeline_id),
                 status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
                 trigger: c.v1_value || "",
+                count: c.v1_count ?? 0,
               },
             ];
             if (c.v2_enabled) {
@@ -150,6 +164,7 @@ export default function Page() {
                 pipeline: pname(c.v2_to_pipeline_id),
                 status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
                 trigger: c.v2_value || "",
+                count: c.v2_count ?? 0,
               });
             }
             rows.push({
@@ -157,6 +172,7 @@ export default function Page() {
               pipeline: pname(c.exp_to_pipeline_id),
               status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
               trigger: `${c.exp_days} днів`,
+              count: c.exp_count ?? 0,
             });
 
             const rowSpan = rows.length;
@@ -174,30 +190,35 @@ export default function Page() {
                     <col />
                     <col />
                     <col className="w-[140px]" />
+                    <col className="w-[120px]" />
                     <col className="w-[80px]" />
                     <col className="w-[120px]" />
                   </colgroup>
                   <tbody>
                     {/* перший ряд групи */}
-                    <tr className="text-center">
-                      <td className="py-3" rowSpan={rowSpan}>
+                    <tr className="text-left">
+                      <td className="py-3 px-2" rowSpan={rowSpan}>
                         {new Date(c.created_at).toLocaleString("uk-UA")}
                       </td>
-                      <td className="py-3 font-semibold" rowSpan={rowSpan}>
+                      <td className="py-3 px-2 font-semibold" rowSpan={rowSpan}>
                         {c.name}
                       </td>
-                      <td className="py-3">База</td>
-                      <td className="py-3">
+                      <td className="py-3 px-2">База</td>
+                      <td className="py-3 px-2">
                         {rows[0].pipeline ? <Badge>{rows[0].pipeline}</Badge> : "—"}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 px-2">
                         {rows[0].status ? <Badge>{rows[0].status}</Badge> : "—"}
                       </td>
-                      <td className="py-3">{rows[0].trigger || "—"}</td>
-                      <td className="py-3" rowSpan={rowSpan}>
+                      <td className="py-3 px-2">{rows[0].trigger}</td>
+                      <td className="py-3 px-2">
+                        {/* базі лічильник не показуємо */}
+                        —
+                      </td>
+                      <td className="py-3 px-2" rowSpan={rowSpan}>
                         {c.enabled ? "yes" : "no"}
                       </td>
-                      <td className="py-3 whitespace-nowrap" rowSpan={rowSpan}>
+                      <td className="py-3 px-2 whitespace-nowrap" rowSpan={rowSpan}>
                         <a
                           className="text-blue-600 hover:underline mr-3"
                           href={`/admin/campaigns/${c.id}/edit`}
@@ -224,15 +245,18 @@ export default function Page() {
 
                     {/* решта рядків (V1 / V2 / EXP) */}
                     {rows.slice(1).map((r, i) => (
-                      <tr className="text-center" key={i}>
-                        <td className="py-3">{r.label}</td>
-                        <td className="py-3">
+                      <tr className="text-left" key={i}>
+                        <td className="py-3 px-2">{r.label}</td>
+                        <td className="py-3 px-2">
                           {r.pipeline ? <Badge>{r.pipeline}</Badge> : "—"}
                         </td>
-                        <td className="py-3">
+                        <td className="py-3 px-2">
                           {r.status ? <Badge>{r.status}</Badge> : "—"}
                         </td>
-                        <td className="py-3">{r.trigger || "—"}</td>
+                        <td className="py-3 px-2">{r.trigger || "—"}</td>
+                        <td className="py-3 px-2">
+                          {"count" in r ? <Counter n={r.count} /> : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
