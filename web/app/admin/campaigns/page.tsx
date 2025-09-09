@@ -1,8 +1,7 @@
+// web/app/admin/campaigns/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
-import CounterPill from "@/components/CounterPill";
-import Chip from "@/components/Chip";
 
 type Campaign = {
   id: string;
@@ -25,18 +24,13 @@ type Campaign = {
   exp_days: number;
   exp_to_pipeline_id: string | null;
   exp_to_status_id: string | null;
-
-  v1_count: number;
-  v2_count: number;
-  exp_count: number;
 };
 
 type Dict = Record<string, string>;
 
-async function api<T>(url: string): Promise<T> {
-  const r = await fetch(url, { credentials: "include", cache: "no-store" });
-  const j = await r.json();
-  return j?.items ?? j;
+async function fetchJSON<T>(url: string): Promise<T> {
+  const r = await fetch(url, { cache: "no-store", credentials: "include" });
+  return r.json();
 }
 
 export default function Page() {
@@ -45,18 +39,19 @@ export default function Page() {
   const [statusesByPipeline, setStatusesByPipeline] = useState<Record<string, Dict>>({});
 
   async function loadAll() {
-    const list = await api<{ items: Campaign[] }>("/api/campaigns");
-    setItems(list as unknown as Campaign[]);
+    const list = await fetchJSON<{ ok: boolean; items: Campaign[] }>("/api/campaigns");
+    setItems(list.items || []);
 
-    // Довідники KeyCRM
-    const pls: any[] = await api("/api/keycrm/pipelines");
+    // Пайплайни
+    const pls: any[] = await fetchJSON("/api/keycrm/pipelines");
     const pMap: Dict = {};
     for (const p of pls || []) pMap[String(p.id)] = String(p.name ?? p.title ?? p.id);
     setPipelines(pMap);
 
+    // Статуси по пайплайнах
     const stMap: Record<string, Dict> = {};
     for (const pid of Object.keys(pMap)) {
-      const sts: any[] = await api(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(pid)}`);
+      const sts: any[] = await fetchJSON(`/api/keycrm/statuses?pipeline_id=${pid}`);
       stMap[pid] = {};
       for (const s of sts || []) stMap[pid][String(s.id)] = String(s.name ?? s.title ?? s.id);
     }
@@ -67,23 +62,14 @@ export default function Page() {
     loadAll();
   }, []);
 
-  function chips(pid: string | null, sid: string | null) {
-    if (!pid || !sid) return <span className="text-gray-500">—/—</span>;
-    const p = pipelines[pid] ?? pid;
-    const s = statusesByPipeline[pid]?.[sid] ?? sid;
-    return (
-      <span className="inline-flex items-center gap-1">
-        <Chip text={p} tone="pipeline" />
-        <span className="text-gray-400">/</span>
-        <Chip text={s} tone="status" />
-      </span>
-    );
-  }
+  const pname = (pid?: string | null) => (pid ? (pipelines[pid] ?? pid) : "—");
+  const sname = (pid?: string | null, sid?: string | null) =>
+    pid && sid ? (statusesByPipeline[pid]?.[sid] ?? sid) : "—";
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="mb-4 flex items-center justify-between">
           <h1 className="text-3xl font-extrabold">Кампанії</h1>
           <div className="flex gap-2">
             <a href="/admin/tools" className="rounded-lg border px-3 py-2 hover:bg-gray-50">
@@ -101,109 +87,172 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border">
-          <table className="min-w-full table-fixed">
+        <div className="overflow-x-auto rounded-2xl">
+          {/* border-separate + spacing — імітація «без рамок», але все акуратно розкладено */}
+          <table className="min-w-full table-fixed border-separate border-spacing-y-2">
             <colgroup>
-              <col className="w-44" />
-              <col className="w-48" />
-              <col />
-              <col className="w-20" />
-              <col className="w-28" />
+              <col className="w-[220px]" /> {/* Дата */}
+              <col className="w-[160px]" />  {/* Назва */}
+              <col className="w-[120px]" />  {/* Сутність */}
+              <col />                        {/* Воронка */}
+              <col />                        {/* Статус */}
+              <col className="w-[140px]" />  {/* Тригер */}
+              <col className="w-[80px]" />   {/* Стан */}
+              <col className="w-[120px]" />  {/* Дії */}
             </colgroup>
 
-            <thead className="bg-gray-50">
-              <tr className="text-left text-gray-600">
-                <th className="px-4 py-3">Дата</th>
-                <th className="px-4 py-3">Назва</th>
-                <th className="px-4 py-3">Сутність</th>
-                <th className="px-4 py-3">Статус</th>
-                <th className="px-4 py-3">Дії</th>
+            <thead>
+              <tr className="text-center text-gray-600">
+                <th className="py-2">Дата</th>
+                <th className="py-2">Назва</th>
+                <th className="py-2">Сутність</th>
+                <th className="py-2">Воронка</th>
+                <th className="py-2">Статус</th>
+                <th className="py-2">Тригер</th>
+                <th className="py-2">Стан</th>
+                <th className="py-2">Дії</th>
               </tr>
             </thead>
 
             <tbody>
-              {items.map((c) => (
-                <tr key={c.id} className="border-t align-top">
-                  <td className="px-4 py-3 text-gray-700">
-                    {new Date(c.created_at).toLocaleString("uk-UA")}
-                  </td>
+              {items.map((c) => {
+                const rows = [
+                  {
+                    label: "База",
+                    pipeline: pname(c.base_pipeline_id),
+                    status: sname(c.base_pipeline_id, c.base_status_id),
+                    trigger: "",
+                  },
+                  {
+                    label: "V1",
+                    pipeline: pname(c.v1_to_pipeline_id),
+                    status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
+                    trigger: c.v1_value || "",
+                  },
+                ] as {
+                  label: string;
+                  pipeline: string;
+                  status: string;
+                  trigger: string;
+                }[];
 
-                  <td className="px-4 py-3 font-semibold">{c.name}</td>
+                if (c.v2_enabled) {
+                  rows.push({
+                    label: "V2",
+                    pipeline: pname(c.v2_to_pipeline_id),
+                    status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
+                    trigger: c.v2_value || "",
+                  });
+                }
 
-                  <td className="px-4 py-3">
-                    {/* База */}
-                    <div className="mb-1 text-gray-800">
-                      <span className="font-bold mr-2">База:</span>
-                      {chips(c.base_pipeline_id, c.base_status_id)}
-                    </div>
+                rows.push({
+                  label: "EXP",
+                  pipeline: pname(c.exp_to_pipeline_id),
+                  status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
+                  trigger: `${c.exp_days} днів`,
+                });
 
-                    {/* V1 */}
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                const rowSpan = rows.length;
+
+                return (
+                  <tr key={c.id} className="align-middle bg-white/80 shadow-sm rounded-xl">
+                    {/* Дата */}
+                    <td className="py-3 text-center" rowSpan={rowSpan}>
                       <div className="text-gray-900">
-                        <span className="font-semibold mr-2">V1 →</span>
-                        {chips(c.v1_to_pipeline_id, c.v1_to_status_id)}
-                        {c.v1_value ? (
-                          <span className="ml-2 text-gray-500">({c.v1_value})</span>
-                        ) : null}
+                        {new Date(c.created_at).toLocaleString("uk-UA")}
                       </div>
-                      <CounterPill label="V1" value={c.v1_count} />
-                    </div>
+                    </td>
 
-                    {/* V2 */}
-                    {c.v2_enabled ? (
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <div className="text-gray-900">
-                          <span className="font-semibold mr-2">V2 →</span>
-                          {chips(c.v2_to_pipeline_id, c.v2_to_status_id)}
-                          {c.v2_value ? (
-                            <span className="ml-2 text-gray-500">({c.v2_value})</span>
-                          ) : null}
-                        </div>
-                        <CounterPill label="V2" value={c.v2_count} />
-                      </div>
-                    ) : null}
+                    {/* Назва */}
+                    <td className="py-3 text-center font-semibold" rowSpan={rowSpan}>
+                      {c.name}
+                    </td>
 
-                    {/* EXP */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-gray-900">
-                        <span className="font-semibold mr-2">EXP({c.exp_days}д) →</span>
-                        {chips(c.exp_to_pipeline_id, c.exp_to_status_id)}
-                      </div>
-                      <CounterPill label="EXP" value={c.exp_count} />
-                    </div>
-                  </td>
+                    {/* перший ряд «База» */}
+                    <td className="py-3 text-center">{rows[0].label}</td>
+                    <td className="py-3 text-center">{rows[0].pipeline}</td>
+                    <td className="py-3 text-center">{rows[0].status}</td>
+                    <td className="py-3 text-center">{rows[0].trigger || "—"}</td>
 
-                  <td className="px-4 py-3">{c.enabled ? "yes" : "no"}</td>
+                    {/* Стан (yes/no) одна клітинка на всю групу */}
+                    <td className="py-3 text-center" rowSpan={rowSpan}>
+                      {c.enabled ? "yes" : "no"}
+                    </td>
 
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <a
-                      href={`/admin/campaigns/${c.id}/edit`}
-                      className="text-blue-600 hover:underline mr-3"
-                    >
-                      Edit
-                    </a>
-                    <a
-                      href={`/api/campaigns/${c.id}`}
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        if (!confirm("Видалити кампанію?")) return;
-                        await fetch(`/api/campaigns/${c.id}`, {
-                          method: "DELETE",
-                          credentials: "include",
-                        });
-                        loadAll();
-                      }}
-                      className="text-red-600 hover:underline"
-                    >
-                      Delete
-                    </a>
-                  </td>
-                </tr>
-              ))}
+                    {/* Дії одна клітинка на всю групу */}
+                    <td className="py-3 text-center whitespace-nowrap" rowSpan={rowSpan}>
+                      <a
+                        className="text-blue-600 hover:underline mr-3"
+                        href={`/admin/campaigns/${c.id}/edit`}
+                      >
+                        Edit
+                      </a>
+                      <a
+                        className="text-red-600 hover:underline"
+                        href={`/api/campaigns/${c.id}`}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (!confirm("Видалити кампанію?")) return;
+                          await fetch(`/api/campaigns/${c.id}`, {
+                            method: "DELETE",
+                            credentials: "include",
+                          });
+                          loadAll();
+                        }}
+                      >
+                        Delete
+                      </a>
+                    </td>
+                  </tr>
+                );
+              }).flatMap((cRow, idx) => {
+                // додаткові рядки для V1/V2/EXP (рендеримо їх одразу після першого)
+                const c = items[idx];
+                if (!c) return [];
+                const rows: {
+                  label: string;
+                  pipeline: string;
+                  status: string;
+                  trigger: string;
+                }[] = [];
 
+                rows.push({
+                  label: "V1",
+                  pipeline: pname(c.v1_to_pipeline_id),
+                  status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
+                  trigger: c.v1_value || "",
+                });
+
+                if (c.v2_enabled) {
+                  rows.push({
+                    label: "V2",
+                    pipeline: pname(c.v2_to_pipeline_id),
+                    status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
+                    trigger: c.v2_value || "",
+                  });
+                }
+
+                rows.push({
+                  label: "EXP",
+                  pipeline: pname(c.exp_to_pipeline_id),
+                  status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
+                  trigger: `${c.exp_days} днів`,
+                });
+
+                // перший ряд уже відрендерили у <tbody> вище,
+                // а тут генеруємо решту рядків для цієї кампанії:
+                return rows.slice(1).map((r, i) => (
+                  <tr key={`extra-${c.id}-${i}`} className="align-middle bg-white/80 shadow-sm">
+                    <td className="py-3 text-center">{r.label}</td>
+                    <td className="py-3 text-center">{r.pipeline}</td>
+                    <td className="py-3 text-center">{r.status}</td>
+                    <td className="py-3 text-center">{r.trigger || "—"}</td>
+                  </tr>
+                ));
+              })}
               {!items.length && (
                 <tr>
-                  <td className="px-4 py-10 text-center text-gray-500" colSpan={5}>
+                  <td className="py-10 text-center text-gray-500" colSpan={8}>
                     Кампаній поки немає
                   </td>
                 </tr>
