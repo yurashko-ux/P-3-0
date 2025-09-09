@@ -75,9 +75,7 @@ const fmtDate = (v: string | number) => {
 };
 
 function Chip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border px-2 py-1 text-xs">{children}</span>
-  );
+  return <span className="rounded-full border px-2 py-1 text-xs">{children}</span>;
 }
 
 export default function CampaignsPage() {
@@ -178,16 +176,19 @@ export default function CampaignsPage() {
       date: fmtDate(c.created_at),
       name: c.name,
       enabled: c.enabled,
-      base: `${nameP(c.base_pipeline_id)}/${nameS(c.base_pipeline_id, c.base_status_id)}`,
-      v1: c.v1_to_pipeline_id || c.v1_to_status_id
+
+      baseText: `${nameP(c.base_pipeline_id)}/${nameS(c.base_pipeline_id, c.base_status_id)}`,
+      v1Text: c.v1_to_pipeline_id || c.v1_to_status_id
         ? `${nameP(c.v1_to_pipeline_id)}/${nameS(c.v1_to_pipeline_id, c.v1_to_status_id)}`
         : '—',
-      v2: c.v2_enabled && (c.v2_to_pipeline_id || c.v2_to_status_id)
+      v2Text: c.v2_enabled && (c.v2_to_pipeline_id || c.v2_to_status_id)
         ? `${nameP(c.v2_to_pipeline_id)}/${nameS(c.v2_to_pipeline_id, c.v2_to_status_id)}`
         : '—',
-      exp: c.exp_to_pipeline_id || c.exp_to_status_id
+      expText: c.exp_to_pipeline_id || c.exp_to_status_id
         ? `${nameP(c.exp_to_pipeline_id)}/${nameS(c.exp_to_pipeline_id, c.exp_to_status_id)}`
         : '—',
+      expDays: Number.isFinite(c.exp_days as any) ? `${c.exp_days}д` : '—',
+
       v1_count: c.v1_count || 0,
       v2_count: c.v2_count || 0,
       exp_count: c.exp_count || 0,
@@ -231,15 +232,18 @@ export default function CampaignsPage() {
                   <div className="font-medium">{r.name}</div>
                 </td>
                 <td className="px-4 py-4">
-                  <div className="text-gray-800">
-                    <div className="mb-1"><span className="font-semibold">База:</span> {r.base}</div>
-                    <div className="mb-1"><span className="font-semibold">V1 →</span> {r.v1}</div>
-                    <div className="mb-1"><span className="font-semibold">V2 →</span> {r.v2}</div>
-                    <div className=""><span className="font-semibold">EXP({/* days */}) →</span> {r.exp}</div>
+                  {/* 4 рядки, щоб збігались із колонкою лічильників */}
+                  <div className="grid grid-rows-4 gap-2 text-gray-800">
+                    <div><span className="font-semibold">База:</span> {r.baseText}</div>
+                    <div><span className="font-semibold">V1 →</span> {r.v1Text}</div>
+                    <div><span className="font-semibold">V2 →</span> {r.v2Text}</div>
+                    <div><span className="font-semibold">EXP({r.expDays}) →</span> {r.expText}</div>
                   </div>
                 </td>
                 <td className="px-4 py-4">
-                  <div className="flex flex-col gap-2">
+                  {/* така сама 4-рядкова сітка для чіткої вертикальної синхронізації */}
+                  <div className="grid grid-rows-4 gap-2">
+                    <div className="h-[24px]" /> {/* рядок База — без лічильника */}
                     <Chip>V1: {r.v1_count}</Chip>
                     <Chip>V2: {r.v2_count}</Chip>
                     <Chip>EXP: {r.exp_count}</Chip>
