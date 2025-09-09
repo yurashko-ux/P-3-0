@@ -8,7 +8,14 @@ const MC_TOKEN = process.env.MC_TOKEN || process.env.MANYCHAT_TOKEN || '';
 function firstStr(...vals: any[]): string | null {
   for (const v of vals) {
     if (v == null) continue;
-    const s = typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
+    const s =
+      typeof v === 'string'
+        ? v
+        : typeof v === 'number'
+        ? String(v)
+        : ArrayBuffer.isView(v)
+        ? Buffer.from(v as any).toString('utf8')
+        : '';
     if (s.trim()) return s.trim();
   }
   return null;
@@ -31,16 +38,49 @@ function getBaseUrl(req: Request) {
   return `${proto}://${host}`;
 }
 
+// --- robust body parser: JSON | form-urlencoded | raw-text-as-query ---
+async function parseBody(req: Request): Promise<any> {
+  const ct = (req.headers.get('content-type') || '').toLowerCase();
+  let raw = '';
+  try {
+    raw = await req.text();
+  } catch {}
+  if (!raw) return {};
+
+  // try JSON
+  if (ct.includes('application/json')) {
+    try { return JSON.parse(raw); } catch {}
+  }
+  // try form-urlencoded
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    try {
+      const sp = new URLSearchParams(raw);
+      const o: any = {};
+      sp.forEach((v, k) => (o[k] = v));
+      return o;
+    } catch {}
+  }
+  // fallback: treat as query string
+  try {
+    const sp = new URLSearchParams(raw);
+    const o: any = {};
+    sp.forEach((v, k) => (o[k] = v));
+    if (Object.keys(o).length) return o;
+  } catch {}
+  // last resort: if it's at least valid JSON despite wrong header
+  try { return JSON.parse(raw); } catch {}
+  return {};
+}
+
 // Accept POST (ManyChat External Request/Webhook) and GET (quick test)
 export async function POST(req: Request) {
-  let body: any = {};
-  try { body = await req.json(); } catch {}
+  const body = await parseBody(req);
 
   if (!okAuth(req, body)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
-  // Try to extract username and text from common ManyChat shapes
+  // normalize typical ManyChat shapes
   const username =
     firstStr(
       body.username,
@@ -70,15 +110,18 @@ export async function POST(req: Request) {
   const card_id = firstStr(body.card_id, body?.data?.card_id) || undefined;
 
   if (!username || !text) {
-    return NextResponse.json({
-      ok: false,
-      error: 'missing username or text',
-      got: { username, text, card_id, body },
-      hint: 'Pass { username, text, [card_id] } or map fields in ManyChat External Request',
-    }, { status: 200 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'missing username or text',
+        got: { username, text, card_id, body },
+        hint: 'Provide { username, text } via JSON or form-urlencoded.',
+      },
+      { status: 200 }
+    );
   }
 
-  // Proxy to the main ingest
+  // forward to main ingest
   const base = getBaseUrl(req);
   const url = new URL('/api/mc/ingest', base);
   if (MC_TOKEN) url.searchParams.set('token', MC_TOKEN);
@@ -87,7 +130,6 @@ export async function POST(req: Request) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MC_TOKEN}` },
     body: JSON.stringify({ username, text, ...(card_id ? { card_id } : {}) }),
-    // no credentials here – internal server-to-server call
   }).catch((e) => ({ ok: false, status: 500, json: async () => ({ ok: false, error: String(e) }) } as any));
 
   let ingest: any = null;
@@ -99,17 +141,18 @@ export async function POST(req: Request) {
     normalized: { username, text, ...(card_id ? { card_id } : {}) },
     ingest,
   };
-  const status = out.ok ? 200 : 200; // ManyChat prefers 200 to not break the flow
-  return NextResponse.json(out, { status });
+  return NextResponse.json(out, { status: 200 }); // ManyChat краще сприймає 200
 }
 
 export async function GET(req: Request) {
   // Quick ping: /api/mc/manychat?token=...&username=USER&text=hi[&card_id=...]
   const url = new URL(req.url);
   const q = Object.fromEntries(url.searchParams.entries());
-  return POST(new Request(req.url, {
-    method: 'POST',
-    headers: req.headers,
-    body: JSON.stringify(q),
-  }));
+  return POST(
+    new Request(req.url, {
+      method: 'POST',
+      headers: req.headers,
+      body: new URLSearchParams(q as any),
+    })
+  );
 }
