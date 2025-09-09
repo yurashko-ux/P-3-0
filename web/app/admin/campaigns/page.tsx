@@ -66,6 +66,12 @@ export default function Page() {
   const sname = (pid?: string | null, sid?: string | null) =>
     pid && sid ? (statusesByPipeline[pid]?.[sid] ?? sid) : "—";
 
+  const Badge = ({ children }: { children: React.ReactNode }) => (
+    <span className="inline-block rounded-full bg-blue-600 text-white px-3 py-1 text-sm font-medium whitespace-nowrap">
+      {children}
+    </span>
+  );
+
   return (
     <div className="p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
@@ -87,20 +93,19 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-2xl">
-          {/* border-separate + spacing — імітація «без рамок», але все акуратно розкладено */}
-          <table className="min-w-full table-fixed border-separate border-spacing-y-2">
+        {/* Заголовок таблиці (стає як «легенда» зверху) */}
+        <div className="mb-2 overflow-x-auto">
+          <table className="min-w-full table-fixed">
             <colgroup>
-              <col className="w-[220px]" /> {/* Дата */}
-              <col className="w-[160px]" />  {/* Назва */}
-              <col className="w-[120px]" />  {/* Сутність */}
-              <col />                        {/* Воронка */}
-              <col />                        {/* Статус */}
-              <col className="w-[140px]" />  {/* Тригер */}
-              <col className="w-[80px]" />   {/* Стан */}
-              <col className="w-[120px]" />  {/* Дії */}
+              <col className="w-[200px]" />
+              <col className="w-[160px]" />
+              <col className="w-[120px]" />
+              <col />
+              <col />
+              <col className="w-[140px]" />
+              <col className="w-[80px]" />
+              <col className="w-[120px]" />
             </colgroup>
-
             <thead>
               <tr className="text-center text-gray-600">
                 <th className="py-2">Дата</th>
@@ -113,152 +118,134 @@ export default function Page() {
                 <th className="py-2">Дії</th>
               </tr>
             </thead>
-
-            <tbody>
-              {items.map((c) => {
-                const rows = [
-                  {
-                    label: "База",
-                    pipeline: pname(c.base_pipeline_id),
-                    status: sname(c.base_pipeline_id, c.base_status_id),
-                    trigger: "",
-                  },
-                  {
-                    label: "V1",
-                    pipeline: pname(c.v1_to_pipeline_id),
-                    status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
-                    trigger: c.v1_value || "",
-                  },
-                ] as {
-                  label: string;
-                  pipeline: string;
-                  status: string;
-                  trigger: string;
-                }[];
-
-                if (c.v2_enabled) {
-                  rows.push({
-                    label: "V2",
-                    pipeline: pname(c.v2_to_pipeline_id),
-                    status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
-                    trigger: c.v2_value || "",
-                  });
-                }
-
-                rows.push({
-                  label: "EXP",
-                  pipeline: pname(c.exp_to_pipeline_id),
-                  status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
-                  trigger: `${c.exp_days} днів`,
-                });
-
-                const rowSpan = rows.length;
-
-                return (
-                  <tr key={c.id} className="align-middle bg-white/80 shadow-sm rounded-xl">
-                    {/* Дата */}
-                    <td className="py-3 text-center" rowSpan={rowSpan}>
-                      <div className="text-gray-900">
-                        {new Date(c.created_at).toLocaleString("uk-UA")}
-                      </div>
-                    </td>
-
-                    {/* Назва */}
-                    <td className="py-3 text-center font-semibold" rowSpan={rowSpan}>
-                      {c.name}
-                    </td>
-
-                    {/* перший ряд «База» */}
-                    <td className="py-3 text-center">{rows[0].label}</td>
-                    <td className="py-3 text-center">{rows[0].pipeline}</td>
-                    <td className="py-3 text-center">{rows[0].status}</td>
-                    <td className="py-3 text-center">{rows[0].trigger || "—"}</td>
-
-                    {/* Стан (yes/no) одна клітинка на всю групу */}
-                    <td className="py-3 text-center" rowSpan={rowSpan}>
-                      {c.enabled ? "yes" : "no"}
-                    </td>
-
-                    {/* Дії одна клітинка на всю групу */}
-                    <td className="py-3 text-center whitespace-nowrap" rowSpan={rowSpan}>
-                      <a
-                        className="text-blue-600 hover:underline mr-3"
-                        href={`/admin/campaigns/${c.id}/edit`}
-                      >
-                        Edit
-                      </a>
-                      <a
-                        className="text-red-600 hover:underline"
-                        href={`/api/campaigns/${c.id}`}
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          if (!confirm("Видалити кампанію?")) return;
-                          await fetch(`/api/campaigns/${c.id}`, {
-                            method: "DELETE",
-                            credentials: "include",
-                          });
-                          loadAll();
-                        }}
-                      >
-                        Delete
-                      </a>
-                    </td>
-                  </tr>
-                );
-              }).flatMap((cRow, idx) => {
-                // додаткові рядки для V1/V2/EXP (рендеримо їх одразу після першого)
-                const c = items[idx];
-                if (!c) return [];
-                const rows: {
-                  label: string;
-                  pipeline: string;
-                  status: string;
-                  trigger: string;
-                }[] = [];
-
-                rows.push({
-                  label: "V1",
-                  pipeline: pname(c.v1_to_pipeline_id),
-                  status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
-                  trigger: c.v1_value || "",
-                });
-
-                if (c.v2_enabled) {
-                  rows.push({
-                    label: "V2",
-                    pipeline: pname(c.v2_to_pipeline_id),
-                    status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
-                    trigger: c.v2_value || "",
-                  });
-                }
-
-                rows.push({
-                  label: "EXP",
-                  pipeline: pname(c.exp_to_pipeline_id),
-                  status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
-                  trigger: `${c.exp_days} днів`,
-                });
-
-                // перший ряд уже відрендерили у <tbody> вище,
-                // а тут генеруємо решту рядків для цієї кампанії:
-                return rows.slice(1).map((r, i) => (
-                  <tr key={`extra-${c.id}-${i}`} className="align-middle bg-white/80 shadow-sm">
-                    <td className="py-3 text-center">{r.label}</td>
-                    <td className="py-3 text-center">{r.pipeline}</td>
-                    <td className="py-3 text-center">{r.status}</td>
-                    <td className="py-3 text-center">{r.trigger || "—"}</td>
-                  </tr>
-                ));
-              })}
-              {!items.length && (
-                <tr>
-                  <td className="py-10 text-center text-gray-500" colSpan={8}>
-                    Кампаній поки немає
-                  </td>
-                </tr>
-              )}
-            </tbody>
           </table>
+        </div>
+
+        {/* Кампанії у вигляді окремих «карток» з внутрішньою табличкою */}
+        <div className="space-y-3">
+          {items.map((c) => {
+            // рядки сутностей
+            const rows: {
+              label: string;
+              pipeline: string;
+              status: string;
+              trigger: string;
+            }[] = [
+              {
+                label: "База",
+                pipeline: pname(c.base_pipeline_id),
+                status: sname(c.base_pipeline_id, c.base_status_id),
+                trigger: "",
+              },
+              {
+                label: "V1",
+                pipeline: pname(c.v1_to_pipeline_id),
+                status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
+                trigger: c.v1_value || "",
+              },
+            ];
+            if (c.v2_enabled) {
+              rows.push({
+                label: "V2",
+                pipeline: pname(c.v2_to_pipeline_id),
+                status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
+                trigger: c.v2_value || "",
+              });
+            }
+            rows.push({
+              label: "EXP",
+              pipeline: pname(c.exp_to_pipeline_id),
+              status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
+              trigger: `${c.exp_days} днів`,
+            });
+
+            const rowSpan = rows.length;
+
+            return (
+              <div
+                key={c.id}
+                className="ring-1 ring-gray-200 rounded-2xl overflow-hidden bg-white"
+              >
+                <table className="min-w-full table-fixed">
+                  <colgroup>
+                    <col className="w-[200px]" />
+                    <col className="w-[160px]" />
+                    <col className="w-[120px]" />
+                    <col />
+                    <col />
+                    <col className="w-[140px]" />
+                    <col className="w-[80px]" />
+                    <col className="w-[120px]" />
+                  </colgroup>
+                  <tbody>
+                    {/* перший ряд групи */}
+                    <tr className="text-center">
+                      <td className="py-3" rowSpan={rowSpan}>
+                        {new Date(c.created_at).toLocaleString("uk-UA")}
+                      </td>
+                      <td className="py-3 font-semibold" rowSpan={rowSpan}>
+                        {c.name}
+                      </td>
+                      <td className="py-3">База</td>
+                      <td className="py-3">
+                        {rows[0].pipeline ? <Badge>{rows[0].pipeline}</Badge> : "—"}
+                      </td>
+                      <td className="py-3">
+                        {rows[0].status ? <Badge>{rows[0].status}</Badge> : "—"}
+                      </td>
+                      <td className="py-3">{rows[0].trigger || "—"}</td>
+                      <td className="py-3" rowSpan={rowSpan}>
+                        {c.enabled ? "yes" : "no"}
+                      </td>
+                      <td className="py-3 whitespace-nowrap" rowSpan={rowSpan}>
+                        <a
+                          className="text-blue-600 hover:underline mr-3"
+                          href={`/admin/campaigns/${c.id}/edit`}
+                        >
+                          Edit
+                        </a>
+                        <a
+                          className="text-red-600 hover:underline"
+                          href={`/api/campaigns/${c.id}`}
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            if (!confirm("Видалити кампанію?")) return;
+                            await fetch(`/api/campaigns/${c.id}`, {
+                              method: "DELETE",
+                              credentials: "include",
+                            });
+                            await loadAll();
+                          }}
+                        >
+                          Delete
+                        </a>
+                      </td>
+                    </tr>
+
+                    {/* решта рядків (V1 / V2 / EXP) */}
+                    {rows.slice(1).map((r, i) => (
+                      <tr className="text-center" key={i}>
+                        <td className="py-3">{r.label}</td>
+                        <td className="py-3">
+                          {r.pipeline ? <Badge>{r.pipeline}</Badge> : "—"}
+                        </td>
+                        <td className="py-3">
+                          {r.status ? <Badge>{r.status}</Badge> : "—"}
+                        </td>
+                        <td className="py-3">{r.trigger || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+
+          {!items.length && (
+            <div className="text-center text-gray-500 py-12 ring-1 ring-gray-200 rounded-2xl bg-white">
+              Кампаній поки немає
+            </div>
+          )}
         </div>
       </div>
     </div>
