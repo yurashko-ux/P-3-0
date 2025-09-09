@@ -3,10 +3,9 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 
-// ---- types (узгоджені зі сторінкою створення) ----
 type Op = 'contains' | 'equals';
 type Campaign = {
   id: string;
@@ -41,7 +40,7 @@ type Campaign = {
 type Pipeline = { id: string | number; name: string };
 type Status = { id: string | number; name: string; pipeline_id?: string | number };
 
-// ---- small UI helpers (зовнішній вигляд як у створенні) ----
+// ---------- UI ----------
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border p-4 md:p-6">
@@ -50,9 +49,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </div>
   );
 }
-function Field({
-  label, children,
-}: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-sm text-gray-600">{label}</span>
@@ -61,23 +58,34 @@ function Field({
   );
 }
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={`rounded-lg border px-3 py-2 text-sm outline-none ${props.className || ''}`}
-    />
-  );
+  return <input {...props} className={`rounded-lg border px-3 py-2 text-sm outline-none ${props.className || ''}`} />;
 }
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className={`rounded-lg border px-3 py-2 text-sm outline-none ${props.className || ''}`}
-    />
-  );
+  return <select {...props} className={`rounded-lg border px-3 py-2 text-sm outline-none ${props.className || ''}`} />;
 }
 
-// ---- page ----
+// ---- helpers to normalize API shapes ----
+function pickArr<T = any>(j: any, keys: string[]): T[] {
+  for (const k of keys) {
+    const v = j?.[k];
+    if (Array.isArray(v)) return v as T[];
+  }
+  return Array.isArray(j) ? (j as T[]) : [];
+}
+function normPipelines(j: any): Pipeline[] {
+  const arr = pickArr<Pipeline>(j, ['items', 'data', 'pipelines', 'result']);
+  return arr.map((p: any) => ({ id: String(p.id ?? p.ID ?? p.value ?? ''), name: String(p.name ?? p.title ?? p.label ?? '') }))
+            .filter(p => p.id && p.name);
+}
+function normStatuses(j: any): Status[] {
+  const arr = pickArr<Status>(j, ['items', 'data', 'statuses', 'result']);
+  return arr.map((s: any) => ({
+    id: String(s.id ?? s.ID ?? s.value ?? ''),
+    name: String(s.name ?? s.title ?? s.label ?? ''),
+    pipeline_id: String(s.pipeline_id ?? s.pipelineId ?? s.pid ?? ''),
+  })).filter(s => s.id && s.name);
+}
+
 export default function EditCampaignPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -86,33 +94,41 @@ export default function EditCampaignPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // довідники
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [statusesByPid, setStatusesByPid] = useState<Record<string, Status[]>>({});
+  const [dictErr, setDictErr] = useState<string | null>(null);
 
-  // кампанія
   const [c, setC] = useState<Campaign | null>(null);
 
-  // ---- fetch helpers ----
   async function fetchPipelines() {
-    const r = await fetch('/api/keycrm/pipelines', { credentials: 'include', cache: 'no-store' });
-    const j = await r.json().catch(() => ({}));
-    setPipelines(Array.isArray(j.items) ? j.items : []);
+    setDictErr(null);
+    try {
+      const r = await fetch('/api/keycrm/pipelines', { credentials: 'include', cache: 'no-store' });
+      const j = await r.json().catch(() => ({}));
+      const arr = normPipelines(j);
+      if (!arr.length && j?.error) setDictErr(`pipelines: ${j.error}`);
+      setPipelines(arr);
+    } catch (e: any) {
+      setDictErr(`pipelines: ${String(e?.message || e)}`);
+      setPipelines([]);
+    }
   }
   async function fetchStatuses(pid: string) {
-    if (!pid) return;
-    if (statusesByPid[pid]) return; // кеш
-    const r = await fetch(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(pid)}`, {
-      credentials: 'include',
-      cache: 'no-store',
-    });
-    const j = await r.json().catch(() => ({}));
-    const arr: Status[] = Array.isArray(j.items) ? j.items : [];
-    setStatusesByPid((s) => ({ ...s, [pid]: arr }));
+    if (!pid || statusesByPid[pid]) return;
+    try {
+      const r = await fetch(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(pid)}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const j = await r.json().catch(() => ({}));
+      const arr = normStatuses(j);
+      setStatusesByPid((s) => ({ ...s, [pid]: arr }));
+    } catch {
+      setStatusesByPid((s) => ({ ...s, [pid]: [] }));
+    }
   }
   const statuses = (pid?: string | null) => statusesByPid[String(pid || '')] || [];
 
-  // ---- load campaign ----
   async function loadCampaign() {
     const r = await fetch('/api/campaigns', { credentials: 'include', cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
@@ -120,14 +136,8 @@ export default function EditCampaignPage() {
     const found = list.find((x) => x.id === id) || null;
     if (!found) throw new Error('Campaign not found');
     setC(found);
-
-    // preload statuses для усіх згаданих воронок
-    const pids = [
-      found.base_pipeline_id,
-      found.v1_to_pipeline_id || '',
-      found.v2_to_pipeline_id || '',
-      found.exp_to_pipeline_id || '',
-    ].filter(Boolean) as string[];
+    const pids = [found.base_pipeline_id, found.v1_to_pipeline_id || '', found.v2_to_pipeline_id || '', found.exp_to_pipeline_id || '']
+      .filter(Boolean) as string[];
     await Promise.allSettled(pids.map((pid) => fetchStatuses(pid)));
   }
 
@@ -136,7 +146,7 @@ export default function EditCampaignPage() {
       setLoading(true);
       setError(null);
       try {
-        await Promise.all([fetchPipelines()]);
+        await fetchPipelines();
         await loadCampaign();
       } catch (e: any) {
         setError(String(e?.message || e));
@@ -147,13 +157,12 @@ export default function EditCampaignPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // ---- change helpers ----
   const set = <K extends keyof Campaign>(key: K, value: Campaign[K]) =>
     setC((prev) => (prev ? { ...prev, [key]: value } : prev));
 
   function onPipelineChange(pKey: keyof Campaign, sKey: keyof Campaign, pid: string) {
     set(pKey, pid as any);
-    set(sKey, '' as any); // скидаємо статус, бо інший pipeline
+    set(sKey, '' as any);
     fetchStatuses(pid);
   }
 
@@ -163,8 +172,6 @@ export default function EditCampaignPage() {
     setSaving(true);
     setError(null);
     try {
-      // NOTE: зараз бекенд POST /api/campaigns створює заново і обнуляє лічильники.
-      // Тимчасово збережемо поточні лічильники всередині payload — якщо на бекенді з’явиться підтримка upsert, вони збережуться.
       const payload: Campaign = {
         ...c,
         updated_at: new Date().toISOString(),
@@ -172,7 +179,6 @@ export default function EditCampaignPage() {
         v2_field: 'text',
         v2_enabled: !!c.v2_enabled && !!(c.v2_value?.trim()),
       };
-
       const r = await fetch('/api/campaigns', {
         method: 'POST',
         credentials: 'include',
@@ -189,7 +195,6 @@ export default function EditCampaignPage() {
     }
   }
 
-  // ---- UI ----
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-6">
@@ -214,12 +219,14 @@ export default function EditCampaignPage() {
           <a href="/admin/campaigns" className="rounded-full border px-3 py-1.5 text-sm">← До списку</a>
           <button
             type="button"
-            onClick={() => fetchPipelines().then(() => {
-              if (c.base_pipeline_id) fetchStatuses(c.base_pipeline_id);
-              if (c.v1_to_pipeline_id) fetchStatuses(c.v1_to_pipeline_id);
-              if (c.v2_to_pipeline_id) fetchStatuses(c.v2_to_pipeline_id);
-              if (c.exp_to_pipeline_id) fetchStatuses(c.exp_to_pipeline_id);
-            })}
+            onClick={() => {
+              fetchPipelines().then(() => {
+                if (c.base_pipeline_id) fetchStatuses(c.base_pipeline_id);
+                if (c.v1_to_pipeline_id) fetchStatuses(c.v1_to_pipeline_id);
+                if (c.v2_to_pipeline_id) fetchStatuses(c.v2_to_pipeline_id);
+                if (c.exp_to_pipeline_id) fetchStatuses(c.exp_to_pipeline_id);
+              });
+            }}
             className="rounded-full border px-3 py-1.5 text-sm"
             title="Оновити довідники"
           >
@@ -228,23 +235,21 @@ export default function EditCampaignPage() {
         </div>
       </div>
 
+      {dictErr && (
+        <div className="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {dictErr}
+        </div>
+      )}
+
       <form onSubmit={onSubmit} className="grid gap-6">
         {/* Загальні */}
         <Section title="Загальні">
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Назва">
-              <TextInput
-                value={c.name || ''}
-                onChange={(e) => set('name', e.target.value)}
-                placeholder="Назва кампанії"
-                required
-              />
+              <TextInput value={c.name || ''} onChange={(e) => set('name', e.target.value)} placeholder="Назва кампанії" required />
             </Field>
             <Field label="Увімкнено">
-              <Select
-                value={c.enabled ? '1' : '0'}
-                onChange={(e) => set('enabled', e.target.value === '1')}
-              >
+              <Select value={c.enabled ? '1' : '0'} onChange={(e) => set('enabled', e.target.value === '1')}>
                 <option value="1">yes</option>
                 <option value="0">no</option>
               </Select>
@@ -288,24 +293,16 @@ export default function EditCampaignPage() {
         <Section title="Варіант V1 (обов’язковий)">
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Оператор">
-              <Select
-                value={c.v1_op}
-                onChange={(e) => set('v1_op', e.target.value as Op)}
-              >
+              <Select value={c.v1_op} onChange={(e) => set('v1_op', e.target.value as Op)}>
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </Select>
             </Field>
             <Field label="Значення (v1_value)">
-              <TextInput
-                value={c.v1_value || ''}
-                onChange={(e) => set('v1_value', e.target.value)}
-                placeholder="ключове слово"
-              />
+              <TextInput value={c.v1_value || ''} onChange={(e) => set('v1_value', e.target.value)} placeholder="ключове слово" />
             </Field>
             <div />
           </div>
-
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <Field label="Воронка призначення (v1)">
               <Select
@@ -319,10 +316,7 @@ export default function EditCampaignPage() {
               </Select>
             </Field>
             <Field label="Статус призначення (v1)">
-              <Select
-                value={c.v1_to_status_id || ''}
-                onChange={(e) => set('v1_to_status_id', e.target.value)}
-              >
+              <Select value={c.v1_to_status_id || ''} onChange={(e) => set('v1_to_status_id', e.target.value)}>
                 <option value="">—</option>
                 {statuses(c.v1_to_pipeline_id).map((s) => (
                   <option key={s.id} value={String(s.id)}>{s.name}</option>
@@ -337,21 +331,13 @@ export default function EditCampaignPage() {
         <Section title="Варіант V2 (опційний)">
           <div className="mb-2 flex items-center gap-2">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={!!c.v2_enabled}
-                onChange={(e) => set('v2_enabled', e.target.checked)}
-              />
+              <input type="checkbox" checked={!!c.v2_enabled} onChange={(e) => set('v2_enabled', e.target.checked)} />
               Увімкнути V2
             </label>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Оператор">
-              <Select
-                value={c.v2_op}
-                onChange={(e) => set('v2_op', e.target.value as Op)}
-                disabled={!c.v2_enabled}
-              >
+              <Select value={c.v2_op} onChange={(e) => set('v2_op', e.target.value as Op)} disabled={!c.v2_enabled}>
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </Select>
@@ -366,7 +352,6 @@ export default function EditCampaignPage() {
             </Field>
             <div />
           </div>
-
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <Field label="Воронка призначення (v2)">
               <Select
@@ -411,7 +396,6 @@ export default function EditCampaignPage() {
             <div />
             <div />
           </div>
-
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <Field label="Воронка призначення (exp)">
               <Select
@@ -425,10 +409,7 @@ export default function EditCampaignPage() {
               </Select>
             </Field>
             <Field label="Статус призначення (exp)">
-              <Select
-                value={c.exp_to_status_id || ''}
-                onChange={(e) => set('exp_to_status_id', e.target.value)}
-              >
+              <Select value={c.exp_to_status_id || ''} onChange={(e) => set('exp_to_status_id', e.target.value)}>
                 <option value="">—</option>
                 {statuses(c.exp_to_pipeline_id).map((s) => (
                   <option key={s.id} value={String(s.id)}>{s.name}</option>
