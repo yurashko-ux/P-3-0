@@ -1,92 +1,119 @@
 // web/lib/keycrm.ts
-/**
- * Легкий клієнт для KeyCRM.
- * ENV:
- *  - KEYCRM_API_TOKEN (Bearer токен) — обов'язково
- *  - KEYCRM_BASE_URL  — опційно, за замовч. https://openapi.keycrm.app/v1
- */
+// Набір утиліт для KeyCRM з "розумним" пошуком картки за title (== instagram username)
 
-const KC_BASE = (process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1').replace(/\/+$/, '');
-const KC_TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
+const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+const TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || "";
 
-function kcHeaders(json = true) {
-  const h: Record<string, string> = { Authorization: `Bearer ${KC_TOKEN}` };
-  if (json) h['Content-Type'] = 'application/json';
-  return h;
-}
+type Json = any;
 
-async function kcFetch(url: string, init?: RequestInit) {
-  if (!KC_TOKEN) {
-    return new Response(JSON.stringify({ ok: false, error: 'KEYCRM_API_TOKEN not set' }), { status: 500 });
+async function kcFetch(path: string, init?: RequestInit) {
+  if (!TOKEN) {
+    return { ok: false, status: 401, json: null };
   }
-  return fetch(url, { cache: 'no-store', ...init });
+  const url = `${BASE}${path}`;
+  const r = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${TOKEN}`,
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  }).catch(() => null);
+  if (!r) return { ok: false, status: 502, json: null };
+  let json: Json = null;
+  try {
+    json = await r.json();
+  } catch {}
+  return { ok: r.ok, status: r.status, json };
 }
 
-/**
- * Пошук картки за title (instagram username_id).
- * Пробує кілька варіантів ендпоінтів/параметрів, повертає перший знайдений id.
- */
-export async function kcFindCardIdByTitle(title: string): Promise<number | null> {
-  const t = String(title ?? '').trim();
-  if (!t) return null;
+// У різних версіях API можуть бути різні параметри пошуку.
+// Спробуємо кілька варіантів і зберемо кандидатів у єдиний список.
+async function tryCollectCandidates(path: string) {
+  const res = await kcFetch(path);
+  if (!res.ok) return [];
+  const j = res.json ?? {};
+  const arr =
+    (Array.isArray(j) && j) ||
+    (Array.isArray(j.data) && j.data) ||
+    (Array.isArray(j.items) && j.items) ||
+    [];
+  return arr;
+}
 
-  const candidates = [
-    `${KC_BASE}/cards?title=${encodeURIComponent(t)}`,
-    `${KC_BASE}/cards?search=${encodeURIComponent(t)}`,
-    `${KC_BASE}/cards?query[title]=${encodeURIComponent(t)}`,
-    `${KC_BASE}/pipelines/cards?title=${encodeURIComponent(t)}`,
+function normTitle(v: string) {
+  return (v || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+// Збираємо кандидатів різними способами, відфільтровуємо по точній рівності title.
+export async function kcFindCardsByTitle(username: string): Promise<Array<any>> {
+  const u = normTitle(username);
+  if (!u) return [];
+
+  const variants = new Set<any>();
+
+  // Варіанти пошуку (беремо все, що повертає масив data/items)
+  const paths = [
+    `/pipelines/cards?search=${encodeURIComponent(u)}`,
+    `/cards?search=${encodeURIComponent(u)}`,
+    `/pipelines/cards?title=${encodeURIComponent(u)}`,
+    `/cards?title=${encodeURIComponent(u)}`,
   ];
 
-  for (const url of candidates) {
-    try {
-      const r = await kcFetch(url, { headers: kcHeaders(false) });
-      if (!r.ok) continue;
-      const j: any = await r.json().catch(() => null);
-
-      const items =
-        Array.isArray(j) ? j :
-        Array.isArray(j?.data) ? j.data :
-        Array.isArray(j?.items) ? j.items :
-        [];
-
-      // пріоритезуємо точний збіг по title
-      const exact = items.find((c: any) =>
-        String(c?.title ?? c?.name ?? '').trim().toLowerCase() === t.toLowerCase()
-      );
-      if (exact?.id != null) return Number(exact.id);
-
-      // fallback — перший елемент із id
-      const first = items.find((c: any) => c?.id != null);
-      if (first?.id != null) return Number(first.id);
-    } catch {}
+  for (const p of paths) {
+    const list = await tryCollectCandidates(p);
+    for (const it of list) variants.add(it);
   }
 
-  return null;
+  // Приводимо у масив і фільтруємо: title має дорівнювати username (без @, без регістру)
+  const arr = Array.from(variants) as any[];
+  return arr.filter((x) => normTitle(x?.title) === u);
 }
 
-/**
- * АЛІАС для існуючого імпорту в роуті:
- *  findCardIdByUsername(username) → шукає card.id по title === username
- */
-export async function findCardIdByUsername(username: string): Promise<number | null> {
-  return kcFindCardIdByTitle(username);
+// Обираємо "найкращу" картку: активну, найсвіжіший updated_at, або з найбільшим id.
+function pickBest(cards: any[]) {
+  if (!cards.length) return null;
+  const nonDeleted = cards.filter((c) => !c?.deleted_at && !c?.archived_at);
+  const pool = nonDeleted.length ? nonDeleted : cards.slice();
+
+  const withDates = pool
+    .map((c) => ({ c, t: Date.parse(String(c?.updated_at || c?.created_at || 0)) || 0 }))
+    .sort((a, b) => b.t - a.t);
+
+  if (withDates[0]?.t) return withDates[0].c;
+
+  // fallback — найбільший id як «найсвіжіший»
+  return pool
+    .map((c) => ({ c, id: Number(String(c?.id)) || 0 }))
+    .sort((a, b) => b.id - a.id)[0]?.c;
 }
 
-/**
- * Рух картки між статусами/воронками.
- * Використовує PUT /pipelines/cards/{cardId}
- * body може містити: { status_id?, pipeline_id?, ...інші поля KeyCRM }
- */
-export async function kcMoveCard(cardId: number | string, body: any) {
-  const url = `${KC_BASE}/pipelines/cards/${encodeURIComponent(String(cardId))}`;
-  const r = await kcFetch(url, {
-    method: 'PUT',
-    headers: kcHeaders(true),
-    body: JSON.stringify(body),
+// Публічна ф-ція: повертаємо id «найкращої» картки по title.
+export async function kcFindCardIdByTitleSmart(username: string): Promise<string> {
+  const cards = await kcFindCardsByTitle(username);
+  const best = pickBest(cards);
+  return best ? String(best.id) : "";
+}
+
+// Отримати стан картки з endpoint, де гарантовано є pipeline_id/status_id
+export async function kcGetCardState(cardId: string): Promise<{ pipeline_id: string; status_id: string } | null> {
+  const res = await kcFetch(`/pipelines/cards/${encodeURIComponent(cardId)}`);
+  if (!res.ok) return null;
+  const d = res.json?.data ?? res.json ?? null;
+  if (!d) return null;
+  return { pipeline_id: String(d.pipeline_id ?? ""), status_id: String(d.status_id ?? "") };
+}
+
+// Переміщення картки (PUT pipelines/cards/{id})
+export async function kcMoveCard(
+  cardId: string,
+  payload: { pipeline_id?: string; status_id?: string; note?: string }
+) {
+  const body = JSON.stringify({
+    ...(payload.pipeline_id ? { pipeline_id: payload.pipeline_id } : {}),
+    ...(payload.status_id ? { status_id: payload.status_id } : {}),
+    ...(payload.note ? { note: payload.note } : {}),
   });
-  const ok = r.ok;
-  let json: any = null;
-  try { json = await r.json(); } catch {}
-  return { ok, status: r.status, response: json, via: 'PUT pipelines/cards/{id}' };
+  return kcFetch(`/pipelines/cards/${encodeURIComponent(cardId)}`, { method: "PUT", body });
 }
-
