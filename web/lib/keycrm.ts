@@ -1,5 +1,5 @@
 // web/lib/keycrm.ts
-// KeyCRM utils: пошук картки за IG username (contact.social_id) + стан + move
+// KeyCRM utils: пошук картки за IG username (contact.social_id) + пошук по title («Чат з …») + move
 
 const BASE_URL = (process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1').replace(/\/+$/, '');
 const API_TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
@@ -27,6 +27,7 @@ async function keycrmFetch(path: string, init?: RequestInit): Promise<Response> 
 }
 
 const norm = (s: string) => (s || '').trim().replace(/^@+/, '').toLowerCase();
+const normTitle = (s: string) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 function extractListItems(j: Json): any[] {
   if (Array.isArray(j)) return j;
@@ -37,23 +38,18 @@ function extractListItems(j: Json): any[] {
   return [];
 }
 
-function hasContactInItem(it: any): boolean {
-  return !!(it && it.contact && (it.contact.social_id || it.contact.socialId));
-}
-
 function itemId(it: any): number | null {
   const n = Number(it?.id ?? it?.card_id ?? it?.cardId);
   return Number.isFinite(n) ? n : null;
 }
 
-// ---- Лісти сторінками з двома стилями пагінації ----
 type Style = 'jsonapi' | 'laravel';
 type ListOpts = {
   page: number;
   per: number;
   search?: string;
   pipeline_id?: string;
-  withContact?: boolean; // додати with=contact
+  withContact?: boolean;
 };
 
 async function listCardsPage(style: Style, opts: ListOpts): Promise<{ items: any[]; count: number }> {
@@ -80,10 +76,12 @@ async function getCardDetail(cardId: number): Promise<Json | null> {
   const r = await keycrmFetch(`/pipelines/cards/${cardId}`);
   if (!r.ok) return null;
   const j = await r.json().catch(() => null);
-  return j;
+  const d = (j as any)?.data ?? j ?? null;
+  return d;
 }
 
-// ---- Move + стани ----
+/* -------------------- СТАН + MOVE -------------------- */
+
 export async function kcGetCardState(cardId: string | number): Promise<{ pipeline_id: string; status_id: string } | null> {
   const r = await keycrmFetch(`/pipelines/cards/${encodeURIComponent(String(cardId))}`);
   if (!r.ok) return null;
@@ -112,10 +110,11 @@ export async function keycrmMoveCard(
   return { ok: r.ok, status: r.status, response: resp, via: 'PUT pipelines/cards/{id}' };
 }
 
-// Сумісність на стару назву
+// для сумісності зі старими імпортами
 export { keycrmMoveCard as kcMoveCard };
 
-// ---- Пошук картки за IG username у contact.social_id ----
+/* -------------------- ПОШУК ЗА IG USERNAME -------------------- */
+
 export type FindResult = {
   ok: boolean;
   username: string;
@@ -134,7 +133,7 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
   const target = norm(username);
 
   try {
-    // 1) Спроба швидко: search + with=contact (щоб не ходити по деталях)
+    // 1) search + with=contact
     for (const style of ['jsonapi', 'laravel'] as Style[]) {
       let checked = 0;
       for (let page = 1; page <= 25; page++) {
@@ -143,7 +142,6 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
         });
         if (count === 0) break;
 
-        // є contact прямо в списку
         for (const it of items) {
           const id = itemId(it);
           const listed = norm(String(it?.contact?.social_id ?? it?.contact?.socialId ?? ''));
@@ -152,10 +150,9 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
           }
         }
 
-        // якщо contact в списку немає — підстрахуємось деталями (обмежимо до 300 перевірок)
         for (const it of items) {
           if (checked >= 300) break;
-          if (hasContactInItem(it)) continue; // уже перевіряли вище
+          if (it?.contact) continue;
           const id = itemId(it);
           if (!id) continue;
           const d = await getCardDetail(id);
@@ -165,11 +162,12 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
             return { ok: true, username, card_id: id, strategy: 'search+detail', checked, scope: 'search' };
           }
         }
-        if (count < 100) break; // схоже, сторінки закінчились
+
+        if (count < 100) break;
       }
     }
 
-    // 2) Глобальний скан без search (у випадку, якщо search не індексує contact)
+    // 2) глобальний скан
     for (const style of ['jsonapi', 'laravel'] as Style[]) {
       let checked = 0;
       for (let page = 1; page <= 40; page++) {
@@ -178,7 +176,6 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
         });
         if (count === 0) break;
 
-        // якщо contact вже в списку — перевіряємо одразу
         for (const it of items) {
           const id = itemId(it);
           const listed = norm(String(it?.contact?.social_id ?? it?.contact?.socialId ?? ''));
@@ -187,10 +184,9 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
           }
         }
 
-        // інакше — деталями
         for (const it of items) {
           if (checked >= 1000) break;
-          if (hasContactInItem(it)) continue;
+          if (it?.contact) continue;
           const id = itemId(it);
           if (!id) continue;
           const d = await getCardDetail(id);
@@ -209,4 +205,58 @@ export async function findCardIdByUsername(usernameRaw: string, pipelineId?: str
   } catch (e: any) {
     return { ok: false, username, card_id: null, strategy: 'error', checked: 0, scope: 'global', error: e?.message || 'failed' };
   }
+}
+
+/* -------------------- ПОШУК ЗА TITLE (FULL NAME) -------------------- */
+
+export async function kcFindCardIdByTitleSmart(fullnameRaw: string, pipelineId?: string): Promise<{ ok: boolean; card_id: number | null; strategy: string; checked: number; }> {
+  const fullname = (fullnameRaw || '').trim();
+  if (!fullname) return { ok: false, card_id: null, strategy: 'no-fullname', checked: 0 };
+
+  const target = normTitle(fullname);
+  const targetExact = `чат з ${target}`; // очікуваний формат заголовка
+
+  // 1) Пошук через search (якщо індексує title)
+  for (const style of ['jsonapi', 'laravel'] as Style[]) {
+    let checked = 0;
+    for (let page = 1; page <= 25; page++) {
+      const { items, count } = await listCardsPage(style, {
+        page, per: 100, search: fullname, pipeline_id: pipelineId,
+      });
+      if (count === 0) break;
+
+      for (const it of items) {
+        const id = itemId(it);
+        const title = normTitle(String(it?.title ?? ''));
+        if (!id) continue;
+        if (title === targetExact || title.endsWith(` ${target}`) || title.includes(target)) {
+          return { ok: true, card_id: id, strategy: 'title-search', checked };
+        }
+      }
+      if (count < 100) break;
+    }
+  }
+
+  // 2) Глобальний скан по title
+  for (const style of ['jsonapi', 'laravel'] as Style[]) {
+    let checked = 0;
+    for (let page = 1; page <= 40; page++) {
+      const { items, count } = await listCardsPage(style, {
+        page, per: 100, pipeline_id: pipelineId,
+      });
+      if (count === 0) break;
+
+      for (const it of items) {
+        const id = itemId(it);
+        const title = normTitle(String(it?.title ?? ''));
+        if (!id) continue;
+        if (title === targetExact || title.endsWith(` ${target}`) || title.includes(target)) {
+          return { ok: true, card_id: id, strategy: 'title-scan', checked };
+        }
+      }
+      if (count < 100) break;
+    }
+  }
+
+  return { ok: false, card_id: null, strategy: 'title-not-found', checked: 0 };
 }
