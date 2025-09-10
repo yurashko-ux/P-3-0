@@ -45,16 +45,30 @@ function pickIds(items: any[]): number[] {
   return out;
 }
 
-async function listCardIdsPage(page = 1, per_page = 50, search?: string): Promise<number[]> {
-  const params = new URLSearchParams();
-  params.set('page', String(page));
-  params.set('per_page', String(per_page));
-  if (search) params.set('search', search);
-  const r = await keycrmFetch(`/pipelines/cards?${params.toString()}`);
+async function listCardIdsPage(page = 1, per = 100, search?: string): Promise<number[]> {
+  // 1) JSON:API стиль: page[number] / page[size]
+  const p1 = new URLSearchParams();
+  p1.set('page[number]', String(page));
+  p1.set('page[size]', String(per));
+  if (search) p1.set('search', search);
+  let r = await keycrmFetch(`/pipelines/cards?${p1.toString()}`);
+  if (r.ok) {
+    const j = await r.json().catch(() => ({}));
+    const items = extractListItems(j);
+    const ids = pickIds(items);
+    if (ids.length) return ids;
+  }
+
+  // 2) Ларавел-стиль: page / per_page
+  const p2 = new URLSearchParams();
+  p2.set('page', String(page));
+  p2.set('per_page', String(per));
+  if (search) p2.set('search', search);
+  r = await keycrmFetch(`/pipelines/cards?${p2.toString()}`);
   if (!r.ok) return [];
-  const j = await r.json().catch(() => ({}));
-  const items = extractListItems(j);
-  return pickIds(items);
+  const j2 = await r.json().catch(() => ({}));
+  const items2 = extractListItems(j2);
+  return pickIds(items2);
 }
 
 async function getCardDetail(cardId: number): Promise<Json | null> {
@@ -84,9 +98,9 @@ export async function findCardIdByUsername(usernameRaw: string): Promise<FindRes
   }
 
   try {
-    // 1) спроба звузити пошуком
+    // 1) Звузити пошуком: спершу сторінка з пошуком (100 штук)
     let checked = 0;
-    const firstIds = await listCardIdsPage(1, 50, username);
+    const firstIds = await listCardIdsPage(1, 100, username);
     for (const id of firstIds) {
       const d = await getCardDetail(id);
       checked++;
@@ -96,11 +110,11 @@ export async function findCardIdByUsername(usernameRaw: string): Promise<FindRes
       }
     }
 
-    // 2) глобальний обмежений скан (до 6*50 детальних перевірок)
+    // 2) Обмежений глобальний скан — до 20 сторінок * 100 = 2000 карток
     checked = 0;
-    const MAX_PAGES = 6;
+    const MAX_PAGES = 20;
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const ids = await listCardIdsPage(page, 50);
+      const ids = await listCardIdsPage(page, 100);
       if (ids.length === 0) break;
       for (const id of ids) {
         const d = await getCardDetail(id);
@@ -110,7 +124,7 @@ export async function findCardIdByUsername(usernameRaw: string): Promise<FindRes
           return { ok: true, username, card_id: id, strategy: 'detail-scan', checked, scope: 'global' };
         }
       }
-      if (ids.length < 50) break;
+      if (ids.length < 100) break; // кінець списку
     }
 
     return { ok: false, username, card_id: null, strategy: 'not-found', checked: 0, scope: 'global' };
@@ -149,5 +163,5 @@ export async function keycrmMoveCard(
   return { ok: r.ok, status: r.status, response: resp, via: 'PUT pipelines/cards/{id}' };
 }
 
-// ---- Експорти сумісності (щоб не ламати існуючі імпорти) ----
+// ---- Експорти сумісності
 export { keycrmMoveCard as kcMoveCard };
