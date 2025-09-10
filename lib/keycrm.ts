@@ -1,154 +1,97 @@
 // lib/keycrm.ts
-// Узагальнений клієнт + пошук картки за title (Instagram username)
+type KCAuth = { baseUrl: string; token: string };
+const kcAuth = (): KCAuth => ({
+  baseUrl: process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1",
+  token: process.env.KEYCRM_API_TOKEN || "",
+});
 
-const KEYCRM_BASE =
-  process.env.KEYCRM_BASE_URL?.replace(/\/+$/, "") ||
-  "https://openapi.keycrm.app/v1";
-
-const KEYCRM_API_TOKEN =
-  process.env.KEYCRM_API_TOKEN ||
-  process.env.KEYCRM_BEARER ||
-  process.env.KEYCRM_TOKEN;
-
-type Json = any;
-
-function norm(str: string) {
-  return (str || "")
-    .toString()
-    .trim()
-    .replace(/^@+/, "") // прибираємо @ на початку
-    .toLowerCase();
-}
-
-export function keycrmConfigured() {
-  return Boolean(KEYCRM_API_TOKEN && KEYCRM_BASE);
-}
-
-async function kcRequest(
-  path: string,
-  init: RequestInit = {}
-): Promise<Response> {
-  if (!keycrmConfigured()) {
-    throw new Error("KeyCRM not configured");
-  }
-  const url = path.startsWith("http") ? path : `${KEYCRM_BASE}/${path.replace(/^\/+/, "")}`;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${KEYCRM_API_TOKEN}`,
+function kcHeaders() {
+  const { token } = kcAuth();
+  return {
+    Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
-    Accept: "application/json",
   };
-  init.headers = { ...headers, ...(init.headers as any) };
-  const res = await fetch(url, init);
-  return res;
+}
+
+type Scope = { pipeline_id: number; status_id: number };
+
+function pickContainer(json: any): any[] {
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json?.data?.data)) return json.data.data;
+  return [];
+}
+
+function pageMeta(json: any, fallbackPer = 50, page = 1) {
+  const total = json?.total ?? json?.meta?.total ?? null;
+  const per = json?.per_page ?? json?.meta?.per_page ?? fallbackPer;
+  const current = json?.current_page ?? json?.meta?.current_page ?? page;
+  const last =
+    json?.last_page ??
+    json?.meta?.last_page ??
+    (total && per ? Math.ceil(total / per) : null);
+  return { total, per, current, last };
+}
+
+function norm(s?: string) {
+  return (s || "").trim().toLowerCase();
+}
+function normTitle(fullname?: string) {
+  const n = norm(fullname);
+  return n ? `чат з ${n}` : "";
 }
 
 /**
- * Повертає першу картку, у якої title === username (точна відповідність, без @, без регістру)
- * Пробує декілька пошукових варіантів і базову пагінацію.
+ * Пошук картки ЛИШЕ в базовій воронці/статусі активної кампанії.
+ * Стратегії:
+ * 1) contact.social_id === username (IG логін без "@")
+ * 2) title включає "Чат з <ПІБ>" (у нижньому регістрі)
  */
-export async function kcFindCardIdByTitleSmart(
-  username: string
-): Promise<string | null> {
-  if (!keycrmConfigured()) return null;
-  const target = norm(username);
-  if (!target) return null;
+export async function kcFindCardIdInBase(
+  opts: { username?: string; fullname?: string; scope: Scope },
+): Promise<{ ok: boolean; card_id: number | null; strategy: string; checked: number }> {
+  const { baseUrl } = kcAuth();
+  const headers = kcHeaders();
+  const username = norm(opts.username);
+  const wantTitle = normTitle(opts.fullname);
+  const { pipeline_id, status_id } = opts.scope;
 
-  // Кандидати URL пошуку (найпоширеніші варіації в KeyCRM API)
-  const candidates = [
-    `pipelines/cards?search=${encodeURIComponent(username)}&page[size]=100`,
-    `pipelines/cards?title=${encodeURIComponent(username)}&page[size]=100`,
-    `cards?search=${encodeURIComponent(username)}&page[size]=100`,
-    `cards?title=${encodeURIComponent(username)}&page[size]=100`,
-  ];
+  const PER = Number(process.env.KEYCRM_PER_PAGE || 50);
+  const MAX_PAGES = Number(process.env.KEYCRM_MAX_PAGES || 3);
 
-  for (const basePath of candidates) {
-    // спробуємо пройти кілька сторінок (1..10) на випадок пагінації
-    for (let page = 1; page <= 10; page++) {
-      const sep = basePath.includes("?") ? "&" : "?";
-      const path = `${basePath}${sep}page[number]=${page}`;
+  let page = 1;
+  let checked = 0;
 
-      let res: Response;
-      try {
-        res = await kcRequest(path, { method: "GET", cache: "no-store" as any });
-      } catch {
-        continue;
+  while (page <= MAX_PAGES) {
+    const url = new URL(`${baseUrl}/pipelines/cards`);
+    url.searchParams.set("pipeline_id", String(pipeline_id));
+    url.searchParams.set("status_id", String(status_id));
+    url.searchParams.set("per_page", String(PER));
+    url.searchParams.set("page", String(page));
+    if (username) url.searchParams.set("search", username); // якщо KeyCRM враховує q у межах цього списку — пришвидшить
+
+    const res = await fetch(url.toString(), { headers, cache: "no-store" });
+    if (!res.ok) break;
+
+    const json = await res.json();
+    const items = pickContainer(json);
+
+    for (const c of items) {
+      checked++;
+      const social = norm(c?.contact?.social_id);
+      const title = norm(c?.title);
+
+      if (username && social === username) {
+        return { ok: true, card_id: Number(c.id), strategy: "contact.social_id", checked };
       }
-      if (!res.ok) continue;
-
-      let json: Json;
-      try {
-        json = await res.json();
-      } catch {
-        continue;
+      if (wantTitle && title.includes(wantTitle)) {
+        return { ok: true, card_id: Number(c.id), strategy: "title", checked };
       }
-
-      const items: any[] =
-        json?.data ||
-        json?.items ||
-        json?.cards ||
-        (Array.isArray(json) ? json : []);
-
-      for (const it of items) {
-        const id =
-          it?.id ?? it?.card_id ?? it?.attributes?.id ?? it?.attributes?.card_id;
-        const title =
-        it?.title ?? it?.name ?? it?.attributes?.title ?? it?.attributes?.name;
-        if (id && title && norm(title) === target) {
-          return String(id);
-        }
-      }
-
-      // якщо є ознаки пагінації й наступної сторінки немає — вилазимо з циклу сторінок
-      const total = json?.meta?.total || json?.meta?.total_items;
-      const perPage = json?.meta?.per_page || json?.meta?.page_size || 100;
-      const current = json?.meta?.current_page || page;
-      const last =
-        json?.meta?.last_page ||
-        (total && perPage ? Math.ceil(total / perPage) : undefined);
-
-      if (last && current >= last) break;
-      // якщо метаданих нема — після першої сторінки теж завершуємо (щоб не робити зайвих запитів)
-      if (!json?.meta && page >= 1) break;
     }
+
+    const meta = pageMeta(json, PER, page);
+    if (!meta.last || meta.current >= meta.last) break;
+    page++;
   }
 
-  return null;
+  return { ok: false, card_id: null, strategy: "not-found", checked };
 }
-
-/** Допоміжний «сирий» виклик (вже є у тебе, лишаю для зручності) */
-export async function kcRaw(
-  method: string,
-  path: string,
-  body?: any
-): Promise<{ ok: boolean; status: number; url: string; method: string; response?: any; sent?: any }> {
-  try {
-    const res = await kcRequest(path, {
-      method,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await res
-      .clone()
-      .json()
-      .catch(() => undefined);
-
-    return {
-      ok: res.ok,
-      status: res.status,
-      url: path.startsWith("http") ? path : `${KEYCRM_BASE}/${path.replace(/^\/+/, "")}`,
-      method,
-      response: data,
-      sent: body ?? null,
-    };
-  } catch (e: any) {
-    return {
-      ok: false,
-      status: 0,
-      url: path,
-      method,
-      response: { error: e?.message || String(e) },
-      sent: body ?? null,
-    };
-    }
-}
-
-export { kcRequest };
