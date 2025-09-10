@@ -1,8 +1,8 @@
 // web/lib/keycrm.ts
-// Утіліти для KeyCRM + пошук картки за instagram username у contact.social_id
+// KeyCRM utils: пошук картки за IG username (contact.social_id) + стан + move
 
 const BASE_URL = (process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1').replace(/\/+$/, '');
-const API_TOKEN = process.env.KEYCRM_API_TOKEN || '';
+const API_TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
 
 type Json = any;
 
@@ -11,9 +11,7 @@ export function keycrmOk(): boolean {
 }
 
 async function keycrmFetch(path: string, init?: RequestInit): Promise<Response> {
-  if (!keycrmOk()) {
-    throw new Error('keycrm not configured');
-  }
+  if (!keycrmOk()) throw new Error('keycrm not configured');
   const url = `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
   const r = await fetch(url, {
     ...init,
@@ -22,32 +20,12 @@ async function keycrmFetch(path: string, init?: RequestInit): Promise<Response> 
       'Content-Type': 'application/json',
       ...(init?.headers || {}),
     },
-    // важливо: без кешу
     cache: 'no-store',
   });
   return r;
 }
 
-// ---- Move card ----
-export async function keycrmMoveCard(card_id: string | number, to_pipeline_id: string | number, to_status_id: string | number) {
-  const url = `/pipelines/cards/${encodeURIComponent(String(card_id))}`;
-  const body = JSON.stringify({
-    pipeline_id: Number(to_pipeline_id),
-    status_id: Number(to_status_id),
-  });
-  const r = await keycrmFetch(url, { method: 'PUT', body });
-  return { via: 'PUT pipelines/cards/{id}', status: r.status };
-}
-
-// ---- Helpers для списків ----
-function coerceArray(v: any): any[] {
-  if (Array.isArray(v)) return v;
-  return [];
-}
-
 function extractListItems(j: Json): any[] {
-  // KeyCRM часто повертає пагінацію у різних обгортках.
-  // Пробуємо найтиповіші варіанти.
   if (Array.isArray(j)) return j;
   if (Array.isArray(j?.data)) return j.data;
   if (Array.isArray(j?.items)) return j.items;
@@ -71,7 +49,6 @@ async function listCardIdsPage(page = 1, per_page = 50, search?: string): Promis
   const params = new URLSearchParams();
   params.set('page', String(page));
   params.set('per_page', String(per_page));
-  // Якщо пошук підтримується бекендом — спробуємо звузити вибірку
   if (search) params.set('search', search);
   const r = await keycrmFetch(`/pipelines/cards?${params.toString()}`);
   if (!r.ok) return [];
@@ -87,7 +64,9 @@ async function getCardDetail(cardId: number): Promise<Json | null> {
   return j;
 }
 
-// ---- Пошук картки за instagram username ----
+const norm = (s: string) => (s || '').trim().replace(/^@+/, '').toLowerCase();
+
+/** Головний пошук: знаходимо картку, де contact.social_id === username */
 export type FindResult = {
   ok: boolean;
   username: string;
@@ -105,24 +84,21 @@ export async function findCardIdByUsername(usernameRaw: string): Promise<FindRes
   }
 
   try {
-    // 1) Спочатку пробуємо звузити пошуком (якщо бекенд індексує title/контакт)
+    // 1) спроба звузити пошуком
     let checked = 0;
-    let candidateIds = await listCardIdsPage(1, 50, username);
-    if (candidateIds.length > 0) {
-      for (const id of candidateIds) {
-        const d = await getCardDetail(id);
-        checked++;
-        const social = (d as any)?.contact?.social_id || (d as any)?.contact?.socialId;
-        if (social && String(social).toLowerCase() === username.toLowerCase()) {
-          return { ok: true, username, card_id: id, strategy: 'search+detail', checked, scope: 'search' };
-        }
+    const firstIds = await listCardIdsPage(1, 50, username);
+    for (const id of firstIds) {
+      const d = await getCardDetail(id);
+      checked++;
+      const social = (d as any)?.contact?.social_id || (d as any)?.contact?.socialId;
+      if (social && norm(String(social)) === norm(username)) {
+        return { ok: true, username, card_id: id, strategy: 'search+detail', checked, scope: 'search' };
       }
     }
 
-    // 2) Якщо не знайшли — робимо обмежений глобальний скан першими сторінками
-    // Щоб не вдаритись у ліміти: до 6 сторінок * 50 = 300 карток максимум.
-    const MAX_PAGES = 6;
+    // 2) глобальний обмежений скан (до 6*50 детальних перевірок)
     checked = 0;
+    const MAX_PAGES = 6;
     for (let page = 1; page <= MAX_PAGES; page++) {
       const ids = await listCardIdsPage(page, 50);
       if (ids.length === 0) break;
@@ -130,24 +106,48 @@ export async function findCardIdByUsername(usernameRaw: string): Promise<FindRes
         const d = await getCardDetail(id);
         checked++;
         const social = (d as any)?.contact?.social_id || (d as any)?.contact?.socialId;
-        if (social && String(social).toLowerCase() === username.toLowerCase()) {
+        if (social && norm(String(social)) === norm(username)) {
           return { ok: true, username, card_id: id, strategy: 'detail-scan', checked, scope: 'global' };
         }
       }
-      // Якщо остання сторінка неповна — далі нічого немає
       if (ids.length < 50) break;
     }
 
     return { ok: false, username, card_id: null, strategy: 'not-found', checked: 0, scope: 'global' };
   } catch (e: any) {
-    return {
-      ok: false,
-      username,
-      card_id: null,
-      strategy: 'error',
-      checked: 0,
-      scope: 'global',
-      error: e?.message || 'failed',
-    };
+    return { ok: false, username, card_id: null, strategy: 'error', checked: 0, scope: 'global', error: e?.message || 'failed' };
   }
 }
+
+// ---- Стан картки (для базового матчу кампанії) ----
+export async function kcGetCardState(cardId: string | number): Promise<{ pipeline_id: string; status_id: string } | null> {
+  const r = await keycrmFetch(`/pipelines/cards/${encodeURIComponent(String(cardId))}`);
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null);
+  const d = (j as any)?.data ?? j ?? null;
+  if (!d) return null;
+  return { pipeline_id: String(d.pipeline_id ?? ''), status_id: String(d.status_id ?? '') };
+}
+
+// ---- Move card ----
+export async function keycrmMoveCard(
+  card_id: string | number,
+  to_pipeline_id?: string | number,
+  to_status_id?: string | number,
+  note?: string
+) {
+  const body: any = {};
+  if (to_pipeline_id != null) body.pipeline_id = Number(to_pipeline_id);
+  if (to_status_id != null) body.status_id = Number(to_status_id);
+  if (note) body.note = note;
+
+  const r = await keycrmFetch(`/pipelines/cards/${encodeURIComponent(String(card_id))}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  let resp: any = undefined; try { resp = await r.clone().json(); } catch {}
+  return { ok: r.ok, status: r.status, response: resp, via: 'PUT pipelines/cards/{id}' };
+}
+
+// ---- Експорти сумісності (щоб не ламати існуючі імпорти) ----
+export { keycrmMoveCard as kcMoveCard };
