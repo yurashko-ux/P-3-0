@@ -1,49 +1,27 @@
 // web/app/api/mc/ingest/route.ts
 import { NextResponse } from "next/server";
 import { kvGet, kvSet, kvZRange } from "@/lib/kv";
-import { kcFindCardIdByTitle, kcMoveCard } from "@/lib/keycrm";
+import {
+  kcMoveCard,
+  kcGetCardState,
+  kcFindCardIdByTitleSmart, // <-- новий розумний пошук по title
+} from "@/lib/keycrm";
 
 export const dynamic = "force-dynamic";
 
-function str(v: any, d = "") { return v == null ? d : String(v); }
-function normAt(s: string) { return s.trim().replace(/^@/, ""); }
-function lower(s: string) { return s.toLowerCase(); }
+const s = (v: unknown, d = "") => (v == null ? d : String(v));
+const normAt = (u: string) => u.trim().replace(/^@/, "");
 type Op = "contains" | "equals";
+const match = (op: Op, source: string, probe: string) =>
+  op === "equals"
+    ? source.toLowerCase() === probe.toLowerCase()
+    : source.toLowerCase().includes(probe.toLowerCase());
 
-function match(op: Op, source: string, probe: string) {
-  const a = source.toLowerCase();
-  const b = probe.toLowerCase();
-  return op === "equals" ? a === b : a.includes(b);
-}
+async function resolveCardIdByUsername(usernameRaw: string): Promise<string> {
+  const u = normAt(s(usernameRaw));
+  if (!u) return "";
 
-// --- KeyCRM helpers (локально тільки читання картки) ---
-const KEYCRM_BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
-const KEYCRM_TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || "";
-
-async function kcGet(path: string) {
-  if (!KEYCRM_TOKEN) return { ok: false, status: 401, json: null };
-  const r = await fetch(`${KEYCRM_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${KEYCRM_TOKEN}` },
-    cache: "no-store",
-  }).catch(() => null);
-  if (!r) return { ok: false, status: 502, json: null };
-  let json: any = null; try { json = await r.json(); } catch {}
-  return { ok: r.ok, status: r.status, json };
-}
-
-async function getCard(cardId: string) {
-  const res = await kcGet(`/cards/${encodeURIComponent(cardId)}`);
-  if (!res.ok) return null;
-  return res.json?.data ?? res.json ?? null;
-}
-
-// --- resolve card_id за username ---
-async function resolveCardId(usernameRaw: string): Promise<string> {
-  const username = normAt(str(usernameRaw));
-  if (!username) return "";
-
-  // 1) KV-кеш по lower-ключу
-  const key = `map:ig:${lower(username)}`;
+  const key = `map:ig:${u.toLowerCase()}`;
   const cached = await kvGet(key);
   if (cached) {
     try {
@@ -53,53 +31,39 @@ async function resolveCardId(usernameRaw: string): Promise<string> {
     return String(cached);
   }
 
-  // 2) KeyCRM: title === username (як є), потім title === username.toLowerCase()
-  const attempts = [username, lower(username)];
-  for (const title of attempts) {
-    const found = await kcFindCardIdByTitle(title);
-    if (found) {
-      const id = String(found);
-      // закешуємо для швидкості подальших звернень
-      await kvSet(key, id);
-      return id;
-    }
+  const found = await kcFindCardIdByTitleSmart(u);
+  if (found) {
+    await kvSet(key, found);
+    return found;
   }
   return "";
 }
 
 export async function POST(req: Request) {
   try {
-    const b = await req.json().catch(() => ({}));
-    const usernameRaw = str(b.username);
-    const text = str(b.text).trim();
+    const body = await req.json().catch(() => ({}));
+    const usernameRaw = s(body.username);
+    const text = s(body.text).trim();
 
-    // Quick guard
     if (!usernameRaw) {
       return NextResponse.json({ ok: false, error: "username required" }, { status: 400 });
     }
 
-    // Знаходимо card_id
-    let card_id = str(b.card_id);
+    // ❗️ІГНОРУЄМО будь-який card_id із ManyChat; завжди шукаємо по title==username
+    const card_id = await resolveCardIdByUsername(usernameRaw);
     if (!card_id) {
-      card_id = await resolveCardId(usernameRaw);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "card_not_found_by_title",
+          hint: 'У KeyCRM має існувати лід, у якого "title" = instagram username (без "@")',
+          username: normAt(usernameRaw),
+        },
+        { status: 404 }
+      );
     }
 
-    if (!card_id) {
-      return NextResponse.json({
-        ok: false,
-        error: "card_not_found",
-        hint: "Створіть у KeyCRM картку з title = instagram username_id або надішліть card_id",
-        username: normAt(usernameRaw),
-      });
-    }
-
-    if (!KEYCRM_TOKEN) {
-      return NextResponse.json({
-        ok: false, error: "KEYCRM not configured", need: { KEYCRM_API_TOKEN: true }
-      }, { status: 401 });
-    }
-
-    // 1) тягнемо всі кампанії (enabled)
+    // тягнемо активні кампанії
     const ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | null;
     const campaigns: any[] = [];
     for (const id of ids || []) {
@@ -110,50 +74,53 @@ export async function POST(req: Request) {
         if (c?.enabled !== false) campaigns.push(c);
       } catch {}
     }
-    if (!campaigns.length) {
-      return NextResponse.json({ ok: true, applied: null, note: "no enabled campaigns" });
-    }
 
-    // 2) отримаємо поточний стан картки
-    const card = await getCard(card_id);
-    const cardPipeline = str(card?.pipeline_id);
-    const cardStatus = str(card?.status_id);
+    // актуальний стан картки
+    const state = await kcGetCardState(card_id);
+    const cardPipeline = s(state?.pipeline_id);
+    const cardStatus = s(state?.status_id);
 
-    // 3) підберемо кампанію та застосуємо правило
+    // перевіряємо правила
+    const checks: any[] = [];
     let applied: "v1" | "v2" | null = null;
-    let moveRes: any = null;
     let usedCampaignId: string | null = null;
+    let moveRes: any = null;
 
     for (const c of campaigns) {
-      // база має збігатись, якщо задана
       const baseOk =
-        (!c.base_pipeline_id || str(c.base_pipeline_id) === cardPipeline) &&
-        (!c.base_status_id   || str(c.base_status_id)   === cardStatus);
+        (!c.base_pipeline_id || s(c.base_pipeline_id) === cardPipeline) &&
+        (!c.base_status_id || s(c.base_status_id) === cardStatus);
+
+      const v1Probe = { op: (c.v1_op as Op) || "contains", value: s(c.v1_value) };
+      const v2Probe = { op: (c.v2_op as Op) || "contains", value: s(c.v2_value) };
+      const v1Hit = !!(v1Probe.value && match(v1Probe.op, text, v1Probe.value));
+      const v2Hit = !!(c.v2_enabled && v2Probe.value && match(v2Probe.op, text, v2Probe.value));
+
+      checks.push({
+        campaign_id: c.id,
+        base: {
+          required: { pipeline: s(c.base_pipeline_id), status: s(c.base_status_id) },
+          actual: { pipeline: cardPipeline, status: cardStatus },
+          ok: baseOk,
+        },
+        v1: { probe: v1Probe, hit: v1Hit, to: { pipeline: s(c.v1_to_pipeline_id), status: s(c.v1_to_status_id) } },
+        v2: { enabled: !!c.v2_enabled, probe: v2Probe, hit: v2Hit, to: { pipeline: s(c.v2_to_pipeline_id), status: s(c.v2_to_status_id) } },
+      });
 
       if (!baseOk) continue;
 
-      // V1: обов’язковий блок
-      if (
-        match((c.v1_op as Op) || "contains", text, str(c.v1_value)) &&
-        (c.v1_to_pipeline_id || c.v1_to_status_id)
-      ) {
+      if (v1Hit && (c.v1_to_pipeline_id || c.v1_to_status_id)) {
         moveRes = await kcMoveCard(card_id, {
           pipeline_id: c.v1_to_pipeline_id || undefined,
-          status_id:   c.v1_to_status_id   || undefined,
+          status_id: c.v1_to_status_id || undefined,
           note: `V1 @${normAt(usernameRaw)}: "${text}"`,
         });
         applied = "v1";
         usedCampaignId = c.id;
-      }
-      // V2: опційний
-      else if (
-        c.v2_enabled &&
-        match((c.v2_op as Op) || "contains", text, str(c.v2_value)) &&
-        (c.v2_to_pipeline_id || c.v2_to_status_id)
-      ) {
+      } else if (v2Hit && (c.v2_to_pipeline_id || c.v2_to_status_id)) {
         moveRes = await kcMoveCard(card_id, {
           pipeline_id: c.v2_to_pipeline_id || undefined,
-          status_id:   c.v2_to_status_id   || undefined,
+          status_id: c.v2_to_status_id || undefined,
           note: `V2 @${normAt(usernameRaw)}: "${text}"`,
         });
         applied = "v2";
@@ -161,7 +128,6 @@ export async function POST(req: Request) {
       }
 
       if (applied) {
-        // оновимо лічильник кампанії
         try {
           const raw = await kvGet(`campaigns:${c.id}`);
           if (raw) {
@@ -185,6 +151,8 @@ export async function POST(req: Request) {
         username: normAt(usernameRaw),
         card_id,
         text,
+        card_state: { pipeline_id: cardPipeline, status_id: cardStatus },
+        checks,
       },
     });
   } catch (e: any) {
