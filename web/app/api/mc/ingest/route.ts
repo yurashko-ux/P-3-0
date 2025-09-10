@@ -1,11 +1,7 @@
 // web/app/api/mc/ingest/route.ts
 import { NextResponse } from "next/server";
 import { kvGet, kvSet, kvZRange } from "@/lib/kv";
-import {
-  kcMoveCard,
-  kcGetCardState,
-  kcFindCardIdByTitleSmart, // <-- новий розумний пошук по title
-} from "@/lib/keycrm";
+import { findCardIdByUsername, kcGetCardState, keycrmMoveCard } from "@/lib/keycrm";
 
 export const dynamic = "force-dynamic";
 
@@ -17,24 +13,26 @@ const match = (op: Op, source: string, probe: string) =>
     ? source.toLowerCase() === probe.toLowerCase()
     : source.toLowerCase().includes(probe.toLowerCase());
 
+// KV-кеш, щоб не шукати кожен раз
 async function resolveCardIdByUsername(usernameRaw: string): Promise<string> {
   const u = normAt(s(usernameRaw));
   if (!u) return "";
-
   const key = `map:ig:${u.toLowerCase()}`;
+
   const cached = await kvGet(key);
   if (cached) {
     try {
       const j = JSON.parse(cached);
-      if (j?.value) return String(j.value);
-    } catch {}
-    return String(cached);
+      if (j?.card_id) return String(j.card_id);
+    } catch {
+      if (cached) return String(cached);
+    }
   }
 
-  const found = await kcFindCardIdByTitleSmart(u);
-  if (found) {
-    await kvSet(key, found);
-    return found;
+  const found = await findCardIdByUsername(u);
+  if (found.ok && found.card_id) {
+    await kvSet(key, JSON.stringify({ card_id: found.card_id, via: found.strategy, at: Date.now() }));
+    return String(found.card_id);
   }
   return "";
 }
@@ -49,14 +47,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "username required" }, { status: 400 });
     }
 
-    // ❗️ІГНОРУЄМО будь-який card_id із ManyChat; завжди шукаємо по title==username
     const card_id = await resolveCardIdByUsername(usernameRaw);
     if (!card_id) {
       return NextResponse.json(
         {
           ok: false,
-          error: "card_not_found_by_title",
-          hint: 'У KeyCRM має існувати лід, у якого "title" = instagram username (без "@")',
+          error: "card_not_found_by_contact.social_id",
+          hint: 'У KeyCRM у лід-картки в полі contact.social_id має бути IG-логін (без "@")',
           username: normAt(usernameRaw),
         },
         { status: 404 }
@@ -75,12 +72,11 @@ export async function POST(req: Request) {
       } catch {}
     }
 
-    // актуальний стан картки
+    // поточний стан картки
     const state = await kcGetCardState(card_id);
     const cardPipeline = s(state?.pipeline_id);
     const cardStatus = s(state?.status_id);
 
-    // перевіряємо правила
     const checks: any[] = [];
     let applied: "v1" | "v2" | null = null;
     let usedCampaignId: string | null = null;
@@ -110,19 +106,11 @@ export async function POST(req: Request) {
       if (!baseOk) continue;
 
       if (v1Hit && (c.v1_to_pipeline_id || c.v1_to_status_id)) {
-        moveRes = await kcMoveCard(card_id, {
-          pipeline_id: c.v1_to_pipeline_id || undefined,
-          status_id: c.v1_to_status_id || undefined,
-          note: `V1 @${normAt(usernameRaw)}: "${text}"`,
-        });
+        moveRes = await keycrmMoveCard(card_id, c.v1_to_pipeline_id || undefined, c.v1_to_status_id || undefined, `V1 @${normAt(usernameRaw)}: "${text}"`);
         applied = "v1";
         usedCampaignId = c.id;
       } else if (v2Hit && (c.v2_to_pipeline_id || c.v2_to_status_id)) {
-        moveRes = await kcMoveCard(card_id, {
-          pipeline_id: c.v2_to_pipeline_id || undefined,
-          status_id: c.v2_to_status_id || undefined,
-          note: `V2 @${normAt(usernameRaw)}: "${text}"`,
-        });
+        moveRes = await keycrmMoveCard(card_id, c.v2_to_pipeline_id || undefined, c.v2_to_status_id || undefined, `V2 @${normAt(usernameRaw)}: "${text}"`);
         applied = "v2";
         usedCampaignId = c.id;
       }
