@@ -40,19 +40,43 @@ function normTitle(fullname?: string) {
   return n ? `чат з ${n}` : "";
 }
 
+// Токенізація імені (літери/цифри), юнікод-безпечно
+function nameTokens(s?: string): string[] {
+  const n = norm(s);
+  if (!n) return [];
+  return n.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+function tokensContainAll(hay: string[], needles: string[]) {
+  if (!hay.length || !needles.length) return false;
+  const set = new Set(hay);
+  return needles.every(n => set.has(n));
+}
+
 /**
- * Пошук картки ЛИШЕ в базовій воронці/статусі активної кампанії.
- * Стратегії:
+ * Розширений пошук картки ЛИШЕ в базовій воронці/статусі активної кампанії.
+ * Порядок стратегій:
  * 1) contact.social_id === username (IG логін без "@")
- * 2) title включає "Чат з <ПІБ>" (у нижньому регістрі)
+ * 2) title містить "чат з <ПІБ>"
+ * 3) contact.full_name дорівнює full_name або містить обидва токени first/last
+ * 4) contact.client.full_name дорівнює full_name або містить обидва токени first/last
  */
-export async function kcFindCardIdInBase(
-  opts: { username?: string; fullname?: string; scope: Scope },
-): Promise<{ ok: boolean; card_id: number | null; strategy: string; checked: number }> {
+export async function kcFindCardIdInBase(opts: {
+  username?: string;
+  fullname?: string;
+  first_name?: string;
+  last_name?: string;
+  scope: Scope;
+}): Promise<{ ok: boolean; card_id: number | null; strategy: string; checked: number }> {
   const { baseUrl } = kcAuth();
   const headers = kcHeaders();
   const username = norm(opts.username);
   const wantTitle = normTitle(opts.fullname);
+
+  const wantFull = norm(opts.fullname);
+  const fTok = nameTokens(opts.first_name);
+  const lTok = nameTokens(opts.last_name);
+  const wantTokens = [...new Set([...fTok, ...lTok])]; // унікальні токени first+last
+
   const { pipeline_id, status_id } = opts.scope;
 
   const PER = Number(process.env.KEYCRM_PER_PAGE || 50);
@@ -67,7 +91,7 @@ export async function kcFindCardIdInBase(
     url.searchParams.set("status_id", String(status_id));
     url.searchParams.set("per_page", String(PER));
     url.searchParams.set("page", String(page));
-    if (username) url.searchParams.set("search", username); // якщо KeyCRM враховує q у межах цього списку — пришвидшить
+    if (username) url.searchParams.set("search", username);
 
     const res = await fetch(url.toString(), { headers, cache: "no-store" });
     if (!res.ok) break;
@@ -77,14 +101,46 @@ export async function kcFindCardIdInBase(
 
     for (const c of items) {
       checked++;
-      const social = norm(c?.contact?.social_id);
+      const contact = c?.contact ?? {};
+      const social = norm(contact?.social_id);
       const title = norm(c?.title);
+      const contactFull = norm(contact?.full_name);
+      const clientFull = norm(contact?.client?.full_name);
 
+      // 1) IG username у contact.social_id
       if (username && social === username) {
         return { ok: true, card_id: Number(c.id), strategy: "contact.social_id", checked };
       }
+
+      // 2) title: "чат з <ПІБ>"
       if (wantTitle && title.includes(wantTitle)) {
         return { ok: true, card_id: Number(c.id), strategy: "title", checked };
+      }
+
+      // 3) contact.full_name — повне співпадіння або токени
+      if (contactFull) {
+        if (wantFull && contactFull === wantFull) {
+          return { ok: true, card_id: Number(c.id), strategy: "contact.full_name", checked };
+        }
+        if (wantTokens.length) {
+          const hay = nameTokens(contactFull);
+          if (tokensContainAll(hay, wantTokens)) {
+            return { ok: true, card_id: Number(c.id), strategy: "contact.full_name_tokens", checked };
+          }
+        }
+      }
+
+      // 4) contact.client.full_name — повне співпадіння або токени
+      if (clientFull) {
+        if (wantFull && clientFull === wantFull) {
+          return { ok: true, card_id: Number(c.id), strategy: "client.full_name", checked };
+        }
+        if (wantTokens.length) {
+          const hay = nameTokens(clientFull);
+          if (tokensContainAll(hay, wantTokens)) {
+            return { ok: true, card_id: Number(c.id), strategy: "client.full_name_tokens", checked };
+          }
+        }
       }
     }
 
