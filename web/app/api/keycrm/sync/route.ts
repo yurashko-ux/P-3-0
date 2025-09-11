@@ -38,7 +38,6 @@ async function kcGet(path: string, qp?: Record<string, any>) {
 function parseUpdatedAt(s: any): number {
   if (!s) return Date.now();
   const str = String(s);
-  // підтримка "YYYY-MM-DD HH:mm:ss" і ISO:
   const iso = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(str) ? str.replace(" ", "T") + "Z" : str;
   const t = Date.parse(iso);
   return Number.isFinite(t) ? t : Date.now();
@@ -47,22 +46,16 @@ const norm = (s?: string) => (s || "").trim();
 const low = (s?: string) => norm(s).toLowerCase();
 const stripAt = (s: string) => s.replace(/^@+/, "");
 
-/** --- safe JSON parse, з підтримкою подвійного шару {"value":"<json>"} --- */
+/** --- safe JSON parse, підтримка {"value":"<json>"} --- */
 function safeParse<T = any>(raw: string | null): T | null {
   if (!raw) return null as any;
   try {
     const first = JSON.parse(raw);
     if (first && typeof first === "object" && typeof (first as any).value === "string") {
-      try {
-        return JSON.parse((first as any).value);
-      } catch {
-        return first as any;
-      }
+      try { return JSON.parse((first as any).value); } catch { return first as any; }
     }
     return first as any;
-  } catch {
-    return null as any;
-  }
+  } catch { return null as any; }
 }
 
 /** --- читаємо всі увімкнені кампанії і збираємо унікальні пари pipeline/status --- */
@@ -97,8 +90,8 @@ async function indexCard(c: any) {
   const card = {
     id,
     title: c?.title ?? null,
-    pipeline_id: c?.pipeline_id ?? null,
-    status_id: c?.status_id ?? null,
+    pipeline_id: Number(c?.pipeline_id ?? null) || null,
+    status_id: Number(c?.status_id ?? null) || null,
     contact_social_name: c?.contact?.social_name ?? null,
     contact_social_id: c?.contact?.social_id ?? null,
     updated_at: c?.updated_at ?? null,
@@ -111,7 +104,6 @@ async function indexCard(c: any) {
   const socialIdRaw = norm(card.contact_social_id || "");
   if (socialName && socialIdRaw) {
     const noAt = stripAt(socialIdRaw);
-    // індексуємо дві форми — з @ та без @
     await kvZAdd(`kc:index:social:${socialName}:${noAt}`, updatedAt, String(id));
     await kvZAdd(`kc:index:social:${socialName}:${socialIdRaw}`, updatedAt, String(id));
   }
@@ -143,22 +135,25 @@ export async function POST(req: Request) {
     let checked = 0;
     let pages = 0;
 
-    // пагінація: спочатку laravel-стиль, інакше jsonapi
     for (let page = 1; page <= maxPages; page++) {
       pages = page;
-      // laravel style
-      let resp = await kcGet("/pipelines/cards", { page, per_page: perPage });
+
+      // 1) laravel-параметри + включаємо контакт для social_id
+      let resp = await kcGet("/pipelines/cards", { page, per_page: perPage, include: "contact" });
+      // 2) jsonapi fallback
       if (!resp.ok || !Array.isArray(resp.json?.data)) {
-        // jsonapi fallback
-        resp = await kcGet("/pipelines/cards", { "page[number]": page, "page[size]": perPage });
+        resp = await kcGet("/pipelines/cards", { "page[number]": page, "page[size]": perPage, include: "contact" });
       }
+
       const rows: any[] = Array.isArray(resp.json?.data) ? resp.json.data : [];
       if (!rows.length) break;
 
-      // фільтруємо саме базову воронку+статус
-      const filtered = rows.filter(
-        (r) => r?.pipeline_id === pair.pipeline_id && r?.status_id === pair.status_id
-      );
+      // ❗ Фікс порівняння: приводимо до Number, бо API інколи віддає рядки
+      const filtered = rows.filter((r) => {
+        const pid = Number(r?.pipeline_id);
+        const sid = Number(r?.status_id);
+        return pid === pair.pipeline_id && sid === pair.status_id;
+      });
 
       for (const r of filtered) {
         checked++;
@@ -166,8 +161,8 @@ export async function POST(req: Request) {
         if (ok) saved++;
       }
 
-      // якщо на сторінці не було жодного кандидата, і так 2 рази поспіль — рано виходимо
-      if (filtered.length === 0 && page >= 2) break;
+      // РАНІШЕ був ранній вихід, якщо filtered.length === 0 на 2-й сторінці.
+      // Прибрано: скануємо всі сторінки до maxPages, щоб не пропустити розкид по сторінках.
     }
 
     summary.push({
