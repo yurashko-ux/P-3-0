@@ -1,9 +1,9 @@
 // lib/keycrm.ts
 // KeyCRM HTTP adapter + KV-based search shims (backward compatible)
 // Fix build issues:
-//  - remove dependency on kvZRevRange (use kvZRange + reverse)
-//  - add overloads for findCardIdByUsername (string OR object)
-//  - kcFindCardIdByAny: pipeline/status optional
+//  - remove dependency on kvZRevRange (use kvZRange + reverse helper zRevRange)
+//  - keep HTTP helpers & normalizer
+//  - provide KV search shims: findCardIdByUsername, kcFindCardIdByAny
 
 import { kvGet, kvZRange } from "@/lib/kv";
 
@@ -223,19 +223,19 @@ function inBasePair(card: KvCard, p?: string, s?: string): boolean {
 
 /**
  * findCardIdByUsername
- * Overloads for backward-compat:
+ * Supports:
  *  - findCardIdByUsername("handle")
  *  - findCardIdByUsername({ username, pipeline_id?, status_id?, limit? })
  */
-export async function findCardIdByUsername(username: string): Promise<string | null>;
-export async function findCardIdByUsername(args: {
-  username: string;
-  pipeline_id?: string | number;
-  status_id?: string | number;
-  limit?: number;
-}): Promise<string | null>;
 export async function findCardIdByUsername(
-  arg: string | { username: string; pipeline_id?: string | number; status_id?: string | number; limit?: number },
+  arg:
+    | string
+    | {
+        username: string;
+        pipeline_id?: string | number;
+        status_id?: string | number;
+        limit?: number;
+      },
 ): Promise<string | null> {
   const username = typeof arg === "string" ? arg : arg.username;
   const p = typeof arg === "string" ? undefined : arg.pipeline_id != null ? String(arg.pipeline_id) : undefined;
@@ -314,7 +314,7 @@ export async function kcFindCardIdByAny(args: {
   if (pipeline_id != null && status_id != null) {
     keysToScan.push(`kc:index:cards:${String(pipeline_id)}:${String(status_id)}`);
   } else {
-    // back-compat heuristic (scan small range)
+    // heuristic range if base pair not provided (back-compat)
     for (let p = 1; p <= 5; p++) {
       for (let s = 1; s <= 10; s++) {
         keysToScan.push(`kc:index:cards:${p}:${s}`);
@@ -338,11 +338,7 @@ export async function kcFindCardIdByAny(args: {
       const cfn = card.contact_full_name ?? "";
 
       for (const q of candidates) {
-        if (
-          includesCI(title, q) ||
-          includesCI(cfn, q) ||
-          includesCI(title, `Чат з ${q}`)
-        ) {
+        if (includesCI(title, q) || includesCI(cfn, q) || includesCI(title, `Чат з ${q}`)) {
           return String(card.id);
         }
       }
