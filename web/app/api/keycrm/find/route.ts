@@ -6,12 +6,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/keycrm/find?username=kolachnyk.v&full_name=Viktoria%20Kolachnyk
- * Додаткові параметри:
- *   pipeline_id=<num>&status_id=<num>  // якщо хочеш шукати тільки в базовій парі
+ * Параметри:
+ *   scope=campaign|global            (default: global)
+ *   pipeline_id=<num>&status_id=<num>  // якщо scope=campaign
  *   max_pages=3&page_size=50
- *   strategy=social|title|both    (default: both)
- *   title_mode=exact|contains     (default: exact)
- *   scope=campaign|global         (default: global; для campaign потрібні pipeline_id і status_id)
+ *   strategy=social|title|both       (default: both)
+ *   title_mode=exact|contains        (default: exact)
  */
 export async function GET(req: Request) {
   try {
@@ -22,14 +22,14 @@ export async function GET(req: Request) {
     const full_name = q("full_name")?.trim();
 
     const pipeline_id = q("pipeline_id") ? Number(q("pipeline_id")) : undefined;
-    const status_id = q("status_id") ? Number(q("status_id")) : undefined;
+    const status_id   = q("status_id") ? Number(q("status_id")) : undefined;
 
     const max_pages = q("max_pages") ? Math.max(1, Number(q("max_pages"))) : 3;
     const page_size = q("page_size") ? Math.max(1, Number(q("page_size"))) : 50;
 
-    const strategy = (q("strategy") as "social" | "title" | "both") || "both";
+    const strategy   = (q("strategy") as "social" | "title" | "both") || "both";
     const title_mode = (q("title_mode") as "exact" | "contains") || "exact";
-    const scope = (q("scope") as "campaign" | "global" | undefined) || "global";
+    const scope      = (q("scope") as "campaign" | "global" | undefined) || "global";
 
     const res = await findCardSimple({
       username,
