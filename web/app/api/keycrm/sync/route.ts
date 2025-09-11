@@ -47,24 +47,40 @@ const norm = (s?: string) => (s || "").trim();
 const low = (s?: string) => norm(s).toLowerCase();
 const stripAt = (s: string) => s.replace(/^@+/, "");
 
-/** --- read all enabled campaigns and dedupe base pipeline/status pairs --- */
+/** --- safe JSON parse, з підтримкою подвійного шару {"value":"<json>"} --- */
+function safeParse<T = any>(raw: string | null): T | null {
+  if (!raw) return null as any;
+  try {
+    const first = JSON.parse(raw);
+    if (first && typeof first === "object" && typeof (first as any).value === "string") {
+      try {
+        return JSON.parse((first as any).value);
+      } catch {
+        return first as any;
+      }
+    }
+    return first as any;
+  } catch {
+    return null as any;
+  }
+}
+
+/** --- читаємо всі увімкнені кампанії і збираємо унікальні пари pipeline/status --- */
 async function readCampaignPairs() {
   const ids = await kvZRange("campaigns:index", 0, -1);
   const pairs = new Map<string, { pipeline_id: number; status_id: number; campaign_id: string; campaign_name: string }>();
   for (const id of ids) {
     const raw = await kvGet(`campaigns:${id}`);
-    if (!raw) continue;
-    try {
-      const c = JSON.parse(raw);
-      if (!c.enabled) continue;
-      const p = Number(c.base_pipeline_id);
-      const s = Number(c.base_status_id);
-      if (!Number.isFinite(p) || !Number.isFinite(s)) continue;
+    const c = safeParse<any>(raw);
+    if (!c) continue;
+    const p = Number(c.base_pipeline_id);
+    const s = Number(c.base_status_id);
+    if (c.enabled && Number.isFinite(p) && Number.isFinite(s)) {
       const key = `${p}:${s}`;
       if (!pairs.has(key)) {
         pairs.set(key, { pipeline_id: p, status_id: s, campaign_id: c.id, campaign_name: c.name || "" });
       }
-    } catch {}
+    }
   }
   return Array.from(pairs.values());
 }
