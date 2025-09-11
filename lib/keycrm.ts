@@ -1,11 +1,13 @@
 // lib/keycrm.ts
 // KeyCRM HTTP adapter + KV-based search shims (backward compatible)
-// Fixes:
-//  - no dependency on kvZRevRange (use kvZRange + reverse)
-//  - findCardIdByUsername accepts string OR object args
-//  - kcFindCardIdByAny pipeline/status are optional
+// Fix build issues:
+//  - remove dependency on kvZRevRange (use kvZRange + reverse)
+//  - add overloads for findCardIdByUsername (string OR object)
+//  - kcFindCardIdByAny: pipeline/status optional
 
 import { kvGet, kvZRange } from "@/lib/kv";
+
+/* -------------------- HTTP -------------------- */
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -15,8 +17,6 @@ const TOKEN = process.env.KEYCRM_API_TOKEN || "";
 if (!TOKEN) {
   console.warn("[keycrm] Missing KEYCRM_API_TOKEN");
 }
-
-/* -------------------------- HTTP helpers -------------------------- */
 
 function qs(params: Record<string, any> = {}): string {
   const sp = new URLSearchParams();
@@ -77,7 +77,7 @@ async function keycrmFetch<T = any>(
   }
 }
 
-/* -------------------------- Public HTTP API -------------------------- */
+/* -------------------- Public HTTP API -------------------- */
 
 export async function kcGetPipelines() {
   return keycrmFetch<any[]>("/pipelines");
@@ -98,7 +98,7 @@ export interface ListCardsParams {
 
 /**
  * GET /pipelines/cards?page=&per_page=&pipeline_id=&status_id=
- * Returns Laravel-like pagination: { total, current_page, per_page, data, last_page?, meta? }
+ * Returns Laravel-like pagination
  */
 export async function kcListCardsLaravel(params: ListCardsParams) {
   const { pipeline_id, status_id, page = 1, per_page = 50 } = params;
@@ -123,7 +123,7 @@ export async function kcMoveCard(
   return keycrmFetch(`/pipelines/cards/${cardId}`, { method: "PUT", body });
 }
 
-/* -------------------------- Normalization -------------------------- */
+/* -------------------- Normalization -------------------- */
 
 export type NormalizedCard = {
   id: number;
@@ -165,16 +165,22 @@ export function toEpoch(x?: string | number | Date | null): number {
   return Date.now();
 }
 
-/* -------------------------- KV search shims -------------------------- */
+/* -------------------- KV search shims -------------------- */
 
-// emulate ZREVRANGE using kvZRange + reverse (for compatibility)
-async function zRevRange(key: string, start: number, stop: number): Promise<any[]> {
-  // read full range then slice reversed; acceptable for small N (we use ≤200)
-  const arr = (await kvZRange(key, 0, -1)) as any;
-  const members = extractMembers(arr).reverse();
-  // normalize stop as inclusive index per Redis semantics
-  const end = stop < 0 ? members.length + stop + 1 : stop + 1;
-  return members.slice(start, end).map((member) => ({ member }));
+// emulate ZREVRANGE using kvZRange + reverse
+async function zRevRange(key: string, start: number, stop: number): Promise<{ member: string }[]> {
+  const raw = (await kvZRange(key, 0, -1)) as any;
+  const all = extractMembers(raw).reverse();
+  const end = stop < 0 ? all.length + stop + 1 : stop + 1; // inclusive
+  return all.slice(start, end).map((member) => ({ member }));
+}
+
+function extractMembers(arr: any): string[] {
+  if (!arr) return [];
+  if (Array.isArray(arr)) {
+    return arr.map((x: any) => (typeof x === "string" ? x : x?.member)).filter(Boolean);
+  }
+  return [];
 }
 
 function normHandle(raw?: string | null): string | null {
@@ -185,15 +191,6 @@ function normHandle(raw?: string | null): string | null {
 function includesCI(h?: string | null, n?: string | null): boolean {
   if (!h || !n) return false;
   return h.toLowerCase().includes(n.toLowerCase());
-}
-
-// kvZRange may return string[] or { member: string; score?: number }[]
-function extractMembers(arr: any): string[] {
-  if (!arr) return [];
-  if (Array.isArray(arr)) {
-    return arr.map((x: any) => (typeof x === "string" ? x : x?.member)).filter(Boolean);
-  }
-  return [];
 }
 
 type KvCard = {
@@ -226,21 +223,19 @@ function inBasePair(card: KvCard, p?: string, s?: string): boolean {
 
 /**
  * findCardIdByUsername
- * Back-compat signature:
+ * Overloads for backward-compat:
  *  - findCardIdByUsername("handle")
  *  - findCardIdByUsername({ username, pipeline_id?, status_id?, limit? })
- * Searches social indexes kc:index:social:instagram:{handle} and @{handle}.
- * If pipeline/status provided — filters within the base pair; otherwise returns newest overall.
  */
+export async function findCardIdByUsername(username: string): Promise<string | null>;
+export async function findCardIdByUsername(args: {
+  username: string;
+  pipeline_id?: string | number;
+  status_id?: string | number;
+  limit?: number;
+}): Promise<string | null>;
 export async function findCardIdByUsername(
-  arg:
-    | string
-    | {
-        username: string;
-        pipeline_id?: string | number;
-        status_id?: string | number;
-        limit?: number;
-      },
+  arg: string | { username: string; pipeline_id?: string | number; status_id?: string | number; limit?: number },
 ): Promise<string | null> {
   const username = typeof arg === "string" ? arg : arg.username;
   const p = typeof arg === "string" ? undefined : arg.pipeline_id != null ? String(arg.pipeline_id) : undefined;
@@ -271,7 +266,7 @@ export async function findCardIdByUsername(
 /**
  * kcFindCardIdByAny
  * 1) try by username (IG social index)
- * 2) fallback scan of kc:index:cards:{p}:{s} (or all pairs if none provided)
+ * 2) fallback scan of kc:index:cards:{p}:{s} (or a small heuristic range if no base pair provided)
  *    matching by title or contact_full_name (case-insensitive)
  */
 export async function kcFindCardIdByAny(args: {
@@ -306,7 +301,7 @@ export async function kcFindCardIdByAny(args: {
     if (byUser) return byUser;
   }
 
-  // candidates for fullname
+  // 2) by names
   const candidates = new Set<string>();
   if (full_name) candidates.add(String(full_name).trim());
   if (name) candidates.add(String(name).trim());
@@ -319,9 +314,7 @@ export async function kcFindCardIdByAny(args: {
   if (pipeline_id != null && status_id != null) {
     keysToScan.push(`kc:index:cards:${String(pipeline_id)}:${String(status_id)}`);
   } else {
-    // back-compat: if no base pair provided, scan *all* card indexes found under a small heuristic set
-    // (in production, it's recommended to pass pipeline/status to avoid wide scans)
-    // For compatibility, try a few common pipeline/status ranges (lightweight best-effort).
+    // back-compat heuristic (scan small range)
     for (let p = 1; p <= 5; p++) {
       for (let s = 1; s <= 10; s++) {
         keysToScan.push(`kc:index:cards:${p}:${s}`);
@@ -337,7 +330,6 @@ export async function kcFindCardIdByAny(args: {
       const card = await getKvCard(id);
       if (!card) continue;
 
-      // if a base pair filter is provided, enforce it here too
       if (pipeline_id != null && status_id != null && !inBasePair(card, String(pipeline_id), String(status_id))) {
         continue;
       }
@@ -345,18 +337,15 @@ export async function kcFindCardIdByAny(args: {
       const title = card.title ?? "";
       const cfn = card.contact_full_name ?? "";
 
-      let match = false;
       for (const q of candidates) {
         if (
           includesCI(title, q) ||
           includesCI(cfn, q) ||
           includesCI(title, `Чат з ${q}`)
         ) {
-          match = true;
-          break;
+          return String(card.id);
         }
       }
-      if (match) return String(card.id);
     }
   }
 
