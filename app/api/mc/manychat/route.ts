@@ -1,41 +1,46 @@
 // app/api/mc/manychat/route.ts
 import { NextResponse } from "next/server";
 import { kcFindCardIdInBase } from "@/lib/keycrm";
-import { getActiveCampaign } from "@/lib/campaigns"; // має повертати { base: { pipeline_id, status_id }, ... }
+import { getActiveCampaign } from "@/lib/campaigns";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const b = await req.json();
 
-    // нормалізація полів ManyChat
     const username: string =
-      body?.username || body?.ig_username || body?.user || "";
+      b?.username || b?.ig_username || b?.user || "";
     const fullname: string =
-      body?.full_name || body?.fullName || body?.fullname || body?.name || "";
-    const text: string = body?.text ?? "";
+      b?.full_name || b?.fullName || b?.fullname || b?.name || "";
+    const first_name: string = b?.first_name || "";
+    const last_name: string = b?.last_name || "";
+    const text: string = b?.text ?? "";
 
-    // беремо лише БАЗОВУ воронку/статус активної кампанії
     const campaign = await getActiveCampaign();
     const scope = {
       pipeline_id: Number(campaign?.base?.pipeline_id),
       status_id: Number(campaign?.base?.status_id),
     };
 
-    // шукаємо ТІЛЬКИ у base
-    const found = await kcFindCardIdInBase({ username, fullname, scope });
+    const found = await kcFindCardIdInBase({
+      username,
+      fullname,
+      first_name,
+      last_name,
+      scope,
+    });
 
     return NextResponse.json({
       ok: true,
       via: "manychat",
-      normalized: { username, text, fullname },
+      normalized: { username, text, fullname, first_name, last_name },
       ingest: { ...found, scope },
     });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: String(e?.message || e) },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
