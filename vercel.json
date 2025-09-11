@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/keycrm/sync",
+      "path": "/api/cron/sync",
       "schedule": "*/15 * * * *"
     }
   ]
