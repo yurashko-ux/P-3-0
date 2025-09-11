@@ -1,46 +1,37 @@
 // app/api/mc/manychat/route.ts
-import { NextResponse } from "next/server";
-import { kcFindCardIdInBase } from "@/lib/keycrm";
-import { getActiveCampaign } from "@/lib/campaigns";
+// Проксі-ендпойнт для ManyChat → /api/mc/ingest з тими самими body/headers (де потрібно).
+// Додає в query обмеження пошуку (воронка/статус), якщо вони є в ENV.
 
-export const dynamic = "force-dynamic";
+import { NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  try {
-    const b = await req.json();
+  const base = new URL(req.url);
+  const body = await req.json().catch(() => ({}));
 
-    const username: string =
-      b?.username || b?.ig_username || b?.user || "";
-    const fullname: string =
-      b?.full_name || b?.fullName || b?.fullname || b?.name || "";
-    const first_name: string = b?.first_name || "";
-    const last_name: string = b?.last_name || "";
-    const text: string = b?.text ?? "";
-
-    const campaign = await getActiveCampaign();
-    const scope = {
-      pipeline_id: Number(campaign?.base?.pipeline_id),
-      status_id: Number(campaign?.base?.status_id),
-    };
-
-    const found = await kcFindCardIdInBase({
-      username,
-      fullname,
-      first_name,
-      last_name,
-      scope,
-    });
-
-    return NextResponse.json({
-      ok: true,
-      via: "manychat",
-      normalized: { username, text, fullname, first_name, last_name },
-      ingest: { ...found, scope },
-    });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message || e) },
-      { status: 500 }
-    );
+  const qs = new URLSearchParams(base.search);
+  // Додаємо ліміти з ENV, якщо їх не передали ззовні:
+  if (!qs.get('pipeline_id') && process.env.MC_LIMIT_PIPELINE_ID) {
+    qs.set('pipeline_id', String(process.env.MC_LIMIT_PIPELINE_ID));
   }
+  if (!qs.get('status_id') && process.env.MC_LIMIT_STATUS_ID) {
+    qs.set('status_id', String(process.env.MC_LIMIT_STATUS_ID));
+  }
+  if (!qs.get('max_pages') && process.env.MC_SEARCH_MAX_PAGES) {
+    qs.set('max_pages', String(process.env.MC_SEARCH_MAX_PAGES));
+  }
+
+  const ingestUrl = `${base.origin}/api/mc/ingest?${qs.toString()}`;
+
+  const res = await fetch(ingestUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // Усі потрібні поля з ManyChat вже в body; x-vercel-protection-bypass ManyChat кладе у Headers самого запиту до твого домену,
+    // а не у внутрішній fetch — тому повторно його додавати тут не потрібно.
+    body: JSON.stringify(body),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  return NextResponse.json(json, { status: res.status });
 }
