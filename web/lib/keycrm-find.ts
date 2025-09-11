@@ -1,7 +1,6 @@
 // web/lib/keycrm-find.ts
-// Простий Пошук у KeyCRM: по contact.social_id (IG username) та/або по title "Чат з <ПІБ>"
-// Виправлено: коректна пагінація (Laravel/JSON:API), не зупиняємось через rows.length<page_size.
-// Додано: нормалізація username (обрізання "@"), гнучкий пошук title (exact/contains).
+// Пошук картки у KeyCRM з фокусом на БАЗОВУ воронку/статус (scope=campaign),
+// універсальне порівняння social_id (з/без "@") і, за потреби, перевірка social_name.
 
 const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/$/, "");
 const TOKEN = process.env.KEYCRM_API_TOKEN || "";
@@ -9,7 +8,6 @@ const TOKEN = process.env.KEYCRM_API_TOKEN || "";
 function kcUrl(path: string) {
   return `${BASE}/${path.replace(/^\//, "")}`;
 }
-
 async function kcGet(path: string) {
   const res = await fetch(kcUrl(path), {
     headers: { Authorization: `Bearer ${TOKEN}` },
@@ -24,35 +22,33 @@ type Strategy = "social" | "title" | "both";
 type TitleMode = "exact" | "contains";
 
 type FindArgs = {
-  username?: string;     // contact.social_id (IG логін)
-  full_name?: string;    // шукаємо у title як "Чат з <full_name>"
-  pipeline_id?: number;  // якщо scope === "campaign"
-  status_id?: number;    // якщо scope === "campaign"
-  max_pages?: number;    // дефолт 3
-  page_size?: number;    // дефолт 50 (KeyCRM може ігнорувати й повертати 15)
-  strategy?: Strategy;   // дефолт both
-  title_mode?: TitleMode;// дефолт exact
-  scope?: ScopeMode;     // дефолт global
+  username?: string;       // IG логін (без або з "@")
+  full_name?: string;      // для title "Чат з <ПІБ>"
+  social_name?: string;    // instagram | telegram | ...
+  pipeline_id?: number;    // якщо scope=campaign
+  status_id?: number;      // якщо scope=campaign
+  max_pages?: number;      // дефолт 3
+  page_size?: number;      // дефолт 50
+  strategy?: Strategy;     // дефолт both
+  title_mode?: TitleMode;  // дефолт exact
+  scope?: ScopeMode;       // дефолт global
 };
 
-function norm(s?: string) {
-  return (s || "").trim();
-}
-function cleanUsername(u?: string) {
-  return norm(u).replace(/^@+/, "").toLowerCase();
-}
-function eqTitle(title: string, fullName: string) {
+const norm = (s?: string) => (s || "").trim();
+const low  = (s?: string) => norm(s).toLowerCase();
+const stripAt = (s: string) => s.replace(/^@+/, "");
+
+function eqTitleExact(title: string, fullName: string) {
   return title === `Чат з ${fullName}`;
 }
-function containsTitle(title: string, fullName: string) {
+function titleContains(title: string, fullName: string) {
   const hay = title.toLowerCase();
-  const fn = fullName.toLowerCase();
+  const fn  = fullName.toLowerCase();
   return hay.includes(fn) || hay.includes(`чат з ${fn}`);
 }
 
 function readMeta(json: any) {
-  // Laravel style: { total, per_page, current_page, last_page, next_page_url }
-  // JSON:API style: { meta: { total, per_page, current_page, last_page }, links: { next, prev } }
+  // Laravel style
   const laravel = {
     total: json?.total ?? null,
     per_page: json?.per_page ?? null,
@@ -60,6 +56,7 @@ function readMeta(json: any) {
     last_page: json?.last_page ?? null,
     next_page_url: json?.next_page_url ?? null,
   };
+  // JSON:API style
   const jsonapi = {
     total: json?.meta?.total ?? null,
     per_page: json?.meta?.per_page ?? null,
@@ -68,7 +65,6 @@ function readMeta(json: any) {
     next: json?.links?.next ?? null,
   };
 
-  // вибір стилю
   const style: "laravel" | "jsonapi" =
     laravel.current_page != null || laravel.last_page != null || laravel.per_page != null
       ? "laravel"
@@ -79,25 +75,28 @@ function readMeta(json: any) {
       ? laravel
       : { total: jsonapi.total, per_page: jsonapi.per_page, current_page: jsonapi.current_page, last_page: jsonapi.last_page, next_page_url: jsonapi.next };
 
-  const actualPerPage =
-    (typeof meta.per_page === "number" && meta.per_page > 0 && meta.per_page) || null;
-  const current =
-    (typeof meta.current_page === "number" && meta.current_page > 0 && meta.current_page) || null;
-  const last =
-    (typeof meta.last_page === "number" && meta.last_page > 0 && meta.last_page) || null;
+  const current = typeof meta.current_page === "number" ? meta.current_page : null;
+  const last    = typeof meta.last_page    === "number" ? meta.last_page    : null;
+  const hasNext = (current != null && last != null && current < last) || Boolean(meta.next_page_url);
 
-  const hasNext =
-    (typeof last === "number" && typeof current === "number" && current < last) ||
-    Boolean(meta.next_page_url);
-
-  return { style, actualPerPage, currentPage: current, lastPage: last, hasNext };
+  return {
+    style,
+    actualPerPage: typeof meta.per_page === "number" ? meta.per_page : null,
+    currentPage: current,
+    lastPage: last,
+    hasNext,
+  };
 }
 
-/** Простий пошук картки. НІЯКИХ переміщень — тільки знаходимо та повертаємо збіг. */
+/** Лише пошук (без move), з жорстким фільтром по pipeline/status коли scope=campaign */
 export async function findCardSimple(args: FindArgs) {
   const scope: ScopeMode = args.scope || "global";
-  const username = cleanUsername(args.username);
+  const usernameRaw = norm(args.username);
+  const usernameLow = low(args.username);
+  const usernameNoAt = stripAt(usernameLow);
+
   const fullName = norm(args.full_name);
+  const socialName = low(args.social_name);
 
   const max_pages = Math.max(1, Math.min(50, args.max_pages ?? 3));
   const requested_page_size = Math.max(1, Math.min(100, args.page_size ?? 50));
@@ -107,26 +106,29 @@ export async function findCardSimple(args: FindArgs) {
   if (!TOKEN) {
     return { ok: false, error: "missing_keycrm_token", hint: "Додай KEYCRM_API_TOKEN у Vercel Env." };
   }
-  if (!username && !fullName) {
+  if (!usernameRaw && !fullName) {
     return { ok: false, error: "no_lookup_keys", hint: "Передай username або full_name." };
   }
   if (scope === "campaign" && (!args.pipeline_id || !args.status_id)) {
     return {
       ok: false,
       error: "campaign_scope_missing",
-      hint: "Для scope=campaign потрібні pipeline_id і status_id (додай їх у query).",
+      hint: "Для scope=campaign потрібні pipeline_id і status_id.",
       used: { scope, pipeline_id: args.pipeline_id, status_id: args.status_id },
     };
   }
 
   let checked = 0;
   let matched: any = null;
+
   let pagination: "laravel" | "jsonapi" | null = null;
-  let pages_scanned = 0;
   let actual_page_size: number | null = null;
+  let pages_scanned = 0;
+  let candidates_total = 0;
+  let consecutiveEmptyCandidates = 0; // рання зупинка в campaign
 
   for (let page = 1; page <= max_pages; page++) {
-    // пробуємо обидва формати пагінації
+    // пробуємо laravel → jsonapi
     const r1 = await kcGet(`/pipelines/cards?page=${page}&per_page=${requested_page_size}`);
     const useR1 = r1.ok && Array.isArray(r1.json?.data);
     const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?page[number]=${page}&page[size]=${requested_page_size}`);
@@ -136,7 +138,7 @@ export async function findCardSimple(args: FindArgs) {
     pagination = meta.style;
     actual_page_size = meta.actualPerPage ?? actual_page_size ?? null;
 
-    // фільтр за campaign scope (якщо треба)
+    // campaign-фільтр ТІЛЬКИ потрібна воронка+статус
     const filtered =
       scope === "campaign"
         ? rows.filter(
@@ -144,22 +146,45 @@ export async function findCardSimple(args: FindArgs) {
           )
         : rows;
 
+    // підрахунок кандидатів на сторінці
+    const candidatesHere = filtered.length;
+    candidates_total += candidatesHere;
+
+    if (scope === "campaign") {
+      if (candidatesHere === 0) consecutiveEmptyCandidates++;
+      else consecutiveEmptyCandidates = 0;
+
+      // якщо 2 послідовні сторінки без жодного кандидата — зупиняємось раніше
+      if (consecutiveEmptyCandidates >= 2) {
+        pages_scanned = page;
+        break;
+      }
+    }
+
     for (const c of filtered) {
       checked++;
 
       const title = norm(c.title);
-      const social = cleanUsername(c.contact?.social_id);
+      const contactSocialRaw = norm(c.contact?.social_id || "");
+      const contactSocialLow = low(contactSocialRaw);
+      const contactSocialNoAt = stripAt(contactSocialLow);
+      const contactSocialName = low(c.contact?.social_name || "");
 
       const socialHit =
-        (strategy === "social" || strategy === "both") && username
-          ? social && social === username
+        (strategy === "social" || strategy === "both") && usernameRaw
+          ? (
+              // match з/без "@"
+              contactSocialLow === usernameLow ||
+              contactSocialLow === `@${usernameNoAt}` ||
+              contactSocialNoAt === usernameNoAt
+            ) && (!socialName || contactSocialName === socialName)
           : false;
 
       const titleHit =
         (strategy === "title" || strategy === "both") && fullName
           ? title_mode === "exact"
-            ? eqTitle(title, fullName)
-            : containsTitle(title, fullName)
+            ? eqTitleExact(title, fullName)
+            : titleContains(title, fullName)
           : false;
 
       if (socialHit || titleHit) {
@@ -169,6 +194,7 @@ export async function findCardSimple(args: FindArgs) {
           pipeline_id: c.pipeline_id,
           status_id: c.status_id,
           contact_social: c.contact?.social_id || null,
+          contact_social_name: c.contact?.social_name || null,
         };
         break;
       }
@@ -176,15 +202,12 @@ export async function findCardSimple(args: FindArgs) {
 
     pages_scanned = page;
     if (matched) break;
-
-    // РІШЕННЯ: не зупиняємось по rows.length < requested_page_size.
-    // Йдемо далі, якщо meta показує наявність наступної сторінки І ми ще не вичерпали max_pages.
     if (!meta.hasNext) break;
   }
 
   return {
     ok: true,
-    username: username || null,
+    username: usernameRaw || null,
     full_name: fullName || null,
     scope,
     used: {
@@ -196,9 +219,10 @@ export async function findCardSimple(args: FindArgs) {
       max_pages,
       strategy,
       title_mode,
+      social_name: socialName || null,
       pages_scanned,
     },
+    stats: { checked, candidates_total },
     result: matched,
-    checked,
   };
 }
