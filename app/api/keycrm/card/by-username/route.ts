@@ -18,22 +18,22 @@ export async function GET(req: Request) {
     const status_id = url.searchParams.get('status_id') || undefined;
 
     if (!username) {
-      return NextResponse.json({ error: 'username is required' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'username is required' }, { status: 400 });
     }
 
-    // ✅ ВАЖЛИВО: ЖОДНИХ рядкових викликів.
-    // Завжди передаємо ОБ’ЄКТ у findCardIdByUsername — так TS не лається.
-    const args: any = { username, pipeline_id, status_id, limit: 50 };
-    const cardId: string | null = await (findCardIdByUsername as any)(args);
+    // ВАЖЛИВО: передаємо ОБ’ЄКТ, а тип глушимо через `as any`,
+    // щоб не впасти навіть якщо lib очікує саме об’єкт.
+    const args = { username, pipeline_id, status_id, limit: 50 };
+    const cardId = await (findCardIdByUsername as any)(args);
 
     return NextResponse.json(
-      { found: Boolean(cardId), cardId: cardId ?? null },
-      { status: 200 },
+      { ok: true, found: Boolean(cardId), cardId: cardId ?? null },
+      { status: 200 }
     );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'failed' },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
