@@ -10,18 +10,12 @@ const HEADERS: Record<string, string> = KV_TOKEN ? { Authorization: `Bearer ${KV
 
 export type ZRangeOptions = { start: number; stop: number; withScores?: boolean };
 
-// ---- FIX: безпечно розпаковуємо result та result.value ----
 export async function kvGet(key: string): Promise<string | null> {
   if (!KV_URL || !KV_TOKEN) return null;
   const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, { headers: HEADERS, cache: 'no-store' });
   if (!r.ok) return null;
   const j = await r.json().catch(() => null as any);
-  const res = j?.result;
-  if (typeof res === 'string') return res;                // варіант: { result: "..." }
-  if (res && typeof res === 'object' && typeof res.value === 'string') {
-    return res.value;                                     // варіант: { result: { value: "..." } }
-  }
-  return null;
+  return (j && typeof j.result === 'string') ? j.result : null;
 }
 
 export async function kvSet(key: string, value: string): Promise<boolean> {
@@ -77,7 +71,7 @@ export async function kvZRange(key: string, start = 0, stop = -1): Promise<strin
   return parseZResult(j);
 }
 
-/** Сумісність із кодом, що очікує zrevrange */
+/** Оригінальна реалізація (нижній регістр 'r') */
 export async function kvZrevrange(key: string, start = 0, stop = -1): Promise<string[]> {
   if (!KV_URL || !KV_TOKEN) return [];
   const r = await fetch(`${KV_URL}/zrevrange/${encodeURIComponent(key)}/${start}/${stop}`, {
@@ -86,6 +80,11 @@ export async function kvZrevrange(key: string, start = 0, stop = -1): Promise<st
   if (!r.ok) return [];
   const j = await r.json().catch(() => null as any);
   return parseZResult(j);
+}
+
+/** Сумісний аліас під ім'я, яке очікує деякий код: kvZRevRange */
+export async function kvZRevRange(key: string, start = 0, stop = -1): Promise<string[]> {
+  return kvZrevrange(key, start, stop);
 }
 
 export function cuid(): string {
