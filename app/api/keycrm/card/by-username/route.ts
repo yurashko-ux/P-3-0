@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'username is required' }, { status: 400 });
     }
 
-    // Завжди передаємо ОБ’ЄКТ у findCardIdByUsername — прибирає TS-ерор.
+    // ВАЖЛИВО: передаємо ОБ’ЄКТ (прибирає TypeScript-ерор навіть без base pair)
     const cardId = await (findCardIdByUsername as any)({
       username,
       pipeline_id,
