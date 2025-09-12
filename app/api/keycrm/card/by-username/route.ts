@@ -8,34 +8,26 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
 
-    // inputs
     const username =
       url.searchParams.get('username') ||
       url.searchParams.get('ig_username') ||
       url.searchParams.get('handle') ||
       '';
-    const pipeline_id = url.searchParams.get('pipeline_id');
-    const status_id = url.searchParams.get('status_id');
+
+    const pipeline_id = url.searchParams.get('pipeline_id') || undefined;
+    const status_id = url.searchParams.get('status_id') || undefined;
 
     if (!username) {
       return NextResponse.json({ error: 'username is required' }, { status: 400 });
     }
 
-    let cardId: string | null = null;
-
-    if (pipeline_id && status_id) {
-      // строгий пошук у межах базової пари
-      cardId = await findCardIdByUsername({
-        username,
-        pipeline_id,
-        status_id,
-        limit: 50,
-      });
-    } else {
-      // мʼякий режим сумісності — дозволяємо виклик рядком
-      // @ts-ignore підтримуємо legacy-виклик
-      cardId = await findCardIdByUsername(username as any);
-    }
+    // Завжди передаємо ОБ’ЄКТ у findCardIdByUsername — прибирає TS-ерор.
+    const cardId = await (findCardIdByUsername as any)({
+      username,
+      pipeline_id,
+      status_id,
+      limit: 50,
+    });
 
     return NextResponse.json(
       { found: Boolean(cardId), cardId: cardId ?? null },
