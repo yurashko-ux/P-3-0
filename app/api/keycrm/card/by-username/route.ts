@@ -32,9 +32,8 @@ export async function GET(req: Request) {
         limit: 50,
       });
     } else {
-      // мʼякий режим сумісності — дозволяємо виклик рядком навіть якщо сигнатура ще стара
-      // Це прибирає TS-фаіл під час білду.
-      // @ts-ignore – підтримуємо виклик із рядком
+      // мʼякий режим сумісності — дозволяємо виклик рядком
+      // @ts-ignore підтримуємо legacy-виклик
       cardId = await findCardIdByUsername(username as any);
     }
 
