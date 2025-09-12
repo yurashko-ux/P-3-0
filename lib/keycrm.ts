@@ -1,7 +1,7 @@
 // lib/keycrm.ts
 // KeyCRM HTTP adapter + KV-based search shims (backward compatible)
 // Fix build issues:
-//  - remove dependency on kvZRevRange (use kvZRange + reverse helper zRevRange)
+//  - remove any dependency on kvZRevRange (use kvZRange + local zRevRange helper)
 //  - make findCardIdByUsername accept (arg: any) to support string OR object calls
 
 import { kvGet, kvZRange } from "@/lib/kv";
