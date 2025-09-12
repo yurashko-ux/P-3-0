@@ -2,8 +2,7 @@
 // KeyCRM HTTP adapter + KV-based search shims (backward compatible)
 // Fix build issues:
 //  - remove dependency on kvZRevRange (use kvZRange + reverse helper zRevRange)
-//  - keep HTTP helpers & normalizer
-//  - provide KV search shims: findCardIdByUsername, kcFindCardIdByAny
+//  - make findCardIdByUsername accept (arg: any) to support string OR object calls
 
 import { kvGet, kvZRange } from "@/lib/kv";
 
@@ -223,24 +222,14 @@ function inBasePair(card: KvCard, p?: string, s?: string): boolean {
 
 /**
  * findCardIdByUsername
- * Supports:
- *  - findCardIdByUsername("handle")
- *  - findCardIdByUsername({ username, pipeline_id?, status_id?, limit? })
+ * Accepts string OR object via `(arg: any)`, to be compatible with existing routes.
+ * If object contains pipeline/status — filters within the base pair; otherwise returns newest overall.
  */
-export async function findCardIdByUsername(
-  arg:
-    | string
-    | {
-        username: string;
-        pipeline_id?: string | number;
-        status_id?: string | number;
-        limit?: number;
-      },
-): Promise<string | null> {
-  const username = typeof arg === "string" ? arg : arg.username;
-  const p = typeof arg === "string" ? undefined : arg.pipeline_id != null ? String(arg.pipeline_id) : undefined;
-  const s = typeof arg === "string" ? undefined : arg.status_id != null ? String(arg.status_id) : undefined;
-  const limit = typeof arg === "string" ? 50 : arg.limit ?? 50;
+export async function findCardIdByUsername(arg: any): Promise<string | null> {
+  const username = typeof arg === "string" ? arg : arg?.username;
+  const p = typeof arg === "string" ? undefined : arg?.pipeline_id != null ? String(arg.pipeline_id) : undefined;
+  const s = typeof arg === "string" ? undefined : arg?.status_id != null ? String(arg.status_id) : undefined;
+  const limit = typeof arg === "string" ? 50 : arg?.limit ?? 50;
 
   const h = normHandle(username);
   if (!h) return null;
