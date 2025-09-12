@@ -21,9 +21,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'username is required' }, { status: 400 });
     }
 
-    // ✅ ВАЖЛИВО: завжди передаємо ОБ’ЄКТ (типи не ламаються)
-    const args = { username, pipeline_id, status_id, limit: 50 } as const;
-    const cardId = await (findCardIdByUsername as any)(args);
+    // ✅ ВАЖЛИВО: завжди передаємо ОБ’ЄКТ у findCardIdByUsername (жодних рядкових викликів)
+    const args: any = { username, pipeline_id, status_id, limit: 50 };
+    const cardId: string | null = await (findCardIdByUsername as any)(args);
 
     return NextResponse.json(
       { found: Boolean(cardId), cardId: cardId ?? null },
