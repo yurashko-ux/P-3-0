@@ -1,11 +1,9 @@
 // app/api/mc/ingest/route.ts
-// КРОК: прибираємо імпорт kcGetCardState і будь-які залежності від '@/lib/keycrm'.
-// Тимчасовий stub-ендпойнт:
-//  - перевіряє MC_TOKEN (Bearer або ?token=),
-//  - парсить ManyChat payload,
-//  - нормалізує username/fullname/text,
-//  - повертає JSON (без звернень у KeyCRM/KV).
-// Після успішного білда повернемо логіку пошуку/руху картки.
+// 🔧 Stub-версія ендпойнта для ManyChat, ЩОБ ЗІБРАТИСЯ БЕЗ ПОМИЛОК.
+// - ЖОДНИХ імпортів із '@/lib/keycrm' (в т.ч. kcGetCardState) — саме це ламало білд.
+// - Перевірка MC_TOKEN (Bearer або ?token=).
+// - Нормалізація username/fullname/text.
+// - Повертаємо JSON; інтеграцію з KV/KeyCRM додамо наступним кроком.
 
 import { NextResponse } from 'next/server';
 
@@ -20,7 +18,7 @@ function normFullname(raw?: unknown): string {
 }
 
 export async function POST(req: Request) {
-  // 1) Auth guard
+  // 1) Auth guard (MC_TOKEN з Bearer або ?token=)
   const url = new URL(req.url);
   const bearer = req.headers.get('authorization') || '';
   const headerToken = bearer.replace(/^Bearer\s+/i, '').trim();
@@ -37,7 +35,7 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    // ignore
+    // ignore parse error → body = {}
   }
 
   // 3) Normalize fields from ManyChat
@@ -62,6 +60,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     normalized: { username, text, fullname },
-    note: 'ingest stub: build unblocked; search/move logic will be added next step',
+    note: 'ingest stub: imports to KeyCRM removed to fix build',
   });
 }
