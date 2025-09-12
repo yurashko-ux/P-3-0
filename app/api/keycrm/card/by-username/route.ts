@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'username is required' }, { status: 400 });
     }
 
-    // ✅ ВАЖЛИВО: завжди передаємо ОБ’ЄКТ у findCardIdByUsername — без рядкових викликів
+    // ✅ ВАЖЛИВО: завжди передаємо ОБ’ЄКТ (типи не ламаються)
     const args = { username, pipeline_id, status_id, limit: 50 } as const;
     const cardId = await (findCardIdByUsername as any)(args);
 
