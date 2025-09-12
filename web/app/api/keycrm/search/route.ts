@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     const username =
       (url.searchParams.get('username') || '').trim() || undefined;
 
-    // приймаємо і full_name, і legacy fullname
+    // підтримуємо і full_name, і legacy fullname
     const full_name =
       (url.searchParams.get('full_name') ||
         url.searchParams.get('fullname') ||
@@ -26,7 +26,6 @@ export async function GET(req: Request) {
     const statusParam   = (url.searchParams.get('status_id')   || '').trim();
     const limitParam    = (url.searchParams.get('limit')       || '').trim();
 
-    // обов’язкові параметри
     if (!pipelineParam || !statusParam) {
       return NextResponse.json(
         {
@@ -59,10 +58,10 @@ export async function GET(req: Request) {
     if (full_name) args.full_name = full_name;
     if (/^\d+$/.test(limitParam)) args.limit = Number(limitParam);
 
-    const result = await kcFindCardIdByAny(args);
+    const result: any = await kcFindCardIdByAny(args).catch(() => null);
 
     return NextResponse.json(
-      { ok: result.ok, result, used: args },
+      { ok: !!(result && result.ok), result, used: args },
       { status: 200 },
     );
   } catch (e: any) {
