@@ -1,8 +1,5 @@
-// lib/keycrm.ts
-// KeyCRM HTTP adapter + KV-based search shims (backward compatible)
-// Fixes:
-//  - remove any dependency on kvZRevRange (use kvZRange + local zRevRange helper)
-//  - make findCardIdByUsername accept (arg: any) so string OR object calls both work
+// lib/keycrm.ts (ROOT VERSION)
+// KeyCRM HTTP adapter + KV-based search shims (no kvZRevRange import)
 
 import { kvGet, kvZRange } from "@/lib/kv";
 
@@ -95,10 +92,7 @@ export interface ListCardsParams {
   per_page?: number;
 }
 
-/**
- * GET /pipelines/cards?page=&per_page=&pipeline_id=&status_id=
- * Returns Laravel-like pagination
- */
+/** GET /pipelines/cards?page=&per_page=&pipeline_id=&status_id= */
 export async function kcListCardsLaravel(params: ListCardsParams) {
   const { pipeline_id, status_id, page = 1, per_page = 50 } = params;
   return keycrmFetch<any>("/pipelines/cards", {
@@ -107,9 +101,7 @@ export async function kcListCardsLaravel(params: ListCardsParams) {
   });
 }
 
-/**
- * PUT /pipelines/cards/{cardId} with { pipeline_id?, status_id? }
- */
+/** PUT /pipelines/cards/{cardId} with { pipeline_id?, status_id? } */
 export async function kcMoveCard(
   cardId: string | number,
   to_pipeline_id?: string | number | null,
@@ -132,7 +124,7 @@ export type NormalizedCard = {
   contact_social_name: string | null;
   contact_social_id: string | null;
   contact_full_name: string | null;
-  updated_at: string; // 'YYYY-MM-DD HH:mm:ss' or ISO-ish
+  updated_at: string;
 };
 
 export function normalizeCard(raw: any): NormalizedCard {
@@ -220,11 +212,7 @@ function inBasePair(card: KvCard, p?: string, s?: string): boolean {
   return cp === p && cs === s;
 }
 
-/**
- * findCardIdByUsername
- * Accepts string OR object via `(arg: any)`, to be compatible with existing routes.
- * If object contains pipeline/status — filters within the base pair; otherwise returns newest overall.
- */
+/** Accepts string OR object (compat) */
 export async function findCardIdByUsername(arg: any): Promise<string | null> {
   const username = typeof arg === "string" ? arg : arg?.username;
   const p = typeof arg === "string" ? undefined : arg?.pipeline_id != null ? String(arg.pipeline_id) : undefined;
@@ -252,21 +240,15 @@ export async function findCardIdByUsername(arg: any): Promise<string | null> {
   return best?.id ?? null;
 }
 
-/**
- * kcFindCardIdByAny
- * 1) try by username (IG social index)
- * 2) fallback scan of kc:index:cards:{p}:{s} (or a small heuristic range if no base pair provided)
- *    matching by title or contact_full_name (case-insensitive)
- */
 export async function kcFindCardIdByAny(args: {
   username?: string | null;
   full_name?: string | null;
   name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
-  pipeline_id?: string | number; // optional for back-compat
-  status_id?: string | number;   // optional for back-compat
-  limit?: number; // fallback scan depth per pair (default 200)
+  pipeline_id?: string | number;
+  status_id?: string | number;
+  limit?: number;
 }): Promise<string | null> {
   const {
     username,
@@ -303,7 +285,7 @@ export async function kcFindCardIdByAny(args: {
   if (pipeline_id != null && status_id != null) {
     keysToScan.push(`kc:index:cards:${String(pipeline_id)}:${String(status_id)}`);
   } else {
-    // heuristic range if base pair not provided (back-compat)
+    // heuristic when no base pair provided
     for (let p = 1; p <= 5; p++) {
       for (let s = 1; s <= 10; s++) {
         keysToScan.push(`kc:index:cards:${p}:${s}`);
