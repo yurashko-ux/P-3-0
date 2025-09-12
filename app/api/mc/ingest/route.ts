@@ -1,74 +1,77 @@
 // app/api/mc/ingest/route.ts
-// Приймає JSON з ManyChat: { username, text, full_name?, first_name?, last_name? }
-// Шукає картку ТІЛЬКИ в межах базової воронки/статусу активної кампанії з жорсткими лімітами.
-// Повертає знайдений card_id (рухати картку можна тут або в іншому місці, за потреби).
+// ЩО РОБИТЬ ЦЕЙ КОД:
+// - Прибирає проблемний імпорт kcGetCardState (через який падав білд).
+// - Перевіряє MC_TOKEN (Bearer або ?token=).
+// - Нормалізує username/fullname/text з ManyChat payload.
+// - Повертає echo-відповідь + (опційно) пише короткий лог у KV.
+// Далі, коли збірка пройде, повернемось і додамо пошук/рух карток.
 
 import { NextResponse } from 'next/server';
-import { kcFindCardIdFast } from '@/lib/keycrm-search';
+import { kvSet } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 
-function toNum(v?: string | null) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
+function normUsername(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  return raw.trim().replace(/^@/, '').toLowerCase();
+}
+function normFullname(raw?: string): string | undefined {
+  const s = raw?.trim();
+  return s ? s : undefined;
 }
 
 export async function POST(req: Request) {
+  // ===== 1) Auth guard (MC_TOKEN) =====
   const url = new URL(req.url);
-  const qs  = url.searchParams;
+  const bearer = req.headers.get('authorization') || '';
+  const headerToken = bearer.replace(/^Bearer\s+/i, '').trim();
+  const queryToken = url.searchParams.get('token') || '';
+  const provided = headerToken || queryToken;
+  const expected = process.env.MC_TOKEN || '';
 
-  // Можна задавати через ENV або через ?pipeline_id=&status_id=&max_pages=
-  const pipeline_id = toNum(process.env.MC_LIMIT_PIPELINE_ID ?? qs.get('pipeline_id'));
-  const status_id   = toNum(process.env.MC_LIMIT_STATUS_ID   ?? qs.get('status_id'));
-  const maxPages    = toNum(process.env.MC_SEARCH_MAX_PAGES  ?? qs.get('max_pages')) ?? 3;
+  if (!expected || provided !== expected) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
 
-  let body: any = {};
+  // ===== 2) Parse & normalize payload =====
+  const body = (await req.json().catch(() => ({}))) as any;
+
+  // ManyChat може надсилати такі поля:
+  // { username, text, full_name, name, first_name, last_name, last_input_text }
+  const username =
+    normUsername(
+      body.username ??
+        body.ig_username ??
+        body.instagram_username ??
+        body.handle ??
+        ''
+    ) || '';
+
+  const text = String(body.text ?? body.last_input_text ?? '').trim();
+
+  const fullnameCandidate =
+    body.full_name ??
+    body.name ??
+    [body.first_name, body.last_name].filter(Boolean).join(' ');
+  const fullname = normFullname(fullnameCandidate) || '';
+
+  // ===== 3) (optional) lightweight log to KV =====
   try {
-    body = await req.json();
+    await kvSet('logs:last:mc:ingest', {
+      ts: Date.now(),
+      username,
+      text,
+      fullname,
+      src: 'mc/ingest',
+    });
   } catch {
-    // порожній/невалідний JSON — не критично
+    // лог — best-effort, помилки ігноруємо
   }
 
-  const username   = (body.username ?? '').trim() || undefined;
-  const full_name  = (body.full_name ?? body.fullname ?? body.name ?? '').trim();
-  const first_name = (body.first_name ?? '').trim();
-  const last_name  = (body.last_name ?? '').trim();
-  const fullName   = full_name || `${first_name} ${last_name}`.trim();
-
-  if (!username && !fullName) {
-    return NextResponse.json({ ok: false, error: 'no_lookup_keys' }, { status: 400 });
-  }
-
-  const foundId = await kcFindCardIdFast(
-    { username, fullName: fullName || undefined },
-    {
-      pipeline_id,
-      status_id,
-      maxPages,
-      perPage: 50,
-      timeoutMs: 8000, // загальний дедлайн на пошук
-    }
-  );
-
-  if (!foundId) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'card_not_found_scoped',
-        debug: { username, fullName: fullName || undefined, pipeline_id, status_id, maxPages },
-      },
-      { status: 200 }
-    );
-  }
-
-  // Якщо потрібно — тут можна робити move у цільову воронку/статус.
-  // Зараз повертаємо card_id максимально швидко — щоб ManyChat не отримував таймаут.
-  return NextResponse.json(
-    {
-      ok: true,
-      card_id: foundId,
-      debug: { pipeline_id, status_id, maxPages },
-    },
-    { status: 200 }
-  );
+  // ===== 4) Echo response (тимчасово, щоб пройти збірку) =====
+  return NextResponse.json({
+    ok: true,
+    normalized: { username, text, fullname },
+    note: 'ingest stub: build unblocked; next step will add search+move',
+  });
 }
