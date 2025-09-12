@@ -1,9 +1,9 @@
 // app/api/mc/ingest/route.ts
-// 🔧 Stub-версія ендпойнта для ManyChat, ЩОБ ЗІБРАТИСЯ БЕЗ ПОМИЛОК.
-// - ЖОДНИХ імпортів із '@/lib/keycrm' (в т.ч. kcGetCardState) — саме це ламало білд.
-// - Перевірка MC_TOKEN (Bearer або ?token=).
-// - Нормалізація username/fullname/text.
-// - Повертаємо JSON; інтеграцію з KV/KeyCRM додамо наступним кроком.
+// ✅ Stub для ManyChat ingest БЕЗ імпортів із '@/lib/keycrm'.
+//    - Прибирає фатальний імпорт kcGetCardState (саме він ламав білд).
+//    - Перевіряє MC_TOKEN (Bearer або ?token=).
+//    - Нормалізує username/fullname/text і відповідає JSON.
+//    - Інтеграцію з KV/KeyCRM додамо окремим кроком.
 
 import { NextResponse } from 'next/server';
 
@@ -30,24 +30,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
-  // 2) Parse body
+  // 2) Parse body (ManyChat payload)
   let body: any = {};
   try {
     body = await req.json();
   } catch {
-    // ignore parse error → body = {}
+    body = {};
   }
 
-  // 3) Normalize fields from ManyChat
-  const username =
-    normUsername(
-      body.username ??
-        body.ig_username ??
-        body.instagram_username ??
-        body.handle ??
-        ''
-    );
-
+  // 3) Normalize fields
+  const username = normUsername(
+    body.username ??
+      body.ig_username ??
+      body.instagram_username ??
+      body.handle ??
+      ''
+  );
   const text = String(body.text ?? body.last_input_text ?? '').trim();
 
   const fullnameCandidate =
