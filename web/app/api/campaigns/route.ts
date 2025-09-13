@@ -5,19 +5,19 @@ import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
 /* ====================== ЛОКАЛЬНІ ХЕЛПЕРИ ====================== */
 
-// Проста адмін-перевірка по ADMIN_PASS: Authorization: Bearer, X-Admin-Pass, cookie admin_pass, ?admin=
+// Дуже проста перевірка адміністратора через ADMIN_PASS.
+// Приймаємо: Authorization: Bearer, X-Admin-Pass, cookie admin_pass, ?admin=
 async function assertAdminLocal(req: Request) {
   const PASS = process.env.ADMIN_PASS || "";
-  if (!PASS) return; // якщо не задано — не блокуємо (щоб не падати на прев'ю)
-  const u = new URL(req.url);
-  const hdr = req.headers.get("authorization") || "";
-  const bearer = hdr.toLowerCase().startsWith("bearer ")
-    ? hdr.slice(7)
+  if (!PASS) return; // якщо не задано — не блокуємо прев'ю/дев
+  const url = new URL(req.url);
+  const auth = req.headers.get("authorization") || "";
+  const bearer = auth.toLowerCase().startsWith("bearer ")
+    ? auth.slice(7)
     : undefined;
   const headerAlt = req.headers.get("x-admin-pass") || undefined;
-  const queryAlt = u.searchParams.get("admin") || undefined;
+  const queryAlt = url.searchParams.get("admin") || undefined;
 
-  // cookie (raw)
   const cookie = req.headers.get("cookie") || "";
   const cookiePass = cookie
     .split(";")
@@ -26,9 +26,7 @@ async function assertAdminLocal(req: Request) {
     ?.split("=")[1];
 
   const got = bearer || headerAlt || queryAlt || cookiePass;
-  if (got !== PASS) {
-    throw new Error("unauthorized");
-  }
+  if (got !== PASS) throw new Error("unauthorized");
 }
 
 function toStringOrUndefined(v: any): string | undefined {
@@ -37,11 +35,11 @@ function toStringOrUndefined(v: any): string | undefined {
   return s;
 }
 
-type Rule = {
+type VariantRule = {
   enabled?: boolean;
   field?: "text";
   op?: "contains" | "equals";
-  value?: string;
+  value: string;
 };
 
 type Campaign = {
@@ -61,7 +59,7 @@ type Campaign = {
   exp_to_pipeline_id?: number | null;
   exp_to_status_id?: number | null;
 
-  rules: { v1: Rule; v2?: Rule };
+  rules: { v1: VariantRule; v2?: VariantRule };
 
   active?: boolean;
   created_at?: string;
@@ -99,19 +97,19 @@ function normalizeIncoming(body: any) {
         body?.value_v2
     ) || "";
 
-  const v1Rule: Rule = {
+  const v1Rule: VariantRule = {
     enabled: body?.rules?.v1?.enabled ?? true,
     field: "text",
-    op: (body?.rules?.v1?.op as Rule["op"]) ?? "equals",
+    op: (body?.rules?.v1?.op as VariantRule["op"]) ?? "equals",
     value: v1Value,
   };
 
-  const v2Rule: Rule | undefined =
+  const v2Rule: VariantRule | undefined =
     v2Value && v2Value.trim() !== ""
       ? {
           enabled: body?.rules?.v2?.enabled ?? true,
           field: "text",
-          op: (body?.rules?.v2?.op as Rule["op"]) ?? "equals",
+          op: (body?.rules?.v2?.op as VariantRule["op"]) ?? "equals",
           value: v2Value,
         }
       : undefined;
@@ -149,16 +147,18 @@ function normalizeIncoming(body: any) {
 /* ====================== HANDLERS ====================== */
 
 export async function GET() {
-  const ids = (await kvZRange("campaigns:index", 0, -1)) as string[]; // порядок не критичний
+  const ids = (await kvZRange("campaigns:index", 0, -1)) as string[];
   const out: Campaign[] = [];
   for (const id of ids || []) {
     const row = await kvGet(`campaigns:${id}`);
     if (!row) continue;
 
-    // KV зазвичай повертає string (JSON). Безпечно парсимо якщо треба.
     let obj: Campaign | null = null;
     try {
-      obj = typeof row === "string" ? (JSON.parse(row) as Campaign) : (row as unknown as Campaign);
+      obj =
+        typeof row === "string"
+          ? (JSON.parse(row) as Campaign)
+          : (row as unknown as Campaign);
     } catch {
       obj = null;
     }
@@ -190,11 +190,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Перевірка унікальності значень варіантів серед усіх не видалених кампаній
+    // ⬇️ ВАЖЛИВО: передаємо повні об'єкти правил, а не string
     await assertVariantsUniqueOrThrow({
       id: undefined,
-      v1: candidate.rules.v1.value!,
-      v2: candidate.rules?.v2?.value || undefined,
+      v1: candidate.rules.v1,
+      v2: candidate.rules.v2,
     });
 
     const id = Date.now();
@@ -203,7 +203,6 @@ export async function POST(req: Request) {
       ...candidate,
     };
 
-    // kvSet прийме об'єкт — ваш обгортка сама серіалізує в JSON
     await kvSet(`campaigns:${id}`, created as any);
     await kvZAdd("campaigns:index", Date.now(), String(id));
 
