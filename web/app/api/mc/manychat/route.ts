@@ -154,7 +154,9 @@ async function bumpCampaignMoved(campaignId: number) {
   obj.moved_count = Number.isFinite(current) ? current + 1 : 1;
   // опціонально: оновити updated_at, якщо є така властивість
   (obj as any).updated_at = new Date().toISOString();
-  await kvSet(key, obj);
+
+  // 🔧 FIX: kvSet очікує string → серіалізуємо
+  await kvSet(key, JSON.stringify(obj));
 }
 
 /* ───────────────────────── Rules match ───────────────────────── */
