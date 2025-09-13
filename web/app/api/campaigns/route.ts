@@ -153,7 +153,16 @@ export async function GET() {
   const out: Campaign[] = [];
   for (const id of ids || []) {
     const row = await kvGet(`campaigns:${id}`);
-    if (row) out.push(row as Campaign);
+    if (!row) continue;
+
+    // KV зазвичай повертає string (JSON). Безпечно парсимо якщо треба.
+    let obj: Campaign | null = null;
+    try {
+      obj = typeof row === "string" ? (JSON.parse(row) as Campaign) : (row as unknown as Campaign);
+    } catch {
+      obj = null;
+    }
+    if (obj) out.push(obj);
   }
   return NextResponse.json({ ok: true, data: out });
 }
@@ -194,7 +203,7 @@ export async function POST(req: Request) {
       ...candidate,
     };
 
-    // kvSet може мати сигнатуру (key, string), тому приводимо тип до any — у вашому kv він серіалізується як JSON
+    // kvSet прийме об'єкт — ваш обгортка сама серіалізує в JSON
     await kvSet(`campaigns:${id}`, created as any);
     await kvZAdd("campaigns:index", Date.now(), String(id));
 
