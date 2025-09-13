@@ -45,7 +45,7 @@ function ensureAdmin(req: Request) {
   }
 }
 
-/** ─────────────────────────────── Types ─────────────────────────────── */
+/** ─────────────────────────────── Types ───────────────────────────── */
 type CampaignDTO = {
   name: string;
   active?: boolean;
@@ -150,14 +150,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // Головне: перевірка унікальності варіантів серед усіх НЕвидалених кампаній
+    // Перевірка унікальності варіантів серед усіх НЕвидалених кампаній
     await assertVariantsUniqueOrThrow({
       v1: body.rules?.v1,
       v2: body.rules?.v2,
-      // excludeId: відсутній — створення нової
     });
 
-    // Генерація id без kvIncr (простий варіант для MVP)
+    // Генерація id (простий варіант для MVP)
     const id: number | string = Date.now();
 
     const created: StoredCampaign = {
@@ -183,7 +182,8 @@ export async function POST(req: Request) {
       status: null,
     };
 
-    await kvSet(`campaigns:${id}`, created);
+    // ⬇️ головна зміна: зберігаємо рядок, а не об’єкт
+    await kvSet(`campaigns:${id}`, JSON.stringify(created));
     await kvZAdd("campaigns:index", Date.now(), String(id));
 
     return NextResponse.json({ ok: true, data: created }, { status: 201 });
