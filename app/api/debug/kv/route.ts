@@ -14,11 +14,11 @@ export async function GET(req: Request) {
   const testIndex = `debug:kv:index`;
 
   let setOk = false;
-  let getValue: any = null;
+  let getValue: unknown = null;
   let zaddOk = false;
   let zrange: string[] = [];
 
-  // kvSet(): Promise<void> → якщо await пройшов без помилки — вважаємо успішним
+  // kvSet(): Promise<void> → якщо await пройшов, вважаємо успішним
   try {
     await kvSet(testKey, "ping");
     setOk = true;
@@ -42,6 +42,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
+    testKey,
     setOk,
     getValue,
     zaddOk,
