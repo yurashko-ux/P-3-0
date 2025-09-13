@@ -190,9 +190,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // ⬇️ ВАЖЛИВО: передаємо повні об'єкти правил, а не string
+    // Перевірка унікальності варіантів: передаємо ПОВНІ об'єкти правил (без поля id)
     await assertVariantsUniqueOrThrow({
-      id: undefined,
       v1: candidate.rules.v1,
       v2: candidate.rules.v2,
     });
