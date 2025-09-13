@@ -38,17 +38,16 @@ function isDeletedCampaign(c?: Campaign | null): boolean {
   return false;
 }
 
+export type Conflict = {
+  which: "v1" | "v2";
+  value: string;
+  campaignId: string | number;
+  campaignName?: string;
+};
+
 export type UniquenessResult =
   | { ok: true }
-  | {
-      ok: false;
-      conflicts: Array<{
-        which: "v1" | "v2";
-        value: string;
-        campaignId: string | number;
-        campaignName?: string;
-      }>;
-    };
+  | { ok: false; conflicts: Conflict[] };
 
 /**
  * Перевіряє унікальність варіантів V1/V2 серед усіх існуючих не-видалених кампаній.
@@ -67,6 +66,7 @@ export async function checkVariantUniqueness(params: {
 
   // Збираємо всі кампанії з KV
   const ids = (await kvZRange("campaigns:index", 0, -1)) as string[]; // список id (string)
+
   // Мапа значення → { id, name, which }
   const taken = new Map<
     string,
@@ -96,7 +96,7 @@ export async function checkVariantUniqueness(params: {
     if (v2) taken.set(v2, { campaignId: c!.id, campaignName: c?.name, which: "v2" });
   }
 
-  const conflicts: UniquenessResult extends { ok: false; conflicts: infer X } ? X : never = [] as any;
+  const conflicts: Conflict[] = [];
 
   if (wantV1 && taken.has(wantV1)) {
     const t = taken.get(wantV1)!;
@@ -131,7 +131,7 @@ export async function assertVariantsUniqueOrThrow(params: {
       )
       .join("; ");
 
-  const err = new Error(msg) as Error & { status?: number; conflicts?: UniquenessResult["conflicts"] };
+  const err = new Error(msg) as Error & { status?: number; conflicts?: Conflict[] };
   err.status = 409;
   err.conflicts = res.conflicts;
   throw err;
