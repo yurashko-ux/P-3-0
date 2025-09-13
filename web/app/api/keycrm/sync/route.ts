@@ -1,180 +1,183 @@
 // web/app/api/keycrm/sync/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { assertAdmin } from "@/lib/auth";
 import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
+import { kcListCardsLaravel } from "@/lib/keycrm";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-const ADMIN = process.env.ADMIN_PASS ?? "";
-const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/$/, "");
-const TOKEN = process.env.KEYCRM_API_TOKEN || "";
+/* ───────────────────────── helpers ───────────────────────── */
 
-/** --- auth: admin cookie or Bearer --- */
-function okAuth(req: Request) {
-  const bearer = req.headers.get("authorization") || "";
-  const token = bearer.startsWith("Bearer ") ? bearer.slice(7) : "";
-  const cookiePass = cookies().get("admin_pass")?.value || "";
-  const pass = token || cookiePass;
-  return !ADMIN || pass === ADMIN;
+type CampaignKV = {
+  id: number | string;
+  name?: string;
+  active?: boolean;
+  deleted?: boolean;
+  base_pipeline_id?: number | string;
+  base_status_id?: number | string;
+};
+
+function parseKVJson<T = any>(raw: unknown): T | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    try { return JSON.parse(raw) as T; } catch { return null; }
+  }
+  if (typeof raw === "object") return raw as T;
+  return null;
 }
 
-/** --- http helpers for KeyCRM --- */
-function kcUrl(path: string, qp?: Record<string, any>) {
-  const url = new URL(`${BASE}/${path.replace(/^\//, "")}`);
-  for (const [k, v] of Object.entries(qp || {})) url.searchParams.set(k, String(v));
-  return url.toString();
-}
-async function kcGet(path: string, qp?: Record<string, any>) {
-  const url = kcUrl(path, qp);
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    cache: "no-store",
-  });
-  const json = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, json, url };
+function toEpoch(x: string | number | Date | null | undefined): number {
+  if (!x) return Date.now();
+  if (typeof x === "number") return x;
+  if (x instanceof Date) return x.getTime();
+  const n = Date.parse(String(x));
+  return Number.isFinite(n) ? n : Date.now();
 }
 
-/** --- time/normalize --- */
-function parseUpdatedAt(s: any): number {
-  if (!s) return Date.now();
-  const str = String(s);
-  const iso = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(str) ? str.replace(" ", "T") + "Z" : str;
-  const t = Date.parse(iso);
-  return Number.isFinite(t) ? t : Date.now();
-}
-const norm = (s?: string) => (s || "").trim();
-const low = (s?: string) => norm(s).toLowerCase();
-const stripAt = (s: string) => s.replace(/^@+/, "");
+type NormalizedCard = {
+  id: number;
+  title: string;
+  pipeline_id: number | null;
+  status_id: number | null;
+  contact_social_name: string | null;
+  contact_social_id: string | null;
+  contact_full_name: string | null;
+  updated_at: string; // ISO або KeyCRM-формат
+};
 
-/** --- safe JSON parse, підтримка {"value":"<json>"} --- */
-function safeParse<T = any>(raw: string | null): T | null {
-  if (!raw) return null as any;
-  try {
-    const first = JSON.parse(raw);
-    if (first && typeof first === "object" && typeof (first as any).value === "string") {
-      try { return JSON.parse((first as any).value); } catch { return first as any; }
-    }
-    return first as any;
-  } catch { return null as any; }
+function normalizeCard(raw: any): NormalizedCard {
+  const pipelineId = raw?.status?.pipeline_id ?? raw?.pipeline_id ?? null;
+  const statusId = raw?.status_id ?? raw?.status?.id ?? null;
+  const socialName =
+    (raw?.contact?.social_name ? String(raw.contact.social_name).toLowerCase() : "") || null;
+  const socialId = raw?.contact?.social_id ?? null;
+  const fullName =
+    raw?.contact?.full_name ?? raw?.contact?.client?.full_name ?? null;
+
+  return {
+    id: Number(raw?.id),
+    title: String(raw?.title ?? "").trim(),
+    pipeline_id: pipelineId != null ? Number(pipelineId) : null,
+    status_id: statusId != null ? Number(statusId) : null,
+    contact_social_name: socialName,
+    contact_social_id: socialId,
+    contact_full_name: fullName ?? null,
+    updated_at:
+      String(raw?.updated_at ?? raw?.status_changed_at ?? new Date().toISOString()),
+  };
 }
 
-/** --- читаємо всі увімкнені кампанії і збираємо унікальні пари pipeline/status --- */
-async function readCampaignPairs() {
-  const ids = await kvZRange("campaigns:index", 0, -1);
-  const pairs = new Map<string, { pipeline_id: number; status_id: number; campaign_id: string; campaign_name: string }>();
+async function listActiveBasePairs() {
+  const ids = (await kvZRange("campaigns:index", 0, -1)) || [];
+  const pairs: Array<{
+    id: string | number;
+    name?: string;
+    p: string;
+    s: string;
+  }> = [];
+
   for (const id of ids) {
     const raw = await kvGet(`campaigns:${id}`);
-    const c = safeParse<any>(raw);
+    const c = parseKVJson<CampaignKV>(raw);
     if (!c) continue;
-    const p = Number(c.base_pipeline_id);
-    const s = Number(c.base_status_id);
-    if (c.enabled && Number.isFinite(p) && Number.isFinite(s)) {
-      const key = `${p}:${s}`;
-      if (!pairs.has(key)) {
-        pairs.set(key, { pipeline_id: p, status_id: s, campaign_id: c.id, campaign_name: c.name || "" });
-      }
-    }
+    if (c.deleted) continue;
+    if (!c.active) continue;
+    const p = c.base_pipeline_id != null ? String(c.base_pipeline_id) : "";
+    const s = c.base_status_id != null ? String(c.base_status_id) : "";
+    if (!p || !s) continue;
+    pairs.push({ id: c.id ?? id, name: c.name, p, s });
   }
-  return Array.from(pairs.values());
+  // унікалізуємо пари (p,s)
+  const seen = new Set<string>();
+  return pairs.filter(({ p, s }) => {
+    const key = `${p}:${s}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
-/** --- persist to KV indexes ---
- *  kc:card:{id} -> JSON (minimal)
- *  kc:index:cards:{pipeline}:{status} -> ZSET score=updated_at member=card_id
- *  kc:index:social:{social_name}:{handle} -> ZSET score=updated_at member=card_id  (і з @, і без @)
- */
-async function indexCard(c: any) {
-  const id = c?.id;
-  if (!id) return false;
-  const updatedAt = parseUpdatedAt(c?.updated_at || c?.status_changed_at);
-  const card = {
-    id,
-    title: c?.title ?? null,
-    pipeline_id: Number(c?.pipeline_id ?? null) || null,
-    status_id: Number(c?.status_id ?? null) || null,
-    contact_social_name: c?.contact?.social_name ?? null,
-    contact_social_id: c?.contact?.social_id ?? null,
-    updated_at: c?.updated_at ?? null,
-  };
-  await kvSet(`kc:card:${id}`, JSON.stringify(card));
-  if (card.pipeline_id && card.status_id) {
-    await kvZAdd(`kc:index:cards:${card.pipeline_id}:${card.status_id}`, updatedAt, String(id));
-  }
-  const socialName = low(card.contact_social_name || "");
-  const socialIdRaw = norm(card.contact_social_id || "");
-  if (socialName && socialIdRaw) {
-    const noAt = stripAt(socialIdRaw);
-    await kvZAdd(`kc:index:social:${socialName}:${noAt}`, updatedAt, String(id));
-    await kvZAdd(`kc:index:social:${socialName}:${socialIdRaw}`, updatedAt, String(id));
-  }
-  return true;
-}
+/* ───────────────────────── handler ───────────────────────── */
 
-/** --- main sync: only base pipeline/status for enabled campaigns --- */
 export async function POST(req: Request) {
-  if (!okAuth(req)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
-  if (!TOKEN) {
-    return NextResponse.json({ ok: false, error: "keycrm_not_configured", need: { KEYCRM_API_TOKEN: true } }, { status: 200 });
-  }
+  await assertAdmin(req);
 
-  // query overrides
   const url = new URL(req.url);
-  const maxPages = Math.max(1, Math.min(20, Number(url.searchParams.get("max_pages") || 5)));
-  const perPage = Math.max(1, Math.min(100, Number(url.searchParams.get("per_page") || 50)));
+  const per_page = Number(url.searchParams.get("per_page") ?? 50);
+  const max_pages = Number(url.searchParams.get("max_pages") ?? 3);
+  const force = url.searchParams.get("force") === "1"; // зарезервовано; очищення індексу можна додати окремо
 
-  const pairs = await readCampaignPairs();
-  if (!pairs.length) {
-    return NextResponse.json({ ok: true, message: "no_active_campaigns" }, { status: 200 });
-  }
+  const basePairs = await listActiveBasePairs();
+  const results: Array<{
+    basePair: { pipeline_id: string; status_id: string };
+    pagesFetched: number;
+    cardsSeen: number;
+    cardsIndexed: number;
+  }> = [];
 
-  const summary: any[] = [];
-  for (const pair of pairs) {
-    let saved = 0;
-    let checked = 0;
-    let pages = 0;
+  for (const { p, s } of basePairs) {
+    let page = 1;
+    let lastPage = Infinity;
+    let seen = 0;
+    let indexed = 0;
 
-    for (let page = 1; page <= maxPages; page++) {
-      pages = page;
+    // TODO(optional): якщо force — почистити kc:index:cards:${p}:${s}
+    // (в цьому коміті лише виправляємо типи/парсинг KV)
 
-      // 1) laravel-параметри + включаємо контакт для social_id
-      let resp = await kcGet("/pipelines/cards", { page, per_page: perPage, include: "contact" });
-      // 2) jsonapi fallback
-      if (!resp.ok || !Array.isArray(resp.json?.data)) {
-        resp = await kcGet("/pipelines/cards", { "page[number]": page, "page[size]": perPage, include: "contact" });
-      }
-
-      const rows: any[] = Array.isArray(resp.json?.data) ? resp.json.data : [];
-      if (!rows.length) break;
-
-      // ❗ Фікс порівняння: приводимо до Number, бо API інколи віддає рядки
-      const filtered = rows.filter((r) => {
-        const pid = Number(r?.pipeline_id);
-        const sid = Number(r?.status_id);
-        return pid === pair.pipeline_id && sid === pair.status_id;
+    while (page <= max_pages && page <= lastPage) {
+      const resp: any = await kcListCardsLaravel({
+        pipeline_id: p,
+        status_id: s,
+        page,
+        per_page,
       });
 
-      for (const r of filtered) {
-        checked++;
-        const ok = await indexCard(r);
-        if (ok) saved++;
+      const data: any[] =
+        resp?.data ??
+        resp?.items ?? // на випадок різних форматів
+        [];
+
+      lastPage =
+        Number(resp?.last_page ?? resp?.meta?.last_page ?? page) || page;
+
+      for (const raw of data) {
+        const card = normalizeCard(raw);
+        const score = toEpoch(card.updated_at);
+
+        // 1) повний об’єкт картки
+        await kvSet(`kc:card:${card.id}`, card);
+
+        // 2) індекс карток у базовій парі
+        await kvZAdd(`kc:index:cards:${p}:${s}`, score, String(card.id));
+
+        // 3) соц-індекси (тільки instagram, дублюємо без @ і з @)
+        if (card.contact_social_name === "instagram" && card.contact_social_id) {
+          const h = String(card.contact_social_id).replace(/^@/, "").toLowerCase();
+          await kvZAdd(`kc:index:social:instagram:${h}`, score, String(card.id));
+          await kvZAdd(`kc:index:social:instagram:@${h}`, score, String(card.id));
+        }
+
+        seen++;
+        indexed++;
       }
 
-      // РАНІШЕ був ранній вихід, якщо filtered.length === 0 на 2-й сторінці.
-      // Прибрано: скануємо всі сторінки до maxPages, щоб не пропустити розкид по сторінках.
+      if (page >= lastPage) break;
+      page++;
     }
 
-    summary.push({
-      pipeline_id: pair.pipeline_id,
-      status_id: pair.status_id,
-      campaign_id: pair.campaign_id,
-      campaign_name: pair.campaign_name,
-      checked,
-      saved,
-      pages_scanned: pages,
+    results.push({
+      basePair: { pipeline_id: p, status_id: s },
+      pagesFetched: Math.min(max_pages, lastPage),
+      cardsSeen: seen,
+      cardsIndexed: indexed,
     });
   }
 
-  return NextResponse.json({ ok: true, pairs: pairs.length, summary }, { status: 200 });
+  return NextResponse.json({
+    ok: true,
+    basePairs: basePairs.map(({ p, s }) => ({ pipeline_id: p, status_id: s })),
+    results,
+    forceApplied: force ?? false,
+  });
 }
