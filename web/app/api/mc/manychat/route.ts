@@ -1,77 +1,70 @@
 // web/app/api/mc/manychat/route.ts
+// ManyChat → (rules) → local KV find (in base pair) → move card in KeyCRM
 import { NextResponse } from "next/server";
 import { kvGet, kvZRange } from "@/lib/kv";
-import { kcMoveCard } from "@/lib/keycrm";
 
 export const dynamic = "force-dynamic";
 
-/**
- * ManyChat sends (examples):
- * {
- *  "username": "{{ig_username}}",
- *  "text": "{{last_input_text}}",
- *  "full_name": "{{full_name}}",
- *  "name":"{{full_name}}",
- *  "first_name":"{{first_name}}",
- *  "last_name":"{{last_name}}"
- * }
- *
- * Test:
- *  POST /api/mc/manychat?admin=ADMIN_PASS&apply=0
- *  Body(JSON): {"username":"@handle","text":"привіт","full_name":"Імʼя Прізвище"}
- *  Для реального руху: ?apply=1
- */
-
-function normHandle(raw?: string | null) {
-  if (!raw) return "";
-  return String(raw).trim().replace(/^@/, "").toLowerCase();
-}
-function normFullname(p: {
-  full_name?: string | null;
-  name?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-}) {
-  const direct = (p.full_name || p.name || "").trim();
-  if (direct) return direct;
-  const fn = (p.first_name || "").trim();
-  const ln = (p.last_name || "").trim();
-  return [fn, ln].filter(Boolean).join(" ").trim();
-}
-function includesCI(hay: string | null | undefined, needle: string) {
-  if (!hay || !needle) return false;
-  return hay.toLowerCase().includes(needle.toLowerCase());
-}
-function parseMaybeJson<T = any>(v: unknown): T | null {
-  if (v == null) return null;
-  if (typeof v === "string") {
-    try {
-      return JSON.parse(v) as T;
-    } catch {
-      return null;
-    }
+/* ───────────────────────── Auth: MC token ───────────────────────── */
+function readCookie(header: string | null, name: string): string | null {
+  if (!header) return null;
+  for (const p of header.split(/;\s*/)) {
+    const [k, ...rest] = p.split("=");
+    if (k === name) return rest.join("=");
   }
-  return v as T;
+  return null;
 }
+function extractBearer(req: Request, name: string) {
+  const url = new URL(req.url);
+  const q = url.searchParams.get(name);
+  if (q) return q;
 
-async function assertMc(req: Request) {
-  const u = new URL(req.url);
-  const provided =
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ||
-    req.headers.get("x-mc-token") ||
-    u.searchParams.get("token") ||
-    "";
-  const expected = (process.env.MC_TOKEN || "").trim();
-  const adminBypass =
-    (u.searchParams.get("admin") || "") === (process.env.ADMIN_PASS || "");
+  const auth = req.headers.get("authorization");
+  if (auth && /^bearer /i.test(auth)) return auth.replace(/^bearer /i, "").trim();
 
-  if (!expected && !adminBypass) {
-    return { ok: false as const, error: "MC_TOKEN is not configured" };
+  const x = req.headers.get(`x-${name.replace(/_/g, "-")}`);
+  if (x) return x;
+
+  const cookieHeader = req.headers.get("cookie");
+  const c = readCookie(cookieHeader, name.toLowerCase());
+  if (c) return c;
+  return null;
+}
+function ensureMc(req: Request) {
+  const want = process.env.MC_TOKEN;
+  const got = extractBearer(req, "MC_TOKEN");
+  if (!want || got !== want) {
+    const err = new Error("Unauthorized");
+    // @ts-ignore
+    err.status = 401;
+    throw err;
   }
-  if (adminBypass) return { ok: true as const, admin: true as const };
-  if (provided && expected && provided === expected) return { ok: true as const, admin: false as const };
-  return { ok: false as const, error: "Unauthorized" };
 }
+
+/* ───────────────────────── Types ───────────────────────── */
+type Rule = {
+  enabled?: boolean;
+  field?: "text";
+  op?: "contains" | "equals";
+  value?: string;
+};
+type Campaign = {
+  id: number;
+  name?: string;
+  active?: boolean;
+  // базова пара для пошуку
+  base_pipeline_id: number | string;
+  base_status_id: number | string;
+  // куди рухати
+  to_pipeline_id?: number | string | null;
+  to_status_id?: number | string | null;
+  // правила
+  rules?: { v1?: Rule; v2?: Rule };
+  // мітки видалення/деактивації — про всяк!
+  deleted?: boolean;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+};
 
 type Card = {
   id: number;
@@ -84,273 +77,259 @@ type Card = {
   updated_at: string;
 };
 
-type RuleV1 = {
-  enabled?: boolean;
-  field?: "text";
-  op?: "contains" | "equals";
-  value?: string;
-};
+/* ───────────────────────── Normalize helpers ───────────────────────── */
+function normHandle(v?: string | null) {
+  if (!v) return undefined;
+  return String(v).trim().replace(/^@/, "").toLowerCase();
+}
+function normText(v?: string | null) {
+  return (v ?? "").toString();
+}
+function normFullname(a?: string | null, b?: string | null, c?: string | null) {
+  const s = (a && a.trim()) || (b && b.trim()) || [c, ""].filter(Boolean).join(" ").trim();
+  return s || undefined;
+}
+function ciIncludes(hay?: string | null, needle?: string | null) {
+  if (!hay || !needle) return false;
+  return hay.toLowerCase().includes(needle.toLowerCase());
+}
+function eqCI(a?: string | null, b?: string | null) {
+  return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+}
+function toEpoch(s?: string | null) {
+  const ts = s ? Date.parse(s) : NaN;
+  return Number.isFinite(ts) ? ts : Date.now();
+}
+function parseCard(raw: unknown): Card | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    try { return JSON.parse(raw) as Card; } catch { return null; }
+  }
+  return raw as Card;
+}
 
-type Campaign = {
-  id: string;
-  name?: string;
-  base_pipeline_id: string;
-  base_status_id: string;
-  to_pipeline_id?: string | null;
-  to_status_id?: string | null;
-  rules?: {
-    v1?: RuleV1;
-  };
-};
-
-async function listActiveCampaignsDetailed(): Promise<Campaign[]> {
+/* ───────────────────────── KV: campaigns ───────────────────────── */
+async function listActiveCampaigns(): Promise<Campaign[]> {
+  const ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | undefined;
+  if (!ids?.length) return [];
   const out: Campaign[] = [];
-  const ids = ((await kvZRange("campaigns:index", 0, 999)) as any[]) ?? [];
   for (const id of ids) {
     const raw = await kvGet(`campaigns:${id}`);
-    const c = parseMaybeJson<any>(raw);
-    if (!c) continue;
-
-    // Активність: допускаємо різні поля, але не ламаємо типи
-    const active =
-      (c.active ?? c.enabled ?? c.is_active) ??
-      (typeof c.status === "string" ? c.status.toLowerCase() === "active" : undefined) ??
-      true;
-
-    const base_pipeline_id =
-      c.base_pipeline_id ??
-      c.pipeline_id ??
-      c.base?.pipeline_id ??
-      c.scope?.pipeline_id ??
-      null;
-
-    const base_status_id =
-      c.base_status_id ??
-      c.status_id ??
-      c.base?.status_id ??
-      c.scope?.status_id ??
-      null;
-
-    // куди рухати при збігу правила (target)
-    const to_pipeline_id =
-      c.to_pipeline_id ?? c.move_to_pipeline_id ?? c.to?.pipeline_id ?? null;
-    const to_status_id =
-      c.to_status_id ?? c.move_to_status_id ?? c.to?.status_id ?? null;
-
-    const v1: RuleV1 =
-      c.rules?.v1 ?? { enabled: true, field: "text", op: "contains", value: "" };
-
-    if (
-      active &&
-      base_pipeline_id != null &&
-      base_status_id != null
-    ) {
-      out.push({
-        id: String(id),
-        name: c.name ?? c.title ?? undefined,
-        base_pipeline_id: String(base_pipeline_id),
-        base_status_id: String(base_status_id),
-        to_pipeline_id: to_pipeline_id != null ? String(to_pipeline_id) : null,
-        to_status_id: to_status_id != null ? String(to_status_id) : null,
-        rules: { v1 },
-      });
+    if (!raw) continue;
+    let obj: Campaign | null = null;
+    try {
+      obj = typeof raw === "string" ? (JSON.parse(raw) as Campaign) : (raw as Campaign);
+    } catch {
+      obj = null;
     }
+    if (!obj) continue;
+    if (obj.deleted || obj.is_deleted || obj.deleted_at) continue;
+    if (!obj.active) continue;
+    if (obj.base_pipeline_id == null || obj.base_status_id == null) continue;
+    out.push(obj);
   }
   return out;
 }
 
-function matchV1(text: string, rule?: RuleV1) {
-  const r: RuleV1 = rule ?? {};
+/* ───────────────────────── Rules match ───────────────────────── */
+function matchRule(text: string, rule?: Rule): boolean {
+  const r = rule ?? {};
   if (r.enabled === false) return false;
-  const value = String(r.value ?? "").trim();
-  if (!value) return false; // порожнє значення — правило неактивне
-  const t = String(text ?? "").trim();
-  const op: NonNullable<RuleV1["op"]> = r.op ?? "contains";
-  if (op === "equals") return t.toLowerCase() === value.toLowerCase();
-  return t.toLowerCase().includes(value.toLowerCase());
+  const value = (r.value ?? "").toString().trim();
+  if (!value) return false;
+  const t = text.toString();
+  if (r.op === "equals") return eqCI(t, value);
+  // default: contains (CI)
+  return ciIncludes(t, value);
 }
 
-type LocalFindResult = {
-  source: "social" | "fullname/title" | null;
-  card: Card | null;
-};
+/* ───────────────────────── Local search in base pair ───────────────────────── */
+async function findByUsernameInPair(username: string, p: string, s: string) {
+  const handle = normHandle(username);
+  if (!handle) return null;
 
-async function localFindInPair({
-  pipeline_id,
-  status_id,
-  username,
-  fullname,
-  limit = 200,
-}: {
-  pipeline_id: string;
-  status_id: string;
-  username?: string;
-  fullname?: string;
-  limit?: number;
-}): Promise<LocalFindResult> {
-  const pairIndex = `kc:index:cards:${pipeline_id}:${status_id}`;
+  const keyA = `kc:index:social:instagram:${handle}`;
+  const keyB = `kc:index:social:instagram:@${handle}`;
 
-  // 1) try social handle (instagram)
-  const handle = normHandle(username || "");
-  if (handle) {
-    const socialKeys = [
-      `kc:index:social:instagram:${handle}`,
-      `kc:index:social:instagram:@${handle}`,
-    ];
-    const checked = new Set<string>();
-    for (const sk of socialKeys) {
-      const members = ((await kvZRange(sk, 0, limit - 1)) as any[]) ?? [];
-      for (const m of members) {
-        const id = String(m);
-        if (checked.has(id)) continue;
-        checked.add(id);
-        const raw = await kvGet(`kc:card:${id}`);
-        const card = parseMaybeJson<Card>(raw);
-        if (!card) continue;
-        if (
-          String(card.pipeline_id ?? "") === pipeline_id &&
-          String(card.status_id ?? "") === status_id
-        ) {
-          return { source: "social", card };
-        }
+  const idsA = (await kvZRange(keyA, -100, -1)) as string[] | undefined;
+  const idsB = (await kvZRange(keyB, -100, -1)) as string[] | undefined;
+
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const arr of [idsA ?? [], idsB ?? []]) {
+    for (const id of arr) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        merged.push(id);
       }
     }
   }
+  if (!merged.length) return null;
 
-  // 2) fallback by fullname/title within the pair
-  const name = (fullname || "").trim();
-  if (name) {
-    const members = ((await kvZRange(pairIndex, 0, limit - 1)) as any[]) ?? [];
-    for (let i = members.length - 1; i >= 0; i--) {
-      const id = String(members[i]);
-      const raw = await kvGet(`kc:card:${id}`);
-      const card = parseMaybeJson<Card>(raw);
-      if (!card) continue;
-      if (
-        includesCI(card.contact_full_name ?? null, name) ||
-        includesCI(card.title ?? "", name)
-      ) {
-        return { source: "fullname/title", card };
-      }
-    }
-  }
-
-  return { source: null, card: null };
-}
-
-export async function POST(req: Request) {
-  // 1) Guard
-  const auth = await assertMc(req);
-  if (!auth.ok) {
-    return NextResponse.json({ ok: false, error: auth.error }, { status: 401 });
-  }
-
-  // 2) Parse body (json or form-data)
-  let body: any = {};
-  try {
-    body = await req.json();
-  } catch {
-    try {
-      const fd = await req.formData();
-      body = Object.fromEntries(fd.entries());
-    } catch {
-      body = {};
-    }
-  }
-
-  // 3) Normalize ManyChat payload
-  const username = normHandle(
-    body.username || body.ig_username || body.handle || ""
-  );
-  const text = String(body.text || body.last_input_text || "").trim();
-  const fullname = normFullname({
-    full_name: body.full_name,
-    name: body.name,
-    first_name: body.first_name,
-    last_name: body.last_name,
-  });
-
-  // 4) Mode: dry-run vs apply
-  const url = new URL(req.url);
-  const apply = url.searchParams.get("apply") === "1";
-
-  // Optional explicit pair (debug)
-  const qpPipeline = url.searchParams.get("pipeline_id");
-  const qpStatus = url.searchParams.get("status_id");
-
-  // 5) Load active campaigns (or build pseudo-campaign from query)
-  let campaigns: Campaign[] = [];
-  if (qpPipeline && qpStatus) {
-    campaigns = [
-      {
-        id: "debug",
-        base_pipeline_id: String(qpPipeline),
-        base_status_id: String(qpStatus),
-        to_pipeline_id: null,
-        to_status_id: null,
-        rules: { v1: { enabled: true, field: "text", op: "contains", value: "" } },
-      },
-    ];
-  } else {
-    campaigns = await listActiveCampaignsDetailed();
-  }
-  if (!campaigns.length) {
-    return NextResponse.json(
-      { ok: false, error: "No campaigns to search (provide ?pipeline_id&status_id or configure active campaigns)" },
-      { status: 400 }
-    );
-  }
-
-  // 6) Try to find & (optionally) move — first hit wins
-  for (const c of campaigns) {
-    const { source, card } = await localFindInPair({
-      pipeline_id: c.base_pipeline_id,
-      status_id: c.base_status_id,
-      username,
-      fullname,
-    });
+  let best: { card: Card; score: number } | null = null;
+  for (const id of merged) {
+    const raw = await kvGet(`kc:card:${id}`);
+    const card = parseCard(raw);
     if (!card) continue;
+    if (String(card.pipeline_id) !== p || String(card.status_id) !== s) continue;
+    const score = toEpoch(card.updated_at);
+    if (!best || score > best.score) best = { card, score };
+  }
+  return best?.card ?? null;
+}
 
-    const v1ok = matchV1(text, c.rules?.v1);
-    const target = {
-      pipeline_id: c.to_pipeline_id ?? undefined,
-      status_id: c.to_status_id ?? undefined,
-    };
-    const would_move = Boolean(v1ok && (target.pipeline_id || target.status_id));
-
-    if (apply && would_move) {
-      const res = await kcMoveCard(
-        Number(card.id),
-        target.pipeline_id ? Number(target.pipeline_id) : undefined,
-        target.status_id ? Number(target.status_id) : undefined
-      );
-      return NextResponse.json({
-        ok: true,
-        mode: "apply",
-        campaign: { id: c.id, name: c.name, base: { pipeline_id: c.base_pipeline_id, status_id: c.base_status_id }, target },
-        match: { source, card },
-        rule_v1: { ok: v1ok, ...(c.rules?.v1 ?? {}) },
-        move: res,
-        input: { username, fullname, text },
-      });
-    } else {
-      return NextResponse.json({
-        ok: true,
-        mode: "dry-run",
-        campaign: { id: c.id, name: c.name, base: { pipeline_id: c.base_pipeline_id, status_id: c.base_status_id }, target },
-        match: { source, card },
-        rule_v1: { ok: v1ok, ...(c.rules?.v1 ?? {}) },
-        would_move,
-        input: { username, fullname, text },
-      });
+async function findByFullnameInPair(fullname: string, p: string, s: string) {
+  const indexKey = `kc:index:cards:${p}:${s}`;
+  const ids = (await kvZRange(indexKey, -200, -1)) as string[] | undefined;
+  if (!ids?.length) return null;
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const id = ids[i];
+    const raw = await kvGet(`kc:card:${id}`);
+    const card = parseCard(raw);
+    if (!card) continue;
+    if (
+      ciIncludes(card.contact_full_name ?? undefined, fullname) ||
+      ciIncludes(card.title, fullname)
+    ) {
+      return card;
     }
   }
+  return null;
+}
 
-  // 7) Not found in any campaign
-  return NextResponse.json({
-    ok: true,
-    mode: apply ? "apply" : "dry-run",
-    match: null,
-    input: { username, fullname, text },
+/* ───────────────────────── KeyCRM move (inline) ───────────────────────── */
+async function kcMoveCard(cardId: number | string, toPipeline?: string | number | null, toStatus?: string | number | null) {
+  const base = process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1";
+  const token = process.env.KEYCRM_API_TOKEN;
+  if (!token) throw new Error("KeyCRM token not set");
+
+  const body: Record<string, any> = {};
+  if (toPipeline != null) body.pipeline_id = Number(toPipeline);
+  if (toStatus != null) body.status_id = Number(toStatus);
+
+  if (Object.keys(body).length === 0) {
+    return { ok: true, status: 204 }; // нічого рухати
+  }
+
+  const res = await fetch(`${base}/pipelines/cards/${cardId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
   });
+
+  let data: any = null;
+  try { data = await res.json(); } catch {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+/* ───────────────────────── Route: POST /api/mc/manychat ───────────────────────── */
+export async function POST(req: Request) {
+  try {
+    ensureMc(req);
+
+    // 1) Read & normalize MC payload
+    const payload = await req.json().catch(() => ({}));
+    const username = normHandle(payload?.username);
+    const text = normText(payload?.text);
+    const fullname =
+      normFullname(payload?.full_name, payload?.name, `${payload?.first_name ?? ""} ${payload?.last_name ?? ""}`);
+
+    // 2) Find exactly one active campaign matched by rules
+    const campaigns = await listActiveCampaigns();
+    let matched: Campaign | undefined;
+    let matchedByV2 = false;
+
+    for (const c of campaigns) {
+      const v1ok = matchRule(text, c.rules?.v1);
+      if (!v1ok) continue;
+      const v2rule = c.rules?.v2;
+      const v2ok = v2rule && v2rule.value ? matchRule(text, v2rule) : false;
+
+      // політика: якщо v2 збігся — пріоритезуємо таку кампанію
+      if (v2ok) {
+        matched = c;
+        matchedByV2 = true;
+        break;
+      }
+      // якщо ще не обрали, беремо першу з v1
+      if (!matched) matched = c;
+    }
+
+    if (!matched) {
+      return NextResponse.json(
+        { ok: false, reason: "no_campaign_match", payload: { username, text, fullname } },
+        { status: 200 }
+      );
+    }
+
+    const p = String(matched.base_pipeline_id);
+    const s = String(matched.base_status_id);
+
+    // 3) Local KV search strictly in the base pair
+    let card: Card | null = null;
+    let matched_by: "username" | "fullname" | "none" = "none";
+
+    if (username) {
+      card = await findByUsernameInPair(username, p, s);
+      if (card) matched_by = "username";
+    }
+    if (!card && fullname) {
+      card = await findByFullnameInPair(fullname, p, s);
+      if (card) matched_by = "fullname";
+    }
+
+    if (!card) {
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "card_not_found_in_pair",
+          campaign: { id: matched.id, name: matched.name, base_pipeline_id: p, base_status_id: s },
+          search: { matched_by, username, fullname },
+        },
+        { status: 200 }
+      );
+    }
+
+    // 4) Move in KeyCRM (if target provided)
+    const toP = matched.to_pipeline_id ?? null;
+    const toS = matched.to_status_id ?? null;
+
+    const moveRes = await kcMoveCard(card.id, toP, toS);
+
+    return NextResponse.json(
+      {
+        ok: moveRes.ok,
+        status: moveRes.status,
+        campaign: {
+          id: matched.id,
+          name: matched.name,
+          matched_by: matchedByV2 ? "v2" : "v1",
+          base_pipeline_id: p,
+          base_status_id: s,
+          to_pipeline_id: toP,
+          to_status_id: toS,
+        },
+        card: {
+          id: card.id,
+          title: card.title,
+          pipeline_id: card.pipeline_id,
+          status_id: card.status_id,
+          contact_social_name: card.contact_social_name,
+          contact_social_id: card.contact_social_id,
+          contact_full_name: card.contact_full_name ?? null,
+          updated_at: card.updated_at,
+        },
+        search: { matched_by, username, fullname },
+        keycrm: moveRes.data ?? null,
+      },
+      { status: moveRes.ok ? 200 : 502 }
+    );
+  } catch (e: any) {
+    const status = e?.status ?? 500;
+    return NextResponse.json({ ok: false, error: e?.message ?? "failed" }, { status });
+  }
 }
