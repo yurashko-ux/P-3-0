@@ -14,11 +14,11 @@ export async function GET(req: Request) {
   const testIndex = `debug:kv:index`;
 
   let setOk = false;
-  let getValue: unknown = null;
+  let getValue: string | null = null;
   let zaddOk = false;
   let zrange: string[] = [];
 
-  // kvSet(): Promise<void> — якщо await пройшов без помилки, вважаємо успішним
+  // kvSet(): Promise<void> → якщо await без помилки, вважаємо успішно
   try {
     await kvSet(testKey, "ping");
     setOk = true;
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     getValue = await kvGet(testKey);
   } catch {}
 
-  // kvZAdd(): Promise<void> — виставляємо прапорець після успіху
+  // kvZAdd(): Promise<void> → ставимо прапорець після успіху
   try {
     await kvZAdd(testIndex, ts, String(ts));
     zaddOk = true;
