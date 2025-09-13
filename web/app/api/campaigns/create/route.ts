@@ -33,7 +33,11 @@ type CampaignIn = {
   base_pipeline_id: number | string;
   base_status_id: number | string;
   rules: { v1: VariantRule; v2?: VariantRule };
-  exp?: { days?: number; to_pipeline_id?: number | string; to_status_id?: number | string };
+  exp?: {
+    days?: number;
+    to_pipeline_id?: number | string;
+    to_status_id?: number | string;
+  };
 };
 
 type Campaign = CampaignIn & {
@@ -59,7 +63,7 @@ export async function POST(req: Request) {
 
   const body = (raw as Partial<CampaignIn>) || {};
 
-  // знімаємо можливість null через локальні змінні
+  // безпечне зняття полів
   const name = String(body.name ?? "").trim();
   const basePipelineId = Number(body.base_pipeline_id);
   const baseStatusId = Number(body.base_status_id);
@@ -83,7 +87,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // перевірка унікальності варіантів по всіх не-видалених кампаніях
+  // перевірка унікальності варіантів по всіх НЕ-видалених кампаніях
   await assertVariantsUniqueOrThrow({
     v1: rulesV1,
     v2: rulesV2,
@@ -117,10 +121,10 @@ export async function POST(req: Request) {
     },
     exp: body.exp
       ? {
-        days: body.exp.days ?? undefined,
-        to_pipeline_id: body.exp.to_pipeline_id ? Number(body.exp.to_pipeline_id) : undefined,
-        to_status_id: body.exp.to_status_id ? Number(body.exp.to_status_id) : undefined,
-      }
+          days: body.exp.days ?? undefined,
+          to_pipeline_id: body.exp.to_pipeline_id ? Number(body.exp.to_pipeline_id) : undefined,
+          to_status_id: body.exp.to_status_id ? Number(body.exp.to_status_id) : undefined,
+        }
       : undefined,
     counters: { v1_count: 0, v2_count: 0, exp_count: 0 },
     active: true,
@@ -129,7 +133,8 @@ export async function POST(req: Request) {
     updated_at: nowIso,
   };
 
-  await kvSet(`campaigns:${id}`, created);
+  // KV приймає string → серіалізуємо
+  await kvSet(`campaigns:${id}`, JSON.stringify(created));
   await kvZAdd("campaigns:index", Date.now(), String(id));
 
   return NextResponse.json({ ok: true, data: created }, { status: 201 });
