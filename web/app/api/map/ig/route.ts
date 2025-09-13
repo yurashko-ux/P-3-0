@@ -1,51 +1,54 @@
 // web/app/api/map/ig/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { kvGet, kvSet } from '@/lib/kv';
+import { NextResponse } from "next/server";
+import { assertAdmin } from "@/lib/auth";
+import { kvSet } from "@/lib/kv";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const ADMIN = process.env.ADMIN_PASS ?? '';
-
-function okAuth(req: NextRequest) {
-  const bearer = req.headers.get('authorization') || '';
-  const token = bearer.startsWith('Bearer ') ? bearer.slice(7) : '';
-  const cookiePass = cookies().get('admin_pass')?.value || '';
-  const pass = token || cookiePass;
-  return !ADMIN || pass === ADMIN;
+function normUsername(u?: string) {
+  if (!u) return "";
+  return u.trim().replace(/^@/, "").toLowerCase();
 }
 
-function bad(status: number, error: string, extra?: any) {
-  return NextResponse.json({ ok: false, error, ...extra }, { status });
+function ok(data: Record<string, unknown>, status = 200) {
+  return NextResponse.json({ ok: true, ...data }, { status });
 }
-function ok(data: any = {}) { return NextResponse.json({ ok: true, ...data }); }
 
-const norm = (s: string) => String(s || '').trim().toLowerCase();
+function bad(status: number, message: string) {
+  return NextResponse.json({ ok: false, error: message }, { status });
+}
 
-// POST: створити/оновити мапінг username -> card_id
-export async function POST(req: NextRequest) {
-  if (!okAuth(req)) return bad(401, 'unauthorized');
-  const b = await req.json().catch(() => ({}));
-  const username = norm(b.username);
-  const card_id = String(b.card_id || '').trim();
-  if (!username || !card_id) return bad(400, 'username and card_id required');
+export async function POST(req: Request) {
+  // Адмін-guard
+  await assertAdmin(req);
 
+  // Парсимо body
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return bad(400, "Invalid JSON body");
+  }
+
+  // Дістаємо та нормалізуємо значення
+  const username = normUsername(body?.username);
+  const card_id_raw = body?.card_id ?? body?.cardId ?? body?.card;
+
+  // Валідація
+  if (!username) return bad(400, "username is required");
+  if (
+    card_id_raw == null ||
+    (typeof card_id_raw !== "string" && typeof card_id_raw !== "number")
+  ) {
+    return bad(400, "card_id is required");
+  }
+
+  const card_id = String(card_id_raw);
   const key = `map:ig:${username}`;
-  const saved = await kvSet(key, card_id);
-  if (!saved) return bad(500, 'kvSet failed');
+
+  // kvSet повертає void → просто викликаємо й повертаємо успіх
+  await kvSet(key, card_id);
 
   return ok({ username, card_id });
-}
-
-// GET: прочитати мапінг
-export async function GET(req: NextRequest) {
-  if (!okAuth(req)) return bad(401, 'unauthorized');
-  const url = new URL(req.url);
-  const username = norm(url.searchParams.get('username') || '');
-  if (!username) return bad(400, 'username required');
-
-  const key = `map:ig:${username}`;
-  const raw = await kvGet(key);
-  return ok({ username, card_id: raw || null });
 }
