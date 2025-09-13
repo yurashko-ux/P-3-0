@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   let zaddOk = false;
   let zrange: string[] = [];
 
-  // kvSet(): Promise<void> → якщо await без помилки, ставимо true
+  // kvSet(): Promise<void> → після успіху ставимо прапорець
   try {
     await kvSet(testKey, "ping");
     setOk = true;
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     getValue = await kvGet(testKey);
   } catch {}
 
-  // kvZAdd(): Promise<void> → після успіху ставимо true
+  // kvZAdd(): Promise<void> → після успіху ставимо прапорець
   try {
     await kvZAdd(testIndex, ts, String(ts));
     zaddOk = true;
@@ -42,10 +42,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    testKey,
-    setOk,
-    getValue,
-    zaddOk,
-    zrange,
+    meta: { testKey, testIndex },
+    results: { setOk, getValue, zaddOk, zrange },
   });
 }
