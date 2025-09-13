@@ -1,107 +1,242 @@
 // web/app/api/campaigns/create/route.ts
 import { NextResponse } from "next/server";
-import { kvSet, kvZAdd } from "@/lib/kv";
+import { assertAdmin } from "@/lib/auth";
+import { kvGet, kvSet, kvZAdd, kvZRange, kvIncr } from "@/lib/kv";
 import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
 export const dynamic = "force-dynamic";
 
-/** ---- helpers: tolerant coercion of rules ---- */
-type RuleInput =
-  | string
-  | number
-  | null
-  | undefined
-  | { value?: string | number; field?: string; op?: string };
+/** helpers */
+const toInt = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+const clean = (s?: string | null) =>
+  (typeof s === "string" ? s.trim() : "") || undefined;
 
-type VariantRule = { field: "text"; op: "contains" | "equals"; value: string };
+/** read body in JSON, urlencoded, or multipart */
+async function readBody(req: Request) {
+  const ct = (req.headers.get("content-type") || "").toLowerCase();
 
-function coerceString(v: unknown): string | undefined {
-  if (v === null || v === undefined) return undefined;
-  const s = String(v).trim();
-  return s.length ? s : undefined;
-}
+  // JSON
+  if (ct.includes("application/json")) {
+    try {
+      return await req.json();
+    } catch {}
+  }
 
-function coerceRule(input: RuleInput): VariantRule | undefined {
-  if (input === null || input === undefined) return undefined;
+  // urlencoded
+  if (ct.includes("application/x-www-form-urlencoded")) {
+    const text = await req.text();
+    const p = new URLSearchParams(text);
+    const get = (k: string) => p.get(k);
 
-  // allow short form: v1: "hi" | 1
-  let value =
-    typeof input === "object" && "value" in (input as any)
-      ? coerceString((input as any).value)
-      : coerceString(input);
+    const body: any = {
+      name: clean(get("name") || get("title")),
+      base_pipeline_id:
+        toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
+        undefined,
+      base_status_id:
+        toInt(get("base_status_id") || get("status_id") || get("base_status")) ??
+        undefined,
+      rules: {
+        v1: {
+          field: "text",
+          op: (clean(get("rules.v1.op") || get("v1_op")) as any) || "contains",
+          value:
+            clean(
+              get("rules.v1.value") ||
+                get("v1") ||
+                get("v1_value") ||
+                get("variant1") ||
+                get("variant_v1")
+            ) || "",
+        },
+      } as any,
+    };
 
-  if (!value) return undefined;
+    const v2val =
+      clean(
+        get("rules.v2.value") ||
+          get("v2") ||
+          get("v2_value") ||
+          get("variant2") ||
+          get("variant_v2")
+      ) || "";
+    if (v2val) {
+      body.rules.v2 = {
+        field: "text",
+        op: (clean(get("rules.v2.op") || get("v2_op")) as any) || "contains",
+        value: v2val,
+      };
+    }
 
-  // defaults
-  let op: "contains" | "equals" =
-    typeof input === "object" && "op" in (input as any)
-      ? ((String((input as any).op).toLowerCase() as any) === "equals"
-          ? "equals"
-          : "contains")
-      : "contains";
+    const expDays =
+      toInt(
+        get("exp_days") ||
+          get("expire_days") ||
+          get("days") ||
+          get("expire.days")
+      ) ?? undefined;
 
-  return { field: "text", op, value };
-}
+    if (expDays) {
+      body.rules.exp = {
+        days: expDays,
+        to_pipeline_id:
+          toInt(
+            get("exp_to_pipeline_id") ||
+              get("expire_pipeline_id") ||
+              get("exp.pipeline_id")
+          ) ?? undefined,
+        to_status_id:
+          toInt(
+            get("exp_to_status_id") ||
+              get("expire_status_id") ||
+              get("exp.status_id")
+          ) ?? undefined,
+      };
+    }
 
-/** ---- route handler ---- */
-export async function POST(req: Request) {
-  let body: any;
+    return body;
+  }
+
+  // multipart
+  if (ct.includes("multipart/form-data")) {
+    const fd = await req.formData();
+    const get = (k: string) => {
+      const v = fd.get(k);
+      return typeof v === "string" ? v : v?.toString() ?? null;
+    };
+    const body: any = {
+      name: clean(get("name") || get("title")),
+      base_pipeline_id:
+        toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
+        undefined,
+      base_status_id:
+        toInt(get("base_status_id") || get("status_id") || get("base_status")) ??
+        undefined,
+      rules: {
+        v1: {
+          field: "text",
+          op: (clean(get("rules.v1.op") || get("v1_op")) as any) || "contains",
+          value:
+            clean(
+              get("rules.v1.value") ||
+                get("v1") ||
+                get("v1_value") ||
+                get("variant1") ||
+                get("variant_v1")
+            ) || "",
+        },
+      } as any,
+    };
+    const v2val =
+      clean(
+        get("rules.v2.value") ||
+          get("v2") ||
+          get("v2_value") ||
+          get("variant2") ||
+          get("variant_v2")
+      ) || "";
+    if (v2val) {
+      body.rules.v2 = {
+        field: "text",
+        op: (clean(get("rules.v2.op") || get("v2_op")) as any) || "contains",
+        value: v2val,
+      };
+    }
+    const expDays =
+      toInt(
+        get("exp_days") ||
+          get("expire_days") ||
+          get("days") ||
+          get("expire.days")
+      ) ?? undefined;
+    if (expDays) {
+      body.rules.exp = {
+        days: expDays,
+        to_pipeline_id:
+          toInt(
+            get("exp_to_pipeline_id") ||
+              get("expire_pipeline_id") ||
+              get("exp.pipeline_id")
+          ) ?? undefined,
+        to_status_id:
+          toInt(
+            get("exp_to_status_id") ||
+              get("expire_status_id") ||
+              get("exp.status_id")
+          ) ?? undefined,
+      };
+    }
+    return body;
+  }
+
+  // final fallback
   try {
-    body = await req.json();
+    return await req.json();
   } catch {
+    return null;
+  }
+}
+
+export async function POST(req: Request) {
+  await assertAdmin(req);
+
+  const body: any = await readBody(req);
+  if (!body) {
     return NextResponse.json(
-      { ok: false, error: "Invalid JSON body" },
+      { ok: false, error: "invalid_body" },
       { status: 400 }
     );
   }
 
-  // tolerate different shapes and coerce everything to strings
-  const v1 = coerceRule(body?.rules?.v1 ?? body?.v1);
-  const v2 = coerceRule(body?.rules?.v2 ?? body?.v2);
-
-  if (!v1?.value) {
+  // normalize rules with sensible defaults
+  const ruleV1 = body.rules?.v1 ?? {};
+  const v1Value = clean(ruleV1.value);
+  const v1Op = (clean(ruleV1.op) as "contains" | "equals") || "contains";
+  if (!v1Value) {
     return NextResponse.json(
       { ok: false, error: "rules.v1.value is required (non-empty)" },
       { status: 400 }
     );
   }
 
-  // Uniqueness check across all non-deleted campaigns
+  const ruleV2 = body.rules?.v2;
+  const v2Value = clean(ruleV2?.value);
+  const v2Op = (clean(ruleV2?.op) as "contains" | "equals") || "contains";
+
+  // uniqueness guard (по всіх не-видалених кампаніях)
   await assertVariantsUniqueOrThrow({
-    v1,
-    v2,
-    // excludeId is undefined here (create flow)
+    v1: { field: "text", op: v1Op, value: v1Value },
+    v2: v2Value ? { field: "text", op: v2Op, value: v2Value } : undefined,
   });
 
-  const id = Date.now(); // simple unique id
-  const now = new Date().toISOString();
+  // issue new id
+  const id = await kvIncr("campaigns:next_id");
 
   const created = {
     id,
-    name: coerceString(body?.name) ?? "",
-    base_pipeline_id: Number(body?.base_pipeline_id ?? body?.base?.pipeline_id ?? 0) || 0,
-    base_status_id: Number(body?.base_status_id ?? body?.base?.status_id ?? 0) || 0,
-    rules: { v1, ...(v2 ? { v2 } : {}) },
-    expire:
-      body?.expire && (body?.expire?.days || body?.expire_days)
+    name: body.name || `Campaign #${id}`,
+    active: body.active !== false,
+    base_pipeline_id: Number(body.base_pipeline_id),
+    base_status_id: Number(body.base_status_id),
+    rules: {
+      v1: { field: "text", op: v1Op, value: v1Value },
+      ...(v2Value ? { v2: { field: "text", op: v2Op, value: v2Value } } : {}),
+      ...(body.rules?.exp
         ? {
-            days: Number(body?.expire?.days ?? body?.expire_days) || 0,
-            to_pipeline_id: Number(
-              body?.expire?.to_pipeline_id ?? body?.expire_to_pipeline_id ?? 0
-            ) || 0,
-            to_status_id: Number(
-              body?.expire?.to_status_id ?? body?.expire_to_status_id ?? 0
-            ) || 0,
+            exp: {
+              days: Number(body.rules.exp.days) || 0,
+              to_pipeline_id: toInt(body.rules.exp.to_pipeline_id),
+              to_status_id: toInt(body.rules.exp.to_status_id),
+            },
           }
-        : undefined,
-    active: true,
-    created_at: now,
-    updated_at: now,
-    // counters
-    v1_count: 0,
-    v2_count: 0,
-    exp_count: 0,
-    deleted: false,
+        : {}),
+    },
+    counters: { v1: 0, v2: 0, exp: 0 },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   // persist
