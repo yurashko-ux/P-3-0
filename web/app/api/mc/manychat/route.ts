@@ -84,6 +84,13 @@ type Card = {
   updated_at: string;
 };
 
+type RuleV1 = {
+  enabled?: boolean;
+  field?: "text";
+  op?: "contains" | "equals";
+  value?: string;
+};
+
 type Campaign = {
   id: string;
   name?: string;
@@ -92,12 +99,7 @@ type Campaign = {
   to_pipeline_id?: string | null;
   to_status_id?: string | null;
   rules?: {
-    v1?: {
-      enabled?: boolean;
-      field?: "text";
-      op?: "contains" | "equals";
-      value?: string;
-    };
+    v1?: RuleV1;
   };
 };
 
@@ -109,10 +111,10 @@ async function listActiveCampaignsDetailed(): Promise<Campaign[]> {
     const c = parseMaybeJson<any>(raw);
     if (!c) continue;
 
-    // FIX: прибрано "never nullish" — робимо частину, що може дати undefined
+    // Активність: допускаємо різні поля, але не ламаємо типи
     const active =
       (c.active ?? c.enabled ?? c.is_active) ??
-      (typeof c.status === "string" ? (c.status.toLowerCase() === "active") : undefined) ??
+      (typeof c.status === "string" ? c.status.toLowerCase() === "active" : undefined) ??
       true;
 
     const base_pipeline_id =
@@ -135,12 +137,8 @@ async function listActiveCampaignsDetailed(): Promise<Campaign[]> {
     const to_status_id =
       c.to_status_id ?? c.move_to_status_id ?? c.to?.status_id ?? null;
 
-    const v1 = c.rules?.v1 ?? {
-      enabled: true,
-      field: "text",
-      op: "contains",
-      value: "",
-    };
+    const v1: RuleV1 =
+      c.rules?.v1 ?? { enabled: true, field: "text", op: "contains", value: "" };
 
     if (
       active &&
@@ -161,13 +159,13 @@ async function listActiveCampaignsDetailed(): Promise<Campaign[]> {
   return out;
 }
 
-function matchV1(text: string, rule?: Campaign["rules"]["v1"]) {
-  const r = rule ?? {};
+function matchV1(text: string, rule?: RuleV1) {
+  const r: RuleV1 = rule ?? {};
   if (r.enabled === false) return false;
   const value = String(r.value ?? "").trim();
   if (!value) return false; // порожнє значення — правило неактивне
   const t = String(text ?? "").trim();
-  const op = (r.op || "contains") as "contains" | "equals";
+  const op: NonNullable<RuleV1["op"]> = (r.op ?? "contains");
   if (op === "equals") return t.toLowerCase() === value.toLowerCase();
   return t.toLowerCase().includes(value.toLowerCase());
 }
@@ -218,7 +216,6 @@ async function localFindInPair({
   const name = (fullname || "").trim();
   if (name) {
     const members = ((await kvZRange(pairIndex, 0, limit - 1)) as any[]) ?? [];
-    // перевіряємо з «кінця» (новіші зазвичай наприкінці)
     for (let i = members.length - 1; i >= 0; i--) {
       const id = String(members[i]);
       const raw = await kvGet(`kc:card:${id}`);
@@ -327,7 +324,7 @@ export async function POST(req: Request) {
         mode: "apply",
         campaign: { id: c.id, name: c.name, base: { pipeline_id: c.base_pipeline_id, status_id: c.base_status_id }, target },
         match: { source, card },
-        rule_v1: { ok: v1ok, ...c.rules?.v1 },
+        rule_v1: { ok: v1ok, ...(c.rules?.v1 ?? {}) },
         move: res,
         input: { username, fullname, text },
       });
@@ -337,7 +334,7 @@ export async function POST(req: Request) {
         mode: "dry-run",
         campaign: { id: c.id, name: c.name, base: { pipeline_id: c.base_pipeline_id, status_id: c.base_status_id }, target },
         match: { source, card },
-        rule_v1: { ok: v1ok, ...c.rules?.v1 },
+        rule_v1: { ok: v1ok, ...(c.rules?.v1 ?? {}) },
         would_move,
         input: { username, fullname, text },
       });
