@@ -165,10 +165,15 @@ function matchV1(text: string, rule?: RuleV1) {
   const value = String(r.value ?? "").trim();
   if (!value) return false; // порожнє значення — правило неактивне
   const t = String(text ?? "").trim();
-  const op: NonNullable<RuleV1["op"]> = (r.op ?? "contains");
+  const op: NonNullable<RuleV1["op"]> = r.op ?? "contains";
   if (op === "equals") return t.toLowerCase() === value.toLowerCase();
   return t.toLowerCase().includes(value.toLowerCase());
 }
+
+type LocalFindResult = {
+  source: "social" | "fullname/title" | null;
+  card: Card | null;
+};
 
 async function localFindInPair({
   pipeline_id,
@@ -182,7 +187,7 @@ async function localFindInPair({
   username?: string;
   fullname?: string;
   limit?: number;
-}) {
+}): Promise<LocalFindResult> {
   const pairIndex = `kc:index:cards:${pipeline_id}:${status_id}`;
 
   // 1) try social handle (instagram)
@@ -230,7 +235,7 @@ async function localFindInPair({
     }
   }
 
-  return { source: null as const, card: null as Card | null };
+  return { source: null, card: null };
 }
 
 export async function POST(req: Request) {
