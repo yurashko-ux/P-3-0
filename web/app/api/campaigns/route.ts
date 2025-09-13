@@ -1,171 +1,80 @@
 // web/app/api/campaigns/route.ts
-/*  ──────────────────────────────────────────────────────────────────────────
-    GET  /api/campaigns   → список кампаній (адмін)
-    POST /api/campaigns   → створити кампанію (адмін) + перевірка унікальності
-    ────────────────────────────────────────────────────────────────────────── */
-
 import { NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvZAdd, kvZRevRange } from "@/lib/kv";
+import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
 import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
-
-/** Допоміжне: безпечно парсити (kv може повертати string або object) */
-function safeParse<T = any>(raw: unknown): T | null {
-  if (raw == null) return null;
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw) as T;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === "object") return raw as T;
-  return null;
+/** Допоміжні: перетворюємо будь-що у непорожній рядок або кидаємо помилку */
+function toNonEmptyString(v: unknown, path: string): string {
+  const s = (v ?? "").toString().trim();
+  if (!s) throw new Error(`${path} is required (non-empty)`);
+  return s;
+}
+function toOptionalString(v: unknown): string | undefined {
+  const s = (v ?? "").toString().trim();
+  return s ? s : undefined;
 }
 
-/** Допоміжне: нормалізувати rule з двох можливих форм:
- *  1) { field:'text', op:'contains'|'equals', value:string }
- *  2) "просто значення" (рядок/число) з UI — трактуємо як {field:'text',op:'contains'}
- */
-type VariantRule = { field: "text"; op: "contains" | "equals"; value: string };
-function normalizeRuleInput(x: any): VariantRule | undefined {
-  if (x == null) return undefined;
-
-  // коротка форма: "1", 1, "  hi  "
-  if (typeof x === "string" || typeof x === "number") {
-    const v = String(x).trim();
-    if (!v) return undefined;
-    return { field: "text", op: "contains", value: v };
-  }
-
-  // об’єктна форма
-  if (typeof x === "object") {
-    const value = String(x.value ?? "").trim();
-    if (!value) return undefined;
-    const op: "contains" | "equals" = x.op === "equals" ? "equals" : "contains";
-    return { field: "text", op, value };
-  }
-
-  return undefined;
-}
-
-/** Схема кампанії для збереження */
-type Campaign = {
-  id: number | string;
-  name: string;
-  active: boolean;
-  base_pipeline_id: number;
-  base_status_id: number;
-  rules: {
-    v1: VariantRule;          // обов’язково
-    v2?: VariantRule | null;  // опційно
-  };
-  expire?: {
-    days?: number;
-    to_pipeline_id?: number | null;
-    to_status_id?: number | null;
-  };
-  counters?: {
-    v1_count?: number;
-    v2_count?: number;
-    exp_count?: number;
-  };
-  created_at: string;
-  updated_at: string;
-};
-
-/* ───────────────────────────── GET (list) ──────────────────────────────── */
+/** GET: список кампаній */
 export async function GET(req: Request) {
   await assertAdmin(req);
-
-  // найновіші спочатку
-  const ids = (await kvZRevRange("campaigns:index", 0, -1)) || [];
-  const out: Campaign[] = [];
-
+  const ids: string[] = (await kvZRange("campaigns:index", 0, -1)) || [];
+  const out: any[] = [];
   for (const id of ids) {
-    const raw = await kvGet(`campaigns:${id}`);
-    const c = safeParse<Campaign>(raw);
-    if (c) out.push(c);
+    const row = await kvGet(`campaigns:${id}`);
+    if (row) out.push(row);
   }
-
   return NextResponse.json({ ok: true, data: out });
 }
 
-/* ───────────────────────────── POST (create) ───────────────────────────── */
+/** POST: створення кампанії */
 export async function POST(req: Request) {
   await assertAdmin(req);
+  const body = await req.json();
 
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid JSON body" },
-      { status: 400 }
-    );
-  }
+  // ---- Н О Р М А Л І З А Ц І Я  &  В А Л І Д А Ц І Я ----
+  // Примусово робимо value рядками (це і є виправлення помилки)
+  const v1Value = toNonEmptyString(body?.rules?.v1?.value, "rules.v1.value");
+  const v1Field = body?.rules?.v1?.field ?? "text";
+  const v1Op = body?.rules?.v1?.op ?? "contains";
 
-  // Базові поля
-  const name = String(body?.name ?? "").trim();
-  const base_pipeline_id = Number(body?.base_pipeline_id);
-  const base_status_id = Number(body?.base_status_id);
+  const v2ValueOpt = toOptionalString(body?.rules?.v2?.value);
+  const v2Field = body?.rules?.v2?.field ?? "text";
+  const v2Op = body?.rules?.v2?.op ?? "contains";
 
-  // Нормалізуємо правила з обох можливих форм UI
-  const v1 = normalizeRuleInput(body?.rules?.v1);
-  const v2 = normalizeRuleInput(body?.rules?.v2);
-
-  // Перевірки
-  if (!name) {
-    return NextResponse.json(
-      { ok: false, error: "name is required (non-empty)" },
-      { status: 400 }
-    );
-  }
-  if (!Number.isFinite(base_pipeline_id) || !Number.isFinite(base_status_id)) {
-    return NextResponse.json(
-      { ok: false, error: "base_pipeline_id and base_status_id are required (numbers)" },
-      { status: 400 }
-    );
-  }
-  if (!v1 || !v1.value?.trim()) {
-    return NextResponse.json(
-      { ok: false, error: "rules.v1.value is required (non-empty)" },
-      { status: 400 }
-    );
-  }
-
-  // Перевірка унікальності варіантів по ВСІХ (крім видалених)
-  await assertVariantsUniqueOrThrow({
-    v1,
-    v2, // може бути undefined — валідатор це врахує
-  });
-
-  // Формуємо об’єкт кампанії
-  const nowIso = new Date().toISOString();
-  const id = Date.now(); // простий монотонний ідентифікатор
-  const created: Campaign = {
-    id,
-    name,
-    active: true,
-    base_pipeline_id,
-    base_status_id,
-    rules: { v1, ...(v2 ? { v2 } : {}) },
-    expire: {
-      days: Number.isFinite(Number(body?.expire?.days)) ? Number(body?.expire?.days) : undefined,
-      to_pipeline_id: body?.expire?.to_pipeline_id != null ? Number(body?.expire?.to_pipeline_id) : undefined,
-      to_status_id: body?.expire?.to_status_id != null ? Number(body?.expire?.to_status_id) : undefined,
+  const candidate = {
+    id: Date.now(), // якщо у тебе є kvIncr — можеш замінити тут на інкремент
+    name: toNonEmptyString(body?.name, "name"),
+    base_pipeline_id: Number(body?.base_pipeline_id),
+    base_status_id: Number(body?.base_status_id),
+    rules: {
+      v1: { field: v1Field, op: v1Op, value: v1Value },
+      // v2 зберігаємо лише якщо value непорожній після тріммінгу
+      ...(v2ValueOpt ? { v2: { field: v2Field, op: v2Op, value: v2ValueOpt } } : {}),
     },
-    counters: { v1_count: 0, v2_count: 0, exp_count: 0 },
-    created_at: nowIso,
-    updated_at: nowIso,
+    exp: body?.exp
+      ? {
+          days: Number(body.exp?.days ?? 0),
+          to_pipeline_id: Number(body.exp?.to_pipeline_id),
+          to_status_id: Number(body.exp?.to_status_id),
+        }
+      : undefined,
+    counters: { v1: 0, v2: 0, exp: 0 },
+    active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
-  // Зберігаємо: саму кампанію та її id в індекс
-  await kvSet(`campaigns:${id}`, created);
+  // Перевірка унікальності значень варіантів серед усіх НЕ видалених кампаній
+  await assertVariantsUniqueOrThrow({
+    v1: candidate.rules.v1,
+    v2: candidate.rules?.v2,
+  });
+
+  // ---- З Б Е Р Е Ж Е Н Н Я ----
+  const id = candidate.id;
+  await kvSet(`campaigns:${id}`, candidate);
   await kvZAdd("campaigns:index", Date.now(), String(id));
 
-  return NextResponse.json({ ok: true, data: created }, { status: 201 });
+  return NextResponse.json({ ok: true, data: candidate }, { status: 201 });
 }
