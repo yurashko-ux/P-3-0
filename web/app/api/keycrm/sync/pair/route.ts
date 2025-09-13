@@ -6,17 +6,17 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/keycrm/sync/pair?pipeline_id=1&status_id=38&per_page=50&max_pages=3
- * Адмін-доступ:
+ * Auth:
  *  - Header: Authorization: Bearer <ADMIN_PASS>
  *  - або ?admin=<ADMIN_PASS>
  *
  * ENV:
- *  - KEYCRM_API_TOKEN (обов'язково)
- *  - KEYCRM_BASE_URL (дефолт: https://openapi.keycrm.app/v1)
- *  - ADMIN_PASS (для guard)
+ *  - KEYCRM_API_TOKEN (required)
+ *  - KEYCRM_BASE_URL (default: https://openapi.keycrm.app/v1)
+ *  - ADMIN_PASS (guard)
  *
- * Зберігає:
- *  - kc:card:{id} => нормалізований JSON
+ * KV записи:
+ *  - kc:card:{id} => JSON string (нормалізована картка)
  *  - kc:index:cards:{pipeline_id}:{status_id} => ZSET(score=updated_at_epoch, member=card_id)
  */
 export async function POST(req: Request) {
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
   const bearer = authHeader.startsWith("Bearer ")
     ? authHeader.slice(7).trim()
     : authHeader.trim();
+
   const ADMIN_PASS = process.env.ADMIN_PASS ?? "";
   if (!ADMIN_PASS || (adminFromQuery !== ADMIN_PASS && bearer !== ADMIN_PASS)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -102,7 +103,9 @@ export async function POST(req: Request) {
     for (const raw of data) {
       const card = normalizeCard(raw);
       const score = toEpoch(card.updated_at);
-      await kvSet(`kc:card:${card.id}`, card);
+
+      // IMPORTANT: KV очікує string → зберігаємо JSON.stringify(...)
+      await kvSet(`kc:card:${card.id}`, JSON.stringify(card));
       await kvZAdd(indexKey, score, String(card.id));
       seen++;
     }
@@ -133,7 +136,6 @@ function normalizeCard(raw: any) {
     title: String(raw?.title ?? "").trim(),
     pipeline_id: pipelineId,
     status_id: statusId,
-    // якщо KeyCRM поверне contact — збережемо; інакше буде null (ок)
     contact_social_name: (raw?.contact?.social_name ?? null)?.toString().toLowerCase() ?? null,
     contact_social_id: raw?.contact?.social_id ?? null,
     contact_full_name:
