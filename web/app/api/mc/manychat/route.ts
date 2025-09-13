@@ -1,7 +1,8 @@
 // web/app/api/mc/manychat/route.ts
 // ManyChat → (rules) → local KV find (in base pair) → move card in KeyCRM
+// Лічильник: campaigns:{id}.moved_count (тільки при УСПІШНОМУ реальному переміщенні)
 import { NextResponse } from "next/server";
-import { kvGet, kvZRange } from "@/lib/kv";
+import { kvGet, kvSet, kvZRange } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
 
@@ -52,18 +53,25 @@ type Campaign = {
   id: number;
   name?: string;
   active?: boolean;
+
   // базова пара для пошуку
   base_pipeline_id: number | string;
   base_status_id: number | string;
-  // куди рухати
+
+  // куди рухати (може бути порожньо → не рухаємо)
   to_pipeline_id?: number | string | null;
   to_status_id?: number | string | null;
+
   // правила
   rules?: { v1?: Rule; v2?: Rule };
-  // мітки видалення/деактивації — про всяк!
+
+  // мітки видалення/деактивації
   deleted?: boolean;
   is_deleted?: boolean;
   deleted_at?: string | null;
+
+  // лічильник ефективності
+  moved_count?: number;
 };
 
 type Card = {
@@ -129,6 +137,24 @@ async function listActiveCampaigns(): Promise<Campaign[]> {
     out.push(obj);
   }
   return out;
+}
+
+// інкрементуємо moved_count тільки при реальному успішному переміщенні
+async function bumpCampaignMoved(campaignId: number) {
+  const key = `campaigns:${campaignId}`;
+  const raw = await kvGet(key);
+  if (!raw) return;
+  let obj: Campaign;
+  try {
+    obj = typeof raw === "string" ? (JSON.parse(raw) as Campaign) : (raw as Campaign);
+  } catch {
+    return;
+  }
+  const current = Number(obj.moved_count ?? 0);
+  obj.moved_count = Number.isFinite(current) ? current + 1 : 1;
+  // опціонально: оновити updated_at, якщо є така властивість
+  (obj as any).updated_at = new Date().toISOString();
+  await kvSet(key, obj);
 }
 
 /* ───────────────────────── Rules match ───────────────────────── */
@@ -207,8 +233,9 @@ async function kcMoveCard(cardId: number | string, toPipeline?: string | number 
   if (toPipeline != null) body.pipeline_id = Number(toPipeline);
   if (toStatus != null) body.status_id = Number(toStatus);
 
+  // якщо нема що рухати — не вважаємо це переміщенням
   if (Object.keys(body).length === 0) {
-    return { ok: true, status: 204 }; // нічого рухати
+    return { ok: true, status: 204, data: null, noAction: true as const };
   }
 
   const res = await fetch(`${base}/pipelines/cards/${cardId}`, {
@@ -223,7 +250,7 @@ async function kcMoveCard(cardId: number | string, toPipeline?: string | number 
 
   let data: any = null;
   try { data = await res.json(); } catch {}
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok, status: res.status, data, noAction: false as const };
 }
 
 /* ───────────────────────── Route: POST /api/mc/manychat ───────────────────────── */
@@ -238,25 +265,20 @@ export async function POST(req: Request) {
     const fullname =
       normFullname(payload?.full_name, payload?.name, `${payload?.first_name ?? ""} ${payload?.last_name ?? ""}`);
 
-    // 2) Find exactly one active campaign matched by rules
+    // 2) Find exactly one active campaign matched by rules (V1 is mandatory; V2 optional)
     const campaigns = await listActiveCampaigns();
     let matched: Campaign | undefined;
-    let matchedByV2 = false;
 
     for (const c of campaigns) {
       const v1ok = matchRule(text, c.rules?.v1);
       if (!v1ok) continue;
-      const v2rule = c.rules?.v2;
-      const v2ok = v2rule && v2rule.value ? matchRule(text, v2rule) : false;
-
-      // політика: якщо v2 збігся — пріоритезуємо таку кампанію
-      if (v2ok) {
-        matched = c;
-        matchedByV2 = true;
-        break;
+      // якщо є V2 з value — теж мусить пройти
+      const v2 = c.rules?.v2;
+      if (v2 && (v2.value ?? "").toString().trim()) {
+        if (!matchRule(text, v2)) continue;
       }
-      // якщо ще не обрали, беремо першу з v1
-      if (!matched) matched = c;
+      matched = c;
+      break;
     }
 
     if (!matched) {
@@ -294,20 +316,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4) Move in KeyCRM (if target provided)
+    // 4) Move in KeyCRM (count only REAL successful moves)
     const toP = matched.to_pipeline_id ?? null;
     const toS = matched.to_status_id ?? null;
 
     const moveRes = await kcMoveCard(card.id, toP, toS);
 
+    if (moveRes.ok && !moveRes.noAction) {
+      await bumpCampaignMoved(matched.id);
+    }
+
     return NextResponse.json(
       {
         ok: moveRes.ok,
         status: moveRes.status,
+        moved_count_incremented: Boolean(moveRes.ok && !moveRes.noAction),
         campaign: {
           id: matched.id,
           name: matched.name,
-          matched_by: matchedByV2 ? "v2" : "v1",
           base_pipeline_id: p,
           base_status_id: s,
           to_pipeline_id: toP,
