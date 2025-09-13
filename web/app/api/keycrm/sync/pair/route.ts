@@ -1,26 +1,30 @@
 // web/app/api/keycrm/sync/pair/route.ts
 import { NextResponse } from "next/server";
-
-// KV helpers (очікувані підписи – як у вашому проекті)
 import { kvGet, kvSet, kvZAdd, kvZRange, kvZRem } from "@/lib/kv";
-// KeyCRM adapter: пагінований список карток за pipeline/status
 import { kcListCardsLaravel } from "@/lib/keycrm";
 
-// робимо route динамічним (щоб не кешувався)
 export const dynamic = "force-dynamic";
 
-// —— локальні утиліти ——————————————————————————————————————————————
 type AnyObj = Record<string, any>;
+
+interface Card {
+  id: number;
+  title: string;
+  pipeline_id: number | null;
+  status_id: number | null;
+  contact_social_name: string | null;
+  contact_social_id: any;
+  contact_full_name: any;
+  updated_at: string;
+}
 
 function toEpoch(d: any): number {
   const t = typeof d === "string" ? Date.parse(d) : Number(d);
   return Number.isFinite(t) ? t : Date.now();
 }
 
-// нормалізуємо “сирий” об’єкт картки з KeyCRM у компактну форму
-function normalizeCard(raw: AnyObj) {
-  const pipelineId =
-    raw?.status?.pipeline_id ?? raw?.pipeline_id ?? null;
+function normalizeCard(raw: AnyObj): Card {
+  const pipelineId = raw?.status?.pipeline_id ?? raw?.pipeline_id ?? null;
   const statusId = raw?.status_id ?? raw?.status?.id ?? null;
 
   const socialName = String(raw?.contact?.social_name ?? "")
@@ -47,10 +51,9 @@ function normalizeCard(raw: AnyObj) {
     contact_social_id: socialId,
     contact_full_name: fullName,
     updated_at: String(updated),
-  } as const;
+  };
 }
 
-// дістаємо активні кампанії й перетворюємо у множину базових пар
 async function listActiveBasePairs(): Promise<Array<{ p: string; s: string }>> {
   const ids: string[] = (await kvZRange("campaigns:index", 0, -1)) ?? [];
   const pairs: Array<{ p: string; s: string }> = [];
@@ -60,7 +63,6 @@ async function listActiveBasePairs(): Promise<Array<{ p: string; s: string }>> {
     const c = (await kvGet(`campaigns:${id}`)) as AnyObj | null;
     if (!c) continue;
 
-    // гнучка перевірка “активності”
     const active =
       c.active !== false &&
       c.enabled !== false &&
@@ -88,9 +90,7 @@ async function resetPairIndex(p: string, s: string) {
   }
 }
 
-// —— основний хендлер ——————————————————————————————————————————————
 export async function POST(req: Request) {
-  // простий guard: дозволяємо тільки “адміну”
   const url = new URL(req.url);
   const admin =
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
@@ -128,7 +128,6 @@ export async function POST(req: Request) {
         per_page,
       });
 
-      // Laravel-подібна пагінація може приходити у різних формах
       const data: AnyObj[] =
         resp?.data ?? resp?.items ?? resp?.results ?? [];
       lastPage =
@@ -142,8 +141,8 @@ export async function POST(req: Request) {
         const score = toEpoch(card.updated_at);
         if (score > updatedMax) updatedMax = score;
 
-        // 1) повний об’єкт картки
-        await kvSet(`kc:card:${card.id}`, card);
+        // 1) повний об’єкт картки — зберігаємо як JSON-рядок
+        await kvSet(`kc:card:${card.id}`, JSON.stringify(card));
 
         // 2) індекс карток у базовій парі
         await kvZAdd(cardsKey, score, String(card.id));
