@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   let zaddOk = false;
   let zrange: string[] = [];
 
-  // kvSet(): Promise<void> → якщо await пройшов, вважаємо успішним
+  // kvSet(): Promise<void> — якщо await пройшов без помилки, вважаємо успішним
   try {
     await kvSet(testKey, "ping");
     setOk = true;
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     getValue = await kvGet(testKey);
   } catch {}
 
-  // kvZAdd(): Promise<void> → фіксуємо успіх прапорцем
+  // kvZAdd(): Promise<void> — виставляємо прапорець після успіху
   try {
     await kvZAdd(testIndex, ts, String(ts));
     zaddOk = true;
