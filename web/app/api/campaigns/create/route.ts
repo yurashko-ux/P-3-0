@@ -5,136 +5,107 @@ import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
 export const dynamic = "force-dynamic";
 
-/* ---- простий admin guard ---- */
-function isAdmin(req: Request) {
-  const url = new URL(req.url);
-  const qp = url.searchParams.get("admin") || url.searchParams.get("token");
-  const hdr = req.headers.get("authorization") || "";
-  const cookie = req.headers.get("cookie") || "";
-  const pass = process.env.ADMIN_PASS;
+/** ---- helpers: tolerant coercion of rules ---- */
+type RuleInput =
+  | string
+  | number
+  | null
+  | undefined
+  | { value?: string | number; field?: string; op?: string };
 
-  if (!pass) return true;
-  if (qp && qp === pass) return true;
-  if (/^Bearer\s+/i.test(hdr) && hdr.replace(/^Bearer\s+/i, "") === pass) return true;
-  if (cookie.includes(`admin_pass=${pass}`)) return true;
-  return false;
+type VariantRule = { field: "text"; op: "contains" | "equals"; value: string };
+
+function coerceString(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  const s = String(v).trim();
+  return s.length ? s : undefined;
 }
 
-/* ---- типи ---- */
-type VariantRule = {
-  enabled?: boolean;
-  field?: "text";
-  op?: "contains" | "equals";
-  value?: string;
-};
+function coerceRule(input: RuleInput): VariantRule | undefined {
+  if (input === null || input === undefined) return undefined;
 
-type CampaignIn = {
-  name: string;
-  base_pipeline_id: number | string;
-  base_status_id: number | string;
-  rules: { v1: VariantRule; v2?: VariantRule };
-  exp?: {
-    days?: number;
-    to_pipeline_id?: number | string;
-    to_status_id?: number | string;
-  };
-};
+  // allow short form: v1: "hi" | 1
+  let value =
+    typeof input === "object" && "value" in (input as any)
+      ? coerceString((input as any).value)
+      : coerceString(input);
 
-type Campaign = CampaignIn & {
-  id: number;
-  created_at: string;
-  updated_at: string;
-  active?: boolean;
-  deleted?: boolean;
-  counters?: { v1_count?: number; v2_count?: number; exp_count?: number };
-};
+  if (!value) return undefined;
 
+  // defaults
+  let op: "contains" | "equals" =
+    typeof input === "object" && "op" in (input as any)
+      ? ((String((input as any).op).toLowerCase() as any) === "equals"
+          ? "equals"
+          : "contains")
+      : "contains";
+
+  return { field: "text", op, value };
+}
+
+/** ---- route handler ---- */
 export async function POST(req: Request) {
-  if (!isAdmin(req)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
-
-  let raw: unknown;
+  let body: any;
   try {
-    raw = await req.json();
+    body = await req.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON body" },
+      { status: 400 }
+    );
   }
 
-  const body = (raw as Partial<CampaignIn>) || {};
+  // tolerate different shapes and coerce everything to strings
+  const v1 = coerceRule(body?.rules?.v1 ?? body?.v1);
+  const v2 = coerceRule(body?.rules?.v2 ?? body?.v2);
 
-  // безпечне зняття полів
-  const name = String(body.name ?? "").trim();
-  const basePipelineId = Number(body.base_pipeline_id);
-  const baseStatusId = Number(body.base_status_id);
-  const rulesV1: VariantRule | undefined = body.rules?.v1;
-  const rulesV2: VariantRule | undefined = body.rules?.v2;
-
-  // базова валідація
-  if (!name) {
-    return NextResponse.json({ ok: false, error: "name is required" }, { status: 400 });
-  }
-  if (!Number.isFinite(basePipelineId)) {
-    return NextResponse.json({ ok: false, error: "base_pipeline_id is required" }, { status: 400 });
-  }
-  if (!Number.isFinite(baseStatusId)) {
-    return NextResponse.json({ ok: false, error: "base_status_id is required" }, { status: 400 });
-  }
-  if (!rulesV1 || !rulesV1.value || !String(rulesV1.value).trim()) {
+  if (!v1?.value) {
     return NextResponse.json(
       { ok: false, error: "rules.v1.value is required (non-empty)" },
       { status: 400 }
     );
   }
 
-  // перевірка унікальності варіантів по всіх НЕ-видалених кампаніях
+  // Uniqueness check across all non-deleted campaigns
   await assertVariantsUniqueOrThrow({
-    v1: rulesV1,
-    v2: rulesV2,
+    v1,
+    v2,
+    // excludeId is undefined here (create flow)
   });
 
-  const id = Date.now();
-  const nowIso = new Date().toISOString();
+  const id = Date.now(); // simple unique id
+  const now = new Date().toISOString();
 
-  const created: Campaign = {
+  const created = {
     id,
-    name,
-    base_pipeline_id: basePipelineId,
-    base_status_id: baseStatusId,
-    rules: {
-      v1: {
-        enabled: rulesV1.enabled ?? true,
-        field: "text",
-        op: rulesV1.op ?? "contains",
-        value: String(rulesV1.value).trim(),
-      },
-      ...(rulesV2 && rulesV2.value
+    name: coerceString(body?.name) ?? "",
+    base_pipeline_id: Number(body?.base_pipeline_id ?? body?.base?.pipeline_id ?? 0) || 0,
+    base_status_id: Number(body?.base_status_id ?? body?.base?.status_id ?? 0) || 0,
+    rules: { v1, ...(v2 ? { v2 } : {}) },
+    expire:
+      body?.expire && (body?.expire?.days || body?.expire_days)
         ? {
-            v2: {
-              enabled: rulesV2.enabled ?? true,
-              field: "text",
-              op: rulesV2.op ?? "contains",
-              value: String(rulesV2.value).trim(),
-            },
+            days: Number(body?.expire?.days ?? body?.expire_days) || 0,
+            to_pipeline_id: Number(
+              body?.expire?.to_pipeline_id ?? body?.expire_to_pipeline_id ?? 0
+            ) || 0,
+            to_status_id: Number(
+              body?.expire?.to_status_id ?? body?.expire_to_status_id ?? 0
+            ) || 0,
           }
-        : {}),
-    },
-    exp: body.exp
-      ? {
-          days: body.exp.days ?? undefined,
-          to_pipeline_id: body.exp.to_pipeline_id ? Number(body.exp.to_pipeline_id) : undefined,
-          to_status_id: body.exp.to_status_id ? Number(body.exp.to_status_id) : undefined,
-        }
-      : undefined,
-    counters: { v1_count: 0, v2_count: 0, exp_count: 0 },
+        : undefined,
     active: true,
+    created_at: now,
+    updated_at: now,
+    // counters
+    v1_count: 0,
+    v2_count: 0,
+    exp_count: 0,
     deleted: false,
-    created_at: nowIso,
-    updated_at: nowIso,
   };
 
-  // KV приймає string → серіалізуємо
-  await kvSet(`campaigns:${id}`, JSON.stringify(created));
+  // persist
+  await kvSet(`campaigns:${id}`, created);
   await kvZAdd("campaigns:index", Date.now(), String(id));
 
   return NextResponse.json({ ok: true, data: created }, { status: 201 });
