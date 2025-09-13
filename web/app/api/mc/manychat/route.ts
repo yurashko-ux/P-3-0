@@ -1,6 +1,7 @@
 // web/app/api/mc/manychat/route.ts
 import { NextResponse } from "next/server";
 import { kvGet, kvZRange } from "@/lib/kv";
+import { kcMoveCard } from "@/lib/keycrm";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,10 @@ export const dynamic = "force-dynamic";
  *  "last_name":"{{last_name}}"
  * }
  *
- * Test call:
- *  POST /api/mc/manychat?pipeline_id=1&status_id=38&token=YOUR_MC_TOKEN
+ * Test:
+ *  POST /api/mc/manychat?admin=ADMIN_PASS&apply=0
+ *  Body(JSON): {"username":"@handle","text":"привіт","full_name":"Імʼя Прізвище"}
+ *  Для реального руху: ?apply=1
  */
 
 function normHandle(raw?: string | null) {
@@ -65,8 +68,8 @@ async function assertMc(req: Request) {
   if (!expected && !adminBypass) {
     return { ok: false as const, error: "MC_TOKEN is not configured" };
   }
-  if (adminBypass) return { ok: true as const };
-  if (provided && expected && provided === expected) return { ok: true as const };
+  if (adminBypass) return { ok: true as const, admin: true as const };
+  if (provided && expected && provided === expected) return { ok: true as const, admin: false as const };
   return { ok: false as const, error: "Unauthorized" };
 }
 
@@ -81,35 +84,92 @@ type Card = {
   updated_at: string;
 };
 
-async function listActiveBasePairsFromKV(): Promise<Array<{ p: string; s: string; id?: string }>> {
-  const out: Array<{ p: string; s: string; id?: string }> = [];
-  // читаємо до 500 кампаній з індексу (якщо менше — просто поверне скільки є)
-  const ids = ((await kvZRange("campaigns:index", 0, 499)) as any[]) ?? [];
+type Campaign = {
+  id: string;
+  name?: string;
+  base_pipeline_id: string;
+  base_status_id: string;
+  to_pipeline_id?: string | null;
+  to_status_id?: string | null;
+  rules?: {
+    v1?: {
+      enabled?: boolean;
+      field?: "text";
+      op?: "contains" | "equals";
+      value?: string;
+    };
+  };
+};
+
+async function listActiveCampaignsDetailed(): Promise<Campaign[]> {
+  const out: Campaign[] = [];
+  const ids = ((await kvZRange("campaigns:index", 0, 999)) as any[]) ?? [];
   for (const id of ids) {
     const raw = await kvGet(`campaigns:${id}`);
     const c = parseMaybeJson<any>(raw);
     if (!c) continue;
-    // tolerant mapping of fields
+
+    // FIX: прибрано "never nullish" — робимо частину, що може дати undefined
     const active =
-      c.active ?? c.enabled ?? c.is_active ?? c.status === "active" ?? true;
-    const p =
+      (c.active ?? c.enabled ?? c.is_active) ??
+      (typeof c.status === "string" ? (c.status.toLowerCase() === "active") : undefined) ??
+      true;
+
+    const base_pipeline_id =
       c.base_pipeline_id ??
       c.pipeline_id ??
       c.base?.pipeline_id ??
       c.scope?.pipeline_id ??
       null;
-    const s =
+
+    const base_status_id =
       c.base_status_id ??
       c.status_id ??
       c.base?.status_id ??
       c.scope?.status_id ??
       null;
 
-    if (active && p != null && s != null) {
-      out.push({ p: String(p), s: String(s), id: String(id) });
+    // куди рухати при збігу правила (target)
+    const to_pipeline_id =
+      c.to_pipeline_id ?? c.move_to_pipeline_id ?? c.to?.pipeline_id ?? null;
+    const to_status_id =
+      c.to_status_id ?? c.move_to_status_id ?? c.to?.status_id ?? null;
+
+    const v1 = c.rules?.v1 ?? {
+      enabled: true,
+      field: "text",
+      op: "contains",
+      value: "",
+    };
+
+    if (
+      active &&
+      base_pipeline_id != null &&
+      base_status_id != null
+    ) {
+      out.push({
+        id: String(id),
+        name: c.name ?? c.title ?? undefined,
+        base_pipeline_id: String(base_pipeline_id),
+        base_status_id: String(base_status_id),
+        to_pipeline_id: to_pipeline_id != null ? String(to_pipeline_id) : null,
+        to_status_id: to_status_id != null ? String(to_status_id) : null,
+        rules: { v1 },
+      });
     }
   }
   return out;
+}
+
+function matchV1(text: string, rule?: Campaign["rules"]["v1"]) {
+  const r = rule ?? {};
+  if (r.enabled === false) return false;
+  const value = String(r.value ?? "").trim();
+  if (!value) return false; // порожнє значення — правило неактивне
+  const t = String(text ?? "").trim();
+  const op = (r.op || "contains") as "contains" | "equals";
+  if (op === "equals") return t.toLowerCase() === value.toLowerCase();
+  return t.toLowerCase().includes(value.toLowerCase());
 }
 
 async function localFindInPair({
@@ -158,7 +218,7 @@ async function localFindInPair({
   const name = (fullname || "").trim();
   if (name) {
     const members = ((await kvZRange(pairIndex, 0, limit - 1)) as any[]) ?? [];
-    // перевіряємо з «кінця» (новіші з вищим score наприкінці масиву)
+    // перевіряємо з «кінця» (новіші зазвичай наприкінці)
     for (let i = members.length - 1; i >= 0; i--) {
       const id = String(members[i]);
       const raw = await kvGet(`kc:card:${id}`);
@@ -208,44 +268,86 @@ export async function POST(req: Request) {
     last_name: body.last_name,
   });
 
-  // 4) Determine base pairs to search
+  // 4) Mode: dry-run vs apply
   const url = new URL(req.url);
+  const apply = url.searchParams.get("apply") === "1";
+
+  // Optional explicit pair (debug)
   const qpPipeline = url.searchParams.get("pipeline_id");
   const qpStatus = url.searchParams.get("status_id");
 
-  let pairs: Array<{ p: string; s: string; id?: string }> = [];
+  // 5) Load active campaigns (or build pseudo-campaign from query)
+  let campaigns: Campaign[] = [];
   if (qpPipeline && qpStatus) {
-    pairs = [{ p: String(qpPipeline), s: String(qpStatus) }];
+    campaigns = [
+      {
+        id: "debug",
+        base_pipeline_id: String(qpPipeline),
+        base_status_id: String(qpStatus),
+        to_pipeline_id: null,
+        to_status_id: null,
+        rules: { v1: { enabled: true, field: "text", op: "contains", value: "" } },
+      },
+    ];
   } else {
-    pairs = await listActiveBasePairsFromKV();
+    campaigns = await listActiveCampaignsDetailed();
   }
-  if (!pairs.length) {
+  if (!campaigns.length) {
     return NextResponse.json(
-      { ok: false, error: "No base pairs to search (provide ?pipeline_id&status_id or configure active campaigns)" },
+      { ok: false, error: "No campaigns to search (provide ?pipeline_id&status_id or configure active campaigns)" },
       { status: 400 }
     );
   }
 
-  // 5) Try to find a card in any pair (first hit wins)
-  for (const pair of pairs) {
+  // 6) Try to find & (optionally) move — first hit wins
+  for (const c of campaigns) {
     const { source, card } = await localFindInPair({
-      pipeline_id: pair.p,
-      status_id: pair.s,
+      pipeline_id: c.base_pipeline_id,
+      status_id: c.base_status_id,
       username,
       fullname,
     });
-    if (card) {
+    if (!card) continue;
+
+    const v1ok = matchV1(text, c.rules?.v1);
+    const target = {
+      pipeline_id: c.to_pipeline_id ?? undefined,
+      status_id: c.to_status_id ?? undefined,
+    };
+    const would_move = Boolean(v1ok && (target.pipeline_id || target.status_id));
+
+    if (apply && would_move) {
+      const res = await kcMoveCard(
+        Number(card.id),
+        target.pipeline_id ? Number(target.pipeline_id) : undefined,
+        target.status_id ? Number(target.status_id) : undefined
+      );
       return NextResponse.json({
         ok: true,
-        match: { pair: { pipeline_id: pair.p, status_id: pair.s }, source, card },
+        mode: "apply",
+        campaign: { id: c.id, name: c.name, base: { pipeline_id: c.base_pipeline_id, status_id: c.base_status_id }, target },
+        match: { source, card },
+        rule_v1: { ok: v1ok, ...c.rules?.v1 },
+        move: res,
+        input: { username, fullname, text },
+      });
+    } else {
+      return NextResponse.json({
+        ok: true,
+        mode: "dry-run",
+        campaign: { id: c.id, name: c.name, base: { pipeline_id: c.base_pipeline_id, status_id: c.base_status_id }, target },
+        match: { source, card },
+        rule_v1: { ok: v1ok, ...c.rules?.v1 },
+        would_move,
         input: { username, fullname, text },
       });
     }
   }
 
-  // 6) Not found
+  // 7) Not found in any campaign
   return NextResponse.json({
     ok: true,
+    mode: apply ? "apply" : "dry-run",
     match: null,
     input: { username, fullname, text },
   });
