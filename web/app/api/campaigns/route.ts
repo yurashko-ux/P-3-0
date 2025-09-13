@@ -1,28 +1,62 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from "next/server";
-import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvZAdd, kvZRange, kvIncr } from "@/lib/kv";
+import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
 import {
   assertVariantsUniqueOrThrow,
   type VariantRule,
-  type Campaign as UniqueCampaign,
 } from "@/lib/campaigns-unique";
 
 export const dynamic = "force-dynamic";
 
-// ==== Типи для цього роуту (сумісні з campaigns-unique) ====
+/** ─────────────────────────── Admin guard (inline) ─────────────────────────── */
+function readCookie(header: string | null, name: string): string | null {
+  if (!header) return null;
+  const parts = header.split(/;\s*/);
+  for (const p of parts) {
+    const [k, ...rest] = p.split("=");
+    if (k === name) return rest.join("=");
+  }
+  return null;
+}
+
+function extractAdminPass(req: Request): string | null {
+  const url = new URL(req.url);
+  const q = url.searchParams.get("admin");
+  if (q) return q;
+
+  const auth = req.headers.get("authorization");
+  if (auth && /^bearer /i.test(auth)) return auth.replace(/^bearer /i, "").trim();
+
+  const x = req.headers.get("x-admin-pass");
+  if (x) return x;
+
+  const cookieHeader = req.headers.get("cookie");
+  const c = readCookie(cookieHeader, "admin_pass");
+  if (c) return c;
+
+  return null;
+}
+
+function ensureAdmin(req: Request) {
+  const want = process.env.ADMIN_PASS;
+  const got = extractAdminPass(req);
+  if (!want || got !== want) {
+    throw new Error("Unauthorized");
+  }
+}
+
+/** ─────────────────────────────── Types ─────────────────────────────── */
 type CampaignDTO = {
   name: string;
   active?: boolean;
+
   base_pipeline_id: number | string;
   base_status_id: number | string;
 
-  // необов’язкові лічильники/налаштування
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
 
-  // expire-логіка (опційно)
   exp_days?: number;
   exp_to_pipeline_id?: number | string;
   exp_to_status_id?: number | string;
@@ -42,16 +76,14 @@ type StoredCampaign = CampaignDTO & {
   status?: string | null;
 };
 
-// ---- helpers ----
+/** ───────────────────────────── Helpers ───────────────────────────── */
 function nowIso() {
   return new Date().toISOString();
 }
-
 function toNumberOrNull(v: any): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-
 function parseMaybeJSON<T>(raw: unknown): T | null {
   if (raw == null) return null;
   if (typeof raw === "string") {
@@ -64,115 +96,100 @@ function parseMaybeJSON<T>(raw: unknown): T | null {
   return raw as T;
 }
 
-// ==== GET: список кампаній (простий) ====
+/** ───────────────────────────── GET ───────────────────────────── */
 export async function GET(req: Request) {
-  await assertAdmin(req);
-  const ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | undefined;
-  const out: StoredCampaign[] = [];
+  try {
+    ensureAdmin(req);
+    const ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | undefined;
+    const out: StoredCampaign[] = [];
 
-  for (const id of ids ?? []) {
-    const raw = await kvGet(`campaigns:${id}`);
-    const c = parseMaybeJSON<StoredCampaign>(raw);
-    if (c) out.push(c);
+    for (const id of ids ?? []) {
+      const raw = await kvGet(`campaigns:${id}`);
+      const c = parseMaybeJSON<StoredCampaign>(raw);
+      if (c) out.push(c);
+    }
+
+    return NextResponse.json({ total: out.length, data: out });
+  } catch (e: any) {
+    const msg = e?.message || "failed";
+    const status = msg === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ ok: false, error: msg }, { status });
   }
-
-  return NextResponse.json({ total: out.length, data: out });
 }
 
-// ==== POST: створення кампанії з перевіркою унікальності варіантів ====
+/** ───────────────────────────── POST (create) ───────────────────────────── */
 export async function POST(req: Request) {
-  await assertAdmin(req);
-
-  let body: CampaignDTO;
   try {
-    body = (await req.json()) as CampaignDTO;
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
-  }
+    ensureAdmin(req);
 
-  // валідація мінімально потрібних полів
-  if (!body?.name?.trim()) {
-    return NextResponse.json({ ok: false, error: "name is required" }, { status: 400 });
-  }
-  const p = toNumberOrNull(body.base_pipeline_id);
-  const s = toNumberOrNull(body.base_status_id);
-  if (!p || !s) {
-    return NextResponse.json(
-      { ok: false, error: "base_pipeline_id and base_status_id must be numeric" },
-      { status: 400 }
-    );
-  }
+    let body: CampaignDTO;
+    try {
+      body = (await req.json()) as CampaignDTO;
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+    }
 
-  // V1 має бути заданий і не порожній (за нашими правилами)
-  const v1 = body.rules?.v1;
-  if (!v1 || !v1.value || !v1.value.trim()) {
-    return NextResponse.json(
-      { ok: false, error: "rules.v1.value is required (non-empty)" },
-      { status: 400 }
-    );
-  }
+    if (!body?.name?.trim()) {
+      return NextResponse.json({ ok: false, error: "name is required" }, { status: 400 });
+    }
 
-  // === головне: перевірка унікальності варіантів серед усіх НЕвидалених кампаній ===
-  try {
+    const p = toNumberOrNull(body.base_pipeline_id);
+    const s = toNumberOrNull(body.base_status_id);
+    if (!p || !s) {
+      return NextResponse.json(
+        { ok: false, error: "base_pipeline_id and base_status_id must be numeric" },
+        { status: 400 }
+      );
+    }
+
+    const v1 = body.rules?.v1;
+    if (!v1 || !v1.value || !v1.value.trim()) {
+      return NextResponse.json(
+        { ok: false, error: "rules.v1.value is required (non-empty)" },
+        { status: 400 }
+      );
+    }
+
+    // Головне: перевірка унікальності варіантів серед усіх НЕвидалених кампаній
     await assertVariantsUniqueOrThrow({
       v1: body.rules?.v1,
       v2: body.rules?.v2,
-      // excludeId не вказуємо — ми створюємо нову кампанію
+      // excludeId: відсутній — створення нової
     });
-  } catch (e: any) {
-    const status = e?.status ?? 409;
-    return NextResponse.json(
-      {
-        ok: false,
-        error: e?.message || "Variants are not unique",
-        conflicts: e?.conflicts,
+
+    // Генерація id без kvIncr (простий варіант для MVP)
+    const id: number | string = Date.now();
+
+    const created: StoredCampaign = {
+      id,
+      name: body.name.trim(),
+      active: body.active ?? true,
+      base_pipeline_id: p,
+      base_status_id: s,
+      v1_count: body.v1_count ?? 0,
+      v2_count: body.v2_count ?? 0,
+      exp_count: body.exp_count ?? 0,
+      exp_days: body.exp_days ?? undefined,
+      exp_to_pipeline_id: body.exp_to_pipeline_id ?? undefined,
+      exp_to_status_id: body.exp_to_status_id ?? undefined,
+      rules: {
+        v1: body.rules?.v1,
+        v2: body.rules?.v2,
       },
-      { status }
-    );
+      created_at: nowIso(),
+      updated_at: nowIso(),
+      deleted: false,
+      deleted_at: null,
+      status: null,
+    };
+
+    await kvSet(`campaigns:${id}`, created);
+    await kvZAdd("campaigns:index", Date.now(), String(id));
+
+    return NextResponse.json({ ok: true, data: created }, { status: 201 });
+  } catch (e: any) {
+    const msg = e?.message || "failed";
+    const status = msg === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ ok: false, error: msg }, { status });
   }
-
-  // генеруємо id (через KV incr; fallback — timestamp)
-  let id: number | string;
-  try {
-    id = await kvIncr("campaigns:seq");
-  } catch {
-    id = Date.now();
-  }
-
-  const created: StoredCampaign = {
-    id,
-    name: body.name.trim(),
-    active: body.active ?? true,
-    base_pipeline_id: p,
-    base_status_id: s,
-    v1_count: body.v1_count ?? 0,
-    v2_count: body.v2_count ?? 0,
-    exp_count: body.exp_count ?? 0,
-    exp_days: body.exp_days ?? undefined,
-    exp_to_pipeline_id: body.exp_to_pipeline_id ?? undefined,
-    exp_to_status_id: body.exp_to_status_id ?? undefined,
-    rules: {
-      v1: body.rules?.v1,
-      v2: body.rules?.v2,
-    },
-    created_at: nowIso(),
-    updated_at: nowIso(),
-    deleted: false,
-    deleted_at: null,
-    status: null,
-  };
-
-  // зберігаємо
-  await kvSet(`campaigns:${id}`, created);
-  await kvZAdd("campaigns:index", Date.now(), String(id));
-
-  // відповідь
-  return NextResponse.json({ ok: true, data: created }, { status: 201 });
 }
-
-/**
- * Примітка:
- * - PUT/PATCH для редагування з перевіркою унікальності (з excludeId) додамо наступним кроком.
- * - Для DELETE ми ставимо прапорець deleted/deleted_at і НЕ прибираємо з index (або можемо — залежить від вашої політики архівації).
- *   Механізм унікальності ігнорує такі кампанії (див. campaigns-unique.ts).
- */
