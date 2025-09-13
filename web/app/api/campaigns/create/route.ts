@@ -1,7 +1,7 @@
 // web/app/api/campaigns/create/route.ts
 import { NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvZAdd, kvZRange, kvIncr } from "@/lib/kv";
+import { kvSet, kvZAdd, kvIncr } from "@/lib/kv";
 import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +11,13 @@ const toInt = (v: unknown) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 };
-const clean = (s?: string | null) =>
-  (typeof s === "string" ? s.trim() : "") || undefined;
+/** Accept string | number | boolean → trimmed string, or undefined */
+const toText = (v: unknown) => {
+  if (v === null || v === undefined) return undefined;
+  const s = typeof v === "string" ? v : String(v);
+  const t = s.trim();
+  return t.length ? t : undefined;
+};
 
 /** read body in JSON, urlencoded, or multipart */
 async function readBody(req: Request) {
@@ -32,7 +37,7 @@ async function readBody(req: Request) {
     const get = (k: string) => p.get(k);
 
     const body: any = {
-      name: clean(get("name") || get("title")),
+      name: toText(get("name") || get("title")),
       base_pipeline_id:
         toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
         undefined,
@@ -42,9 +47,9 @@ async function readBody(req: Request) {
       rules: {
         v1: {
           field: "text",
-          op: (clean(get("rules.v1.op") || get("v1_op")) as any) || "contains",
+          op: (toText(get("rules.v1.op") || get("v1_op")) as any) || "contains",
           value:
-            clean(
+            toText(
               get("rules.v1.value") ||
                 get("v1") ||
                 get("v1_value") ||
@@ -56,7 +61,7 @@ async function readBody(req: Request) {
     };
 
     const v2val =
-      clean(
+      toText(
         get("rules.v2.value") ||
           get("v2") ||
           get("v2_value") ||
@@ -66,7 +71,7 @@ async function readBody(req: Request) {
     if (v2val) {
       body.rules.v2 = {
         field: "text",
-        op: (clean(get("rules.v2.op") || get("v2_op")) as any) || "contains",
+        op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
         value: v2val,
       };
     }
@@ -108,7 +113,7 @@ async function readBody(req: Request) {
       return typeof v === "string" ? v : v?.toString() ?? null;
     };
     const body: any = {
-      name: clean(get("name") || get("title")),
+      name: toText(get("name") || get("title")),
       base_pipeline_id:
         toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
         undefined,
@@ -118,9 +123,9 @@ async function readBody(req: Request) {
       rules: {
         v1: {
           field: "text",
-          op: (clean(get("rules.v1.op") || get("v1_op")) as any) || "contains",
+          op: (toText(get("rules.v1.op") || get("v1_op")) as any) || "contains",
           value:
-            clean(
+            toText(
               get("rules.v1.value") ||
                 get("v1") ||
                 get("v1_value") ||
@@ -131,7 +136,7 @@ async function readBody(req: Request) {
       } as any,
     };
     const v2val =
-      clean(
+      toText(
         get("rules.v2.value") ||
           get("v2") ||
           get("v2_value") ||
@@ -141,7 +146,7 @@ async function readBody(req: Request) {
     if (v2val) {
       body.rules.v2 = {
         field: "text",
-        op: (clean(get("rules.v2.op") || get("v2_op")) as any) || "contains",
+        op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
         value: v2val,
       };
     }
@@ -193,8 +198,8 @@ export async function POST(req: Request) {
 
   // normalize rules with sensible defaults
   const ruleV1 = body.rules?.v1 ?? {};
-  const v1Value = clean(ruleV1.value);
-  const v1Op = (clean(ruleV1.op) as "contains" | "equals") || "contains";
+  const v1Value = toText(ruleV1.value);           // ✅ тепер приймає і число
+  const v1Op = (toText(ruleV1.op) as "contains" | "equals") || "contains";
   if (!v1Value) {
     return NextResponse.json(
       { ok: false, error: "rules.v1.value is required (non-empty)" },
@@ -203,10 +208,10 @@ export async function POST(req: Request) {
   }
 
   const ruleV2 = body.rules?.v2;
-  const v2Value = clean(ruleV2?.value);
-  const v2Op = (clean(ruleV2?.op) as "contains" | "equals") || "contains";
+  const v2Value = toText(ruleV2?.value);          // ✅ теж через toText
+  const v2Op = (toText(ruleV2?.op) as "contains" | "equals") || "contains";
 
-  // uniqueness guard (по всіх не-видалених кампаніях)
+  // uniqueness guard
   await assertVariantsUniqueOrThrow({
     v1: { field: "text", op: v1Op, value: v1Value },
     v2: v2Value ? { field: "text", op: v2Op, value: v2Value } : undefined,
@@ -239,7 +244,6 @@ export async function POST(req: Request) {
     updated_at: new Date().toISOString(),
   };
 
-  // persist
   await kvSet(`campaigns:${id}`, created);
   await kvZAdd("campaigns:index", Date.now(), String(id));
 
