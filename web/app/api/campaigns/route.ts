@@ -1,7 +1,7 @@
 // web/app/api/campaigns/route.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
+import { kvGet, kvSet, kvZAdd, kvZRevRange } from "@/lib/kv";
 
 // Динаміка, щоб не кешувалось
 export const revalidate = 0;
@@ -36,7 +36,6 @@ const pick = <T>(...vals: T[]) =>
   vals.find((v) => v !== undefined && v !== null) as T | undefined;
 
 function coerceRule(raw: any, fallbacks: any, which: "v1" | "v2"): VariantRule | undefined {
-  // Підтримуємо різні імена полів з форми
   const op =
     (raw?.op ??
       fallbacks?.[`${which}_op`] ??
@@ -48,7 +47,7 @@ function coerceRule(raw: any, fallbacks: any, which: "v1" | "v2"): VariantRule |
       raw?.value,
       fallbacks?.[`${which}_value`],
       fallbacks?.[which]?.value,
-      fallbacks?.[which], // коли прислали просто рядок
+      fallbacks?.[which],
       fallbacks?.[`variant${which === "v1" ? "1" : "2"}Value`],
       fallbacks?.[`variant${which === "v1" ? "1" : "2"}`]?.value
     ) ?? "";
@@ -58,7 +57,7 @@ function coerceRule(raw: any, fallbacks: any, which: "v1" | "v2"): VariantRule |
   if (which === "v1" && !value) {
     throw new Error("rules.v1.value is required (non-empty)");
   }
-  if (!value) return undefined; // для v2 дозволено порожнє → пропускаємо
+  if (!value) return undefined;
 
   return { field: "text", op: (op || "contains") as VariantOp, value };
 }
@@ -118,16 +117,16 @@ function parseBodyToCampaign(body: any): Campaign {
 // ---- GET: список кампаній
 export async function GET() {
   try {
-    // нові зверху
-    const ids = await kvZRange("campaigns:index", -1000, -1, true); // останні N
+    // новіші зверху: беремо останні 1000 id у зворотному порядку
+    const ids = (await kvZRevRange("campaigns:index", 0, 999)) ?? [];
     const out: Campaign[] = [];
-    for (const id of ids ?? []) {
+    for (const id of ids) {
       const raw = await kvGet(`campaigns:${id}`);
       if (!raw) continue;
       const c = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!c?.deleted) out.push(c as Campaign);
     }
-    // відсортуємо за updated_at (спадання)
+    // на всяк випадок — ще раз відсортуємо за updated_at
     out.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
     return NextResponse.json({ ok: true, data: out });
   } catch (e: any) {
@@ -144,7 +143,6 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const created = parseBodyToCampaign(body);
 
-    // Мінімальна перевірка обовʼязкових полів
     if (!created.name) {
       return NextResponse.json(
         { ok: false, error: "name is required" },
@@ -158,7 +156,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Збереження
     await kvSet(`campaigns:${created.id}`, created);
     await kvZAdd("campaigns:index", Date.now(), String(created.id));
 
