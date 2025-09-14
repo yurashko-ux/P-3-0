@@ -32,6 +32,9 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     return bad(400, "Invalid JSON body");
+    // web/app/api/campaigns/create/route.ts
+export { POST } from "../route";
+
   }
 
   // ---- basic fields
