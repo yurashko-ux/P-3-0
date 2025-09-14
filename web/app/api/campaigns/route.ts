@@ -184,7 +184,22 @@ async function readBody(req: Request) {
 /* ───────── GET: list campaigns ───────── */
 export async function GET(req: Request) {
   await assertAdmin(req);
-  const ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | null;
+
+  // 1) основний шлях — через індекс
+  let ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | null;
+
+  // 2) fallback — якщо індекс порожній, скануємо 1..next_id
+  if (!ids || ids.length === 0) {
+    const nextRaw = (await kvGet("campaigns:next_id")) as string | null;
+    const next = Number(nextRaw ?? 0);
+    const scanIds: string[] = [];
+    for (let i = 1; i <= next; i++) {
+      const raw = (await kvGet(`campaigns:${i}`)) as string | null;
+      if (raw) scanIds.push(String(i));
+    }
+    ids = scanIds;
+  }
+
   const out: any[] = [];
   for (const id of ids || []) {
     const raw = (await kvGet(`campaigns:${id}`)) as string | null;
@@ -193,6 +208,10 @@ export async function GET(req: Request) {
       out.push(JSON.parse(raw));
     } catch {}
   }
+
+  // новіші — вище
+  out.sort((a, b) => (b?.created_at || "").localeCompare(a?.created_at || ""));
+
   return NextResponse.json({ ok: true, data: out });
 }
 
@@ -205,7 +224,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   }
 
-  // Нормалізуємо опції та значення правил — підхоплюємо альтернативні ключі з JSON та form-data
+  // Нормалізація правил (включно з альтернативними ключами)
   const v1Raw = pickFirst(
     body?.rules?.v1?.value,
     body?.v1,
@@ -220,7 +239,6 @@ export async function POST(req: Request) {
     body?.["rules.v1.op"],
     "contains"
   );
-
   const v2Raw = pickFirst(
     body?.rules?.v2?.value,
     body?.v2,
@@ -238,7 +256,6 @@ export async function POST(req: Request) {
 
   const v1Value = toText(v1Raw);
   const v1Op = (toText(v1OpRaw) as any) || "contains";
-
   if (!v1Value) {
     return NextResponse.json(
       { ok: false, error: "rules.v1.value is required (non-empty)" },
@@ -285,8 +302,10 @@ export async function POST(req: Request) {
     updated_at: new Date().toISOString(),
   };
 
-  // KV приймає string → зберігаємо JSON
+  // Зберігаємо як JSON-рядок
   await kvSet(`campaigns:${id}`, JSON.stringify(created));
+
+  // Додаємо до індексу (якщо індекс десь «ламається», GET має fallback)
   await kvZAdd("campaigns:index", Date.now(), String(id));
 
   return NextResponse.json({ ok: true, data: created }, { status: 201 });
