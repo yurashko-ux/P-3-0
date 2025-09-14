@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/auth";
 import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
 
-// ---- types (локально, щоб не ламались імпорти) ----
+// ---- local types ----
 type VariantOp = "contains" | "equals";
 type VariantRule = { field: "text"; op: VariantOp; value: string };
 type Campaign = {
@@ -14,10 +14,7 @@ type Campaign = {
   base_pipeline_id: number;
   base_status_id: number;
 
-  rules: {
-    v1: VariantRule;
-    v2?: VariantRule;
-  };
+  rules: { v1: VariantRule; v2?: VariantRule };
 
   exp_days: number;
   exp_to_pipeline_id: number;
@@ -28,44 +25,62 @@ type Campaign = {
 };
 
 // ---- helpers ----
-function bad(status: number, message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status });
-}
+const bad = (status: number, message: string, extra?: any) =>
+  NextResponse.json({ ok: false, error: message, ...(extra ? { extra } : {}) }, { status });
 
-function safeParse<T = any>(raw: unknown): T | null {
-  if (raw == null) return null;
-  try {
-    return typeof raw === "string" ? (JSON.parse(raw) as T) : (raw as T);
-  } catch {
-    return null;
-  }
-}
+const trimOrEmpty = (x: unknown) => String(x ?? "").trim();
 
-function trimOrEmpty(x: unknown): string {
-  return String(x ?? "").trim();
-}
-
-/** Приймає або рядок, або об'єкт і повертає нормалізоване правило, або undefined */
 function coerceRule(input: any): VariantRule | undefined {
   if (!input) return undefined;
 
-  // якщо прийшов просто рядок
-  if (typeof input === "string") {
+  // plain string/number
+  if (typeof input === "string" || typeof input === "number") {
     const value = trimOrEmpty(input);
     if (!value) return undefined;
     return { field: "text", op: "contains", value };
   }
 
-  // якщо прийшов об'єкт
+  // object { value, op? }
   if (typeof input === "object") {
-    const value = trimOrEmpty(input.value);
+    // іноді прилітає { value } або { v: ... } або { text: ... }
+    const rawValue =
+      input.value ?? input.v ?? input.text ?? input.val ?? input.keyword ?? input.query;
+    const value = trimOrEmpty(rawValue);
     if (!value) return undefined;
-    const op: VariantOp =
-      input.op === "equals" || input.op === "contains" ? input.op : "contains";
+
+    const rawOp = String(input.op ?? input.operator ?? "").toLowerCase();
+    const op: VariantOp = rawOp === "equals" ? "equals" : "contains";
+
     return { field: "text", op, value };
   }
 
   return undefined;
+}
+
+/** Витягує можливі варіанти з різних назв полів форми */
+function pickPossibleV(body: any, which: 1 | 2) {
+  const idx = which === 1 ? "1" : "2";
+  const candidates: any[] = [
+    // сучасна схема
+    body?.rules?.[`v${idx}`],
+    // «плоскі» варіанти
+    body?.[`v${idx}`],
+    body?.[`rules_v${idx}`],
+    body?.[`v${idx}_value`],
+    body?.[`value${idx}`],
+    body?.[`variant${idx}_value`],
+    body?.[`variant_${idx}`]?.value,
+    body?.[`rule${idx}`],
+    body?.[`rule${idx}_value`],
+    body?.[`ruleV${idx}`],
+    body?.[`ruleV${idx}_value`],
+    // дуже обережний запасний варіант (інколи фронт шле {opX,valueX})
+    body?.[`op${idx}`] || body?.[`operator${idx}`]
+      ? { op: body?.[`op${idx}`] || body?.[`operator${idx}`], value: body?.[`value${idx}`] }
+      : undefined,
+  ].filter((x) => x !== undefined);
+
+  return candidates.find((x) => coerceRule(x)) ?? candidates[0];
 }
 
 // ---------- GET: список кампаній ----------
@@ -82,7 +97,13 @@ export async function GET(req: Request) {
   const out: Campaign[] = [];
   for (const id of ids) {
     const raw = await kvGet(`campaigns:${id}`);
-    const c = safeParse<Campaign>(raw);
+    const c = (() => {
+      try {
+        return typeof raw === "string" ? (JSON.parse(raw) as Campaign) : (raw as Campaign);
+      } catch {
+        return null;
+      }
+    })();
     if (c) out.push(c);
   }
 
@@ -101,11 +122,18 @@ export async function POST(req: Request) {
   const base_pipeline_id = Number(body.base_pipeline_id ?? body.pipeline_id);
   const base_status_id = Number(body.base_status_id ?? body.status_id);
 
-  // правила: приймаємо і "рядок", і "об'єкт"
-  const ruleV1 = coerceRule(body.rules?.v1 ?? body.v1 ?? body.rules_v1);
-  const ruleV2 = coerceRule(body.rules?.v2 ?? body.v2 ?? body.rules_v2);
+  // v1/v2 з максимальною толерантністю до назв
+  const v1Raw = pickPossibleV(body, 1);
+  const v2Raw = pickPossibleV(body, 2);
+  const ruleV1 = coerceRule(v1Raw);
+  const ruleV2 = coerceRule(v2Raw);
 
-  if (!ruleV1) return bad(400, "rules.v1.value is required (non-empty)");
+  if (!ruleV1) {
+    return bad(400, "rules.v1.value is required (non-empty)", {
+      receivedKeys: Object.keys(body || {}),
+      sample: { expected: { rules: { v1: { value: "text", op: "contains|equals" } } } },
+    });
+  }
 
   // expire
   const exp_days = Number(body.exp_days ?? body.exp?.days ?? 0) || 0;
@@ -121,7 +149,7 @@ export async function POST(req: Request) {
   if (!base_pipeline_id || !base_status_id)
     return bad(400, "base_pipeline_id and base_status_id are required");
 
-  // формуємо повний об'єкт кампанії
+  // формуємо об'єкт
   const id = String(Date.now());
   const created: Campaign = {
     id,
@@ -137,7 +165,7 @@ export async function POST(req: Request) {
     active: true,
   };
 
-  // збереження (KV очікує string → зберігаємо JSON)
+  // збереження — рядком
   await kvSet(`campaigns:${id}`, JSON.stringify(created));
   await kvZAdd("campaigns:index", Date.now(), id);
 
