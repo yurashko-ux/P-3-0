@@ -1,153 +1,169 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from "next/server";
+import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
 import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvZRevRange, kvZAdd } from "@/lib/kv";
-import { z } from "zod";
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
+/** ===== Types ===== */
+type VariantOp = "contains" | "equals";
 
-type RuleOp = "contains" | "equals";
-type Campaign = {
-  id: string;
-  name: string;
-  active?: boolean;
-  base_pipeline_id: number;
-  base_status_id: number;
-  rules: {
-    v1: { field: "text"; op: RuleOp; value: string };
-    v2?: { field: "text"; op: RuleOp; value: string };
-  };
-  exp_days?: number;
-  exp_to_pipeline_id?: number;
-  exp_to_status_id?: number;
-  created_at: number;
-  updated_at: number;
+type Rule = {
+  field: "text";
+  op: VariantOp;
+  value: string; // збережемо як рядок
 };
 
-// ---------- helpers
-function safeJSON<T>(raw: unknown): T | null {
-  if (raw == null) return null;
-  try {
-    if (typeof raw === "string") return JSON.parse(raw) as T;
-    return raw as T;
-  } catch {
-    return null;
-  }
+export type Campaign = {
+  id: string;
+  name: string;
+
+  base_pipeline_id: number;
+  base_status_id: number;
+
+  rule_v1: Rule;         // обов'язкове
+  rule_v2?: Rule | null; // опційне
+
+  exp_days?: number | null;
+  exp_to_pipeline_id?: number | null;
+  exp_to_status_id?: number | null;
+
+  // лічильники
+  v1_count?: number;
+  v2_count?: number;
+  exp_count?: number;
+
+  // службове
+  created_at: number;
+  updated_at: number;
+  deleted?: boolean;
+};
+
+/** ===== Helpers ===== */
+function bad(status: number, message: string) {
+  return new NextResponse(message, { status });
+}
+function okJSON(data: any, status = 200) {
+  return NextResponse.json(data, { status });
 }
 
-const RuleSchema = z.object({
-  field: z.literal("text").optional().default("text"),
-  op: z.enum(["contains", "equals"] as const).default("contains"),
-  // важливо: будь-що → у String → trim → не порожнє
-  value: z
-    .preprocess((v) => String(v ?? ""), z.string())
-    .transform((s) => s.trim())
-    .refine((s) => s.length > 0, "rules.v1.value is required (non-empty)"),
-});
+function str(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  return String(v).trim();
+}
+function num(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function isOp(x: unknown): x is VariantOp {
+  return x === "contains" || x === "equals";
+}
 
-const OptionalRuleSchema = z
-  .object({
-    field: z.literal("text").optional().default("text"),
-    op: z.enum(["contains", "equals"] as const).default("contains"),
-    value: z
-      .preprocess((v) => String(v ?? ""), z.string())
-      .transform((s) => s.trim()),
-  })
-  // якщо value порожній — вважаємо, що v2 відсутній
-  .transform((r) => (r.value ? r : undefined));
+/** Нормалізація Rule — приводимо value до рядка */
+function normalizeRule(input: any): Rule | null {
+  const op = input?.op;
+  const value = str(input?.value);
+  if (!isOp(op)) return null;
+  if (!value) return null;
+  return { field: "text", op, value };
+}
 
-const CreateSchema = z.object({
-  name: z.string().transform((s) => s.trim()).min(1, "name is required"),
-  active: z.coerce.boolean().optional().default(true),
-  base_pipeline_id: z.coerce.number(),
-  base_status_id: z.coerce.number(),
-  rules: z.object({
-    v1: RuleSchema, // обовʼязково
-    v2: OptionalRuleSchema.optional(), // опційно
-  }),
-  expire: z
-    .object({
-      days: z.coerce.number().optional(),
-      to_pipeline_id: z.coerce.number().optional(),
-      to_status_id: z.coerce.number().optional(),
-    })
-    .optional(),
-});
-
-// ---------- GET: список (нові зверху)
+/** ===== GET /api/campaigns =====
+ * Повертає список кампаній (нові зверху)
+ */
 export async function GET(req: Request) {
   await assertAdmin(req);
 
-  let ids: string[] = [];
-  try {
-    const zset = await kvZRevRange("campaigns:index", 0, -1);
-    ids = Array.isArray(zset) ? zset.map(String) : [];
-  } catch {
-    ids = [];
-  }
-
-  const items: Campaign[] = [];
-  for (const id of ids) {
+  // забираємо всі id і вже в коді реверсимо (щоб не залежати від kvZRevRange)
+  const ids = (await kvZRange("campaigns:index", 0, -1)) ?? [];
+  const out: Campaign[] = [];
+  for (const id of [...ids].reverse()) {
     const raw = await kvGet(`campaigns:${id}`);
-    const c = safeJSON<Campaign>(raw);
-    if (!c) continue;
-    (c as any).id = c.id ?? id;
-    items.push(c);
+    if (!raw) continue;
+    try {
+      const c = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!c?.deleted) out.push(c as Campaign);
+    } catch {
+      // ігноруємо биті записи
+    }
   }
-
-  return NextResponse.json({ ok: true, data: items });
+  return okJSON({ items: out });
 }
 
-// ---------- POST: створення
+/** ===== POST /api/campaigns =====
+ * Створення кампанії
+ */
 export async function POST(req: Request) {
   await assertAdmin(req);
 
-  let parsed;
+  let body: any;
   try {
-    const body = await req.json();
-    parsed = CreateSchema.parse(body);
-  } catch (e: any) {
-    const msg =
-      e?.errors?.[0]?.message ??
-      (typeof e?.message === "string" ? e.message : "Bad Request");
-    return NextResponse.json({ ok: false, error: msg }, { status: 400 });
+    body = await req.json();
+  } catch {
+    return bad(400, "Invalid JSON body");
   }
 
+  // базові поля
+  const name = str(body?.name);
+  const base_pipeline_id = num(body?.base_pipeline_id);
+  const base_status_id = num(body?.base_status_id);
+
+  // правила
+  // приводимо до рядка — навіть якщо користувач ввів число "1", збережемо "1"
+  const ruleV1 = normalizeRule({
+    op: body?.rules?.v1?.op ?? body?.rule_v1?.op,
+    value: str(body?.rules?.v1?.value ?? body?.rule_v1?.value),
+  });
+  const ruleV2raw = normalizeRule({
+    op: body?.rules?.v2?.op ?? body?.rule_v2?.op,
+    value: str(body?.rules?.v2?.value ?? body?.rule_v2?.value),
+  });
+  const rule_v2 = ruleV2raw ?? null;
+
+  // expire
+  const exp_days = num(body?.expire?.days ?? body?.exp_days);
+  const exp_to_pipeline_id = num(
+    body?.expire?.to_pipeline_id ?? body?.exp_to_pipeline_id
+  );
+  const exp_to_status_id = num(
+    body?.expire?.to_status_id ?? body?.exp_to_status_id
+  );
+
+  // валідація
+  if (!name) return bad(400, "name is required");
+  if (!base_pipeline_id || !base_status_id)
+    return bad(400, "base_pipeline_id & base_status_id are required");
+
+  if (!ruleV1) {
+    // повідомлення під ваш UI
+    return bad(400, "rules.v1.value is required (non-empty)");
+  }
+
+  // формуємо кампанію
   const now = Date.now();
-  const id = now.toString(36);
+  const id = String(now);
 
-  const v1 = {
-    field: "text" as const,
-    op: parsed.rules.v1.op,
-    value: parsed.rules.v1.value,
-  };
-  const v2 =
-    parsed.rules.v2 && parsed.rules.v2.value
-      ? ({
-          field: "text",
-          op: parsed.rules.v2.op,
-          value: parsed.rules.v2.value,
-        } as const)
-      : undefined;
-
-  const created: Campaign = {
+  const campaign: Campaign = {
     id,
-    name: parsed.name,
-    active: parsed.active,
-    base_pipeline_id: parsed.base_pipeline_id,
-    base_status_id: parsed.base_status_id,
-    rules: { v1, ...(v2 ? { v2 } : {}) },
-    exp_days: parsed.expire?.days,
-    exp_to_pipeline_id: parsed.expire?.to_pipeline_id,
-    exp_to_status_id: parsed.expire?.to_status_id,
+    name,
+    base_pipeline_id,
+    base_status_id,
+    rule_v1: ruleV1,
+    rule_v2,
+
+    exp_days: exp_days ?? null,
+    exp_to_pipeline_id: exp_to_pipeline_id ?? null,
+    exp_to_status_id: exp_to_status_id ?? null,
+
+    v1_count: 0,
+    v2_count: 0,
+    exp_count: 0,
+
     created_at: now,
     updated_at: now,
   };
 
   // зберігаємо
-  await kvSet(`campaigns:${id}`, JSON.stringify(created));
-  await kvZAdd("campaigns:index", now, String(id));
+  await kvSet(`campaigns:${id}`, campaign);
+  await kvZAdd("campaigns:index", now, id);
 
-  return NextResponse.json({ ok: true, data: created }, { status: 201 });
+  return okJSON({ ok: true, id, campaign }, 201);
 }
