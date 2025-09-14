@@ -1,251 +1,128 @@
 // web/app/api/campaigns/create/route.ts
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { assertAdmin } from "@/lib/auth";
-import { kvSet, kvZAdd, kvIncr } from "@/lib/kv";
+import { kvSet, kvZAdd } from "@/lib/kv";
 import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
-export const dynamic = "force-dynamic";
+const OpEnum = z.enum(["contains", "equals"]);
 
-/** helpers */
-const toInt = (v: unknown) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
-};
-/** Accept string | number | boolean → trimmed string, or undefined */
-const toText = (v: unknown) => {
-  if (v === null || v === undefined) return undefined;
-  const s = typeof v === "string" ? v : String(v);
-  const t = s.trim();
-  return t.length ? t : undefined;
-};
+const RuleV1Schema = z.object({
+  // field завжди 'text', але приймаємо як необовʼязкове і дефолтимо
+  field: z.literal("text").optional().default("text"),
+  op: OpEnum,
+  // ГОЛОВНЕ: коерс у рядок + trim + non-empty
+  value: z.coerce.string().trim().min(1, "rules.v1.value is required (non-empty)"),
+});
 
-/** read body in JSON, urlencoded, or multipart */
-async function readBody(req: Request) {
-  const ct = (req.headers.get("content-type") || "").toLowerCase();
+const RuleV2Schema = z
+  .object({
+    field: z.literal("text").optional().default("text"),
+    op: OpEnum,
+    // коерс у рядок + trim, але БЕЗ min(1) — порожнє значення означає, що v2 відключено
+    value: z.coerce.string().trim().optional(),
+  })
+  .optional();
 
-  // JSON
-  if (ct.includes("application/json")) {
-    try {
-      return await req.json();
-    } catch {}
-  }
+const ExpireSchema = z
+  .object({
+    days: z.coerce.number().int().min(1),
+    to_pipeline_id: z.coerce.number().int().positive(),
+    to_status_id: z.coerce.number().int().positive(),
+  })
+  .optional();
 
-  // urlencoded
-  if (ct.includes("application/x-www-form-urlencoded")) {
-    const text = await req.text();
-    const p = new URLSearchParams(text);
-    const get = (k: string) => p.get(k);
+const BodySchema = z.object({
+  name: z.coerce.string().trim().min(1),
+  base_pipeline_id: z.coerce.number().int().positive(),
+  base_status_id: z.coerce.number().int().positive(),
+  rules: z.object({
+    v1: RuleV1Schema,
+    v2: RuleV2Schema,
+  }),
+  expire: ExpireSchema,
+});
 
-    const body: any = {
-      name: toText(get("name") || get("title")),
-      base_pipeline_id:
-        toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
-        undefined,
-      base_status_id:
-        toInt(get("base_status_id") || get("status_id") || get("base_status")) ??
-        undefined,
-      rules: {
-        v1: {
-          field: "text",
-          op: (toText(get("rules.v1.op") || get("v1_op")) as any) || "contains",
-          value:
-            toText(
-              get("rules.v1.value") ||
-                get("v1") ||
-                get("v1_value") ||
-                get("variant1") ||
-                get("variant_v1")
-            ) || "",
-        },
-      } as any,
-    };
-
-    const v2val =
-      toText(
-        get("rules.v2.value") ||
-          get("v2") ||
-          get("v2_value") ||
-          get("variant2") ||
-          get("variant_v2")
-      ) || "";
-    if (v2val) {
-      body.rules.v2 = {
-        field: "text",
-        op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
-        value: v2val,
-      };
-    }
-
-    const expDays =
-      toInt(
-        get("exp_days") ||
-          get("expire_days") ||
-          get("days") ||
-          get("expire.days")
-      ) ?? undefined;
-
-    if (expDays) {
-      body.rules.exp = {
-        days: expDays,
-        to_pipeline_id:
-          toInt(
-            get("exp_to_pipeline_id") ||
-              get("expire_pipeline_id") ||
-              get("exp.pipeline_id")
-          ) ?? undefined,
-        to_status_id:
-          toInt(
-            get("exp_to_status_id") ||
-              get("expire_status_id") ||
-              get("exp.status_id")
-          ) ?? undefined,
-      };
-    }
-
-    return body;
-  }
-
-  // multipart
-  if (ct.includes("multipart/form-data")) {
-    const fd = await req.formData();
-    const get = (k: string) => {
-      const v = fd.get(k);
-      return typeof v === "string" ? v : v?.toString() ?? null;
-    };
-    const body: any = {
-      name: toText(get("name") || get("title")),
-      base_pipeline_id:
-        toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
-        undefined,
-      base_status_id:
-        toInt(get("base_status_id") || get("status_id") || get("base_status")) ??
-        undefined,
-      rules: {
-        v1: {
-          field: "text",
-          op: (toText(get("rules.v1.op") || get("v1_op")) as any) || "contains",
-          value:
-            toText(
-              get("rules.v1.value") ||
-                get("v1") ||
-                get("v1_value") ||
-                get("variant1") ||
-                get("variant_v1")
-            ) || "",
-        },
-      } as any,
-    };
-    const v2val =
-      toText(
-        get("rules.v2.value") ||
-          get("v2") ||
-          get("v2_value") ||
-          get("variant2") ||
-          get("variant_v2")
-      ) || "";
-    if (v2val) {
-      body.rules.v2 = {
-        field: "text",
-        op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
-        value: v2val,
-      };
-    }
-    const expDays =
-      toInt(
-        get("exp_days") ||
-          get("expire_days") ||
-          get("days") ||
-          get("expire.days")
-      ) ?? undefined;
-    if (expDays) {
-      body.rules.exp = {
-        days: expDays,
-        to_pipeline_id:
-          toInt(
-            get("exp_to_pipeline_id") ||
-              get("expire_pipeline_id") ||
-              get("exp.pipeline_id")
-          ) ?? undefined,
-        to_status_id:
-          toInt(
-            get("exp_to_status_id") ||
-              get("expire_status_id") ||
-              get("exp.status_id")
-          ) ?? undefined,
-      };
-    }
-    return body;
-  }
-
-  // final fallback
-  try {
-    return await req.json();
-  } catch {
-    return null;
-  }
-}
+type Body = z.infer<typeof BodySchema>;
 
 export async function POST(req: Request) {
   await assertAdmin(req);
 
-  const body: any = await readBody(req);
-  if (!body) {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
     return NextResponse.json(
-      { ok: false, error: "invalid_body" },
+      { ok: false, error: "Invalid JSON body" },
       { status: 400 }
     );
   }
 
-  // normalize rules with sensible defaults
-  const ruleV1 = body.rules?.v1 ?? {};
-  const v1Value = toText(ruleV1.value);           // ✅ тепер приймає і число
-  const v1Op = (toText(ruleV1.op) as "contains" | "equals") || "contains";
-  if (!v1Value) {
-    return NextResponse.json(
-      { ok: false, error: "rules.v1.value is required (non-empty)" },
-      { status: 400 }
-    );
+  const parsed = BodySchema.safeParse(raw);
+  if (!parsed.success) {
+    // повертаємо перше зрозуміле повідомлення (включно з rules.v1.value…)
+    const msg =
+      parsed.error.issues[0]?.message || "Validation error in request body";
+    return NextResponse.json({ ok: false, error: msg }, { status: 400 });
   }
 
-  const ruleV2 = body.rules?.v2;
-  const v2Value = toText(ruleV2?.value);          // ✅ теж через toText
-  const v2Op = (toText(ruleV2?.op) as "contains" | "equals") || "contains";
+  const body: Body = parsed.data;
 
-  // uniqueness guard
+  // Нормалізуємо v2: якщо value відсутнє або порожнє — взагалі прибираємо v2
+  const v2 =
+    body.rules.v2 && body.rules.v2.value
+      ? {
+          field: "text" as const,
+          op: body.rules.v2.op,
+          value: body.rules.v2.value,
+        }
+      : undefined;
+
+  // Перевірка унікальності варіантів (по всіх НЕ видалених кампаніях)
   await assertVariantsUniqueOrThrow({
-    v1: { field: "text", op: v1Op, value: v1Value },
-    v2: v2Value ? { field: "text", op: v2Op, value: v2Value } : undefined,
+    v1: { field: "text", op: body.rules.v1.op, value: body.rules.v1.value },
+    v2,
   });
 
-  // issue new id
-  const id = await kvIncr("campaigns:next_id");
+  const now = Date.now();
+  const id = now; // простий ID на базі часу
 
   const created = {
     id,
-    name: body.name || `Campaign #${id}`,
-    active: body.active !== false,
-    base_pipeline_id: Number(body.base_pipeline_id),
-    base_status_id: Number(body.base_status_id),
+    name: body.name,
+    created_at: new Date(now).toISOString(),
+    updated_at: new Date(now).toISOString(),
+    active: true as const,
+
+    base_pipeline_id: body.base_pipeline_id,
+    base_status_id: body.base_status_id,
+
     rules: {
-      v1: { field: "text", op: v1Op, value: v1Value },
-      ...(v2Value ? { v2: { field: "text", op: v2Op, value: v2Value } } : {}),
-      ...(body.rules?.exp
-        ? {
-            exp: {
-              days: Number(body.rules.exp.days) || 0,
-              to_pipeline_id: toInt(body.rules.exp.to_pipeline_id),
-              to_status_id: toInt(body.rules.exp.to_status_id),
-            },
-          }
-        : {}),
+      v1: {
+        field: "text" as const,
+        op: body.rules.v1.op,
+        value: body.rules.v1.value,
+      },
+      ...(v2 ? { v2 } : {}),
     },
-    counters: { v1: 0, v2: 0, exp: 0 },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+
+    expire: body.expire
+      ? {
+        days: body.expire.days,
+        to_pipeline_id: body.expire.to_pipeline_id,
+        to_status_id: body.expire.to_status_id,
+      }
+      : undefined,
+
+    // стартові лічильники
+    v1_count: 0,
+    v2_count: 0,
+    exp_count: 0,
   };
 
-  await kvSet(`campaigns:${id}`, created);
-  await kvZAdd("campaigns:index", Date.now(), String(id));
+  // Зберігаємо
+  await kvSet(`campaigns:${id}`, JSON.stringify(created));
+  await kvZAdd("campaigns:index", now, String(id));
 
   return NextResponse.json({ ok: true, data: created }, { status: 201 });
 }
