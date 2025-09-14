@@ -17,7 +17,10 @@ const toText = (v: unknown) => {
   const t = s.trim();
   return t.length ? t : undefined;
 };
+const pickFirst = (...vals: unknown[]) =>
+  vals.find((x) => x !== undefined && x !== null);
 
+/** Читаємо тіло з підтримкою JSON, x-www-form-urlencoded, multipart/form-data */
 async function readBody(req: Request) {
   const ct = (req.headers.get("content-type") || "").toLowerCase();
 
@@ -34,7 +37,7 @@ async function readBody(req: Request) {
     const p = new URLSearchParams(raw);
     const get = (k: string) => p.get(k);
 
-    const b: any = {
+    const out: any = {
       name: toText(get("name") || get("title")),
       base_pipeline_id:
         toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
@@ -67,7 +70,7 @@ async function readBody(req: Request) {
           get("variant_v2")
       ) || "";
     if (v2val) {
-      b.rules.v2 = {
+      out.rules.v2 = {
         field: "text",
         op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
         value: v2val,
@@ -78,7 +81,7 @@ async function readBody(req: Request) {
       toInt(get("exp_days") || get("expire_days") || get("days") || get("expire.days")) ??
       undefined;
     if (expDays) {
-      b.rules.exp = {
+      out.rules.exp = {
         days: expDays,
         to_pipeline_id:
           toInt(
@@ -95,7 +98,7 @@ async function readBody(req: Request) {
       };
     }
 
-    return b;
+    return out;
   }
 
   // multipart/form-data
@@ -106,7 +109,7 @@ async function readBody(req: Request) {
       return typeof v === "string" ? v : v?.toString() ?? null;
     };
 
-    const b: any = {
+    const out: any = {
       name: toText(get("name") || get("title")),
       base_pipeline_id:
         toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
@@ -139,7 +142,7 @@ async function readBody(req: Request) {
           get("variant_v2")
       ) || "";
     if (v2val) {
-      b.rules.v2 = {
+      out.rules.v2 = {
         field: "text",
         op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
         value: v2val,
@@ -150,7 +153,7 @@ async function readBody(req: Request) {
       toInt(get("exp_days") || get("expire_days") || get("days") || get("expire.days")) ??
       undefined;
     if (expDays) {
-      b.rules.exp = {
+      out.rules.exp = {
         days: expDays,
         to_pipeline_id:
           toInt(
@@ -167,7 +170,7 @@ async function readBody(req: Request) {
       };
     }
 
-    return b;
+    return out;
   }
 
   // fallback
@@ -202,19 +205,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   }
 
-  // normalize rules (accept number/boolean/string)
-  const v1Value = toText(body.rules?.v1?.value);
-  const v1Op = (toText(body.rules?.v1?.op) as "contains" | "equals") || "contains";
+  // Нормалізуємо опції та значення правил — підхоплюємо альтернативні ключі з JSON та form-data
+  const v1Raw = pickFirst(
+    body?.rules?.v1?.value,
+    body?.v1,
+    body?.v1_value,
+    body?.variant1,
+    body?.variant_v1,
+    body?.["rules.v1.value"]
+  );
+  const v1OpRaw = pickFirst(
+    body?.rules?.v1?.op,
+    body?.v1_op,
+    body?.["rules.v1.op"],
+    "contains"
+  );
+
+  const v2Raw = pickFirst(
+    body?.rules?.v2?.value,
+    body?.v2,
+    body?.v2_value,
+    body?.variant2,
+    body?.variant_v2,
+    body?.["rules.v2.value"]
+  );
+  const v2OpRaw = pickFirst(
+    body?.rules?.v2?.op,
+    body?.v2_op,
+    body?.["rules.v2.op"],
+    "contains"
+  );
+
+  const v1Value = toText(v1Raw);
+  const v1Op = (toText(v1OpRaw) as any) || "contains";
+
   if (!v1Value) {
     return NextResponse.json(
       { ok: false, error: "rules.v1.value is required (non-empty)" },
       { status: 400 }
     );
   }
-  const v2Value = toText(body.rules?.v2?.value);
-  const v2Op = (toText(body.rules?.v2?.op) as "contains" | "equals") || "contains";
 
-  // uniqueness check across not-deleted campaigns
+  const v2Value = toText(v2Raw);
+  const v2Op = (toText(v2OpRaw) as any) || "contains";
+
+  // Перевірка унікальності варіантів серед НЕ видалених кампаній
   await assertVariantsUniqueOrThrow({
     v1: { field: "text", op: v1Op, value: v1Value },
     v2: v2Value ? { field: "text", op: v2Op, value: v2Value } : undefined,
@@ -226,8 +261,12 @@ export async function POST(req: Request) {
     id,
     name: body.name || `Campaign #${id}`,
     active: body.active !== false,
-    base_pipeline_id: Number(body.base_pipeline_id),
-    base_status_id: Number(body.base_status_id),
+    base_pipeline_id: Number(
+      pickFirst(body.base_pipeline_id, body.pipeline_id, body.base_pipeline)
+    ),
+    base_status_id: Number(
+      pickFirst(body.base_status_id, body.status_id, body.base_status)
+    ),
     rules: {
       v1: { field: "text", op: v1Op, value: v1Value },
       ...(v2Value ? { v2: { field: "text", op: v2Op, value: v2Value } } : {}),
@@ -246,7 +285,7 @@ export async function POST(req: Request) {
     updated_at: new Date().toISOString(),
   };
 
-  // kvSet очікує string → зберігаємо як JSON
+  // KV приймає string → зберігаємо JSON
   await kvSet(`campaigns:${id}`, JSON.stringify(created));
   await kvZAdd("campaigns:index", Date.now(), String(id));
 
