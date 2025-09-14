@@ -4,40 +4,53 @@ import { findCardIdByUsername } from '@/lib/keycrm';
 
 export const dynamic = 'force-dynamic';
 
-function toNumOrStr(v: string): number | string {
-  return /^\d+$/.test(v) ? Number(v) : v;
-}
-
 export async function GET(req: Request) {
   try {
-    const url = new URL(req.url);
-    const username = (url.searchParams.get('username') || '').trim();
-    const pipelineParam = (url.searchParams.get('pipeline_id') || '').trim();
-    const statusParam = (url.searchParams.get('status_id') || '').trim();
-    const limitParam = (url.searchParams.get('limit') || '').trim();
+    const u = new URL(req.url);
 
-    if (!username || !pipelineParam || !statusParam) {
+    const username = (u.searchParams.get('username') || '').trim();
+    const pipelineParam = u.searchParams.get('pipeline_id') || '';
+    const statusParam = u.searchParams.get('status_id') || '';
+    // backward-compat: ?limit= — використовуємо як per_page
+    const limitParam =
+      u.searchParams.get('limit') ||
+      u.searchParams.get('per_page') ||
+      '';
+
+    if (!username) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: 'missing_params',
-          need: { username: !username ? 'required' : 'ok', pipeline_id: !pipelineParam ? 'required' : 'ok', status_id: !statusParam ? 'required' : 'ok' },
-          hint: 'GET ?username=<ig>&pipeline_id=<id>&status_id=<id>[&limit=...]',
-        },
+        { ok: false, error: 'username is required' },
         { status: 400 }
       );
     }
 
-    const params: { username: string; pipeline_id: string | number; status_id: string | number; limit?: number } = {
-      username,
-      pipeline_id: toNumOrStr(pipelineParam),
-      status_id: toNumOrStr(statusParam),
-    };
-    if (/^\d+$/.test(limitParam)) params.limit = Number(limitParam);
+    const opts: {
+      pipeline_id?: number | string;
+      status_id?: number | string;
+      per_page?: number;
+      max_pages?: number;
+    } = {};
 
-    const found = await findCardIdByUsername(params);
+    if (pipelineParam) {
+      opts.pipeline_id = /^\d+$/.test(pipelineParam)
+        ? Number(pipelineParam)
+        : pipelineParam;
+    }
+    if (statusParam) {
+      opts.status_id = /^\d+$/.test(statusParam)
+        ? Number(statusParam)
+        : statusParam;
+    }
+    if (/^\d+$/.test(limitParam)) {
+      opts.per_page = Number(limitParam);
+    }
+
+    const found = await findCardIdByUsername(username, opts);
     return NextResponse.json(found, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'failed' }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || 'failed' },
+      { status: 500 }
+    );
   }
 }
