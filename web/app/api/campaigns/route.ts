@@ -1,312 +1,145 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvZAdd, kvZRange, kvIncr } from "@/lib/kv";
-import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
+import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
 
-export const dynamic = "force-dynamic";
+// ---- types (локально, щоб не ламались імпорти) ----
+type VariantOp = "contains" | "equals";
+type VariantRule = { field: "text"; op: VariantOp; value: string };
+type Campaign = {
+  id: string;
+  name: string;
+  created_at: number;
 
-/* ───────── helpers ───────── */
-const toInt = (v: unknown) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
+  base_pipeline_id: number;
+  base_status_id: number;
+
+  rules: {
+    v1: VariantRule;
+    v2?: VariantRule;
+  };
+
+  exp_days: number;
+  exp_to_pipeline_id: number;
+  exp_to_status_id: number;
+
+  counters?: { v1_count?: number; v2_count?: number; exp_count?: number };
+  active?: boolean;
 };
-const toText = (v: unknown) => {
-  if (v === null || v === undefined) return undefined;
-  const s = typeof v === "string" ? v : String(v);
-  const t = s.trim();
-  return t.length ? t : undefined;
-};
-const pickFirst = (...vals: unknown[]) =>
-  vals.find((x) => x !== undefined && x !== null);
 
-/** Читаємо тіло з підтримкою JSON, x-www-form-urlencoded, multipart/form-data */
-async function readBody(req: Request) {
-  const ct = (req.headers.get("content-type") || "").toLowerCase();
+// ---- helpers ----
+function bad(status: number, message: string) {
+  return NextResponse.json({ ok: false, error: message }, { status });
+}
 
-  // JSON
-  if (ct.includes("application/json")) {
-    try {
-      return await req.json();
-    } catch {}
-  }
-
-  // x-www-form-urlencoded
-  if (ct.includes("application/x-www-form-urlencoded")) {
-    const raw = await req.text();
-    const p = new URLSearchParams(raw);
-    const get = (k: string) => p.get(k);
-
-    const out: any = {
-      name: toText(get("name") || get("title")),
-      base_pipeline_id:
-        toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
-        undefined,
-      base_status_id:
-        toInt(get("base_status_id") || get("status_id") || get("base_status")) ??
-        undefined,
-      rules: {
-        v1: {
-          field: "text",
-          op: (toText(get("rules.v1.op") || get("v1_op")) as any) || "contains",
-          value:
-            toText(
-              get("rules.v1.value") ||
-                get("v1") ||
-                get("v1_value") ||
-                get("variant1") ||
-                get("variant_v1")
-            ) || "",
-        },
-      } as any,
-    };
-
-    const v2val =
-      toText(
-        get("rules.v2.value") ||
-          get("v2") ||
-          get("v2_value") ||
-          get("variant2") ||
-          get("variant_v2")
-      ) || "";
-    if (v2val) {
-      out.rules.v2 = {
-        field: "text",
-        op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
-        value: v2val,
-      };
-    }
-
-    const expDays =
-      toInt(get("exp_days") || get("expire_days") || get("days") || get("expire.days")) ??
-      undefined;
-    if (expDays) {
-      out.rules.exp = {
-        days: expDays,
-        to_pipeline_id:
-          toInt(
-            get("exp_to_pipeline_id") ||
-              get("expire_pipeline_id") ||
-              get("exp.pipeline_id")
-          ) ?? undefined,
-        to_status_id:
-          toInt(
-            get("exp_to_status_id") ||
-              get("expire_status_id") ||
-              get("exp.status_id")
-          ) ?? undefined,
-      };
-    }
-
-    return out;
-  }
-
-  // multipart/form-data
-  if (ct.includes("multipart/form-data")) {
-    const fd = await req.formData();
-    const get = (k: string) => {
-      const v = fd.get(k);
-      return typeof v === "string" ? v : v?.toString() ?? null;
-    };
-
-    const out: any = {
-      name: toText(get("name") || get("title")),
-      base_pipeline_id:
-        toInt(get("base_pipeline_id") || get("pipeline_id") || get("base_pipeline")) ??
-        undefined,
-      base_status_id:
-        toInt(get("base_status_id") || get("status_id") || get("base_status")) ??
-        undefined,
-      rules: {
-        v1: {
-          field: "text",
-          op: (toText(get("rules.v1.op") || get("v1_op")) as any) || "contains",
-          value:
-            toText(
-              get("rules.v1.value") ||
-                get("v1") ||
-                get("v1_value") ||
-                get("variant1") ||
-                get("variant_v1")
-            ) || "",
-        },
-      } as any,
-    };
-
-    const v2val =
-      toText(
-        get("rules.v2.value") ||
-          get("v2") ||
-          get("v2_value") ||
-          get("variant2") ||
-          get("variant_v2")
-      ) || "";
-    if (v2val) {
-      out.rules.v2 = {
-        field: "text",
-        op: (toText(get("rules.v2.op") || get("v2_op")) as any) || "contains",
-        value: v2val,
-      };
-    }
-
-    const expDays =
-      toInt(get("exp_days") || get("expire_days") || get("days") || get("expire.days")) ??
-      undefined;
-    if (expDays) {
-      out.rules.exp = {
-        days: expDays,
-        to_pipeline_id:
-          toInt(
-            get("exp_to_pipeline_id") ||
-              get("expire_pipeline_id") ||
-              get("exp.pipeline_id")
-          ) ?? undefined,
-        to_status_id:
-          toInt(
-            get("exp_to_status_id") ||
-              get("expire_status_id") ||
-              get("exp.status_id")
-          ) ?? undefined,
-      };
-    }
-
-    return out;
-  }
-
-  // fallback
+function safeParse<T = any>(raw: unknown): T | null {
+  if (raw == null) return null;
   try {
-    return await req.json();
+    return typeof raw === "string" ? (JSON.parse(raw) as T) : (raw as T);
   } catch {
     return null;
   }
 }
 
-/* ───────── GET: list campaigns ───────── */
+function trimOrEmpty(x: unknown): string {
+  return String(x ?? "").trim();
+}
+
+/** Приймає або рядок, або об'єкт і повертає нормалізоване правило, або undefined */
+function coerceRule(input: any): VariantRule | undefined {
+  if (!input) return undefined;
+
+  // якщо прийшов просто рядок
+  if (typeof input === "string") {
+    const value = trimOrEmpty(input);
+    if (!value) return undefined;
+    return { field: "text", op: "contains", value };
+  }
+
+  // якщо прийшов об'єкт
+  if (typeof input === "object") {
+    const value = trimOrEmpty(input.value);
+    if (!value) return undefined;
+    const op: VariantOp =
+      input.op === "equals" || input.op === "contains" ? input.op : "contains";
+    return { field: "text", op, value };
+  }
+
+  return undefined;
+}
+
+// ---------- GET: список кампаній ----------
 export async function GET(req: Request) {
   await assertAdmin(req);
 
-  // 1) основний шлях — через індекс
-  let ids = (await kvZRange("campaigns:index", 0, -1)) as string[] | null;
-
-  // 2) fallback — якщо індекс порожній, скануємо 1..next_id
-  if (!ids || ids.length === 0) {
-    const nextRaw = (await kvGet("campaigns:next_id")) as string | null;
-    const next = Number(nextRaw ?? 0);
-    const scanIds: string[] = [];
-    for (let i = 1; i <= next; i++) {
-      const raw = (await kvGet(`campaigns:${i}`)) as string | null;
-      if (raw) scanIds.push(String(i));
-    }
-    ids = scanIds;
+  let ids: string[] = [];
+  try {
+    ids = (await kvZRange("campaigns:index", 0, -1)) || [];
+  } catch {
+    ids = [];
   }
 
-  const out: any[] = [];
-  for (const id of ids || []) {
-    const raw = (await kvGet(`campaigns:${id}`)) as string | null;
-    if (!raw) continue;
-    try {
-      out.push(JSON.parse(raw));
-    } catch {}
+  const out: Campaign[] = [];
+  for (const id of ids) {
+    const raw = await kvGet(`campaigns:${id}`);
+    const c = safeParse<Campaign>(raw);
+    if (c) out.push(c);
   }
-
-  // новіші — вище
-  out.sort((a, b) => (b?.created_at || "").localeCompare(a?.created_at || ""));
 
   return NextResponse.json({ ok: true, data: out });
 }
 
-/* ───────── POST: create campaign ───────── */
+// ---------- POST: створення кампанії ----------
 export async function POST(req: Request) {
   await assertAdmin(req);
 
-  const body: any = await readBody(req);
-  if (!body) {
-    return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
-  }
+  const body = await req.json().catch(() => null);
+  if (!body) return bad(400, "invalid JSON body");
 
-  // Нормалізація правил (включно з альтернативними ключами)
-  const v1Raw = pickFirst(
-    body?.rules?.v1?.value,
-    body?.v1,
-    body?.v1_value,
-    body?.variant1,
-    body?.variant_v1,
-    body?.["rules.v1.value"]
+  // базові поля
+  const name = trimOrEmpty(body.name || body.title);
+  const base_pipeline_id = Number(body.base_pipeline_id ?? body.pipeline_id);
+  const base_status_id = Number(body.base_status_id ?? body.status_id);
+
+  // правила: приймаємо і "рядок", і "об'єкт"
+  const ruleV1 = coerceRule(body.rules?.v1 ?? body.v1 ?? body.rules_v1);
+  const ruleV2 = coerceRule(body.rules?.v2 ?? body.v2 ?? body.rules_v2);
+
+  if (!ruleV1) return bad(400, "rules.v1.value is required (non-empty)");
+
+  // expire
+  const exp_days = Number(body.exp_days ?? body.exp?.days ?? 0) || 0;
+  const exp_to_pipeline_id = Number(
+    body.exp_to_pipeline_id ?? body.exp?.pipeline_id ?? base_pipeline_id
   );
-  const v1OpRaw = pickFirst(
-    body?.rules?.v1?.op,
-    body?.v1_op,
-    body?.["rules.v1.op"],
-    "contains"
-  );
-  const v2Raw = pickFirst(
-    body?.rules?.v2?.value,
-    body?.v2,
-    body?.v2_value,
-    body?.variant2,
-    body?.variant_v2,
-    body?.["rules.v2.value"]
-  );
-  const v2OpRaw = pickFirst(
-    body?.rules?.v2?.op,
-    body?.v2_op,
-    body?.["rules.v2.op"],
-    "contains"
+  const exp_to_status_id = Number(
+    body.exp_to_status_id ?? body.exp?.status_id ?? base_status_id
   );
 
-  const v1Value = toText(v1Raw);
-  const v1Op = (toText(v1OpRaw) as any) || "contains";
-  if (!v1Value) {
-    return NextResponse.json(
-      { ok: false, error: "rules.v1.value is required (non-empty)" },
-      { status: 400 }
-    );
-  }
+  // валідації
+  if (!name) return bad(400, "name is required");
+  if (!base_pipeline_id || !base_status_id)
+    return bad(400, "base_pipeline_id and base_status_id are required");
 
-  const v2Value = toText(v2Raw);
-  const v2Op = (toText(v2OpRaw) as any) || "contains";
-
-  // Перевірка унікальності варіантів серед НЕ видалених кампаній
-  await assertVariantsUniqueOrThrow({
-    v1: { field: "text", op: v1Op, value: v1Value },
-    v2: v2Value ? { field: "text", op: v2Op, value: v2Value } : undefined,
-  });
-
-  const id = await kvIncr("campaigns:next_id");
-
-  const created = {
+  // формуємо повний об'єкт кампанії
+  const id = String(Date.now());
+  const created: Campaign = {
     id,
-    name: body.name || `Campaign #${id}`,
-    active: body.active !== false,
-    base_pipeline_id: Number(
-      pickFirst(body.base_pipeline_id, body.pipeline_id, body.base_pipeline)
-    ),
-    base_status_id: Number(
-      pickFirst(body.base_status_id, body.status_id, body.base_status)
-    ),
-    rules: {
-      v1: { field: "text", op: v1Op, value: v1Value },
-      ...(v2Value ? { v2: { field: "text", op: v2Op, value: v2Value } } : {}),
-      ...(body.rules?.exp
-        ? {
-            exp: {
-              days: Number(body.rules.exp.days) || 0,
-              to_pipeline_id: toInt(body.rules.exp.to_pipeline_id),
-              to_status_id: toInt(body.rules.exp.to_status_id),
-            },
-          }
-        : {}),
-    },
-    counters: { v1: 0, v2: 0, exp: 0 },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    name,
+    created_at: Date.now(),
+    base_pipeline_id,
+    base_status_id,
+    rules: { v1: ruleV1, ...(ruleV2 ? { v2: ruleV2 } : {}) },
+    exp_days,
+    exp_to_pipeline_id,
+    exp_to_status_id,
+    counters: { v1_count: 0, v2_count: 0, exp_count: 0 },
+    active: true,
   };
 
-  // Зберігаємо як JSON-рядок
+  // збереження (KV очікує string → зберігаємо JSON)
   await kvSet(`campaigns:${id}`, JSON.stringify(created));
-
-  // Додаємо до індексу (якщо індекс десь «ламається», GET має fallback)
-  await kvZAdd("campaigns:index", Date.now(), String(id));
+  await kvZAdd("campaigns:index", Date.now(), id);
 
   return NextResponse.json({ ok: true, data: created }, { status: 201 });
 }
