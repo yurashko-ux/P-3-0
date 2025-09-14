@@ -1,118 +1,125 @@
 // web/app/api/campaigns/create/route.ts
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { assertAdmin } from "@/lib/auth";
 import { kvSet, kvZAdd } from "@/lib/kv";
 import { assertVariantsUniqueOrThrow } from "@/lib/campaigns-unique";
 
-const OpEnum = z.enum(["contains", "equals"]);
+type Op = "contains" | "equals";
 
-const RuleV1Schema = z.object({
-  // field завжди 'text', але приймаємо як необовʼязкове і дефолтимо
-  field: z.literal("text").optional().default("text"),
-  op: OpEnum,
-  // ГОЛОВНЕ: коерс у рядок + trim + non-empty
-  value: z.coerce.string().trim().min(1, "rules.v1.value is required (non-empty)"),
-});
-
-const RuleV2Schema = z
-  .object({
-    field: z.literal("text").optional().default("text"),
-    op: OpEnum,
-    // коерс у рядок + trim, але БЕЗ min(1) — порожнє значення означає, що v2 відключено
-    value: z.coerce.string().trim().optional(),
-  })
-  .optional();
-
-const ExpireSchema = z
-  .object({
-    days: z.coerce.number().int().min(1),
-    to_pipeline_id: z.coerce.number().int().positive(),
-    to_status_id: z.coerce.number().int().positive(),
-  })
-  .optional();
-
-const BodySchema = z.object({
-  name: z.coerce.string().trim().min(1),
-  base_pipeline_id: z.coerce.number().int().positive(),
-  base_status_id: z.coerce.number().int().positive(),
-  rules: z.object({
-    v1: RuleV1Schema,
-    v2: RuleV2Schema,
-  }),
-  expire: ExpireSchema,
-});
-
-type Body = z.infer<typeof BodySchema>;
+function toStr(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  return String(v).trim();
+}
+function toInt(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+function isPositiveInt(n: unknown): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n > 0;
+}
+function bad(status: number, error: string) {
+  return NextResponse.json({ ok: false, error }, { status });
+}
+function ok(data: unknown, status = 201) {
+  return NextResponse.json({ ok: true, data }, { status });
+}
 
 export async function POST(req: Request) {
   await assertAdmin(req);
 
-  let raw: unknown;
+  let body: any;
   try {
-    raw = await req.json();
+    body = await req.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    return bad(400, "Invalid JSON body");
   }
 
-  const parsed = BodySchema.safeParse(raw);
-  if (!parsed.success) {
-    // повертаємо перше зрозуміле повідомлення (включно з rules.v1.value…)
-    const msg =
-      parsed.error.issues[0]?.message || "Validation error in request body";
-    return NextResponse.json({ ok: false, error: msg }, { status: 400 });
+  // ---- basic fields
+  const name = toStr(body?.name);
+  if (!name) return bad(400, "name is required");
+
+  const base_pipeline_id = toInt(body?.base_pipeline_id);
+  if (!isPositiveInt(base_pipeline_id))
+    return bad(400, "base_pipeline_id must be a positive integer");
+
+  const base_status_id = toInt(body?.base_status_id);
+  if (!isPositiveInt(base_status_id))
+    return bad(400, "base_status_id must be a positive integer");
+
+  // ---- rules.v1 (required)
+  const v1op = toStr(body?.rules?.v1?.op) as Op;
+  const v1value = toStr(body?.rules?.v1?.value);
+  if (!v1value) {
+    // зберігаємо точний текст, який очікує фронт
+    return bad(400, "rules.v1.value is required (non-empty)");
+  }
+  if (v1op !== "contains" && v1op !== "equals") {
+    return bad(400, "rules.v1.op must be 'contains' or 'equals'");
   }
 
-  const body: Body = parsed.data;
+  // ---- rules.v2 (optional)
+  let v2:
+    | {
+        field: "text";
+        op: Op;
+        value: string;
+      }
+    | undefined = undefined;
 
-  // Нормалізуємо v2: якщо value відсутнє або порожнє — взагалі прибираємо v2
-  const v2 =
-    body.rules.v2 && body.rules.v2.value
-      ? {
-          field: "text" as const,
-          op: body.rules.v2.op,
-          value: body.rules.v2.value,
-        }
-      : undefined;
+  const maybeV2 = body?.rules?.v2 ?? undefined;
+  const v2op = toStr(maybeV2?.op) as Op;
+  const v2value = toStr(maybeV2?.value);
+  if (v2value) {
+    if (v2op !== "contains" && v2op !== "equals") {
+      return bad(400, "rules.v2.op must be 'contains' or 'equals'");
+    }
+    v2 = { field: "text", op: v2op, value: v2value };
+  }
 
-  // Перевірка унікальності варіантів (по всіх НЕ видалених кампаніях)
+  // ---- expire (optional)
+  let expire:
+    | {
+        days: number;
+        to_pipeline_id: number;
+        to_status_id: number;
+      }
+    | undefined = undefined;
+
+  if (body?.expire) {
+    const days = toInt(body.expire.days);
+    const to_pipeline_id = toInt(body.expire.to_pipeline_id);
+    const to_status_id = toInt(body.expire.to_status_id);
+    if (!isPositiveInt(days)) return bad(400, "expire.days must be a positive integer");
+    if (!isPositiveInt(to_pipeline_id)) return bad(400, "expire.to_pipeline_id must be a positive integer");
+    if (!isPositiveInt(to_status_id)) return bad(400, "expire.to_status_id must be a positive integer");
+    expire = { days, to_pipeline_id, to_status_id };
+  }
+
+  // ---- унікальність варіантів серед НЕ видалених кампаній
   await assertVariantsUniqueOrThrow({
-    v1: { field: "text", op: body.rules.v1.op, value: body.rules.v1.value },
+    v1: { field: "text", op: v1op, value: v1value },
     v2,
   });
 
   const now = Date.now();
-  const id = now; // простий ID на базі часу
+  const id = now; // простий id на основі часу
 
   const created = {
     id,
-    name: body.name,
+    name,
     created_at: new Date(now).toISOString(),
     updated_at: new Date(now).toISOString(),
     active: true as const,
 
-    base_pipeline_id: body.base_pipeline_id,
-    base_status_id: body.base_status_id,
+    base_pipeline_id,
+    base_status_id,
 
     rules: {
-      v1: {
-        field: "text" as const,
-        op: body.rules.v1.op,
-        value: body.rules.v1.value,
-      },
+      v1: { field: "text" as const, op: v1op, value: v1value },
       ...(v2 ? { v2 } : {}),
     },
 
-    expire: body.expire
-      ? {
-        days: body.expire.days,
-        to_pipeline_id: body.expire.to_pipeline_id,
-        to_status_id: body.expire.to_status_id,
-      }
-      : undefined,
+    expire,
 
     // стартові лічильники
     v1_count: 0,
@@ -120,9 +127,9 @@ export async function POST(req: Request) {
     exp_count: 0,
   };
 
-  // Зберігаємо
+  // зберігаємо в KV
   await kvSet(`campaigns:${id}`, JSON.stringify(created));
   await kvZAdd("campaigns:index", now, String(id));
 
-  return NextResponse.json({ ok: true, data: created }, { status: 201 });
+  return ok(created, 201);
 }
