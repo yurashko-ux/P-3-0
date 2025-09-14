@@ -10,11 +10,9 @@ type CampaignKV = {
   active?: boolean;
   created_at?: number | string;
 
-  // базова пара
   base_pipeline_id?: number | string | null;
   base_status_id?: number | string | null;
 
-  // старі плоскі поля (підтримуємо на всяк випадок)
   v1_pipeline_id?: number | string | null;
   v1_status_id?: number | string | null;
   v2_pipeline_id?: number | string | null;
@@ -23,7 +21,6 @@ type CampaignKV = {
   exp_to_pipeline_id?: number | string | null;
   exp_to_status_id?: number | string | null;
 
-  // нова вкладена схема
   rules?: {
     v1?: {
       field?: "text";
@@ -46,7 +43,6 @@ type CampaignKV = {
     };
   };
 
-  // лічильники
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
@@ -56,26 +52,31 @@ function num(x: any): number | undefined {
   const n = Number(x);
   return Number.isFinite(n) ? n : undefined;
 }
-
 function labelOrDash(name?: string) {
-  return name && name.trim() ? name : "—";
+  return name && String(name).trim() ? String(name) : "—";
+}
+
+// Нормалізація відповіді KeyCRM у масив
+function arr<T = any>(maybe: any): T[] {
+  if (!maybe) return [];
+  if (Array.isArray(maybe)) return maybe as T[];
+  if (maybe && Array.isArray(maybe.data)) return maybe.data as T[];
+  return [];
 }
 
 export async function GET(req: Request) {
   await assertAdmin(req);
 
-  // 1) зчитуємо всі id кампаній у зворотньому порядку (нові зверху)
+  // 1) свіжі кампанії (реверс)
   const ids = (await kvZRevRange("campaigns:index", 0, -1)) ?? [];
 
-  // 2) забираємо самі кампанії
   const items: CampaignKV[] = [];
   for (const id of ids) {
     const raw = await kvGet(`campaigns:${id}`);
-    if (!raw) continue;
-    items.push(raw as CampaignKV);
+    if (raw) items.push(raw as CampaignKV);
   }
 
-  // 3) збираємо УСІ можливі pipeline_id зі всіх сегментів (base, v1, v2, exp)
+  // 2) зібрати всі використані pipeline_id (base, v1, v2, exp)
   const allPipelineIds = new Set<number>();
   for (const c of items) {
     const bp = num(c.base_pipeline_id);
@@ -91,8 +92,9 @@ export async function GET(req: Request) {
     if (expp) allPipelineIds.add(expp);
   }
 
-  // 4) підтягнемо список усіх воронок та побудуємо map
-  const pipes = await kcGetPipelines().catch(() => [] as any[]);
+  // 3) назви воронок
+  const pipesRaw = await kcGetPipelines().catch(() => []);
+  const pipes = arr<any>(pipesRaw);
   const pipeNameById = new Map<number, string>();
   for (const p of pipes ?? []) {
     const id = num(p?.id);
@@ -100,22 +102,23 @@ export async function GET(req: Request) {
     if (id) pipeNameById.set(id, nm);
   }
 
-  // 5) для кожної потрібної воронки підтягуємо її статуси і теж будуємо map
+  // 4) назви статусів для кожної потрібної воронки
   const statusNameById = new Map<number, string>();
   for (const pid of allPipelineIds) {
     try {
-      const statuses = await kcGetStatuses(pid);
+      const statusesRaw = await kcGetStatuses(pid);
+      const statuses = arr<any>(statusesRaw);
       for (const s of statuses ?? []) {
         const sid = num(s?.id);
         const nm = String(s?.name ?? "");
         if (sid) statusNameById.set(sid, nm);
       }
     } catch {
-      // ігноруємо помилки конкретної воронки, просто не буде назв
+      // пропустити конкретну воронку при помилці
     }
   }
 
-  // 6) готуємо відповідь у зручному для UI вигляді
+  // 5) сформувати під UI
   const rows = items.map((c) => {
     const created =
       typeof c.created_at === "number"
@@ -166,7 +169,6 @@ export async function GET(req: Request) {
           })
         : null,
 
-      // базова пара
       base: {
         pipeline_id: base_pipeline_id ?? null,
         status_id: base_status_id ?? null,
@@ -174,7 +176,6 @@ export async function GET(req: Request) {
         status_name: labelOrDash(base_status_name),
       },
 
-      // V1
       v1: {
         pipeline_id: v1_pipeline_id ?? null,
         status_id: v1_status_id ?? null,
@@ -188,7 +189,6 @@ export async function GET(req: Request) {
         },
       },
 
-      // V2 (може бути порожнім)
       v2: {
         pipeline_id: v2_pipeline_id ?? null,
         status_id: v2_status_id ?? null,
@@ -202,7 +202,6 @@ export async function GET(req: Request) {
         },
       },
 
-      // EXP
       exp: {
         days: exp_days ?? null,
         to_pipeline_id: exp_pipeline_id ?? null,
