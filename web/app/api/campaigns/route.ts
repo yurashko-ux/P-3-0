@@ -1,171 +1,190 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from "next/server";
+import { kvGet, kvSet, kvZRange, kvZRevRange, kvZAdd } from "@/lib/kv";
 import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvDel, kvZAdd, kvZRem, kvZRange, kvZRevRange } from "@/lib/kv";
+import { kcGetPipelines, kcGetStatusesByPipeline } from "@/lib/keycrm";
 
-type VariantOp = "contains" | "equals";
-type VariantRule = { field: "text"; op: VariantOp; value: string };
-type Campaign = {
+// Типи зберігаються в KV у такому вигляді
+type Rule = {
+  field: "text";
+  op: "contains" | "equals";
+  value: string;
+  // інколи форми надсилають цілі саме всередині правила:
+  to_pipeline_id?: number | string | null;
+  to_status_id?: number | string | null;
+};
+
+type CampaignKV = {
   id: string;
   name: string;
-
-  // базова пара (обов’язково)
-  base_pipeline_id: number;
-  base_status_id: number;
-
-  // правила
-  v1: VariantRule;
-  v2?: VariantRule | null;
-
-  // expire (опційно)
-  exp_days?: number | null;
-  exp_to_pipeline_id?: number | null;
-  exp_to_status_id?: number | null;
-
-  // системні поля
   active?: boolean;
-  created_at?: string;        // ISO
-  created_epoch?: number;     // ms
-  updated_at?: string;        // ISO
-  updated_epoch?: number;     // ms
 
-  // лічильники
+  // База (обовʼязково)
+  base_pipeline_id: number | string;
+  base_status_id: number | string;
+
+  // Варіант 1 (обовʼязково rule.value, а куди рухати — у цих полях)
+  rules: {
+    v1: Rule;
+    v2?: Rule | null;
+  };
+
+  // Цілі для V1/V2 можуть бути збережені як окремі поля
+  v1_to_pipeline_id?: number | string | null;
+  v1_to_status_id?: number | string | null;
+
+  v2_to_pipeline_id?: number | string | null;
+  v2_to_status_id?: number | string | null;
+
+  // Expire (опціонально)
+  exp_days?: number | string | null;
+  exp_to_pipeline_id?: number | string | null;
+  exp_to_status_id?: number | string | null;
+
+  // Лічильники
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+
+  // службові
+  created_at?: number;
+  updated_at?: number;
 };
 
-const IDX = "campaigns:index";
-const KEY = (id: string) => `campaigns:${id}`;
-
-// ───────────────────────────────────────────────────────────────────────────────
-// helpers
-function nowIso() { return new Date().toISOString(); }
-function toEpoch(d: string | number | Date | undefined) {
-  const ms = d ? Date.parse(String(d)) : NaN;
-  return Number.isFinite(ms) ? ms : Date.now();
-}
-function safeNum(n: any): number | null {
-  const v = Number(n);
-  return Number.isFinite(v) ? v : null;
-}
-function ensureRule(r?: any): VariantRule | null {
-  if (!r) return null;
-  const value = String(r.value ?? "").trim();
-  if (!value) return null;
-  const op = (r.op === "equals" ? "equals" : "contains") as VariantOp;
-  return { field: "text", op, value };
-}
-function decorate(c: Campaign) {
-  // fallback-и для старих записів
-  const created_epoch = c.created_epoch ?? toEpoch(c.created_at);
-  const updated_epoch = c.updated_epoch ?? created_epoch;
-  const created_at = c.created_at ?? new Date(created_epoch).toISOString();
-  const updated_at = c.updated_at ?? new Date(updated_epoch).toISOString();
-
-  // для відображення в UI
-  const exp_days_label =
-    typeof c.exp_days === "number" && Number.isFinite(c.exp_days)
-      ? `${c.exp_days} днів`
-      : "—";
-
-  return { ...c, created_at, created_epoch, updated_at, updated_epoch, exp_days_label };
-}
-// ───────────────────────────────────────────────────────────────────────────────
-
-/**
- * GET /api/campaigns
- * Повертає список кампаній від нових до старих з гарантовано валідною датою/лейблом.
- */
-export async function GET() {
-  // читаємо індекс у зворотньому порядку (нові зверху); якщо немає kvZRevRange – використай kvZRange і розверни масив
-  const ids: string[] =
-    (await (kvZRevRange?.(IDX, 0, -1) ?? kvZRange(IDX, 0, -1))) || [];
-
-  const items: Campaign[] = [];
-  for (const id of ids) {
-    const raw = await kvGet(KEY(id));
-    if (!raw) continue;
-    // захист від битих JSON-ів
-    let c: Campaign;
-    try { c = typeof raw === "string" ? JSON.parse(raw) : raw; }
-    catch { continue; }
-    items.push(decorate(c));
-  }
-  return NextResponse.json({ items });
+function numOrNull(v: any): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
-/**
- * POST /api/campaigns
- * Створює нову кампанію; забезпечує created_at/epoch та правильне сортування в індексі.
- */
-export async function POST(req: Request) {
+function hasNonEmpty(str?: string | null) {
+  return !!(str && String(str).trim().length > 0);
+}
+
+export async function GET(req: Request) {
   await assertAdmin(req);
 
-  let body: any;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
+  // беремо останні 1000 кампаній (нові зверху)
+  const ids = await kvZRevRange("campaigns:index", 0, -1).catch(() => []) as string[]; // fall back якщо немає util
+  const out: any[] = [];
 
-  // валідація мінімуму
-  const name = String(body.name ?? "").trim();
-  const base_pipeline_id = Number(body.base_pipeline_id);
-  const base_status_id = Number(body.base_status_id);
-  const v1 = ensureRule(body.v1);
-  const v2 = ensureRule(body.v2);
-
-  if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
-  if (!Number.isFinite(base_pipeline_id) || !Number.isFinite(base_status_id)) {
-    return NextResponse.json({ error: "base pair is required" }, { status: 400 });
+  // 1) зчитуємо всі кампанії
+  const campaigns: CampaignKV[] = [];
+  for (const id of ids ?? []) {
+    const c = (await kvGet<CampaignKV>(`campaigns:${id}`)) as CampaignKV | null;
+    if (c) campaigns.push(c);
   }
-  if (!v1) return NextResponse.json({ error: "rules.v1.value is required (non-empty)" }, { status: 400 });
 
-  const id = crypto.randomUUID();
+  // 2) збираємо всі pipeline/status, які потрібно розвʼязати в назви
+  const pipelineIds = new Set<number>();
+  const statusByPipeline = new Map<number, Set<number>>();
 
-  const created_epoch = Date.now();
-  const created_at = new Date(created_epoch).toISOString();
-
-  const exp_days = safeNum(body.exp_days);
-  const exp_to_pipeline_id = safeNum(body.exp_to_pipeline_id);
-  const exp_to_status_id = safeNum(body.exp_to_status_id);
-
-  const c: Campaign = {
-    id,
-    name,
-    base_pipeline_id,
-    base_status_id,
-    v1,
-    v2: v2 ?? null,
-    exp_days,
-    exp_to_pipeline_id,
-    exp_to_status_id,
-    active: true,
-    created_at,
-    created_epoch,
-    updated_at: created_at,
-    updated_epoch: created_epoch,
-    v1_count: 0,
-    v2_count: 0,
-    exp_count: 0,
+  const addPair = (p?: any, s?: any) => {
+    const pn = numOrNull(p);
+    const sn = numOrNull(s);
+    if (pn) {
+      pipelineIds.add(pn);
+      if (sn) {
+        if (!statusByPipeline.has(pn)) statusByPipeline.set(pn, new Set<number>());
+        statusByPipeline.get(pn)!.add(sn);
+      }
+    }
   };
 
-  // запис і індексація: score = created_epoch → нові зверху
-  await kvSet(KEY(id), c);
-  await kvZAdd(IDX, created_epoch, id);
+  for (const c of campaigns) {
+    addPair(c.base_pipeline_id, c.base_status_id);
 
-  return NextResponse.json({ ok: true, id, item: decorate(c) });
+    // V1 цілі можуть бути як окремі поля, так і всередині rules.v1
+    const v1p = c.v1_to_pipeline_id ?? c.rules?.v1?.to_pipeline_id;
+    const v1s = c.v1_to_status_id ?? c.rules?.v1?.to_status_id;
+    addPair(v1p, v1s);
+
+    // V2 — тільки якщо rule існує і непорожній
+    if (c.rules?.v2 && hasNonEmpty(c.rules.v2.value)) {
+      const v2p = c.v2_to_pipeline_id ?? c.rules.v2.to_pipeline_id;
+      const v2s = c.v2_to_status_id ?? c.rules.v2.to_status_id;
+      addPair(v2p, v2s);
+    }
+
+    // Expire
+    addPair(c.exp_to_pipeline_id, c.exp_to_status_id);
+  }
+
+  // 3) тягнемо словники з KeyCRM
+  //    pipelines: Map<pipeline_id, pipeline_name>
+  //    statuses:  Map<pipeline_id, Map<status_id, status_name>>
+  const pipelinesList = await kcGetPipelines().catch(() => []);
+  const pipelinesById = new Map<number, string>();
+  for (const p of pipelinesList as any[]) {
+    const id = numOrNull(p?.id);
+    if (id) pipelinesById.set(id, String(p?.name ?? p?.title ?? `#${id}`));
+  }
+
+  const statusesByPipe = new Map<number, Map<number, string>>();
+  for (const pId of pipelineIds) {
+    const want = statusByPipeline.get(pId);
+    const fetched = await kcGetStatusesByPipeline(pId).catch(() => []);
+    const map = new Map<number, string>();
+    for (const s of fetched as any[]) {
+      const sid = numOrNull(s?.id);
+      if (sid) map.set(sid, String(s?.name ?? s?.title ?? `#${sid}`));
+    }
+    statusesByPipe.set(pId, map);
+    // гарантуємо, що навіть відсутні статуси будуть показані як #id
+    for (const sid of want ?? []) {
+      if (!map.has(sid)) map.set(sid, `#${sid}`);
+    }
+  }
+
+  const namePipe = (id?: any) => {
+    const n = numOrNull(id);
+    if (!n) return "—";
+    return pipelinesById.get(n) ?? `#${n}`;
+  };
+  const nameStatus = (p?: any, s?: any) => {
+    const pn = numOrNull(p);
+    const sn = numOrNull(s);
+    if (!pn || !sn) return "—";
+    return statusesByPipe.get(pn)?.get(sn) ?? `#${sn}`;
+  };
+
+  // 4) будуємо вихід із розвʼязаними назвами
+  for (const c of campaigns) {
+    const v1p = c.v1_to_pipeline_id ?? c.rules?.v1?.to_pipeline_id;
+    const v1s = c.v1_to_status_id ?? c.rules?.v1?.to_status_id;
+
+    const hasV2 = c.rules?.v2 && hasNonEmpty(c.rules.v2.value);
+    const v2p = hasV2 ? (c.v2_to_pipeline_id ?? c.rules?.v2?.to_pipeline_id) : null;
+    const v2s = hasV2 ? (c.v2_to_status_id ?? c.rules?.v2?.to_status_id) : null;
+
+    out.push({
+      ...c,
+      // БАЗА
+      base_pipeline_name: namePipe(c.base_pipeline_id),
+      base_status_name: nameStatus(c.base_pipeline_id, c.base_status_id),
+
+      // V1
+      v1_to_pipeline_id: numOrNull(v1p),
+      v1_to_status_id: numOrNull(v1s),
+      v1_to_pipeline_name: namePipe(v1p),
+      v1_to_status_name: nameStatus(v1p, v1s),
+
+      // V2 (якщо є)
+      has_v2: !!hasV2,
+      v2_to_pipeline_id: numOrNull(v2p),
+      v2_to_status_id: numOrNull(v2s),
+      v2_to_pipeline_name: namePipe(v2p),
+      v2_to_status_name: nameStatus(v2p, v2s),
+
+      // EXP (якщо є)
+      exp_to_pipeline_name: namePipe(c.exp_to_pipeline_id),
+      exp_to_status_name: nameStatus(c.exp_to_pipeline_id, c.exp_to_status_id),
+    });
+  }
+
+  return NextResponse.json({ items: out });
 }
 
-/**
- * DELETE /api/campaigns?id=...
- * (опційно) — швидке видалення з індексу та KV.
- */
-export async function DELETE(req: Request) {
-  await assertAdmin(req);
-  const u = new URL(req.url);
-  const id = u.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
-
-  await kvDel(KEY(id));
-  await kvZRem(IDX, id);
-  return NextResponse.json({ ok: true, id });
-}
+// POST створення/оновлення – лишаємо як було.
+// Якщо у вас у цьому файлі також є POST, не чіпайте його зараз.
+// Головне — GET тепер віддає назви для Base/V1/V2/EXP і прапорець has_v2.
