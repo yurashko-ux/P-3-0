@@ -1,140 +1,190 @@
 // web/app/(admin)/campaigns/page.tsx
 "use client";
 
-import useSWR from "swr";
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 
-type Op = "contains" | "equals";
-type RuleEx = { field: "text"; op: Op; value: string; pipeline_id: number | null; status_id: number | null };
+type Names = Record<number, string>;
+type Rule = { field: "text"; op: "contains" | "equals"; value: string };
+type Variant = { pipeline_id: number | null; status_id: number | null; rule?: Rule };
+type Expire = { days: number; to_pipeline_id: number | null; to_status_id: number | null };
+
 type Campaign = {
   id: string;
   name: string;
   created_at: number;
   active: boolean;
+
   base_pipeline_id: number;
   base_status_id: number;
-  v1: RuleEx;
-  v2: RuleEx; // NEW: показуємо другу умову, якщо задано value
-  exp: { days: number; to_pipeline_id: number; to_status_id: number };
+
+  v1: Variant;
+  v2: Variant;
+  exp: Expire;
+
   v1_count?: number;
-  v2_count?: number; // NEW: лічильник для V2 якщо є
+  v2_count?: number;
   exp_count?: number;
+
+  _pipe_name?: Names;
+  _status_name?: Names;
 };
 
-const fetcher = (url: string) => fetch(url, { credentials: "include" }).then((r) => r.json());
+export default function CampaignsPage() {
+  const [items, setItems] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
 
-function Badge({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const res = await fetch("/api/campaigns", { cache: "no-store" });
+      const json = await res.json();
+      setItems(json?.items ?? []);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) {
+    return <div className="p-6 text-slate-500">Завантаження…</div>;
+  }
+  if (!items.length) {
+    return <div className="p-6 text-slate-500">Кампаній поки немає</div>;
+  }
+
   return (
-    <span className="rounded-full bg-blue-600/10 text-blue-700 px-3 py-1 text-sm font-medium">
+    <div className="p-4 space-y-6">
+      {items.map((c) => (
+        <div key={c.id} className="rounded-2xl border border-slate-200 p-4">
+          <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500 mb-3">
+            <div className="font-semibold text-slate-900 text-lg">{c.name}</div>
+            <div>{fmtDate(c.created_at)}</div>
+            <div className="ml-auto flex gap-4">
+              <a className="text-blue-600 hover:underline" href={`/admin/campaigns/${c.id}`}>Edit</a>
+              <a className="text-rose-600 hover:underline" href={`/api/campaigns/${c.id}`} onClick={(e) => e.preventDefault()}>Delete</a>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-12 gap-2 items-center">
+            {/* BASE */}
+            <Cell label="Сутність" value="База" />
+            <PipeStatus
+              pipeName={name(c._pipe_name, c.base_pipeline_id)}
+              statusName={name(c._status_name, c.base_status_id)}
+            />
+            <Counter label="—" value={null} />
+            <StateBadge active={c.active} />
+
+            {/* V1 */}
+            <Cell label="Сутність" value="V1" />
+            <PipeStatus
+              pipeName={name(c._pipe_name, c.v1?.pipeline_id)}
+              statusName={name(c._status_name, c.v1?.status_id)}
+              empty={!(c.v1?.pipeline_id && c.v1?.status_id)}
+            />
+            <Counter label="" value={c.v1_count ?? 0} />
+
+            {/* V2 — нове */}
+            <Cell label="Сутність" value="V2" />
+            <PipeStatus
+              pipeName={name(c._pipe_name, c.v2?.pipeline_id)}
+              statusName={name(c._status_name, c.v2?.status_id)}
+              empty={!(c.v2?.rule?.value)}
+            />
+            <Counter label="" value={c.v2_count ?? 0} />
+
+            {/* EXP */}
+            <Cell label="Сутність" value="EXP" />
+            <PipeStatus
+              pipeName={name(c._pipe_name, c.exp?.to_pipeline_id)}
+              statusName={name(c._status_name, c.exp?.to_status_id)}
+              prefix={`${c.exp?.days ?? 7} днів`}
+            />
+            <Counter label="" value={c.exp_count ?? 0} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Cell({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <div className="col-span-2 text-sm text-slate-500">{label}</div>
+      <div className="col-span-10">
+        <span className="inline-block rounded-full bg-slate-100 px-3 py-1 text-slate-700">{value}</span>
+      </div>
+    </>
+  );
+}
+
+function PipeStatus({
+  pipeName,
+  statusName,
+  empty,
+  prefix,
+}: {
+  pipeName?: string;
+  statusName?: string;
+  empty?: boolean;
+  prefix?: string;
+}) {
+  if (empty) {
+    return (
+      <div className="col-span-8 flex items-center gap-2">
+        <Pill>—</Pill>
+        <Pill>—</Pill>
+      </div>
+    );
+  }
+  return (
+    <div className="col-span-8 flex items-center gap-2">
+      {prefix ? <Pill muted>{prefix}</Pill> : null}
+      <Pill>{pipeName ?? "—"}</Pill>
+      <Pill>{statusName ?? "—"}</Pill>
+    </div>
+  );
+}
+
+function Counter({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="col-span-2 flex items-center justify-end gap-2">
+      {label ? <span className="text-sm text-slate-400">{label}</span> : null}
+      {value !== null ? <Bubble>{value}</Bubble> : <span className="text-slate-400">—</span>}
+    </div>
+  );
+}
+
+function StateBadge({ active }: { active: boolean }) {
+  return (
+    <div className="col-span-12 md:col-span-12 lg:col-span-12 text-right text-sm text-slate-500">
+      {active ? <span className="text-emerald-600">yes</span> : <span className="text-slate-400">no</span>}
+    </div>
+  );
+}
+
+function Pill({ children, muted }: { children: any; muted?: boolean }) {
+  return (
+    <span className={`inline-block rounded-full px-3 py-1 ${muted ? "bg-slate-100 text-slate-600" : "bg-blue-600/10 text-blue-700"}`}>
       {children}
     </span>
   );
 }
-
-function Dash() {
-  return <span className="text-2xl leading-none text-slate-400">—</span>;
-}
-
-export default function CampaignsPage() {
-  const { data, isLoading } = useSWR("/api/campaigns", fetcher, { refreshInterval: 0 });
-
-  const items: Campaign[] = useMemo(() => data?.items ?? [], [data]);
-
+function Bubble({ children }: { children: any }) {
   return (
-    <div className="max-w-6xl mx-auto px-6 py-6">
-      <h1 className="text-3xl font-bold mb-6">Кампанії</h1>
-
-      {!isLoading && items.length === 0 && (
-        <div className="rounded-2xl border border-slate-200 p-14 text-center text-slate-500">
-          Кампаній поки немає
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {items.map((c) => (
-          <div key={c.id} className="rounded-2xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between">
-              <div className="text-slate-500">
-                {new Date(c.created_at).toLocaleString()}
-              </div>
-              <div className="space-x-3">
-                {/* Посилання Edit/Delete залишають як є у вашому проєкті */}
-                <a className="text-blue-600 hover:underline" href={`/admin/campaigns/${c.id}/edit`}>Edit</a>
-                <a className="text-rose-600 hover:underline" href={`/admin/campaigns/${c.id}/delete`}>Delete</a>
-              </div>
-            </div>
-
-            <div className="mt-2 mb-4 text-xl font-semibold">{c.name}</div>
-
-            <div className="grid grid-cols-12 gap-y-2 gap-x-3 text-sm items-center">
-              {/* БАЗА */}
-              <div className="col-span-2 text-slate-500">База</div>
-              <div className="col-span-5">
-                <div className="flex items-center gap-2">
-                  <Badge>Воронка #{c.base_pipeline_id}</Badge>
-                  <Badge>Статус #{c.base_status_id}</Badge>
-                </div>
-              </div>
-              <div className="col-span-2 text-slate-500">Тригер</div>
-              <div className="col-span-3"><Dash /></div>
-
-              {/* V1 */}
-              <div className="col-span-2 text-slate-500">V1</div>
-              <div className="col-span-5">
-                <div className="flex items-center gap-2">
-                  {c.v1.value ? (
-                    <>
-                      <Badge>{c.v1.op === "equals" ? "Дорівнює" : "Містить"}</Badge>
-                      <Badge>{c.v1.value}</Badge>
-                    </>
-                  ) : (
-                    <Dash />
-                  )}
-                </div>
-              </div>
-              <div className="col-span-2 text-slate-500">Лічильник</div>
-              <div className="col-span-3">
-                <Badge>{c.v1_count ?? 0}</Badge>
-              </div>
-
-              {/* V2 — NEW */}
-              <div className="col-span-2 text-slate-500">V2</div>
-              <div className="col-span-5">
-                <div className="flex items-center gap-2">
-                  {c.v2?.value ? (
-                    <>
-                      <Badge>{c.v2.op === "equals" ? "Дорівнює" : "Містить"}</Badge>
-                      <Badge>{c.v2.value}</Badge>
-                      {c.v2.pipeline_id ? <Badge>Воронка #{c.v2.pipeline_id}</Badge> : null}
-                      {c.v2.status_id ? <Badge>Статус #{c.v2.status_id}</Badge> : null}
-                    </>
-                  ) : (
-                    <Dash />
-                  )}
-                </div>
-              </div>
-              <div className="col-span-2 text-slate-500">Лічильник</div>
-              <div className="col-span-3">
-                <Badge>{c.v2?.value ? (c.v2_count ?? 0) : 0}</Badge>
-              </div>
-
-              {/* EXP */}
-              <div className="col-span-2 text-slate-500">EXP</div>
-              <div className="col-span-5">
-                <div className="flex items-center gap-2">
-                  <Badge>Через {c.exp.days} днів</Badge>
-                  <Badge>→ Воронка #{c.exp.to_pipeline_id}</Badge>
-                  <Badge>→ Статус #{c.exp.to_status_id}</Badge>
-                </div>
-              </div>
-              <div className="col-span-2 text-slate-500">Лічильник</div>
-              <div className="col-span-3">
-                <Badge>{c.exp_count ?? 0}</Badge>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+      {children}
+    </span>
   );
+}
+function name(map: Record<number, string> | undefined, id?: number | null) {
+  if (!id) return undefined;
+  return map?.[id] ?? String(id);
+}
+function fmtDate(ts: number) {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString();
+  } catch {
+    return "Invalid Date";
+  }
 }
