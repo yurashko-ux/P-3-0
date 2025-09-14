@@ -1,219 +1,183 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvZRevRange } from "@/lib/kv";
-import { kcGetPipelines, kcGetStatuses } from "@/lib/keycrm";
+import { kvGet, kvSet, kvZAdd, kvZRevRange } from "@/lib/kv";
 
-// ВАЖЛИВО: робимо роут завжди динамічним і без кешу
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type CampaignKV = {
-  id: string;
-  name: string;
-  active?: boolean;
-  created_at?: number | string;
+function num(x: any): number | null {
+  const n = Number(x);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function str(x: any): string {
+  return (x ?? "").toString().trim();
+}
+function pick<T>(...vals: T[]): T | undefined {
+  for (const v of vals) if (v !== undefined && v !== null && (v as any) !== "") return v;
+  return undefined;
+}
 
-  base_pipeline_id?: number | string | null;
-  base_status_id?: number | string | null;
+/** Канонічна збірка правил із різних варіантів імен полів */
+function normalizeCampaignInput(body: any) {
+  const base_pipeline_id = num(
+    pick(body.base_pipeline_id, body.basePipelineId, body.base?.pipeline_id, body.base?.pipelineId)
+  );
+  const base_status_id = num(
+    pick(body.base_status_id, body.baseStatusId, body.base?.status_id, body.base?.statusId)
+  );
 
-  v1_pipeline_id?: number | string | null;
-  v1_status_id?: number | string | null;
-  v2_pipeline_id?: number | string | null;
-  v2_status_id?: number | string | null;
+  // V1
+  const v1_value = str(
+    pick(
+      body.rules?.v1?.value,
+      body.v1?.value,
+      body.v1_value,
+      body.rule_v1_value,
+      body.rules?.v1_value
+    )
+  );
+  const v1_pipeline_id = num(
+    pick(
+      body.rules?.v1?.to_pipeline_id,
+      body.rules?.v1?.pipeline_id,
+      body.v1?.pipeline_id,
+      body.v1_pipeline_id,
+      body.v1PipelineId
+    )
+  );
+  const v1_status_id = num(
+    pick(
+      body.rules?.v1?.to_status_id,
+      body.rules?.v1?.status_id,
+      body.v1?.status_id,
+      body.v1_status_id,
+      body.v1StatusId
+    )
+  );
+  const v1_field = str(pick(body.rules?.v1?.field, body.v1?.field)) || "text";
+  const v1_op = str(pick(body.rules?.v1?.op, body.v1?.op)) || "contains";
 
-  exp_days?: number | string | null;
-  exp_to_pipeline_id?: number | string | null;
-  exp_to_status_id?: number | string | null;
+  // V2 (необов'язкове)
+  const v2_value = str(
+    pick(
+      body.rules?.v2?.value,
+      body.v2?.value,
+      body.v2_value,
+      body.rule_v2_value,
+      body.rules?.v2_value
+    )
+  );
+  const v2_pipeline_id = num(
+    pick(
+      body.rules?.v2?.to_pipeline_id,
+      body.rules?.v2?.pipeline_id,
+      body.v2?.pipeline_id,
+      body.v2_pipeline_id,
+      body.v2PipelineId
+    )
+  );
+  const v2_status_id = num(
+    pick(
+      body.rules?.v2?.to_status_id,
+      body.rules?.v2?.status_id,
+      body.v2?.status_id,
+      body.v2_status_id,
+      body.v2StatusId
+    )
+  );
+  const v2_field = str(pick(body.rules?.v2?.field, body.v2?.field)) || "text";
+  const v2_op = str(pick(body.rules?.v2?.op, body.v2?.op)) || "contains";
 
-  rules?: {
-    v1?: { field?: "text"; op?: "contains" | "equals"; value?: string; to_pipeline_id?: number | string | null; to_status_id?: number | string | null; };
-    v2?: { field?: "text"; op?: "contains" | "equals"; value?: string; to_pipeline_id?: number | string | null; to_status_id?: number | string | null; };
-    exp?: { days?: number | string | null; to_pipeline_id?: number | string | null; to_status_id?: number | string | null; };
+  // EXP
+  const exp_days = num(pick(body.rules?.exp?.days, body.exp?.days, body.exp_days)) ?? 7;
+  const exp_to_pipeline_id = num(
+    pick(
+      body.rules?.exp?.to_pipeline_id,
+      body.exp?.to_pipeline_id,
+      body.exp_to_pipeline_id,
+      body.expPipelineId
+    )
+  );
+  const exp_to_status_id = num(
+    pick(
+      body.rules?.exp?.to_status_id,
+      body.exp?.to_status_id,
+      body.exp_to_status_id,
+      body.expStatusId
+    )
+  );
+
+  return {
+    name: str(body.name),
+    active: !!pick(body.active, body.enabled),
+    base_pipeline_id,
+    base_status_id,
+    // Канонічні правила
+    rules: {
+      v1: { field: v1_field, op: v1_op, value: v1_value, to_pipeline_id: v1_pipeline_id, to_status_id: v1_status_id },
+      v2: v2_value
+        ? { field: v2_field, op: v2_op, value: v2_value, to_pipeline_id: v2_pipeline_id, to_status_id: v2_status_id }
+        : undefined,
+      exp: { days: exp_days, to_pipeline_id: exp_to_pipeline_id, to_status_id: exp_to_status_id },
+    },
+    // Дублюємо у «плоскі» поля для зворотної сумісності зі списком/редактором
+    v1_pipeline_id,
+    v1_status_id,
+    v2_pipeline_id,
+    v2_status_id,
+    exp_days,
+    exp_to_pipeline_id,
+    exp_to_status_id,
+  };
+}
+
+/** GET /api/campaigns — список кампаній */
+export async function GET(req: Request) {
+  await assertAdmin(req);
+  const ids = (await kvZRevRange("campaigns:index", 0, -1)) ?? [];
+  const items: any[] = [];
+  for (const id of ids) {
+    const c = await kvGet(`campaigns:${id}`).catch(() => null);
+    if (c) items.push(c);
+  }
+  return NextResponse.json({ ok: true, count: items.length, items }, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** POST /api/campaigns — створення кампанії (tolerant-normalize) */
+export async function POST(req: Request) {
+  await assertAdmin(req);
+  const body = await req.json().catch(() => ({}));
+  const norm = normalizeCampaignInput(body);
+
+  const id = String(Date.now());
+  const ts = Date.now();
+
+  const campaign = {
+    id,
+    created_at: ts,
+    name: norm.name,
+    active: norm.active,
+    base_pipeline_id: norm.base_pipeline_id,
+    base_status_id: norm.base_status_id,
+    rules: norm.rules,
+    // зворотна сумісність
+    v1_pipeline_id: norm.v1_pipeline_id,
+    v1_status_id: norm.v1_status_id,
+    v2_pipeline_id: norm.v2_pipeline_id,
+    v2_status_id: norm.v2_status_id,
+    exp_days: norm.exp_days,
+    exp_to_pipeline_id: norm.exp_to_pipeline_id,
+    exp_to_status_id: norm.exp_to_status_id,
+    // лічильники за замовчуванням
+    v1_count: 0,
+    v2_count: 0,
+    exp_count: 0,
   };
 
-  v1_count?: number;
-  v2_count?: number;
-  exp_count?: number;
-};
+  // Зберігаємо
+  await kvSet(`campaigns:${id}`, campaign);
+  await kvZAdd("campaigns:index", ts, id);
 
-function num(x: any): number | undefined {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : undefined;
-}
-function labelOrDash(name?: string) {
-  return name && String(name).trim() ? String(name) : "—";
-}
-function arr<T = any>(maybe: any): T[] {
-  if (!maybe) return [];
-  if (Array.isArray(maybe)) return maybe as T[];
-  if (maybe && Array.isArray(maybe.data)) return maybe.data as T[];
-  return [];
-}
-
-export async function GET(req: Request) {
-  try {
-    await assertAdmin(req);
-
-    // 1) прочитати індекс кампаній (реверсом — новіші попереду)
-    const ids = (await kvZRevRange("campaigns:index", 0, -1)) ?? [];
-
-    // 2) забрати JSON кожної кампанії
-    const items: CampaignKV[] = [];
-    for (const id of ids) {
-      const raw = await kvGet(`campaigns:${id}`);
-      if (raw) items.push(raw as CampaignKV);
-    }
-
-    // Якщо кампаній немає — повертаємо порожній масив без помилок
-    if (items.length === 0) {
-      return NextResponse.json(
-        { ok: true, rows: [] },
-        { headers: { "Cache-Control": "no-store" } }
-      );
-    }
-
-    // 3) зібрати унікальні pipeline_id, щоб підтягнути назви
-    const allPipelineIds = new Set<number>();
-    for (const c of items) {
-      const bp = num(c.base_pipeline_id);
-      if (bp) allPipelineIds.add(bp);
-      const v1p = num(c.rules?.v1?.to_pipeline_id ?? c.v1_pipeline_id);
-      if (v1p) allPipelineIds.add(v1p);
-      const v2p = num(c.rules?.v2?.to_pipeline_id ?? c.v2_pipeline_id);
-      if (v2p) allPipelineIds.add(v2p);
-      const expp = num(c.rules?.exp?.to_pipeline_id ?? c.exp_to_pipeline_id);
-      if (expp) allPipelineIds.add(expp);
-    }
-
-    // 4) мапа назв воронок
-    const pipes = arr<any>(await kcGetPipelines().catch(() => []));
-    const pipeNameById = new Map<number, string>();
-    for (const p of pipes ?? []) {
-      const id = num(p?.id);
-      const nm = String(p?.name ?? "");
-      if (id) pipeNameById.set(id, nm);
-    }
-
-    // 5) мапа назв статусів (по кожній потрібній воронці)
-    const statusNameById = new Map<number, string>();
-    for (const pid of allPipelineIds) {
-      try {
-        const statuses = arr<any>(await kcGetStatuses(pid));
-        for (const s of statuses ?? []) {
-          const sid = num(s?.id);
-          const nm = String(s?.name ?? "");
-          if (sid) statusNameById.set(sid, nm);
-        }
-      } catch {
-        // ігноруємо помилки конкретної воронки — UI все одно покаже "—"
-      }
-    }
-
-    // 6) сформувати рядки для UI
-    const rows = items.map((c) => {
-      const created =
-        typeof c.created_at === "number"
-          ? new Date(c.created_at)
-          : c.created_at
-          ? new Date(String(c.created_at))
-          : undefined;
-
-      const base_pipeline_id = num(c.base_pipeline_id);
-      const base_status_id = num(c.base_status_id);
-
-      const v1_pipeline_id = num(c.rules?.v1?.to_pipeline_id ?? c.v1_pipeline_id);
-      const v1_status_id = num(c.rules?.v1?.to_status_id ?? c.v1_status_id);
-
-      const v2_pipeline_id = num(c.rules?.v2?.to_pipeline_id ?? c.v2_pipeline_id);
-      const v2_status_id = num(c.rules?.v2?.to_status_id ?? c.v2_status_id);
-
-      const exp_days = num(c.rules?.exp?.days ?? c.exp_days);
-      const exp_pipeline_id = num(c.rules?.exp?.to_pipeline_id ?? c.exp_to_pipeline_id);
-      const exp_status_id = num(c.rules?.exp?.to_status_id ?? c.exp_to_status_id);
-
-      const base_pipeline_name = base_pipeline_id ? pipeNameById.get(base_pipeline_id) : undefined;
-      const base_status_name = base_status_id ? statusNameById.get(base_status_id) : undefined;
-
-      const v1_pipeline_name = v1_pipeline_id ? pipeNameById.get(v1_pipeline_id) : undefined;
-      const v1_status_name = v1_status_id ? statusNameById.get(v1_status_id) : undefined;
-
-      const v2_pipeline_name = v2_pipeline_id ? pipeNameById.get(v2_pipeline_id) : undefined;
-      const v2_status_name = v2_status_id ? statusNameById.get(v2_status_id) : undefined;
-
-      const exp_pipeline_name = exp_pipeline_id ? pipeNameById.get(exp_pipeline_id) : undefined;
-      const exp_status_name = exp_status_id ? statusNameById.get(exp_status_id) : undefined;
-
-      return {
-        id: c.id,
-        name: c.name,
-        active: !!c.active,
-
-        created_at: created?.toISOString() ?? null,
-        created_at_human: created
-          ? created.toLocaleString("uk-UA", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            })
-          : null,
-
-        base: {
-          pipeline_id: base_pipeline_id ?? null,
-          status_id: base_status_id ?? null,
-          pipeline_name: labelOrDash(base_pipeline_name),
-          status_name: labelOrDash(base_status_name),
-        },
-
-        v1: {
-          pipeline_id: v1_pipeline_id ?? null,
-          status_id: v1_status_id ?? null,
-          pipeline_name: labelOrDash(v1_pipeline_name),
-          status_name: labelOrDash(v1_status_name),
-          count: c.v1_count ?? 0,
-          rule: {
-            field: c.rules?.v1?.field ?? "text",
-            op: c.rules?.v1?.op ?? "contains",
-            value: c.rules?.v1?.value ?? "",
-          },
-        },
-
-        v2: {
-          pipeline_id: v2_pipeline_id ?? null,
-          status_id: v2_status_id ?? null,
-          pipeline_name: labelOrDash(v2_pipeline_name),
-          status_name: labelOrDash(v2_status_name),
-          count: c.v2_count ?? 0,
-          rule: {
-            field: c.rules?.v2?.field ?? "text",
-            op: c.rules?.v2?.op ?? "contains",
-            value: c.rules?.v2?.value ?? "",
-          },
-        },
-
-        exp: {
-          days: exp_days ?? null,
-          to_pipeline_id: exp_pipeline_id ?? null,
-          to_status_id: exp_status_id ?? null,
-          to_pipeline_name: labelOrDash(exp_pipeline_name),
-          to_status_name: labelOrDash(exp_status_name),
-          count: c.exp_count ?? 0,
-        },
-      };
-    });
-
-    return NextResponse.json(
-      { ok: true, rows },
-      { headers: { "Cache-Control": "no-store" } }
-    );
-  } catch (err: any) {
-    // Ніколи не роняємо UI — повертаємо мʼяку помилку
-    return NextResponse.json(
-      { ok: false, error: String(err?.message ?? err ?? "unknown error"), rows: [] },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
-    );
-  }
+  return NextResponse.json({ ok: true, id, campaign }, { headers: { "Cache-Control": "no-store" } });
 }
