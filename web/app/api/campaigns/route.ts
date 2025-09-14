@@ -1,128 +1,123 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/auth";
-import {
-  kvGet, kvSet, kvZAdd, kvZRevRange, kvDel, kvZRem
-} from "@/lib/kv";
-import {
-  kcGetPipelines,
-  kcGetStatusesByPipeline
-} from "@/lib/keycrm";
+import { kvGet, kvSet, kvZAdd, kvZRevRange } from "@/lib/kv";
 
-type Rule = { field: "text"; op: "contains" | "equals"; value: string };
-type MaybeRule = { pipeline_id?: number | null; status_id?: number | null; value?: string | null };
-type ExpCfg = { days: number; to_pipeline_id: number; to_status_id: number };
+// ===== Types =====
+type Op = "contains" | "equals";
+type Rule = { field: "text"; op: Op; value: string };
+type RuleEx = Rule & { pipeline_id: number | null; status_id: number | null };
 
 export type Campaign = {
   id: string;
   name: string;
   created_at: number;
   active: boolean;
+
+  // базова пара (область пошуку та синхронізації)
   base_pipeline_id: number;
   base_status_id: number;
-  v1: MaybeRule;
-  v2?: MaybeRule;
-  exp: ExpCfg;
+
+  // правила
+  v1: RuleEx;            // обов’язкове, value !== ""
+  v2: RuleEx;            // опційне, зберігаємо лише коли value !== ""
+  exp: {
+    days: number;
+    to_pipeline_id: number;
+    to_status_id: number;
+  };
+
+  // лічильники (можуть бути відсутні в KV)
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
 };
 
-function num(n: any): number | null {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : null;
-}
-const safe = <T,>(v: T | undefined | null, d: T) => (v ?? d);
+// ===== Helpers =====
+const num = (x: unknown) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
+};
 
-// ---------- GET: list campaigns with resolved names ----------
+const ensureRule = (r: Partial<Rule> | null | undefined): Rule => {
+  const op: Op = (r?.op === "equals" ? "equals" : "contains");
+  const value = (r?.value ?? "").toString().trim();
+  return { field: "text", op, value };
+};
+
+const buildRuleEx = (
+  r: Partial<Rule> | null | undefined,
+  pipeline_id?: unknown,
+  status_id?: unknown
+): RuleEx => {
+  const base = ensureRule(r);
+  return {
+    ...base,
+    pipeline_id: num(pipeline_id) || null,
+    status_id: num(status_id) || null,
+  };
+};
+
+const CAMPAIGNS_INDEX = "campaigns:index";
+const campaignKey = (id: string) => `campaigns:${id}`;
+
+// ===== GET: список кампаній =====
 export async function GET(req: Request) {
   await assertAdmin(req);
 
-  // 1) зчитати всі кампанії (новіші зверху)
-  const ids = (await kvZRevRange("campaigns:index", 0, -1)) ?? [];
+  // показуємо останні 1000 (нові зверху)
+  const ids: string[] =
+    (await kvZRevRange(CAMPAIGNS_INDEX, 0, 999)) ?? [];
+
   const items: Campaign[] = [];
   for (const id of ids) {
-    const c = (await kvGet(`campaigns:${id}`)) as Campaign | null;
-    if (c) items.push(c);
-  }
+    const raw = await kvGet(campaignKey(id));
+    if (!raw) continue;
+    const c = typeof raw === "string" ? JSON.parse(raw) : raw;
 
-  // 2) зібрати усі pipeline_id, що зустрічаються
-  const pipeIds = new Set<number>();
-  for (const c of items) {
-    pipeIds.add(Number(c.base_pipeline_id));
-    if (num(c.v1?.pipeline_id)) pipeIds.add(Number(c.v1!.pipeline_id));
-    if (num(c.v2?.pipeline_id)) pipeIds.add(Number(c.v2!.pipeline_id));
-    if (num(c.exp?.to_pipeline_id)) pipeIds.add(Number(c.exp.to_pipeline_id));
-  }
-
-  // 3) підтягнути назви воронок і статусів
-  const pipelines = (await kcGetPipelines().catch(() => [])) as any[];
-  const pipeNameById = new Map<number, string>();
-  for (const p of pipelines) {
-    const id = Number(p?.id);
-    if (id) pipeNameById.set(id, String(p?.name ?? ""));
-  }
-
-  const statusNameByPipe = new Map<number, Map<number, string>>();
-  for (const pid of pipeIds) {
-    const statuses = (await kcGetStatusesByPipeline(pid).catch(() => [])) as any[];
-    const map = new Map<number, string>();
-    for (const s of statuses) {
-      const sid = Number(s?.id);
-      if (sid) map.set(sid, String(s?.name ?? ""));
-    }
-    statusNameByPipe.set(pid, map);
-  }
-
-  // 4) побудувати відповідь + resolved labels (додаємо, нічого не ламаємо)
-  const withResolved = items.map((c) => {
-    const baseP = Number(c.base_pipeline_id);
-    const baseS = Number(c.base_status_id);
-
-    const v1P = num(c.v1?.pipeline_id);
-    const v1S = num(c.v1?.status_id);
-
-    const v2P = num(c.v2?.pipeline_id);
-    const v2S = num(c.v2?.status_id);
-
-    const expP = num(c.exp?.to_pipeline_id);
-    const expS = num(c.exp?.to_status_id);
-
-    const res = {
-      ...c,
-      resolved: {
-        base: {
-          pipeline: pipeNameById.get(baseP) ?? "",
-          status: statusNameByPipe.get(baseP)?.get(baseS) ?? "",
-        },
-        v1: {
-          pipeline: v1P ? (pipeNameById.get(v1P) ?? "") : "",
-          status: v1P && v1S ? (statusNameByPipe.get(v1P)?.get(v1S) ?? "") : "",
-        },
-        v2: {
-          pipeline: v2P ? (pipeNameById.get(v2P) ?? "") : "",
-          status: v2P && v2S ? (statusNameByPipe.get(v2P)?.get(v2S) ?? "") : "",
-        },
-        exp: {
-          pipeline: expP ? (pipeNameById.get(expP) ?? "") : "",
-          status: expP && expS ? (statusNameByPipe.get(expP)?.get(expS) ?? "") : "",
-          days: safe(c.exp?.days, 0),
-        },
-      },
+    // мʼяка нормалізація, аби UI ніколи не падав
+    c.v1 = {
+      field: "text",
+      op: (c?.v1?.op === "equals" ? "equals" : "contains"),
+      value: String(c?.v1?.value ?? ""),
+      pipeline_id: c?.v1?.pipeline_id ?? null,
+      status_id: c?.v1?.status_id ?? null,
     };
-    return res;
-  });
+    c.v2 = {
+      field: "text",
+      op: (c?.v2?.op === "equals" ? "equals" : "contains"),
+      value: String(c?.v2?.value ?? ""),
+      pipeline_id: c?.v2?.pipeline_id ?? null,
+      status_id: c?.v2?.status_id ?? null,
+    };
 
-  return NextResponse.json({
-    ok: true,
-    count: withResolved.length,
-    items: withResolved,
-  });
+    items.push(c as Campaign);
+  }
+
+  return NextResponse.json({ ok: true, count: items.length, items });
 }
 
-// ---------- POST: create campaign (без змін логіки правил) ----------
+// ===== POST: створення кампанії =====
+/**
+ * Очікуваний JSON:
+ * {
+ *   "name": string,
+ *   "base_pipeline_id": number,
+ *   "base_status_id": number,
+ *   "rules": {
+ *     "v1": { "op": "contains"|"equals", "value": string },
+ *     "v2": { "op": "contains"|"equals", "value": string }   // опційно
+ *   },
+ *   "v1_pipeline_id": number | null,  "v1_status_id": number | null, // (необов’язково; можна не задавати)
+ *   "v2_pipeline_id": number | null,  "v2_status_id": number | null, // (опційно)
+ *   "exp_days": number,
+ *   "exp_to_pipeline_id": number,
+ *   "exp_to_status_id": number
+ * }
+ */
 export async function POST(req: Request) {
   await assertAdmin(req);
+
   let body: any;
   try {
     body = await req.json();
@@ -130,62 +125,57 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const now = Date.now();
-  const id = String(now);
+  const name = String(body?.name ?? "").trim();
+  const base_pipeline_id = num(body?.base_pipeline_id);
+  const base_status_id = num(body?.base_status_id);
 
-  const base_pipeline_id = Number(body?.base_pipeline_id);
-  const base_status_id = Number(body?.base_status_id);
-
-  if (!base_pipeline_id || !base_status_id) {
-    return NextResponse.json(
-      { ok: false, error: "base_pipeline_id and base_status_id are required" },
-      { status: 400 }
-    );
-  }
-
-  // V1 обов’язкове значення — лише перевірка value, pipeline/status можуть бути порожніми
-  const v1: MaybeRule = {
-    pipeline_id: num(body?.v1?.pipeline_id),
-    status_id: num(body?.v1?.status_id),
-    value: (body?.v1?.value ?? "").trim(),
-  };
-
-  if (!v1.value) {
+  const rV1 = ensureRule(body?.rules?.v1);
+  if (!rV1.value) {
     return NextResponse.json(
       { ok: false, error: "rules.v1.value is required (non-empty)" },
       { status: 400 }
     );
   }
 
-  const v2: MaybeRule = {
-    pipeline_id: num(body?.v2?.pipeline_id),
-    status_id: num(body?.v2?.status_id),
-    value: (body?.v2?.value ?? "").trim(),
-  };
+  // v1 завжди існує; pipeline/status для v1 – не обов’язкові
+  const v1: RuleEx = buildRuleEx(body?.rules?.v1, body?.v1_pipeline_id, body?.v1_status_id);
 
-  const exp: ExpCfg = {
-    days: Number(body?.exp?.days ?? 7),
-    to_pipeline_id: Number(body?.exp?.to_pipeline_id),
-    to_status_id: Number(body?.exp?.to_status_id),
-  };
+  // v2 — опційне: зберігаємо ТІЛЬКИ якщо value непорожнє
+  const v2Candidate = ensureRule(body?.rules?.v2);
+  const v2: RuleEx = v2Candidate.value
+    ? buildRuleEx(body?.rules?.v2, body?.v2_pipeline_id, body?.v2_status_id)
+    : { ...v2Candidate, pipeline_id: null, status_id: null };
+
+  const exp_days = Math.max(0, num(body?.exp_days) || 0);
+  const exp_to_pipeline_id = num(body?.exp_to_pipeline_id);
+  const exp_to_status_id = num(body?.exp_to_status_id);
+
+  const id = String(Date.now());
+  const created_at = Date.now();
+  const active = false;
 
   const campaign: Campaign = {
     id,
-    name: String(body?.name ?? "").trim() || "Без назви",
-    created_at: now,
-    active: Boolean(body?.active ?? false),
+    name,
+    created_at,
+    active,
     base_pipeline_id,
     base_status_id,
     v1,
     v2,
-    exp,
+    exp: {
+      days: exp_days,
+      to_pipeline_id: exp_to_pipeline_id,
+      to_status_id: exp_to_status_id,
+    },
     v1_count: 0,
     v2_count: 0,
     exp_count: 0,
   };
 
-  await kvSet(`campaigns:${id}`, campaign);
-  await kvZAdd("campaigns:index", now, id);
+  // зберегти
+  await kvSet(campaignKey(id), campaign);
+  await kvZAdd(CAMPAIGNS_INDEX, created_at, id);
 
-  return NextResponse.json({ ok: true, id, campaign });
+  return NextResponse.json({ ok: true, id, item: campaign }, { status: 201 });
 }
