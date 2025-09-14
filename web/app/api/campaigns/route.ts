@@ -1,141 +1,174 @@
 // web/app/api/campaigns/route.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { assertAdmin } from "@/lib/auth";
-import { kvGet, kvSet, kvZAdd, kvZRevRange } from "@/lib/kv";
+import { kvGet, kvSet, kvZAdd, kvZRange } from "@/lib/kv";
 
-// 🔥 прибираємо будь-яке кешування цього маршруту
-export const dynamic = "force-dynamic";
+// Динаміка, щоб не кешувалось
 export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
+// ---- Типи
 type VariantOp = "contains" | "equals";
 type VariantRule = { field: "text"; op: VariantOp; value: string };
-export type Campaign = {
-  id: string; // зберігаємо як string для узгодженості з KV
+type Campaign = {
+  id: number;
   name: string;
-  active?: boolean;
   base_pipeline_id: number;
   base_status_id: number;
   rules: { v1: VariantRule; v2?: VariantRule };
   exp_days?: number;
   exp_to_pipeline_id?: number;
   exp_to_status_id?: number;
+  active: boolean;
+  created_at: number;
+  updated_at: number;
+  deleted?: boolean;
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
-  created_at?: number;
-  updated_at?: number;
 };
 
-function bad(status: number, message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status });
-}
+// ---- Хелпери
+const s = (v: unknown) =>
+  (typeof v === "number" ? String(v) : String(v ?? "")).trim();
 
-function reqNumber(n: unknown, def?: number): number {
-  const x = Number(n);
-  if (Number.isFinite(x)) return x;
-  if (def !== undefined) return def;
-  throw new Error("Expected number");
-}
+const pick = <T>(...vals: T[]) =>
+  vals.find((v) => v !== undefined && v !== null) as T | undefined;
 
-function normalizeRule(r?: any): VariantRule | undefined {
-  if (!r) return undefined;
-  const value = String(r.value ?? "").trim();
-  const op = (r.op === "equals" ? "equals" : "contains") as VariantOp;
-  return { field: "text", op, value };
-}
+function coerceRule(raw: any, fallbacks: any, which: "v1" | "v2"): VariantRule | undefined {
+  // Підтримуємо різні імена полів з форми
+  const op =
+    (raw?.op ??
+      fallbacks?.[`${which}_op`] ??
+      fallbacks?.[which]?.op ??
+      "contains") as VariantOp;
 
-function validateIncoming(body: any): { payload: Omit<Campaign, "id"> } {
-  const name = String(body?.name ?? "").trim();
-  if (!name) throw new Error("name is required");
-  const base_pipeline_id = reqNumber(body?.base_pipeline_id);
-  const base_status_id = reqNumber(body?.base_status_id);
+  const valueRaw =
+    pick(
+      raw?.value,
+      fallbacks?.[`${which}_value`],
+      fallbacks?.[which]?.value,
+      fallbacks?.[which], // коли прислали просто рядок
+      fallbacks?.[`variant${which === "v1" ? "1" : "2"}Value`],
+      fallbacks?.[`variant${which === "v1" ? "1" : "2"}`]?.value
+    ) ?? "";
 
-  const v1 = normalizeRule(body?.rules?.v1);
-  const v2 = normalizeRule(body?.rules?.v2);
-  if (!v1 || v1.value.length === 0) {
+  const value = s(valueRaw);
+
+  if (which === "v1" && !value) {
     throw new Error("rules.v1.value is required (non-empty)");
   }
+  if (!value) return undefined; // для v2 дозволено порожнє → пропускаємо
 
-  const exp_days = body?.exp_days != null ? reqNumber(body.exp_days) : undefined;
-  const exp_to_pipeline_id =
-    body?.exp_to_pipeline_id != null ? reqNumber(body.exp_to_pipeline_id) : undefined;
-  const exp_to_status_id =
-    body?.exp_to_status_id != null ? reqNumber(body.exp_to_status_id) : undefined;
+  return { field: "text", op: (op || "contains") as VariantOp, value };
+}
 
-  const payload: Omit<Campaign, "id"> = {
+function parseBodyToCampaign(body: any): Campaign {
+  const now = Date.now();
+  const id =
+    Number(pick(body?.id, body?.campaign_id)) || Number(now.toString().slice(-9));
+
+  const name = s(pick(body?.name, body?.title));
+  const base_pipeline_id = Number(
+    pick(
+      body?.base_pipeline_id,
+      body?.pipeline_id,
+      body?.base?.pipeline_id,
+      body?.base_pipeline
+    )
+  );
+  const base_status_id = Number(
+    pick(
+      body?.base_status_id,
+      body?.status_id,
+      body?.base?.status_id,
+      body?.base_status
+    )
+  );
+
+  const v1 = coerceRule(body?.rules?.v1, { ...body, v1: body?.v1 }, "v1")!;
+  const v2 = coerceRule(body?.rules?.v2, { ...body, v2: body?.v2 }, "v2");
+
+  const exp_days = Number(pick(body?.exp_days, body?.expire_days, body?.expire?.days)) || undefined;
+  const exp_to_pipeline_id = Number(
+    pick(body?.exp_to_pipeline_id, body?.expire?.to_pipeline_id)
+  ) || undefined;
+  const exp_to_status_id = Number(
+    pick(body?.exp_to_status_id, body?.expire?.to_status_id)
+  ) || undefined;
+
+  return {
+    id,
     name,
-    active: body?.active !== false, // за замовчуванням true
     base_pipeline_id,
     base_status_id,
-    rules: { v1, ...(v2 && v2.value ? { v2 } : {}) },
+    rules: v2 ? { v1, v2 } : { v1 },
     exp_days,
     exp_to_pipeline_id,
     exp_to_status_id,
-    v1_count: body?.v1_count ?? 0,
-    v2_count: body?.v2_count ?? 0,
-    exp_count: body?.exp_count ?? 0,
+    active: Boolean(pick(body?.active, true)),
+    created_at: now,
+    updated_at: now,
+    v1_count: 0,
+    v2_count: 0,
+    exp_count: 0,
   };
-  return { payload };
 }
 
-// GET /api/campaigns — список (за індексом)
-export async function GET(req: Request) {
+// ---- GET: список кампаній
+export async function GET() {
   try {
-    await assertAdmin(req);
-  } catch {
-    return bad(401, "unauthorized");
+    // нові зверху
+    const ids = await kvZRange("campaigns:index", -1000, -1, true); // останні N
+    const out: Campaign[] = [];
+    for (const id of ids ?? []) {
+      const raw = await kvGet(`campaigns:${id}`);
+      if (!raw) continue;
+      const c = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!c?.deleted) out.push(c as Campaign);
+    }
+    // відсортуємо за updated_at (спадання)
+    out.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+    return NextResponse.json({ ok: true, data: out });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message || "GET failed" },
+      { status: 500 }
+    );
   }
-
-  // читаємо індекс у зворотному порядку (нові зверху)
-  const ids: string[] = await kvZRevRange("campaigns:index", 0, -1);
-  const out: Campaign[] = [];
-
-  for (const id of ids || []) {
-    const c = await kvGet(`campaigns:${id}`);
-    if (c) out.push(c as Campaign);
-  }
-
-  return NextResponse.json({ ok: true, data: out }, { status: 200, headers: { "Cache-Control": "no-store" } });
 }
 
-// POST /api/campaigns — створення
+// ---- POST: створити кампанію
 export async function POST(req: Request) {
   try {
-    await assertAdmin(req);
-  } catch {
-    return bad(401, "unauthorized");
-  }
+    const body = await req.json().catch(() => ({}));
+    const created = parseBodyToCampaign(body);
 
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return bad(400, "invalid json");
-  }
+    // Мінімальна перевірка обовʼязкових полів
+    if (!created.name) {
+      return NextResponse.json(
+        { ok: false, error: "name is required" },
+        { status: 400 }
+      );
+    }
+    if (!created.base_pipeline_id || !created.base_status_id) {
+      return NextResponse.json(
+        { ok: false, error: "base_pipeline_id & base_status_id are required" },
+        { status: 400 }
+      );
+    }
 
-  try {
-    const { payload } = validateIncoming(body);
-    const now = Date.now();
-    const id = String(body?.id ?? now); // генеруємо id, якщо не передали
-
-    const created: Campaign = {
-      id,
-      ...payload,
-      created_at: body?.created_at ?? now,
-      updated_at: now,
-    };
-
-    // 1) сам обʼєкт
-    await kvSet(`campaigns:${id}`, created);
-    // 2) індекс
-    await kvZAdd("campaigns:index", now, id);
+    // Збереження
+    await kvSet(`campaigns:${created.id}`, created);
+    await kvZAdd("campaigns:index", Date.now(), String(created.id));
 
     return NextResponse.json({ ok: true, data: created }, { status: 201 });
   } catch (e: any) {
-    const msg = String(e?.message ?? "validation error");
-    if (msg.includes("rules.v1.value")) {
-      return bad(400, "rules.v1.value is required (non-empty)");
-    }
-    return bad(400, msg);
+    const msg = e?.message || "POST failed";
+    const isBad = msg.includes("rules.v1.value is required");
+    return NextResponse.json(
+      { ok: false, error: msg },
+      { status: isBad ? 400 : 500 }
+    );
   }
 }
