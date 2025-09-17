@@ -13,8 +13,7 @@ export const V1RuleSchema = RuleSchema.extend({
 });
 
 export const CampaignSchema = z.object({
-  // Не вимагаємо UUID, підтримуємо довільні рядкові id
-  id: z.string().optional(),
+  id: z.string().optional(), // вільний рядок
   name: z.string().trim().min(1),
   created_at: Num.optional(),
   active: z.coerce.boolean().default(false),
@@ -38,7 +37,6 @@ export const CampaignSchema = z.object({
 
 export type CampaignInput = z.input<typeof CampaignSchema>;
 
-// Нормалізований тип (гарантуємо string id та number created_at)
 export type Campaign = Omit<z.output<typeof CampaignSchema>, 'id' | 'created_at' | 'rules'> & {
   id: string;
   created_at: number;
@@ -85,15 +83,12 @@ function prepareCampaignInput(input: any): CampaignInput {
   const rules = input.rules ?? {};
 
   // ---- aliases for V1 ----
-  const v1op = pickFirst(
-    rules?.v1?.op,
-    input.v1_op,
-    input.rules_v1_op,
-    input.v1Op,
-    input.v1Operator
-  ) ?? 'contains';
+  const v1op =
+    pickFirst(rules?.v1?.op, input.v1_op, input.rules_v1_op, input.v1Op, input.v1Operator) ??
+    'contains';
 
   const v1val = pickFirst(
+    // звичні
     rules?.v1?.value,
     input.v1_value,
     input.rules_v1_value,
@@ -103,17 +98,20 @@ function prepareCampaignInput(input: any): CampaignInput {
     input.v1Text,
     input.keyword,
     input.trigger,
-    input.rule_v1_value
+    input.rule_v1_value,
+    // часті кейси з форм
+    input.value,      // <- головний підозрюваний
+    input.value1,
+    input.variant1_value,
+    input['variant1.value'],
+    input['v1.value'],
+    input['rules.v1.value']
   );
 
   // ---- aliases for V2 ----
-  const v2op = pickFirst(
-    rules?.v2?.op,
-    input.v2_op,
-    input.rules_v2_op,
-    input.v2Op,
-    input.v2Operator
-  ) ?? 'contains';
+  const v2op =
+    pickFirst(rules?.v2?.op, input.v2_op, input.rules_v2_op, input.v2Op, input.v2Operator) ??
+    'contains';
 
   const v2val = pickFirst(
     rules?.v2?.value,
@@ -123,7 +121,13 @@ function prepareCampaignInput(input: any): CampaignInput {
     input.v2,
     input.v2_text,
     input.v2Text,
-    input.rule_v2_value
+    input.rule_v2_value,
+    // часті кейси з форм
+    input.value2,
+    input.variant2_value,
+    input['variant2.value'],
+    input['v2.value'],
+    input['rules.v2.value']
   );
 
   const expDays = pickFirst(input.exp?.days, input.exp_days);
@@ -140,7 +144,7 @@ function prepareCampaignInput(input: any): CampaignInput {
     base_status_id:
       coerceNum(input.base_status_id ?? input.status_id) ?? undefined,
     rules: {
-      v1: { op: v1op, value: v1val ?? '' }, // значення обов'язково перевірить V1RuleSchema
+      v1: { op: v1op, value: v1val ?? '' }, // V1 обов'язковий, Zod перевірить
       ...(v2op !== undefined || v2val !== undefined
         ? { v2: { op: v2op, value: v2val ?? '' } }
         : {}),
