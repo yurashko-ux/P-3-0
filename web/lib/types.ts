@@ -56,7 +56,7 @@ export type Campaign = Omit<z.output<typeof CampaignSchema>, 'id' | 'created_at'
     | undefined;
 };
 
-// Допоміжні коерсери
+// -------- helpers --------
 function coerceBool(v: any) {
   return v === true || v === 'true' || v === '1' || v === 1;
 }
@@ -65,21 +65,70 @@ function coerceNum(v: any) {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 }
+function str(v: any) {
+  return v === undefined || v === null ? undefined : String(v);
+}
 function trim(v: any) {
-  return v === undefined || v === null ? undefined : String(v).trim();
+  const s = str(v);
+  return s === undefined ? undefined : s.trim();
+}
+function pickFirst(...vals: any[]) {
+  for (const v of vals) {
+    const t = trim(v);
+    if (t !== undefined && t !== '') return t;
+  }
+  return undefined;
 }
 
-// Підтримка пласких формових полів: v1_op/v1_value, v2_op/v2_value, exp_days, ...
+// Підтримка пласких / альтернативних назв полів з форм/клієнтів
 function prepareCampaignInput(input: any): CampaignInput {
   const rules = input.rules ?? {};
-  const v1op = rules?.v1?.op ?? input.v1_op ?? input.rules_v1_op ?? 'contains';
-  const v1val = rules?.v1?.value ?? input.v1_value ?? input.rules_v1_value ?? '';
-  const v2op = rules?.v2?.op ?? input.v2_op ?? input.rules_v2_op ?? 'contains';
-  const v2val = rules?.v2?.value ?? input.v2_value ?? input.rules_v2_value ?? '';
 
-  const expDays = input.exp?.days ?? input.exp_days;
-  const expToPipeline = input.exp?.to_pipeline_id ?? input.exp_to_pipeline_id;
-  const expToStatus = input.exp?.to_status_id ?? input.exp_to_status_id;
+  // ---- aliases for V1 ----
+  const v1op = pickFirst(
+    rules?.v1?.op,
+    input.v1_op,
+    input.rules_v1_op,
+    input.v1Op,
+    input.v1Operator
+  ) ?? 'contains';
+
+  const v1val = pickFirst(
+    rules?.v1?.value,
+    input.v1_value,
+    input.rules_v1_value,
+    input.v1Value,
+    input.v1,
+    input.v1_text,
+    input.v1Text,
+    input.keyword,
+    input.trigger,
+    input.rule_v1_value
+  );
+
+  // ---- aliases for V2 ----
+  const v2op = pickFirst(
+    rules?.v2?.op,
+    input.v2_op,
+    input.rules_v2_op,
+    input.v2Op,
+    input.v2Operator
+  ) ?? 'contains';
+
+  const v2val = pickFirst(
+    rules?.v2?.value,
+    input.v2_value,
+    input.rules_v2_value,
+    input.v2Value,
+    input.v2,
+    input.v2_text,
+    input.v2Text,
+    input.rule_v2_value
+  );
+
+  const expDays = pickFirst(input.exp?.days, input.exp_days);
+  const expToPipeline = pickFirst(input.exp?.to_pipeline_id, input.exp_to_pipeline_id);
+  const expToStatus = pickFirst(input.exp?.to_status_id, input.exp_to_status_id);
 
   const prepared: any = {
     id: trim(input.id),
@@ -91,13 +140,11 @@ function prepareCampaignInput(input: any): CampaignInput {
     base_status_id:
       coerceNum(input.base_status_id ?? input.status_id) ?? undefined,
     rules: {
-      v1: { op: v1op, value: trim(v1val) ?? '' },
-      // v2 додаємо лише якщо хоч щось передано; бекенд все одно заповнить дефолт
+      v1: { op: v1op, value: v1val ?? '' }, // значення обов'язково перевірить V1RuleSchema
       ...(v2op !== undefined || v2val !== undefined
-        ? { v2: { op: v2op, value: trim(v2val) ?? '' } }
+        ? { v2: { op: v2op, value: v2val ?? '' } }
         : {}),
     },
-    // exp додаємо лише якщо є хоч одне поле
     ...(expDays !== undefined || expToPipeline !== undefined || expToStatus !== undefined
       ? {
           exp: {
@@ -116,8 +163,9 @@ function prepareCampaignInput(input: any): CampaignInput {
 }
 
 export function normalizeCampaign(input: CampaignInput): Campaign {
-  // 1) М’яка підготовка payload (підтримка пласких форм)
+  // 1) М’яка підготовка payload (покриває різні назви полів)
   const prepared = prepareCampaignInput(input);
+
   // 2) Валідація/коерс через Zod
   const parsed = CampaignSchema.parse(prepared);
 
