@@ -10,64 +10,61 @@ const KEY = (id: string) => `campaigns:${id}`;
 const norm = (s: string) => s.trim().toLowerCase();
 const hasV2 = (c: Campaign) => (c.rules?.v2?.value ?? '').trim().length > 0;
 
-async function findDuplicateRule(candidate: Campaign): Promise<
+async function findGlobalValueConflict(candidate: Campaign): Promise<
   | {
-      rule: 'v1' | 'v2';
-      conflict: {
-        id: string;
-        name: string;
-        base_pipeline_id: number;
-        base_status_id: number;
-        v1?: Campaign['rules']['v1'];
-        v2?: Campaign['rules']['v2'];
-      };
+      rule: 'v1' | 'v2' | 'v2_same_as_v1';
+      value: string;
+      conflict?: { id: string; name: string; rule: 'v1' | 'v2'; value: string };
     }
   | null
 > {
+  const candV1 = norm(candidate.rules.v1.value);
+  const candV2 = hasV2(candidate) ? norm(candidate.rules.v2.value) : null;
+
+  if (candV2 && candV1 === candV2) {
+    return { rule: 'v2_same_as_v1', value: candidate.rules.v2.value };
+  }
+
   const ids: string[] = await kvZRange(INDEX, 0, -1);
   if (!ids?.length) return null;
-  const raws = await Promise.all(ids.map((id) => kvGet<any>(KEY(id))));
 
+  const raws = await Promise.all(ids.map((id) => kvGet<any>(KEY(id))));
   for (const raw of raws) {
     if (!raw) continue;
     const existing = normalizeCampaign(typeof raw === 'string' ? JSON.parse(raw) : raw);
     if (existing.id === candidate.id) continue;
 
-    const sameBase =
-      existing.base_pipeline_id === candidate.base_pipeline_id &&
-      existing.base_status_id === candidate.base_status_id;
-    if (!sameBase) continue;
+    const ev1 = norm(existing.rules.v1.value);
+    const ev2 = (existing.rules.v2?.value ?? '').trim() ? norm(existing.rules.v2!.value) : null;
 
-    const v1dup =
-      existing.rules.v1.op === candidate.rules.v1.op &&
-      norm(existing.rules.v1.value) === norm(candidate.rules.v1.value);
-    if (v1dup) {
+    if (candV1 === ev1) {
       return {
         rule: 'v1',
-        conflict: {
-          id: existing.id,
-          name: existing.name,
-          base_pipeline_id: existing.base_pipeline_id,
-          base_status_id: existing.base_status_id,
-          v1: existing.rules.v1,
-        },
+        value: candidate.rules.v1.value,
+        conflict: { id: existing.id, name: existing.name, rule: 'v1', value: existing.rules.v1.value },
+      };
+    }
+    if (ev2 && candV1 === ev2) {
+      return {
+        rule: 'v1',
+        value: candidate.rules.v1.value,
+        conflict: { id: existing.id, name: existing.name, rule: 'v2', value: existing.rules.v2!.value },
       };
     }
 
-    if (hasV2(candidate) && hasV2(existing)) {
-      const v2dup =
-        existing.rules.v2.op === candidate.rules.v2.op &&
-        norm(existing.rules.v2.value) === norm(candidate.rules.v2.value);
-      if (v2dup) {
+    if (candV2) {
+      if (candV2 === ev1) {
         return {
           rule: 'v2',
-          conflict: {
-            id: existing.id,
-            name: existing.name,
-            base_pipeline_id: existing.base_pipeline_id,
-            base_status_id: existing.base_status_id,
-            v2: existing.rules.v2,
-          },
+          value: candidate.rules.v2!.value,
+          conflict: { id: existing.id, name: existing.name, rule: 'v1', value: existing.rules.v1.value },
+        };
+      }
+      if (ev2 && candV2 === ev2) {
+        return {
+          rule: 'v2',
+          value: candidate.rules.v2!.value,
+          conflict: { id: existing.id, name: existing.name, rule: 'v2', value: existing.rules.v2!.value },
         };
       }
     }
@@ -85,17 +82,16 @@ export async function POST(req: NextRequest) {
     const c = normalizeCampaign(body);
 
     if (!allowDup) {
-      const dup = await findDuplicateRule(c);
-      if (dup) {
-        const errorCode = dup.rule === 'v1' ? 'duplicate_v1' : 'duplicate_v2';
-        const message =
-          dup.rule === 'v1'
-            ? 'Campaign with the same base (pipeline/status) and V1 already exists.'
-            : 'Campaign with the same base (pipeline/status) and V2 already exists.';
-        return new Response(
-          JSON.stringify({ error: errorCode, message, conflict: dup.conflict }),
-          { status: 409, headers: { 'content-type': 'application/json' } }
-        );
+      const conflict = await findGlobalValueConflict(c);
+      if (conflict) {
+        const msg =
+          conflict.rule === 'v2_same_as_v1'
+            ? 'V2 value cannot be the same as V1 within the same campaign.'
+            : `Value "${conflict.value}" already exists globally in ${conflict.conflict!.rule.toUpperCase()} of campaign "${conflict.conflict!.name}".`;
+        return new Response(JSON.stringify({ error: 'duplicate_value', rule: conflict.rule, value: conflict.value, conflict: conflict.conflict, message: msg }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        });
       }
     }
 
