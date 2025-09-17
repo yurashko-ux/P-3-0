@@ -21,9 +21,11 @@ export async function GET(req: NextRequest) {
     if (!raw) continue;
     const c = normalizeCampaign(typeof raw === 'string' ? JSON.parse(raw) : raw);
 
+    // Збагачення назвами базової пари
     c.base_pipeline_name = await getPipelineName(c.base_pipeline_id);
     c.base_status_name = await getStatusName(c.base_pipeline_id, c.base_status_id);
 
+    // Збагачення назвами для EXP (якщо є)
     if (c.exp) {
       const ep = c.exp;
       (c as any).exp = {
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
         to_pipeline_name: await getPipelineName(ep.to_pipeline_id),
         to_status_name: await getStatusName(
           ep.to_pipeline_id ?? c.base_pipeline_id,
-          ep.to_status_id ?? null,
+          ep.to_status_id ?? null
         ),
       };
     }
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
     items.push(c);
   }
 
+  // стабільне сортування у списку
   items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
   return NextResponse.json(items);
 }
@@ -50,7 +53,8 @@ export async function POST(req: NextRequest) {
     const c = normalizeCampaign(body);
 
     await kvSet(KEY(c.id), c);
-    await kvZAdd(INDEX, { score: c.created_at, member: c.id });
+    // kvZAdd: (key, score, member)
+    await kvZAdd(INDEX, c.created_at, c.id);
 
     return NextResponse.json(c, { status: 200 });
   } catch (e: any) {
