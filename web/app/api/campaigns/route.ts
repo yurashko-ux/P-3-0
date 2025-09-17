@@ -21,11 +21,9 @@ export async function GET(req: NextRequest) {
     if (!raw) continue;
     const c = normalizeCampaign(typeof raw === 'string' ? JSON.parse(raw) : raw);
 
-    // Збагачення назвами базової пари
     c.base_pipeline_name = await getPipelineName(c.base_pipeline_id);
     c.base_status_name = await getStatusName(c.base_pipeline_id, c.base_status_id);
 
-    // Збагачення назвами для EXP (якщо є)
     if (c.exp) {
       const ep = c.exp;
       (c as any).exp = {
@@ -41,7 +39,6 @@ export async function GET(req: NextRequest) {
     items.push(c);
   }
 
-  // стабільне сортування у списку
   items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
   return NextResponse.json(items);
 }
@@ -53,10 +50,13 @@ export async function POST(req: NextRequest) {
     const c = normalizeCampaign(body);
 
     await kvSet(KEY(c.id), c);
-    // kvZAdd: (key, score, member)
     await kvZAdd(INDEX, c.created_at, c.id);
 
-    return NextResponse.json(c, { status: 200 });
+    // Повертаємо «чистий» Response зі статусом 201
+    return new Response(JSON.stringify(c), {
+      status: 201,
+      headers: { 'content-type': 'application/json' },
+    });
   } catch (e: any) {
     const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
     return NextResponse.json({ error: msg }, { status: 400 });
