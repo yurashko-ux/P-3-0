@@ -11,16 +11,15 @@ const TOKEN = process.env.KEYCRM_API_TOKEN || '';
 async function keycrmFetch(path: string, search?: Record<string, any>) {
   const url = new URL(path, BASE_URL);
   if (search) {
-    Object.entries(search).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries(search)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    });
+    }
   }
   const res = await fetch(url.toString(), {
     headers: {
       Authorization: `Bearer ${TOKEN}`,
       'Content-Type': 'application/json',
     },
-    // на Vercel це серверний контекст
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -31,20 +30,39 @@ async function keycrmFetch(path: string, search?: Record<string, any>) {
 }
 
 async function kcFetchPipelines(): Promise<Array<{ id: number; name?: string; title?: string }>> {
-  // припускаємо, що API повертає { data: [...] } або просто масив — покриємо обидва
   const json = await keycrmFetch('/pipelines');
   return Array.isArray(json) ? json : json?.data ?? [];
 }
 
-async function kcFetchStatuses(pipelineId: number): Promise<Array<{ id: number; name?: string; title?: string }>> {
+async function kcFetchStatuses(
+  pipelineId: number,
+): Promise<Array<{ id: number; name?: string; title?: string }>> {
   const json = await keycrmFetch('/pipelines/statuses', { pipeline_id: pipelineId });
   return Array.isArray(json) ? json : json?.data ?? [];
 }
 
+// Безпечне читання мапи з KV (kvGet може повертати string|object|null)
+function ensureMap(raw: unknown): Record<string, string> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed ? (parsed as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object') return raw as Record<string, string>;
+  return {};
+}
+
 export async function getPipelineName(id?: number | null) {
   if (!id) return null;
-  let map = await kvGet<Record<string, string>>(PIPELINES_KEY);
-  if (!map || !map[String(id)]) {
+
+  const raw = await kvGet<any>(PIPELINES_KEY);
+  let map = ensureMap(raw);
+
+  if (!map[String(id)]) {
     const list = await kcFetchPipelines();
     map = Object.fromEntries(
       list.map((p: any) => [String(p.id), String(p.name || p.title || '')]),
@@ -59,9 +77,12 @@ export async function getStatusName(
   statusId?: number | null,
 ) {
   if (!pipelineId || !statusId) return null;
+
   const key = STATUSES_KEY(pipelineId);
-  let map = await kvGet<Record<string, string>>(key);
-  if (!map || !map[String(statusId)]) {
+  const raw = await kvGet<any>(key);
+  let map = ensureMap(raw);
+
+  if (!map[String(statusId)]) {
     const list = await kcFetchStatuses(pipelineId);
     map = Object.fromEntries(
       list.map((s: any) => [String(s.id), String(s.name || s.title || '')]),
