@@ -34,13 +34,21 @@ export const CampaignSchema = z.object({
 });
 
 export type CampaignInput = z.input<typeof CampaignSchema>;
-export type Campaign = z.output<typeof CampaignSchema> & {
+
+// Нормалізований тип, який ми реально повертаємо/зберігаємо (id гарантовано string)
+export type Campaign = Omit<z.output<typeof CampaignSchema>, 'id' | 'created_at' | 'rules'> & {
+  id: string;
+  created_at: number;
+  rules: {
+    v1: z.output<typeof V1RuleSchema>;
+    v2: z.output<typeof RuleSchema>;
+  };
   base_pipeline_name?: string | null;
   base_status_name?: string | null;
-  exp?: Campaign['exp'] & {
+  exp?: (z.output<typeof CampaignSchema>['exp'] & {
     to_pipeline_name?: string | null;
     to_status_name?: string | null;
-  };
+  }) | undefined;
 };
 
 export function normalizeCampaign(input: CampaignInput): Campaign {
