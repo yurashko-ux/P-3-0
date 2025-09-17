@@ -13,7 +13,7 @@ export const V1RuleSchema = RuleSchema.extend({
 });
 
 export const CampaignSchema = z.object({
-  // Послаблюємо вимогу до UUID, щоб підтримати існуючі id
+  // Не вимагаємо UUID, підтримуємо довільні рядкові id
   id: z.string().optional(),
   name: z.string().trim().min(1),
   created_at: Num.optional(),
@@ -56,8 +56,70 @@ export type Campaign = Omit<z.output<typeof CampaignSchema>, 'id' | 'created_at'
     | undefined;
 };
 
+// Допоміжні коерсери
+function coerceBool(v: any) {
+  return v === true || v === 'true' || v === '1' || v === 1;
+}
+function coerceNum(v: any) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+function trim(v: any) {
+  return v === undefined || v === null ? undefined : String(v).trim();
+}
+
+// Підтримка пласких формових полів: v1_op/v1_value, v2_op/v2_value, exp_days, ...
+function prepareCampaignInput(input: any): CampaignInput {
+  const rules = input.rules ?? {};
+  const v1op = rules?.v1?.op ?? input.v1_op ?? input.rules_v1_op ?? 'contains';
+  const v1val = rules?.v1?.value ?? input.v1_value ?? input.rules_v1_value ?? '';
+  const v2op = rules?.v2?.op ?? input.v2_op ?? input.rules_v2_op ?? 'contains';
+  const v2val = rules?.v2?.value ?? input.v2_value ?? input.rules_v2_value ?? '';
+
+  const expDays = input.exp?.days ?? input.exp_days;
+  const expToPipeline = input.exp?.to_pipeline_id ?? input.exp_to_pipeline_id;
+  const expToStatus = input.exp?.to_status_id ?? input.exp_to_status_id;
+
+  const prepared: any = {
+    id: trim(input.id),
+    name: trim(input.name),
+    created_at: coerceNum(input.created_at),
+    active: input.active !== undefined ? coerceBool(input.active) : undefined,
+    base_pipeline_id:
+      coerceNum(input.base_pipeline_id ?? input.pipeline_id) ?? undefined,
+    base_status_id:
+      coerceNum(input.base_status_id ?? input.status_id) ?? undefined,
+    rules: {
+      v1: { op: v1op, value: trim(v1val) ?? '' },
+      // v2 додаємо лише якщо хоч щось передано; бекенд все одно заповнить дефолт
+      ...(v2op !== undefined || v2val !== undefined
+        ? { v2: { op: v2op, value: trim(v2val) ?? '' } }
+        : {}),
+    },
+    // exp додаємо лише якщо є хоч одне поле
+    ...(expDays !== undefined || expToPipeline !== undefined || expToStatus !== undefined
+      ? {
+          exp: {
+            days: coerceNum(expDays),
+            to_pipeline_id: coerceNum(expToPipeline),
+            to_status_id: coerceNum(expToStatus),
+          },
+        }
+      : {}),
+    v1_count: coerceNum(input.v1_count),
+    v2_count: coerceNum(input.v2_count),
+    exp_count: coerceNum(input.exp_count),
+  };
+
+  return prepared;
+}
+
 export function normalizeCampaign(input: CampaignInput): Campaign {
-  const parsed = CampaignSchema.parse(input);
+  // 1) М’яка підготовка payload (підтримка пласких форм)
+  const prepared = prepareCampaignInput(input);
+  // 2) Валідація/коерс через Zod
+  const parsed = CampaignSchema.parse(prepared);
 
   const id =
     parsed.id ??
