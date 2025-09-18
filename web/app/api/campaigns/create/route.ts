@@ -25,9 +25,10 @@ async function readBody(req: NextRequest): Promise<any> {
 
 export async function POST(req: NextRequest) {
   await assertAdmin(req);
+  const url = new URL(req.url);
+  const wantJson = url.searchParams.get('json') === '1';
 
-  // читаємо «як є», щоб у разі помилки повернути ключі
-  const ct = req.headers.get('content-type') || '';
+  // читаємо «як є», а в разі помилки повернемо зрозумілу причину
   const rawBody = await readBody(req);
 
   try {
@@ -36,28 +37,40 @@ export async function POST(req: NextRequest) {
     await kvSet(KEY(c.id), c);
     await kvZAdd(INDEX, c.created_at, c.id);
 
-    return new Response(JSON.stringify(c), {
-      status: 201,
-      headers: { 'content-type': 'application/json' },
-    });
+    if (wantJson) {
+      // новий клієнт: JSON + 201
+      return new Response(JSON.stringify({ ok: true, campaign: c }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    // СТАРИЙ КЛІЄНТ: простий текст "ok" + 200
+    return new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } });
   } catch (e: any) {
-    // детальна діагностика: які саме поля прийшли
+    const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
     const debug = {
-      content_type: ct,
       flat_keys: Object.keys(rawBody ?? {}),
-      // найчастіші вкладені варіанти
       sample_rules: {
         'rules.v1': rawBody?.rules?.v1,
         'rules.v2': rawBody?.rules?.v2,
-        v1_value: rawBody?.v1_value ?? rawBody?.value ?? rawBody?.value1 ?? rawBody?.['v1.value'],
-        v2_value: rawBody?.v2_value ?? rawBody?.value2 ?? rawBody?.['v2.value'],
+        v1_value:
+          rawBody?.v1_value ??
+          rawBody?.value ??
+          rawBody?.value1 ??
+          rawBody?.['v1.value'],
+        v2_value:
+          rawBody?.v2_value ??
+          rawBody?.value2 ??
+          rawBody?.['v2.value'],
       },
     };
-
-    const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
-    return new Response(JSON.stringify({ error: msg, debug }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    });
+    if (wantJson) {
+      return new Response(JSON.stringify({ ok: false, error: msg, debug }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    // старий клієнт: повертаємо простий текст з помилкою
+    return new Response(String(msg), { status: 400, headers: { 'content-type': 'text/plain' } });
   }
 }
