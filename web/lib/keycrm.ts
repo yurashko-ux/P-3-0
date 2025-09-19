@@ -119,10 +119,10 @@ export async function findCardIdByUsername(
 export async function kcFindCardIdByAny(params: {
   username?: string | null;
   fullname?: string | null;
-  pipeline_id?: number;
-  status_id?: number;
-  path?: string;        // дефолт 'leads'
-  max_pages?: number;   // скільки сторінок переглянути у fallback
+  pipeline_id?: number | string;   // <-- приймаємо string | number
+  status_id?: number | string;     // <-- приймаємо string | number
+  path?: string;
+  max_pages?: number;
   per_page?: number;
 }): Promise<number | null> {
   // 1) індекс за username
