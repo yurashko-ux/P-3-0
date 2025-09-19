@@ -1,23 +1,18 @@
 // web/lib/keycrm.ts
-// KeyCRM client з підтримкою різних назв ENV і автододаванням /v1.
+// KeyCRM client: використовує GET /pipelines/cards (а не /leads).
 
 import { kvZRange } from './kv';
 
-/* ───────── ENV compatibility ─────────
-   URL:  KEYCRM_BASE_URL  | KEYCRM_API_URL
-   TOKEN: KEYCRM_API_TOKEN | KEYCRM_BEARER
-*/
+/* ENV сумісність і автододавання /v1 */
 const RAW_BASE =
   process.env.KEYCRM_BASE_URL ||
   process.env.KEYCRM_API_URL ||
   'https://openapi.keycrm.app/v1';
-
 const TOKEN =
   process.env.KEYCRM_API_TOKEN ||
   process.env.KEYCRM_BEARER ||
   '';
 
-/* завжди гарантуємо суфікс /v1 */
 function ensureV1(base: string): string {
   let url = (base || '').trim().replace(/\/+$/g, '');
   if (!url) url = 'https://openapi.keycrm.app/v1';
@@ -26,19 +21,9 @@ function ensureV1(base: string): string {
 }
 const BASE_URL = ensureV1(RAW_BASE);
 
-// ───────── helpers ─────────
-function pathUrl(p: string) {
-  return new URL(p.replace(/^\/+/, ''), BASE_URL).toString();
-}
 function authHeaders() {
   if (!TOKEN) throw new Error('KEYCRM_API_TOKEN (або KEYCRM_BEARER) is not set');
   return { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
-}
-function normHandle(s?: string | null) {
-  if (!s) return null;
-  const t = String(s).trim();
-  if (!t) return null;
-  return t.replace(/^@+/, '').toLowerCase();
 }
 function safeJson(text: string, url: string) {
   try { return JSON.parse(text); }
@@ -46,10 +31,8 @@ function safeJson(text: string, url: string) {
 }
 async function httpGet(path: string, qs?: Record<string, any>) {
   const url = new URL(path.replace(/^\/+/, ''), BASE_URL);
-  if (qs) {
-    for (const [k, v] of Object.entries(qs)) {
-      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
-    }
+  if (qs) for (const [k, v] of Object.entries(qs)) {
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
   }
   const res = await fetch(url.toString(), { headers: authHeaders(), cache: 'no-store' });
   const text = await res.text().catch(() => '');
@@ -57,36 +40,32 @@ async function httpGet(path: string, qs?: Record<string, any>) {
   return safeJson(text, url.toString());
 }
 async function httpPut(path: string, body: any) {
-  const url = pathUrl(path);
+  const url = new URL(path.replace(/^\/+/, ''), BASE_URL).toString();
   const res = await fetch(url, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
   const text = await res.text().catch(() => '');
   if (!res.ok) throw new Error(`KeyCRM PUT ${res.status} ${res.statusText} at ${url} :: ${text.slice(0, 400)}`);
   try { return JSON.parse(text); } catch { return text ? { ok: true, raw: text } : { ok: true }; }
 }
 
-// ───────── public API ─────────
+/* ───────── Метадані ───────── */
 export async function kcGetPipelines(): Promise<any[]> {
   const j = await httpGet('pipelines');
   return Array.isArray(j) ? j : (j?.data ?? []);
 }
-
 export async function kcGetStatuses(pipelineId: number): Promise<any[]> {
-  try {
-    const j = await httpGet(`pipelines/${pipelineId}/statuses`);
-    return Array.isArray(j) ? j : (j?.data ?? []);
-  } catch {
-    const j2 = await httpGet('statuses', { pipeline_id: pipelineId });
-    const arr = Array.isArray(j2) ? j2 : (j2?.data ?? []);
-    return arr.filter((s: any) => Number(s?.pipeline_id ?? s?.pipeline?.id) === Number(pipelineId));
-  }
+  // офіційний шлях зі скріну
+  const j = await httpGet(`pipelines/${pipelineId}/statuses`);
+  return Array.isArray(j) ? j : (j?.data ?? []);
 }
 
-/** Пагінація по лід-картках. path='leads' за замовчуванням. */
-export async function kcListLeads(params: {
-  page?: number; per_page?: number; pipeline_id?: number; status_id?: number; path?: string;
+/* ───────── Список карток (лідів) у воронках ─────────
+   Відповідає GET /pipelines/cards із фільтрами pipeline_id/status_id.
+*/
+export async function kcListCards(params: {
+  page?: number; per_page?: number;
+  pipeline_id?: number; status_id?: number;
 }): Promise<{ items: any[]; hasNext: boolean; raw: any }> {
-  const path = (params.path || 'leads').replace(/^\/+/, '');
-  const j = await httpGet(path, {
+  const j = await httpGet('pipelines/cards', {
     page: params.page ?? 1,
     per_page: params.per_page ?? 50,
     pipeline_id: params.pipeline_id,
@@ -97,31 +76,28 @@ export async function kcListLeads(params: {
   return { items: data, hasNext, raw: j };
 }
 
-export async function kcGetLead(id: number | string): Promise<any> {
-  return httpGet(`leads/${id}`);
+export async function kcGetCard(id: number | string): Promise<any> {
+  return httpGet(`pipelines/cards/${id}`);
 }
 
-/** Зміна статусу/воронки для картки — спочатку leads, потім fallback на deals */
 export async function kcMoveCard(params: { id: number | string; pipeline_id?: number; status_id?: number; }): Promise<any> {
   const body: Record<string, any> = {};
   if (params.pipeline_id != null) body.pipeline_id = Number(params.pipeline_id);
   if (params.status_id != null) body.status_id = Number(params.status_id);
-  try { return await httpPut(`leads/${params.id}`, body); }
-  catch { return await httpPut(`deals/${params.id}`, body); }
+  return httpPut(`pipelines/cards/${params.id}`, body);
 }
 
-// ───────── сумісність ─────────
-export async function kcListCardsLaravel(params: {
-  page?: number; per_page?: number; pipeline_id?: number; status_id?: number; path?: string;
-}): Promise<{ items: any[]; hasNext: boolean; raw: any }> {
-  return kcListLeads(params);
+/* ───────── Пошук по username через локальний індекс (якщо він є) ───────── */
+function normHandle(s?: string | null) {
+  if (!s) return null;
+  const t = String(s).trim();
+  if (!t) return null;
+  return t.replace(/^@+/, '').toLowerCase();
 }
-
 export async function findCardIdByUsername(username?: string | null): Promise<number | null> {
-  const handle = normHandle(username || '');
-  if (!handle) return null;
-  const keys = [`kc:index:social:instagram:${handle}`, `kc:index:social:instagram:@${handle}`];
-  for (const key of keys) {
+  const h = normHandle(username || '');
+  if (!h) return null;
+  for (const key of [`kc:index:social:instagram:${h}`, `kc:index:social:instagram:@${h}`]) {
     const ids: string[] = await kvZRange(key, 0, -1).catch(() => []);
     const latestFirst = Array.isArray(ids) ? [...ids].reverse() : [];
     if (latestFirst.length) return Number(latestFirst[0]);
@@ -129,49 +105,45 @@ export async function findCardIdByUsername(username?: string | null): Promise<nu
   return null;
 }
 
+/* ───────── Live-пошук у /pipelines/cards ───────── */
 export async function kcFindCardIdByAny(params: {
   username?: string | null;
   fullname?: string | null;
   pipeline_id?: number | string;
   status_id?: number | string;
-  path?: string;
-  max_pages?: number;
   per_page?: number;
+  max_pages?: number;
 }): Promise<number | null> {
-  const fromIndex = await findCardIdByUsername(params.username);
-  if (fromIndex) return fromIndex;
-
+  const h = normHandle(params.username);
+  const needle = String(params.fullname ?? '').trim().toLowerCase();
   const pipelineId = Number(params.pipeline_id ?? NaN);
   const statusId = Number(params.status_id ?? NaN);
   if (!Number.isFinite(pipelineId) || !Number.isFinite(statusId)) return null;
 
+  let page = 1;
   const per_page = params.per_page ?? 50;
   const max_pages = params.max_pages ?? 2;
-  const needle = String(params.fullname ?? '').trim().toLowerCase();
 
-  let page = 1;
   while (page <= max_pages) {
-    const { items, hasNext } = await kcListLeads({
-      page,
-      per_page,
-      pipeline_id: pipelineId,
-      status_id: statusId,
-      path: (params.path || 'leads'),
-    });
+    const { items, hasNext } = await kcListCards({ page, per_page, pipeline_id: pipelineId, status_id: statusId });
 
-    const filtered = items.filter((raw: any) => {
-      const p = raw?.status?.pipeline_id ?? raw?.pipeline_id;
-      const s = raw?.status_id ?? raw?.status?.id;
-      return Number(p) === pipelineId && Number(s) === statusId;
-    });
+    for (const raw of items) {
+      const pid = Number(raw?.status?.pipeline_id ?? raw?.pipeline_id);
+      const sid = Number(raw?.status_id ?? raw?.status?.id);
+      if (pid !== pipelineId || sid !== statusId) continue;
 
-    for (const raw of filtered) {
+      const social = String(raw?.contact?.social_id ?? '').trim().toLowerCase();
       const title = String(raw?.title ?? '').toLowerCase();
       const fn = String(raw?.contact?.full_name ?? raw?.contact?.client?.full_name ?? '').toLowerCase();
-      if (needle && (title.includes(needle) || fn.includes(needle))) {
+
+      const usernameOk = h ? (social === h || social === '@' + h) : false;
+      const fullnameOk = needle ? (title.includes(needle) || fn.includes(needle)) : false;
+
+      if ((h && usernameOk) || (!h && fullnameOk) || (h && fullnameOk && (usernameOk || fullnameOk))) {
         return Number(raw?.id);
       }
     }
+
     if (!hasNext) break;
     page += 1;
   }
