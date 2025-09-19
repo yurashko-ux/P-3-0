@@ -1,7 +1,7 @@
 // web/app/api/campaigns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { assertAdmin } from '@/lib/auth';
-import { kvGet, kvMGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
+import { kvGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
 import { Campaign, CampaignInput, normalizeCampaign } from '@/lib/types';
 import { getPipelineName, getStatusName } from '@/lib/kc-cache';
 
@@ -10,23 +10,27 @@ const KEY = (id: string) => `campaigns:${id}`;
 
 const norm = (s?: string | null) => String(s ?? '').trim().toLowerCase();
 
+/** Завантажити всі кампанії з KV (новіші перші) */
 async function loadAllCampaigns(): Promise<Campaign[]> {
-  // твій kvZRange не приймає options → без {rev:true}
+  // твій kvZRange не має options → беремо як є та робимо reverse для "новіших зверху"
   const ids: string[] = await kvZRange(INDEX, 0, -1).catch(() => []);
   if (!ids?.length) return [];
-  // найновіші зверху
-  const sortedIds = [...ids].reverse();
-  const keys = sortedIds.map(KEY);
-  const rawList = await kvMGet(keys);
-  const items: Campaign[] = [];
-  for (const raw of rawList) {
-    if (!raw) continue;
-    const c = normalizeCampaign(typeof raw === 'string' ? JSON.parse(raw) : raw);
-    items.push(c);
-  }
-  return items;
+
+  const ordered = [...ids].reverse();
+  // паралельно витягнемо всі ключі
+  const items = await Promise.all(
+    ordered.map(async (id) => {
+      const raw = await kvGet<any>(KEY(id)).catch(() => null);
+      if (!raw) return null;
+      const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return normalizeCampaign(obj);
+    })
+  );
+
+  return items.filter(Boolean) as Campaign[];
 }
 
+/** Збагачення назвами воронки/статусів */
 async function enrichNames(c: Campaign): Promise<Campaign> {
   c.base_pipeline_name = await getPipelineName(c.base_pipeline_id);
   c.base_status_name = await getStatusName(c.base_pipeline_id, c.base_status_id);
@@ -41,7 +45,7 @@ async function enrichNames(c: Campaign): Promise<Campaign> {
   return c;
 }
 
-/** Глобальна унікальність V1/V2 серед усіх кампаній. Також V1≠V2 всередині однієї кампанії. */
+/** Глобальна унікальність V1/V2 серед усіх кампаній; також V1≠V2 всередині кампанії */
 function checkGlobalUniqueness(all: Campaign[], candidate: Campaign):
   | { ok: true }
   | { ok: false; message: string } {
@@ -54,7 +58,7 @@ function checkGlobalUniqueness(all: Campaign[], candidate: Campaign):
 
   const occupied = new Map<string, string>(); // value → "campaignId:field"
   for (const c of all) {
-    if (c.id === candidate.id) continue; // ігноруємо себе при апдейті
+    if (c.id === candidate.id) continue; // дозволити апдейт власних значень
     const a = norm(c.rules?.v1?.value);
     const b = norm(c.rules?.v2?.value);
     if (a) occupied.set(a, `${c.id}:v1`);
@@ -63,7 +67,7 @@ function checkGlobalUniqueness(all: Campaign[], candidate: Campaign):
 
   const clashes: string[] = [];
   if (v1 && occupied.has(v1)) clashes.push(`V1="${candidate.rules.v1.value}" вже використано (${occupied.get(v1)})`);
-  if (v2 && occupied.has(v2)) clashes.push(`V2="${candidate.rules.v2?.value}" вже використано (${occupied.get(v2)})`);
+  if (v2 && occupied.has(v2)) clashes.push(`V2="${candidate.rules?.v2?.value}" вже використано (${occupied.get(v2)})`);
 
   if (clashes.length) {
     return {
@@ -79,11 +83,12 @@ function checkGlobalUniqueness(all: Campaign[], candidate: Campaign):
 
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
-  const all = await loadAllCampaigns();
 
-  // збагачуємо назвами
+  const all = await loadAllCampaigns();
   const enriched: Campaign[] = [];
-  for (const c of all) enriched.push(await enrichNames(c));
+  for (const c of all) {
+    enriched.push(await enrichNames(c));
+  }
 
   return NextResponse.json(enriched, { status: 200 });
 }
@@ -96,7 +101,7 @@ export async function POST(req: NextRequest) {
     // нормалізація/дефолти/uuid/лічильники
     const candidate = normalizeCampaign(body);
 
-    // унікальність V1/V2 глобально
+    // глобальна унікальність V1/V2
     const all = await loadAllCampaigns();
     const unique = checkGlobalUniqueness(all, candidate);
     if (!unique.ok) {
@@ -109,7 +114,7 @@ export async function POST(req: NextRequest) {
     // індекс за created_at — ⚠️ твоя сигнатура: kvZAdd(key, score, member)
     await kvZAdd(INDEX, candidate.created_at, candidate.id);
 
-    // повертаємо зі збагаченими назвами (для UI)
+    // повернемо зі збагаченими назвами (для UI)
     const withNames = await enrichNames(candidate);
     return NextResponse.json(withNames, { status: 200 });
   } catch (e: any) {
