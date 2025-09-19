@@ -1,6 +1,6 @@
 // web/lib/keycrm.ts
 // Єдина обгортка під KeyCRM з дефолтом на LEADS + сумісність зі старими імпортами.
-// Важливо: Шляхи формуються без початкового '/', щоб не «з'їсти» '/v1' у BASE_URL.
+// Шляхи формуємо без початкового '/', щоб не «з'їсти» '/v1' у BASE_URL.
 
 import { kvZRange } from './kv';
 
@@ -99,11 +99,14 @@ export async function kcListCardsLaravel(params: {
   return kcListLeads(params);
 }
 
-/** Пошук card_id по IG username через локальний індекс (створений під час sync). */
-export async function findCardIdByUsername(username?: string | null): Promise<number | null> {
+/** Пошук card_id по IG username через локальний індекс (створений під час sync).
+ *  Підтримуємо старий виклик з 2-м аргументом: (username, opts) — другий ігноруємо. */
+export async function findCardIdByUsername(
+  username?: string | null,
+  _opts?: any // <- сумісність зі старими роутами
+): Promise<number | null> {
   const handle = normHandle(username || '');
   if (!handle) return null;
-  // індекси будуються як kc:index:social:instagram:<handle> і дубль з '@<handle>'
   const keys = [`kc:index:social:instagram:${handle}`, `kc:index:social:instagram:@${handle}`];
   for (const key of keys) {
     const ids: string[] = await kvZRange(key, 0, -1, { rev: true }).catch(() => []);
@@ -122,11 +125,11 @@ export async function kcFindCardIdByAny(params: {
   max_pages?: number;   // скільки сторінок переглянути у fallback
   per_page?: number;
 }): Promise<number | null> {
-  // 1) найшвидший шлях — по індексу username
+  // 1) індекс за username
   const fromIndex = await findCardIdByUsername(params.username);
   if (fromIndex) return fromIndex;
 
-  // 2) опційний перебір по Leads у межах пари (повільніше; використовується лише як fallback)
+  // 2) опційний перебір по Leads у межах пари
   const pipelineId = Number(params.pipeline_id ?? NaN);
   const statusId = Number(params.status_id ?? NaN);
   if (!Number.isFinite(pipelineId) || !Number.isFinite(statusId)) return null;
@@ -145,7 +148,6 @@ export async function kcFindCardIdByAny(params: {
       path: (params.path || 'leads'),
     });
 
-    // клієнтська фільтрація за парою (на випадок, якщо API не фільтрує)
     const filtered = items.filter((raw: any) => {
       const p = raw?.status?.pipeline_id ?? raw?.pipeline_id;
       const s = raw?.status_id ?? raw?.status?.id;
