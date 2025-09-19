@@ -1,18 +1,37 @@
 // web/lib/keycrm.ts
-// Єдина обгортка під KeyCRM з дефолтом на LEADS + сумісність зі старими імпортами.
-// Шляхи формуємо без початкового '/', щоб не «з'їсти» '/v1' у BASE_URL.
+// KeyCRM client з підтримкою різних назв ENV і автододаванням /v1.
 
 import { kvZRange } from './kv';
 
-const BASE_URL = process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
-const TOKEN = process.env.KEYCRM_API_TOKEN || '';
+/* ───────── ENV compatibility ─────────
+   URL:  KEYCRM_BASE_URL  | KEYCRM_API_URL
+   TOKEN: KEYCRM_API_TOKEN | KEYCRM_BEARER
+*/
+const RAW_BASE =
+  process.env.KEYCRM_BASE_URL ||
+  process.env.KEYCRM_API_URL ||
+  'https://openapi.keycrm.app/v1';
 
-// ---------- helpers ----------
+const TOKEN =
+  process.env.KEYCRM_API_TOKEN ||
+  process.env.KEYCRM_BEARER ||
+  '';
+
+/* завжди гарантуємо суфікс /v1 */
+function ensureV1(base: string): string {
+  let url = (base || '').trim().replace(/\/+$/g, '');
+  if (!url) url = 'https://openapi.keycrm.app/v1';
+  if (!/\/v\d+($|\/)/i.test(url)) url = url + '/v1';
+  return url + '/';
+}
+const BASE_URL = ensureV1(RAW_BASE);
+
+// ───────── helpers ─────────
 function pathUrl(p: string) {
   return new URL(p.replace(/^\/+/, ''), BASE_URL).toString();
 }
 function authHeaders() {
-  if (!TOKEN) throw new Error('KEYCRM_API_TOKEN is not set');
+  if (!TOKEN) throw new Error('KEYCRM_API_TOKEN (або KEYCRM_BEARER) is not set');
   return { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 }
 function normHandle(s?: string | null) {
@@ -45,7 +64,7 @@ async function httpPut(path: string, body: any) {
   try { return JSON.parse(text); } catch { return text ? { ok: true, raw: text } : { ok: true }; }
 }
 
-// ---------- public API (нові) ----------
+// ───────── public API ─────────
 export async function kcGetPipelines(): Promise<any[]> {
   const j = await httpGet('pipelines');
   return Array.isArray(j) ? j : (j?.data ?? []);
@@ -91,26 +110,18 @@ export async function kcMoveCard(params: { id: number | string; pipeline_id?: nu
   catch { return await httpPut(`deals/${params.id}`, body); }
 }
 
-// ---------- сумісність зі старими імпортами ----------
-/** Старі роутери очікують "Laravel-сторінки". Даємо синонім до kcListLeads. */
+// ───────── сумісність ─────────
 export async function kcListCardsLaravel(params: {
   page?: number; per_page?: number; pipeline_id?: number; status_id?: number; path?: string;
 }): Promise<{ items: any[]; hasNext: boolean; raw: any }> {
   return kcListLeads(params);
 }
 
-/** Пошук card_id по IG username через локальний індекс (створений під час sync).
- *  Підтримуємо старий виклик з 2-м аргументом: (username, opts) — другий ігноруємо.
- *  ВАЖЛИВО: kvZRange у вашому проєкті приймає лише 1-3 аргументи => без {rev:true}. */
-export async function findCardIdByUsername(
-  username?: string | null,
-  _opts?: any // <- сумісність зі старими роутами
-): Promise<number | null> {
+export async function findCardIdByUsername(username?: string | null): Promise<number | null> {
   const handle = normHandle(username || '');
   if (!handle) return null;
   const keys = [`kc:index:social:instagram:${handle}`, `kc:index:social:instagram:@${handle}`];
   for (const key of keys) {
-    // беремо весь діапазон і реверсимо локально, щоб імітувати { rev: true }
     const ids: string[] = await kvZRange(key, 0, -1).catch(() => []);
     const latestFirst = Array.isArray(ids) ? [...ids].reverse() : [];
     if (latestFirst.length) return Number(latestFirst[0]);
@@ -118,21 +129,18 @@ export async function findCardIdByUsername(
   return null;
 }
 
-/** Універсальний пошук: спочатку username через індекс; далі — (опц.) перебір по Leads. */
 export async function kcFindCardIdByAny(params: {
   username?: string | null;
   fullname?: string | null;
-  pipeline_id?: number | string;   // приймаємо string | number
-  status_id?: number | string;     // приймаємо string | number
+  pipeline_id?: number | string;
+  status_id?: number | string;
   path?: string;
   max_pages?: number;
   per_page?: number;
 }): Promise<number | null> {
-  // 1) індекс за username
   const fromIndex = await findCardIdByUsername(params.username);
   if (fromIndex) return fromIndex;
 
-  // 2) опційний перебір по Leads у межах пари
   const pipelineId = Number(params.pipeline_id ?? NaN);
   const statusId = Number(params.status_id ?? NaN);
   if (!Number.isFinite(pipelineId) || !Number.isFinite(statusId)) return null;
@@ -164,10 +172,8 @@ export async function kcFindCardIdByAny(params: {
         return Number(raw?.id);
       }
     }
-
     if (!hasNext) break;
     page += 1;
   }
-
   return null;
 }
