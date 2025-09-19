@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
         // зберігаємо нормалізовану картку
         await kvSet(CARD_KEY(card.id), card);
 
-        // індекс пари (⚠️ kvZAdd expects (key, score, member))
+        // індекс пари (kvZAdd(key, score, member))
         await kvZAdd(pairIndexKey, now, String(card.id));
 
         // індекс по IG handle (і з @, і без @)
