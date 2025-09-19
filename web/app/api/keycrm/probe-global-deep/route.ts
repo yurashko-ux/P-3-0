@@ -1,7 +1,5 @@
 // web/app/api/keycrm/probe-global-deep/route.ts
-// Глобальний глибинний пошук card_id по contact.social_id (IG username)
-// 1) пагінуємо /pipelines/cards
-// 2) для кожного id робимо GET /pipelines/cards/{id} і звіряємо contact.social_id
+// Глобальний глибинний пошук по contact.social_id (IG username) з throttle + retry(429)
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -9,6 +7,8 @@ export const dynamic = 'force-dynamic';
 
 const norm = (s?: string | null) => String(s ?? '').trim().toLowerCase();
 const normHandle = (s?: string | null) => (s ? s.trim().replace(/^@+/, '').toLowerCase() : '');
+
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 function baseUrl() {
   return process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
@@ -32,27 +32,60 @@ async function ensureAdmin(req: NextRequest) {
   return bearer === expected || passParam === expected;
 }
 
-async function fetchJson(path: string) {
+// fetch з обробкою 429 (retry з експоненційним backoff) + throttle між викликами
+async function fetchJsonWithRetry(
+  path: string,
+  opts: { throttleMs: number; max429Retries: number; initialBackoffMs: number }
+) {
   const url = `${baseUrl()}${path}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-    cache: 'no-store',
-  });
-  const text = await res.text();
-  if (!res.ok) {
+  let attempt = 0;
+  let backoff = opts.initialBackoffMs;
+
+  for (;;) {
+    // throttle між кожним запитом
+    if (opts.throttleMs > 0) await sleep(opts.throttleMs);
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+      cache: 'no-store',
+    });
+
+    // 2xx -> пробуємо розпарсити
+    if (res.ok) {
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`KeyCRM returned non-JSON at ${url} :: ${text.slice(0, 400)}`);
+      }
+    }
+
+    // 429 -> backoff і повтор
+    if (res.status === 429 && attempt < opts.max429Retries) {
+      attempt++;
+      // читаємо Retry-After, якщо є
+      const retryAfter = Number(res.headers.get('retry-after') || '') || 0;
+      const wait = Math.max(backoff, retryAfter * 1000);
+      await sleep(wait);
+      backoff = Math.min(backoff * 2, 15000); // cap 15s
+      continue;
+    }
+
+    // інші помилки
+    const text = await res.text().catch(() => '');
     throw new Error(`KeyCRM ${res.status} ${res.statusText} at ${url} :: ${text.slice(0, 400)}`);
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`KeyCRM returned non-JSON at ${url} :: ${text.slice(0, 400)}`);
   }
 }
 
 // список карток (лайт)
-async function listCards(page: number, per_page: number) {
+async function listCards(page: number, per_page: number, throttleMs: number, max429Retries: number, initialBackoffMs: number) {
   const q = new URLSearchParams({ page: String(page), per_page: String(per_page) });
-  const json = await fetchJson(`/pipelines/cards?${q.toString()}`);
+  const json = await fetchJsonWithRetry(`/pipelines/cards?${q.toString()}`, {
+    throttleMs,
+    max429Retries,
+    initialBackoffMs,
+  });
+
   // Laravel-style або простий масив
   if (Array.isArray(json)) {
     return { ids: json.map((x: any) => x?.id).filter(Boolean), hasNext: json.length === per_page };
@@ -65,9 +98,18 @@ async function listCards(page: number, per_page: number) {
   return { ids, hasNext: !!nextUrl || current < last };
 }
 
-// деталі однієї картки (тут має бути contact.social_id)
-async function getCard(cardId: number | string) {
-  const json = await fetchJson(`/pipelines/cards/${cardId}`);
+// деталі картки (тут шукаємо contact.social_id)
+async function getCard(
+  cardId: number | string,
+  throttleMs: number,
+  max429Retries: number,
+  initialBackoffMs: number
+) {
+  const json = await fetchJsonWithRetry(`/pipelines/cards/${cardId}`, {
+    throttleMs,
+    max429Retries,
+    initialBackoffMs,
+  });
   return json;
 }
 
@@ -79,9 +121,15 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const usernameRaw = url.searchParams.get('username') || url.searchParams.get('handle') || '';
     const username = normHandle(usernameRaw);
+
     const per_page = Math.min(Math.max(Number(url.searchParams.get('per_page') || '50'), 1), 100) || 50;
     const max_pages = Math.min(Math.max(Number(url.searchParams.get('max_pages') || '20'), 1), 200) || 20;
-    const max_card_fetches = Math.min(Math.max(Number(url.searchParams.get('max_card_fetches') || '1000'), 1), 5000) || 1000;
+    const max_card_fetches = Math.min(Math.max(Number(url.searchParams.get('max_card_fetches') || '800'), 1), 3000) || 800;
+
+    // throttle + retry контролюються query:
+    const throttle_ms = Math.min(Math.max(Number(url.searchParams.get('delay_ms') || '250'), 0), 2000) || 250;
+    const retry_429 = Math.min(Math.max(Number(url.searchParams.get('retry_429') || '5'), 0), 10) || 5;
+    const backoff_ms = Math.min(Math.max(Number(url.searchParams.get('backoff_ms') || '500'), 100), 5000) || 500;
 
     if (!username) {
       return NextResponse.json({ ok: false, error: 'username is required' }, { status: 400 });
@@ -105,15 +153,13 @@ export async function GET(req: NextRequest) {
     const samplePairs: Array<{ pipeline_id: number | null; status_id: number | null }> = [];
     const sampleSocial: string[] = [];
 
-    // пагінуємо список
     while (page <= max_pages && scannedCards < max_card_fetches && !found) {
-      const { ids, hasNext } = await listCards(page, per_page);
+      const { ids, hasNext } = await listCards(page, per_page, throttle_ms, retry_429, backoff_ms);
       scannedList += ids.length;
 
-      // для кожного id — тягнемо деталі
       for (const id of ids) {
         if (scannedCards >= max_card_fetches) break;
-        const card = await getCard(id);
+        const card = await getCard(id, throttle_ms, retry_429, backoff_ms);
         scannedCards++;
 
         const pid = card?.status?.pipeline_id ?? card?.pipeline_id ?? null;
@@ -164,11 +210,10 @@ export async function GET(req: NextRequest) {
         max_card_fetches,
         max_pages,
       },
+      rate_limits: { throttle_ms, retry_429, backoff_ms },
       sample_seen_pairs: samplePairs,
       sample_seen_social_ids: sampleSocial,
       used: { username: '@' + username },
-      note:
-        'Цей пробник додатково запитує деталі кожної картки. Якщо не знайшло — або social_id відрізняється від IG, або контакт не з Instagram, або API не повертає social_id для вашого тарифу/джерела.',
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 400 });
