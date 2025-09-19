@@ -1,18 +1,27 @@
 // web/app/api/mc/manychat/route.ts
 // Ingest з ManyChat → live-пошук у KeyCRM (/pipelines/cards) → move card → лічильники у кампанії.
-// Без KV-індексів. Кампанії й кеш назв лишаються в KV (як і домовлялись).
+// Без KV-індексів для пошуку. KV використовується тільки для кампаній і лічильників.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { assertMc } from '@/lib/auth';
 import { kvGet, kvSet, kvZRange } from '@/lib/kv';
 import { Campaign } from '@/lib/types';
 import { kcFindCardIdByAny, kcMoveCard } from '@/lib/keycrm';
 
+export const dynamic = 'force-dynamic';
+
+// локальна перевірка Bearer MC_TOKEN (щоб не залежати від lib/auth)
+async function ensureMc(req: NextRequest) {
+  const header = req.headers.get('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const expected = process.env.MC_TOKEN || '';
+  if (!expected || token !== expected) {
+    throw new Error('Unauthorized: invalid or missing MC_TOKEN');
+  }
+}
+
 // KV keys для кампаній
 const INDEX = 'campaigns:index';
 const KEY = (id: string) => `campaigns:${id}`;
-
-export const dynamic = 'force-dynamic';
 
 type IngestBody = {
   username?: string | null;   // IG username (може бути з @)
@@ -21,8 +30,7 @@ type IngestBody = {
   name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
-  // опціонально дозволимо явний вибір кампанії:
-  campaign_id?: string | null;
+  campaign_id?: string | null; // опційно: форснути конкретну кампанію
 };
 
 const norm = (s?: string | null) => String(s ?? '').trim();
@@ -36,7 +44,6 @@ function matchRule(op: 'contains'|'equals', value: string, hay: string) {
 }
 
 function ensureV2(c: Campaign): Campaign {
-  // гарантуємо наявність об'єкта v2 для простоти логіки UI/бекенду
   if (!c.rules) (c as any).rules = { v1: { op: 'contains', value: '' }, v2: { op: 'contains', value: '' } };
   if (!c.rules.v2) (c as any).rules.v2 = { op: 'contains', value: '' };
   return c;
@@ -51,7 +58,6 @@ async function loadCampaigns(): Promise<Campaign[]> {
     const raw = await kvGet<any>(KEY(id)).catch(() => null);
     if (!raw) continue;
     const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    // normalizeCounters + ensure v2 object
     const c: Campaign = {
       ...obj,
       v1_count: Number(obj?.v1_count ?? 0),
@@ -65,7 +71,7 @@ async function loadCampaigns(): Promise<Campaign[]> {
 
 export async function POST(req: NextRequest) {
   try {
-    await assertMc(req);
+    await ensureMc(req);
 
     const body = (await req.json()) as IngestBody;
     const username = norm(body.username);
@@ -84,11 +90,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'no campaigns configured' }, { status: 400 });
     }
 
-    // Якщо явно задано campaign_id — спробуємо її першою
+    // якщо явно задано campaign_id — пробуємо її першою
     const explicit = body.campaign_id ? campaigns.find(c => c.id === body.campaign_id) : null;
     const ordered = explicit ? [explicit, ...campaigns.filter(c => c.id !== explicit.id)] : campaigns;
 
-    // Знайдемо першу активну кампанію, де спрацьовує V1 (і, якщо задано V2 — теж)
+    // шукаємо першу активну кампанію, де тригериться V1 (і V2 — якщо задано)
     let chosen: Campaign | null = null;
     let v1Hit = false;
     let v2Hit = false;
@@ -100,7 +106,7 @@ export async function POST(req: NextRequest) {
       const v2val = c.rules?.v2?.value || '';
       const v2op = c.rules?.v2?.op || 'contains';
 
-      const hay = text || ''; // матчимо по тексту повідомлення
+      const hay = text || ''; // матчимо по тексту
       const v1ok = v1val ? matchRule(v1op as any, v1val, hay) : false;
       const v2ok = v2val ? matchRule(v2op as any, v2val, hay) : false;
 
@@ -121,7 +127,7 @@ export async function POST(req: NextRequest) {
       }, { status: 200 });
     }
 
-    // Live-пошук card_id прямо у KeyCRM в межах базової пари кампанії
+    // live-пошук card_id напряму в KeyCRM в межах базової пари
     const cardId = await kcFindCardIdByAny({
       username,
       fullname: fullName,
@@ -145,14 +151,14 @@ export async function POST(req: NextRequest) {
       }, { status: 200 });
     }
 
-    // Move у KeyCRM (залишаємо у базовій парі кампанії; якщо потрібно — тут можна робити інші переходи)
+    // move у KeyCRM у базову пару (за потреби тут можна змінити ціль)
     const moveResp = await kcMoveCard({
       id: cardId,
       pipeline_id: chosen.base_pipeline_id,
       status_id: chosen.base_status_id,
     }).catch((e: any) => ({ ok: false, error: e?.message || String(e) }));
 
-    // Оновимо лічильники кампанії (зберігаються у KV в самій кампанії)
+    // інкремент лічильників у самій кампанії
     const updated: Campaign = {
       ...chosen,
       v1_count: (chosen.v1_count ?? 0) + (v1Hit ? 1 : 0),
