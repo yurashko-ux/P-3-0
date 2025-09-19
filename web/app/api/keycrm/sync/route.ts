@@ -36,7 +36,7 @@ type NormalizedCard = {
   updated_at: string; // ISO or "YYYY-MM-DD ..."
 };
 
-// taken from your spec (adapted a bit)
+// normalize KeyCRM card
 function normalizeCard(raw: RawCard): NormalizedCard {
   const pipelineId = raw?.status?.pipeline_id ?? raw?.pipeline_id ?? null;
   const statusId = raw?.status_id ?? raw?.status?.id ?? null;
@@ -79,7 +79,7 @@ async function fetchCardsPage(
   page: number,
   perPage: number
 ): Promise<{ items: RawCard[]; hasNext: boolean }> {
-  // If your API uses a different endpoint, adjust here.
+  // Adjust to your real endpoint if different
   const json = await kcGet('/pipelines/cards', {
     pipeline_id: pipelineId,
     status_id: statusId,
@@ -92,20 +92,26 @@ async function fetchCardsPage(
   return { items: data, hasNext };
 }
 
-async function listActiveBasePairs(): Promise<Array<{ pipeline_id: number; status_id: number }>> {
+// 🔧 NEW: includeInactive flag
+async function listBasePairs(includeInactive: boolean): Promise<Array<{ pipeline_id: number; status_id: number }>> {
   const ids: string[] = await kvZRange('campaigns:index', 0, -1);
   if (!ids?.length) return [];
   const pairs: Array<{ pipeline_id: number; status_id: number }> = [];
   for (const id of ids) {
     const raw = await kvGet<any>(`campaigns:${id}`);
     if (!raw) continue;
-    const c: Campaign = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (!c.active) continue;
-    if (typeof c.base_pipeline_id === 'number' && typeof c.base_status_id === 'number') {
-      pairs.push({ pipeline_id: c.base_pipeline_id, status_id: c.base_status_id });
+    // запис міг бути збережений у "вільній" формі — читаємо м’яко
+    const c: Partial<Campaign> = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const active = Boolean((c as any)?.active);
+    if (!includeInactive && !active) continue;
+
+    const p = Number((c as any)?.base_pipeline_id ?? NaN);
+    const s = Number((c as any)?.base_status_id ?? NaN);
+    if (Number.isFinite(p) && Number.isFinite(s)) {
+      pairs.push({ pipeline_id: p, status_id: s });
     }
   }
-  // unique
+  // unique pairs
   const uniq = new Map<string, { pipeline_id: number; status_id: number }>();
   for (const p of pairs) uniq.set(`${p.pipeline_id}:${p.status_id}`, p);
   return Array.from(uniq.values());
@@ -121,13 +127,13 @@ async function indexCard(card: NormalizedCard) {
     await kvZAdd(pairKey, Date.parse(card.updated_at) || Date.now(), String(card.id));
   }
 
-  // index IG handle (if contact_social_name indicates instagram OR we just index whatever comes in social_id)
+  // index IG handle (by social_id, with and without @)
   const rawHandle = card.contact_social_id ? String(card.contact_social_id) : null;
   const handle = normHandle(rawHandle);
   if (handle) {
-    // with and without @ for safety
-    await kvZAdd(KC_INDEX_IG(handle), Date.parse(card.updated_at) || Date.now(), String(card.id));
-    await kvZAdd(KC_INDEX_IG(`@${handle}`), Date.parse(card.updated_at) || Date.now(), String(card.id));
+    const score = Date.parse(card.updated_at) || Date.now();
+    await kvZAdd(KC_INDEX_IG(handle), score, String(card.id));
+    await kvZAdd(KC_INDEX_IG(`@${handle}`), score, String(card.id));
   }
 }
 
@@ -135,13 +141,10 @@ export async function GET(req: NextRequest) {
   await assertAdmin(req);
   const url = new URL(req.url);
 
-  // controls
   const perPage = Number(url.searchParams.get('per_page') ?? '50') || 50;
   const maxPages = Number(url.searchParams.get('max_pages') ?? '2') || 2;
-  // NOTE: `force=1` clearing is not implemented here (no kvDel/kvZRem in lib yet). We only add.
-  const force = url.searchParams.get('force') === '1';
+  const includeInactive = url.searchParams.get('include_inactive') === '1'; // 🔧 NEW
 
-  // either a single pair override, or all active pairs
   const overridePipeline = Number(url.searchParams.get('pipeline_id') ?? '') || undefined;
   const overrideStatus = Number(url.searchParams.get('status_id') ?? '') || undefined;
 
@@ -149,7 +152,7 @@ export async function GET(req: NextRequest) {
   if (overridePipeline && overrideStatus) {
     pairs = [{ pipeline_id: overridePipeline, status_id: overrideStatus }];
   } else {
-    pairs = await listActiveBasePairs();
+    pairs = await listBasePairs(includeInactive); // 🔧 NEW
   }
 
   const summary: Array<{
@@ -189,7 +192,7 @@ export async function GET(req: NextRequest) {
     pairs: pairs.length,
     per_page: perPage,
     max_pages: maxPages,
-    force,
+    include_inactive: includeInactive, // 🔧 NEW
     summary,
   });
 }
