@@ -83,14 +83,14 @@ export async function GET(req: NextRequest) {
         // зберігаємо нормалізовану картку
         await kvSet(CARD_KEY(card.id), card);
 
-        // індекс пари
-        await kvZAdd(pairIndexKey, { score: now, member: String(card.id) });
+        // індекс пари (⚠️ kvZAdd expects (key, score, member))
+        await kvZAdd(pairIndexKey, now, String(card.id));
 
         // індекс по IG handle (і з @, і без @)
         const handle = normHandle(card.contact_social_id);
         if (handle) {
-          await kvZAdd(SOCIAL_INDEX(handle), { score: now, member: String(card.id) });
-          await kvZAdd(SOCIAL_INDEX('@' + handle), { score: now, member: String(card.id) });
+          await kvZAdd(SOCIAL_INDEX(handle), now, String(card.id));
+          await kvZAdd(SOCIAL_INDEX('@' + handle), now, String(card.id));
         }
 
         indexed++;
