@@ -1,14 +1,16 @@
 // web/app/api/keycrm/probe-global-deep/route.ts
-// Глобальний глибинний пошук по contact.social_id (IG username) з throttle + retry(429)
+// Глобальний глибинний пошук по contact.social_id (IG хендл) з throttle + retry(429).
+// Тепер головний параметр — ?social_id=..., а ?username / ?handle — лише синоніми.
 
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const norm = (s?: string | null) => String(s ?? '').trim().toLowerCase();
-const normHandle = (s?: string | null) => (s ? s.trim().replace(/^@+/, '').toLowerCase() : '');
-
 const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+const norm = (s?: string | null) => String(s ?? '').trim().toLowerCase();
+const normHandle = (s?: string | null) =>
+  (s ? s.trim().replace(/^@+/, '').toLowerCase() : '');
 
 function baseUrl() {
   return process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
@@ -42,7 +44,6 @@ async function fetchJsonWithRetry(
   let backoff = opts.initialBackoffMs;
 
   for (;;) {
-    // throttle між кожним запитом
     if (opts.throttleMs > 0) await sleep(opts.throttleMs);
 
     const res = await fetch(url, {
@@ -50,35 +51,34 @@ async function fetchJsonWithRetry(
       cache: 'no-store',
     });
 
-    // 2xx -> пробуємо розпарсити
     if (res.ok) {
       const text = await res.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        throw new Error(`KeyCRM returned non-JSON at ${url} :: ${text.slice(0, 400)}`);
-      }
+      try { return JSON.parse(text); }
+      catch { throw new Error(`KeyCRM returned non-JSON at ${url} :: ${text.slice(0, 400)}`); }
     }
 
-    // 429 -> backoff і повтор
     if (res.status === 429 && attempt < opts.max429Retries) {
       attempt++;
-      // читаємо Retry-After, якщо є
       const retryAfter = Number(res.headers.get('retry-after') || '') || 0;
       const wait = Math.max(backoff, retryAfter * 1000);
       await sleep(wait);
-      backoff = Math.min(backoff * 2, 15000); // cap 15s
+      backoff = Math.min(backoff * 2, 15000);
       continue;
     }
 
-    // інші помилки
     const text = await res.text().catch(() => '');
     throw new Error(`KeyCRM ${res.status} ${res.statusText} at ${url} :: ${text.slice(0, 400)}`);
   }
 }
 
 // список карток (лайт)
-async function listCards(page: number, per_page: number, throttleMs: number, max429Retries: number, initialBackoffMs: number) {
+async function listCards(
+  page: number,
+  per_page: number,
+  throttleMs: number,
+  max429Retries: number,
+  initialBackoffMs: number
+) {
   const q = new URLSearchParams({ page: String(page), per_page: String(per_page) });
   const json = await fetchJsonWithRetry(`/pipelines/cards?${q.toString()}`, {
     throttleMs,
@@ -86,7 +86,6 @@ async function listCards(page: number, per_page: number, throttleMs: number, max
     initialBackoffMs,
   });
 
-  // Laravel-style або простий масив
   if (Array.isArray(json)) {
     return { ids: json.map((x: any) => x?.id).filter(Boolean), hasNext: json.length === per_page };
   }
@@ -105,12 +104,11 @@ async function getCard(
   max429Retries: number,
   initialBackoffMs: number
 ) {
-  const json = await fetchJsonWithRetry(`/pipelines/cards/${cardId}`, {
+  return await fetchJsonWithRetry(`/pipelines/cards/${cardId}`, {
     throttleMs,
     max429Retries,
     initialBackoffMs,
   });
-  return json;
 }
 
 export async function GET(req: NextRequest) {
@@ -118,26 +116,32 @@ export async function GET(req: NextRequest) {
     if (!(await ensureAdmin(req))) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
+
     const url = new URL(req.url);
-    const usernameRaw = url.searchParams.get('username') || url.searchParams.get('handle') || '';
-    const username = normHandle(usernameRaw);
+    // головний параметр — social_id; username/handle лишаємо як синоніми
+    const socialIdRaw =
+      url.searchParams.get('social_id') ||
+      url.searchParams.get('username') ||
+      url.searchParams.get('handle') ||
+      '';
+    const socialId = normHandle(socialIdRaw);
 
     const per_page = Math.min(Math.max(Number(url.searchParams.get('per_page') || '50'), 1), 100) || 50;
     const max_pages = Math.min(Math.max(Number(url.searchParams.get('max_pages') || '20'), 1), 200) || 20;
     const max_card_fetches = Math.min(Math.max(Number(url.searchParams.get('max_card_fetches') || '800'), 1), 3000) || 800;
 
-    // throttle + retry контролюються query:
-    const throttle_ms = Math.min(Math.max(Number(url.searchParams.get('delay_ms') || '250'), 0), 2000) || 250;
-    const retry_429 = Math.min(Math.max(Number(url.searchParams.get('retry_429') || '5'), 0), 10) || 5;
-    const backoff_ms = Math.min(Math.max(Number(url.searchParams.get('backoff_ms') || '500'), 100), 5000) || 500;
+    const throttle_ms = Math.min(Math.max(Number(url.searchParams.get('delay_ms') || '300'), 0), 2000) || 300;
+    const retry_429 = Math.min(Math.max(Number(url.searchParams.get('retry_429') || '6'), 0), 10) || 6;
+    const backoff_ms = Math.min(Math.max(Number(url.searchParams.get('backoff_ms') || '700'), 100), 5000) || 700;
 
-    if (!username) {
-      return NextResponse.json({ ok: false, error: 'username is required' }, { status: 400 });
+    if (!socialId) {
+      return NextResponse.json({ ok: false, error: 'social_id is required' }, { status: 400 });
     }
 
     let page = 1;
     let scannedList = 0;
     let scannedCards = 0;
+
     let found:
       | null
       | {
@@ -159,6 +163,7 @@ export async function GET(req: NextRequest) {
 
       for (const id of ids) {
         if (scannedCards >= max_card_fetches) break;
+
         const card = await getCard(id, throttle_ms, retry_429, backoff_ms);
         scannedCards++;
 
@@ -175,12 +180,13 @@ export async function GET(req: NextRequest) {
           card?.contact?.social_id ??
           card?.contact?.client?.social_id ??
           null;
+
         const social = norm(socialRaw);
         if (socialRaw && sampleSocial.length < 12 && !sampleSocial.includes(String(socialRaw))) {
           sampleSocial.push(String(socialRaw));
         }
 
-        if (social === username || social === '@' + username) {
+        if (social === socialId || social === '@' + socialId) {
           found = {
             id: Number(card?.id),
             title: card?.title ?? '',
@@ -213,7 +219,7 @@ export async function GET(req: NextRequest) {
       rate_limits: { throttle_ms, retry_429, backoff_ms },
       sample_seen_pairs: samplePairs,
       sample_seen_social_ids: sampleSocial,
-      used: { username: '@' + username },
+      used: { social_id: '@' + socialId }, // для ясності у відповіді
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 400 });
