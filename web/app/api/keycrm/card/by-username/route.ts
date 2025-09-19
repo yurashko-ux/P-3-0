@@ -1,56 +1,50 @@
 // web/app/api/keycrm/card/by-username/route.ts
-import { NextResponse } from 'next/server';
+// Повертає card_id з локальних індексів за IG username (із @ або без).
+// Авторизація м'яка: Bearer ADMIN_PASS або ?pass=... (для ручних перевірок)
+
+import { NextRequest, NextResponse } from 'next/server';
 import { findCardIdByUsername } from '@/lib/keycrm';
+import { assertAdmin } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: Request) {
+async function ensureAdmin(req: NextRequest) {
+  const url = new URL(req.url);
+  const passParam = url.searchParams.get('pass');
+  const header = req.headers.get('authorization') || '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const expected = process.env.ADMIN_PASS || '';
+  if ((expected && bearer === expected) || (expected && passParam === expected)) return true;
+  try { await assertAdmin(req); return true; } catch { return false; }
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const u = new URL(req.url);
-
-    const username = (u.searchParams.get('username') || '').trim();
-    const pipelineParam = u.searchParams.get('pipeline_id') || '';
-    const statusParam = u.searchParams.get('status_id') || '';
-    // backward-compat: ?limit= — використовуємо як per_page
-    const limitParam =
-      u.searchParams.get('limit') ||
-      u.searchParams.get('per_page') ||
-      '';
-
-    if (!username) {
+    if (!(await ensureAdmin(req))) {
       return NextResponse.json(
-        { ok: false, error: 'username is required' },
-        { status: 400 }
+        { ok: false, error: 'Unauthorized. Use Authorization: Bearer <ADMIN_PASS> or ?pass=<ADMIN_PASS>' },
+        { status: 401 }
       );
     }
 
-    const opts: {
-      pipeline_id?: number | string;
-      status_id?: number | string;
-      per_page?: number;
-      max_pages?: number;
-    } = {};
+    const url = new URL(req.url);
+    const username = url.searchParams.get('username') || url.searchParams.get('handle') || '';
 
-    if (pipelineParam) {
-      opts.pipeline_id = /^\d+$/.test(pipelineParam)
-        ? Number(pipelineParam)
-        : pipelineParam;
-    }
-    if (statusParam) {
-      opts.status_id = /^\d+$/.test(statusParam)
-        ? Number(statusParam)
-        : statusParam;
-    }
-    if (/^\d+$/.test(limitParam)) {
-      opts.per_page = Number(limitParam);
+    if (!username.trim()) {
+      return NextResponse.json({ ok: false, error: 'username is required' }, { status: 400 });
     }
 
-    const found = await findCardIdByUsername(username, opts);
-    return NextResponse.json(found, { status: 200 });
+    // ✅ Нова сигнатура: лише 1 аргумент
+    const found = await findCardIdByUsername(username);
+
+    return NextResponse.json(
+      { ok: true, found_card_id: found ?? null, used: { username } },
+      { status: 200 }
+    );
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || 'failed' },
-      { status: 500 }
+      { ok: false, error: e?.message || String(e) },
+      { status: 400 }
     );
   }
 }
