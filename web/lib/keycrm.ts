@@ -1,189 +1,116 @@
 // web/lib/keycrm.ts
-// Lightweight KeyCRM adapter used by routes.
-// Exports: kcGetPipelines, kcGetStatusesByPipeline, kcListCardsLaravel, kcMoveCard,
-//          findCardIdByUsername, kcFindCardIdByAny
+// Уніфікована обгортка над KeyCRM з дефолтом на LEADS та м'якими фолбеками.
+// Важливо: шляхи формуємо без початкового '/', щоб не з'їсти '/v1' у BASE_URL.
 
-const BASE = process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1";
-const TOKEN = process.env.KEYCRM_API_TOKEN || "";
+const BASE_URL = process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
+const TOKEN = process.env.KEYCRM_API_TOKEN || '';
 
-type Json = any;
+function apiPath(p: string) {
+  return new URL(p.replace(/^\/+/, ''), BASE_URL).toString();
+}
 
-async function kcFetch(path: string, init: RequestInit = {}) {
-  const url = `${BASE.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
-  const headers: Record<string, string> = {
-    Accept: "application/json",
+function authHeaders() {
+  if (!TOKEN) throw new Error('KEYCRM_API_TOKEN is not set');
+  return {
     Authorization: `Bearer ${TOKEN}`,
-    ...(init.body ? { "Content-Type": "application/json" } : {}),
-    ...(init.headers as Record<string, string>),
+    'Content-Type': 'application/json',
   };
+}
 
-  const res = await fetch(url, { ...init, headers, cache: "no-store" });
-  let data: Json = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore non-JSON
+async function httpGet(path: string, qs?: Record<string, any>) {
+  const url = new URL(path.replace(/^\/+/, ''), BASE_URL);
+  if (qs) {
+    for (const [k, v] of Object.entries(qs)) {
+      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+    }
   }
-  return { ok: res.ok, status: res.status, data };
+  const res = await fetch(url.toString(), { headers: authHeaders(), cache: 'no-store' });
+  const text = await res.text().catch(() => '');
+  if (!res.ok) throw new Error(`KeyCRM GET ${res.status} ${res.statusText} at ${url} :: ${text.slice(0, 400)}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`KeyCRM GET non-JSON at ${url} :: ${text.slice(0, 400)}`);
+  }
 }
 
-/** GET /pipelines — список воронок */
+async function httpPut(path: string, body: any) {
+  const url = apiPath(path);
+  const res = await fetch(url, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+  const text = await res.text().catch(() => '');
+  if (!res.ok) throw new Error(`KeyCRM PUT ${res.status} ${res.statusText} at ${url} :: ${text.slice(0, 400)}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text ? { ok: true, raw: text } : { ok: true };
+  }
+}
+
+/* ===================== Public API ===================== */
+
+/** Пайплайни (unified) */
 export async function kcGetPipelines(): Promise<any[]> {
-  const r = await kcFetch("/pipelines", { method: "GET" });
-  if (!r.ok) throw new Error(`KeyCRM pipelines ${r.status}`);
-  return Array.isArray(r.data) ? r.data : r.data?.data ?? [];
+  // Основний: pipelines
+  const j = await httpGet('pipelines');
+  return Array.isArray(j) ? j : j?.data ?? [];
 }
 
-/** GET /pipelines/{pipelineId}/statuses — статуси конкретної воронки */
-export async function kcGetStatusesByPipeline(pipelineId: number | string): Promise<any[]> {
-  const id = String(pipelineId).trim();
-  const r = await kcFetch(`/pipelines/${id}/statuses`, { method: "GET" });
-  if (!r.ok) throw new Error(`KeyCRM statuses ${r.status}`);
-  return Array.isArray(r.data) ? r.data : r.data?.data ?? [];
+/** Статуси в пайплайні (уніфіковано) */
+export async function kcGetStatuses(pipelineId: number): Promise<any[]> {
+  // Пробуємо canonical шлях
+  try {
+    const j = await httpGet(`pipelines/${pipelineId}/statuses`);
+    return Array.isArray(j) ? j : j?.data ?? [];
+  } catch {
+    // Фолбек на можливий варіант зі списком усіх статусів + фільтр
+    const j2 = await httpGet('statuses', { pipeline_id: pipelineId });
+    const arr = Array.isArray(j2) ? j2 : j2?.data ?? [];
+    return arr.filter((s: any) => Number(s?.pipeline_id ?? s?.pipeline?.id) === Number(pipelineId));
+  }
 }
 
-/**
- * GET /pipelines/cards?page=&per_page=&pipeline_id=&status_id=
- * Повертає або { data:[], last_page } або { data:[], meta:{ last_page } }.
- */
-export async function kcListCardsLaravel(params: {
-  pipeline_id?: number | string;
-  status_id?: number | string;
+/** Пагінований знімок лід-карток; path за замовчуванням — 'leads'. */
+export async function kcListLeads(params: {
   page?: number;
   per_page?: number;
-}): Promise<{ data: any[]; last_page?: number; meta?: { last_page?: number } }> {
-  const u = new URL(`${BASE.replace(/\/$/, "")}/pipelines/cards`);
-  if (params.pipeline_id != null) u.searchParams.set("pipeline_id", String(params.pipeline_id));
-  if (params.status_id != null) u.searchParams.set("status_id", String(params.status_id));
-  u.searchParams.set("page", String(params.page ?? 1));
-  u.searchParams.set("per_page", String(params.per_page ?? 50));
-
-  const r = await kcFetch(u.pathname + "?" + u.searchParams.toString(), { method: "GET" });
-  if (!r.ok) throw new Error(`KeyCRM cards ${r.status}`);
-
-  const data = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
-  const last_page = r.data?.last_page ?? r.data?.meta?.last_page;
-  return { data, last_page, meta: r.data?.meta };
-}
-
-/** PUT /pipelines/cards/{cardId} — рух картки між статусами/воронками */
-export async function kcMoveCard(
-  cardId: number | string,
-  to_pipeline_id?: number,
-  to_status_id?: number
-): Promise<{ ok: boolean; status: number; data: any; error?: any }> {
-  const body: Record<string, any> = {};
-  if (to_pipeline_id != null) body.pipeline_id = Number(to_pipeline_id);
-  if (to_status_id != null) body.status_id = Number(to_status_id);
-
-  const r = await kcFetch(`/pipelines/cards/${cardId}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
+  pipeline_id?: number;
+  status_id?: number;
+  path?: string; // можна передати інший ресурс без '/' (наприклад, 'leads', 'deals')
+}): Promise<{ items: any[]; hasNext: boolean; raw: any }> {
+  const path = (params.path || 'leads').replace(/^\/+/, '');
+  const j = await httpGet(path, {
+    page: params.page ?? 1,
+    per_page: params.per_page ?? 50,
+    pipeline_id: params.pipeline_id,
+    status_id: params.status_id,
   });
-  return r;
+  const data = Array.isArray(j) ? j : j?.data ?? [];
+  const hasNext = Boolean((Array.isArray(j) ? null : j?.next_page_url) ?? false);
+  return { items: data, hasNext, raw: j };
 }
 
-/* -------------------------- helpers for search -------------------------- */
+/** Зміна статусу/пайплайна для картки — спочатку пробуємо LEADS, далі фолбек на DEALS */
+export async function kcMoveCard(params: {
+  id: number | string;
+  pipeline_id?: number;
+  status_id?: number;
+  // інколи API вимагає обгортку; робимо мінімально необхідне тіло
+}): Promise<any> {
+  const body: Record<string, any> = {};
+  if (params.pipeline_id != null) body.pipeline_id = Number(params.pipeline_id);
+  if (params.status_id != null) body.status_id = Number(params.status_id);
 
-function normHandle(v?: string) {
-  return (v ?? "").trim().replace(/^@/, "").toLowerCase();
+  // 1) Leads
+  try {
+    return await httpPut(`leads/${params.id}`, body);
+  } catch (e) {
+    // 2) Fallback → Deals (на випадок старих інсталяцій/прав доступу)
+    return await httpPut(`deals/${params.id}`, body);
+  }
 }
 
-/**
- * Пошук card_id за IG username в межах (pipeline_id,status_id).
- * Перебирає сторінки KeyCRM (дешево, без KV).
- */
-export async function findCardIdByUsername(username: string, opts: {
-  pipeline_id?: number | string;
-  status_id?: number | string;
-  per_page?: number;
-  max_pages?: number;
-} = {}): Promise<number | null> {
-  const handle = normHandle(username);
-  if (!handle) return null;
-
-  const perPage = opts.per_page ?? 50;
-  const maxPages = opts.max_pages ?? 5;
-
-  let page = 1;
-  let last = Infinity;
-
-  while (page <= maxPages && page <= last) {
-    const resp = await kcListCardsLaravel({
-      pipeline_id: opts.pipeline_id,
-      status_id: opts.status_id,
-      page,
-      per_page: perPage,
-    });
-    last = resp.last_page ?? resp.meta?.last_page ?? page;
-
-    for (const raw of resp.data ?? []) {
-      const socialName = String(raw?.contact?.social_name ?? "").toLowerCase();
-      const socialId = normHandle(raw?.contact?.social_id);
-      if (socialName === "instagram" && socialId && socialId === handle) {
-        const idNum = Number(raw?.id);
-        return Number.isFinite(idNum) ? idNum : null;
-      }
-    }
-    if (page >= last) break;
-    page++;
-  }
-  return null;
-}
-
-/**
- * Комбінований пошук: спочатку за username, далі — по full name/title.
- * Повертає перший знайдений card_id або null.
- */
-export async function kcFindCardIdByAny(params: {
-  username?: string;
-  fullname?: string;
-  pipeline_id?: number | string;
-  status_id?: number | string;
-  per_page?: number;
-  max_pages?: number;
-}): Promise<number | null> {
-  // 1) username
-  if (params.username) {
-    const byUser = await findCardIdByUsername(params.username, params);
-    if (byUser) return byUser;
-  }
-
-  // 2) fallback: full name у title або contact.full_name
-  const fullname = (params.fullname ?? "").trim();
-  if (!fullname) return null;
-
-  const needle = fullname.toLowerCase();
-  const perPage = params.per_page ?? 50;
-  const maxPages = params.max_pages ?? 5;
-
-  let page = 1;
-  let last = Infinity;
-
-  while (page <= maxPages && page <= last) {
-    const resp = await kcListCardsLaravel({
-      pipeline_id: params.pipeline_id,
-      status_id: params.status_id,
-      page,
-      per_page: perPage,
-    });
-    last = resp.last_page ?? resp.meta?.last_page ?? page;
-
-    for (const raw of resp.data ?? []) {
-      const title = String(raw?.title ?? "").toLowerCase();
-      const full = String(
-        raw?.contact?.full_name ??
-        raw?.contact?.client?.full_name ??
-        ""
-      ).toLowerCase();
-
-      if ((title && title.includes(needle)) || (full && full.includes(needle))) {
-        const idNum = Number(raw?.id);
-        return Number.isFinite(idNum) ? idNum : null;
-      }
-    }
-    if (page >= last) break;
-    page++;
-  }
-  return null;
+/** Допоміжний пошук — може знадобитись у локальних інструментах */
+export async function kcGetLead(id: number | string): Promise<any> {
+  const j = await httpGet(`leads/${id}`);
+  return j;
 }
