@@ -100,7 +100,8 @@ export async function kcListCardsLaravel(params: {
 }
 
 /** Пошук card_id по IG username через локальний індекс (створений під час sync).
- *  Підтримуємо старий виклик з 2-м аргументом: (username, opts) — другий ігноруємо. */
+ *  Підтримуємо старий виклик з 2-м аргументом: (username, opts) — другий ігноруємо.
+ *  ВАЖЛИВО: kvZRange у вашому проєкті приймає лише 1-3 аргументи => без {rev:true}. */
 export async function findCardIdByUsername(
   username?: string | null,
   _opts?: any // <- сумісність зі старими роутами
@@ -109,8 +110,10 @@ export async function findCardIdByUsername(
   if (!handle) return null;
   const keys = [`kc:index:social:instagram:${handle}`, `kc:index:social:instagram:@${handle}`];
   for (const key of keys) {
-    const ids: string[] = await kvZRange(key, 0, -1, { rev: true }).catch(() => []);
-    if (ids && ids.length) return Number(ids[0]);
+    // беремо весь діапазон і реверсимо локально, щоб імітувати { rev: true }
+    const ids: string[] = await kvZRange(key, 0, -1).catch(() => []);
+    const latestFirst = Array.isArray(ids) ? [...ids].reverse() : [];
+    if (latestFirst.length) return Number(latestFirst[0]);
   }
   return null;
 }
@@ -119,8 +122,8 @@ export async function findCardIdByUsername(
 export async function kcFindCardIdByAny(params: {
   username?: string | null;
   fullname?: string | null;
-  pipeline_id?: number | string;   // <-- приймаємо string | number
-  status_id?: number | string;     // <-- приймаємо string | number
+  pipeline_id?: number | string;   // приймаємо string | number
+  status_id?: number | string;     // приймаємо string | number
   path?: string;
   max_pages?: number;
   per_page?: number;
