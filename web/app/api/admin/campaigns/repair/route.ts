@@ -1,59 +1,83 @@
 // web/app/api/admin/campaigns/repair/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { assertAdmin } from '@/lib/auth';
-import { kvMGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
+import { kvGet, kvSet, kvZRange } from '@/lib/kv';
 import { Campaign, CampaignInput, normalizeCampaign } from '@/lib/types';
-
-export const dynamic = 'force-dynamic';
 
 const INDEX = 'campaigns:index';
 const KEY = (id: string) => `campaigns:${id}`;
 
+/**
+ * GET -> легкий статус: що є в індексі та скільки реально існує значень.
+ */
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  const url = new URL(req.url);
-  const seed = url.searchParams.get('seed'); // seed=1 — створити демо-кампанію
-
-  let seeded: Campaign | null = null;
-
-  if (seed) {
-    // мінімальна валідна демо-кампанія, щоб UI гарантовано щось побачив
-    const demo: CampaignInput = {
-      name: 'DEMO: Пошук по title (V1)',
-      base_pipeline_id: 1,        // підстав свої значення за потреби
-      base_status_id: 38,         // підстав свої значення за потреби
-      rules: {
-        v1: { op: 'contains', value: 'Viktoria' }, // будь-яке не порожнє значення
-        // v2 опціональний, бекенд сам додасть { value: '' }
-      },
-      active: true,
-    };
-
-    const c = normalizeCampaign(demo);
-    await kvSet(KEY(c.id), c);
-    await kvZAdd(INDEX, { score: c.created_at, member: c.id });
-    seeded = c;
-  }
-
-  // читаємо індекс і збираємо всі, хто існує
-  const ids: string[] = await kvZRange(INDEX, 0, -1, { rev: true });
+  const ids: string[] = await kvZRange(INDEX, 0, -1, { rev: true }).catch(() => []);
   const keys = ids.map(KEY);
-  const raw = keys.length ? await kvMGet(keys) : [];
 
-  const items: Campaign[] = [];
-  for (const r of raw) {
-    if (!r) continue;
-    const obj = typeof r === 'string' ? JSON.parse(r) : r;
-    items.push(normalizeCampaign(obj));
+  let exists = 0;
+  const sample: Array<{ id: string; exists: boolean }> = [];
+
+  for (let i = 0; i < Math.min(keys.length, 10); i++) {
+    const id = ids[i];
+    const raw = await kvGet(KEY(id)).catch(() => null);
+    const ok = !!raw;
+    if (ok) exists++;
+    sample.push({ id, exists: ok });
   }
 
   return NextResponse.json({
     ok: true,
-    seeded: !!seed,
-    seeded_id: seeded?.id ?? null,
-    count: items.length,
-    ids,
-    items,
+    index_count: ids.length,
+    first_10: sample,
+    note: 'POST на цей ендпойнт спробує нормалізувати всі наявні кампанії (додасть дефолтні поля тощо).',
+  });
+}
+
+/**
+ * POST -> «ремонт»: проходить по всіх campaign keys, підтягує дефолти (rules.v2, counters),
+ * та перезаписує значення у KV у нормалізованому вигляді.
+ */
+export async function POST(req: NextRequest) {
+  await assertAdmin(req);
+
+  const ids: string[] = await kvZRange(INDEX, 0, -1, { rev: true }).catch(() => []);
+  let normalized = 0;
+  let skipped = 0;
+
+  for (const id of ids) {
+    const key = KEY(id);
+    const raw = await kvGet<any>(key).catch(() => null);
+    if (!raw) {
+      skipped++;
+      continue;
+    }
+
+    // raw може бути рядком або об’єктом
+    const asObj: CampaignInput = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+    // Гарантуємо дефолти (rules.v2, counters, created_at, active тощо)
+    let fixed: Campaign;
+    try {
+      fixed = normalizeCampaign(asObj);
+    } catch (e: any) {
+      skipped++;
+      continue;
+    }
+
+    // Перезаписуємо назад у KV
+    await kvSet(key, fixed).catch(() => null);
+    normalized++;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    index_count: ids.length,
+    normalized,
+    skipped,
+    hint:
+      'Якщо після цього список порожній — у індексі є ID без самих об’єктів у KV. ' +
+      'У такому випадку створіть першу кампанію вручну через UI, або скажіть — зроблю окремий cleanup-рут.',
   });
 }
