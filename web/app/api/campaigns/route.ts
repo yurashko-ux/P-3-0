@@ -9,15 +9,14 @@ const KEY = (id: string) => `campaigns:${id}`;
 
 export const dynamic = 'force-dynamic';
 
-// GET: віддаємо всі кампанії, відсортовані за created_at спадно.
-// ЖОДНИХ ZSET — лише простий масив id у KV.
+// GET /api/campaigns — повертає всі кампанії, відсортовані за created_at (DESC).
+// Використовуємо тільки kvGet/kvSet, без ZSET.
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
   const ids: string[] = (await kvGet<string[]>(IDS_KEY)) || [];
   if (!ids.length) return NextResponse.json([], { status: 200 });
 
-  // тягнемо по одному (kvMGet не використовуємо, щоб уникнути несумісності)
   const items: Campaign[] = [];
   for (const id of ids) {
     const raw = await kvGet<any>(KEY(id)).catch(() => null);
@@ -30,8 +29,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(items, { status: 200 });
 }
 
-// POST: створення/оновлення кампанії.
-// Зберігаємо JSON у campaigns:{id} та підтримуємо масив id у campaigns:ids (без дублів).
+// POST /api/campaigns — створює/оновлює кампанію.
+// Зберігаємо повний JSON у campaigns:{id} та підтримуємо масив ID у campaigns:ids (без дублів).
 export async function POST(req: NextRequest) {
   try {
     await assertAdmin(req);
@@ -39,20 +38,23 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as CampaignInput;
     const c = normalizeCampaign(body);
 
-    // 1) сама кампанія
+    // 1) зберігаємо сам об’єкт
     await kvSet(KEY(c.id), c);
 
-    // 2) список id (без дублікатів)
+    // 2) оновлюємо список ID (простий масив)
     const ids: string[] = (await kvGet<string[]>(IDS_KEY)) || [];
     if (!ids.includes(c.id)) {
       ids.push(c.id);
       await kvSet(IDS_KEY, ids);
     }
 
-    // 3) повертаємо те, що реально зберегли (без будь-яких зовнішніх збагачень)
+    // 3) повертаємо, що зберегли
     return NextResponse.json(c, { status: 200 });
   } catch (e: any) {
-    const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
+    const msg =
+      e?.issues?.[0]?.message ||
+      e?.message ||
+      'Invalid payload';
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
