@@ -1,133 +1,106 @@
 // web/lib/kv.ts
-// Мінімальна in-memory KV для Vercel (dev/demo).
-// Підтримує kvGet, kvSet, kvMGet, kvZAdd, kvZRange у потрібних сигнатурах.
+// Легка in-memory KV для локальної/верцел збірки без зовнішніх залежностей.
+// Підтримує: kvGet, kvSet (TTL), kvMGet, kvZAdd, kvZRange({ rev }).
 
-type Json = any;
+type KVValue = any;
 
-type KVSetOptions = {
-  ex?: number; // seconds (ігноруємо у простій in-memory реалізації)
-};
+type TTL = { ex?: number }; // seconds
+type ZAddItem = { score: number; member: string };
+type ZRangeOpts = { rev?: boolean };
 
-type ZAddEntry = { score: number; member: string };
-type ZRangeOptions = { rev?: boolean };
-
-type KVState = {
-  strings: Map<string, string>;          // key -> JSON string
-  zsets: Map<string, ZAddEntry[]>;       // key -> sorted array by score ASC
-};
+type ZItem = { score: number; member: string };
 
 const g = globalThis as any;
+
 if (!g.__P30_KV__) {
   g.__P30_KV__ = {
-    strings: new Map<string, string>(),
-    zsets: new Map<string, ZAddEntry[]>(),
-  } as KVState;
-}
-const KV: KVState = g.__P30_KV__;
-
-/** ---------- String API ---------- */
-
-export async function kvSet(key: string, value: Json, _opts?: KVSetOptions): Promise<"OK"> {
-  KV.strings.set(key, JSON.stringify(value));
-  return "OK";
+    data: new Map<string, { v: KVValue; exp?: number }>(),
+    zsets: new Map<string, ZItem[]>(),
+  };
 }
 
-export async function kvGet<T = Json>(key: string): Promise<T | null> {
-  const raw = KV.strings.get(key);
-  if (raw == null) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    // fallback — зберігалось не як JSON
-    return raw as unknown as T;
+const store: {
+  data: Map<string, { v: KVValue; exp?: number }>;
+  zsets: Map<string, ZItem[]>;
+} = g.__P30_KV__;
+
+// -- helpers
+function now() {
+  return Date.now();
+}
+
+function cleanupKey(key: string) {
+  const rec = store.data.get(key);
+  if (!rec) return;
+  if (rec.exp && rec.exp <= now()) {
+    store.data.delete(key);
   }
 }
 
-export async function kvMGet(keys: string[]): Promise<(Json | null)[]> {
-  const out: (Json | null)[] = [];
-  for (const k of keys) {
-    const raw = KV.strings.get(k);
-    if (raw == null) {
-      out.push(null);
-    } else {
-      try {
-        out.push(JSON.parse(raw));
-      } catch {
-        out.push(raw);
-      }
-    }
-  }
+function putZ(key: string, item: ZItem) {
+  const arr = store.zsets.get(key) ?? [];
+  // заміна по member (унікальність)
+  const idx = arr.findIndex((x) => x.member === item.member);
+  if (idx >= 0) arr.splice(idx, 1);
+  // вставка відсортовано за score зростаюче
+  // (проста вставка + сортування — для малих обсягів ок)
+  arr.push(item);
+  arr.sort((a, b) => a.score - b.score);
+  store.zsets.set(key, arr);
+}
+
+// -- API
+
+export async function kvGet<T = KVValue>(key: string): Promise<T | null> {
+  cleanupKey(key);
+  const rec = store.data.get(key);
+  return (rec ? (rec.v as T) : null);
+}
+
+export async function kvSet(key: string, value: KVValue, ttl?: TTL): Promise<'OK'> {
+  const exMs = ttl?.ex ? now() + ttl.ex * 1000 : undefined;
+  store.data.set(key, { v: value, exp: exMs });
+  return 'OK';
+}
+
+// багаточитання
+export async function kvMGet(keys: string[]): Promise<(KVValue | null)[]> {
+  const out: (KVValue | null)[] = [];
+  for (const k of keys) out.push(await kvGet(k));
   return out;
 }
 
-/** ---------- ZSET helpers ---------- */
-
-function getZSet(key: string): ZAddEntry[] {
-  let arr = KV.zsets.get(key);
-  if (!arr) {
-    arr = [];
-    KV.zsets.set(key, arr);
-  }
-  return arr;
+// ZSET add: один елемент
+export async function kvZAdd(key: string, item: ZAddItem): Promise<number> {
+  putZ(key, { score: item.score, member: String(item.member) });
+  return 1;
 }
 
-function sortAsc(arr: ZAddEntry[]) {
-  arr.sort((a, b) => a.score - b.score || a.member.localeCompare(b.member));
-}
-
-/** kvZAdd(key, { score, member }) або kvZAdd(key, [{ score, member }, ...]) */
-export async function kvZAdd(key: string, entry: ZAddEntry | ZAddEntry[]): Promise<number> {
-  const arr = getZSet(key);
-  const list = Array.isArray(entry) ? entry : [entry];
-
-  let addedOrUpdated = 0;
-  for (const e of list) {
-    const idx = arr.findIndex((x) => x.member === String(e.member));
-    if (idx >= 0) {
-      // оновлюємо score
-      if (arr[idx].score !== e.score) {
-        arr[idx].score = e.score;
-        addedOrUpdated++;
-      }
-    } else {
-      arr.push({ score: e.score, member: String(e.member) });
-      addedOrUpdated++;
-    }
-  }
-  sortAsc(arr);
-  return addedOrUpdated;
-}
-
-/**
- * kvZRange(key, start, stop, { rev })
- * Повертає масив members (string) у діапазоні індексів [start..stop] включно.
- * Індекси можуть бути від'ємними (як у Redis), -1 означає останній елемент.
- */
+// ZSET range: за індексами [start, stop] (як у Redis), з опцією rev
 export async function kvZRange(
   key: string,
   start: number,
   stop: number,
-  opts?: ZRangeOptions
+  opts?: ZRangeOpts
 ): Promise<string[]> {
-  const arr = getZSet(key).slice(); // копія
-  const rev = !!opts?.rev;
-  if (rev) arr.reverse();
-
-  const n = arr.length;
-  const norm = (i: number) => (i < 0 ? n + i : i);
-  let s = norm(start);
-  let e = norm(stop);
-
-  // межі
+  const arr = store.zsets.get(key) ?? [];
+  const data = opts?.rev ? [...arr].reverse() : arr;
+  // нормалізуємо негативні індекси
+  const n = data.length;
+  let s = start < 0 ? n + start : start;
+  let e = stop < 0 ? n + stop : stop;
   s = Math.max(0, s);
   e = Math.min(n - 1, e);
-  if (n === 0 || s > e) return [];
-
-  return arr.slice(s, e + 1).map((x) => x.member);
+  if (e < s || n === 0) return [];
+  return data.slice(s, e + 1).map((x) => x.member);
 }
 
-/** Допоміжне: очистити все (не в проді) */
-export async function kvFlushAll(): Promise<void> {
-  KV.strings.clear();
-  KV.zsets.clear();
+// (необов'язково) утиліти, якщо знадобляться пізніше
+export async function kvDel(key: string): Promise<number> {
+  const had = store.data.delete(key);
+  return had ? 1 : 0;
+}
+
+export async function kvZCard(key: string): Promise<number> {
+  return (store.zsets.get(key) ?? []).length;
 }
