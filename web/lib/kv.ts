@@ -1,5 +1,5 @@
 // web/lib/kv.ts
-// Мінімальний in-memory KV для Vercel (розробка/демо). Не персистентний між холодними стартами.
+// Найпростіший in-memory KV для демо на Vercel. Не персистується між холодними стартами.
 
 type ZEntry = { score: number; member: string };
 
@@ -21,7 +21,11 @@ export async function kvGet<T = any>(key: string): Promise<T | null> {
   return s.kv.has(key) ? (s.kv.get(key) as T) : null;
 }
 
-export async function kvSet(key: string, value: any, _opts?: { ex?: number }): Promise<"OK"> {
+export async function kvSet(
+  key: string,
+  value: any,
+  _opts?: { ex?: number } // TTL опційно, тут іґноруємо
+): Promise<"OK"> {
   const s = store();
   s.kv.set(key, value);
   return "OK";
@@ -32,14 +36,17 @@ export async function kvMGet(keys: string[]): Promise<any[]> {
   return keys.map((k) => (s.kv.has(k) ? s.kv.get(k) : null));
 }
 
-// API, сумісне з нашим кодом: kvZAdd(key, { score, member })
-export async function kvZAdd(key: string, entry: { score: number; member: string }): Promise<number> {
+// Правильна сигнатура для нашого коду: kvZAdd(key, { score, member })
+export async function kvZAdd(
+  key: string,
+  entry: { score: number; member: string }
+): Promise<number> {
   const s = store();
   const list = s.z.get(key) ?? [];
-  // видаляємо попередні дублікати member
+  // при upsert видаляємо попередні записи цього member
   const filtered = list.filter((e) => e.member !== entry.member);
   filtered.push({ score: Number(entry.score) || Date.now(), member: String(entry.member) });
-  // сортуємо за score ASC
+  // сортуємо ASC за score (як у Redis ZSET)
   filtered.sort((a, b) => a.score - b.score);
   s.z.set(key, filtered);
   return 1;
@@ -56,11 +63,13 @@ export async function kvZRange(
   const list = (s.z.get(key) ?? []).slice();
   if (!list.length) return [];
   const arr = opts?.rev ? list.slice().reverse() : list;
-  // нормалізуємо індекси як у Redis
+
+  // Нормалізація індексів у стилі Redis
   const n = arr.length;
   const from = start < 0 ? Math.max(n + start, 0) : Math.min(start, n);
   const toRaw = end < 0 ? n + end : end;
   const to = Math.min(toRaw, n - 1);
   if (to < from) return [];
+
   return arr.slice(from, to + 1).map((e) => e.member);
 }
