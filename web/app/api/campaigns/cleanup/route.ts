@@ -1,65 +1,71 @@
 // web/app/api/campaigns/cleanup/route.ts
-// POST /api/campaigns/cleanup?id={optionalId}&hard=1
-// - з id: жорстко видаляє campaigns:{id} та ZREM з campaigns:index
-// - без id: чистить «биті» елементи індексу (коли JSON відсутній або явний сміттєвий запис)
+import { NextRequest, NextResponse } from 'next/server';
+import { assertAdmin } from '@/lib/auth';
+import { kvGet, kvZRange } from '@/lib/kv';
 
-import { NextResponse } from "next/server";
-import { assertAdmin } from "../../../../lib/auth";
-import { kvGet, kvDel, kvZRem, kvZRange } from "../../../../lib/kv";
+export const dynamic = 'force-dynamic';
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
+const INDEX = 'campaigns:index';
+const KEY = (id: string) => `campaigns:${id}`;
 
-export async function POST(req: Request) {
+/**
+ * GET — швидкий статус, що з індексом:
+ *   - скільки ID в індексі
+ *   - перших N (20) елементів з ознакою існування значення в KV
+ */
+export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  const u = new URL(req.url);
-  const id = u.searchParams.get("id")?.trim();
-  const hard = u.searchParams.get("hard") === "1";
+  const ids: string[] = await kvZRange(INDEX, 0, -1).catch(() => []);
+  ids.reverse(); // новіші зверху
 
-  // Жорстке видалення конкретного id
-  if (id) {
-    const key = `campaigns:${id}`;
-    const existed = Boolean(await kvGet(key));
-    if (hard) {
-      await kvDel(key).catch(() => {});
-      await kvZRem("campaigns:index", id).catch(() => {});
-    }
-    return NextResponse.json({ ok: true, mode: "hard-delete", id, existed });
+  const limit = 20;
+  const sample = [];
+  let existCount = 0;
+
+  for (let i = 0; i < Math.min(ids.length, limit); i++) {
+    const id = ids[i];
+    const raw = await kvGet(KEY(id)).catch(() => null);
+    const exists = !!raw;
+    if (exists) existCount++;
+    sample.push({ id, exists });
   }
 
-  // Авточистка «битих» записів індексу
-  const ids: string[] = (await kvZRange("campaigns:index", 0, -1)) ?? [];
-  const removed: string[] = [];
-  const kept: string[] = [];
-
-  for (const cid of ids) {
-    const raw = await kvGet(`campaigns:${cid}`);
-    // якщо JSON відсутній — видаляємо з індексу
-    if (!raw) {
-      await kvZRem("campaigns:index", cid).catch(() => {});
-      removed.push(cid);
-      continue;
-    }
-    // мінімальна перевірка валідності
-    const c = typeof raw === "string" ? safeParse(raw) : raw;
-    const looksBroken =
-      !c ||
-      typeof c !== "object" ||
-      (c.name === undefined && c.title === undefined && c.v1 === undefined);
-
-    if (looksBroken) {
-      await kvDel(`campaigns:${cid}`).catch(() => {});
-      await kvZRem("campaigns:index", cid).catch(() => {});
-      removed.push(cid);
-    } else {
-      kept.push(cid);
-    }
-  }
-
-  return NextResponse.json({ ok: true, removed, kept, total: { index: ids.length, removed: removed.length } });
+  return NextResponse.json({
+    ok: true,
+    index_count: ids.length,
+    sample_limit: limit,
+    sample,
+    note: 'POST без параметрів поверне повний список відсутніх ключів; окреме видалення з індексу не виконуємо.',
+  });
 }
 
-function safeParse(s: string) {
-  try { return JSON.parse(s); } catch { return null; }
+/**
+ * POST — повна перевірка: повертає всі ID з індексу, для яких немає значення в KV.
+ * Нічого не видаляє — лише звіт (щоб уникнути випадкових втрат).
+ */
+export async function POST(req: NextRequest) {
+  await assertAdmin(req);
+
+  const ids: string[] = await kvZRange(INDEX, 0, -1).catch(() => []);
+  ids.reverse();
+
+  const missing: string[] = [];
+  let present = 0;
+
+  for (const id of ids) {
+    const raw = await kvGet(KEY(id)).catch(() => null);
+    if (!raw) missing.push(id);
+    else present++;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    index_count: ids.length,
+    present,
+    missing_count: missing.length,
+    missing_ids: missing,
+    hint:
+      'Цей ендпойнт нічого не видаляє навмисно. Скажи, якщо потрібен окремий POST /cleanup/delete-missing — додам безпечне видалення.',
+  });
 }
