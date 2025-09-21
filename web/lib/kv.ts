@@ -1,80 +1,97 @@
 // web/lib/kv.ts
-// Легкий in-memory KV для Vercel/Next без залежностей.
-// Підтримує: kvGet, kvSet, kvMGet, kvZAdd, kvZRange (з { rev }).
+// Легка обгортка над Upstash Redis REST API під наші потреби.
+// Потрібні env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
-type ZItem = { score: number; member: string };
+const URL_ = process.env.UPSTASH_REDIS_REST_URL!;
+const TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN!;
 
-// Глобальні сховища, щоб переживали гарячі імпорти в одному рантаймі
-const g = globalThis as any;
-g.__KV_STORE__ ||= new Map<string, any>();
-g.__ZSET_STORE__ ||= new Map<string, ZItem[]>();
+if (!URL_ || !TOKEN) {
+  // не падаємо на імпорті, але підкажемо під час виконання
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[kv] Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN. Set them in Vercel Project → Settings → Environment Variables.'
+  );
+}
 
-const KV: Map<string, any> = g.__KV_STORE__;
-const ZS: Map<string, ZItem[]> = g.__ZSET_STORE__;
+type UpstashResp<T = any> = { result?: T; error?: string };
 
-// --- KV (get/set/mget) ---
+async function send<T = any>(command: string[]): Promise<T> {
+  if (!URL_ || !TOKEN) {
+    throw new Error('KV not configured: missing UPSTASH_* envs');
+  }
+  const res = await fetch(URL_, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ command }),
+    // щоб роутери Next.js могли викликати з edge/Node середовищ
+    cache: 'no-store',
+  });
+
+  const data = (await res.json()) as UpstashResp<T>;
+  if (!res.ok || data.error) {
+    throw new Error(`KV ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+  }
+  return data.result as T;
+}
+
+// --- Публічні утиліти ---
 
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  return (KV.has(key) ? KV.get(key) : null) as T | null;
+  const raw = await send<string | null>(['GET', key]);
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    // якщо зберігали не JSON — повернемо як є
+    return raw as unknown as T;
+  }
+}
+
+export async function kvMGet<T = any>(keys: string[]): Promise<(T | null)[]> {
+  if (!keys.length) return [];
+  const arr = await send<(string | null)[]>(['MGET', ...keys]);
+  return arr.map((raw) => {
+    if (raw == null) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return raw as unknown as T;
+    }
+  });
 }
 
 export async function kvSet(
   key: string,
   value: any,
-  _opts?: { ex?: number } // TTL ігноруємо в in-memory режимі
-): Promise<"OK"> {
-  KV.set(key, value);
-  return "OK";
+  opts?: { ex?: number } // ex = seconds TTL
+): Promise<'OK'> {
+  const payload = JSON.stringify(value);
+  const cmd = ['SET', key, payload];
+  if (opts?.ex && Number.isFinite(opts.ex)) {
+    cmd.push('EX', String(opts.ex));
+  }
+  return await send<'OK'>(cmd);
 }
 
-export async function kvMGet(keys: string[]): Promise<any[]> {
-  return keys.map((k) => (KV.has(k) ? KV.get(k) : null));
-}
-
-// --- ZSET (kvZAdd/kvZRange) ---
-
-/**
- * Правильна сигнатура (узгоджено з нашим кодом):
- *   kvZAdd(key, { score, member })
- */
+// Sorted Set: додаємо один елемент
 export async function kvZAdd(
   key: string,
   entry: { score: number; member: string }
 ): Promise<number> {
-  const list = ZS.get(key) ?? [];
-  const idx = list.findIndex((i) => i.member === entry.member);
-  if (idx >= 0) {
-    list[idx] = entry; // оновити score
-  } else {
-    list.push(entry);
-  }
-  // сортуємо по score зростаюче
-  list.sort((a, b) => a.score - b.score);
-  ZS.set(key, list);
-  return 1;
+  return await send<number>(['ZADD', key, String(entry.score), entry.member]);
 }
 
-/**
- * kvZRange(key, start, stop, { rev?: boolean })
- * Повертає масив member-ів у зрізі індексів (як в Redis).
- * stop = -1 означає до кінця.
- */
+// Sorted Set: діапазон (опція REV підтримується)
 export async function kvZRange(
   key: string,
   start: number,
   stop: number,
   opts?: { rev?: boolean }
 ): Promise<string[]> {
-  let list = (ZS.get(key) ?? []).slice();
-  if (opts?.rev) list.reverse();
-
-  const norm = (i: number, len: number) => (i < 0 ? len + i : i);
-  const len = list.length;
-  const s = Math.max(0, norm(start, len));
-  const eRaw = norm(stop, len);
-  const e = Math.min(len - 1, eRaw < 0 ? len - 1 : eRaw);
-
-  if (len === 0 || s > e) return [];
-  return list.slice(s, e + 1).map((it) => it.member);
+  const cmd = ['ZRANGE', key, String(start), String(stop)];
+  if (opts?.rev) cmd.push('REV');
+  return await send<string[]>(cmd);
 }
-
