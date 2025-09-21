@@ -86,7 +86,36 @@ export async function getCardById(id: number): Promise<Card | null> {
   return null;
 }
 
-/** Export default for routes that import default client. */
+/* ------------------------------------------------------------------
+ * Compatibility wrappers used by existing routes
+ * ------------------------------------------------------------------ */
+
+/**
+ * kcFindCardIdByAny: tries username first (if provided), else title contains.
+ * Returns the first matching card id or null.
+ * Signature chosen to match common usage in routes.
+ */
+export async function kcFindCardIdByAny(input: { username?: string; title?: string }): Promise<number | null> {
+  const { username, title } = input || {};
+  if (username) {
+    const res = await findByUsername(username);
+    if (res.cards[0]?.id) return res.cards[0].id;
+  }
+  if (title) {
+    const res = await searchByTitleContains(title);
+    if (res.cards[0]?.id) return res.cards[0].id;
+  }
+  return null;
+}
+
+/**
+ * kcMoveCard: thin wrapper around moveCard to satisfy named import usage.
+ */
+export async function kcMoveCard(card_id: number, pipeline_id: number, status_id: number): Promise<{ ok: true }> {
+  return moveCard({ card_id, pipeline_id, status_id });
+}
+
+/** Default export for modules importing the client as default. */
 const keycrm = {
   findByUsername,
   searchByTitleContains,
@@ -94,5 +123,7 @@ const keycrm = {
   getPipelines,
   getStatuses,
   getCardById,
+  kcFindCardIdByAny,
+  kcMoveCard,
 };
 export default keycrm;
