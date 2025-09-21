@@ -1,62 +1,19 @@
 // web/lib/auth.ts
-import type { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
 
-function readBearer(req: NextRequest): string | null {
-  const h = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!h) return null;
-  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
-  return m ? m[1] : null;
-}
+// Use ENV in prod, fallback for dev
+const ADMIN_PASS = process.env.ADMIN_PASS || '11111';
 
-function readPassParam(req: NextRequest): string | null {
-  try {
-    const url = new URL(req.url);
-    const pass = url.searchParams.get('pass');
-    return pass ? pass.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function pickToken(req: NextRequest): string | null {
-  return readBearer(req) ?? readPassParam(req) ?? null;
-}
-
+// Throws if not authorized
 export async function assertAdmin(req: NextRequest): Promise<void> {
-  const token = pickToken(req);
-  const expected = process.env.ADMIN_PASS?.trim();
-  if (!expected) {
-    throw new Error('ADMIN_PASS is not configured');
-  }
-  if (!token || token !== expected) {
-    const e: any = new Error('Unauthorized (admin)');
-    e.status = 401;
-    throw e;
-  }
-}
+  const h = req.headers.get('authorization') || '';
+  const bearer =
+    h.toLowerCase().startsWith('bearer ') ? h.slice(7).trim() : null;
 
-export async function assertMc(req: NextRequest): Promise<void> {
-  const token = pickToken(req);
-  const expected = process.env.MC_TOKEN?.trim();
-  if (!expected) {
-    throw new Error('MC_TOKEN is not configured');
-  }
-  if (!token || token !== expected) {
-    const e: any = new Error('Unauthorized (manychat)');
-    e.status = 401;
-    throw e;
-  }
-}
+  // also allow ?pass= for quick cURL tests
+  const urlPass = (req as any).nextUrl?.searchParams?.get('pass');
 
-// Опціонально: зручно мати "мʼякі" перевірки
-export function isAdmin(req: NextRequest): boolean {
-  const token = pickToken(req);
-  const expected = process.env.ADMIN_PASS?.trim();
-  return !!expected && token === expected;
-}
+  if (bearer === ADMIN_PASS || urlPass === ADMIN_PASS) return;
 
-export function isMc(req: NextRequest): boolean {
-  const token = pickToken(req);
-  const expected = process.env.MC_TOKEN?.trim();
-  return !!expected && token === expected;
+  throw new Error('Unauthorized');
 }
