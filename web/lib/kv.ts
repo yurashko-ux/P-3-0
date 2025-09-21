@@ -1,105 +1,69 @@
 // web/lib/kv.ts
-// Універсальний wrapper для Vercel KV (Upstash REST) через /pipeline.
-// Підтримує збереження будь-яких значень: якщо не string — серіалізує у JSON.
+import { kv } from '@vercel/kv';
 
-const BASE = process.env.KV_REST_API_URL || "";
-const TOKEN = process.env.KV_REST_API_TOKEN || "";
+type Json = any;
 
-if (!BASE || !TOKEN) {
-  // Не кидаємо помилку на імпорт, але кинемо при першому виклику.
-  console.warn("[KV] Missing KV_REST_API_URL or KV_REST_API_TOKEN");
+/** JSON-safe set (з optional TTL у секундах) */
+export async function kvSet<T = Json>(
+  key: string,
+  value: T,
+  opts?: { ex?: number }
+) {
+  const payload = typeof value === 'string' ? value : JSON.stringify(value);
+  if (opts?.ex) {
+    await kv.set(key, payload, { ex: opts.ex });
+  } else {
+    await kv.set(key, payload);
+  }
 }
 
-type Cmd = (string | number)[];
+/** JSON-safe get */
+export async function kvGet<T = Json>(key: string): Promise<T | null> {
+  const raw = (await kv.get<string | object>(key)) as any;
+  if (raw == null) return null;
+  if (typeof raw === 'object') return raw as T;
+  try {
+    return JSON.parse(String(raw)) as T;
+  } catch {
+    return (raw as unknown) as T;
+  }
+}
 
-// Внутрішній виклик pipeline
-async function kvCall(cmds: Cmd[] | Cmd): Promise<any[]> {
-  if (!BASE || !TOKEN) throw new Error("KV env is not configured");
-  const body = Array.isArray(cmds[0]) ? cmds : [cmds as Cmd];
-  const res = await fetch(`${BASE}/pipeline`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
+/** Batched get по кількох ключах (повертає масив значень 1:1 з keys) */
+export async function kvMGet<T = Json>(keys: string[]): Promise<(T | null)[]> {
+  if (!keys.length) return [];
+  // @vercel/kv підтримує mget(...keys)
+  const raw = (await (kv as any).mget(...keys)) as Array<string | object | null>;
+  return raw.map((val) => {
+    if (val == null) return null;
+    if (typeof val === 'object') return val as T;
+    try {
+      return JSON.parse(String(val)) as T;
+    } catch {
+      return (val as unknown) as T;
+    }
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`[KV] ${res.status} ${res.statusText}: ${text}`);
-  }
-  const json = await res.json().catch(() => null);
-  // Upstash повертає масив об’єктів { result: ... }
-  return Array.isArray(json) ? json : [json];
 }
 
-function tryParse<T = unknown>(v: any): T | string | null {
-  if (v === null || v === undefined) return null;
-  if (typeof v !== "string") return v as T;
-  const s = v.trim();
-  if (!s) return "" as any;
-  // Пробуємо розпарсити JSON, але не зобов’язуємо
-  if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]")) || s.startsWith('"')) {
-    try { return JSON.parse(s) as T; } catch { /* fallthrough */ }
-  }
-  return s;
+/** Sorted Set: ZADD */
+export async function kvZAdd(
+  key: string,
+  entry: { score: number; member: string }
+) {
+  await kv.zadd(key, entry);
 }
 
-/* ───────────────────────── Basic KV ───────────────────────── */
-
-export async function kvGet<T = unknown>(key: string): Promise<T | string | null> {
-  const [r] = await kvCall(["GET", key]);
-  const val = r?.result ?? null;
-  return tryParse<T>(val);
+/** Sorted Set: ZRANGE (без опцій, як в @vercel/kv) */
+export async function kvZRange(
+  key: string,
+  start: number,
+  stop: number
+): Promise<string[]> {
+  // Вертає масив members (strings)
+  return (await kv.zrange(key, start, stop)) as string[];
 }
 
-export async function kvSet(key: string, value: unknown, opts?: { ex?: number; px?: number }): Promise<void> {
-  // Якщо значення не рядок — серіалізуємо в JSON
-  const toStore = typeof value === "string" ? value : JSON.stringify(value);
-  // Підтримка TTL (EX seconds / PX ms) якщо треба
-  const args: (string | number)[] = ["SET", key, toStore];
-  if (opts?.ex) args.push("EX", opts.ex);
-  if (opts?.px) args.push("PX", opts.px);
-  await kvCall(args);
-}
-
-export async function kvDel(key: string): Promise<void> {
-  await kvCall(["DEL", key]);
-}
-
-export async function kvIncr(key: string, by: number = 1): Promise<number> {
-  const cmd: Cmd = by === 1 ? ["INCR", key] : ["INCRBY", key, by];
-  const [r] = await kvCall(cmd);
-  return Number(r?.result ?? 0);
-}
-
-/* ───────────────────────── ZSET helpers ───────────────────────── */
-
-export async function kvZAdd(key: string, score: number, member: string): Promise<void> {
-  await kvCall(["ZADD", key, score, member]);
-}
-
-export async function kvZRem(key: string, member: string): Promise<void> {
-  await kvCall(["ZREM", key, member]);
-}
-
-export async function kvZRemBatch(key: string, members: string[] = []): Promise<void> {
-  if (!members.length) return;
-  // Розіб’ємо на батчі по 200
-  const chunk = 200;
-  for (let i = 0; i < members.length; i += chunk) {
-    const part = members.slice(i, i + chunk);
-    await kvCall(["ZREM", key, ...part]);
-  }
-}
-
-export async function kvZRange(key: string, start = 0, stop = -1): Promise<string[]> {
-  const [r] = await kvCall(["ZRANGE", key, start, stop]);
-  return (r?.result as string[]) ?? [];
-}
-
-export async function kvZRevRange(key: string, start = 0, stop = -1): Promise<string[]> {
-  const [r] = await kvCall(["ZREVRANGE", key, start, stop]);
-  return (r?.result as string[]) ?? [];
+/** Видалення ключа */
+export async function kvDel(key: string) {
+  await kv.del(key);
 }
