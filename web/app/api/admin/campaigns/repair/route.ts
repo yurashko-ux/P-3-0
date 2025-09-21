@@ -13,13 +13,15 @@ const KEY = (id: string) => `campaigns:${id}`;
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  const ids: string[] = await kvZRange(INDEX, 0, -1, { rev: true }).catch(() => []);
-  const keys = ids.map(KEY);
+  // kvZRange приймає тільки (key, start, end) — без options.
+  // Тому забираємо все й самі реверсимо для останніх зверху.
+  const ids: string[] = await kvZRange(INDEX, 0, -1).catch(() => []);
+  ids.reverse();
 
   let exists = 0;
   const sample: Array<{ id: string; exists: boolean }> = [];
 
-  for (let i = 0; i < Math.min(keys.length, 10); i++) {
+  for (let i = 0; i < Math.min(ids.length, 10); i++) {
     const id = ids[i];
     const raw = await kvGet(KEY(id)).catch(() => null);
     const ok = !!raw;
@@ -31,7 +33,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     index_count: ids.length,
     first_10: sample,
-    note: 'POST на цей ендпойнт спробує нормалізувати всі наявні кампанії (додасть дефолтні поля тощо).',
+    note:
+      'POST на цей ендпойнт спробує нормалізувати всі наявні кампанії (додасть дефолтні поля тощо).',
   });
 }
 
@@ -42,7 +45,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   await assertAdmin(req);
 
-  const ids: string[] = await kvZRange(INDEX, 0, -1, { rev: true }).catch(() => []);
+  const ids: string[] = await kvZRange(INDEX, 0, -1).catch(() => []);
+  ids.reverse();
+
   let normalized = 0;
   let skipped = 0;
 
@@ -54,21 +59,15 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // raw може бути рядком або об’єктом
     const asObj: CampaignInput = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
-    // Гарантуємо дефолти (rules.v2, counters, created_at, active тощо)
-    let fixed: Campaign;
     try {
-      fixed = normalizeCampaign(asObj);
-    } catch (e: any) {
+      const fixed: Campaign = normalizeCampaign(asObj);
+      await kvSet(key, fixed).catch(() => null);
+      normalized++;
+    } catch {
       skipped++;
-      continue;
     }
-
-    // Перезаписуємо назад у KV
-    await kvSet(key, fixed).catch(() => null);
-    normalized++;
   }
 
   return NextResponse.json({
@@ -78,6 +77,6 @@ export async function POST(req: NextRequest) {
     skipped,
     hint:
       'Якщо після цього список порожній — у індексі є ID без самих об’єктів у KV. ' +
-      'У такому випадку створіть першу кампанію вручну через UI, або скажіть — зроблю окремий cleanup-рут.',
+      'Створіть першу кампанію вручну через UI або скажи — дам окремий cleanup-рут для видалення битих ID.',
   });
 }
