@@ -12,21 +12,17 @@ export async function GET(req: NextRequest) {
   // Перевірка адміна (Bearer або ?pass=)
   await assertAdmin(req);
 
-  // Беремо усі id кампаній з індексу
-  const ids: string[] = (await kvZRange(INDEX, 0, -1, { rev: true })) || [];
+  // Беремо усі id кампаній з індексу (без додаткових опцій)
+  const ids: string[] = (await kvZRange(INDEX, 0, -1)) || [];
   const indexCount = ids.length;
 
-  // Підтягнемо до 5 штук як семпл (без kvMGet — однаково швидко для діагностики)
+  // Семпл до 5 шт.
   const sampleIds = ids.slice(0, 5);
-  const sample: Array<{
-    id: string;
-    exists: boolean;
-    key: string;
-  }> = [];
+  const sample: Array<{ id: string; key: string; exists: boolean }> = [];
 
   for (const id of sampleIds) {
     const key = KEY(id);
-    const val = await kvGet(key);
+    const val = await kvGet(key).catch(() => null);
     sample.push({ id, key, exists: val != null });
   }
 
