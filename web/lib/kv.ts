@@ -1,79 +1,66 @@
 // web/lib/kv.ts
-// Легкий in-memory KV-поліфіл для локальної/тимчасової роботи на Vercel.
-// Підтримує: kvGet, kvSet, kvMGet, kvZAdd, kvZRange
-// ⚠️ Дані не persistent між інстансами; це стабілізує білд і API-контракти.
+// Мінімальний in-memory KV для Vercel (розробка/демо). Не персистентний між холодними стартами.
 
-type KVSetOpts = { ex?: number }; // seconds
-type ZAddItem = { score: number; member: string };
-type ZRangeOpts = { rev?: boolean };
+type ZEntry = { score: number; member: string };
 
-const store = new Map<string, { value: any; exp?: number }>();
-const zsets = new Map<string, ZAddItem[]>();
+type StoreShape = {
+  kv: Map<string, any>;
+  z: Map<string, ZEntry[]>;
+};
 
-function nowSec() {
-  return Math.floor(Date.now() / 1000);
-}
-
-function purgeIfExpired(key: string) {
-  const rec = store.get(key);
-  if (!rec) return;
-  if (rec.exp && rec.exp <= nowSec()) {
-    store.delete(key);
+function store(): StoreShape {
+  const g = globalThis as any;
+  if (!g.__P30_KV__) {
+    g.__P30_KV__ = { kv: new Map<string, any>(), z: new Map<string, ZEntry[]>() } as StoreShape;
   }
+  return g.__P30_KV__ as StoreShape;
 }
 
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  purgeIfExpired(key);
-  const rec = store.get(key);
-  return (rec ? (rec.value as T) : null);
+  const s = store();
+  return s.kv.has(key) ? (s.kv.get(key) as T) : null;
 }
 
-export async function kvSet(key: string, value: any, opts?: KVSetOpts): Promise<'OK'> {
-  let exp: number | undefined = undefined;
-  if (opts?.ex && opts.ex > 0) {
-    exp = nowSec() + opts.ex;
-  }
-  store.set(key, { value, exp });
-  return 'OK';
+export async function kvSet(key: string, value: any, _opts?: { ex?: number }): Promise<"OK"> {
+  const s = store();
+  s.kv.set(key, value);
+  return "OK";
 }
 
 export async function kvMGet(keys: string[]): Promise<any[]> {
-  const out: any[] = [];
-  for (const k of keys) {
-    purgeIfExpired(k);
-    out.push(store.get(k)?.value ?? null);
-  }
-  return out;
+  const s = store();
+  return keys.map((k) => (s.kv.has(k) ? s.kv.get(k) : null));
 }
 
-export async function kvZAdd(key: string, item: ZAddItem): Promise<number> {
-  const arr = zsets.get(key) ?? [];
-  // уникаємо дублікатів по member: оновлюємо score
-  const idx = arr.findIndex((i) => i.member === item.member);
-  if (idx >= 0) {
-    arr[idx] = item;
-  } else {
-    arr.push(item);
-  }
-  zsets.set(key, arr);
+// API, сумісне з нашим кодом: kvZAdd(key, { score, member })
+export async function kvZAdd(key: string, entry: { score: number; member: string }): Promise<number> {
+  const s = store();
+  const list = s.z.get(key) ?? [];
+  // видаляємо попередні дублікати member
+  const filtered = list.filter((e) => e.member !== entry.member);
+  filtered.push({ score: Number(entry.score) || Date.now(), member: String(entry.member) });
+  // сортуємо за score ASC
+  filtered.sort((a, b) => a.score - b.score);
+  s.z.set(key, filtered);
   return 1;
 }
 
+// kvZRange(key, start, end, { rev?: true }) -> string[] members
 export async function kvZRange(
   key: string,
   start: number,
-  stop: number,
-  opts?: ZRangeOpts
+  end: number,
+  opts?: { rev?: boolean }
 ): Promise<string[]> {
-  const arr = (zsets.get(key) ?? []).slice().sort((a, b) => a.score - b.score);
-  const data = opts?.rev ? arr.reverse() : arr;
-
-  // нормалізація індексів на манер Redis
-  const n = data.length;
-  const norm = (i: number) => (i < 0 ? Math.max(n + i, 0) : i);
-  let s = norm(start);
-  let e = norm(stop);
-  if (e >= n) e = n - 1;
-  if (s > e || n === 0) return [];
-  return data.slice(s, e + 1).map((i) => i.member);
+  const s = store();
+  const list = (s.z.get(key) ?? []).slice();
+  if (!list.length) return [];
+  const arr = opts?.rev ? list.slice().reverse() : list;
+  // нормалізуємо індекси як у Redis
+  const n = arr.length;
+  const from = start < 0 ? Math.max(n + start, 0) : Math.min(start, n);
+  const toRaw = end < 0 ? n + end : end;
+  const to = Math.min(toRaw, n - 1);
+  if (to < from) return [];
+  return arr.slice(from, to + 1).map((e) => e.member);
 }
