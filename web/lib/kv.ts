@@ -78,3 +78,4 @@ export async function kvMGet<T = any>(keys: string[]): Promise<(T | null)[]> {
     return v as T;
   });
 }
+
