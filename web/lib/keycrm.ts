@@ -1,8 +1,7 @@
 // web/lib/keycrm.ts
 /**
  * Minimal KeyCRM client: mock-first, real calls behind ENABLE_REAL_KC=true.
- * This file only provides *safe* wrappers so build doesn't fail.
- * Replace/extend implementations later without changing imports elsewhere.
+ * Safe wrappers for build-time stability; extend to real API later.
  */
 const ENABLE_REAL = process.env.ENABLE_REAL_KC === 'true';
 const API_URL = process.env.KEYCRM_API_URL || '';
@@ -25,14 +24,12 @@ async function realFetch(path: string, init?: RequestInit) {
   return res.json();
 }
 
-/** Find cards by Instagram username (exact/contains depending on your API semantics). */
+/** Find cards by Instagram username */
 export async function findByUsername(username: string): Promise<SearchResult> {
   if (ENABLE_REAL) {
-    // Adjust path/params to your real KeyCRM search endpoint
     const data = await realFetch(`/cards/search?username=${encodeURIComponent(username)}`);
     return data as SearchResult;
   }
-  // MOCK
   return { cards: [] };
 }
 
@@ -42,7 +39,6 @@ export async function searchByTitleContains(query: string): Promise<SearchResult
     const data = await realFetch(`/cards/search?title=${encodeURIComponent(query)}`);
     return data as SearchResult;
   }
-  // MOCK
   return { cards: [] };
 }
 
@@ -55,7 +51,6 @@ export async function moveCard(input: MoveInput): Promise<{ ok: true }> {
     });
     return { ok: true };
   }
-  // MOCK
   return { ok: true };
 }
 
@@ -77,7 +72,7 @@ export async function getStatuses(pipeline_id: number): Promise<Array<{ id: numb
   return [{ id: 38, name: 'New' }];
 }
 
-/** Convenience: get card by exact id (if needed by probes). */
+/** Convenience: get card by exact id */
 export async function getCardById(id: number): Promise<Card | null> {
   if (ENABLE_REAL) {
     const data = await realFetch(`/cards/${id}`);
@@ -91,12 +86,21 @@ export async function getCardById(id: number): Promise<Card | null> {
  * ------------------------------------------------------------------ */
 
 /**
- * kcFindCardIdByAny: tries username first (if provided), else title contains.
- * Returns the first matching card id or null.
- * Signature chosen to match common usage in routes.
+ * kcFindCardIdByAny: tries username first (if provided), else uses title/fullname contains.
+ * Accepts extra fields (pipeline_id/status_id/per_page/...) and safely ignores them in mock mode.
  */
-export async function kcFindCardIdByAny(input: { username?: string; title?: string }): Promise<number | null> {
-  const { username, title } = input || {};
+export async function kcFindCardIdByAny(input: {
+  username?: string;
+  title?: string;
+  fullname?: string;
+  pipeline_id?: number;
+  status_id?: number;
+  per_page?: number;
+  // allow future extra fields without TS error
+} & Record<string, any>): Promise<number | null> {
+  const username = input?.username?.trim();
+  const title = input?.title?.trim() || input?.fullname?.trim();
+
   if (username) {
     const res = await findByUsername(username);
     if (res.cards[0]?.id) return res.cards[0].id;
@@ -108,9 +112,7 @@ export async function kcFindCardIdByAny(input: { username?: string; title?: stri
   return null;
 }
 
-/**
- * kcMoveCard: thin wrapper around moveCard to satisfy named import usage.
- */
+/** kcMoveCard: thin wrapper to satisfy named import usage. */
 export async function kcMoveCard(card_id: number, pipeline_id: number, status_id: number): Promise<{ ok: true }> {
   return moveCard({ card_id, pipeline_id, status_id });
 }
