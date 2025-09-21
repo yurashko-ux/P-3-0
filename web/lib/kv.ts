@@ -7,8 +7,6 @@ const BASE = process.env.KV_REST_API_URL!;
 const TOKEN = process.env.KV_REST_API_TOKEN!;
 
 if (!BASE || !TOKEN) {
-  // У проді це не впаде білдом, але дасть зрозумілий ерор у рантаймі
-  // і не тягне зайвих залежностей.
   // eslint-disable-next-line no-console
   console.warn('KV env missing: KV_REST_API_URL / KV_REST_API_TOKEN');
 }
@@ -21,7 +19,6 @@ async function kvCmd<T = any>(command: (string | number)[]): Promise<T> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ command: command.map(String) }),
-    // Важливо для edge/Node-середовища Vercel
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -38,10 +35,8 @@ export async function kvSet<T = Json>(
   value: T,
   opts?: { ex?: number }
 ) {
-  const payload =
-    typeof value === 'string' ? value : JSON.stringify(value);
+  const payload = typeof value === 'string' ? value : JSON.stringify(value);
   if (opts?.ex) {
-    // SET key value EX ttl
     await kvCmd(['SET', key, payload, 'EX', opts.ex]);
   } else {
     await kvCmd(['SET', key, payload]);
@@ -63,10 +58,7 @@ export async function kvGet<T = Json>(key: string): Promise<T | null> {
 /** Batched get по кількох ключах (повертає масив значень 1:1 з keys) */
 export async function kvMGet<T = Json>(keys: string[]): Promise<(T | null)[]> {
   if (!keys.length) return [];
-  const raw = (await kvCmd<Array<string | null>>([
-    'MGET',
-    ...keys,
-  ])) as Array<string | null>;
+  const raw = (await kvCmd<Array<string | null>>(['MGET', ...keys])) ?? [];
   return raw.map((val) => {
     if (val == null) return null;
     try {
@@ -82,23 +74,28 @@ export async function kvZAdd(
   key: string,
   entry: { score: number; member: string }
 ) {
-  // ZADD key score member
   await kvCmd(['ZADD', key, entry.score, entry.member]);
 }
 
-/** Sorted Set: ZRANGE start..stop (повертає members як string[]) */
+/** Sorted Set: ZRANGE start..stop (opts.rev === true -> ZREVRANGE) */
 export async function kvZRange(
+  key: string,
+  start: number,
+  stop: number,
+  opts?: { rev?: boolean }
+): Promise<string[]> {
+  const cmd = opts?.rev ? 'ZREVRANGE' : 'ZRANGE';
+  const out = await kvCmd<string[]>([cmd, key, start, stop]);
+  return Array.isArray(out) ? out.map(String) : [];
+}
+
+/** Явний реверсний рендж (для існуючого імпорту у UI) */
+export async function kvZRevRange(
   key: string,
   start: number,
   stop: number
 ): Promise<string[]> {
-  // ZRANGE key start stop
-  const out = await kvCmd<string[]>([
-    'ZRANGE',
-    key,
-    start,
-    stop,
-  ]);
+  const out = await kvCmd<string[]>(['ZREVRANGE', key, start, stop]);
   return Array.isArray(out) ? out.map(String) : [];
 }
 
