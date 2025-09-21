@@ -104,3 +104,4 @@ export async function kvDel(key: string): Promise<number> {
 export async function kvZCard(key: string): Promise<number> {
   return (store.zsets.get(key) ?? []).length;
 }
+
