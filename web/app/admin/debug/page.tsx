@@ -1,54 +1,63 @@
 // web/app/admin/debug/page.tsx
 // Server-only debug: показує стан KV та кілька останніх кампаній.
 
-import { kvGet, kvZRevRange } from "../../../lib/kv";
+import { kvGet, kvZRange } from '@/lib/kv';
 
 export const revalidate = 0;
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
-export default async function DebugPage() {
-  const envOk = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+const INDEX = 'campaigns:index';
+const KEY = (id: string) => `campaigns:${id}`;
 
-  let ids: string[] = [];
-  let firstCampaign: any = null;
-  let error: string | null = null;
+type Campaign = {
+  id: string;
+  name?: string | null;
+  created_at?: number;
+  base_pipeline_id?: number;
+  base_status_id?: number;
+  rules?: any;
+  v1_count?: number;
+  v2_count?: number;
+  exp_count?: number;
+};
 
-  try {
-    ids = await kvZRevRange("campaigns:index", 0, 9);
-    if (ids[0]) {
-      firstCampaign = await kvGet(`campaigns:${ids[0]}`);
-    }
-  } catch (e: any) {
-    error = String(e?.message || e);
+async function fetchLatestCampaigns(limit = 10) {
+  // останні id (реверсований ZSET)
+  const ids: string[] = await kvZRange(INDEX, 0, -1, { rev: true });
+  const latest = ids.slice(0, limit);
+  const items: Campaign[] = [];
+  for (const id of latest) {
+    const c = await kvGet<Campaign>(KEY(id));
+    if (c) items.push(c);
   }
+  return { ids, items };
+}
+
+export default async function Page() {
+  const { ids, items } = await fetchLatestCampaigns(10);
 
   return (
-    <main className="p-6 space-y-4">
-      <h1 className="text-xl font-semibold">Admin / Debug</h1>
-
-      <section className="space-y-1">
-        <div>
-          <b>KV env configured:</b> {envOk ? "yes" : "no"}
-        </div>
-        {error && (
-          <div className="text-red-500">
-            <b>KV error:</b> {error}
-          </div>
-        )}
-      </section>
+    <main className="p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Admin • Debug (KV)</h1>
 
       <section className="space-y-2">
-        <h2 className="font-medium">Останні campaign IDs (campaigns:index)</h2>
-        <pre className="bg-gray-900 text-gray-100 p-3 rounded">
-          {JSON.stringify(ids, null, 2)}
-        </pre>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="font-medium">Перша кампанія</h2>
-        <pre className="bg-gray-900 text-gray-100 p-3 rounded">
-          {JSON.stringify(firstCampaign, null, 2)}
-        </pre>
+        <div className="text-sm text-gray-500">ZSET: {INDEX}</div>
+        <div className="text-sm">Всього в індексі: <b>{ids.length}</b></div>
+        <div className="text-sm">Останні {items.length} елементів:</div>
+        <ul className="list-disc pl-6">
+          {items.map((c) => (
+            <li key={c.id} className="text-sm">
+              <code>{c.id}</code>&nbsp;—&nbsp;
+              <b>{c.name ?? '(без назви)'}</b>
+              {typeof c.created_at === 'number' && (
+                <span className="text-gray-500">
+                  &nbsp;• {new Date(c.created_at).toLocaleString()}
+                </span>
+              )}
+            </li>
+          ))}
+          {!items.length && <li className="text-sm text-gray-500">порожньо</li>}
+        </ul>
       </section>
     </main>
   );
