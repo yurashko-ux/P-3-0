@@ -1,32 +1,85 @@
 // web/lib/redis.ts
-// Підключення до Upstash KV з ПРАВАМИ НА ЗАПИС
-import { Redis } from '@upstash/redis';
+// Safe shim for Redis client used by /api/logs and similar routes.
+// Avoids compile-time dependency on '@upstash/redis'.
+// Runtime: in-memory (volatile). Later we can switch to Upstash REST when ENV present.
 
-const url =
-  process.env.KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL;
+type Val = string;
+const store = new Map<string, Val | Val[]>();
 
-const token =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN;
-
-if (!url || !token) {
-  throw new Error(
-    'KV is not configured: missing KV_REST_API_URL and/or KV_REST_API_TOKEN (write token).'
-  );
+function getList(key: string): Val[] {
+  const cur = store.get(key);
+  if (Array.isArray(cur)) return cur;
+  const arr: Val[] = [];
+  store.set(key, arr);
+  return arr;
 }
 
-export const redis = new Redis({ url, token });
+export const redis = {
+  // LPUSH key value [value ...]
+  async lpush(key: string, ...values: Val[]): Promise<number> {
+    const arr = getList(key);
+    // newest first, like LPUSH
+    for (const v of values) arr.unshift(v);
+    store.set(key, arr);
+    return arr.length;
+  },
 
-// Невеликий self-check у дев/прев’ю
-if (process.env.NODE_ENV !== 'production') {
-  (async () => {
-    try {
-      const probe = `campaigns:__probe__:${Date.now()}`;
-      await redis.set(probe, JSON.stringify({ t: Date.now() }));
-      await redis.del(probe);
-    } catch (e) {
-      console.error('KV write self-check failed:', e);
-    }
-  })();
-}
+  // LRANGE key start stop (stop inclusive)
+  async lrange(key: string, start: number, stop: number): Promise<Val[]> {
+    const arr = getList(key);
+    const norm = (i: number) => (i < 0 ? arr.length + i : i);
+    const s = Math.max(0, norm(start));
+    const e = Math.min(arr.length - 1, norm(stop));
+    if (e < s) return [];
+    return arr.slice(s, e + 1);
+  },
+
+  // SET/GET simple string values (used occasionally)
+  async set(key: string, value: Val): Promise<'OK'> {
+    store.set(key, value);
+    return 'OK';
+  },
+  async get(key: string): Promise<Val | null> {
+    const v = store.get(key);
+    return typeof v === 'string' ? v : null;
+  },
+
+  // DEL
+  async del(key: string): Promise<number> {
+    const existed = store.delete(key);
+    return existed ? 1 : 0;
+  },
+
+  // ZADD/ZRANGE (basic, score:number)
+  async zadd(key: string, score: number, member: Val): Promise<number> {
+    const arr = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
+    // We'll encode as "score|member" and keep sorted by score asc
+    const parsed = (arr as Val[]).map((x) => {
+      const [s, ...m] = x.split('|');
+      return { score: Number(s), member: m.join('|') };
+    });
+    const idx = parsed.findIndex((x) => x.member === member);
+    if (idx >= 0) parsed[idx].score = score;
+    else parsed.push({ score, member });
+    parsed.sort((a, b) => a.score - b.score);
+    const enc = parsed.map((x) => `${x.score}|${x.member}`);
+    store.set(key, enc);
+    return 1;
+  },
+  async zrange(key: string, start: number, stop: number): Promise<Val[]> {
+    const enc = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
+    const parsed = enc.map((x) => x.split('|').slice(1).join('|'));
+    const norm = (i: number) => (i < 0 ? parsed.length + i : i);
+    const s = Math.max(0, norm(start));
+    const e = Math.min(parsed.length - 1, norm(stop));
+    if (e < s) return [];
+    return parsed.slice(s, e + 1);
+  },
+
+  // No-op for expiry in shim mode
+  async expire(_key: string, _seconds: number): Promise<0 | 1> {
+    return 0;
+  },
+};
+
+export default redis;
