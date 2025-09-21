@@ -1,36 +1,34 @@
 // web/app/api/campaigns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { assertAdmin } from '@/lib/auth';
-import { kvGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
-import { CampaignInput, Campaign, normalizeCampaign } from '@/lib/types';
+import { kvGet, kvSet } from '@/lib/kv';
+import { Campaign, CampaignInput, normalizeCampaign } from '@/lib/types';
 
-const INDEX = 'campaigns:index';
+const IDS_KEY = 'campaigns:ids';
 const KEY = (id: string) => `campaigns:${id}`;
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/campaigns  — віддає всі кампанії з KV (без звернень до KeyCRM)
+// GET /api/campaigns — читаємо всі id зі списку, тягнемо об'єкти, сортуємо за created_at desc
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  const ids: string[] = (await kvZRange(INDEX, 0, -1)) || [];
-  if (!ids.length) return NextResponse.json([]);
-
-  // ZSET повертає зростаюче — віддамо у зворотньому порядку (нові згори)
-  const ordered = ids.slice().reverse();
+  const ids: string[] = (await kvGet<string[]>(IDS_KEY)) || [];
+  if (!ids.length) return NextResponse.json([], { status: 200 });
 
   const items: Campaign[] = [];
-  for (const id of ordered) {
+  for (const id of ids) {
     const raw = await kvGet<any>(KEY(id)).catch(() => null);
     if (!raw) continue;
     const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
     items.push(normalizeCampaign(obj));
   }
 
+  items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
   return NextResponse.json(items, { status: 200 });
 }
 
-// POST /api/campaigns — створює/оновлює одну кампанію в KV
+// POST /api/campaigns — створити/оновити кампанію
 export async function POST(req: NextRequest) {
   try {
     await assertAdmin(req);
@@ -38,12 +36,17 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as CampaignInput;
     const c = normalizeCampaign(body);
 
-    // повний JSON
+    // зберігаємо саму кампанію
     await kvSet(KEY(c.id), c);
 
-    // індекс за created_at (увага: у твоїй обгортці kvZAdd приймає об'єкт {score, member})
-    await kvZAdd(INDEX, { score: c.created_at, member: c.id });
+    // оновлюємо список id (без дублікатів)
+    const ids: string[] = (await kvGet<string[]>(IDS_KEY)) || [];
+    if (!ids.includes(c.id)) {
+      ids.push(c.id);
+      await kvSet(IDS_KEY, ids);
+    }
 
+    // відповідаємо тим, що реально зберегли
     return NextResponse.json(c, { status: 200 });
   } catch (e: any) {
     const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
