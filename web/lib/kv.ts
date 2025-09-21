@@ -1,7 +1,6 @@
 // web/lib/kv.ts
-// Легка in-memory реалізація KV для розробки/прев'ю на Vercel без @vercel/kv.
-// ⚠️ Дані НЕ persistent. Підійде, щоб пройти build і поганяти ручки.
-// API сумісний з тим, що використовує код проєкту.
+// Простий in-memory KV для дев/прев'ю на Vercel без @vercel/kv.
+// ⚠️ Дані НЕ зберігаються між деплоями — це заглушка, щоб проходили build і ендпоїнти працювали.
 
 export type KvSetOptions = { ex?: number }; // seconds (ігноруємо тут)
 type ZEntry = { score: number; member: string };
@@ -31,7 +30,7 @@ export async function kvDel(key: string): Promise<number> {
   return mem.delete(key) ? 1 : 0;
 }
 
-// Підтримуємо обидві сигнатури:
+// Підтримуємо дві сигнатури:
 // kvZAdd(key, score, member)
 // kvZAdd(key, { score, member })
 export async function kvZAdd(
@@ -49,7 +48,7 @@ export async function kvZAdd(
   const arr = getZ(key);
   const idx = arr.findIndex((e) => e.member === entry.member);
   if (idx >= 0) {
-    arr[idx] = entry; // update score
+    arr[idx] = entry; // update
     return 0;
   } else {
     arr.push(entry);
@@ -73,7 +72,6 @@ export async function kvZRange(
   return arr.slice(s, e + 1).map((e) => e.member);
 }
 
-// Додатково: отримати весь ZSET як пари (для дебагу, не обов'язково)
 export async function kvZCard(key: string): Promise<number> {
   return getZ(key).length;
 }
