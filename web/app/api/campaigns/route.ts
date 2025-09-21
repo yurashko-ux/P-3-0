@@ -1,92 +1,99 @@
 // web/app/api/campaigns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { assertAdmin } from '@/lib/auth';
-import { kvGet, kvSet, kvZRange } from '@/lib/kv';
 import { Campaign, CampaignInput, normalizeCampaign } from '@/lib/types';
-import { getPipelineName, getStatusName } from '@/lib/kc-cache';
 
 export const dynamic = 'force-dynamic';
 
 const INDEX = 'campaigns:index';
 const KEY = (id: string) => `campaigns:${id}`;
 
-/** Локальний обхід проблеми kvZAdd: прямий REST-виклик Upstash ZADD */
-async function zaddDirect(key: string, score: number, member: string) {
-  const base = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-  if (!base || !token) throw new Error('KV REST env missing');
+function mustEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env ${name}`);
+  return v;
+}
 
-  const url = `${base}/zadd/${encodeURIComponent(key)}/${score}/${encodeURIComponent(member)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  const json = await res.json().catch(() => ({} as any));
-  if (!res.ok || (json && json.error)) {
-    throw new Error(`Upstash ZADD failed: ${json?.error || res.statusText}`);
-  }
+async function kvSetJSON(key: string, value: any) {
+  const base = mustEnv('KV_REST_API_URL');
+  const token = mustEnv('KV_REST_API_TOKEN');
+  const url = `${base}/set/${encodeURIComponent(key)}/${encodeURIComponent(
+    JSON.stringify(value)
+  )}`;
+  const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.error) throw new Error(`Upstash SET failed: ${json?.error || res.statusText}`);
   return json?.result ?? null;
 }
 
-async function enrichNames(c: Campaign): Promise<Campaign> {
-  try { c.base_pipeline_name = await getPipelineName(c.base_pipeline_id); } catch { c.base_pipeline_name = null; }
-  try { c.base_status_name = await getStatusName(c.base_pipeline_id, c.base_status_id); } catch { c.base_status_name = null; }
-
-  if (c.exp) {
-    const ep = c.exp;
-    try {
-      (c as any).exp = {
-        ...ep,
-        to_pipeline_name: ep?.to_pipeline_id ? await getPipelineName(ep.to_pipeline_id) : null,
-        to_status_name:
-          ep?.to_pipeline_id && ep?.to_status_id
-            ? await getStatusName(ep.to_pipeline_id, ep.to_status_id)
-            : null,
-      };
-    } catch {
-      (c as any).exp = { ...ep, to_pipeline_name: null, to_status_name: null };
-    }
+async function kvGetJSON<T = any>(key: string): Promise<T | null> {
+  const base = mustEnv('KV_REST_API_URL');
+  const token = mustEnv('KV_REST_API_TOKEN');
+  const url = `${base}/get/${encodeURIComponent(key)}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.error) throw new Error(`Upstash GET failed: ${json?.error || res.statusText}`);
+  const raw = json?.result as string | null;
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    // якщо колись лежав plain-string
+    return raw as unknown as T;
   }
-  return c;
+}
+
+async function kvZAdd(key: string, score: number, member: string) {
+  const base = mustEnv('KV_REST_API_URL');
+  const token = mustEnv('KV_REST_API_TOKEN');
+  const url = `${base}/zadd/${encodeURIComponent(key)}/${score}/${encodeURIComponent(member)}`;
+  const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.error) throw new Error(`Upstash ZADD failed: ${json?.error || res.statusText}`);
+  return json?.result ?? null;
+}
+
+async function kvZRangeRev(key: string, start = 0, stop = -1): Promise<string[]> {
+  const base = mustEnv('KV_REST_API_URL');
+  const token = mustEnv('KV_REST_API_TOKEN');
+  // upstash підтримує ?rev=true для зворотного порядку
+  const url = `${base}/zrange/${encodeURIComponent(key)}/${start}/${stop}?rev=true`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.error) throw new Error(`Upstash ZRANGE failed: ${json?.error || res.statusText}`);
+  return (json?.result as string[]) || [];
 }
 
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  // kvZRange без options -> відсортовано за зростанням; розвернемо в пам’яті
-  const ids: string[] = (await kvZRange(INDEX, 0, -1)) || [];
-  const ordered = [...ids].reverse();
+  const ids = await kvZRangeRev(INDEX, 0, -1);
+  if (!ids?.length) return NextResponse.json([]);
 
   const items: Campaign[] = [];
-  for (const id of ordered) {
-    const raw = await kvGet<any>(KEY(id));
+  for (const id of ids) {
+    const raw = await kvGetJSON<any>(KEY(id));
     if (!raw) continue;
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const c = await enrichNames(normalizeCampaign(data));
+    const c = normalizeCampaign(typeof raw === 'string' ? JSON.parse(raw) : raw);
     items.push(c);
   }
-
   return NextResponse.json(items);
 }
 
 export async function POST(req: NextRequest) {
   try {
     await assertAdmin(req);
-
     const body = (await req.json()) as CampaignInput;
     const c = normalizeCampaign(body);
 
-    // 1) зберігаємо JSON
-    await kvSet(KEY(c.id), c);
+    // 1) зберігаємо повний JSON
+    await kvSetJSON(KEY(c.id), c);
 
-    // 2) індексуємо напряму через Upstash REST ZADD (обхід kvZAdd)
-    await zaddDirect(INDEX, c.created_at, c.id);
+    // 2) індексуємо за created_at
+    await kvZAdd(INDEX, c.created_at, c.id);
 
-    // 3) повертаємо те, що реально поклали (без обов’язкового збагачення — щоб не чіпати KeyCRM)
     return NextResponse.json(c, { status: 200 });
   } catch (e: any) {
-    const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
-    return NextResponse.json({ error: msg }, { status: 400 });
+    return NextResponse.json({ error: e?.message || 'Invalid payload' }, { status: 400 });
   }
 }
