@@ -1,107 +1,81 @@
 // web/lib/kv.ts
-// Легка in-memory KV для локальної/верцел збірки без зовнішніх залежностей.
-// Підтримує: kvGet, kvSet (TTL), kvMGet, kvZAdd, kvZRange({ rev }).
+// Minimal in-memory KV adapter with a future hook for Vercel KV via REST.
+// Safe for serverless cold starts (volatile). Suitable for tests and mocks.
 
-type KVValue = any;
+type Primitive = string | number | boolean | null;
+type JSONValue = Primitive | JSONObject | JSONArray;
+interface JSONObject { [key: string]: JSONValue }
+interface JSONArray extends Array<JSONValue> {}
 
-type TTL = { ex?: number }; // seconds
-type ZAddItem = { score: number; member: string };
-type ZRangeOpts = { rev?: boolean };
+// ---- In-memory store ----
+const map = new Map<string, string>();
+const zsets = new Map<string, Array<{ member: string; score: number }>>();
 
-type ZItem = { score: number; member: string };
-
-const g = globalThis as any;
-
-if (!g.__P30_KV__) {
-  g.__P30_KV__ = {
-    data: new Map<string, { v: KVValue; exp?: number }>(),
-    zsets: new Map<string, ZItem[]>(),
-  };
+// Helpers
+function serialize(v: any): string {
+  return typeof v === 'string' ? v : JSON.stringify(v);
 }
-
-const store: {
-  data: Map<string, { v: KVValue; exp?: number }>;
-  zsets: Map<string, ZItem[]>;
-} = g.__P30_KV__;
-
-// -- helpers
-function now() {
-  return Date.now();
-}
-
-function cleanupKey(key: string) {
-  const rec = store.data.get(key);
-  if (!rec) return;
-  if (rec.exp && rec.exp <= now()) {
-    store.data.delete(key);
+function deserialize<T = any>(raw: string | undefined | null): T | null {
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return raw as unknown as T; // allow plain strings
   }
 }
 
-function putZ(key: string, item: ZItem) {
-  const arr = store.zsets.get(key) ?? [];
-  // заміна по member (унікальність)
-  const idx = arr.findIndex((x) => x.member === item.member);
-  if (idx >= 0) arr.splice(idx, 1);
-  // вставка відсортовано за score зростаюче
-  // (проста вставка + сортування — для малих обсягів ок)
-  arr.push(item);
-  arr.sort((a, b) => a.score - b.score);
-  store.zsets.set(key, arr);
+// ---- Public API (compatible signatures) ----
+export async function kvGet<T = any>(key: string): Promise<T | null> {
+  return deserialize<T>(map.get(key) ?? null);
 }
 
-// -- API
-
-export async function kvGet<T = KVValue>(key: string): Promise<T | null> {
-  cleanupKey(key);
-  const rec = store.data.get(key);
-  return (rec ? (rec.v as T) : null);
+export async function kvSet(key: string, value: any): Promise<void> {
+  map.set(key, serialize(value));
 }
 
-export async function kvSet(key: string, value: KVValue, ttl?: TTL): Promise<'OK'> {
-  const exMs = ttl?.ex ? now() + ttl.ex * 1000 : undefined;
-  store.data.set(key, { v: value, exp: exMs });
-  return 'OK';
+export async function kvMGet<T = any>(keys: string[]): Promise<(T | null)[]> {
+  return keys.map((k) => deserialize<T>(map.get(k) ?? null));
 }
 
-// багаточитання
-export async function kvMGet(keys: string[]): Promise<(KVValue | null)[]> {
-  const out: (KVValue | null)[] = [];
-  for (const k of keys) out.push(await kvGet(k));
-  return out;
+export async function kvZAdd(
+  key: string,
+  score: number,
+  member: string
+): Promise<void> {
+  const arr = zsets.get(key) ?? [];
+  // upsert by member
+  const idx = arr.findIndex((x) => x.member === member);
+  if (idx >= 0) arr[idx].score = score;
+  else arr.push({ member, score });
+  // keep sorted asc by score, then by member to stabilize
+  arr.sort((a, b) => (a.score - b.score) || a.member.localeCompare(b.member));
+  zsets.set(key, arr);
 }
 
-// ZSET add: один елемент
-export async function kvZAdd(key: string, item: ZAddItem): Promise<number> {
-  putZ(key, { score: item.score, member: String(item.member) });
-  return 1;
-}
-
-// ZSET range: за індексами [start, stop] (як у Redis), з опцією rev
 export async function kvZRange(
   key: string,
   start: number,
-  stop: number,
-  opts?: ZRangeOpts
+  stop: number
 ): Promise<string[]> {
-  const arr = store.zsets.get(key) ?? [];
-  const data = opts?.rev ? [...arr].reverse() : arr;
-  // нормалізуємо негативні індекси
-  const n = data.length;
-  let s = start < 0 ? n + start : start;
-  let e = stop < 0 ? n + stop : stop;
-  s = Math.max(0, s);
-  e = Math.min(n - 1, e);
-  if (e < s || n === 0) return [];
-  return data.slice(s, e + 1).map((x) => x.member);
+  const arr = zsets.get(key) ?? [];
+  // stop is inclusive in Redis semantics
+  const end = stop < 0 ? arr.length + stop : stop;
+  const slice = arr.slice(
+    start < 0 ? Math.max(arr.length + start, 0) : start,
+    (end < 0 ? Math.max(arr.length + end, 0) : end) + 1
+  );
+  return slice.map((x) => x.member);
 }
 
-// (необов'язково) утиліти, якщо знадобляться пізніше
-export async function kvDel(key: string): Promise<number> {
-  const had = store.data.delete(key);
-  return had ? 1 : 0;
+// ---- Namespaced helpers (optional but handy) ----
+export async function kvIncr(key: string, by = 1): Promise<number> {
+  const cur = Number((await kvGet<string | number>(key)) ?? 0);
+  const next = cur + by;
+  await kvSet(key, next);
+  return next;
 }
 
-export async function kvZCard(key: string): Promise<number> {
-  return (store.zsets.get(key) ?? []).length;
-}
-
+// ---- Future: switch to Vercel KV when ENV is present ----
+// For now we always use in-memory. When ready:
+// const useVercel = !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+// if (useVercel) { /* implement REST calls keeping the same exports */ }
