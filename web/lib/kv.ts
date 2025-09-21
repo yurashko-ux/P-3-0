@@ -1,81 +1,79 @@
 // web/lib/kv.ts
-// Легка обгортка над Upstash/Vercel KV REST.
-// Потрібні env: KV_REST_API_URL, KV_REST_API_TOKEN
+// Легка in-memory реалізація KV для розробки/прев'ю на Vercel без @vercel/kv.
+// ⚠️ Дані НЕ persistent. Підійде, щоб пройти build і поганяти ручки.
+// API сумісний з тим, що використовує код проєкту.
 
-type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
+export type KvSetOptions = { ex?: number }; // seconds (ігноруємо тут)
+type ZEntry = { score: number; member: string };
 
-const BASE = process.env.KV_REST_API_URL;
-const TOKEN = process.env.KV_REST_API_TOKEN;
+const mem = new Map<string, any>();
+const zsets = new Map<string, ZEntry[]>();
 
-if (!BASE || !TOKEN) {
-  console.warn('[kv] Missing KV_REST_API_URL or KV_REST_API_TOKEN. KV calls will fail at runtime.');
+function getZ(key: string): ZEntry[] {
+  if (!zsets.has(key)) zsets.set(key, []);
+  return zsets.get(key)!;
 }
 
-async function redis<T = any>(...parts: (string | number)[]): Promise<T> {
-  if (!BASE || !TOKEN) throw new Error('KV env is not configured');
-  const url = `${BASE}/${parts.map(String).map(encodeURIComponent).join('/')}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`KV ${res.status} ${res.statusText}: ${text}`);
-  }
-  const json = await res.json().catch(() => ({}));
-  return (json?.result ?? json) as T; // upstash returns { result }
+export async function kvSet(key: string, value: any, _opts?: KvSetOptions) {
+  mem.set(key, value);
+  return 'OK';
 }
 
-// --- Public API ---
-
-// GET key -> T | null
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  const v = await redis<any>('GET', key).catch(() => null);
-  if (v == null) return null;
-  if (typeof v === 'string') {
-    try { return JSON.parse(v) as T; } catch { return v as unknown as T; }
-  }
-  return v as T;
+  return (mem.has(key) ? (mem.get(key) as T) : null);
 }
 
-// SET key value (JSON). opts.ex — TTL у секундах
-export async function kvSet(key: string, value: any, opts?: { ex?: number }): Promise<'OK'> {
-  const payload = typeof value === 'string' ? value : JSON.stringify(value);
-  if (opts?.ex && Number.isFinite(opts.ex)) {
-    return await redis<'OK'>('SET', key, payload, 'EX', opts.ex);
-  }
-  return await redis<'OK'>('SET', key, payload);
+export async function kvMGet(keys: string[]): Promise<any[]> {
+  return keys.map((k) => (mem.has(k) ? mem.get(k) : null));
 }
 
-// ZADD key { score, member }
+export async function kvDel(key: string): Promise<number> {
+  return mem.delete(key) ? 1 : 0;
+}
+
+// Підтримуємо обидві сигнатури:
+// kvZAdd(key, score, member)
+// kvZAdd(key, { score, member })
 export async function kvZAdd(
   key: string,
-  entry: { score: number; member: string | number }
+  a: number | { score: number; member: string },
+  b?: string
 ): Promise<number> {
-  return await redis<number>('ZADD', key, entry.score, String(entry.member));
+  let entry: ZEntry;
+  if (typeof a === 'number') {
+    if (typeof b !== 'string') throw new Error('kvZAdd(key, score, member) expects member as string');
+    entry = { score: a, member: b };
+  } else {
+    entry = { score: a.score, member: String(a.member) };
+  }
+  const arr = getZ(key);
+  const idx = arr.findIndex((e) => e.member === entry.member);
+  if (idx >= 0) {
+    arr[idx] = entry; // update score
+    return 0;
+  } else {
+    arr.push(entry);
+    return 1;
+  }
 }
 
-// ZRANGE key start stop (+ REV)
+// kvZRange(key, start, stop, { rev?: true })
 export async function kvZRange(
   key: string,
   start: number,
   stop: number,
   opts?: { rev?: boolean }
 ): Promise<string[]> {
-  if (opts?.rev) return await redis<string[]>('ZRANGE', key, start, stop, 'REV');
-  return await redis<string[]>('ZRANGE', key, start, stop);
+  const arr = [...getZ(key)];
+  arr.sort((x, y) => (opts?.rev ? y.score - x.score : x.score - y.score));
+  const norm = (n: number) => (n < 0 ? arr.length + n : n);
+  const s = Math.max(0, norm(start));
+  const e = Math.min(arr.length - 1, norm(stop));
+  if (arr.length === 0 || s > e) return [];
+  return arr.slice(s, e + 1).map((e) => e.member);
 }
 
-// MGET keys[] -> (T | null)[]
-export async function kvMGet<T = any>(keys: string[]): Promise<(T | null)[]> {
-  if (!keys.length) return [];
-  const res = await redis<any[]>('MGET', ...keys);
-  return res.map((v) => {
-    if (v == null) return null;
-    if (typeof v === 'string') {
-      try { return JSON.parse(v) as T; } catch { return v as unknown as T; }
-    }
-    return v as T;
-  });
+// Додатково: отримати весь ZSET як пари (для дебагу, не обов'язково)
+export async function kvZCard(key: string): Promise<number> {
+  return getZ(key).length;
 }
-
