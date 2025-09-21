@@ -1,75 +1,79 @@
 // web/lib/kv.ts
-// Найпростіший in-memory KV для демо на Vercel. Не персистується між холодними стартами.
+// Легкий in-memory KV для Vercel/Next без залежностей.
+// Підтримує: kvGet, kvSet, kvMGet, kvZAdd, kvZRange (з { rev }).
 
-type ZEntry = { score: number; member: string };
+type ZItem = { score: number; member: string };
 
-type StoreShape = {
-  kv: Map<string, any>;
-  z: Map<string, ZEntry[]>;
-};
+// Глобальні сховища, щоб переживали гарячі імпорти в одному рантаймі
+const g = globalThis as any;
+g.__KV_STORE__ ||= new Map<string, any>();
+g.__ZSET_STORE__ ||= new Map<string, ZItem[]>();
 
-function store(): StoreShape {
-  const g = globalThis as any;
-  if (!g.__P30_KV__) {
-    g.__P30_KV__ = { kv: new Map<string, any>(), z: new Map<string, ZEntry[]>() } as StoreShape;
-  }
-  return g.__P30_KV__ as StoreShape;
-}
+const KV: Map<string, any> = g.__KV_STORE__;
+const ZS: Map<string, ZItem[]> = g.__ZSET_STORE__;
+
+// --- KV (get/set/mget) ---
 
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  const s = store();
-  return s.kv.has(key) ? (s.kv.get(key) as T) : null;
+  return (KV.has(key) ? KV.get(key) : null) as T | null;
 }
 
 export async function kvSet(
   key: string,
   value: any,
-  _opts?: { ex?: number } // TTL опційно, тут іґноруємо
+  _opts?: { ex?: number } // TTL ігноруємо в in-memory режимі
 ): Promise<"OK"> {
-  const s = store();
-  s.kv.set(key, value);
+  KV.set(key, value);
   return "OK";
 }
 
 export async function kvMGet(keys: string[]): Promise<any[]> {
-  const s = store();
-  return keys.map((k) => (s.kv.has(k) ? s.kv.get(k) : null));
+  return keys.map((k) => (KV.has(k) ? KV.get(k) : null));
 }
 
-// Правильна сигнатура для нашого коду: kvZAdd(key, { score, member })
+// --- ZSET (kvZAdd/kvZRange) ---
+
+/**
+ * Правильна сигнатура (узгоджено з нашим кодом):
+ *   kvZAdd(key, { score, member })
+ */
 export async function kvZAdd(
   key: string,
   entry: { score: number; member: string }
 ): Promise<number> {
-  const s = store();
-  const list = s.z.get(key) ?? [];
-  // при upsert видаляємо попередні записи цього member
-  const filtered = list.filter((e) => e.member !== entry.member);
-  filtered.push({ score: Number(entry.score) || Date.now(), member: String(entry.member) });
-  // сортуємо ASC за score (як у Redis ZSET)
-  filtered.sort((a, b) => a.score - b.score);
-  s.z.set(key, filtered);
+  const list = ZS.get(key) ?? [];
+  const idx = list.findIndex((i) => i.member === entry.member);
+  if (idx >= 0) {
+    list[idx] = entry; // оновити score
+  } else {
+    list.push(entry);
+  }
+  // сортуємо по score зростаюче
+  list.sort((a, b) => a.score - b.score);
+  ZS.set(key, list);
   return 1;
 }
 
-// kvZRange(key, start, end, { rev?: true }) -> string[] members
+/**
+ * kvZRange(key, start, stop, { rev?: boolean })
+ * Повертає масив member-ів у зрізі індексів (як в Redis).
+ * stop = -1 означає до кінця.
+ */
 export async function kvZRange(
   key: string,
   start: number,
-  end: number,
+  stop: number,
   opts?: { rev?: boolean }
 ): Promise<string[]> {
-  const s = store();
-  const list = (s.z.get(key) ?? []).slice();
-  if (!list.length) return [];
-  const arr = opts?.rev ? list.slice().reverse() : list;
+  let list = (ZS.get(key) ?? []).slice();
+  if (opts?.rev) list.reverse();
 
-  // Нормалізація індексів у стилі Redis
-  const n = arr.length;
-  const from = start < 0 ? Math.max(n + start, 0) : Math.min(start, n);
-  const toRaw = end < 0 ? n + end : end;
-  const to = Math.min(toRaw, n - 1);
-  if (to < from) return [];
+  const norm = (i: number, len: number) => (i < 0 ? len + i : i);
+  const len = list.length;
+  const s = Math.max(0, norm(start, len));
+  const eRaw = norm(stop, len);
+  const e = Math.min(len - 1, eRaw < 0 ? len - 1 : eRaw);
 
-  return arr.slice(from, to + 1).map((e) => e.member);
+  if (len === 0 || s > e) return [];
+  return list.slice(s, e + 1).map((it) => it.member);
 }
