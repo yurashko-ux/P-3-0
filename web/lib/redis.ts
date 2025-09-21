@@ -25,7 +25,7 @@ export const redis = {
   },
 
   // LRANGE key start stop (stop inclusive)
-  async lrange(key: string, start: number, stop: number): Promise(Val[]) {
+  async lrange(key: string, start: number, stop: number): Promise<Val[]> {
     const arr = getList(key);
     const norm = (i: number) => (i < 0 ? arr.length + i : i);
     const s = Math.max(0, norm(start));
