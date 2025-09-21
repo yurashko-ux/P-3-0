@@ -1,99 +1,102 @@
 // web/lib/kv.ts
-// Легкий REST-клієнт для Upstash/Vercel KV без @vercel/kv.
+// Легка in-memory реалізація KV для Vercel/Next без зовнішніх залежностей.
 // Підтримує: kvGet, kvSet, kvMGet, kvZAdd, kvZRange.
+// У проді можна замінити на Upstash REST, зберігши ті самі сигнатури.
 
-type ZRangeOpts = { rev?: boolean };
-type SetOpts = { ex?: number }; // seconds
+type ZEntry = { score: number; member: string };
 
-const URL =
-  process.env.KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL ||
-  '';
-const TOKEN =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN ||
-  '';
+type GlobalKVState = {
+  kv: Map<string, string>;
+  z: Map<string, ZEntry[]>;
+};
 
-if (!URL || !TOKEN) {
-  // Не кидаємо помилку тут, щоб збірка не падала.
-  // Але при першому виклику отримаєш зрозумілу помилку.
-  // Додай ENV: KV_REST_API_URL & KV_REST_API_TOKEN (або Upstash аналоги).
-  // Vercel → Settings → Environment Variables.
+const g = globalThis as any;
+if (!g.__P30_KV__) {
+  g.__P30_KV__ = { kv: new Map<string, string>(), z: new Map<string, ZEntry[]>() } as GlobalKVState;
+}
+const state: GlobalKVState = g.__P30_KV__;
+
+// ---- helpers
+function ensureZ(key: string): ZEntry[] {
+  const arr = state.z.get(key);
+  if (arr) return arr;
+  const fresh: ZEntry[] = [];
+  state.z.set(key, fresh);
+  return fresh;
 }
 
-async function kvSend<T = any>(args: (string | number)[]): Promise<T> {
-  if (!URL || !TOKEN) {
-    throw new Error(
-      'KV REST is not configured. Set KV_REST_API_URL & KV_REST_API_TOKEN (or UPSTASH_REDIS_REST_URL & UPSTASH_REDIS_REST_TOKEN).'
-    );
-  }
-  const res = await fetch(URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-    // Upstash REST не потребує cache, але щоб не було Next fetch cache:
-    // @ts-ignore
-    cache: 'no-store',
-  });
+// ---- public api
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // Upstash повертає { error: "..."} при помилці парсингу команди.
-    const msg = data?.error || `HTTP ${res.status}`;
-    throw new Error(`KV ${res.status} ${res.statusText}: ${JSON.stringify(data) || msg}`);
-  }
-  return data.result as T;
-}
-
-// ---------- helpers ----------
-
-function tryParse<T>(v: any): T | null {
-  if (typeof v !== 'string') return (v as T) ?? (null as any);
-  try {
-    return JSON.parse(v) as T;
-  } catch {
-    return (v as any) as T;
-  }
-}
-
-// ---------- API ----------
-
+// Отримати значення по ключу (JSON.parse)
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  const res = await kvSend<string | null>(['GET', key]);
-  return res == null ? null : tryParse<T>(res);
-}
-
-export async function kvSet<T = any>(key: string, value: T, opts?: SetOpts): Promise<'OK'> {
-  const payload = typeof value === 'string' ? value : JSON.stringify(value);
-  if (opts?.ex && Number.isFinite(opts.ex)) {
-    return await kvSend(['SET', key, payload, 'EX', Math.floor(opts.ex!).toString()]);
+  const raw = state.kv.get(key);
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    // якщо зберігли як рядок, повертаємо як є
+    return raw as unknown as T;
   }
-  return await kvSend(['SET', key, payload]);
 }
 
-export async function kvMGet<T = any>(keys: string[]): Promise<(T | null)[]> {
-  if (!keys.length) return [];
-  const res = await kvSend<(string | null)[]>(['MGET', ...keys]);
-  return res.map((v) => (v == null ? null : tryParse<T>(v)));
+// Встановити значення по ключу (JSON.stringify). Параметр ex ігноруємо у in-memory варіанті.
+export async function kvSet(key: string, value: any, _opts?: { ex?: number }): Promise<void> {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value);
+  state.kv.set(key, raw);
 }
 
-export async function kvZAdd(
-  key: string,
-  entry: { score: number; member: string | number }
-): Promise<number> {
-  // ZADD key score member
-  const { score, member } = entry;
-  return await kvSend<number>(['ZADD', key, String(score), String(member)]);
+// Масове отримання кількох ключів
+export async function kvMGet(keys: string[]): Promise<any[]> {
+  const out: any[] = [];
+  for (const k of keys) {
+    const v = await kvGet(k);
+    out.push(v);
+  }
+  return out;
 }
 
+// Додати елемент у ZSET: kvZAdd(key, { score, member })
+export async function kvZAdd(key: string, entry: ZEntry): Promise<void> {
+  const arr = ensureZ(key);
+  // замінимо існуючий member, якщо такий є
+  const idx = arr.findIndex((e) => e.member === entry.member);
+  if (idx >= 0) {
+    arr[idx] = entry;
+  } else {
+    arr.push(entry);
+  }
+  // підтримуємо масив відсортованим за score зростаюче
+  arr.sort((a, b) => a.score - b.score);
+}
+
+// Повернути діапазон членів (лише members), підтримує { rev: true } для зворотного порядку.
+// start/end як у Redis: 0..-1 означає весь діапазон.
 export async function kvZRange(
   key: string,
   start: number,
-  stop: number,
-  opts?: ZRangeOpts
+  end: number,
+  opts?: { rev?: boolean }
 ): Promise<string[]> {
-  // ZRANGE key start stop [REV]
-  const args: (string | number)[] = ['ZRANGE', key, start, stop];
-  if (opts?.rev) args.push('REV');
-  return await kvSend<string[]>(args);
+  const arr = ensureZ(key);
+  const src = opts?.rev ? [...arr].reverse() : arr;
+  // нормалізація індексів як у Redis
+  const N = src.length;
+  const s = start < 0 ? Math.max(N + start, 0) : Math.min(start, N);
+  const eInclusive = end < 0 ? N + end : end;
+  const e = Math.min(Math.max(eInclusive, -1), N - 1);
+  if (N === 0 || e < s) return [];
+  return src.slice(s, e + 1).map((x) => x.member);
+}
+
+// (необов’язкове) Видалення ключа
+export async function kvDel(key: string): Promise<void> {
+  state.kv.delete(key);
+}
+
+// (необов’язкове) Отримати «сирі» дані для відладки
+export function __kv_debug__() {
+  return {
+    kv_keys: Array.from(state.kv.keys()),
+    z_keys: Array.from(state.z.keys()),
+  };
 }
