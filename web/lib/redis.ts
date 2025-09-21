@@ -38,11 +38,20 @@ export const redis = {
     store.set(key, value);
     return 'OK';
   },
+
   // Support generics like redis.get<string>(key)
   async get<T = string>(key: string): Promise<T | null> {
     const v = store.get(key);
     if (typeof v === 'string') return (v as unknown) as T;
     return null;
+  },
+
+  // MGET variadic: redis.mget(...keys)
+  async mget<T = string>(...keys: string[]): Promise<(T | null)[]> {
+    return keys.map((k) => {
+      const v = store.get(k);
+      return typeof v === 'string' ? ((v as unknown) as T) : null;
+    });
   },
 
   // DEL
