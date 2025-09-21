@@ -1,33 +1,9 @@
 // web/app/api/campaigns/create/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { assertAdmin } from '@/lib/auth';
-import { kvSet, kvZAdd } from '@/lib/kv';
-import { CampaignInput, normalizeCampaign } from '@/lib/types';
+import { NextResponse } from 'next/server';
 
-export const dynamic = 'force-dynamic';
-
-const INDEX = 'campaigns:index';
-const KEY = (id: string) => `campaigns:${id}`;
-
-export async function POST(req: NextRequest) {
-  try {
-    await assertAdmin(req);
-
-    const body = (await req.json()) as CampaignInput;
-    const c = normalizeCampaign(body);
-
-    // зберігаємо повний JSON
-    await kvSet(KEY(c.id), c);
-
-    // ВАЖЛИВО: ваша сигнатура kvZAdd — (key, score, member)
-    await kvZAdd(INDEX, c.created_at, c.id);
-
-    return NextResponse.json(c, { status: 200 });
-  } catch (e: any) {
-    const msg =
-      e?.issues?.[0]?.message ||
-      e?.message ||
-      'Invalid payload';
-    return NextResponse.json({ error: msg }, { status: 400 });
-  }
+export async function GET() {
+  return NextResponse.json({ disabled: true });
+}
+export async function POST() {
+  return NextResponse.json({ disabled: true });
 }
