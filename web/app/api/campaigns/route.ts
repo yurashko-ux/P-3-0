@@ -2,56 +2,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertAdmin } from '@/lib/auth';
 import { kvGet, kvSet, kvZAdd, kvZRange } from '@/lib/kv';
-import { Campaign, CampaignInput, normalizeCampaign } from '@/lib/types';
-import { getPipelineName, getStatusName } from '@/lib/kc-cache';
-
-export const dynamic = 'force-dynamic';
+import { CampaignInput, Campaign, normalizeCampaign } from '@/lib/types';
 
 const INDEX = 'campaigns:index';
 const KEY = (id: string) => `campaigns:${id}`;
 
+export const dynamic = 'force-dynamic';
+
+// GET /api/campaigns  — віддає всі кампанії з KV (без звернень до KeyCRM)
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  // Уникаємо опцій у kvZRange (деякі реалізації їх не підтримують)
-  let ids: string[] = await kvZRange(INDEX, 0, -1);
-  if (!ids || !ids.length) return NextResponse.json([]);
+  const ids: string[] = (await kvZRange(INDEX, 0, -1)) || [];
+  if (!ids.length) return NextResponse.json([]);
 
-  // Хочемо нові зверху — просто розвертаємо масив
-  ids = ids.reverse();
-
-  const keys = ids.map(KEY);
-
-  // Без kvMGet: читаємо по одному — простіше і надійніше
-  const rawList = await Promise.all(keys.map((k) => kvGet<any>(k)));
+  // ZSET повертає зростаюче — віддамо у зворотньому порядку (нові згори)
+  const ordered = ids.slice().reverse();
 
   const items: Campaign[] = [];
-  for (const raw of rawList) {
+  for (const id of ordered) {
+    const raw = await kvGet<any>(KEY(id)).catch(() => null);
     if (!raw) continue;
-    const c = normalizeCampaign(typeof raw === 'string' ? JSON.parse(raw) : raw);
-
-    // збагачення назвами
-    c.base_pipeline_name = await getPipelineName(c.base_pipeline_id);
-    c.base_status_name = await getStatusName(c.base_pipeline_id, c.base_status_id);
-
-    if (c.exp) {
-      const ep = c.exp;
-      (c as any).exp = {
-        ...ep,
-        to_pipeline_name: await getPipelineName(ep.to_pipeline_id),
-        to_status_name: await getStatusName(
-          ep.to_pipeline_id ?? c.base_pipeline_id,
-          ep.to_status_id ?? null
-        ),
-      };
-    }
-
-    items.push(c);
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    items.push(normalizeCampaign(obj));
   }
 
-  return NextResponse.json(items);
+  return NextResponse.json(items, { status: 200 });
 }
 
+// POST /api/campaigns — створює/оновлює одну кампанію в KV
 export async function POST(req: NextRequest) {
   try {
     await assertAdmin(req);
@@ -59,13 +38,12 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as CampaignInput;
     const c = normalizeCampaign(body);
 
-    // зберігаємо повний JSON кампанії
+    // повний JSON
     await kvSet(KEY(c.id), c);
 
-    // ВАЖЛИВО: правильна сигнатура kvZAdd — один об’єкт { score, member }
+    // індекс за created_at (увага: у твоїй обгортці kvZAdd приймає об'єкт {score, member})
     await kvZAdd(INDEX, { score: c.created_at, member: c.id });
 
-    // Повертаємо те, що зберегли (без звернень до KeyCRM)
     return NextResponse.json(c, { status: 200 });
   } catch (e: any) {
     const msg = e?.issues?.[0]?.message || e?.message || 'Invalid payload';
