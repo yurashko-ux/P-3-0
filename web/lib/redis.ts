@@ -25,7 +25,7 @@ export const redis = {
   },
 
   // LRANGE key start stop (stop inclusive)
-  async lrange(key: string, start: number, stop: number): Promise<Val[]> {
+  async lrange(key: string, start: number, stop: number): Promise(Val[]) {
     const arr = getList(key);
     const norm = (i: number) => (i < 0 ? arr.length + i : i);
     const s = Math.max(0, norm(start));
@@ -52,9 +52,9 @@ export const redis = {
 
   // ZADD/ZRANGE (basic, score:number)
   async zadd(key: string, score: number, member: Val): Promise<number> {
-    const arr = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
+    const enc = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
     // We'll encode as "score|member" and keep sorted by score asc
-    const parsed = (arr as Val[]).map((x) => {
+    const parsed = enc.map((x) => {
       const [s, ...m] = x.split('|');
       return { score: Number(s), member: m.join('|') };
     });
@@ -62,18 +62,39 @@ export const redis = {
     if (idx >= 0) parsed[idx].score = score;
     else parsed.push({ score, member });
     parsed.sort((a, b) => a.score - b.score);
-    const enc = parsed.map((x) => `${x.score}|${x.member}`);
-    store.set(key, enc);
+    const nextEnc = parsed.map((x) => `${x.score}|${x.member}`);
+    store.set(key, nextEnc);
     return 1;
   },
-  async zrange(key: string, start: number, stop: number): Promise<Val[]> {
+
+  /**
+   * ZRANGE key start stop [REV]
+   * Shim supports an optional 4th argument options: { rev?: boolean }
+   * Example: await redis.zrange('k', 0, -1, { rev: true })
+   */
+  async zrange(
+    key: string,
+    start: number,
+    stop: number,
+    options?: { rev?: boolean }
+  ): Promise<Val[]> {
     const enc = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
-    const parsed = enc.map((x) => x.split('|').slice(1).join('|'));
-    const norm = (i: number) => (i < 0 ? parsed.length + i : i);
+    // decode to [{score, member}] keeping ascending by score (as stored)
+    const items = enc.map((x) => {
+      const [s, ...m] = x.split('|');
+      return { score: Number(s), member: m.join('|') };
+    });
+
+    // apply REV if requested
+    if (options?.rev) items.reverse();
+
+    const total = items.length;
+    const norm = (i: number) => (i < 0 ? total + i : i);
     const s = Math.max(0, norm(start));
-    const e = Math.min(parsed.length - 1, norm(stop));
-    if (e < s) return [];
-    return parsed.slice(s, e + 1);
+    const e = Math.min(total - 1, norm(stop));
+    if (e < s || total === 0) return [];
+
+    return items.slice(s, e + 1).map((x) => x.member);
   },
 
   // No-op for expiry in shim mode
