@@ -1,29 +1,31 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": false,
     "noEmit": true,
     "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
 
-    // 🔧 головне — alias для імпортів виду "@/lib/..."
+    // 🔽 ГОЛОВНЕ: alias '@/*' для імпортів типу '@/lib/kv'
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+
+    // (не обов'язково, але корисно для Next 14)
+    "types": ["node", "react", "react-dom"]
   },
   "include": [
-    "next-env.d.ts",
+    ".next/types/**/*.ts",
     "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts"
+    "**/*.tsx"
   ],
   "exclude": ["node_modules"]
 }
