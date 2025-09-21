@@ -39,9 +39,12 @@ export const redis = {
     store.set(key, value);
     return 'OK';
   },
-  async get(key: string): Promise<Val | null> {
+
+  // NOTE: support generics like redis.get<string>(key)
+  async get<T = string>(key: string): Promise<T | null> {
     const v = store.get(key);
-    return typeof v === 'string' ? v : null;
+    if (typeof v === 'string') return (v as unknown) as T;
+    return null;
   },
 
   // DEL
