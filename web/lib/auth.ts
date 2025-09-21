@@ -1,29 +1,54 @@
 // web/lib/auth.ts
-import type { NextRequest } from "next/server";
+import { NextRequest } from 'next/server';
 
-function getPassFromReq(req: NextRequest | Request): string | null {
-  const header = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (header && header.toLowerCase().startsWith("bearer ")) {
-    return header.slice(7).trim();
-  }
+/**
+ * Проста адмін-авторизація:
+ *  - Header:  Authorization: Bearer 11111
+ *  - або query: ?pass=11111  (для ручних перевірок у браузері)
+ *
+ * Значення пароля береться з ENV ADMIN_PASS або за замовчуванням "11111".
+ */
+function expectedPass(): string {
+  return process.env.ADMIN_PASS?.trim() || '11111';
+}
+
+function readBearer(req: NextRequest): string | null {
+  const h = req.headers.get('authorization') || req.headers.get('Authorization');
+  if (!h) return null;
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1] : null;
+}
+
+function readQueryPass(req: NextRequest): string | null {
   try {
-    const url = new URL(req.url);
-    const p = url.searchParams.get("pass");
-    if (p) return p.trim();
-  } catch {}
-  return null;
-}
-
-export async function assertAdmin(req: NextRequest | Request): Promise<void> {
-  const expected = process.env.ADMIN_PASS || "11111";
-  const got = getPassFromReq(req);
-  if (!got || got !== expected) {
-    throw new Error("Unauthorized");
+    return req.nextUrl.searchParams.get('pass')?.trim() || null;
+  } catch {
+    // на всяк випадок fallback через стандартний URL
+    try {
+      const u = new URL(req.url);
+      return u.searchParams.get('pass')?.trim() || null;
+    } catch {
+      return null;
+    }
   }
 }
 
-export function isAdmin(req: NextRequest | Request): boolean {
-  const expected = process.env.ADMIN_PASS || "11111";
-  const got = getPassFromReq(req);
-  return !!got && got === expected;
+export async function assertAdmin(req: NextRequest): Promise<void> {
+  const want = expectedPass();
+  const got = readBearer(req) || readQueryPass(req);
+  if (!got || got !== want) {
+    const err: any = new Error('Unauthorized');
+    err.status = 401;
+    throw err;
+  }
+}
+
+// опційно: щоб швидко перевіряти в UI/діагностиці без кидання помилки
+export async function isAdmin(req: NextRequest): Promise<boolean> {
+  try {
+    await assertAdmin(req);
+    return true;
+  } catch {
+    return false;
+  }
 }
