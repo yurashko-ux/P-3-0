@@ -1,83 +1,47 @@
 // web/lib/kv.ts
-// Мінімальний клієнт для Vercel KV (Upstash REST).
-// ВАЖЛИВО: будь-що, що не є рядком — stringify перед записом.
+import { kv } from '@vercel/kv';
 
-type AnyObj = Record<string, any>;
-
-const BASE = process.env.KV_REST_API_URL;
-const TOKEN = process.env.KV_REST_API_TOKEN;
-
-function ensureEnv() {
-  if (!BASE || !TOKEN) {
-    throw new Error('KV env missing: KV_REST_API_URL or KV_REST_API_TOKEN');
-  }
-}
-
-async function send<T = any>(command: (string | number)[]): Promise<T> {
-  ensureEnv();
-  // Upstash очікує { command: [...] }
-  const res = await fetch(BASE as string, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      command: command.map((c) => String(c)),
-    }),
-    // на Vercel edge важливо не кешувати
-    cache: 'no-store',
-  });
-
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    // Повернемо текст помилки з тіла
-    throw new Error(`KV ${res.status} ${res.statusText}: ${JSON.stringify(json)}`);
-  }
-  // Від Upstash приходить { result: ... }
-  return (json && 'result' in json ? json.result : json) as T;
-}
-
-/** GET key -> T | null (авто JSON.parse, якщо можливо) */
+/** Проста обгортка get */
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  const val = await send<string | null>(['GET', key]).catch(() => null);
-  if (val == null) return null;
-  if (typeof val === 'string') {
-    // спробуємо розпарсити JSON
-    try {
-      return JSON.parse(val) as T;
-    } catch {
-      // повертаємо як є, якщо це звичайний рядок
-      return val as unknown as T;
-    }
-  }
-  return val as unknown as T;
+  return (await kv.get<T>(key)) ?? null;
 }
 
-/** SET key value (об’єкти/масиви stringify) */
+/** set з optional TTL (ex у секундах) */
 export async function kvSet(
   key: string,
   value: any,
-  opts?: { ex?: number } // seconds
+  opts?: { ex?: number }
 ): Promise<'OK'> {
-  const stored =
-    typeof value === 'string' ? value : JSON.stringify(value);
-  if (opts?.ex && Number.isFinite(opts.ex)) {
-    return await send(['SET', key, stored, 'EX', String(opts.ex)]);
-  }
-  return await send(['SET', key, stored]);
+  if (opts?.ex) return kv.set(key, value, { ex: opts.ex });
+  return kv.set(key, value);
 }
 
-/** ZADD key score member */
+/** del */
+export async function kvDel(key: string): Promise<number> {
+  return kv.del(key);
+}
+
+/**
+ * ZADD: підтримує 2 сигнатури:
+ *  - нова/бажана: kvZAdd(key, { score, member })
+ *  - легасі:      kvZAdd(key, score, member)
+ */
 export async function kvZAdd(
   key: string,
-  score: number,
-  member: string
+  arg1: { score: number; member: string } | number,
+  arg2?: string
 ): Promise<number> {
-  return await send(['ZADD', key, String(score), member]);
+  if (typeof arg1 === 'number' && typeof arg2 !== 'undefined') {
+    // легасі виклик (score, member)
+    return kv.zadd(key, { score: arg1, member: arg2 });
+  }
+  // сучасний виклик
+  return kv.zadd(key, arg1 as { score: number; member: string });
 }
 
-/** ZRANGE / ZREVRANGE */
+/**
+ * ZRANGE з підтримкою { rev: true }
+ */
 export async function kvZRange(
   key: string,
   start: number,
@@ -85,13 +49,18 @@ export async function kvZRange(
   opts?: { rev?: boolean }
 ): Promise<string[]> {
   if (opts?.rev) {
-    return await send(['ZREVRANGE', key, String(start), String(stop)]);
+    return kv.zrange<string>(key, start, stop, { rev: true });
   }
-  return await send(['ZRANGE', key, String(start), String(stop)]);
+  return kv.zrange<string>(key, start, stop);
 }
 
-/** MGET keys... -> (string | null)[] (з авто JSON.parse по місцю використання) */
-export async function kvMGet(keys: string[]): Promise<(string | null)[]> {
-  if (!keys.length) return [];
-  return await send(['MGET', ...keys]);
+/**
+ * MGET для набору ключів. Повертає масив значень у тій же послідовності.
+ * Значення можуть бути рядками або об'єктами — парсити вже у викликача, якщо потрібно.
+ */
+export async function kvMGet(keys: string[]): Promise<any[]> {
+  if (!keys?.length) return [];
+  // @vercel/kv підтримує varargs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (await (kv as any).mget(...keys)) ?? [];
 }
