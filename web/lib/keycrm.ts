@@ -7,9 +7,11 @@ const ENABLE_REAL = process.env.ENABLE_REAL_KC === 'true';
 const API_URL = process.env.KEYCRM_API_URL || '';
 const API_TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
 
+type Idish = number | string;
+
 type Card = { id: number; title: string; pipeline_id?: number; status_id?: number; username?: string };
 type SearchResult = { cards: Card[] };
-type MoveInput = { card_id: number; pipeline_id: number; status_id: number };
+type MoveInput = { card_id: number; pipeline_id: Idish; status_id: Idish };
 
 async function realFetch(path: string, init?: RequestInit) {
   if (!API_URL || !API_TOKEN) throw new Error('KeyCRM real mode requires KEYCRM_API_URL and KEYCRM_API_TOKEN');
@@ -42,15 +44,20 @@ export async function searchByTitleContains(query: string): Promise<SearchResult
   return { cards: [] };
 }
 
-/** Move a card to another pipeline/status. */
+/** Move a card to another pipeline/status. Accepts string/number ids; coerces to number. */
 export async function moveCard(input: MoveInput): Promise<{ ok: true }> {
+  const payload = {
+    pipeline_id: Number(input.pipeline_id),
+    status_id: Number(input.status_id),
+  };
   if (ENABLE_REAL) {
     await realFetch(`/cards/${input.card_id}/move`, {
       method: 'POST',
-      body: JSON.stringify({ pipeline_id: input.pipeline_id, status_id: input.status_id }),
+      body: JSON.stringify(payload),
     });
     return { ok: true };
   }
+  // MOCK
   return { ok: true };
 }
 
@@ -87,16 +94,16 @@ export async function getCardById(id: number): Promise<Card | null> {
 
 /**
  * kcFindCardIdByAny: tries username first (if provided), else uses title/fullname contains.
- * Accepts extra fields (pipeline_id/status_id/per_page/...) and safely ignores them in mock mode.
+ * Accepts extra fields (pipeline_id/status_id/per_page/max_pages/...) and safely ignores them in mock mode.
  */
 export async function kcFindCardIdByAny(input: {
   username?: string;
   title?: string;
   fullname?: string;
-  pipeline_id?: number;
-  status_id?: number;
+  pipeline_id?: Idish;
+  status_id?: Idish;
   per_page?: number;
-  // allow future extra fields without TS error
+  max_pages?: number;
 } & Record<string, any>): Promise<number | null> {
   const username = input?.username?.trim();
   const title = input?.title?.trim() || input?.fullname?.trim();
@@ -113,7 +120,7 @@ export async function kcFindCardIdByAny(input: {
 }
 
 /** kcMoveCard: thin wrapper to satisfy named import usage. */
-export async function kcMoveCard(card_id: number, pipeline_id: number, status_id: number): Promise<{ ok: true }> {
+export async function kcMoveCard(card_id: number, pipeline_id: Idish, status_id: Idish): Promise<{ ok: true }> {
   return moveCard({ card_id, pipeline_id, status_id });
 }
 
