@@ -3,45 +3,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertAdmin } from '@/lib/auth';
 import { kvGet, kvZRange } from '@/lib/kv';
 
+export const dynamic = 'force-dynamic';
+
 const INDEX = 'campaigns:index';
 const KEY = (id: string) => `campaigns:${id}`;
-
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   await assertAdmin(req);
 
-  // усі campaign-id з індексу (без опцій, бо kvZRange приймає 3 аргументи)
-  const ids: string[] = (await kvZRange(INDEX, 0, -1)) ?? [];
-  const indexCount = ids.length;
+  // Беремо всі id з індексу. Наш kvZRange має сигнатуру (key, start, end),
+  // тож без {rev:true}. Розвернемо в JS.
+  const ids: string[] = (await kvZRange(INDEX, 0, -1)) || [];
+  const idsDesc = [...ids].reverse();
 
-  // підтягнемо до 5 записів як семпл
-  const sampleIds = ids.slice(-5).reverse(); // останні додані — першими
-  const sampleKeys = sampleIds.map(KEY);
-  const sample = await Promise.all(
-    sampleKeys.map(async (k, i) => {
-      const raw = await kvGet<any>(k).catch(() => null);
-      return {
-        id: sampleIds[i],
-        key: k,
-        exists: raw != null,
-        valueType: raw == null ? null : typeof raw,
-        parsed: raw && typeof raw === 'object'
-          ? {
-              name: raw.name ?? null,
-              base_pipeline_id: raw.base_pipeline_id ?? null,
-              base_status_id: raw.base_status_id ?? null,
-              has_rules: !!raw.rules,
-            }
-          : null,
-      };
-    })
-  );
+  // Підтягнемо до 5 штук як семпл
+  const sampleIds = idsDesc.slice(0, 5);
+  const sample: any[] = [];
+  for (const id of sampleIds) {
+    const raw = await kvGet<any>(KEY(id)).catch(() => null);
+    sample.push({
+      id,
+      exists: !!raw,
+      valueType: raw ? typeof raw : null,
+      name: raw?.name ?? null,
+      base_pipeline_id: raw?.base_pipeline_id ?? null,
+      base_status_id: raw?.base_status_id ?? null,
+      created_at: raw?.created_at ?? null,
+    });
+  }
 
   return NextResponse.json({
     ok: true,
-    indexCount,
-    sampleIds,
+    index_count: ids.length,
+    sample_ids: sampleIds,
     sample,
   });
 }
