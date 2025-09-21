@@ -1,19 +1,33 @@
 // web/lib/auth.ts
-import { NextRequest } from 'next/server';
+// Проста авторизація: Bearer <ADMIN_PASS> або ?pass=... у query.
+// За замовчуванням ADMIN_PASS="11111" (як у твоїх прикладах).
 
-// Use ENV in prod, fallback for dev
+import type { NextRequest } from 'next/server';
+
 const ADMIN_PASS = process.env.ADMIN_PASS || '11111';
 
-// Throws if not authorized
-export async function assertAdmin(req: NextRequest): Promise<void> {
-  const h = req.headers.get('authorization') || '';
-  const bearer =
-    h.toLowerCase().startsWith('bearer ') ? h.slice(7).trim() : null;
+export async function assertAdmin(req: NextRequest | Request): Promise<void> {
+  // 1) Authorization: Bearer <token>
+  const authHeader =
+    (req as any).headers?.get?.('authorization') ??
+    (req as any).headers?.get?.('Authorization') ??
+    '';
 
-  // also allow ?pass= for quick cURL tests
-  const urlPass = (req as any).nextUrl?.searchParams?.get('pass');
+  let token =
+    authHeader && authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7).trim()
+      : null;
 
-  if (bearer === ADMIN_PASS || urlPass === ADMIN_PASS) return;
+  // 2) ?pass=...
+  if (!token) {
+    const url = new URL((req as any).url);
+    const q = url.searchParams.get('pass')?.trim();
+    if (q) token = q;
+  }
 
-  throw new Error('Unauthorized');
+  if (!token || token !== ADMIN_PASS) {
+    const err: any = new Error('Unauthorized');
+    err.status = 401;
+    throw err;
+  }
 }
