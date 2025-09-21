@@ -18,8 +18,7 @@ export const redis = {
   // LPUSH key value [value ...]
   async lpush(key: string, ...values: Val[]): Promise<number> {
     const arr = getList(key);
-    // newest first, like LPUSH
-    for (const v of values) arr.unshift(v);
+    for (const v of values) arr.unshift(v); // newest first
     store.set(key, arr);
     return arr.length;
   },
@@ -34,13 +33,12 @@ export const redis = {
     return arr.slice(s, e + 1);
   },
 
-  // SET/GET simple string values (used occasionally)
+  // SET/GET simple string values
   async set(key: string, value: Val): Promise<'OK'> {
     store.set(key, value);
     return 'OK';
   },
-
-  // NOTE: support generics like redis.get<string>(key)
+  // Support generics like redis.get<string>(key)
   async get<T = string>(key: string): Promise<T | null> {
     const v = store.get(key);
     if (typeof v === 'string') return (v as unknown) as T;
@@ -53,18 +51,30 @@ export const redis = {
     return existed ? 1 : 0;
   },
 
-  // ZADD/ZRANGE (basic, score:number)
-  async zadd(key: string, score: number, member: Val): Promise<number> {
+  // ZADD (supports two signatures):
+  // 1) zadd(key, score:number, member:string)
+  // 2) zadd(key, { score:number, member:string })
+  async zadd(
+    key: string,
+    a: number | { score: number; member: Val },
+    b?: Val
+  ): Promise<number> {
     const enc = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
-    // We'll encode as "score|member" and keep sorted by score asc
+
+    // decode to objects
     const parsed = enc.map((x) => {
       const [s, ...m] = x.split('|');
       return { score: Number(s), member: m.join('|') };
     });
+
+    const { score, member } =
+      typeof a === 'number' ? { score: a, member: b as Val } : a;
+
     const idx = parsed.findIndex((x) => x.member === member);
     if (idx >= 0) parsed[idx].score = score;
     else parsed.push({ score, member });
-    parsed.sort((a, b) => a.score - b.score);
+
+    parsed.sort((x, y) => x.score - y.score);
     const nextEnc = parsed.map((x) => `${x.score}|${x.member}`);
     store.set(key, nextEnc);
     return 1;
@@ -72,8 +82,7 @@ export const redis = {
 
   /**
    * ZRANGE key start stop [REV]
-   * Shim supports an optional 4th argument options: { rev?: boolean }
-   * Example: await redis.zrange('k', 0, -1, { rev: true })
+   * supports optional 4th arg: { rev?: boolean }
    */
   async zrange(
     key: string,
@@ -82,13 +91,11 @@ export const redis = {
     options?: { rev?: boolean }
   ): Promise<Val[]> {
     const enc = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
-    // decode to [{score, member}] keeping ascending by score (as stored)
     const items = enc.map((x) => {
       const [s, ...m] = x.split('|');
       return { score: Number(s), member: m.join('|') };
     });
 
-    // apply REV if requested
     if (options?.rev) items.reverse();
 
     const total = items.length;
@@ -100,9 +107,8 @@ export const redis = {
     return items.slice(s, e + 1).map((x) => x.member);
   },
 
-  // No-op for expiry in shim mode
   async expire(_key: string, _seconds: number): Promise<0 | 1> {
-    return 0;
+    return 0; // no-op in shim
   },
 };
 
