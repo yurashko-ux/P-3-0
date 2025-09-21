@@ -16,11 +16,11 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as CampaignInput;
     const c = normalizeCampaign(body);
 
-    // зберігаємо повний JSON кампанії
+    // зберігаємо повний JSON
     await kvSet(KEY(c.id), c);
 
-    // ДОДАНО: правильна сигнатура kvZAdd — один об’єкт { score, member }
-    await kvZAdd(INDEX, { score: c.created_at, member: c.id });
+    // ВАЖЛИВО: ваша сигнатура kvZAdd — (key, score, member)
+    await kvZAdd(INDEX, c.created_at, c.id);
 
     return NextResponse.json(c, { status: 200 });
   } catch (e: any) {
