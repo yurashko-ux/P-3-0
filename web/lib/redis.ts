@@ -90,30 +90,39 @@ export const redis = {
   },
 
   /**
-   * ZRANGE key start stop [REV]
-   * supports optional 4th arg: { rev?: boolean }
+   * ZRANGE:
+   * - index mode: zrange(key, startIndex, stopIndex, { rev? })
+   * - score mode: zrange(key, minScore, maxScore, { byScore: true, rev? })
+   * Supports generic type param: redis.zrange<T>(...)
    */
-  async zrange(
+  async zrange<T = string>(
     key: string,
     start: number,
     stop: number,
-    options?: { rev?: boolean }
-  ): Promise<Val[]> {
+    options?: { rev?: boolean; byScore?: boolean }
+  ): Promise<T[]> {
     const enc = Array.isArray(store.get(key)) ? (store.get(key) as Val[]) : [];
     const items = enc.map((x) => {
       const [s, ...m] = x.split('|');
       return { score: Number(s), member: m.join('|') };
     });
 
-    if (options?.rev) items.reverse();
-
-    const total = items.length;
-    const norm = (i: number) => (i < 0 ? total + i : i);
-    const s = Math.max(0, norm(start));
-    const e = Math.min(total - 1, norm(stop));
-    if (e < s || total === 0) return [];
-
-    return items.slice(s, e + 1).map((x) => x.member);
+    if (options?.byScore) {
+      // filter by score range (inclusive)
+      let filtered = items.filter((it) => it.score >= start && it.score <= stop);
+      // default order is asc by score; apply REV if requested
+      if (options?.rev) filtered = filtered.reverse();
+      return filtered.map((x) => x.member as unknown as T);
+    } else {
+      // index-based slicing
+      const total = items.length;
+      if (options?.rev) items.reverse();
+      const norm = (i: number) => (i < 0 ? total + i : i);
+      const s = Math.max(0, norm(start));
+      const e = Math.min(total - 1, norm(stop));
+      if (e < s || total === 0) return [];
+      return items.slice(s, e + 1).map((x) => x.member as unknown as T);
+    }
   },
 
   async expire(_key: string, _seconds: number): Promise<0 | 1> {
