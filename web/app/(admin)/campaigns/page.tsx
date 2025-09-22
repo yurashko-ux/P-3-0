@@ -1,20 +1,22 @@
 // web/app/(admin)/campaigns/page.tsx
-import { redis } from "@/lib/redis";
-
 export const dynamic = "force-dynamic";
 
 type Rule = { op?: "contains" | "equals"; value?: string };
+
 type Campaign = {
   id: string;
   name?: string;
 
+  // base (V1 base pair)
   base_pipeline_id?: number;
   base_status_id?: number;
   base_pipeline_name?: string | null;
   base_status_name?: string | null;
 
+  // rules
   rules?: { v1?: Rule; v2?: Rule };
 
+  // experiment (EXP)
   exp?: {
     to_pipeline_id?: number;
     to_status_id?: number;
@@ -23,6 +25,7 @@ type Campaign = {
     trigger?: Rule;
   };
 
+  // counters
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
@@ -31,191 +34,128 @@ type Campaign = {
   active?: boolean;
 };
 
-const NS = "campaigns";
-const INDEX_KEY = `${NS}:index`;
-const ITEM_KEY = (id: string) => `${NS}:${id}`;
+async function getCampaigns(): Promise<Campaign[]> {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/campaigns`, {
+    cache: "no-store",
+  }).catch(() => null as any);
 
-async function loadCampaigns(): Promise<Campaign[]> {
-  "use server";
+  if (!res?.ok) {
+    // fallback: виклик локального відносного шляху, якщо NEXT_PUBLIC_BASE_URL не заданий
+    const rel = await fetch(`/api/campaigns`, { cache: "no-store" }).catch(() => null as any);
+    if (!rel?.ok) return [];
+    const data = await rel.json();
+    return (data?.items ?? []) as Campaign[];
+  }
+
+  const data = await res.json();
+  return (data?.items ?? []) as Campaign[];
+}
+
+function fmtDate(ts?: number) {
+  if (!ts) return "-";
   try {
-    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-    const out: Campaign[] = [];
-    for (const id of ids || []) {
-      const raw = await redis.get(ITEM_KEY(id));
-      if (!raw) continue;
-      try {
-        out.push(JSON.parse(raw) as Campaign);
-      } catch {
-        // skip broken
-      }
-    }
-    return out;
+    const d = new Date(ts);
+    return d.toLocaleString();
   } catch {
-    return [];
+    return String(ts);
   }
 }
 
-function KV({ k, v }: { k: string; v: any }) {
-  const val =
-    v === null || v === undefined
-      ? "—"
-      : typeof v === "object"
-      ? JSON.stringify(v)
-      : String(v);
-  return (
-    <div className="text-xs text-gray-500">
-      <span className="font-mono text-gray-400">{k}:</span> {val}
-    </div>
-  );
+function ruleText(r?: Rule) {
+  if (!r?.value) return "-";
+  return `${r.op === "equals" ? "==" : "∋"} ${r.value}`;
 }
 
-function RuleBadge({ label, rule }: { label: string; rule?: Rule }) {
-  if (!rule?.value) return null;
-  return (
-    <div className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-      <span className="font-semibold">{label}</span>
-      <span className="opacity-70">{rule.op || "contains"}</span>
-      <span className="font-mono">“{rule.value}”</span>
-    </div>
-  );
-}
-
-function Pair({
-  id,
-  name,
-}: {
-  id?: number;
-  name?: string | null;
-}) {
-  if (!id && !name) return <span className="opacity-50">—</span>;
-  return (
-    <div className="flex flex-col leading-tight">
-      <span>{name ?? "—"}</span>
-      {id ? <span className="text-xs text-gray-500">id: {id}</span> : null}
-    </div>
-  );
-}
-
-export default async function Page() {
-  const items = await loadCampaigns();
+export default async function CampaignsPage() {
+  const items = await getCampaigns();
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Campaigns</h1>
+        <h1 className="text-2xl font-semibold">Кампанії</h1>
         <a
           href="/admin/campaigns/new"
-          className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+          className="rounded-xl px-4 py-2 border hover:shadow transition"
         >
-          + New Campaign
+          + Нова кампанія
         </a>
       </div>
 
-      {items.length === 0 ? (
-        <div className="rounded-xl border p-8 text-center text-gray-500">
-          Campaign list is empty.
+      {(!items || items.length === 0) && (
+        <div className="rounded-xl border p-6 text-gray-600">
+          Список порожній. Створіть першу кампанію.
         </div>
-      ) : (
+      )}
+
+      {items && items.length > 0 && (
         <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-4 py-3">Name / ID</th>
-                <th className="px-4 py-3">V1 (Base)</th>
-                <th className="px-4 py-3">Rules</th>
-                <th className="px-4 py-3">V2</th>
-                <th className="px-4 py-3">EXP → Target</th>
-                <th className="px-4 py-3">Counts</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Active</th>
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr className="text-left">
+                <th className="px-4 py-3 font-medium">ID</th>
+                <th className="px-4 py-3 font-medium">Назва</th>
+                <th className="px-4 py-3 font-medium">База (V1)</th>
+                <th className="px-4 py-3 font-medium">V1 правило</th>
+                <th className="px-4 py-3 font-medium">V2 правило</th>
+                <th className="px-4 py-3 font-medium">EXP → ціль</th>
+                <th className="px-4 py-3 font-medium">EXP тригер</th>
+                <th className="px-4 py-3 font-medium">Лічильники</th>
+                <th className="px-4 py-3 font-medium">Статус</th>
+                <th className="px-4 py-3 font-medium">Створено</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((c) => (
-                <tr key={c.id} className="border-t">
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-medium">{c.name || "—"}</div>
-                    <KV k="id" v={c.id} />
-                  </td>
+              {items.map((c) => {
+                const basePipe =
+                  (c.base_pipeline_name ?? undefined) || (c.base_pipeline_id != null ? `#${c.base_pipeline_id}` : "-");
+                const baseStatus =
+                  (c.base_status_name ?? undefined) || (c.base_status_id != null ? `#${c.base_status_id}` : "-");
 
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-semibold mb-1">Base pipeline/status</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Pair
-                        id={c.base_pipeline_id}
-                        name={c.base_pipeline_name ?? undefined}
-                      />
-                      <Pair
-                        id={c.base_status_id}
-                        name={c.base_status_name ?? undefined}
-                      />
-                    </div>
-                  </td>
+                const toPipe =
+                  (c.exp?.to_pipeline_name ?? undefined) ||
+                  (c.exp?.to_pipeline_id != null ? `#${c.exp?.to_pipeline_id}` : "-");
+                const toStatus =
+                  (c.exp?.to_status_name ?? undefined) ||
+                  (c.exp?.to_status_id != null ? `#${c.exp?.to_status_id}` : "-");
 
-                  <td className="px-4 py-3 align-top">
-                    <div className="flex flex-col gap-1">
-                      <RuleBadge label="V1" rule={c.rules?.v1} />
-                      <RuleBadge label="V2" rule={c.rules?.v2} />
-                      {c.exp?.trigger ? (
-                        <RuleBadge label="EXP" rule={c.exp?.trigger} />
-                      ) : null}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    {/* окрема колонка для явного показу V2 value/op */}
-                    {c.rules?.v2?.value ? (
-                      <div className="flex flex-col">
-                        <div className="font-medium">V2</div>
-                        <div className="text-xs text-gray-600">
-                          {c.rules?.v2?.op || "contains"}{" "}
-                          <span className="font-mono">“{c.rules?.v2?.value}”</span>
-                        </div>
+                return (
+                  <tr key={c.id} className="border-t">
+                    <td className="px-4 py-3 text-gray-500">{c.id}</td>
+                    <td className="px-4 py-3 font-medium">{c.name ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      <div className="text-gray-900">{basePipe} → {baseStatus}</div>
+                    </td>
+                    <td className="px-4 py-3">{ruleText(c.rules?.v1)}</td>
+                    <td className="px-4 py-3">{ruleText(c.rules?.v2)}</td>
+                    <td className="px-4 py-3">
+                      <div className="text-gray-900">{toPipe} → {toStatus}</div>
+                    </td>
+                    <td className="px-4 py-3">{ruleText(c.exp?.trigger)}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <div className="flex gap-3">
+                        <span>V1: {c.v1_count ?? 0}</span>
+                        <span>V2: {c.v2_count ?? 0}</span>
+                        <span>EXP: {c.exp_count ?? 0}</span>
                       </div>
-                    ) : (
-                      <span className="opacity-50">—</span>
-                    )}
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-semibold mb-1">Experiment target</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Pair
-                        id={c.exp?.to_pipeline_id}
-                        name={c.exp?.to_pipeline_name ?? undefined}
-                      />
-                      <Pair
-                        id={c.exp?.to_status_id}
-                        name={c.exp?.to_status_name ?? undefined}
-                      />
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    <KV k="v1_count" v={c.v1_count ?? 0} />
-                    <KV k="v2_count" v={c.v2_count ?? 0} />
-                    <KV k="exp_count" v={c.exp_count ?? 0} />
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    {c.created_at
-                      ? new Date(c.created_at).toLocaleString()
-                      : "—"}
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    {c.active !== false ? (
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
-                        active
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs border ${
+                          c.active ? "bg-green-50 border-green-200 text-green-700" : "bg-gray-50 border-gray-200 text-gray-600"
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            c.active ? "bg-green-500" : "bg-gray-400"
+                          }`}
+                        />
+                        {c.active ? "active" : "inactive"}
                       </span>
-                    ) : (
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                        inactive
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{fmtDate(c.created_at)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
