@@ -1,278 +1,210 @@
 // web/app/admin/campaigns/page.tsx
-"use client";
+// Список кампаній з блоком V2 + коректні назви pipeline/status у V1 та EXP
 
-import { useEffect, useState } from "react";
+export const dynamic = "force-dynamic";
 
 type Campaign = {
-  id: string;
-  created_at: string;
-  name: string;
-  enabled: boolean;
+  id?: string | number;
+  name?: string;
+  created_at?: number;
 
-  base_pipeline_id: string;
-  base_status_id: string;
+  // base
+  base_pipeline_id?: number;
+  base_status_id?: number;
+  base_pipeline_name?: string | null;
+  base_status_name?: string | null;
 
-  v1_value: string;
-  v1_to_pipeline_id: string | null;
-  v1_to_status_id: string | null;
+  // V1
+  v1_pipeline_id?: number;
+  v1_status_id?: number;
+  v1_pipeline_name?: string | null;
+  v1_status_name?: string | null;
 
-  v2_enabled: boolean;
-  v2_value: string;
-  v2_to_pipeline_id: string | null;
-  v2_to_status_id: string | null;
+  // V2
+  v2_pipeline_id?: number;
+  v2_status_id?: number;
+  v2_pipeline_name?: string | null;
+  v2_status_name?: string | null;
 
-  exp_days: number;
-  exp_to_pipeline_id: string | null;
-  exp_to_status_id: string | null;
+  // EXP
+  exp?: {
+    to_pipeline_id?: number | null;
+    to_status_id?: number | null;
+    to_pipeline_name?: string | null;
+    to_status_name?: string | null;
+    days?: number | null;
+  };
 
-  // лічильники
+  // counters
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+
+  active?: boolean;
 };
 
-type Dict = Record<string, string>;
-
-async function fetchJSON<T>(url: string): Promise<T> {
-  const r = await fetch(url, { cache: "no-store", credentials: "include" });
-  return r.json();
+function fmtDate(ts?: number) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  return d.toLocaleString("uk-UA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
-export default function Page() {
-  const [items, setItems] = useState<Campaign[]>([]);
-  const [pipelines, setPipelines] = useState<Dict>({});
-  const [statusesByPipeline, setStatusesByPipeline] = useState<Record<string, Dict>>({});
-
-  async function loadAll() {
-    const list = await fetchJSON<{ ok: boolean; items: Campaign[] }>("/api/campaigns");
-    setItems(list.items || []);
-
-    // Пайплайни
-    const pls: any[] = await fetchJSON("/api/keycrm/pipelines");
-    const pMap: Dict = {};
-    for (const p of pls || []) pMap[String(p.id)] = String(p.name ?? p.title ?? p.id);
-    setPipelines(pMap);
-
-    // Статуси по пайплайнах
-    const stMap: Record<string, Dict> = {};
-    for (const pid of Object.keys(pMap)) {
-      const sts: any[] = await fetchJSON(`/api/keycrm/statuses?pipeline_id=${pid}`);
-      stMap[pid] = {};
-      for (const s of sts || []) stMap[pid][String(s.id)] = String(s.name ?? s.title ?? s.id);
-    }
-    setStatusesByPipeline(stMap);
-  }
-
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  const pname = (pid?: string | null) => (pid ? (pipelines[pid] ?? pid) : "—");
-  const sname = (pid?: string | null, sid?: string | null) =>
-    pid && sid ? (statusesByPipeline[pid]?.[sid] ?? sid) : "—";
-
-  const Badge = ({ children }: { children: React.ReactNode }) => (
-    <span className="inline-block rounded-full bg-blue-600 text-white px-3 py-1 text-sm font-medium whitespace-nowrap">
-      {children}
-    </span>
-  );
-
-  const Counter = ({ n }: { n?: number }) => (
-    <span className="inline-block rounded-full bg-gray-100 text-gray-800 px-2.5 py-1 text-sm font-medium">
-      {typeof n === "number" ? n : "—"}
-    </span>
-  );
-
+function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <div className="p-4 sm:p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-3xl font-extrabold">Кампанії</h1>
-          <div className="flex gap-2">
-            <a href="/admin/tools" className="rounded-lg border px-3 py-2 hover:bg-gray-50">
-              Інструменти
-            </a>
-            <button onClick={loadAll} className="rounded-lg border px-3 py-2 hover:bg-gray-50">
-              Оновити
-            </button>
-            <a
-              href="/admin/campaigns/new"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-            >
-              Нова кампанія
-            </a>
-          </div>
-        </div>
+    <span className="inline-flex items-center px-4 py-2 rounded-xl bg-blue-600 text-white">
+      {children ?? "—"}
+    </span>
+  );
+}
 
-        {/* Заголовок-легенда */}
-        <div className="mb-2 overflow-x-auto">
-          <table className="min-w-full table-fixed">
-            <colgroup>
-              <col className="w-[200px]" />
-              <col className="w-[160px]" />
-              <col className="w-[120px]" />
-              <col />
-              <col />
-              <col className="w-[140px]" />
-              <col className="w-[120px]" />
-              <col className="w-[80px]" />
-              <col className="w-[120px]" />
-            </colgroup>
-            <thead>
-              <tr className="text-left text-gray-600">
-                <th className="py-2">Дата</th>
-                <th className="py-2">Назва</th>
-                <th className="py-2">Сутність</th>
-                <th className="py-2">Воронка</th>
-                <th className="py-2">Статус</th>
-                <th className="py-2">Тригер</th>
-                <th className="py-2">Лічильник</th>
-                <th className="py-2">Стан</th>
-                <th className="py-2">Дії</th>
-              </tr>
-            </thead>
-          </table>
-        </div>
-
-        {/* Картки кампаній */}
-        <div className="space-y-3">
-          {items.map((c) => {
-            const rows: {
-              label: string;
-              pipeline: string;
-              status: string;
-              trigger: string;
-              count?: number;
-            }[] = [
-              {
-                label: "База",
-                pipeline: pname(c.base_pipeline_id),
-                status: sname(c.base_pipeline_id, c.base_status_id),
-                trigger: "—",
-              },
-              {
-                label: "V1",
-                pipeline: pname(c.v1_to_pipeline_id),
-                status: sname(c.v1_to_pipeline_id, c.v1_to_status_id),
-                trigger: c.v1_value || "",
-                count: c.v1_count ?? 0,
-              },
-            ];
-            if (c.v2_enabled) {
-              rows.push({
-                label: "V2",
-                pipeline: pname(c.v2_to_pipeline_id),
-                status: sname(c.v2_to_pipeline_id, c.v2_to_status_id),
-                trigger: c.v2_value || "",
-                count: c.v2_count ?? 0,
-              });
-            }
-            rows.push({
-              label: "EXP",
-              pipeline: pname(c.exp_to_pipeline_id),
-              status: sname(c.exp_to_pipeline_id, c.exp_to_status_id),
-              trigger: `${c.exp_days} днів`,
-              count: c.exp_count ?? 0,
-            });
-
-            const rowSpan = rows.length;
-
-            return (
-              <div
-                key={c.id}
-                className="ring-1 ring-gray-200 rounded-2xl overflow-hidden bg-white"
-              >
-                <table className="min-w-full table-fixed">
-                  <colgroup>
-                    <col className="w-[200px]" />
-                    <col className="w-[160px]" />
-                    <col className="w-[120px]" />
-                    <col />
-                    <col />
-                    <col className="w-[140px]" />
-                    <col className="w-[120px]" />
-                    <col className="w-[80px]" />
-                    <col className="w-[120px]" />
-                  </colgroup>
-                  <tbody>
-                    {/* перший ряд групи */}
-                    <tr className="text-left">
-                      <td className="py-3 px-2" rowSpan={rowSpan}>
-                        {new Date(c.created_at).toLocaleString("uk-UA")}
-                      </td>
-                      <td className="py-3 px-2 font-semibold" rowSpan={rowSpan}>
-                        {c.name}
-                      </td>
-                      <td className="py-3 px-2">База</td>
-                      <td className="py-3 px-2">
-                        {rows[0].pipeline ? <Badge>{rows[0].pipeline}</Badge> : "—"}
-                      </td>
-                      <td className="py-3 px-2">
-                        {rows[0].status ? <Badge>{rows[0].status}</Badge> : "—"}
-                      </td>
-                      <td className="py-3 px-2">{rows[0].trigger}</td>
-                      <td className="py-3 px-2">
-                        {/* базі лічильник не показуємо */}
-                        —
-                      </td>
-                      <td className="py-3 px-2" rowSpan={rowSpan}>
-                        {c.enabled ? "yes" : "no"}
-                      </td>
-                      <td className="py-3 px-2 whitespace-nowrap" rowSpan={rowSpan}>
-                        <a
-                          className="text-blue-600 hover:underline mr-3"
-                          href={`/admin/campaigns/${c.id}/edit`}
-                        >
-                          Edit
-                        </a>
-                        <a
-                          className="text-red-600 hover:underline"
-                          href={`/api/campaigns/${c.id}`}
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            if (!confirm("Видалити кампанію?")) return;
-                            await fetch(`/api/campaigns/${c.id}`, {
-                              method: "DELETE",
-                              credentials: "include",
-                            });
-                            await loadAll();
-                          }}
-                        >
-                          Delete
-                        </a>
-                      </td>
-                    </tr>
-
-                    {/* решта рядків (V1 / V2 / EXP) */}
-                    {rows.slice(1).map((r, i) => (
-                      <tr className="text-left" key={i}>
-                        <td className="py-3 px-2">{r.label}</td>
-                        <td className="py-3 px-2">
-                          {r.pipeline ? <Badge>{r.pipeline}</Badge> : "—"}
-                        </td>
-                        <td className="py-3 px-2">
-                          {r.status ? <Badge>{r.status}</Badge> : "—"}
-                        </td>
-                        <td className="py-3 px-2">{r.trigger || "—"}</td>
-                        <td className="py-3 px-2">
-                          {"count" in r ? <Counter n={r.count} /> : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })}
-
-          {!items.length && (
-            <div className="text-center text-gray-500 py-12 ring-1 ring-gray-200 rounded-2xl bg-white">
-              Кампаній поки немає
-            </div>
-          )}
-        </div>
-      </div>
+function Pair({
+  pipeName,
+  pipeId,
+  statusName,
+  statusId,
+}: {
+  pipeName?: string | null;
+  pipeId?: number | string;
+  statusName?: string | null;
+  statusId?: number | string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Pill>{pipeName ?? pipeId ?? "—"}</Pill>
+      <Pill>{statusName ?? statusId ?? "—"}</Pill>
     </div>
   );
 }
 
+async function getCampaigns(): Promise<Campaign[]> {
+  // завжди свіже
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/campaigns`, {
+    cache: "no-store",
+  }).catch(() => null as any);
+
+  if (!res || !res.ok) return [];
+  const json = (await res.json().catch(() => ({}))) as { items?: Campaign[] };
+  return Array.isArray(json.items) ? json.items : [];
+}
+
+export default async function Page() {
+  const items = await getCampaigns();
+
+  return (
+    <div className="px-6 py-8">
+      <div className="text-4xl font-extrabold mb-6">Кампанії</div>
+
+      <div className="grid grid-cols-12 text-gray-700 font-semibold mb-3">
+        <div className="col-span-3">Дата</div>
+        <div className="col-span-2">Назва</div>
+        <div className="col-span-2">Сутність</div>
+        <div className="col-span-3">Воронка</div>
+        <div className="col-span-1">Лічильник</div>
+        <div className="col-span-1">Дії</div>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="w-full border rounded-2xl text-center py-20 text-2xl text-gray-500">
+          Кампаній поки немає
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {items.map((c) => {
+            const v1cnt = Number.isFinite(c.v1_count) ? Number(c.v1_count) : 0;
+            const v2cnt = Number.isFinite(c.v2_count) ? Number(c.v2_count) : 0;
+            const expcnt = Number.isFinite(c.exp_count) ? Number(c.exp_count) : 0;
+            const expDays =
+              typeof c.exp?.days === "number" && c.exp?.days! > 0
+                ? `${c.exp?.days} днів`
+                : "—";
+
+            return (
+              <div key={`${c.id ?? Math.random()}`} className="border rounded-2xl p-5">
+                {/* BASE */}
+                <div className="grid grid-cols-12 items-center gap-y-3">
+                  <div className="col-span-3 text-gray-600">{fmtDate(c.created_at)}</div>
+                  <div className="col-span-2 font-semibold">{c.name ?? "—"}</div>
+                  <div className="col-span-2">База</div>
+                  <div className="col-span-3">
+                    <Pair
+                      pipeName={c.base_pipeline_name}
+                      pipeId={c.base_pipeline_id}
+                      statusName={c.base_status_name}
+                      statusId={c.base_status_id}
+                    />
+                  </div>
+                  <div className="col-span-1 text-center">—</div>
+                  <div className="col-span-1 flex gap-4">
+                    <a className="text-blue-600" href={`/admin/campaigns/${c.id}/edit`}>
+                      Edit
+                    </a>
+                    <a className="text-red-600" href={`/admin/campaigns/${c.id}/delete`}>
+                      Delete
+                    </a>
+                  </div>
+
+                  {/* V1 */}
+                  <div className="col-span-3" />
+                  <div className="col-span-2" />
+                  <div className="col-span-2">V1</div>
+                  <div className="col-span-3">
+                    <Pair
+                      pipeName={c.v1_pipeline_name}
+                      pipeId={c.v1_pipeline_id}
+                      statusName={c.v1_status_name}
+                      statusId={c.v1_status_id}
+                    />
+                  </div>
+                  <div className="col-span-1 text-center">{v1cnt}</div>
+                  <div className="col-span-1" />
+
+                  {/* V2 (ДОДАНО) */}
+                  <div className="col-span-3" />
+                  <div className="col-span-2" />
+                  <div className="col-span-2">V2</div>
+                  <div className="col-span-3">
+                    <Pair
+                      pipeName={c.v2_pipeline_name}
+                      pipeId={c.v2_pipeline_id}
+                      statusName={c.v2_status_name}
+                      statusId={c.v2_status_id}
+                    />
+                  </div>
+                  <div className="col-span-1 text-center">{v2cnt}</div>
+                  <div className="col-span-1" />
+
+                  {/* EXP */}
+                  <div className="col-span-3" />
+                  <div className="col-span-2" />
+                  <div className="col-span-2">EXP</div>
+                  <div className="col-span-3">
+                    <Pair
+                      pipeName={c.exp?.to_pipeline_name ?? null}
+                      pipeId={c.exp?.to_pipeline_id ?? undefined}
+                      statusName={c.exp?.to_status_name ?? null}
+                      statusId={c.exp?.to_status_id ?? undefined}
+                    />
+                  </div>
+                  <div className="col-span-1 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <span>{expcnt}</span>
+                      <span className="text-gray-500">{expDays}</span>
+                    </div>
+                  </div>
+                  <div className="col-span-1" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
