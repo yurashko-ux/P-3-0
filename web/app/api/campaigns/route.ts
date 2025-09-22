@@ -1,123 +1,81 @@
 // web/app/api/campaigns/route.ts
-import { NextResponse } from "next/server";
-import { redis } from "@/lib/redis";
+import { NextRequest, NextResponse } from 'next/server';
+import { redis } from '@/lib/redis';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
-const INDEX_KEY = "campaigns:index";
-const ITEM_KEY = (id: string | number) => `campaigns:${id}`;
+const INDEX_KEY = 'campaigns:index';
+const ITEM_KEY = (id: string) => `campaigns:${id}`;
 
-// --- утиліти ---------------------------------------------------------------
-function parseCookie(header: string | null | undefined, name: string): string | null {
-  if (!header) return null;
-  // Безпечний конструктор RegExp: екрануємо спецсимволи в імені cookie
-  const escaped = name.replace(/[-.[\]{}()*+?^$|\\]/g, "\\$&");
-  const m = header.match(new RegExp(`(?:^|;\\s*)${escaped}=([^;]*)`));
-  return m ? decodeURIComponent(m[1]) : null;
+// ---- auth: приймаємо токен з query, cookie, або Authorization: Bearer
+function readToken(req: NextRequest): string {
+  // 1) ?token=...
+  const fromQuery = (req.nextUrl.searchParams.get('token') || '').trim();
+  if (fromQuery) return fromQuery;
+
+  // 2) cookie=admin_token
+  const fromCookie = (req.cookies.get('admin_token')?.value || '').trim();
+  if (fromCookie) return fromCookie;
+
+  // 3) Authorization: Bearer XXX
+  const auth = req.headers.get('authorization') || '';
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (m) return m[1].trim();
+
+  return '';
 }
 
-function getAdminToken(req: Request): string {
-  const url = new URL(req.url);
-  // 1) query
-  const q = url.searchParams.get("token")?.trim();
-  if (q) return q;
-
-  // 2) header
-  const h = req.headers.get("x-admin-token")?.trim();
-  if (h) return h;
-
-  // 3) cookie
-  const c = parseCookie(req.headers.get("cookie"), "admin_token");
-  if (c) return c.trim();
-
-  return "";
+function unauthorized(msg = 'Unauthorized: missing or invalid admin token') {
+  return NextResponse.json({ ok: false, error: msg }, { status: 401 });
 }
 
-function isAuthorized(token: string): boolean {
-  const envToken = process.env.ADMIN_TOKEN?.trim();
-  if (process.env.ALLOW_ANY_ADMIN === "true") return true; // опційний байпас для дев/стейджу
-  if (!envToken) return false;
-  return token === envToken;
-}
+export async function GET(req: NextRequest) {
+  const token = readToken(req);
+  const expected = (process.env.ADMIN_TOKEN || '').trim();
 
-// --- GET /api/campaigns ----------------------------------------------------
-export async function GET(req: Request) {
-  const token = getAdminToken(req);
-  if (!isAuthorized(token)) {
+  if (expected) {
+    if (!token || token !== expected) {
+      return unauthorized();
+    }
+  }
+  // якщо ADMIN_TOKEN не задано в env — проходимо без перевірки
+
+  // тягнемо ids з індексу
+  let ids: string[] = [];
+  try {
+    // наш redis-адаптер підтримує { rev: true }
+    ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as unknown as string[];
+  } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: "Unauthorized: missing or invalid admin token" },
-      { status: 401, headers: { "Cache-Control": "no-store" } }
+      { ok: false, error: `KV error: ${e?.message || String(e)}` },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 
-  try {
-    // Нові звернення у стилі Upstash REST SDK обгортки (з нашого redis.ts)
-    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-
-    const items: any[] = [];
-    for (const id of ids || []) {
+  // підвантажуємо кожен item окремо (без mget)
+  const items: any[] = [];
+  for (const id of ids || []) {
+    try {
       const raw = await redis.get(ITEM_KEY(id));
       if (!raw) continue;
       try {
         items.push(JSON.parse(raw));
       } catch {
-        // якщо збережено plain string — просто скіпаємо або кладемо як є
+        // якщо це не JSON — повернемо як рядок
         items.push({ id, name: String(raw) });
       }
+    } catch {
+      // пропускаємо зламані елементи
     }
-
-    return NextResponse.json(
-      { ok: true, count: items.length, items },
-      { headers: { "Cache-Control": "no-store" } }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: `KV error: ${e?.message || String(e)}` },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
-    );
   }
+
+  return NextResponse.json(
+    { ok: true, count: items.length, items },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
 
-// --- POST /api/campaigns (залишаємо як є/мінімальна заглушка) --------------
-export async function POST(req: Request) {
-  const token = getAdminToken(req);
-  if (!isAuthorized(token)) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized: missing or invalid admin token" },
-      { status: 401, headers: { "Cache-Control": "no-store" } }
-    );
-  }
-
-  try {
-    const body = await req.json().catch(() => ({}));
-    const now = Date.now();
-    const id = String(body?.id || now);
-
-    const item = {
-      id,
-      created_at: now,
-      active: !!body?.active,
-      name: body?.name || `Campaign ${id}`,
-      base_pipeline_id: body?.base_pipeline_id ?? null,
-      base_status_id: body?.base_status_id ?? null,
-      base_pipeline_name: body?.base_pipeline_name ?? null,
-      base_status_name: body?.base_status_name ?? null,
-      rules: body?.rules || {},
-      exp: body?.exp || undefined,
-    };
-
-    await redis.set(ITEM_KEY(id), JSON.stringify(item));
-    // Upstash-сов сумісний виклик zadd з об’єктом
-    await redis.zadd(INDEX_KEY, { score: now, member: id });
-
-    return NextResponse.json(
-      { ok: true, created: id, item },
-      { headers: { "Cache-Control": "no-store" } }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: `KV error: ${e?.message || String(e)}` },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
-    );
-  }
+// опційно — щоб не лякати preflight у деяких браузерів/розширень
+export async function OPTIONS() {
+  return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
 }
