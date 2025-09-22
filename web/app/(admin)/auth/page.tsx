@@ -1,8 +1,11 @@
 // web/app/(admin)/auth/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+
+// Забороняємо статичне пререндерення цієї сторінки
+export const dynamic = 'force-dynamic';
 
 function setCookie(name: string, value: string, days = 30) {
   if (typeof document === 'undefined') return;
@@ -12,7 +15,7 @@ function setCookie(name: string, value: string, days = 30) {
   document.cookie = `${name}=${encodeURIComponent(value)}; ${expires}; path=/; SameSite=Lax`;
 }
 
-export default function AdminAuthPage() {
+function AuthForm() {
   const router = useRouter();
   const search = useSearchParams();
   const [value, setValue] = useState('');
@@ -44,8 +47,9 @@ export default function AdminAuthPage() {
       >
         <h1 className="text-2xl font-semibold mb-4">Адмін доступ</h1>
         <p className="text-sm text-gray-500 mb-6">
-          Введи значення змінної <code>ADMIN_PASS</code> (або <code>ADMIN_TOKEN</code>),
-          ми збережемо його в cookies для доступу до адмін-ендпойнтів.
+          Введи значення змінної <code>ADMIN_PASS</code> (або{' '}
+          <code>ADMIN_TOKEN</code>). Воно тимчасово збережеться в cookies для
+          доступу до адмін-ендпойнтів.
         </p>
         <label className="block text-sm font-medium mb-2">Адмін токен</label>
         <div className="flex items-center gap-2 mb-4">
@@ -79,5 +83,14 @@ export default function AdminAuthPage() {
         </p>
       </form>
     </div>
+  );
+}
+
+export default function AdminAuthPage() {
+  // useSearchParams в середині Suspense — вимога Next.js
+  return (
+    <Suspense fallback={<div className="p-6 text-center">Завантаження…</div>}>
+      <AuthForm />
+    </Suspense>
   );
 }
