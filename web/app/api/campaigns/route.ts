@@ -1,122 +1,101 @@
 // web/app/api/campaigns/route.ts
-// GET  → масив кампаній (новіші зверху), гарантує rules.v1/v2
-// POST → створення/апсертування кампанії, індексація у campaigns:index (score=created_at)
-//       Дублюємо id у LIST campaigns:all і сам об’єкт у LIST campaigns:items —
-//       щоб GET завжди мав хоча б один надійний фолбек.
-
 import { NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { assertAdmin } from '@/lib/auth';
-import { normalizeCampaign, type Campaign, type CampaignWithNames } from '@/lib/types';
+
+// клавіші
+const INDEX_KEY = 'campaigns:index';
+const ITEM_KEY = (id: string) => `campaigns:${id}`;
+
+// допоміжне: safe parse
+function parse<T = any>(raw: string | null): T | null {
+  if (!raw) return null;
+  try { return JSON.parse(raw) as T; } catch { return null; }
+}
+
+// гарантуємо мінімально потрібні поля для UI
+function normalizeCampaign(input: any) {
+  const now = Date.now();
+  const id = input?.id || (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
+  const rules = input?.rules || {};
+  const v1 = rules?.v1 || {};
+  const v2 = rules?.v2 || {};
+  const exp = input?.exp;
+
+  return {
+    id,
+    name: String(input?.name ?? 'Без назви'),
+    created_at: Number(input?.created_at ?? now),
+    active: Boolean(input?.active ?? false),
+    base_pipeline_id: Number(input?.base_pipeline_id ?? 0),
+    base_status_id: Number(input?.base_status_id ?? 0),
+    rules: {
+      v1: { op: (v1?.op === 'equals' ? 'equals' : 'contains'), value: String(v1?.value ?? '') },
+      v2: { op: (v2?.op === 'equals' ? 'equals' : 'contains'), value: String(v2?.value ?? '') },
+    },
+    exp: exp
+      ? {
+          days: Number(exp?.days ?? 0),
+          to_pipeline_id: Number(exp?.to_pipeline_id ?? 0),
+          to_status_id: Number(exp?.to_status_id ?? 0),
+        }
+      : undefined,
+    v1_count: Number(input?.v1_count ?? 0),
+    v2_count: Number(input?.v2_count ?? 0),
+    exp_count: Number(input?.exp_count ?? 0),
+
+    // назви можуть підставлятись kc-cache згодом; UI нормально відобразить id, якщо назв нема
+    base_pipeline_name: input?.base_pipeline_name ?? null,
+    base_status_name: input?.base_status_name ?? null,
+    exp_to_pipeline_name: input?.exp_to_pipeline_name ?? null,
+    exp_to_status_name: input?.exp_to_status_name ?? null,
+  };
+}
 
 export const dynamic = 'force-dynamic';
 
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '11111';
-const INDEX_KEY = 'campaigns:index';      // ZSET: score = created_at, member = id
-const LIST_KEY  = 'campaigns:all';        // LIST: LPUSH id (нові зверху)
-const ITEMS_KEY = 'campaigns:items';      // LIST: LPUSH JSON.stringify(item) (нові зверху)
-const ITEM_KEY  = (id: string) => `campaigns:${id}`;
-
-// ——— kc-cache: збагачення назв, але не ламаємось якщо модуль відсутній
-async function safeGetPipelineName(id: number): Promise<string | null> {
-  try {
-    const mod = await import('@/lib/kc-cache');
-    if (typeof (mod as any).getPipelineName === 'function') {
-      return ((mod as any).getPipelineName as (x: number) => Promise<string | null>)(id);
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-async function safeGetStatusName(id: number): Promise<string | null> {
-  try {
-    const mod = await import('@/lib/kc-cache');
-    if (typeof (mod as any).getStatusName === 'function') {
-      return ((mod as any).getStatusName as (x: number) => Promise<string | null>)(id);
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-async function enrich(c: Campaign): Promise<CampaignWithNames> {
-  const base_pipeline_name = await safeGetPipelineName(c.base_pipeline_id);
-  const base_status_name   = await safeGetStatusName(c.base_status_id);
-  let exp: CampaignWithNames['exp'] = null;
-  if (c.exp) {
-    exp = {
-      ...c.exp,
-      to_pipeline_name: await safeGetPipelineName(c.exp.to_pipeline_id),
-      to_status_name: await safeGetStatusName(c.exp.to_status_id),
-    };
-  }
-  return { ...c, base_pipeline_name, base_status_name, exp };
-}
-
-// ——— дістаємо всі id з індексу з фолбеками
-async function getAllCampaignIdsNewestFirst(): Promise<string[]> {
-  // 1) ZSET
-  const zIds = (await redis.zrange(INDEX_KEY, 0, -1).catch(() => [])) as string[];
-  if (Array.isArray(zIds) && zIds.length) return [...zIds].reverse();
-
-  // 2) LIST з id
-  const lIds = (await redis.lrange(LIST_KEY, 0, -1).catch(() => [])) as string[];
-  if (Array.isArray(lIds) && lIds.length) return lIds;
-
-  return [];
-}
-
-// ——— GET
+// GET: список кампаній з індексу (найновіші першими)
 export async function GET() {
   try {
-    const ids = await getAllCampaignIdsNewestFirst();
-
-    // 1) основний шлях — тягнемо по id
-    const items: CampaignWithNames[] = [];
-    for (const id of ids) {
-      const raw = await redis.get(ITEM_KEY(id));
-      if (!raw) continue;
-      try { items.push(await enrich(JSON.parse(raw) as Campaign)); } catch { /* skip */ }
+    const ids = await redis.zrange(INDEX_KEY, 0, -1, { rev: true }).catch(() => []);
+    if (!ids?.length) {
+      return NextResponse.json([], { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    // 2) фолбек останньої інстанції — читаємо список готових JSON-ів
-    if (!items.length) {
-      const raws = (await redis.lrange(ITEMS_KEY, 0, -1).catch(() => [])) as string[];
-      for (const r of raws) {
-        try { items.push(await enrich(JSON.parse(r) as Campaign)); } catch { /* skip */ }
-      }
-    }
+    // mget по всіх ключах і парсимо
+    const raws = await redis.mget(...ids.map(ITEM_KEY));
+    const items = (raws || [])
+      .map((r) => parse(r))
+      .filter(Boolean)
+      .map((c) => {
+        // гарантуємо наявність rules.v1/v2 навіть якщо відсутні у сховищі
+        const n = normalizeCampaign(c);
+        return n;
+      });
 
     return NextResponse.json(items, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || String(e) },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
 }
 
-// ——— POST
+// POST: створення/апсертування кампанії + індексація у ZSET
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({} as any));
-    if (String(body?.pass || '') !== ADMIN_TOKEN) {
-      await assertAdmin(new Request(req.url, { method: req.method, headers: req.headers }));
-    }
+    await assertAdmin(req);
 
-    const { pass: _omit, ...payload } = body || {};
-    const item = normalizeCampaign(payload); // гарантії: rules.v1/v2, uuid, лічильники
+    const body = await req.json().catch(() => ({}));
+    const campaign = normalizeCampaign(body);
 
-    // 1) KV: сам об’єкт
-    await redis.set(ITEM_KEY(item.id), JSON.stringify(item));
+    // зберегти item
+    await redis.set(ITEM_KEY(campaign.id), JSON.stringify(campaign));
+    // індексувати за created_at
+    await redis.zadd(INDEX_KEY, { score: campaign.created_at, member: campaign.id });
 
-    // 2) індекси
-    await redis.zadd(INDEX_KEY, { score: item.created_at, member: String(item.id) }).catch(() => {});
-    await redis.lpush(LIST_KEY, String(item.id)).catch(() => {});
-    await redis.lpush(ITEMS_KEY, JSON.stringify(item)).catch(() => {});
-
-    const enriched = await enrich(item);
-    return NextResponse.json({ ok: true, item: enriched }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ ok: true, campaign }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
     const msg = e?.message || String(e);
-    const status = /unauthorized/i.test(msg) ? 401 : /invalid campaign|invalid/i.test(msg) ? 400 : 500;
+    const status = /unauthorized/i.test(msg) ? 401 : 500;
     return NextResponse.json({ ok: false, error: msg }, { status });
   }
 }
