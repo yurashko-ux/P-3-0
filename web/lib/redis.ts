@@ -1,6 +1,6 @@
 // web/lib/redis.ts
 // Легкий клієнт для Upstash Redis REST + безпечний fallback in-memory.
-// Підтримує: set/get/del/expire, lpush/lrange, zadd/zrange, ping.
+// Підтримує: set/get/mget/del/expire, lpush/lrange, zadd/zrange, ping.
 
 type Val = string;
 type Any = any;
@@ -91,6 +91,20 @@ export const redis = {
     return _mem.kv.get(key) ?? null;
   },
 
+  // NEW: MGET
+  async mget(...keys: string[]): Promise<(string | null)[]> {
+    if (REST_URL && REST_TOKEN) {
+      const r = await restExec(["MGET", ...keys]);
+      // Upstash повертає масив (або null на місці відсутнього ключа)
+      return Array.isArray(r) ? r.map(v => (v == null ? null : String(v))) : [];
+    }
+    // fallback
+    return keys.map((k) => {
+      if (_isExpired(k)) return null;
+      return _mem.kv.get(k) ?? null;
+    });
+  },
+
   async del(key: string): Promise<number> {
     if (REST_URL && REST_TOKEN) {
       const r = await restExec(["DEL", key]);
@@ -169,9 +183,7 @@ export const redis = {
       const cmd: (string | number)[] = ["ZADD", key];
       if (opts?.nx) cmd.push("NX");
       if (opts?.xx) cmd.push("XX");
-      for (const p of pairs) {
-        cmd.push(p.score, p.member);
-      }
+      for (const p of pairs) cmd.push(p.score, p.member);
       const r = await restExec(cmd);
       return Number(r) || 0;
     }
