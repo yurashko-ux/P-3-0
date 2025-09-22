@@ -1,41 +1,42 @@
 // web/app/api/auth/login/route.ts
-import { NextResponse } from "next/server";
+// Встановлює httpOnly cookie admin_pass (діє ~7 днів).
+// Виклик: 
+//   GET  /api/auth/login?pass=11111
+//   POST /api/auth/login  { "pass": "11111" }
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
+import { NextResponse } from 'next/server';
+
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '11111';
+const COOKIE_NAME = 'admin_pass';
+const MAX_AGE = 7 * 24 * 60 * 60; // 7 днів
+
+function buildLoginResponse(ok: boolean, msg: string, status = 200) {
+  const res = NextResponse.json({ ok, message: msg }, { status, headers: { 'Cache-Control': 'no-store' } });
+  if (ok) {
+    res.headers.set(
+      'Set-Cookie',
+      `${COOKIE_NAME}=${encodeURIComponent(ADMIN_TOKEN)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}; ${
+        process.env.NODE_ENV === 'production' ? 'Secure; ' : ''
+      }`
+    );
+  }
+  return res;
+}
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const pass = url.searchParams.get('pass') || '';
+  if (pass !== ADMIN_TOKEN) {
+    return buildLoginResponse(false, 'Invalid pass', 401);
+  }
+  return buildLoginResponse(true, 'Logged in');
+}
 
 export async function POST(req: Request) {
-  try {
-    const { pass } = (await req.json().catch(() => ({}))) as { pass?: string };
-    const adminPass = process.env.ADMIN_PASS || "";
-    if (!adminPass) {
-      return NextResponse.json({ ok: false, error: "ADMIN_PASS not set" }, { status: 500 });
-    }
-    if (!pass || pass !== adminPass) {
-      return NextResponse.json({ ok: false, error: "invalid password" }, { status: 401 });
-    }
-
-    const res = NextResponse.json({ ok: true }, { status: 200 });
-
-    // HttpOnly, Path=/, Lax, Secure-if-HTTPS
-    const maxAge = 60 * 60 * 24 * 90; // 90 днів
-    res.cookies.set("admin", "1", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: true,
-      path: "/",
-      maxAge,
-    });
-    res.cookies.set("admin_pass", pass, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: true,
-      path: "/",
-      maxAge,
-    });
-
-    return res;
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "login failed" }, { status: 500 });
+  const body = await req.json().catch(() => ({} as any));
+  const pass = String(body?.pass || '');
+  if (pass !== ADMIN_TOKEN) {
+    return buildLoginResponse(false, 'Invalid pass', 401);
   }
+  return buildLoginResponse(true, 'Logged in');
 }
