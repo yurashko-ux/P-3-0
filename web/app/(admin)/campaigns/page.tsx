@@ -1,30 +1,20 @@
 // web/app/(admin)/campaigns/page.tsx
-import Link from "next/link";
+import { redis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
-type Rule = {
-  op?: "contains" | "equals";
-  value?: string;
-};
-
+type Rule = { op?: "contains" | "equals"; value?: string };
 type Campaign = {
-  id?: string;
+  id: string;
   name?: string;
 
-  // база (V1)
   base_pipeline_id?: number;
   base_status_id?: number;
   base_pipeline_name?: string | null;
   base_status_name?: string | null;
 
-  // правила
-  rules?: {
-    v1?: Rule;
-    v2?: Rule;
-  };
+  rules?: { v1?: Rule; v2?: Rule };
 
-  // експерименти
   exp?: {
     to_pipeline_id?: number;
     to_status_id?: number;
@@ -33,7 +23,6 @@ type Campaign = {
     trigger?: Rule;
   };
 
-  // діагн./агрегації (опційні)
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
@@ -42,168 +31,195 @@ type Campaign = {
   active?: boolean;
 };
 
-async function fetchCampaigns(): Promise<Campaign[]> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/campaigns`, {
-    cache: "no-store",
-    headers: { "x-no-cache": "1" },
-  }).catch(() => null);
+const NS = "campaigns";
+const INDEX_KEY = `${NS}:index`;
+const ITEM_KEY = (id: string) => `${NS}:${id}`;
 
-  if (!res || !res.ok) return [];
-
-  const data = (await res.json().catch(() => null)) as any;
-  const items = (data?.items || []) as Campaign[];
-  return items;
+async function loadCampaigns(): Promise<Campaign[]> {
+  "use server";
+  try {
+    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
+    const out: Campaign[] = [];
+    for (const id of ids || []) {
+      const raw = await redis.get(ITEM_KEY(id));
+      if (!raw) continue;
+      try {
+        out.push(JSON.parse(raw) as Campaign);
+      } catch {
+        // skip broken
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
-function safeNameOrId(name?: string | null, id?: number | string) {
-  if (name && String(name).trim()) return name;
-  return id ?? "";
-}
-
-function RuleView({ label, rule }: { label: string; rule?: Rule }) {
-  if (!rule || !rule.value) return (
-    <div className="text-sm text-gray-400">—</div>
-  );
+function KV({ k, v }: { k: string; v: any }) {
+  const val =
+    v === null || v === undefined
+      ? "—"
+      : typeof v === "object"
+      ? JSON.stringify(v)
+      : String(v);
   return (
-    <div className="text-sm">
-      <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 mr-2">{label}</span>
-      <span className="uppercase text-xs tracking-wide text-gray-500 mr-2">{rule.op || "contains"}</span>
-      <span className="font-mono">{rule.value}</span>
+    <div className="text-xs text-gray-500">
+      <span className="font-mono text-gray-400">{k}:</span> {val}
     </div>
   );
 }
 
-export default async function CampaignsPage() {
-  const campaigns = await fetchCampaigns();
+function RuleBadge({ label, rule }: { label: string; rule?: Rule }) {
+  if (!rule?.value) return null;
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+      <span className="font-semibold">{label}</span>
+      <span className="opacity-70">{rule.op || "contains"}</span>
+      <span className="font-mono">“{rule.value}”</span>
+    </div>
+  );
+}
+
+function Pair({
+  id,
+  name,
+}: {
+  id?: number;
+  name?: string | null;
+}) {
+  if (!id && !name) return <span className="opacity-50">—</span>;
+  return (
+    <div className="flex flex-col leading-tight">
+      <span>{name ?? "—"}</span>
+      {id ? <span className="text-xs text-gray-500">id: {id}</span> : null}
+    </div>
+  );
+}
+
+export default async function Page() {
+  const items = await loadCampaigns();
 
   return (
-    <main className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Campaigns</h1>
-        <div className="flex gap-3">
-          <Link
-            href="/admin/campaigns/new"
-            className="px-3 py-2 rounded-xl bg-black text-white hover:opacity-90"
-          >
-            + New campaign
-          </Link>
-          <Link
-            href="/admin"
-            className="px-3 py-2 rounded-xl border hover:bg-gray-50"
-          >
-            Admin home
-          </Link>
-        </div>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Campaigns</h1>
+        <a
+          href="/admin/campaigns/new"
+          className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+        >
+          + New Campaign
+        </a>
       </div>
 
-      {(!campaigns || campaigns.length === 0) ? (
-        <div className="rounded-xl border p-6 bg-white">
-          <div className="text-gray-600">Поки що немає кампаній.</div>
-          <div className="mt-3">
-            <Link href="/admin/campaigns/new" className="text-blue-600 hover:underline">
-              Створити першу кампанію →
-            </Link>
-          </div>
+      {items.length === 0 ? (
+        <div className="rounded-xl border p-8 text-center text-gray-500">
+          Campaign list is empty.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border bg-white">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-left">
-              <tr>
-                <th className="px-4 py-3 font-medium">ID</th>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">V1 Base (pipeline → status)</th>
-                <th className="px-4 py-3 font-medium">V1</th>
-                <th className="px-4 py-3 font-medium">V2</th>
-                <th className="px-4 py-3 font-medium">EXP</th>
-                <th className="px-4 py-3 font-medium">Active</th>
-                <th className="px-4 py-3 font-medium"></th>
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-left">
+                <th className="px-4 py-3">Name / ID</th>
+                <th className="px-4 py-3">V1 (Base)</th>
+                <th className="px-4 py-3">Rules</th>
+                <th className="px-4 py-3">V2</th>
+                <th className="px-4 py-3">EXP → Target</th>
+                <th className="px-4 py-3">Counts</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3">Active</th>
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((c) => {
-                const v1 = c.rules?.v1;
-                const v2 = c.rules?.v2;
+              {items.map((c) => (
+                <tr key={c.id} className="border-t">
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-medium">{c.name || "—"}</div>
+                    <KV k="id" v={c.id} />
+                  </td>
 
-                const basePipe = safeNameOrId(c.base_pipeline_name ?? undefined, c.base_pipeline_id ?? "");
-                const baseStatus = safeNameOrId(c.base_status_name ?? undefined, c.base_status_id ?? "");
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-semibold mb-1">Base pipeline/status</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Pair
+                        id={c.base_pipeline_id}
+                        name={c.base_pipeline_name ?? undefined}
+                      />
+                      <Pair
+                        id={c.base_status_id}
+                        name={c.base_status_name ?? undefined}
+                      />
+                    </div>
+                  </td>
 
-                const expPipe = safeNameOrId(c.exp?.to_pipeline_name ?? undefined, c.exp?.to_pipeline_id ?? "");
-                const expStatus = safeNameOrId(c.exp?.to_status_name ?? undefined, c.exp?.to_status_id ?? "");
+                  <td className="px-4 py-3 align-top">
+                    <div className="flex flex-col gap-1">
+                      <RuleBadge label="V1" rule={c.rules?.v1} />
+                      <RuleBadge label="V2" rule={c.rules?.v2} />
+                      {c.exp?.trigger ? (
+                        <RuleBadge label="EXP" rule={c.exp?.trigger} />
+                      ) : null}
+                    </div>
+                  </td>
 
-                return (
-                  <tr key={String(c.id ?? Math.random())} className="border-t">
-                    <td className="px-4 py-3 font-mono text-gray-600">{c.id ?? "—"}</td>
-                    <td className="px-4 py-3">{c.name ?? "—"}</td>
-
-                    <td className="px-4 py-3">
-                      <div className="text-sm">
-                        <div className="font-medium">{basePipe || "—"} <span className="text-gray-400">→</span> {baseStatus || "—"}</div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {typeof c.base_pipeline_id !== "undefined" && typeof c.base_status_id !== "undefined" ? (
-                            <>IDs: {c.base_pipeline_id} → {c.base_status_id}</>
-                          ) : "IDs: —"}
+                  <td className="px-4 py-3 align-top">
+                    {/* окрема колонка для явного показу V2 value/op */}
+                    {c.rules?.v2?.value ? (
+                      <div className="flex flex-col">
+                        <div className="font-medium">V2</div>
+                        <div className="text-xs text-gray-600">
+                          {c.rules?.v2?.op || "contains"}{" "}
+                          <span className="font-mono">“{c.rules?.v2?.value}”</span>
                         </div>
                       </div>
-                    </td>
+                    ) : (
+                      <span className="opacity-50">—</span>
+                    )}
+                  </td>
 
-                    <td className="px-4 py-3">
-                      <RuleView label="V1" rule={v1} />
-                      {typeof c.v1_count === "number" && (
-                        <div className="text-xs text-gray-500 mt-1">count: {c.v1_count}</div>
-                      )}
-                    </td>
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-semibold mb-1">Experiment target</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Pair
+                        id={c.exp?.to_pipeline_id}
+                        name={c.exp?.to_pipeline_name ?? undefined}
+                      />
+                      <Pair
+                        id={c.exp?.to_status_id}
+                        name={c.exp?.to_status_name ?? undefined}
+                      />
+                    </div>
+                  </td>
 
-                    <td className="px-4 py-3">
-                      {/* 👇 тепер V2 відображається завжди, якщо є value */}
-                      <RuleView label="V2" rule={v2} />
-                      {typeof c.v2_count === "number" && (
-                        <div className="text-xs text-gray-500 mt-1">count: {c.v2_count}</div>
-                      )}
-                    </td>
+                  <td className="px-4 py-3 align-top">
+                    <KV k="v1_count" v={c.v1_count ?? 0} />
+                    <KV k="v2_count" v={c.v2_count ?? 0} />
+                    <KV k="exp_count" v={c.exp_count ?? 0} />
+                  </td>
 
-                    <td className="px-4 py-3">
-                      <div className="text-sm">
-                        <div className="font-medium">
-                          {expPipe || "—"} <span className="text-gray-400">→</span> {expStatus || "—"}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {typeof c.exp?.to_pipeline_id !== "undefined" && typeof c.exp?.to_status_id !== "undefined"
-                            ? <>IDs: {c.exp?.to_pipeline_id} → {c.exp?.to_status_id}</>
-                            : "IDs: —"}
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <RuleView label="EXP" rule={c.exp?.trigger} />
-                        {typeof c.exp_count === "number" && (
-                          <div className="text-xs text-gray-500 mt-1">count: {c.exp_count}</div>
-                        )}
-                      </div>
-                    </td>
+                  <td className="px-4 py-3 align-top">
+                    {c.created_at
+                      ? new Date(c.created_at).toLocaleString()
+                      : "—"}
+                  </td>
 
-                    <td className="px-4 py-3">
-                      {c.active ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs">active</span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs">inactive</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <Link
-                        className="text-blue-600 hover:underline"
-                        href={`/admin/campaigns/${c.id}/edit`}
-                      >
-                        Edit →
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
+                  <td className="px-4 py-3 align-top">
+                    {c.active !== false ? (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                        active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                        inactive
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
-    </main>
+    </div>
   );
 }
