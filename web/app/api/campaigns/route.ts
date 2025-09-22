@@ -5,12 +5,11 @@ import { redis } from "@/lib/redis";
 export const dynamic = "force-dynamic";
 
 type Rule = { op?: "contains" | "equals"; value?: string };
-
 type Campaign = {
   id: string;
   name?: string;
 
-  // V1 (base)
+  // base pair (V1 base)
   base_pipeline_id?: number;
   base_status_id?: number;
   base_pipeline_name?: string | null;
@@ -19,7 +18,7 @@ type Campaign = {
   // rules
   rules?: { v1?: Rule; v2?: Rule };
 
-  // experiment
+  // experiment (EXP) target + optional trigger rule
   exp?: {
     to_pipeline_id?: number;
     to_status_id?: number;
@@ -28,11 +27,12 @@ type Campaign = {
     trigger?: Rule;
   };
 
-  // diagnostics
+  // counters
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
 
+  // meta
   created_at?: number;
   active?: boolean;
 };
@@ -41,104 +41,85 @@ const NS = "campaigns";
 const INDEX_KEY = `${NS}:index`;
 const ITEM_KEY = (id: string) => `${NS}:${id}`;
 
-function nowTs() {
-  return Date.now();
+/** ===== Helpers ===== */
+
+function ok<T>(data: T, init?: ResponseInit) {
+  return NextResponse.json({ ok: true, ...((data as any) ?? {}) }, init);
+}
+function fail(status: number, error: string, extra?: Record<string, any>) {
+  return NextResponse.json({ ok: false, error, ...(extra || {}) }, { status });
 }
 
-function coerceNum(n: any): number | undefined {
-  if (n === null || n === undefined || n === "") return undefined;
-  const v = Number(n);
-  return Number.isFinite(v) ? v : undefined;
+/** Перевірка адмін-токена: потрібна ТІЛЬКИ для методів, що змінюють дані */
+function isWriteMethod(method: string) {
+  return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 }
-
-function trimOrNull(s: any): string | null | undefined {
-  if (s === null || s === undefined) return undefined;
-  const t = String(s).trim();
-  return t.length ? t : null;
-}
-
-function sanitizeInput(body: any): Omit<Campaign, "id"> {
-  const base_pipeline_id = coerceNum(body.base_pipeline_id);
-  const base_status_id = coerceNum(body.base_status_id);
-
-  const base_pipeline_name = trimOrNull(body.base_pipeline_name);
-  const base_status_name = trimOrNull(body.base_status_name);
-
-  const v1: Rule | undefined =
-    body?.rules?.v1 || body.v1
-      ? {
-          op: (body?.rules?.v1?.op || body?.v1?.op || "contains") as
-            | "contains"
-            | "equals",
-          value:
-            trimOrNull(body?.rules?.v1?.value ?? body?.v1?.value) ?? undefined,
-        }
-      : undefined;
-
-  const v2: Rule | undefined =
-    body?.rules?.v2 || body.v2
-      ? {
-          op: (body?.rules?.v2?.op || body?.v2?.op || "contains") as
-            | "contains"
-            | "equals",
-          value:
-            trimOrNull(body?.rules?.v2?.value ?? body?.v2?.value) ?? undefined,
-        }
-      : undefined;
-
-  const exp_to_pipeline_id = coerceNum(body?.exp?.to_pipeline_id ?? body?.to_pipeline_id);
-  const exp_to_status_id = coerceNum(body?.exp?.to_status_id ?? body?.to_status_id);
-  const exp_to_pipeline_name = trimOrNull(
-    body?.exp?.to_pipeline_name ?? body?.to_pipeline_name
+function readIncomingToken(req: Request) {
+  const u = new URL(req.url);
+  return (
+    req.headers.get("x-admin-token") ||
+    u.searchParams.get("admin") ||
+    u.searchParams.get("token")
   );
-  const exp_to_status_name = trimOrNull(
-    body?.exp?.to_status_name ?? body?.to_status_name
-  );
-  const exp_trigger: Rule | undefined =
-    body?.exp?.trigger || body?.exp_trigger
-      ? {
-          op: (body?.exp?.trigger?.op || body?.exp_trigger?.op || "contains") as
-            | "contains"
-            | "equals",
-          value:
-            trimOrNull(
-              body?.exp?.trigger?.value ?? body?.exp_trigger?.value
-            ) ?? undefined,
-        }
-      : undefined;
+}
+function checkAdmin(req: Request) {
+  if (!isWriteMethod(req.method)) return { ok: true };
+  const expected = process.env.ADMIN_TOKEN;
+  if (!expected) return { ok: true }; // якщо токен не налаштований — не блокуємо
+  const provided = readIncomingToken(req);
+  if (provided && provided === expected) return { ok: true };
+  return { ok: false, status: 401 as const, error: "Unauthorized: missing or invalid admin token" };
+}
 
-  const name = trimOrNull(body.name) ?? undefined;
+/** Normalization for incoming payload */
+function normalizeCampaign(input: any): Campaign {
+  const now = Date.now();
+  const id: string = String(input?.id ?? now);
 
-  // збираємо структуру
-  const result: Omit<Campaign, "id"> = {
-    name,
-    base_pipeline_id,
-    base_status_id,
-    base_pipeline_name,
-    base_status_name,
-    rules: v1 || v2 ? { v1, v2 } : undefined,
-    exp:
-      exp_to_pipeline_id ||
-      exp_to_status_id ||
-      exp_to_pipeline_name ||
-      exp_to_status_name ||
-      exp_trigger
-        ? {
-            to_pipeline_id: exp_to_pipeline_id,
-            to_status_id: exp_to_status_id,
-            to_pipeline_name: exp_to_pipeline_name,
-            to_status_name: exp_to_status_name,
-            trigger: exp_trigger,
-          }
-        : undefined,
-    active: body.active === false ? false : true,
-    created_at: nowTs(),
+  const numOrUndef = (x: any) =>
+    x === null || x === undefined || x === "" ? undefined : Number(x);
+
+  const rule = (r: any): Rule | undefined => {
+    if (!r) return undefined;
+    const value = r.value ?? r?.val ?? r?.text ?? r?.title;
+    const op = r.op === "equals" ? "equals" : "contains";
+    if (!value) return undefined;
+    return { op, value: String(value) };
   };
 
-  return result;
+  return {
+    id,
+    name: input?.name ?? input?.title ?? `Campaign ${id}`,
+    base_pipeline_id: numOrUndef(input?.base_pipeline_id),
+    base_status_id: numOrUndef(input?.base_status_id),
+    base_pipeline_name: input?.base_pipeline_name ?? null,
+    base_status_name: input?.base_status_name ?? null,
+
+    rules: {
+      v1: rule(input?.rules?.v1 ?? input?.v1),
+      v2: rule(input?.rules?.v2 ?? input?.v2),
+    },
+
+    exp: {
+      to_pipeline_id: numOrUndef(input?.exp?.to_pipeline_id ?? input?.to_pipeline_id),
+      to_status_id: numOrUndef(input?.exp?.to_status_id ?? input?.to_status_id),
+      to_pipeline_name: input?.exp?.to_pipeline_name ?? input?.to_pipeline_name ?? null,
+      to_status_name: input?.exp?.to_status_name ?? input?.to_status_name ?? null,
+      trigger: rule(input?.exp?.trigger),
+    },
+
+    v1_count: Number(input?.v1_count ?? 0),
+    v2_count: Number(input?.v2_count ?? 0),
+    exp_count: Number(input?.exp_count ?? 0),
+
+    created_at: Number(input?.created_at ?? now),
+    active: input?.active ?? true,
+  };
 }
 
-// GET /api/campaigns — список
+/** ===== Handlers ===== */
+
+// GET /api/campaigns  — ПУБЛІЧНИЙ (без токена)
 export async function GET() {
   try {
     const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
@@ -147,60 +128,53 @@ export async function GET() {
       const raw = await redis.get(ITEM_KEY(id));
       if (!raw) continue;
       try {
-        const parsed = JSON.parse(raw) as Campaign;
-        items.push(parsed);
+        items.push(JSON.parse(raw) as Campaign);
       } catch {
         // skip broken
       }
     }
-
-    return NextResponse.json(
-      {
-        ok: true,
-        count: items.length,
-        items,
-      },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    return ok({ items, count: items.length }, { headers: { "Cache-Control": "no-store" } });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: `KV error: ${e?.message || String(e)}` },
-      { status: 500 }
-    );
+    return fail(500, "KV error: " + (e?.message || String(e)));
   }
 }
 
-// POST /api/campaigns — створення
+// POST /api/campaigns — створення (ПОТРІБЕН токен тільки тут)
 export async function POST(req: Request) {
+  const auth = checkAdmin(req);
+  if (!auth.ok) return fail(auth.status, auth.error);
+
+  let input: any;
   try {
-    // auth (проста перевірка токена)
-    const token = req.headers.get("x-admin-token") || "";
-    const expect = process.env.ADMIN_TOKEN || process.env.NEXT_PUBLIC_ADMIN_TOKEN || "";
-    if (!expect || token !== expect) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized: missing or invalid admin token" },
-        { status: 401 }
-      );
+    input = await req.json();
+  } catch {
+    return fail(400, "Bad JSON");
+  }
+
+  const item = normalizeCampaign(input);
+  const now = Date.now();
+
+  try {
+    await redis.set(ITEM_KEY(item.id), JSON.stringify(item));
+    // наша обгортка підтримує об'єктний варіант { score, member }
+    await redis.zadd(INDEX_KEY, { score: now, member: item.id });
+
+    // одразу повертаємо актуальний список
+    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
+    const items: Campaign[] = [];
+    for (const id of ids || []) {
+      const raw = await redis.get(ITEM_KEY(id));
+      if (!raw) continue;
+      try {
+        items.push(JSON.parse(raw) as Campaign);
+      } catch {}
     }
 
-    const body = await req.json().catch(() => ({}));
-    const data = sanitizeInput(body);
-
-    const id = (body.id && String(body.id)) || `${Date.now()}`;
-    const item: Campaign = { id, ...data };
-
-    // збереження
-    await redis.set(ITEM_KEY(id), JSON.stringify(item));
-    await redis.zadd(INDEX_KEY, item.created_at || nowTs(), id);
-
-    return NextResponse.json(
-      { ok: true, id, item },
+    return ok(
+      { created: item.id, item, items, count: items.length },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: `KV error: ${e?.message || String(e)}` },
-      { status: 500 }
-    );
+    return fail(500, "KV error: " + (e?.message || String(e)));
   }
 }
