@@ -1,15 +1,19 @@
 // web/lib/redis.ts
-// KV client (Vercel KV / Upstash Redis) з авто-підбором формату pipeline + fallback на пам'ять.
-// Підтримує: get, set, mget, mset, zadd, zrange, lpush, lrange, del, expire.
+// KV client (Vercel KV / Upstash Redis) з авто-визначенням формату і fallback на пам'ять.
+// Покриває: get, set, mget, mset, zadd, zrange, lpush, lrange, del, expire.
 
 type Val = string;
 type Any = any;
 
 const KV_URL = process.env.KV_REST_API_URL || process.env.KV_URL || '';
-const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.KV_REST_API_READ_ONLY_TOKEN || '';
+const KV_TOKEN =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.KV_REST_API_READ_ONLY_TOKEN ||
+  process.env.KV_TOKEN ||
+  '';
 
-/** ---------------- Low-level helpers ---------------- */
-async function httpJSON<T = Any>(url: string, body: any) {
+/* ---------------- low-level HTTP ---------------- */
+async function httpJSON(url: string, body: any) {
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -25,43 +29,66 @@ async function httpJSON<T = Any>(url: string, body: any) {
   return { ok: resp.ok, status: resp.status, text, json };
 }
 
-// single-command endpoint (Vercel KV)
+/* ---------------- single command ----------------
+   Пробуємо 2 формати:
+   A) Vercel:  POST baseURL  { "command": ["SET","k","v"] }
+   B) Upstash: POST baseURL  ["SET","k","v"]
+-------------------------------------------------- */
 async function kvSingle<T = Any>(command: string[]): Promise<T> {
   if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
-  const { ok, status, text, json } = await httpJSON(KV_URL, { command });
-  if (!ok) throw new Error(`KV error: ${status} ${text}`);
-  return (json?.result as T) ?? (undefined as unknown as T);
+
+  // A) Vercel формат
+  {
+    const { ok, status, text, json } = await httpJSON(KV_URL, { command });
+    if (ok) return (json?.result as T) ?? (undefined as unknown as T);
+    // якщо помилка парсингу — пробуємо Upstash формат
+    if (status !== 404 && status !== 405) {
+      // 404/405 часто означає, що базовий URL не приймає цей формат — тоді не шумимо
+      // але якщо 400 і т.п. — спробуємо другу схему
+    }
+  }
+
+  // B) Upstash формат (ті самі endpoint, але body — чистий масив)
+  {
+    const { ok, status, text, json } = await httpJSON(KV_URL, command);
+    if (ok) return (Array.isArray(json) ? json[0]?.result : json?.result) as T;
+    throw new Error(`KV error: ${status} ${text || JSON.stringify(json) || 'ERR failed to parse command'}`);
+  }
 }
 
-// pipeline endpoint — пробує три формати підряд, поки один не спрацює.
+/* ---------------- pipeline ----------------
+   Спроби по черзі:
+   1) /multi-exec {commands:[...]}   (Vercel KV)
+   2) /pipeline   {commands:[...]}   (Upstash JSON-обгортка)
+   3) /pipeline   [...]              (Upstash "чистий масив")
+-------------------------------------------------- */
 async function kvPipeline<T = Any>(commands: string[][]): Promise<T[]> {
   if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
 
-  // 1) Vercel KV format: POST {url}/multi-exec  with { commands: [ ["SET","k","v"], ... ] }
+  // 1) multi-exec
   {
-    const multi = KV_URL.replace(/\/+$/, '') + '/multi-exec';
-    const { ok, status, text, json } = await httpJSON(multi, { commands });
-    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
-    // деякі інсталяції повертають помилку парсингу
-  }
-
-  // 2) Upstash Redis: POST {url}/pipeline with { commands: [...] }
-  {
-    const pipe = KV_URL.replace(/\/+$/, '') + '/pipeline';
-    const { ok, status, text, json } = await httpJSON(pipe, { commands });
+    const url = KV_URL.replace(/\/+$/, '') + '/multi-exec';
+    const { ok, json } = await httpJSON(url, { commands });
     if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
   }
 
-  // 3) Upstash альтернативний: POST {url}/pipeline з чистим масивом [...], без обгортки
+  // 2) pipeline {commands: [...]}
   {
-    const pipe = KV_URL.replace(/\/+$/, '') + '/pipeline';
-    const { ok, status, text, json } = await httpJSON(pipe, commands);
+    const url = KV_URL.replace(/\/+$/, '') + '/pipeline';
+    const { ok, json } = await httpJSON(url, { commands });
+    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
+  }
+
+  // 3) pipeline з «чистим масивом»
+  {
+    const url = KV_URL.replace(/\/+$/, '') + '/pipeline';
+    const { ok, status, text, json } = await httpJSON(url, commands);
     if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
     throw new Error(`KV error: ${status} ${text || JSON.stringify(json) || 'ERR failed to parse pipeline request'}`);
   }
 }
 
-/** ---------------- In-memory fallback ---------------- */
+/* ---------------- in-memory fallback ---------------- */
 const mem = new Map<string, Val>();
 const lists = new Map<string, Val[]>();
 const zsets = new Map<string, Array<{ m: Val; s: number }>>();
@@ -75,7 +102,7 @@ const rangeIdx = (len: number, start: number, stop: number) => {
   return [s, e] as const;
 };
 
-/** ---------------- Public API ---------------- */
+/* ---------------- public API ---------------- */
 export const redis = {
   // STRINGS
   async get(key: string): Promise<string | null> {
@@ -123,7 +150,6 @@ export const redis = {
   // ZSET
   async zadd(key: string, ...items: Array<{ score: number; member: string }>): Promise<number> {
     if (KV_URL && KV_TOKEN) {
-      // деякі бекенди не приймають кілька елементів у одному ZADD → робимо pipeline
       const cmds = items.map((it) => ['ZADD', key, String(it.score), it.member]);
       await kvPipeline(cmds);
       return items.length;
@@ -154,7 +180,6 @@ export const redis = {
     const z = getZ(key).slice();
     z.sort((a, b) => a.s - b.s);
     if (opts?.rev) z.reverse();
-
     if (opts?.byScore) {
       const filtered = z.filter((i) => i.s >= start && i.s <= stop);
       return filtered.map((i) => i.m);
