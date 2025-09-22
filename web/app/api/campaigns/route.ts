@@ -1,50 +1,49 @@
 // web/app/api/campaigns/route.ts
+// Уніфікований GET/POST для кампаній. Працює з web/lib/redis.ts.
+// GET: повертає масив кампаній (останнє зверху).
+// POST: створення/апсертування (вимагає адмін-токен через assertAdmin()).
+
 import { NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { assertAdmin } from '@/lib/auth';
 
-// клавіші
 const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
+const ITEM_KEY = (id: string) => `campaigns:item:${id}`;
 
-// допоміжне: safe parse
-function parse<T = any>(raw: string | null): T | null {
-  if (!raw) return null;
-  try { return JSON.parse(raw) as T; } catch { return null; }
-}
-
-// гарантуємо мінімально потрібні поля для UI
-function normalizeCampaign(input: any) {
+// Проста нормалізація мінімально потрібних полів
+function normalize(input: any): any {
   const now = Date.now();
-  const id = input?.id || (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
+  const id = input?.id || crypto.randomUUID();
+
   const rules = input?.rules || {};
-  const v1 = rules?.v1 || {};
-  const v2 = rules?.v2 || {};
-  const exp = input?.exp;
+  const v1 = rules.v1 || { op: 'contains', value: '' };
+  const v2 = rules.v2 || { op: 'contains', value: '' };
+
+  const base_pipeline_id = Number(input?.base_pipeline_id ?? 0);
+  const base_status_id = Number(input?.base_status_id ?? 0);
+
+  const exp = input?.exp
+    ? {
+        days: Number(input.exp.days ?? 0),
+        to_pipeline_id: Number(input.exp.to_pipeline_id ?? 0),
+        to_status_id: Number(input.exp.to_status_id ?? 0),
+      }
+    : undefined;
 
   return {
     id,
-    name: String(input?.name ?? 'Без назви'),
+    name: String(input?.name ?? 'Untitled'),
     created_at: Number(input?.created_at ?? now),
     active: Boolean(input?.active ?? false),
-    base_pipeline_id: Number(input?.base_pipeline_id ?? 0),
-    base_status_id: Number(input?.base_status_id ?? 0),
-    rules: {
-      v1: { op: (v1?.op === 'equals' ? 'equals' : 'contains'), value: String(v1?.value ?? '') },
-      v2: { op: (v2?.op === 'equals' ? 'equals' : 'contains'), value: String(v2?.value ?? '') },
-    },
-    exp: exp
-      ? {
-          days: Number(exp?.days ?? 0),
-          to_pipeline_id: Number(exp?.to_pipeline_id ?? 0),
-          to_status_id: Number(exp?.to_status_id ?? 0),
-        }
-      : undefined,
+    base_pipeline_id,
+    base_status_id,
+    rules: { v1, v2 },
+    exp,
     v1_count: Number(input?.v1_count ?? 0),
     v2_count: Number(input?.v2_count ?? 0),
     exp_count: Number(input?.exp_count ?? 0),
 
-    // назви можуть підставлятись kc-cache згодом; UI нормально відобразить id, якщо назв нема
+    // назви можуть бути додані бекендом пізніше — не вимагаємо тут
     base_pipeline_name: input?.base_pipeline_name ?? null,
     base_status_name: input?.base_status_name ?? null,
     exp_to_pipeline_name: input?.exp_to_pipeline_name ?? null,
@@ -54,48 +53,62 @@ function normalizeCampaign(input: any) {
 
 export const dynamic = 'force-dynamic';
 
-// GET: список кампаній з індексу (найновіші першими)
+// ===== GET: список кампаній (новіші зверху) =====
 export async function GET() {
   try {
-    const ids = await redis.zrange(INDEX_KEY, 0, -1, { rev: true }).catch(() => []);
-    if (!ids?.length) {
-      return NextResponse.json([], { headers: { 'Cache-Control': 'no-store' } });
+    // Читаємо ВСІ id з індексу. Використовуємо індексне ZRANGE (0..-1) + REV.
+    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
+
+    if (!ids || ids.length === 0) {
+      return NextResponse.json({ ok: true, items: [] }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    // mget по всіх ключах і парсимо
-    const raws = await redis.mget(...ids.map(ITEM_KEY));
-    const items = (raws || [])
-      .map((r) => parse(r))
-      .filter(Boolean)
-      .map((c) => {
-        // гарантуємо наявність rules.v1/v2 навіть якщо відсутні у сховищі
-        const n = normalizeCampaign(c);
-        return n;
-      });
+    // Батчимо MGET по ключам items
+    const keys = ids.map(ITEM_KEY);
+    const raws = (await redis.mget(...keys)) as (string | null)[];
+    const items = raws
+      .map((raw) => {
+        if (!raw) return null;
+        try {
+          return normalize(JSON.parse(raw));
+        } catch {
+          // Якщо лежить plain-string — обгортаємо мінімально
+          return normalize({ name: String(raw) });
+        }
+      })
+      .filter(Boolean);
 
-    return NextResponse.json(items, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ ok: true, items }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }
 
-// POST: створення/апсертування кампанії + індексація у ZSET
+// ===== POST: створити/апдейтнути кампанію =====
 export async function POST(req: Request) {
   try {
-    await assertAdmin(req);
+    await assertAdmin(req); // вимагає Bearer 11111 або ?pass=11111
 
     const body = await req.json().catch(() => ({}));
-    const campaign = normalizeCampaign(body);
+    const item = normalize(body);
+    const { id, created_at } = item;
 
-    // зберегти item
-    await redis.set(ITEM_KEY(campaign.id), JSON.stringify(campaign));
-    // індексувати за created_at
-    await redis.zadd(INDEX_KEY, { score: campaign.created_at, member: campaign.id });
+    // Зберегти сам об'єкт
+    await redis.set(ITEM_KEY(id), JSON.stringify(item));
 
-    return NextResponse.json({ ok: true, campaign }, { headers: { 'Cache-Control': 'no-store' } });
+    // Додати до індексу за created_at
+    await redis.zadd(INDEX_KEY, { score: Number(created_at), member: id });
+
+    // Повернути короткий результат
+    return NextResponse.json({ ok: true, id, item }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
-    const msg = e?.message || String(e);
-    const status = /unauthorized/i.test(msg) ? 401 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status });
+    const status = String(e?.message || '').toLowerCase().includes('unauthorized') ? 401 : 500;
+    return NextResponse.json(
+      { ok: false, error: e?.message || String(e) },
+      { status, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }
