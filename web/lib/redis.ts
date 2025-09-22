@@ -1,206 +1,199 @@
 // web/lib/redis.ts
-// KV client (Vercel KV / Upstash Redis) з авто-визначенням формату і fallback на пам'ять.
-// Покриває: get, set, mget, mset, zadd, zrange, lpush, lrange, del, expire.
+// Легкий клієнт для Upstash Redis REST + безпечний fallback in-memory.
+// Підтримує: set/get/del/expire, lpush/lrange, zadd/zrange, ping.
 
 type Val = string;
 type Any = any;
 
-const KV_URL = process.env.KV_REST_API_URL || process.env.KV_URL || '';
-const KV_TOKEN =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.KV_REST_API_READ_ONLY_TOKEN ||
-  process.env.KV_TOKEN ||
-  '';
+const REST_URL = process.env.KV_REST_API_URL || process.env.KV_URL || "";
+const REST_TOKEN =
+  process.env.KV_REST_API_TOKEN || process.env.KV_REST_API_READ_ONLY_TOKEN || "";
 
-/* ---------------- low-level HTTP ---------------- */
-async function httpJSON(url: string, body: any) {
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${KV_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    next: { revalidate: 0 },
-  });
-  const text = await resp.text().catch(() => '');
-  let json: any = null;
-  try { json = text ? JSON.parse(text) : null; } catch {}
-  return { ok: resp.ok, status: resp.status, text, json };
-}
-
-/* ---------------- single command ----------------
-   Пробуємо 2 формати:
-   A) Vercel:  POST baseURL  { "command": ["SET","k","v"] }
-   B) Upstash: POST baseURL  ["SET","k","v"]
--------------------------------------------------- */
-async function kvSingle<T = Any>(command: string[]): Promise<T> {
-  if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
-
-  // A) Vercel формат
-  {
-    const { ok, status, text, json } = await httpJSON(KV_URL, { command });
-    if (ok) return (json?.result as T) ?? (undefined as unknown as T);
-    // якщо помилка парсингу — пробуємо Upstash формат
-    if (status !== 404 && status !== 405) {
-      // 404/405 часто означає, що базовий URL не приймає цей формат — тоді не шумимо
-      // але якщо 400 і т.п. — спробуємо другу схему
-    }
-  }
-
-  // B) Upstash формат (ті самі endpoint, але body — чистий масив)
-  {
-    const { ok, status, text, json } = await httpJSON(KV_URL, command);
-    if (ok) return (Array.isArray(json) ? json[0]?.result : json?.result) as T;
-    throw new Error(`KV error: ${status} ${text || JSON.stringify(json) || 'ERR failed to parse command'}`);
-  }
-}
-
-/* ---------------- pipeline ----------------
-   Спроби по черзі:
-   1) /multi-exec {commands:[...]}   (Vercel KV)
-   2) /pipeline   {commands:[...]}   (Upstash JSON-обгортка)
-   3) /pipeline   [...]              (Upstash "чистий масив")
--------------------------------------------------- */
-async function kvPipeline<T = Any>(commands: string[][]): Promise<T[]> {
-  if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
-
-  // 1) multi-exec
-  {
-    const url = KV_URL.replace(/\/+$/, '') + '/multi-exec';
-    const { ok, json } = await httpJSON(url, { commands });
-    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
-  }
-
-  // 2) pipeline {commands: [...]}
-  {
-    const url = KV_URL.replace(/\/+$/, '') + '/pipeline';
-    const { ok, json } = await httpJSON(url, { commands });
-    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
-  }
-
-  // 3) pipeline з «чистим масивом»
-  {
-    const url = KV_URL.replace(/\/+$/, '') + '/pipeline';
-    const { ok, status, text, json } = await httpJSON(url, commands);
-    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
-    throw new Error(`KV error: ${status} ${text || JSON.stringify(json) || 'ERR failed to parse pipeline request'}`);
-  }
-}
-
-/* ---------------- in-memory fallback ---------------- */
-const mem = new Map<string, Val>();
-const lists = new Map<string, Val[]>();
-const zsets = new Map<string, Array<{ m: Val; s: number }>>();
-
-const getList = (k: string) => (lists.has(k) ? lists.get(k)! : (lists.set(k, []), lists.get(k)!));
-const getZ = (k: string) => (zsets.has(k) ? zsets.get(k)! : (zsets.set(k, []), zsets.get(k)!));
-const rangeIdx = (len: number, start: number, stop: number) => {
-  const norm = (i: number) => (i < 0 ? len + i : i);
-  const s = Math.max(0, norm(start));
-  const e = Math.min(len - 1, norm(stop));
-  return [s, e] as const;
+// ----------------- In-memory fallback (якщо немає REST env) -----------------
+const _mem = {
+  kv: new Map<string, string>(),
+  lists: new Map<string, string[]>(),
+  zsets: new Map<string, Array<{ score: number; member: string }>>(),
+  expires: new Map<string, number>(), // key -> epoch ms
 };
 
-/* ---------------- public API ---------------- */
+function _isExpired(key: string) {
+  const exp = _mem.expires.get(key);
+  if (exp && Date.now() > exp) {
+    _mem.kv.delete(key);
+    _mem.lists.delete(key);
+    _mem.zsets.delete(key);
+    _mem.expires.delete(key);
+    return true;
+  }
+  return false;
+}
+
+function _ensureList(key: string) {
+  if (!_mem.lists.has(key)) _mem.lists.set(key, []);
+  return _mem.lists.get(key)!;
+}
+function _ensureZset(key: string) {
+  if (!_mem.zsets.has(key)) _mem.zsets.set(key, []);
+  return _mem.zsets.get(key)!;
+}
+
+// ----------------- REST executor -----------------
+async function restExec(command: (string | number)[]): Promise<any> {
+  if (!REST_URL || !REST_TOKEN) {
+    throw new Error("NO_REST_ENV");
+  }
+  // Upstash REST: POST { "command": ["SET","k","v"] }
+  const res = await fetch(REST_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${REST_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ command }),
+    // no-cache для максимальної прозорості діагностики
+    cache: "no-store",
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || (data && data.error)) {
+    const msg = typeof data?.error === "string" ? data.error : JSON.stringify(data);
+    throw new Error(`REST_ERROR ${res.status}: ${msg}`);
+  }
+  return data?.result ?? data; // Upstash повертає { result: ... }
+}
+
+// ----------------- Публічне API -----------------
 export const redis = {
-  // STRINGS
-  async get(key: string): Promise<string | null> {
-    if (KV_URL && KV_TOKEN) return kvSingle<string | null>(['GET', key]);
-    return mem.has(key) ? mem.get(key)! : null;
-  },
-
-  async set(key: string, value: string): Promise<'OK'> {
-    if (KV_URL && KV_TOKEN) return kvSingle<'OK'>(['SET', key, value]);
-    mem.set(key, value);
-    return 'OK';
-  },
-
-  async mget(...keys: string[]): Promise<(string | null)[]> {
-    if (KV_URL && KV_TOKEN) return kvSingle<(string | null)[]>(['MGET', ...keys]);
-    return keys.map((k) => (mem.has(k) ? mem.get(k)! : null));
-  },
-
-  async mset(...kv: string[]): Promise<'OK'> {
-    if (KV_URL && KV_TOKEN) {
-      const cmds: string[][] = [];
-      for (let i = 0; i < kv.length; i += 2) cmds.push(['SET', kv[i], kv[i + 1]]);
-      await kvPipeline(cmds);
-      return 'OK';
+  async ping(): Promise<string> {
+    try {
+      const r = await restExec(["PING"]);
+      return typeof r === "string" ? r : "PONG";
+    } catch (e) {
+      // fallback
+      return "PONG";
     }
-    for (let i = 0; i < kv.length; i += 2) mem.set(kv[i], kv[i + 1]);
-    return 'OK';
   },
 
-  // LIST
+  // KV
+  async set(key: string, value: string): Promise<"OK"> {
+    if (REST_URL && REST_TOKEN) {
+      await restExec(["SET", key, value]);
+      return "OK";
+    }
+    _mem.kv.set(key, value);
+    return "OK";
+  },
+
+  async get(key: string): Promise<string | null> {
+    if (REST_URL && REST_TOKEN) {
+      const r = await restExec(["GET", key]);
+      return r ?? null;
+    }
+    if (_isExpired(key)) return null;
+    return _mem.kv.get(key) ?? null;
+  },
+
+  async del(key: string): Promise<number> {
+    if (REST_URL && REST_TOKEN) {
+      const r = await restExec(["DEL", key]);
+      return Number(r) || 0;
+    }
+    _mem.kv.delete(key);
+    _mem.lists.delete(key);
+    _mem.zsets.delete(key);
+    _mem.expires.delete(key);
+    return 1;
+  },
+
+  async expire(key: string, seconds: number): Promise<number> {
+    if (REST_URL && REST_TOKEN) {
+      const r = await restExec(["EXPIRE", key, seconds]);
+      return Number(r) || 0;
+    }
+    _mem.expires.set(key, Date.now() + seconds * 1000);
+    return 1;
+  },
+
+  // LISTS
   async lpush(key: string, ...values: string[]): Promise<number> {
-    if (KV_URL && KV_TOKEN) return kvSingle<number>(['LPUSH', key, ...values]);
-    const arr = getList(key);
+    if (REST_URL && REST_TOKEN) {
+      const r = await restExec(["LPUSH", key, ...values]);
+      return Number(r) || 0;
+    }
+    const arr = _ensureList(key);
     arr.unshift(...values);
     return arr.length;
   },
 
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
-    if (KV_URL && KV_TOKEN) return kvSingle<string[]>(['LRANGE', key, String(start), String(stop)]);
-    const arr = getList(key);
-    const [s, e] = rangeIdx(arr.length, start, stop);
-    return e < s ? [] : arr.slice(s, e + 1);
+    if (REST_URL && REST_TOKEN) {
+      const r = await restExec(["LRANGE", key, start, stop]);
+      return Array.isArray(r) ? r.map(String) : [];
+    }
+    if (_isExpired(key)) return [];
+    const arr = _ensureList(key);
+    const norm = (i: number) => (i < 0 ? arr.length + i : i);
+    const s = Math.max(0, norm(start));
+    const e = Math.min(arr.length - 1, norm(stop));
+    if (e < s) return [];
+    return arr.slice(s, e + 1);
   },
 
   // ZSET
-  async zadd(key: string, ...items: Array<{ score: number; member: string }>): Promise<number> {
-    if (KV_URL && KV_TOKEN) {
-      const cmds = items.map((it) => ['ZADD', key, String(it.score), it.member]);
-      await kvPipeline(cmds);
-      return items.length;
+  async zadd(
+    key: string,
+    score: number,
+    member: string,
+    opts?: { nx?: boolean; xx?: boolean }
+  ): Promise<number> {
+    if (REST_URL && REST_TOKEN) {
+      const flags: (string | number)[] = ["ZADD", key];
+      if (opts?.nx) flags.push("NX");
+      if (opts?.xx) flags.push("XX");
+      flags.push(score, member);
+      const r = await restExec(flags);
+      return Number(r) || 0;
     }
-    const z = getZ(key);
-    let added = 0;
-    for (const it of items) {
-      const i = z.findIndex((e) => e.m === it.member);
-      if (i >= 0) z[i].s = it.score;
-      else { z.push({ m: it.member, s: it.score }); added++; }
-    }
-    z.sort((a, b) => a.s - b.s);
-    return added;
+    const z = _ensureZset(key);
+    if (opts?.nx && z.some((i) => i.member === member)) return 0;
+    if (opts?.xx && !z.some((i) => i.member === member)) return 0;
+    const idx = z.findIndex((i) => i.member === member);
+    if (idx >= 0) z[idx].score = score;
+    else z.push({ score, member });
+    z.sort((a, b) => a.score - b.score);
+    return 1;
   },
 
+  /**
+   * zrange(key, startOrMin, stopOrMax, options?)
+   * - індексний режим: start, stop (+ опція { rev })
+   * - за score: { byScore: true, rev?: boolean }
+   */
   async zrange(
     key: string,
-    start: number,
-    stop: number,
-    opts?: { rev?: boolean; byScore?: boolean }
+    a: number,
+    b: number,
+    options?: { rev?: boolean; byScore?: boolean; withScores?: boolean }
   ): Promise<string[]> {
-    if (KV_URL && KV_TOKEN) {
-      const cmd: string[] = ['ZRANGE', key, String(start), String(stop)];
-      if (opts?.byScore) cmd.push('BYSCORE');
-      if (opts?.rev) cmd.push('REV');
-      return kvSingle<string[]>(cmd);
+    if (REST_URL && REST_TOKEN) {
+      const cmd: (string | number)[] = ["ZRANGE", key, a, b];
+      if (options?.byScore) cmd.splice(2, 2, a, b, "BYSCORE"); // -> ZRANGE key min max BYSCORE
+      if (options?.rev) cmd.push("REV");
+      if (options?.withScores) cmd.push("WITHSCORES");
+      const r = await restExec(cmd);
+      // без WITHSCORES повертається масив членів
+      return Array.isArray(r) ? r.map(String) : [];
     }
-    const z = getZ(key).slice();
-    z.sort((a, b) => a.s - b.s);
-    if (opts?.rev) z.reverse();
-    if (opts?.byScore) {
-      const filtered = z.filter((i) => i.s >= start && i.s <= stop);
-      return filtered.map((i) => i.m);
-    }
-    const [s, e] = rangeIdx(z.length, start, stop);
-    return e < s ? [] : z.slice(s, e + 1).map((i) => i.m);
-  },
 
-  // MISC
-  async del(key: string): Promise<number> {
-    if (KV_URL && KV_TOKEN) return kvSingle<number>(['DEL', key]);
-    const existed = mem.delete(key) ? 1 : 0;
-    lists.delete(key);
-    zsets.delete(key);
-    return existed;
-  },
+    // fallback
+    if (_isExpired(key)) return [];
+    const z = _ensureZset(key).slice();
+    const src = options?.byScore
+      ? z.filter((i) => i.score >= a && i.score <= b)
+      : z.slice(Math.max(0, a), b < 0 ? z.length : b + 1);
 
-  async expire(key: string, seconds: number): Promise<0 | 1> {
-    if (KV_URL && KV_TOKEN) return kvSingle<0 | 1>(['EXPIRE', key, String(seconds)]);
-    return 0;
+    src.sort((x, y) => (options?.rev ? y.score - x.score : x.score - y.score));
+    return src.map((i) => i.member);
   },
 };
-
-export default redis;
