@@ -6,27 +6,35 @@ type Rule = { op?: "contains" | "equals"; value?: string };
 
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
-  const m = document.cookie.match(
-    new RegExp("(?:^|;\\s*)" + name.replace(/[-.[\\]{}()*+?^$|\\\\]/g, "\\$&") + "=([^;]*)")
-  );
-  return m ? decodeURIComponent(m[1]) : null;
+  const cookies = document.cookie ? document.cookie.split("; ") : [];
+  for (const c of cookies) {
+    const eq = c.indexOf("=");
+    const k = decodeURIComponent(c.slice(0, eq));
+    if (k === name) return decodeURIComponent(c.slice(eq + 1));
+  }
+  return null;
 }
 
 export default function AdminCampaignNewPage() {
   // --- admin token handling ---
   const [token, setToken] = useState<string>("");
+
   useEffect(() => {
     const fromCookie = readCookie("admin_token");
     const fromLS = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
     const t = (fromCookie || fromLS || "").trim();
     if (t) setToken(t);
   }, []);
+
   useEffect(() => {
     if (token && typeof window !== "undefined") {
       localStorage.setItem("admin_token", token);
-      document.cookie = `admin_token=${encodeURIComponent(token)}; Max-Age=${60 * 60 * 24 * 30}; Path=/; SameSite=Lax`;
+      document.cookie = `admin_token=${encodeURIComponent(token)}; Max-Age=${
+        60 * 60 * 24 * 30
+      }; Path=/; SameSite=Lax`;
     }
   }, [token]);
+
   const validToken = useMemo(() => (token || "").trim(), [token]);
 
   // --- form state ---
@@ -91,7 +99,6 @@ export default function AdminCampaignNewPage() {
       if (!r.ok || !j.ok) throw new Error(j?.error || r.statusText || "Create failed");
 
       setOkMsg(`Створено: ${j.id || "ok"}`);
-      // опційно — редірект у список
       // location.href = "/admin/campaigns?created=1";
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -111,7 +118,11 @@ export default function AdminCampaignNewPage() {
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
-          <span className={`text-xs px-2 py-1 rounded ${validToken ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+          <span
+            className={`text-xs px-2 py-1 rounded ${
+              validToken ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+            }`}
+          >
             {validToken ? "token ✓" : "нема токена"}
           </span>
         </div>
@@ -126,12 +137,20 @@ export default function AdminCampaignNewPage() {
 
           <label className="flex flex-col gap-1">
             <span className="text-sm text-gray-600">Base pipeline id (V1)</span>
-            <input className="border rounded px-2 py-1" value={basePipelineId} onChange={(e) => setBasePipelineId(e.target.value)} />
+            <input
+              className="border rounded px-2 py-1"
+              value={basePipelineId}
+              onChange={(e) => setBasePipelineId(e.target.value)}
+            />
           </label>
 
           <label className="flex flex-col gap-1">
             <span className="text-sm text-gray-600">Base status id (V1)</span>
-            <input className="border rounded px-2 py-1" value={baseStatusId} onChange={(e) => setBaseStatusId(e.target.value)} />
+            <input
+              className="border rounded px-2 py-1"
+              value={baseStatusId}
+              onChange={(e) => setBaseStatusId(e.target.value)}
+            />
           </label>
         </div>
 
@@ -144,7 +163,12 @@ export default function AdminCampaignNewPage() {
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </select>
-              <input className="border rounded px-2 py-1 flex-1" placeholder="value..." value={v1Value} onChange={(e) => setV1Value(e.target.value)} />
+              <input
+                className="border rounded px-2 py-1 flex-1"
+                placeholder="value..."
+                value={v1Value}
+                onChange={(e) => setV1Value(e.target.value)}
+              />
             </div>
           </div>
 
@@ -156,7 +180,12 @@ export default function AdminCampaignNewPage() {
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </select>
-              <input className="border rounded px-2 py-1 flex-1" placeholder="value..." value={v2Value} onChange={(e) => setV2Value(e.target.value)} />
+              <input
+                className="border rounded px-2 py-1 flex-1"
+                placeholder="value..."
+                value={v2Value}
+                onChange={(e) => setV2Value(e.target.value)}
+              />
             </div>
           </div>
         </div>
@@ -165,14 +194,29 @@ export default function AdminCampaignNewPage() {
         <div className="border rounded p-3 space-y-2">
           <div className="text-sm font-medium">EXP (optional)</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input className="border rounded px-2 py-1" placeholder="to_pipeline_id" value={expPipelineId} onChange={(e) => setExpPipelineId(e.target.value)} />
-            <input className="border rounded px-2 py-1" placeholder="to_status_id" value={expStatusId} onChange={(e) => setExpStatusId(e.target.value)} />
+            <input
+              className="border rounded px-2 py-1"
+              placeholder="to_pipeline_id"
+              value={expPipelineId}
+              onChange={(e) => setExpPipelineId(e.target.value)}
+            />
+            <input
+              className="border rounded px-2 py-1"
+              placeholder="to_status_id"
+              value={expStatusId}
+              onChange={(e) => setExpStatusId(e.target.value)}
+            />
             <div className="flex gap-2">
               <select className="border rounded px-2 py-1" value={expOp} onChange={(e) => setExpOp(e.target.value as any)}>
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </select>
-              <input className="border rounded px-2 py-1 flex-1" placeholder="trigger value..." value={expValue} onChange={(e) => setExpValue(e.target.value)} />
+              <input
+                className="border rounded px-2 py-1 flex-1"
+                placeholder="trigger value..."
+                value={expValue}
+                onChange={(e) => setExpValue(e.target.value)}
+              />
             </div>
           </div>
         </div>
