@@ -1,11 +1,70 @@
 // web/app/api/campaigns/route.ts
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { redis } from '../../../lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-const INDEX_KEY = 'campaigns:index:list'; // список id (LPUSH → нові зверху)
+// ---------- Upstash REST helpers (без lib/redis) ----------
+const URL = process.env.KV_REST_API_URL!;
+const TOKEN = process.env.KV_REST_API_TOKEN!;
+function okKV() { return !!URL && !!TOKEN; }
+
+async function kvGET<T = string | null>(key: string): Promise<T | null> {
+  const r = await fetch(`${URL}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    cache: 'no-store',
+  });
+  const j = await r.json().catch(() => ({}));
+  return (j?.result ?? null) as any;
+}
+
+async function kvSET(key: string, val: any): Promise<boolean> {
+  const value = typeof val === 'string' ? val : JSON.stringify(val);
+  const r = await fetch(
+    `${URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      cache: 'no-store',
+    }
+  );
+  const j = await r.json().catch(() => ({}));
+  return j?.result === 'OK';
+}
+
+async function kvLPUSH(key: string, ...values: string[]): Promise<number> {
+  const r = await fetch(`${URL}/lpush/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(values),
+    cache: 'no-store',
+  });
+  const j = await r.json().catch(() => ({}));
+  // Upstash повертає {result: <new length>}
+  return Number(j?.result ?? 0);
+}
+
+async function kvLRANGE(
+  key: string,
+  start = 0,
+  stop = -1
+): Promise<string[]> {
+  const r = await fetch(
+    `${URL}/lrange/${encodeURIComponent(key)}/${start}/${stop}`,
+    {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      cache: 'no-store',
+    }
+  );
+  const j = await r.json().catch(() => ({}));
+  return (j?.result ?? []) as string[];
+}
+
+// ---------- Ключі та утиліти ----------
+const INDEX_KEY = 'campaigns:index:list'; // LPUSH нові зверху
 const ITEM_KEY = (id: string | number) => `campaigns:${id}`;
 
 function isAdmin(): boolean {
@@ -16,18 +75,12 @@ function isAdmin(): boolean {
     c.get('ADMIN_TOKEN')?.value ||
     c.get('ADMIN_PASS')?.value ||
     '';
-
-  const envToken =
-    process.env.ADMIN_TOKEN ||
-    process.env.ADMIN_PASS ||
-    '';
-
-  // Якщо токен у env задано — перевіряємо збіг; якщо ні — пускаємо (dev)
+  const envToken = process.env.ADMIN_TOKEN || process.env.ADMIN_PASS || '';
   if (envToken) return !!cookieToken && cookieToken === envToken;
-  return true;
+  return true; // dev режим, якщо токен не задано в env
 }
 
-// ===== GET /api/campaigns =====
+// ---------- GET: список кампаній ----------
 export async function GET() {
   try {
     if (!isAdmin()) {
@@ -36,13 +89,18 @@ export async function GET() {
         { status: 401 }
       );
     }
+    if (!okKV()) {
+      return NextResponse.json(
+        { ok: false, error: 'KV not configured (KV_REST_API_URL/TOKEN)' },
+        { status: 500 }
+      );
+    }
 
-    // читаємо індекс як список
-    const ids = (await redis.lrange(INDEX_KEY, 0, -1)) as string[];
+    const ids = await kvLRANGE(INDEX_KEY, 0, -1);
 
     const items: any[] = [];
-    for (const id of ids || []) {
-      const raw = await redis.get(ITEM_KEY(id));
+    for (const id of ids) {
+      const raw = await kvGET<string>(ITEM_KEY(id));
       if (!raw) continue;
       try {
         const obj = JSON.parse(raw);
@@ -79,7 +137,7 @@ export async function GET() {
   }
 }
 
-// ===== POST /api/campaigns =====
+// ---------- POST: створення кампанії ----------
 export async function POST(req: Request) {
   try {
     if (!isAdmin()) {
@@ -88,10 +146,15 @@ export async function POST(req: Request) {
         { status: 401 }
       );
     }
+    if (!okKV()) {
+      return NextResponse.json(
+        { ok: false, error: 'KV not configured (KV_REST_API_URL/TOKEN)' },
+        { status: 500 }
+      );
+    }
 
     const now = Date.now();
     const body = await req.json().catch(() => ({} as any));
-
     const name = String(body?.name || '').trim();
     if (!name) {
       return NextResponse.json(
@@ -105,10 +168,8 @@ export async function POST(req: Request) {
       created_at: now,
       active: body?.active ?? true,
 
-      base_pipeline_id:
-        body?.base_pipeline_id ?? body?.pipeline_id ?? null,
-      base_status_id:
-        body?.base_status_id ?? body?.status_id ?? null,
+      base_pipeline_id: body?.base_pipeline_id ?? body?.pipeline_id ?? null,
+      base_status_id: body?.base_status_id ?? body?.status_id ?? null,
       base_pipeline_name: body?.base_pipeline_name ?? null,
       base_status_name: body?.base_status_name ?? null,
 
@@ -126,14 +187,12 @@ export async function POST(req: Request) {
 
     const id = `${now}`;
 
-    // 1) зберегти саму кампанію
-    await redis.set(ITEM_KEY(id), JSON.stringify(item));
-
-    // 2) додати id у початок списку-індексу
-    await redis.lpush(INDEX_KEY, id);
+    // зберегти та проіндексувати
+    const ok1 = await kvSET(ITEM_KEY(id), item);
+    await kvLPUSH(INDEX_KEY, id);
 
     return NextResponse.json(
-      { ok: true, id, item },
+      { ok: ok1, id, item },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (e: any) {
