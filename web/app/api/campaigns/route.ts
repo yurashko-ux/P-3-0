@@ -36,43 +36,65 @@ const LIST_KEY = "campaigns:ids";
 const ITEM_KEY = (id: string) => `campaigns:${id}`;
 
 // --- helpers ---
+function parseCookieToken(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  // шукаємо "admin_token=..."
+  const m = cookieHeader.match(/(?:^|;\s*)admin_token=([^;]+)/i);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function parseQueryToken(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.searchParams.get("token");
+  } catch {
+    return null;
+  }
+}
+
 function isAdmin(req: Request) {
-  const hdr = req.headers.get("x-admin-token") || req.headers.get("X-Admin-Token");
   const env = process.env.ADMIN_TOKEN;
-  return !!env && hdr === env;
+  if (!env) return false;
+
+  // 1) заголовок
+  const hdr =
+    req.headers.get("x-admin-token") || req.headers.get("X-Admin-Token");
+  if (hdr && hdr === env) return true;
+
+  // 2) cookie
+  const cookieToken = parseCookieToken(req.headers.get("cookie"));
+  if (cookieToken && cookieToken === env) return true;
+
+  // 3) query ?token=...
+  const qToken = parseQueryToken(req.url || "");
+  if (qToken && qToken === env) return true;
+
+  return false;
 }
 
 async function readAll(): Promise<Campaign[]> {
-  // 1) основне джерело — звичайний список
   let ids: string[] = [];
   try {
     ids = await redis.lrange(LIST_KEY, 0, -1);
   } catch {}
 
-  // 2) fallback: якщо список порожній, пробуємо старий індекс у ZSET без "options"
   if (!ids.length) {
+    // fallback: старий ZSET без options
     try {
       const zIds = (await (redis as any).zrange("campaigns:index", 0, -1)) as string[];
       if (Array.isArray(zIds)) ids = zIds;
-    } catch {
-      // ігноруємо помилку — Upstash REST може не приймати такі варіанти
-    }
+    } catch {}
   }
 
-  // 3) зчитуємо предмети (без MGET, щоб уникнути несумісних команд)
   const items: Campaign[] = [];
   for (const id of ids) {
     try {
       const raw = await redis.get(ITEM_KEY(id));
       if (!raw) continue;
-      const parsed = JSON.parse(raw) as Campaign;
-      items.push(parsed);
-    } catch {
-      // пропускаємо биті записи
-    }
+      items.push(JSON.parse(raw) as Campaign);
+    } catch {}
   }
 
-  // 4) сортуємо за часом створення (нові зверху)
   items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
   return items;
 }
@@ -81,7 +103,10 @@ async function readAll(): Promise<Campaign[]> {
 export async function GET() {
   try {
     const items = await readAll();
-    return NextResponse.json({ ok: true, items }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, items },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: "KV error: " + (e?.message || String(e)) },
@@ -93,7 +118,10 @@ export async function GET() {
 // --- POST /api/campaigns ---
 export async function POST(req: Request) {
   if (!isAdmin(req)) {
-    return NextResponse.json({ ok: false, error: "Unauthorized: missing or invalid admin token" }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized: missing or invalid admin token" },
+      { status: 401 }
+    );
   }
 
   try {
@@ -112,7 +140,7 @@ export async function POST(req: Request) {
 
       rules: {
         v1: body.rules?.v1 ?? { op: "contains", value: "" },
-        v2: body.rules?.v2, // може бути undefined — ок
+        v2: body.rules?.v2,
       },
 
       exp: body.exp
@@ -133,12 +161,13 @@ export async function POST(req: Request) {
       active: body.active ?? true,
     };
 
-    // записуємо сам об'єкт
     await redis.set(ITEM_KEY(id), JSON.stringify(item));
-    // додаємо id у LIST-індекс (нові — ліворуч)
     await redis.lpush(LIST_KEY, id);
 
-    return NextResponse.json({ ok: true, created: id }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, created: id },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: "KV error: " + (e?.message || String(e)) },
