@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { redis } from '../../../lib/redis';
 
+export const dynamic = 'force-dynamic';
+
 const INDEX_KEY = 'campaigns:index';
 const ITEM_KEY = (id: string | number) => `campaigns:${id}`;
 
@@ -21,25 +23,21 @@ function isAdmin(): boolean {
     '';
 
   // Якщо в env задано токен — вимагаємо збіг. Якщо ні — пропускаємо (dev).
-  if (envToken) {
-    return cookieToken && cookieToken === envToken;
-  }
+  if (envToken) return !!cookieToken && cookieToken === envToken;
   return true;
 }
 
-export const dynamic = 'force-dynamic';
-
-// GET /api/campaigns — список кампаній (desc)
+// ===== GET /api/campaigns =====
+// Повертає список кампаній у порядку від нових до старих
 export async function GET() {
   try {
     if (!isAdmin()) {
       return NextResponse.json(
         { ok: false, error: 'Unauthorized: missing or invalid admin token' },
-        { status: 401 },
+        { status: 401 }
       );
     }
 
-    // id з індексу (найсвіжіші спочатку)
     const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
 
     const items: any[] = [];
@@ -48,37 +46,118 @@ export async function GET() {
       if (!raw) continue;
       try {
         const obj = JSON.parse(raw);
-        // Підстрахуємося полями для таблиці
         items.push({
           id,
           name: obj?.name ?? '',
           created_at: obj?.created_at ?? Date.now(),
+          active: obj?.active ?? true,
+
+          // база для V1 (назви або id)
           base_pipeline_id: obj?.base_pipeline_id ?? obj?.pipeline_id ?? null,
           base_status_id: obj?.base_status_id ?? obj?.status_id ?? null,
+          base_pipeline_name: obj?.base_pipeline_name ?? null,
+          base_status_name: obj?.base_status_name ?? null,
+
+          // правила
           rules: obj?.rules ?? {},
+
+          // експерименти (можуть бути відсутні)
           exp: obj?.exp ?? {},
           v1_count: obj?.v1_count ?? 0,
           v2_count: obj?.v2_count ?? 0,
           exp_count: obj?.exp_count ?? 0,
-          active: obj?.active ?? true,
         });
       } catch {
-        // якщо це не JSON — пропускаємо
+        // не JSON — пропускаємо
       }
     }
 
     return NextResponse.json(
-      {
-        ok: true,
-        count: items.length,
-        items,
-      },
-      { headers: { 'Cache-Control': 'no-store' } },
+      { ok: true, count: items.length, items },
+      { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: `KV error: ${e?.message || String(e)}` },
-      { status: 500 },
+      { status: 500 }
+    );
+  }
+}
+
+// ===== POST /api/campaigns =====
+// Створює нову кампанію (мінімально необхідні поля)
+export async function POST(req: Request) {
+  try {
+    if (!isAdmin()) {
+      return NextResponse.json(
+        { ok: false, error: 'Unauthorized: missing or invalid admin token' },
+        { status: 401 }
+      );
+    }
+
+    const now = Date.now();
+    const body = await req.json().catch(() => ({} as any));
+
+    // Мінімальна валідація
+    const name = String(body?.name || '').trim();
+    if (!name) {
+      return NextResponse.json(
+        { ok: false, error: 'Name is required' },
+        { status: 400 }
+      );
+    }
+
+    // Підтримуємо ваші поля з форми
+    const item = {
+      name,
+      created_at: now,
+      active: body?.active ?? true,
+
+      // база для V1
+      base_pipeline_id:
+        body?.base_pipeline_id ?? body?.pipeline_id ?? null,
+      base_status_id:
+        body?.base_status_id ?? body?.status_id ?? null,
+      base_pipeline_name: body?.base_pipeline_name ?? null,
+      base_status_name: body?.base_status_name ?? null,
+
+      // правила (v1/v2)
+      rules: {
+        v1: body?.rules?.v1 ?? {
+          op: 'contains',
+          value: '',
+        },
+        v2: body?.rules?.v2 ?? {
+          op: 'contains',
+          value: '',
+        },
+      },
+
+      // експерименти (необов’язково)
+      exp: body?.exp ?? {},
+
+      // службові лічильники
+      v1_count: 0,
+      v2_count: 0,
+      exp_count: 0,
+    };
+
+    // Генеруємо id
+    const id = `${now}`;
+
+    // Зберігаємо в KV
+    await redis.set(ITEM_KEY(id), JSON.stringify(item));
+    // Ваш redis.zadd очікує сигнатуру (key, score, member)
+    await redis.zadd(INDEX_KEY, now, id);
+
+    return NextResponse.json(
+      { ok: true, id, item },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: `KV error: ${e?.message || String(e)}` },
+      { status: 500 }
     );
   }
 }
