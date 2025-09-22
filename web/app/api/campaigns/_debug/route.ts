@@ -1,71 +1,49 @@
 // web/app/api/campaigns/_debug/route.ts
 import { NextResponse } from 'next/server';
-import { redis } from '../../../../lib/redis';
+import { redis } from '@/lib/redis';
 
-export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
-const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
-type Any = Record<string, any>;
-
-async function scanAll(match: string, count = 200): Promise<string[]> {
-  let cursor = 0;
-  const acc: string[] = [];
-  while (true) {
-    const res: any = await (redis as any).scan(cursor, { match, count });
-    const next = Array.isArray(res) ? Number(res[0]) : Number(res?.cursor ?? 0);
-    const keys = Array.isArray(res) ? (res[1] as string[]) : ((res?.keys as string[]) ?? []);
-    if (keys?.length) acc.push(...keys);
-    cursor = next;
-    if (!cursor) break;
-  }
-  return acc;
-}
+const INDEX_KEY = 'campaigns:index';      // ZSET: score=created_at, member=id
+const LIST_KEY  = 'campaigns:all';        // LIST: ids (нові зверху)
+const ITEMS_KEY = 'campaigns:items';      // LIST: JSON кампаній (нові зверху)
+const ITEM_KEY  = (id: string) => `campaigns:${id}`;
 
 export async function GET() {
   const env = {
-    KV_REST_API_URL: !!process.env.KV_REST_API_URL,
-    KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
-    KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
+    KV_URL: !!process.env.KV_REST_API_URL || !!process.env.KV_URL,
+    KV_TOKEN: !!process.env.KV_REST_API_TOKEN || !!process.env.KV_REST_API_READ_ONLY_TOKEN,
   };
 
-  // чи можемо писати в KV
-  let canWrite = false, writeError = '';
   try {
-    const probe = `campaigns:__probe__:${Date.now()}`;
-    await redis.set(probe, JSON.stringify({ t: Date.now() }));
-    await redis.del(probe);
-    canWrite = true;
+    // індекси
+    const zAsc  = await redis.zrange(INDEX_KEY, 0, -1).catch(() => []);
+    const zDesc = await redis.zrange(INDEX_KEY, 0, -1, { rev: true }).catch(() => []);
+    const lIds  = await redis.lrange(LIST_KEY, 0, -1).catch(() => []);
+    const rawItems = await redis.lrange(ITEMS_KEY, 0, -1).catch(() => []);
+
+    // sample з ITEM_KEY
+    let sample: any = null;
+    if (zDesc?.[0]) {
+      const raw = await redis.get(ITEM_KEY(String(zDesc[0])));
+      if (raw) {
+        try { sample = JSON.parse(raw); } catch { sample = raw; }
+      }
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        env,
+        index: { zAsc, zDesc, lIds, itemsLen: rawItems.length },
+        sample,
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (e: any) {
-    canWrite = false; writeError = e?.message || String(e);
+    return NextResponse.json(
+      { ok: false, env, error: e?.message || String(e) },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+    );
   }
-
-  // що в індексі
-  let indexIds: string[] = [];
-  try {
-    indexIds = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-  } catch (e: any) {
-    writeError ||= `zrange: ${e?.message || String(e)}`;
-  }
-
-  // які існують "сирі" ключі campaigns:*
-  let keys: string[] = [];
-  try { keys = await scanAll('campaigns:*'); } catch {}
-
-  // зчитати перший елемент за індексом
-  let sample: Any | null = null;
-  if (indexIds?.[0]) {
-    const raw = await redis.get<string>(ITEM_KEY(indexIds[0]));
-    try { sample = raw ? JSON.parse(raw) : null; } catch { sample = raw as any; }
-  }
-
-  return NextResponse.json({
-    ok: true,
-    env, canWrite, writeError,
-    indexCount: indexIds.length, indexIds,
-    keysCount: keys.length, keys: keys.slice(0, 50),
-    sample,
-  }, { headers: { 'Cache-Control': 'no-store' } });
 }
