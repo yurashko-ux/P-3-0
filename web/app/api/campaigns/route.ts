@@ -1,7 +1,7 @@
 // web/app/api/campaigns/route.ts
 // GET  → масив кампаній (новіші зверху), гарантує rules.v1/v2
 // POST → створення/апсертування кампанії, індексація у campaigns:index (score=created_at)
-//       Тепер приймає адмін-токен також з ТІЛА: { pass: "11111", ... }
+//       + резервний список campaigns:all на випадок, якщо ZSET недоступний у поточній реалізації.
 
 import { NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
@@ -11,8 +11,9 @@ import { normalizeCampaign, type Campaign, type CampaignWithNames } from '@/lib/
 export const dynamic = 'force-dynamic';
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '11111';
-const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
+const INDEX_KEY = 'campaigns:index';      // ZSET: score = created_at, member = id
+const LIST_KEY  = 'campaigns:all';        // LIST: LPUSH id (нові зверху)
+const ITEM_KEY  = (id: string) => `campaigns:${id}`;
 
 // ——— kc-cache: збагачення назв, але не ламаємось якщо модуль відсутній
 async function safeGetPipelineName(id: number): Promise<string | null> {
@@ -47,13 +48,26 @@ async function enrich(c: Campaign): Promise<CampaignWithNames> {
   return { ...c, base_pipeline_name, base_status_name, exp };
 }
 
+// ——— дістаємо всі id з індексу з фолбеком
+async function getAllCampaignIdsNewestFirst(): Promise<string[]> {
+  // пробуємо ZSET
+  const zIds = (await redis.zrange(INDEX_KEY, 0, -1).catch(() => [])) as string[];
+  if (Array.isArray(zIds) && zIds.length) return [...zIds].reverse();
+
+  // фолбек: LIST (LPUSH дає новіші на початку)
+  const lIds = (await redis.lrange(LIST_KEY, 0, -1).catch(() => [])) as string[];
+  if (Array.isArray(lIds) && lIds.length) return lIds;
+
+  return [];
+}
+
 // ——— GET
 export async function GET() {
   try {
-    const ids = (await redis.zrange(INDEX_KEY, 0, -1).catch(() => [])) as string[];
-    const ordered = Array.isArray(ids) ? [...ids].reverse() : [];
+    const ids = await getAllCampaignIdsNewestFirst();
+
     const items: CampaignWithNames[] = [];
-    for (const id of ordered) {
+    for (const id of ids) {
       const raw = await redis.get(ITEM_KEY(id));
       if (!raw) continue;
       try {
@@ -72,27 +86,26 @@ export async function GET() {
 // ——— POST
 export async function POST(req: Request) {
   try {
-    // 1) Спробуємо витягти тіло одразу (щоб підтримати { pass: "11111", ... })
-    const payloadRaw = await req.json().catch(() => ({} as any));
-    const passFromBody: string | undefined =
-      typeof payloadRaw?.pass === 'string' ? payloadRaw.pass : undefined;
-
-    // 2) Якщо в тілі прийшов правильний pass — використовуємо його.
-    //    Інакше — стандартна перевірка через заголовок/квері (assertAdmin).
-    if (passFromBody !== ADMIN_TOKEN) {
-      // Класична перевірка (Bearer 11111 або ?pass=11111)
+    // підтримка { pass: '11111', ... } у тілі
+    const body = await req.json().catch(() => ({} as any));
+    if (String(body?.pass || '') !== ADMIN_TOKEN) {
+      // класична перевірка (Bearer 11111 або ?pass=11111 або cookie)
       await assertAdmin(new Request(req.url, { method: req.method, headers: req.headers }));
     }
 
-    // 3) Нормалізуємо кампанію (payloadRaw може містити pass — приберемо його)
-    const { pass: _omit, ...payload } = payloadRaw || {};
+    const { pass: _omit, ...payload } = body || {};
     const item = normalizeCampaign(payload); // гарантії: rules.v1/v2, uuid, лічильники
 
-    // 4) Запис у KV
+    // збереження
     await redis.set(ITEM_KEY(item.id), JSON.stringify(item));
+
+    // індексація (основний індекс — ZSET)
     await redis.zadd(INDEX_KEY, { score: item.created_at, member: String(item.id) }).catch(() => {});
 
-    // 5) Віддаємо збагачений варіант
+    // дублюємо в резервний список (щоб GET завжди мав джерело)
+    await redis.lpush(LIST_KEY, String(item.id)).catch(() => {});
+    // (опційно) Унікалізація LIST нам не потрібна — LPUSH того ж id зверху просто перемістить його вище у відображенні.
+
     const enriched = await enrich(item);
     return NextResponse.json({ ok: true, item: enriched }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
