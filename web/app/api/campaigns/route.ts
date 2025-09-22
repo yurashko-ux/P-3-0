@@ -5,7 +5,7 @@ import { redis } from '../../../lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-const INDEX_KEY = 'campaigns:index';
+const INDEX_KEY = 'campaigns:index:list'; // список id (LPUSH → нові зверху)
 const ITEM_KEY = (id: string | number) => `campaigns:${id}`;
 
 function isAdmin(): boolean {
@@ -22,13 +22,12 @@ function isAdmin(): boolean {
     process.env.ADMIN_PASS ||
     '';
 
-  // Якщо в env задано токен — вимагаємо збіг. Якщо ні — пропускаємо (dev).
+  // Якщо токен у env задано — перевіряємо збіг; якщо ні — пускаємо (dev)
   if (envToken) return !!cookieToken && cookieToken === envToken;
   return true;
 }
 
 // ===== GET /api/campaigns =====
-// Повертає список кампаній у порядку від нових до старих
 export async function GET() {
   try {
     if (!isAdmin()) {
@@ -38,7 +37,8 @@ export async function GET() {
       );
     }
 
-    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
+    // читаємо індекс як список
+    const ids = (await redis.lrange(INDEX_KEY, 0, -1)) as string[];
 
     const items: any[] = [];
     for (const id of ids || []) {
@@ -52,24 +52,19 @@ export async function GET() {
           created_at: obj?.created_at ?? Date.now(),
           active: obj?.active ?? true,
 
-          // база для V1 (назви або id)
           base_pipeline_id: obj?.base_pipeline_id ?? obj?.pipeline_id ?? null,
           base_status_id: obj?.base_status_id ?? obj?.status_id ?? null,
           base_pipeline_name: obj?.base_pipeline_name ?? null,
           base_status_name: obj?.base_status_name ?? null,
 
-          // правила
           rules: obj?.rules ?? {},
-
-          // експерименти (можуть бути відсутні)
           exp: obj?.exp ?? {},
+
           v1_count: obj?.v1_count ?? 0,
           v2_count: obj?.v2_count ?? 0,
           exp_count: obj?.exp_count ?? 0,
         });
-      } catch {
-        // не JSON — пропускаємо
-      }
+      } catch {}
     }
 
     return NextResponse.json(
@@ -85,7 +80,6 @@ export async function GET() {
 }
 
 // ===== POST /api/campaigns =====
-// Створює нову кампанію (мінімально необхідні поля)
 export async function POST(req: Request) {
   try {
     if (!isAdmin()) {
@@ -98,7 +92,6 @@ export async function POST(req: Request) {
     const now = Date.now();
     const body = await req.json().catch(() => ({} as any));
 
-    // Мінімальна валідація
     const name = String(body?.name || '').trim();
     if (!name) {
       return NextResponse.json(
@@ -107,13 +100,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Підтримуємо ваші поля з форми
     const item = {
       name,
       created_at: now,
       active: body?.active ?? true,
 
-      // база для V1
       base_pipeline_id:
         body?.base_pipeline_id ?? body?.pipeline_id ?? null,
       base_status_id:
@@ -121,34 +112,25 @@ export async function POST(req: Request) {
       base_pipeline_name: body?.base_pipeline_name ?? null,
       base_status_name: body?.base_status_name ?? null,
 
-      // правила (v1/v2)
       rules: {
-        v1: body?.rules?.v1 ?? {
-          op: 'contains',
-          value: '',
-        },
-        v2: body?.rules?.v2 ?? {
-          op: 'contains',
-          value: '',
-        },
+        v1: body?.rules?.v1 ?? { op: 'contains', value: '' },
+        v2: body?.rules?.v2 ?? { op: 'contains', value: '' },
       },
 
-      // експерименти (необов’язково)
       exp: body?.exp ?? {},
 
-      // службові лічильники
       v1_count: 0,
       v2_count: 0,
       exp_count: 0,
     };
 
-    // Генеруємо id
     const id = `${now}`;
 
-    // Зберігаємо в KV
+    // 1) зберегти саму кампанію
     await redis.set(ITEM_KEY(id), JSON.stringify(item));
-    // Ваш redis.zadd очікує сигнатуру (key, score, member)
-    await redis.zadd(INDEX_KEY, now, id);
+
+    // 2) додати id у початок списку-індексу
+    await redis.lpush(INDEX_KEY, id);
 
     return NextResponse.json(
       { ok: true, id, item },
