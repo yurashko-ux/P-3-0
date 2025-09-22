@@ -27,13 +27,10 @@ async function kvSet(key: string, value: any) {
   return kvGET(`/set/${encodeURIComponent(key)}/${encodeURIComponent(v)}`, { method: 'POST' });
 }
 
-// lpush via REST with JSON body: ["a","b",...]
+// ✅ LPUSH: шляховий варіант — кожне значення передаємо у path (не в JSON body)
 async function kvLPush(key: string, ...values: string[]) {
-  return kvGET(`/lpush/${encodeURIComponent(key)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(values),
-  });
+  const pathValues = values.map(encodeURIComponent).join('/');
+  return kvGET(`/lpush/${encodeURIComponent(key)}/${pathValues}`, { method: 'POST' });
 }
 
 async function kvLRange(key: string, start = 0, stop = -1) {
@@ -48,15 +45,34 @@ async function kvGet(key: string) {
 const INDEX_KEY = 'campaigns:index:list';
 const ITEM_KEY = (id: string | number) => `campaigns:${id}`;
 
+// допоміжне: розпрямляємо старі зіпсовані елементи типу ["id"] -> id
+function normalizeIndex(raw: any): string[] {
+  const list: string[] = Array.isArray(raw?.result) ? raw.result : [];
+  return list.map((v) => {
+    if (typeof v === 'string') {
+      try {
+        const parsed = JSON.parse(v);
+        if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
+          return parsed[0];
+        }
+      } catch { /* ignore */ }
+      return v;
+    }
+    return String(v);
+  });
+}
+
 // GET: подивитися індекс і перший елемент, якщо є
 export async function GET() {
   if (!hasKV()) return NextResponse.json({ ok:false, error:'KV not configured' }, { status: 500 });
-  const idx = await kvLRange(INDEX_KEY, 0, -1).catch(() => ({ result: [] as string[] }));
-  const firstId = idx?.result?.[0];
+
+  const rawIdx = await kvLRange(INDEX_KEY, 0, -1).catch(() => ({ result: [] as string[] }));
+  const index = normalizeIndex(rawIdx);
+  const firstId = index[0];
   const first = firstId ? await kvGet(ITEM_KEY(firstId)).catch(() => ({})) : null;
 
   return NextResponse.json(
-    { ok:true, index: idx?.result ?? [], sampleId:firstId, sample:first?.result ?? null },
+    { ok:true, index, sampleId:firstId, sample:first?.result ?? null },
     { headers: { 'Cache-Control':'no-store' } }
   );
 }
@@ -87,11 +103,12 @@ export async function POST() {
   };
 
   const setRes = await kvSet(ITEM_KEY(id), item);
+  // ✅ пушимо чисте значення id
   const pushRes = await kvLPush(INDEX_KEY, id);
-  const idx = await kvLRange(INDEX_KEY, 0, -1).catch(() => ({ result: [] as string[] }));
+  const index = normalizeIndex(await kvLRange(INDEX_KEY, 0, -1).catch(() => ({ result: [] })));
 
   return NextResponse.json(
-    { ok:true, created:id, setRes, pushRes, index: idx?.result ?? [] },
+    { ok:true, created:id, setRes, pushRes, index },
     { headers: { 'Cache-Control':'no-store' } }
   );
 }
