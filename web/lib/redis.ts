@@ -1,5 +1,6 @@
 // web/lib/redis.ts
-// Upstash KV → fallback in-memory. Підтримує: get, set, mget, mset, zadd, zrange, lpush, lrange, del, expire.
+// KV client (Vercel KV / Upstash Redis) з авто-підбором формату pipeline + fallback на пам'ять.
+// Підтримує: get, set, mget, mset, zadd, zrange, lpush, lrange, del, expire.
 
 type Val = string;
 type Any = any;
@@ -7,42 +8,60 @@ type Any = any;
 const KV_URL = process.env.KV_REST_API_URL || process.env.KV_URL || '';
 const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.KV_REST_API_READ_ONLY_TOKEN || '';
 
-/** ---------- Upstash REST (robust: спершу single-command, при потребі pipeline) ---------- */
-async function upstashCall<T = Any>(command: string[]): Promise<T> {
-  if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
-
-  // 1) single-command endpoint
-  const single = await fetch(KV_URL, {
+/** ---------------- Low-level helpers ---------------- */
+async function httpJSON<T = Any>(url: string, body: any) {
+  const resp = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
+    headers: {
+      Authorization: `Bearer ${KV_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
     next: { revalidate: 0 },
   });
-
-  if (single.ok) {
-    const j = (await single.json().catch(() => ({}))) as { result?: Any };
-    return j.result as T;
-  }
-
-  // 2) pipeline endpoint
-  const pipeUrl = KV_URL.endsWith('/pipeline') ? KV_URL : `${KV_URL.replace(/\/+$/, '')}/pipeline`;
-  const pipel = await fetch(pipeUrl, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ commands: [command] }),
-    next: { revalidate: 0 },
-  });
-
-  if (!pipel.ok) {
-    const text = await pipel.text().catch(() => '');
-    throw new Error(`KV error: ${pipel.status} ${text}`);
-  }
-
-  const arr = (await pipel.json().catch(() => [])) as Array<{ result?: Any }>;
-  return (arr?.[0]?.result as T) ?? (undefined as unknown as T);
+  const text = await resp.text().catch(() => '');
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+  return { ok: resp.ok, status: resp.status, text, json };
 }
 
-/** ---------- In-memory fallback ---------- */
+// single-command endpoint (Vercel KV)
+async function kvSingle<T = Any>(command: string[]): Promise<T> {
+  if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
+  const { ok, status, text, json } = await httpJSON(KV_URL, { command });
+  if (!ok) throw new Error(`KV error: ${status} ${text}`);
+  return (json?.result as T) ?? (undefined as unknown as T);
+}
+
+// pipeline endpoint — пробує три формати підряд, поки один не спрацює.
+async function kvPipeline<T = Any>(commands: string[][]): Promise<T[]> {
+  if (!KV_URL || !KV_TOKEN) throw new Error('KV not configured');
+
+  // 1) Vercel KV format: POST {url}/multi-exec  with { commands: [ ["SET","k","v"], ... ] }
+  {
+    const multi = KV_URL.replace(/\/+$/, '') + '/multi-exec';
+    const { ok, status, text, json } = await httpJSON(multi, { commands });
+    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
+    // деякі інсталяції повертають помилку парсингу
+  }
+
+  // 2) Upstash Redis: POST {url}/pipeline with { commands: [...] }
+  {
+    const pipe = KV_URL.replace(/\/+$/, '') + '/pipeline';
+    const { ok, status, text, json } = await httpJSON(pipe, { commands });
+    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
+  }
+
+  // 3) Upstash альтернативний: POST {url}/pipeline з чистим масивом [...], без обгортки
+  {
+    const pipe = KV_URL.replace(/\/+$/, '') + '/pipeline';
+    const { ok, status, text, json } = await httpJSON(pipe, commands);
+    if (ok && Array.isArray(json)) return json.map((x: any) => x?.result) as T[];
+    throw new Error(`KV error: ${status} ${text || JSON.stringify(json) || 'ERR failed to parse pipeline request'}`);
+  }
+}
+
+/** ---------------- In-memory fallback ---------------- */
 const mem = new Map<string, Val>();
 const lists = new Map<string, Val[]>();
 const zsets = new Map<string, Array<{ m: Val; s: number }>>();
@@ -56,41 +75,30 @@ const rangeIdx = (len: number, start: number, stop: number) => {
   return [s, e] as const;
 };
 
-/** ---------- Public API ---------- */
+/** ---------------- Public API ---------------- */
 export const redis = {
   // STRINGS
   async get(key: string): Promise<string | null> {
-    if (KV_URL && KV_TOKEN) return upstashCall<string | null>(['GET', key]);
+    if (KV_URL && KV_TOKEN) return kvSingle<string | null>(['GET', key]);
     return mem.has(key) ? mem.get(key)! : null;
   },
 
   async set(key: string, value: string): Promise<'OK'> {
-    if (KV_URL && KV_TOKEN) return upstashCall<'OK'>(['SET', key, value]);
+    if (KV_URL && KV_TOKEN) return kvSingle<'OK'>(['SET', key, value]);
     mem.set(key, value);
     return 'OK';
   },
 
   async mget(...keys: string[]): Promise<(string | null)[]> {
-    if (KV_URL && KV_TOKEN) return upstashCall<(string | null)[]>(['MGET', ...keys]);
+    if (KV_URL && KV_TOKEN) return kvSingle<(string | null)[]>(['MGET', ...keys]);
     return keys.map((k) => (mem.has(k) ? mem.get(k)! : null));
   },
 
   async mset(...kv: string[]): Promise<'OK'> {
     if (KV_URL && KV_TOKEN) {
-      // перетворимо на pipeline
-      const pipeUrl = KV_URL.endsWith('/pipeline') ? KV_URL : `${KV_URL.replace(/\/+$/, '')}/pipeline`;
-      const commands: string[][] = [];
-      for (let i = 0; i < kv.length; i += 2) commands.push(['SET', kv[i], kv[i + 1]]);
-      const resp = await fetch(pipeUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands }),
-        next: { revalidate: 0 },
-      });
-      if (!resp.ok) {
-        const t = await resp.text().catch(() => '');
-        throw new Error(`KV error: ${resp.status} ${t}`);
-      }
+      const cmds: string[][] = [];
+      for (let i = 0; i < kv.length; i += 2) cmds.push(['SET', kv[i], kv[i + 1]]);
+      await kvPipeline(cmds);
       return 'OK';
     }
     for (let i = 0; i < kv.length; i += 2) mem.set(kv[i], kv[i + 1]);
@@ -99,14 +107,14 @@ export const redis = {
 
   // LIST
   async lpush(key: string, ...values: string[]): Promise<number> {
-    if (KV_URL && KV_TOKEN) return upstashCall<number>(['LPUSH', key, ...values]);
+    if (KV_URL && KV_TOKEN) return kvSingle<number>(['LPUSH', key, ...values]);
     const arr = getList(key);
     arr.unshift(...values);
     return arr.length;
   },
 
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
-    if (KV_URL && KV_TOKEN) return upstashCall<string[]>(['LRANGE', key, String(start), String(stop)]);
+    if (KV_URL && KV_TOKEN) return kvSingle<string[]>(['LRANGE', key, String(start), String(stop)]);
     const arr = getList(key);
     const [s, e] = rangeIdx(arr.length, start, stop);
     return e < s ? [] : arr.slice(s, e + 1);
@@ -115,19 +123,9 @@ export const redis = {
   // ZSET
   async zadd(key: string, ...items: Array<{ score: number; member: string }>): Promise<number> {
     if (KV_URL && KV_TOKEN) {
-      // single-command не підтримує кілька елементів одразу → зробимо pipeline
-      const pipeUrl = KV_URL.endsWith('/pipeline') ? KV_URL : `${KV_URL.replace(/\/+$/, '')}/pipeline`;
-      const commands = items.map((it) => ['ZADD', key, String(it.score), it.member]);
-      const resp = await fetch(pipeUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands }),
-        next: { revalidate: 0 },
-      });
-      if (!resp.ok) {
-        const t = await resp.text().catch(() => '');
-        throw new Error(`KV error: ${resp.status} ${t}`);
-      }
+      // деякі бекенди не приймають кілька елементів у одному ZADD → робимо pipeline
+      const cmds = items.map((it) => ['ZADD', key, String(it.score), it.member]);
+      await kvPipeline(cmds);
       return items.length;
     }
     const z = getZ(key);
@@ -135,10 +133,7 @@ export const redis = {
     for (const it of items) {
       const i = z.findIndex((e) => e.m === it.member);
       if (i >= 0) z[i].s = it.score;
-      else {
-        z.push({ m: it.member, s: it.score });
-        added++;
-      }
+      else { z.push({ m: it.member, s: it.score }); added++; }
     }
     z.sort((a, b) => a.s - b.s);
     return added;
@@ -151,10 +146,10 @@ export const redis = {
     opts?: { rev?: boolean; byScore?: boolean }
   ): Promise<string[]> {
     if (KV_URL && KV_TOKEN) {
-      const cmd = ['ZRANGE', key, String(start), String(stop)];
+      const cmd: string[] = ['ZRANGE', key, String(start), String(stop)];
       if (opts?.byScore) cmd.push('BYSCORE');
       if (opts?.rev) cmd.push('REV');
-      return upstashCall<string[]>(cmd);
+      return kvSingle<string[]>(cmd);
     }
     const z = getZ(key).slice();
     z.sort((a, b) => a.s - b.s);
@@ -170,7 +165,7 @@ export const redis = {
 
   // MISC
   async del(key: string): Promise<number> {
-    if (KV_URL && KV_TOKEN) return upstashCall<number>(['DEL', key]);
+    if (KV_URL && KV_TOKEN) return kvSingle<number>(['DEL', key]);
     const existed = mem.delete(key) ? 1 : 0;
     lists.delete(key);
     zsets.delete(key);
@@ -178,7 +173,7 @@ export const redis = {
   },
 
   async expire(key: string, seconds: number): Promise<0 | 1> {
-    if (KV_URL && KV_TOKEN) return upstashCall<0 | 1>(['EXPIRE', key, String(seconds)]);
+    if (KV_URL && KV_TOKEN) return kvSingle<0 | 1>(['EXPIRE', key, String(seconds)]);
     return 0;
   },
 };
