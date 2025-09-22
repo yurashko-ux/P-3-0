@@ -43,7 +43,6 @@ async function restExec(command: (string | number)[]): Promise<any> {
   if (!REST_URL || !REST_TOKEN) {
     throw new Error("NO_REST_ENV");
   }
-  // Upstash REST: POST { "command": ["SET","k","v"] }
   const res = await fetch(REST_URL, {
     method: "POST",
     headers: {
@@ -51,7 +50,6 @@ async function restExec(command: (string | number)[]): Promise<any> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ command }),
-    // no-cache для максимальної прозорості діагностики
     cache: "no-store",
   });
 
@@ -60,7 +58,7 @@ async function restExec(command: (string | number)[]): Promise<any> {
     const msg = typeof data?.error === "string" ? data.error : JSON.stringify(data);
     throw new Error(`REST_ERROR ${res.status}: ${msg}`);
   }
-  return data?.result ?? data; // Upstash повертає { result: ... }
+  return data?.result ?? data;
 }
 
 // ----------------- Публічне API -----------------
@@ -69,8 +67,7 @@ export const redis = {
     try {
       const r = await restExec(["PING"]);
       return typeof r === "string" ? r : "PONG";
-    } catch (e) {
-      // fallback
+    } catch {
       return "PONG";
     }
   },
@@ -141,28 +138,59 @@ export const redis = {
   },
 
   // ZSET
+  /**
+   * Підтримувані форми:
+   *  - zadd(key, score, member, opts?)
+   *  - zadd(key, { score, member }, opts?)
+   *  - zadd(key, [{ score, member }, ...], opts?)
+   */
   async zadd(
     key: string,
-    score: number,
-    member: string,
+    arg:
+      | number
+      | { score: number; member: string }
+      | Array<{ score: number; member: string }>,
+    member?: string,
     opts?: { nx?: boolean; xx?: boolean }
   ): Promise<number> {
+    // Нормалізуємо до масиву пар {score, member}
+    let pairs: Array<{ score: number; member: string }>;
+
+    if (typeof arg === "number") {
+      if (typeof member !== "string") throw new Error("zadd: member required");
+      pairs = [{ score: arg, member }];
+    } else if (Array.isArray(arg)) {
+      pairs = arg;
+    } else {
+      pairs = [arg];
+    }
+
     if (REST_URL && REST_TOKEN) {
-      const flags: (string | number)[] = ["ZADD", key];
-      if (opts?.nx) flags.push("NX");
-      if (opts?.xx) flags.push("XX");
-      flags.push(score, member);
-      const r = await restExec(flags);
+      const cmd: (string | number)[] = ["ZADD", key];
+      if (opts?.nx) cmd.push("NX");
+      if (opts?.xx) cmd.push("XX");
+      for (const p of pairs) {
+        cmd.push(p.score, p.member);
+      }
+      const r = await restExec(cmd);
       return Number(r) || 0;
     }
+
+    // fallback
     const z = _ensureZset(key);
-    if (opts?.nx && z.some((i) => i.member === member)) return 0;
-    if (opts?.xx && !z.some((i) => i.member === member)) return 0;
-    const idx = z.findIndex((i) => i.member === member);
-    if (idx >= 0) z[idx].score = score;
-    else z.push({ score, member });
+    let added = 0;
+    for (const p of pairs) {
+      if (opts?.nx && z.some((i) => i.member === p.member)) continue;
+      if (opts?.xx && !z.some((i) => i.member === p.member)) continue;
+      const idx = z.findIndex((i) => i.member === p.member);
+      if (idx >= 0) z[idx].score = p.score;
+      else {
+        z.push({ score: p.score, member: p.member });
+        added++;
+      }
+    }
     z.sort((a, b) => a.score - b.score);
-    return 1;
+    return added;
   },
 
   /**
@@ -178,15 +206,13 @@ export const redis = {
   ): Promise<string[]> {
     if (REST_URL && REST_TOKEN) {
       const cmd: (string | number)[] = ["ZRANGE", key, a, b];
-      if (options?.byScore) cmd.splice(2, 2, a, b, "BYSCORE"); // -> ZRANGE key min max BYSCORE
+      if (options?.byScore) cmd.splice(2, 2, a, b, "BYSCORE");
       if (options?.rev) cmd.push("REV");
       if (options?.withScores) cmd.push("WITHSCORES");
       const r = await restExec(cmd);
-      // без WITHSCORES повертається масив членів
       return Array.isArray(r) ? r.map(String) : [];
     }
 
-    // fallback
     if (_isExpired(key)) return [];
     const z = _ensureZset(key).slice();
     const src = options?.byScore
