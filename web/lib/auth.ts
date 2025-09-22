@@ -1,35 +1,55 @@
 // web/lib/auth.ts
-// Проста адмін-охорона: Authorization: Bearer 11111 або ?pass=11111
-// Повертаємо зрозумілу 401-помилку, щоб /api/campaigns не падало 500-кою.
+// Адмін-охорона: приймаємо токен з (1) Authorization, (2) ?pass=, (3) cookie=admin_pass
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '11111';
 
 function readAuthHeader(req: Request): string | null {
   const h = req.headers.get('authorization') || req.headers.get('Authorization');
   if (!h) return null;
-  // дозволимо як "Bearer 11111", так і просто "11111"
   const trimmed = h.trim();
   if (/^bearer\s+/i.test(trimmed)) return trimmed.replace(/^bearer\s+/i, '');
   return trimmed;
 }
 
+function readQueryPass(req: Request): string | null {
+  try {
+    const url = new URL(req.url);
+    const pass = url.searchParams.get('pass');
+    return pass || null;
+  } catch {
+    return null;
+  }
+}
+
+function readCookie(req: Request, name: string): string | null {
+  const all = req.headers.get('cookie');
+  if (!all) return null;
+  // простий парсер cookie
+  const parts = all.split(/; */);
+  for (const p of parts) {
+    const [k, ...rest] = p.split('=');
+    if (decodeURIComponent(k.trim()) === name) {
+      return decodeURIComponent(rest.join('=').trim());
+    }
+  }
+  return null;
+}
+
 export async function assertAdmin(req: Request): Promise<void> {
-  // 1) Bearer/Authorization
+  // 1) Authorization header
   const headerToken = readAuthHeader(req);
   if (headerToken && headerToken === ADMIN_TOKEN) return;
 
   // 2) ?pass=...
-  try {
-    const url = new URL(req.url);
-    const pass = url.searchParams.get('pass');
-    if (pass && pass === ADMIN_TOKEN) return;
-  } catch {
-    /* ignore malformed URL */
-  }
+  const pass = readQueryPass(req);
+  if (pass && pass === ADMIN_TOKEN) return;
 
-  // Якщо не пройшли — кидаємо помилку З ЧІТКИМ ТЕКСТОМ "Unauthorized"
+  // 3) cookie: admin_pass
+  const cookiePass = readCookie(req, 'admin_pass');
+  if (cookiePass && cookiePass === ADMIN_TOKEN) return;
+
   const e = new Error('Unauthorized: missing or invalid admin token');
-  // @ts-expect-error — runtime-only прапорець, корисний для маршрутизатора
+  // @ts-expect-error add status
   e.statusCode = 401;
   throw e;
 }
