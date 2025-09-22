@@ -27,7 +27,6 @@ type Campaign = {
     trigger?: Rule;
   };
 
-  // підрахунки (якщо бекенд їх повертає)
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
@@ -69,7 +68,7 @@ function PairCell({
   const s = statusName ?? undefined;
   return (
     <span className="whitespace-nowrap">
-      {p || pipelineId ?? "—"} → {s || statusId ?? "—"}
+      {(p ?? pipelineId ?? "—")} → {(s ?? statusId ?? "—")}
     </span>
   );
 }
@@ -77,19 +76,22 @@ function PairCell({
 export const dynamic = "force-dynamic";
 
 export default async function CampaignsPage() {
-  // 1) дістати токен з cookie
   const token = cookies().get("admin_token")?.value?.trim() || "";
 
-  // 2) підтягти список
   let items: Campaign[] = [];
   let error: string | null = null;
 
   if (!token) {
-    error = "Немає admin_token у cookies. Введи токен на сторінці створення кампанії (праворуч вгорі).";
+    error =
+      "Немає admin_token у cookies. Введи токен на сторінці створення кампанії (праворуч вгорі).";
   } else {
     try {
+      const urlBase =
+        process.env.NEXT_PUBLIC_BASE_URL && process.env.NEXT_PUBLIC_BASE_URL.length > 0
+          ? process.env.NEXT_PUBLIC_BASE_URL
+          : "";
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/campaigns?token=${encodeURIComponent(token)}`,
+        `${urlBase}/api/campaigns?token=${encodeURIComponent(token)}`,
         { cache: "no-store" }
       ).catch(() =>
         fetch(`/api/campaigns?token=${encodeURIComponent(token)}`, { cache: "no-store" })
@@ -145,7 +147,7 @@ export default async function CampaignsPage() {
             {items.length === 0 ? (
               <tr>
                 <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
-                  Кампаній немає або фільтр порожній.
+                  Кампаній немає або фільтр порожний.
                 </td>
               </tr>
             ) : (
@@ -160,7 +162,6 @@ export default async function CampaignsPage() {
                     </div>
                   </td>
 
-                  {/* V1 база */}
                   <td className="px-4 py-2">
                     <PairCell
                       pipelineName={c.base_pipeline_name}
@@ -170,17 +171,14 @@ export default async function CampaignsPage() {
                     />
                   </td>
 
-                  {/* V1 правило */}
                   <td className="px-4 py-2">
                     <RuleBadge label="v1" rule={c.rules?.v1} />
                   </td>
 
-                  {/* V2 правило (показуємо якщо є) */}
                   <td className="px-4 py-2">
                     <RuleBadge label="v2" rule={c.rules?.v2} />
                   </td>
 
-                  {/* EXP куди рухати */}
                   <td className="px-4 py-2">
                     {c.exp ? (
                       <PairCell
@@ -194,7 +192,6 @@ export default async function CampaignsPage() {
                     )}
                   </td>
 
-                  {/* EXP тригер */}
                   <td className="px-4 py-2">
                     <RuleBadge label="exp" rule={c.exp?.trigger} />
                   </td>
@@ -206,7 +203,7 @@ export default async function CampaignsPage() {
       </div>
 
       <div className="text-xs text-gray-500">
-        Якщо не бачиш нову кампанію — перевір: 1) правильний <code>ADMIN_TOKEN</code> у cookie
+        Якщо не бачиш нову кампанію — перевір: 1) правильний <code>ADMIN_TOKEN</code> у cookie{" "}
         <code>admin_token</code>; 2) сторінка створення зберігає назви воронок/статусів разом з id;
         3) бекенд повертає їх у відповіді списку.
       </div>
