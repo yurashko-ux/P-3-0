@@ -1,47 +1,62 @@
 // web/app/api/campaigns/_seed/route.ts
-import { NextResponse } from 'next/server';
-import { redis } from '../../../../lib/redis';
+import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+/**
+ * POST /api/campaigns/_seed
+ * Створює кілька демо-кампаній через внутрішній POST /api/campaigns
+ * Потрібно, щоб у Vercel env був ADMIN_PASS (токен, яким ти логінишся /api/auth/set?token=...).
+ */
+export const dynamic = "force-dynamic";
 
-const INDEX_KEY = 'campaigns:index';
-const ITEM_KEY = (id: string) => `campaigns:${id}`;
+export async function POST() {
+  const h = headers();
+  const host = h.get("host")!;
+  const proto =
+    (h.get("x-forwarded-proto") || "").includes("https") ? "https" : "https";
+  const base = `${proto}://${host}`;
 
-function genId() {
-  return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toUpperCase();
-}
+  const token = process.env.ADMIN_PASS || "11111"; // fallback на твій тестовий
 
-export async function GET() {
-  const now = Date.now();
-  const id = 'SEED_' + genId();
-  const item = {
-    id,
-    name: 'SEED TEST ' + new Date(now).toISOString(),
-    enabled: true,
-    created_at: now,
-    updated_at: now,
-    base_pipeline_id: null,
-    base_status_id: null,
-    v1_field: 'text',
-    v1_op: 'contains',
-    v1_value: 'yes',
-    v1_to_pipeline_id: null,
-    v1_to_status_id: null,
-  };
+  const payloads = [
+    {
+      name: "Demo campaign A",
+      base_pipeline_id: 111,
+      base_status_id: 222,
+      rules: { v1: { op: "contains", value: "ціна" }, v2: { op: "equals", value: "привіт" } },
+    },
+    {
+      name: "Demo campaign B",
+      base_pipeline_id: 6,
+      base_status_id: 68,
+      rules: { v1: { op: "contains", value: "замов" }, v2: { op: "contains", value: "оплата" } },
+    },
+  ];
 
-  try {
-    await redis.set(ITEM_KEY(id), JSON.stringify(item));
-    await redis.zadd(INDEX_KEY, { score: now, member: id });
-
-    // спробуємо відразу повернути все, що бачимо через GET-логіку
-    const ids = (await redis.zrange(INDEX_KEY, 0, -1, { rev: true })) as string[];
-    const raws = ids.length ? (await redis.mget(...ids.map(ITEM_KEY))) as (string | null)[] : [];
-    const items = (raws || []).map(r => { try { return r ? JSON.parse(r) : null; } catch { return null; } }).filter(Boolean);
-
-    return NextResponse.json({ ok: true, created: id, count: items.length, items }, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'SEED_FAILED' }, { status: 500 });
+  const results: any[] = [];
+  for (const body of payloads) {
+    const res = await fetch(`${base}/api/campaigns`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Token": token,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const json = await res.json().catch(() => ({}));
+    results.push({ status: res.status, ok: res.ok, json });
   }
+
+  // Після сіду знімаємо зліпок списку для перевірки
+  const after = await fetch(`${base}/api/campaigns`, {
+    cache: "no-store",
+    headers: { cookie: h.get("cookie") ?? "" },
+  }).then((r) => r.json()).catch(() => ({ ok: false }));
+
+  return NextResponse.json({
+    ok: true,
+    created: results,
+    after,
+  }, { headers: { "Cache-Control": "no-store" } });
 }
