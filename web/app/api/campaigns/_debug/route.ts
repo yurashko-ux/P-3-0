@@ -4,46 +4,67 @@ import { redis } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-const INDEX_KEY = 'campaigns:index';      // ZSET: score=created_at, member=id
-const LIST_KEY  = 'campaigns:all';        // LIST: ids (нові зверху)
-const ITEMS_KEY = 'campaigns:items';      // LIST: JSON кампаній (нові зверху)
-const ITEM_KEY  = (id: string) => `campaigns:${id}`;
+// Ті ж ключі, що й у /api/campaigns (LIST-схема)
+const LIST_KEY = 'campaigns:index';     // список id (LPUSH/RPUSH)
+const ITEMS_KEY = 'campaigns:items';    // список JSON-об’єктів (LPUSH/RPUSH)
+const ITEM_KEY = (id: string | number) => `campaigns:item:${id}`;
 
 export async function GET() {
-  const env = {
-    KV_URL: !!process.env.KV_REST_API_URL || !!process.env.KV_URL,
-    KV_TOKEN: !!process.env.KV_REST_API_TOKEN || !!process.env.KV_REST_API_READ_ONLY_TOKEN,
-  };
+  const started = Date.now();
 
   try {
-    // індекси
-    const zAsc  = await redis.zrange(INDEX_KEY, 0, -1).catch(() => []);
-    const zDesc = await redis.zrange(INDEX_KEY, 0, -1, { rev: true }).catch(() => []);
-    const lIds  = await redis.lrange(LIST_KEY, 0, -1).catch(() => []);
-    const rawItems = await redis.lrange(ITEMS_KEY, 0, -1).catch(() => []);
+    // Читаємо все тільки через LRANGE — без zrange
+    const listIds = await redis.lrange(LIST_KEY, 0, -1).catch(() => []);
+    const itemsRaw = await redis.lrange(ITEMS_KEY, 0, -1).catch(() => []);
 
-    // sample з ITEM_KEY
+    // Парсимо JSON, але без крешів
+    const itemsParsed = itemsRaw.map((r) => {
+      try { return r ? JSON.parse(r) : null; } catch { return null; }
+    }).filter(Boolean);
+
+    // Спробуємо дістати перший елемент також через одиночний ключ — якщо існує
+    let sampleId: string | null = null;
+    let sampleRaw: string | null = null;
     let sample: any = null;
-    if (zDesc?.[0]) {
-      const raw = await redis.get(ITEM_KEY(String(zDesc[0])));
-      if (raw) {
-        try { sample = JSON.parse(raw); } catch { sample = raw; }
+
+    if (listIds?.[0]) {
+      sampleId = listIds[0];
+      sampleRaw = await redis.get(ITEM_KEY(sampleId));
+      if (sampleRaw) {
+        try { sample = JSON.parse(sampleRaw); } catch { sample = sampleRaw; }
       }
     }
 
-    return NextResponse.json(
-      {
-        ok: true,
-        env,
-        index: { zAsc, zDesc, lIds, itemsLen: rawItems.length },
-        sample,
+    const took = Date.now() - started;
+
+    return NextResponse.json({
+      ok: true,
+      took_ms: took,
+      list: {
+        key: LIST_KEY,
+        length: listIds.length,
+        ids: listIds,
       },
-      { headers: { 'Cache-Control': 'no-store' } }
-    );
+      items: {
+        key: ITEMS_KEY,
+        length: itemsRaw.length,
+        raw: itemsRaw,
+        parsed: itemsParsed,
+      },
+      sample: {
+        id: sampleId,
+        item_key: sampleId ? ITEM_KEY(sampleId) : null,
+        raw: sampleRaw,
+        parsed: sample,
+      },
+      note: 'Цей debug-ендпоінт використовує тільки LRANGE/GET. Z* команди не застосовуються.',
+    }, { headers: { 'Cache-Control': 'no-store' } });
+
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, env, error: e?.message || String(e) },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
-    );
+    return NextResponse.json({
+      ok: false,
+      error: 'debug_failed',
+      message: e?.message || String(e),
+    }, { status: 500 });
   }
 }
