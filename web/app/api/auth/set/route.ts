@@ -5,15 +5,15 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/auth/set?token=YOUR_ADMIN_PASS
- * - якщо token передано — встановлюємо cookie admin_token
+ * - якщо token передано — ставимо cookie admin_token
  * - якщо token порожній — видаляємо cookie
- * - після цього редірект на /admin/campaigns
+ * - редіректимо на /admin/campaigns (або на ?to=...)
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const token = url.searchParams.get('token') || '';
-
   const redirectTo = url.searchParams.get('to') || '/admin/campaigns';
+
   const res = NextResponse.redirect(new URL(redirectTo, req.url));
 
   if (token) {
@@ -25,7 +25,8 @@ export async function GET(req: Request) {
       maxAge: 60 * 60 * 24 * 30, // 30 днів
     });
   } else {
-    res.cookies.delete('admin_token', { path: '/' });
+    // ✅ Важливо: видаляємо лише за ім'ям — без options
+    res.cookies.delete('admin_token');
   }
 
   return res;
