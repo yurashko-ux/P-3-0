@@ -1,42 +1,40 @@
 // web/middleware.ts
-import { NextResponse, NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 export function middleware(req: NextRequest) {
-  const { nextUrl, cookies } = req;
+  const url = req.nextUrl;
 
-  // Працюємо лише з нашими кампаніями
-  const pathname = nextUrl.pathname;
-  if (!pathname.startsWith('/api/campaigns')) {
-    return NextResponse.next();
-  }
+  // 1) з URL: ?token=... | ?admin=... | ?admin_token=...
+  const tokenFromQuery =
+    url.searchParams.get('token') ||
+    url.searchParams.get('admin') ||
+    url.searchParams.get('admin_token') ||
+    '';
 
-  // 1) Витягуємо токен з cookie або ?token=...
-  const tokenFromCookie = cookies.get('admin_token')?.value || '';
-  const tokenFromQuery = nextUrl.searchParams.get('token') || '';
-  const token = tokenFromCookie || tokenFromQuery;
+  // 2) з cookie
+  const tokenFromCookie = req.cookies.get('admin_token')?.value || '';
 
-  // 2) Пробросимо токен у заголовок X-Admin-Token
-  const requestHeaders = new Headers(req.headers);
-  if (token) requestHeaders.set('X-Admin-Token', token);
-
-  // 3) Якщо прийшов ?token=..., збережемо його в cookie
-  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  // якщо прийшов токен у query — одразу збережемо його в cookie
+  const res = NextResponse.next();
   if (tokenFromQuery) {
     res.cookies.set('admin_token', tokenFromQuery, {
       path: '/',
-      // ВАЖЛИВО: значення повинно бути в нижньому регістрі
-      sameSite: 'lax',
+      sameSite: 'lax', // важливо: саме нижнім регістром
       httpOnly: false,
-      // на проді краще ввімкнути secure
-      secure: true,
-      maxAge: 60 * 60 * 24 * 30, // 30 днів
     });
+  }
+
+  const token = tokenFromQuery || tokenFromCookie;
+
+  // 3) якщо маємо токен — прокинемо його у заголовок для бекенду
+  if (token) {
+    res.headers.set('x-admin-token', token);
   }
 
   return res;
 }
 
-// Обмеження застосування
+// застосовуємо для всіх API та адмін-сторінок
 export const config = {
-  matcher: ['/api/campaigns/:path*'],
+  matcher: ['/api/:path*', '/admin/:path*'],
 };
