@@ -4,37 +4,43 @@ import { NextRequest, NextResponse } from 'next/server';
 export function middleware(req: NextRequest) {
   const url = req.nextUrl;
 
-  // 1) з URL: ?token=... | ?admin=... | ?admin_token=...
+  // 1) токен із query (?token=... | ?admin=... | ?admin_token=...)
   const tokenFromQuery =
     url.searchParams.get('token') ||
     url.searchParams.get('admin') ||
     url.searchParams.get('admin_token') ||
     '';
 
-  // 2) з cookie
+  // 2) токен із cookie
   const tokenFromCookie = req.cookies.get('admin_token')?.value || '';
 
-  // якщо прийшов токен у query — одразу збережемо його в cookie
-  const res = NextResponse.next();
+  // 3) фінальний токен
+  const token = tokenFromQuery || tokenFromCookie || '';
+
+  // 4) сформуємо нові заголовки ЗАПИТУ до хендлерів (важливо!)
+  const requestHeaders = new Headers(req.headers);
+  if (token) {
+    requestHeaders.set('x-admin-token', token);
+  }
+
+  // 5) пропускаємо далі з модифікованими заголовками запиту
+  const res = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+
+  // 6) якщо був токен у query — збережемо в cookie, щоб не тягнути в URL
   if (tokenFromQuery) {
     res.cookies.set('admin_token', tokenFromQuery, {
       path: '/',
-      sameSite: 'lax', // важливо: саме нижнім регістром
+      sameSite: 'lax',
       httpOnly: false,
     });
-  }
-
-  const token = tokenFromQuery || tokenFromCookie;
-
-  // 3) якщо маємо токен — прокинемо його у заголовок для бекенду
-  if (token) {
-    res.headers.set('x-admin-token', token);
   }
 
   return res;
 }
 
-// застосовуємо для всіх API та адмін-сторінок
+// застосувати і до API, і до адмін-роутів
 export const config = {
   matcher: ['/api/:path*', '/admin/:path*'],
 };
