@@ -4,88 +4,143 @@ import { redis } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-const INDEX_KEY = 'campaigns:index';
+// Ключі в KV (лист індексів + окремі items)
+const INDEX_KEY = 'campaigns:index:list';
 const ITEM_KEY = (id: string | number) => `campaigns:item:${id}`;
 
-// ---- helpers
-function readCookie(headers: Headers, name: string): string | null {
-  const raw = headers.get('cookie');
-  if (!raw) return null;
-  const rx = new RegExp('(?:^|;\\s*)' + name.replace(/[-.[\]{}()*+?^$|\\]/g, '\\$&') + '=([^;]*)');
-  const m = raw.match(rx);
-  return m ? decodeURIComponent(m[1]) : null;
+// Допоміжне читання JSON із безпечним парсом
+async function readJson<T = any>(req: Request): Promise<T> {
+  try {
+    return (await req.json()) as T;
+  } catch {
+    throw new Error('Invalid JSON body');
+  }
 }
 
-function isAdmin(req: Request): boolean {
-  const hdr = req.headers.get('x-admin-token') || '';
-  const ck = readCookie(req.headers, 'admin_token') || '';
-  const pass = process.env.ADMIN_PASS || '11111';
-  return hdr === pass || ck === pass;
+function unauthorized(msg = 'Unauthorized: missing or invalid admin token') {
+  return NextResponse.json({ ok: false, error: msg }, { status: 401 });
 }
 
-// ---- GET /api/campaigns  -> список кампаній (нові зверху)
+function badRequest(msg: string, detail?: unknown) {
+  return NextResponse.json({ ok: false, error: msg, detail }, { status: 400 });
+}
+
+function serverError(msg: string, detail?: unknown) {
+  return NextResponse.json({ ok: false, error: msg, detail }, { status: 500 });
+}
+
+// GET /api/campaigns — повертає список кампаній у порядку додавання (новіші зверху)
 export async function GET() {
-  // Читаємо всі id з list-індексу
-  const ids: string[] = await redis.lrange(INDEX_KEY, 0, -1).catch(() => []);
+  try {
+    // Читаємо всі id з LIST
+    const ids = (await redis.lrange(INDEX_KEY, 0, -1).catch(() => [])) as string[];
 
-  const items: any[] = [];
-  for (const id of ids) {
-    const raw = await redis.get(ITEM_KEY(id)).catch(() => null);
-    if (!raw) continue;
-    try {
-      const obj = JSON.parse(raw);
-      items.push({ id, ...obj });
-    } catch {
-      // ігноруємо биті записи
+    if (!ids || ids.length === 0) {
+      return NextResponse.json({ ok: true, count: 0, items: [] }, { headers: { 'Cache-Control': 'no-store' } });
     }
-  }
 
-  return NextResponse.json(
-    { ok: true, count: items.length, items },
-    { headers: { 'Cache-Control': 'no-store' } }
-  );
+    // Тягнемо кожен item по ключу
+    const items: any[] = [];
+    for (const id of ids) {
+      const raw = await redis.get(ITEM_KEY(id)).catch(() => null);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        // захист від битих записів
+        if (parsed && typeof parsed === 'object') items.push({ id, ...parsed });
+      } catch {
+        // ігноруємо биті json
+      }
+    }
+
+    return NextResponse.json(
+      { ok: true, count: items.length, items },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (e: any) {
+    return serverError('KV list read failed', e?.message || String(e));
+  }
 }
 
-// ---- POST /api/campaigns  -> створення кампанії
+// POST /api/campaigns — створює кампанію
 export async function POST(req: Request) {
-  if (!isAdmin(req)) {
-    return new NextResponse('Unauthorized: missing or invalid admin token', { status: 401 });
+  // Перевірка адмін-токена в заголовку
+  const headerToken = req.headers.get('x-admin-token') || '';
+  const envToken = process.env.ADMIN_PASS || '';
+  if (!envToken || headerToken !== envToken) {
+    return unauthorized();
   }
 
-  const body = await req.json().catch(() => ({}));
+  type Rule = { op?: 'contains' | 'equals'; value?: string };
+  type Body = {
+    name?: string;
+    base_pipeline_id?: number | string;
+    base_status_id?: number | string;
+    rules?: { v1?: Rule; v2?: Rule };
+    exp?: Record<string, unknown>;
+    active?: boolean;
+  };
+
+  let body: Body;
+  try {
+    body = await readJson<Body>(req);
+  } catch (e: any) {
+    return badRequest('Invalid JSON body', e?.message || String(e));
+  }
+
+  const name = String(body?.name || '').trim();
+  if (!name) return badRequest('Field "name" is required');
+
+  // Примусово числа для pipeline/status
+  const base_pipeline_id = Number(body?.base_pipeline_id ?? 0) || 0;
+  const base_status_id = Number(body?.base_status_id ?? 0) || 0;
+
+  // Нормалізація правил
+  const rules = {
+    v1: {
+      op: (body?.rules?.v1?.op === 'equals' ? 'equals' : 'contains') as 'contains' | 'equals',
+      value: String(body?.rules?.v1?.value ?? ''),
+    },
+    v2: {
+      op: (body?.rules?.v2?.op === 'equals' ? 'equals' : 'contains') as 'contains' | 'equals',
+      value: String(body?.rules?.v2?.value ?? ''),
+    },
+  };
+
   const now = Date.now();
   const id = String(now);
 
   const item = {
-    name: body.name ?? 'New campaign',
+    name,
     created_at: now,
-    active: true,
-    base_pipeline_id: body.base_pipeline_id ?? null,
-    base_status_id: body.base_status_id ?? null,
-    base_pipeline_name: body.base_pipeline_name ?? null,
-    base_status_name: body.base_status_name ?? null,
-    rules: {
-      v1: {
-        op: body?.rules?.v1?.op ?? 'contains',
-        value: body?.rules?.v1?.value ?? '',
-      },
-      v2: {
-        op: body?.rules?.v2?.op ?? 'contains',
-        value: body?.rules?.v2?.value ?? '',
-      },
-    },
-    exp: body.exp ?? {},
+    active: body?.active ?? true,
+
+    base_pipeline_id,
+    base_status_id,
+    base_pipeline_name: null as string | null,
+    base_status_name: null as string | null,
+
+    rules,
+    exp: body?.exp ?? {},
+
     v1_count: 0,
     v2_count: 0,
     exp_count: 0,
   };
 
-  // Зберігаємо сам об’єкт і оновлюємо list-індекс (нові зверху)
-  const setRes = await redis.set(ITEM_KEY(id), JSON.stringify(item));
-  await redis.lpush(INDEX_KEY, id);
+  try {
+    // 1) зберегти сам об’єкт
+    const setRes = await redis.set(ITEM_KEY(id), JSON.stringify(item));
 
-  return NextResponse.json(
-    { ok: true, id, setRes: { result: setRes }, item },
-    { headers: { 'Cache-Control': 'no-store' } }
-  );
+    // 2) додати id у початок списку (нові зверху)
+    // Якщо хочеш знизу — поміняй на rpush
+    const pushRes = await redis.lpush(INDEX_KEY, id);
+
+    return NextResponse.json(
+      { ok: true, id, setRes: { result: setRes }, pushRes: { result: pushRes }, item },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (e: any) {
+    return serverError('KV write failed', e?.message || String(e));
+  }
 }
