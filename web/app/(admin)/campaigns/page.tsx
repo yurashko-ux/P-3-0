@@ -1,7 +1,7 @@
 // web/app/(admin)/campaigns/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Rule = { op?: 'contains' | 'equals'; value?: string };
 type Campaign = {
@@ -22,13 +22,16 @@ type Campaign = {
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
   const m = document.cookie.match(
+    // екрануємо спецсимволи у назві cookie
     new RegExp('(?:^|;\\s*)' + name.replace(/[-.[\]{}()*+?^$|\\]/g, '\\$&') + '=([^;]*)')
   );
   return m ? decodeURIComponent(m[1]) : null;
 }
 
 export default function CampaignsPage() {
-  const [loading, setLoading] = useState(true);
+  const tokenFromCookie = useMemo(() => readCookie('admin_token') || '', []);
+  const [token, setToken] = useState(tokenFromCookie);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<Campaign[]>([]);
 
@@ -36,23 +39,23 @@ export default function CampaignsPage() {
     setLoading(true);
     setError(null);
     try {
-      const token = readCookie('admin_token') || '';
+      const t = readCookie('admin_token') || '';
+      setToken(t);
       const res = await fetch('/api/campaigns', {
         method: 'GET',
-        headers: { 'X-Admin-Token': token },
+        headers: { 'X-Admin-Token': t },
         cache: 'no-store',
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${text}`);
+        throw new Error(`HTTP ${res.status}: ${text || 'Failed to load campaigns'}`);
       }
       const json = await res.json();
-      if (!json?.ok) {
-        throw new Error(json?.error || 'Unknown API error');
-      }
+      if (!json?.ok) throw new Error(json?.error || 'Unknown API error');
       setItems(json.items || []);
     } catch (e: any) {
       setError(e?.message || String(e));
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -83,32 +86,62 @@ export default function CampaignsPage() {
         </div>
       </div>
 
-      {/* підказка по токену */}
-      {!loading && !error && items.length === 0 && (
-        <div className="rounded-xl border p-10 text-center text-gray-500">
-          Кампаній поки немає
-          <div className="mt-2 text-sm">
-            Якщо очікуєш дані, переконайся, що встановлено cookie{' '}
-            <code>admin_token</code>. Швидка перевірка: відкрий{' '}
-            <a
-              className="text-blue-600 underline"
-              href="/api/auth/set?token=11111"
-            >
-              /api/auth/set?token=11111
-            </a>{' '}
-            і повернись на цю сторінку.
-          </div>
+      {/* DEBUG-панель по токену */}
+      <div className="mb-4 rounded-lg border bg-yellow-50 p-3 text-sm text-yellow-800">
+        <div className="mb-1">
+          <strong>admin_token (cookie):</strong>{' '}
+          <code className="break-all">{token || '— немає'}</code>
         </div>
-      )}
+        <div className="flex flex-wrap gap-3">
+          <a
+            className="rounded-md border border-yellow-300 bg-white px-2 py-1 hover:bg-yellow-100"
+            href="/api/auth/set?token=11111"
+            title="Встановити admin_token=11111 (cookie)"
+          >
+            Встановити токен = 11111
+          </a>
+          <button
+            className="rounded-md border border-yellow-300 bg-white px-2 py-1 hover:bg-yellow-100"
+            onClick={() => {
+              // миттєво оновити відображення токена і список
+              setToken(readCookie('admin_token') || '');
+              load();
+            }}
+          >
+            Перевірити токен & Перезавантажити
+          </button>
+          <a
+            className="rounded-md border border-yellow-300 bg-white px-2 py-1 hover:bg-yellow-100"
+            href="/api/debug/seed"
+            title="Переглянути індекс/зразок у KV (тільки діагностика)"
+          >
+            Перевірити KV /debug/seed
+          </a>
+        </div>
+      </div>
 
       {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 text-red-700 p-4">
-          Не вдалося завантажити кампанії. <br />
-          <span className="text-sm opacity-80">{error}</span>
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-4 text-red-700">
+          <div className="font-medium">Не вдалося завантажити кампанії</div>
+          <div className="mt-1 text-xs opacity-80">{error}</div>
         </div>
       )}
 
       {loading && <div className="text-gray-500">Завантаження…</div>}
+
+      {!loading && !error && items.length === 0 && (
+        <div className="rounded-xl border p-10 text-center text-gray-500">
+          Кампаній поки немає
+          <div className="mt-2 text-sm">
+            Якщо очікуєш дані — спочатку натисни{' '}
+            <a className="text-blue-600 underline" href="/api/auth/set?token=11111">
+              встановити токен
+            </a>
+            , потім «Перевірити токен & Перезавантажити». Для наповнення можна створити через
+            UI або скористатись <code>POST /api/debug/seed</code>.
+          </div>
+        </div>
+      )}
 
       {!loading && !error && items.length > 0 && (
         <div className="overflow-x-auto rounded-xl border">
