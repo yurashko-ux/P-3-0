@@ -1,237 +1,93 @@
 // web/lib/redis.ts
-// Легкий клієнт для Upstash Redis REST + безпечний fallback in-memory.
-// Підтримує: set/get/mget/del/expire, lpush/lrange, zadd/zrange, ping.
+// Легкий клієнт до Vercel KV (Upstash REST) з підтримкою: set, get, del, lpush, lrange
+// Використовує стандартні змінні середовища Vercel KV:
+// KV_REST_API_URL, KV_REST_API_TOKEN (і опційно KV_REST_API_READ_ONLY_TOKEN)
 
-type Val = string;
-type Any = any;
+type UpstashResult<T = any> = { result: T };
 
-const REST_URL = process.env.KV_REST_API_URL || process.env.KV_URL || "";
-const REST_TOKEN =
-  process.env.KV_REST_API_TOKEN || process.env.KV_REST_API_READ_ONLY_TOKEN || "";
+const URL_BASE =
+  process.env.KV_REST_API_URL ||
+  process.env.KV_URL || // fallback, якщо раптом
+  '';
 
-// ----------------- In-memory fallback (якщо немає REST env) -----------------
-const _mem = {
-  kv: new Map<string, string>(),
-  lists: new Map<string, string[]>(),
-  zsets: new Map<string, Array<{ score: number; member: string }>>(),
-  expires: new Map<string, number>(), // key -> epoch ms
-};
+const TOKEN =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.KV_REST_API_READ_ONLY_TOKEN ||
+  '';
 
-function _isExpired(key: string) {
-  const exp = _mem.expires.get(key);
-  if (exp && Date.now() > exp) {
-    _mem.kv.delete(key);
-    _mem.lists.delete(key);
-    _mem.zsets.delete(key);
-    _mem.expires.delete(key);
-    return true;
+if (!URL_BASE || !TOKEN) {
+  // Не кидаємо помилку тут, але дамо зрозуміти в рантаймі
+  // при першому виклику методу.
+  console.warn('[redis.ts] Missing KV_REST_API_URL / KV_REST_API_TOKEN envs');
+}
+
+async function callSingle<T = any>(command: (string | number)[]) {
+  if (!URL_BASE || !TOKEN) {
+    throw new Error('KV env is not configured (KV_REST_API_URL / KV_REST_API_TOKEN)');
   }
-  return false;
-}
 
-function _ensureList(key: string) {
-  if (!_mem.lists.has(key)) _mem.lists.set(key, []);
-  return _mem.lists.get(key)!;
-}
-function _ensureZset(key: string) {
-  if (!_mem.zsets.has(key)) _mem.zsets.set(key, []);
-  return _mem.zsets.get(key)!;
-}
-
-// ----------------- REST executor -----------------
-async function restExec(command: (string | number)[]): Promise<any> {
-  if (!REST_URL || !REST_TOKEN) {
-    throw new Error("NO_REST_ENV");
-  }
-  const res = await fetch(REST_URL, {
-    method: "POST",
+  const res = await fetch(URL_BASE, {
+    method: 'POST',
     headers: {
-      Authorization: `Bearer ${REST_TOKEN}`,
-      "Content-Type": "application/json",
+      Authorization: `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ command }),
-    cache: "no-store",
+    body: JSON.stringify(command),
+    // Upstash добре працює і на edge, і на node, без спец. опцій
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || (data && data.error)) {
-    const msg = typeof data?.error === "string" ? data.error : JSON.stringify(data);
-    throw new Error(`REST_ERROR ${res.status}: ${msg}`);
+  const text = await res.text();
+  // Upstash завжди повертає JSON { result: ... } або { error: ... }
+  // але перестрахуємось на випадок порожнього тіла.
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* ignore */ }
+
+  if (!res.ok) {
+    // якщо прийшла помилка від REST: збережемо текст
+    throw new Error(`REST_ERROR ${res.status}: ${text || res.statusText}`);
   }
-  return data?.result ?? data;
+  // якщо немає json або поля result — теж вважай за помилку формату
+  if (!json || typeof json !== 'object' || !('result' in json)) {
+    throw new Error(`Unexpected KV response: ${text}`);
+  }
+  return (json as UpstashResult<T>).result;
 }
 
-// ----------------- Публічне API -----------------
 export const redis = {
-  async ping(): Promise<string> {
-    try {
-      const r = await restExec(["PING"]);
-      return typeof r === "string" ? r : "PONG";
-    } catch {
-      return "PONG";
-    }
+  // STRING
+  async set(key: string, value: string) {
+    // SET key value
+    return callSingle<string>(['SET', key, value]);
+  },
+  async get(key: string) {
+    // GET key
+    return callSingle<string | null>(['GET', key]);
+  },
+  async del(key: string) {
+    // DEL key
+    return callSingle<number>(['DEL', key]);
   },
 
-  // KV
-  async set(key: string, value: string): Promise<"OK"> {
-    if (REST_URL && REST_TOKEN) {
-      await restExec(["SET", key, value]);
-      return "OK";
-    }
-    _mem.kv.set(key, value);
-    return "OK";
+  // LIST
+  async lpush(key: string, ...values: string[]) {
+    // LPUSH key v1 v2 ...
+    return callSingle<number>(['LPUSH', key, ...values]);
+  },
+  async lrange(key: string, start: number, stop: number) {
+    // LRANGE key start stop
+    return callSingle<string[]>(['LRANGE', key, String(start), String(stop)]);
   },
 
-  async get(key: string): Promise<string | null> {
-    if (REST_URL && REST_TOKEN) {
-      const r = await restExec(["GET", key]);
-      return r ?? null;
-    }
-    if (_isExpired(key)) return null;
-    return _mem.kv.get(key) ?? null;
+  // (опційно, якщо десь ще кличеться)
+  async rpush(key: string, ...values: string[]) {
+    return callSingle<number>(['RPUSH', key, ...values]);
+  },
+  async expire(key: string, seconds: number) {
+    return callSingle<number>(['EXPIRE', key, String(seconds)]);
   },
 
-  // NEW: MGET
-  async mget(...keys: string[]): Promise<(string | null)[]> {
-    if (REST_URL && REST_TOKEN) {
-      const r = await restExec(["MGET", ...keys]);
-      // Upstash повертає масив (або null на місці відсутнього ключа)
-      return Array.isArray(r) ? r.map(v => (v == null ? null : String(v))) : [];
-    }
-    // fallback
-    return keys.map((k) => {
-      if (_isExpired(k)) return null;
-      return _mem.kv.get(k) ?? null;
-    });
-  },
-
-  async del(key: string): Promise<number> {
-    if (REST_URL && REST_TOKEN) {
-      const r = await restExec(["DEL", key]);
-      return Number(r) || 0;
-    }
-    _mem.kv.delete(key);
-    _mem.lists.delete(key);
-    _mem.zsets.delete(key);
-    _mem.expires.delete(key);
-    return 1;
-  },
-
-  async expire(key: string, seconds: number): Promise<number> {
-    if (REST_URL && REST_TOKEN) {
-      const r = await restExec(["EXPIRE", key, seconds]);
-      return Number(r) || 0;
-    }
-    _mem.expires.set(key, Date.now() + seconds * 1000);
-    return 1;
-  },
-
-  // LISTS
-  async lpush(key: string, ...values: string[]): Promise<number> {
-    if (REST_URL && REST_TOKEN) {
-      const r = await restExec(["LPUSH", key, ...values]);
-      return Number(r) || 0;
-    }
-    const arr = _ensureList(key);
-    arr.unshift(...values);
-    return arr.length;
-  },
-
-  async lrange(key: string, start: number, stop: number): Promise<string[]> {
-    if (REST_URL && REST_TOKEN) {
-      const r = await restExec(["LRANGE", key, start, stop]);
-      return Array.isArray(r) ? r.map(String) : [];
-    }
-    if (_isExpired(key)) return [];
-    const arr = _ensureList(key);
-    const norm = (i: number) => (i < 0 ? arr.length + i : i);
-    const s = Math.max(0, norm(start));
-    const e = Math.min(arr.length - 1, norm(stop));
-    if (e < s) return [];
-    return arr.slice(s, e + 1);
-  },
-
-  // ZSET
-  /**
-   * Підтримувані форми:
-   *  - zadd(key, score, member, opts?)
-   *  - zadd(key, { score, member }, opts?)
-   *  - zadd(key, [{ score, member }, ...], opts?)
-   */
-  async zadd(
-    key: string,
-    arg:
-      | number
-      | { score: number; member: string }
-      | Array<{ score: number; member: string }>,
-    member?: string,
-    opts?: { nx?: boolean; xx?: boolean }
-  ): Promise<number> {
-    // Нормалізуємо до масиву пар {score, member}
-    let pairs: Array<{ score: number; member: string }>;
-
-    if (typeof arg === "number") {
-      if (typeof member !== "string") throw new Error("zadd: member required");
-      pairs = [{ score: arg, member }];
-    } else if (Array.isArray(arg)) {
-      pairs = arg;
-    } else {
-      pairs = [arg];
-    }
-
-    if (REST_URL && REST_TOKEN) {
-      const cmd: (string | number)[] = ["ZADD", key];
-      if (opts?.nx) cmd.push("NX");
-      if (opts?.xx) cmd.push("XX");
-      for (const p of pairs) cmd.push(p.score, p.member);
-      const r = await restExec(cmd);
-      return Number(r) || 0;
-    }
-
-    // fallback
-    const z = _ensureZset(key);
-    let added = 0;
-    for (const p of pairs) {
-      if (opts?.nx && z.some((i) => i.member === p.member)) continue;
-      if (opts?.xx && !z.some((i) => i.member === p.member)) continue;
-      const idx = z.findIndex((i) => i.member === p.member);
-      if (idx >= 0) z[idx].score = p.score;
-      else {
-        z.push({ score: p.score, member: p.member });
-        added++;
-      }
-    }
-    z.sort((a, b) => a.score - b.score);
-    return added;
-  },
-
-  /**
-   * zrange(key, startOrMin, stopOrMax, options?)
-   * - індексний режим: start, stop (+ опція { rev })
-   * - за score: { byScore: true, rev?: boolean }
-   */
-  async zrange(
-    key: string,
-    a: number,
-    b: number,
-    options?: { rev?: boolean; byScore?: boolean; withScores?: boolean }
-  ): Promise<string[]> {
-    if (REST_URL && REST_TOKEN) {
-      const cmd: (string | number)[] = ["ZRANGE", key, a, b];
-      if (options?.byScore) cmd.splice(2, 2, a, b, "BYSCORE");
-      if (options?.rev) cmd.push("REV");
-      if (options?.withScores) cmd.push("WITHSCORES");
-      const r = await restExec(cmd);
-      return Array.isArray(r) ? r.map(String) : [];
-    }
-
-    if (_isExpired(key)) return [];
-    const z = _ensureZset(key).slice();
-    const src = options?.byScore
-      ? z.filter((i) => i.score >= a && i.score <= b)
-      : z.slice(Math.max(0, a), b < 0 ? z.length : b + 1);
-
-    src.sort((x, y) => (options?.rev ? y.score - x.score : x.score - y.score));
-    return src.map((i) => i.member);
+  // health-check
+  async ping() {
+    return callSingle<string>(['PING']);
   },
 };
