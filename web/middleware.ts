@@ -1,46 +1,48 @@
 // web/middleware.ts
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
+
+/**
+ * Ловить ?token=... і зберігає його у cookie `admin_token`,
+ * після чого робить редірект на ту ж URL без параметра.
+ *
+ * Використання:
+ *   https://p-3-0.vercel.app/admin/campaigns?token=11111
+ *   або
+ *   https://p-3-0.vercel.app/admin/campaigns/new?token=11111
+ */
 
 export function middleware(req: NextRequest) {
-  const url = req.nextUrl;
+  const url = new URL(req.url)
+  const tokenFromQuery = url.searchParams.get('token')
 
-  // 1) токен із query (?token=... | ?admin=... | ?admin_token=...)
-  const tokenFromQuery =
-    url.searchParams.get('token') ||
-    url.searchParams.get('admin') ||
-    url.searchParams.get('admin_token') ||
-    '';
+  // Пропускаємо запит далі за замовчуванням
+  const res = NextResponse.next()
 
-  // 2) токен із cookie
-  const tokenFromCookie = req.cookies.get('admin_token')?.value || '';
+  if (tokenFromQuery !== null) {
+    if (tokenFromQuery === '' || tokenFromQuery === '0') {
+      // Видалити токен
+      res.cookies.delete('admin_token')
+    } else {
+      // Зберегти токен
+      res.cookies.set('admin_token', tokenFromQuery, {
+        path: '/',
+        sameSite: 'lax',   // важливо: нижній регістр для типів Next 14
+        httpOnly: false,   // щоб клієнтський код міг читати при потребі
+      })
+    }
 
-  // 3) фінальний токен
-  const token = tokenFromQuery || tokenFromCookie || '';
-
-  // 4) сформуємо нові заголовки ЗАПИТУ до хендлерів (важливо!)
-  const requestHeaders = new Headers(req.headers);
-  if (token) {
-    requestHeaders.set('x-admin-token', token);
+    // Прибрати ?token з адресного рядка
+    url.searchParams.delete('token')
+    return NextResponse.redirect(url)
   }
 
-  // 5) пропускаємо далі з модифікованими заголовками запиту
-  const res = NextResponse.next({
-    request: { headers: requestHeaders },
-  });
-
-  // 6) якщо був токен у query — збережемо в cookie, щоб не тягнути в URL
-  if (tokenFromQuery) {
-    res.cookies.set('admin_token', tokenFromQuery, {
-      path: '/',
-      sameSite: 'lax',
-      httpOnly: false,
-    });
-  }
-
-  return res;
+  return res
 }
 
-// застосувати і до API, і до адмін-роутів
 export const config = {
-  matcher: ['/api/:path*', '/admin/:path*'],
-};
+  matcher: [
+    '/admin/:path*',
+    '/api/:path*', // дозволяє теж передати ?token=... прямо в API, якщо треба
+  ],
+}
