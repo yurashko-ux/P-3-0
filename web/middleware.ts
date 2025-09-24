@@ -1,38 +1,41 @@
 // web/middleware.ts
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
-/**
- * Доступ до /admin/*:
- *  - дозволяємо, якщо cookie "admin=1" (старий механізм) АБО
- *  - якщо cookie "admin_pass" збігається з ADMIN_PASS (новий механізм).
- *  - /admin/login завжди дозволено.
- *  - Якщо ADMIN_PASS порожній у ENV — не блокуємо (щоб не зачинити доступ випадково).
- */
 export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
+  const { nextUrl, cookies } = req;
 
-  // сторінка логіну без перевірок
-  if (pathname === '/admin/login') return NextResponse.next();
+  // Працюємо лише для admin-кампанійних API
+  // (можна розширити список шляхів у matcher нижче)
+  const pathname = nextUrl.pathname;
+  if (!pathname.startsWith('/api/campaigns')) {
+    return NextResponse.next();
+  }
 
-  const envPass = process.env.ADMIN_PASS?.trim();
-  const cookieAdmin = req.cookies.get('admin')?.value; // старий флаг
-  const cookiePass = req.cookies.get('admin_pass')?.value?.trim(); // новий
+  // 1) Дістаємо токен з cookie або з рядка запиту (?token=...)
+  const tokenFromCookie = cookies.get('admin_token')?.value || '';
+  const tokenFromQuery = nextUrl.searchParams.get('token') || '';
+  const token = tokenFromCookie || tokenFromQuery;
 
-  // якщо пароля в ENV нема — пускаємо всіх (режим налаштування)
-  if (!envPass) return NextResponse.next();
+  // 2) Пробросимо токен у заголовок запиту X-Admin-Token
+  const requestHeaders = new Headers(req.headers);
+  if (token) {
+    requestHeaders.set('X-Admin-Token', token);
+  }
 
-  // приймаємо або старий, або новий механізм
-  const allowed = cookieAdmin === '1' || (cookiePass && cookiePass === envPass);
-  if (allowed) return NextResponse.next();
+  // 3) Якщо токен прийшов через ?token=..., одночасно збережемо його в cookie
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  if (tokenFromQuery) {
+    res.cookies.set('admin_token', tokenFromQuery, {
+      path: '/',
+      sameSite: 'Lax',
+      httpOnly: false,
+    });
+  }
 
-  // редіректимо на логін зі збереженням next
-  const url = req.nextUrl.clone();
-  url.pathname = '/admin/login';
-  const next = pathname + (search || '');
-  url.search = `?next=${encodeURIComponent(next)}`;
-  return NextResponse.redirect(url);
+  return res;
 }
 
+// Обмежуємо middleware тільки потрібними маршрутами
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/api/campaigns/:path*'],
 };
