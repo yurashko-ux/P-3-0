@@ -1,110 +1,141 @@
 // web/app/(admin)/campaigns/page.tsx
-import { headers } from "next/headers";
+'use client';
 
-export const dynamic = "force-dynamic";
+import React from 'react';
 
+type Rule = { op?: 'contains' | 'equals'; value?: string };
+type Rules = { v1?: Rule; v2?: Rule };
 type Campaign = {
   id?: string | number;
   name?: string;
   created_at?: number;
-  base_pipeline_name?: string | null;
-  base_status_name?: string | null;
+  active?: boolean;
   base_pipeline_id?: number | string;
   base_status_id?: number | string;
-  rules?: {
-    v1?: { op?: "contains" | "equals"; value?: string };
-    v2?: { op?: "contains" | "equals"; value?: string };
-  };
+  base_pipeline_name?: string | null;
+  base_status_name?: string | null;
+  rules?: Rules;
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
 };
 
-async function getCampaigns(): Promise<{ ok: boolean; items: Campaign[] }> {
-  const h = headers();
-  const host = h.get("host")!;
-  const proto =
-    (h.get("x-forwarded-proto") || "").includes("https") ? "https" : "https";
-  const url = `${proto}://${host}/api/campaigns`;
+export default function CampaignsPage() {
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [items, setItems] = React.useState<Campaign[]>([]);
 
-  // Проксую cookie поточного запиту до API
-  const cookie = h.get("cookie") ?? "";
-  const res = await fetch(url, {
-    method: "GET",
-    cache: "no-store",
-    headers: { cookie },
-  });
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/campaigns', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setItems(Array.isArray(data?.items) ? data.items : []);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  if (!res.ok) {
-    // Повертаємо порожній список щоб хоч якось відрендеритись,
-    // але показуємо код відповіді всередині UI для дебагу.
-    return { ok: false, items: [] };
-  }
-  const data = await res.json();
-  return { ok: !!data?.ok, items: data?.items || [] };
-}
-
-export default async function CampaignsPage() {
-  const { ok, items } = await getCampaigns();
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   return (
-    <main className="px-6 py-6">
-      <h1 className="text-3xl font-semibold mb-6">Кампанії</h1>
-
-      {!ok && (
-        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-800">
-          Не вдалося отримати дані (можливо не встановлено адмін-доступ).
-          Спробуй відкрити{" "}
+    <main className="p-6 max-w-5xl mx-auto">
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Кампанії</h1>
+        <div className="flex items-center gap-2">
           <a
-            className="underline"
-            href="/api/auth/set?token=11111"
+            href="/admin/campaigns/new"
+            className="rounded-lg px-3 py-2 border hover:bg-gray-50"
           >
-            /api/auth/set?token=11111
-          </a>{" "}
-          і потім перезавантаж сторінку.
+            + Нова кампанія
+          </a>
+          <button
+            onClick={load}
+            className="rounded-lg px-3 py-2 border hover:bg-gray-50"
+            disabled={loading}
+          >
+            {loading ? 'Оновлюю…' : 'Оновити'}
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-red-700">
+          Помилка: {error}
         </div>
       )}
 
-      <div className="rounded-2xl border p-6">
-        {items.length === 0 ? (
-          <div className="text-center text-gray-500 py-16">
-            Кампаній поки немає
-          </div>
-        ) : (
-          <table className="w-full border-collapse">
+      {!loading && items.length === 0 && !error && (
+        <div className="rounded-lg border bg-white p-6 text-gray-600">
+          Кампаній поки немає. Створи першу 👆
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border bg-white">
+          <table className="min-w-full text-sm">
             <thead>
-              <tr className="text-left text-gray-600">
-                <th className="py-2 pr-4">Дата</th>
-                <th className="py-2 pr-4">Назва</th>
-                <th className="py-2 pr-4">Сутність</th>
-                <th className="py-2 pr-4">Воронка</th>
-                <th className="py-2 pr-4">Лічильник</th>
+              <tr className="border-b bg-gray-50 text-left">
+                <th className="px-4 py-2">ID</th>
+                <th className="px-4 py-2">Назва</th>
+                <th className="px-4 py-2">База (V1)</th>
+                <th className="px-4 py-2">V1 правило</th>
+                <th className="px-4 py-2">V2 правило</th>
+                <th className="px-4 py-2">Лічильники</th>
+                <th className="px-4 py-2">Статус</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((c) => (
-                <tr key={String(c.id)} className="border-t">
-                  <td className="py-2 pr-4">
-                    {c.created_at
-                      ? new Date(c.created_at).toLocaleString()
-                      : "—"}
-                  </td>
-                  <td className="py-2 pr-4">{c.name ?? "—"}</td>
-                  <td className="py-2 pr-4">База / V1 / EXP</td>
-                  <td className="py-2 pr-4">
-                    {(c.base_pipeline_name ?? c.base_pipeline_id ?? "—") +
-                      " → " +
-                      (c.base_status_name ?? c.base_status_id ?? "—")}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {(c.v1_count ?? 0) + (c.v2_count ?? 0) + (c.exp_count ?? 0)}
-                  </td>
-                </tr>
-              ))}
+              {items
+                .slice()
+                .sort((a, b) => (Number(b.created_at) - Number(a.created_at)))
+                .map((c) => {
+                  const v1 = c.rules?.v1;
+                  const v2 = c.rules?.v2;
+                  const pipeline =
+                    c.base_pipeline_name ?? c.base_pipeline_id ?? '—';
+                  const status =
+                    c.base_status_name ?? c.base_status_id ?? '—';
+
+                  const fmtRule = (r?: Rule) =>
+                    r?.op && (r.value ?? r.value === '')
+                      ? `${r.op} ${JSON.stringify(r.value)}`
+                      : '—';
+
+                  return (
+                    <tr key={String(c.id ?? c.created_at)} className="border-b last:border-b-0">
+                      <td className="px-4 py-2 text-gray-500">{c.id ?? c.created_at ?? '—'}</td>
+                      <td className="px-4 py-2">{c.name ?? '—'}</td>
+                      <td className="px-4 py-2">
+                        <span className="whitespace-nowrap">
+                          {pipeline} → {status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">{fmtRule(v1)}</td>
+                      <td className="px-4 py-2">{fmtRule(v2)}</td>
+                      <td className="px-4 py-2 text-gray-600">
+                        V1: {c.v1_count ?? 0} · V2: {c.v2_count ?? 0} · EXP: {c.exp_count ?? 0}
+                      </td>
+                      <td className="px-4 py-2">
+                        {c.active ? (
+                          <span className="rounded bg-green-100 px-2 py-1 text-green-700">active</span>
+                        ) : (
+                          <span className="rounded bg-gray-100 px-2 py-1 text-gray-700">inactive</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
     </main>
   );
 }
