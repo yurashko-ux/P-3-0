@@ -1,48 +1,40 @@
 // web/middleware.ts
-import type { NextRequest } from 'next/server'
-import { NextResponse } from 'next/server'
-
-/**
- * Ловить ?token=... і зберігає його у cookie `admin_token`,
- * після чого робить редірект на ту ж URL без параметра.
- *
- * Використання:
- *   https://p-3-0.vercel.app/admin/campaigns?token=11111
- *   або
- *   https://p-3-0.vercel.app/admin/campaigns/new?token=11111
- */
+import { NextRequest, NextResponse } from 'next/server';
 
 export function middleware(req: NextRequest) {
-  const url = new URL(req.url)
-  const tokenFromQuery = url.searchParams.get('token')
+  const url = req.nextUrl;
+  const tokenFromQuery = url.searchParams.get('token');
 
-  // Пропускаємо запит далі за замовчуванням
-  const res = NextResponse.next()
+  // Базова відповідь (пропускаємо запит далі)
+  const res = NextResponse.next();
 
-  if (tokenFromQuery !== null) {
-    if (tokenFromQuery === '' || tokenFromQuery === '0') {
-      // Видалити токен
-      res.cookies.delete('admin_token')
-    } else {
-      // Зберегти токен
-      res.cookies.set('admin_token', tokenFromQuery, {
-        path: '/',
-        sameSite: 'lax',   // важливо: нижній регістр для типів Next 14
-        httpOnly: false,   // щоб клієнтський код міг читати при потребі
-      })
-    }
+  if (tokenFromQuery && tokenFromQuery.trim()) {
+    // Ставимо cookie з адмін-токеном
+    res.cookies.set('admin_token', tokenFromQuery.trim(), {
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30, // 30 днів
+    });
 
-    // Прибрати ?token з адресного рядка
-    url.searchParams.delete('token')
-    return NextResponse.redirect(url)
+    // Прибираємо токен з адресного рядка
+    const clean = new URL(url);
+    clean.searchParams.delete('token');
+
+    // Повертаємо редірект БЕЗ параметра token і ЗІ встановленим cookie
+    return NextResponse.redirect(clean, {
+      headers: res.headers,
+    });
   }
 
-  return res
+  return res;
 }
 
+// Працюємо скрізь: як мінімум /admin та /api нам потрібні.
+// Якщо хочеш обмежити — залиш "/admin/:path*" і "/api/:path*".
 export const config = {
   matcher: [
-    '/admin/:path*',
-    '/api/:path*', // дозволяє теж передати ?token=... прямо в API, якщо треба
+    '/((?!_next|static|favicon.ico|robots.txt|sitemap.xml).*)',
   ],
-}
+};
