@@ -3,12 +3,20 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 
+// ✅ Без регулярних виразів — надійно для білда
 function readCookie(name: string) {
   if (typeof document === 'undefined') return null;
-  const m = document.cookie.match(
-    new RegExp('(?:^|;\\s*)' + name.replace(/[-.[\\]{}()*+?^$|\\\\]/g, '\\$&') + '=([^;]*)')
-  );
-  return m ? decodeURIComponent(m[1]) : null;
+  const parts = document.cookie.split(';');
+  for (const raw of parts) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const eq = entry.indexOf('=');
+    if (eq === -1) continue;
+    const key = entry.slice(0, eq);
+    const val = entry.slice(eq + 1);
+    if (key === name) return decodeURIComponent(val);
+  }
+  return null;
 }
 
 function setCookie(name: string, val: string) {
@@ -40,25 +48,21 @@ export default function NewCampaignPage() {
 
   async function saveToken() {
     if (!tokenDraft.trim()) {
-      setMsg('Введи адмін-токен (змінна ENV ADMIN_PASS на Vercel).');
+      setMsg('Введи адмін-токен (ENV ADMIN_PASS на Vercel).');
       return;
     }
-    // пробуємо серверний запис (опціонально)
     try {
       await fetch('/api/auth/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: tokenDraft.trim() }),
-      });
-    } catch {
-      // fall back: клієнтський запис
+      }).catch(() => {});
+    } finally {
       setCookie('admin_token', tokenDraft.trim());
+      setAdminToken(tokenDraft.trim());
+      setShowTokenInput(false);
+      setMsg('Токен збережено. Можеш створювати кампанію.');
     }
-    // гарантовано ставимо куку на клієнті, щоб одразу працювало
-    setCookie('admin_token', tokenDraft.trim());
-    setAdminToken(tokenDraft.trim());
-    setShowTokenInput(false);
-    setMsg('Токен збережено. Можеш створювати кампанію.');
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -104,14 +108,8 @@ export default function NewCampaignPage() {
         throw new Error(text || `HTTP ${resp.status}`);
       }
 
-      const data = await resp.json().catch(() => ({}));
-      const createdId = data?.id || data?.item?.id;
-
       setMsg('Кампанію створено ✅');
-      // невелика пауза щоб KV записався
-      setTimeout(() => {
-        router.push('/admin/campaigns');
-      }, 300);
+      setTimeout(() => router.push('/admin/campaigns'), 300);
     } catch (err: any) {
       console.error(err);
       const t = String(err?.message || err);
@@ -132,7 +130,6 @@ export default function NewCampaignPage() {
     <div className="max-w-3xl mx-auto p-6">
       <h1 className="text-2xl font-semibold mb-4">Створити кампанію</h1>
 
-      {/* Банер про токен */}
       {!adminToken && (
         <div className="mb-4 rounded-lg border p-3 bg-yellow-50">
           <div className="font-medium">Немає адмін-токена</div>
@@ -142,7 +139,6 @@ export default function NewCampaignPage() {
         </div>
       )}
 
-      {/* Ввід/оновлення токена */}
       {showTokenInput && (
         <div className="mb-6 rounded-xl border p-4">
           <label className="block text-sm mb-1">Admin token</label>
@@ -176,14 +172,12 @@ export default function NewCampaignPage() {
         </div>
       )}
 
-      {/* Повідомлення */}
       {msg && (
         <div className="mb-4 rounded-lg border p-3 bg-slate-50 whitespace-pre-wrap">
           {msg}
         </div>
       )}
 
-      {/* Форма створення */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm mb-1">Назва</label>
