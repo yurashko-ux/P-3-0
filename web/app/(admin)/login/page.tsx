@@ -1,10 +1,12 @@
 // web/app/(admin)/login/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function AdminLoginPage() {
+export const dynamic = 'force-dynamic';
+
+function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const [token, setToken] = useState(sp.get('token') ?? '');
@@ -22,28 +24,21 @@ export default function AdminLoginPage() {
       const res = await fetch('/api/auth/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // тіло запиту: { token: "..." }
         body: JSON.stringify({ token }),
       });
 
-      // 401 → показуємо повідомлення й не редиректимо
       if (!res.ok) {
         let msg = 'Auth failed';
         try {
           const data = await res.json();
           msg = data?.error || msg;
-        } catch {
-          // ignore parse errors
-        }
+        } catch {}
         setError(msg);
         return;
       }
 
-      // успіх → коротке повідомлення і редирект у список кампаній
       setOkMsg('Успішний вхід. Перенаправляю…');
-      // невелика пауза, щоб користувач бачив фідбек
       setTimeout(() => {
-        // важливо: повний reload, аби Next зчитав оновлені куки на сервері
         router.push('/admin/campaigns');
         router.refresh();
       }, 400);
@@ -94,9 +89,18 @@ export default function AdminLoginPage() {
         </form>
 
         <p className="mt-4 text-xs text-neutral-500">
-          Підказка: бекенд порівнює введене значення з <code>process.env.ADMIN_PASS</code>.
+          Сравнення йде з <code>process.env.ADMIN_PASS</code>. Невірне значення — 401 і кука не ставиться.
         </p>
       </div>
     </main>
+  );
+}
+
+export default function AdminLoginPage() {
+  // Вимога Next.js: якщо використовуємо useSearchParams — обгортаємо в Suspense
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-neutral-500">Завантаження…</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }
