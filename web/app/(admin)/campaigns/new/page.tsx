@@ -1,214 +1,282 @@
-// web/app/(admin)/campaigns/new/page.tsx
 'use client';
 
-import React from 'react';
+import * as React from 'react';
+import { useRouter } from 'next/navigation';
 
-type Op = 'contains' | 'equals';
-
-function readCookie(name: string): string | null {
+function readCookie(name: string) {
   if (typeof document === 'undefined') return null;
   const m = document.cookie.match(
-    new RegExp('(?:^|;\\s*)' + name.replace(/[-[\]{}()*+?^$|\\]/g, '\\$&') + '=([^;]*)')
+    new RegExp('(?:^|;\\s*)' + name.replace(/[-.[\\]{}()*+?^$|\\\\]/g, '\\$&') + '=([^;]*)')
   );
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-function getAdminToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  const url = new URL(window.location.href);
-  const fromQuery = url.searchParams.get('token');
-  if (fromQuery) {
-    try {
-      document.cookie = `admin_token=${encodeURIComponent(fromQuery)}; Path=/; SameSite=Lax`;
-    } catch {}
-    return fromQuery;
-  }
-  const fromCookie = readCookie('admin_token');
-  if (fromCookie) return fromCookie;
-
-  // як тимчасовий резерв — localStorage
-  try {
-    const fromLS = localStorage.getItem('admin_token');
-    if (fromLS) return fromLS;
-  } catch {}
-  return null;
+function setCookie(name: string, val: string) {
+  document.cookie = `${name}=${encodeURIComponent(val)}; path=/; SameSite=Lax`;
 }
 
 export default function NewCampaignPage() {
+  const router = useRouter();
+  const [adminToken, setAdminToken] = React.useState<string | null>(null);
+  const [showTokenInput, setShowTokenInput] = React.useState(false);
+  const [tokenDraft, setTokenDraft] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState<string | null>(null);
+
+  // form state
   const [name, setName] = React.useState('UI-created');
-  const [pipeline, setPipeline] = React.useState<string>('111');
-  const [status, setStatus] = React.useState<string>('222');
-
-  const [v1op, setV1op] = React.useState<Op>('contains');
+  const [basePipelineId, setBasePipelineId] = React.useState<number | ''>(111);
+  const [baseStatusId, setBaseStatusId] = React.useState<number | ''>(222);
+  const [v1op, setV1op] = React.useState<'contains' | 'equals'>('contains');
   const [v1val, setV1val] = React.useState('ціна');
-
-  const [v2op, setV2op] = React.useState<Op>('equals');
+  const [v2op, setV2op] = React.useState<'contains' | 'equals'>('equals');
   const [v2val, setV2val] = React.useState('привіт');
 
-  const [submitting, setSubmitting] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const token = readCookie('admin_token');
+    setAdminToken(token);
+    setShowTokenInput(!token);
+  }, []);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function saveToken() {
+    if (!tokenDraft.trim()) {
+      setMsg('Введи адмін-токен (змінна ENV ADMIN_PASS на Vercel).');
+      return;
+    }
+    // пробуємо серверний запис (опціонально)
+    try {
+      await fetch('/api/auth/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenDraft.trim() }),
+      });
+    } catch {
+      // fall back: клієнтський запис
+      setCookie('admin_token', tokenDraft.trim());
+    }
+    // гарантовано ставимо куку на клієнті, щоб одразу працювало
+    setCookie('admin_token', tokenDraft.trim());
+    setAdminToken(tokenDraft.trim());
+    setShowTokenInput(false);
+    setMsg('Токен збережено. Можеш створювати кампанію.');
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setMsg(null);
-    setErr(null);
-
-    const token = getAdminToken();
-    if (!token) {
-      setErr('Немає admin токена. Додай ?token=11111 в URL, або встанови cookie "admin_token".');
-      setSubmitting(false);
+    if (!adminToken) {
+      setMsg('Немає адмін-токена. Введи токен вище.');
+      setShowTokenInput(true);
+      return;
+    }
+    if (!name.trim()) {
+      setMsg('Назва обовʼязкова.');
+      return;
+    }
+    if (basePipelineId === '' || baseStatusId === '') {
+      setMsg('Потрібні ID воронки та статусу.');
       return;
     }
 
-    const payload = {
-      name,
-      base_pipeline_id: Number.isNaN(Number(pipeline)) ? pipeline : Number(pipeline),
-      base_status_id: Number.isNaN(Number(status)) ? status : Number(status),
-      rules: {
-        v1: { op: v1op, value: v1val },
-        v2: { op: v2op, value: v2val },
-      },
-    };
-
+    setBusy(true);
     try {
-      const res = await fetch('/api/campaigns', {
+      const payload = {
+        name: name.trim(),
+        base_pipeline_id: Number(basePipelineId),
+        base_status_id: Number(baseStatusId),
+        rules: {
+          v1: { op: v1op, value: v1val ?? '' },
+          v2: { op: v2op, value: v2val ?? '' },
+        },
+      };
+
+      const resp = await fetch('/api/campaigns', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Admin-Token': token,
+          'X-Admin-Token': adminToken,
         },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        let detail = '';
-        try {
-          const j = await res.json();
-          detail = j?.error || JSON.stringify(j);
-        } catch {}
-        throw new Error(`${res.status} ${detail}`.trim());
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(text || `HTTP ${resp.status}`);
       }
 
-      const data = await res.json();
-      setMsg(`Готово! Створено id=${data?.id ?? '—'}`);
-    } catch (e: any) {
-      setErr(`Не вдалося зберегти: ${e?.message ?? e}`);
+      const data = await resp.json().catch(() => ({}));
+      const createdId = data?.id || data?.item?.id;
+
+      setMsg('Кампанію створено ✅');
+      // невелика пауза щоб KV записався
+      setTimeout(() => {
+        router.push('/admin/campaigns');
+      }, 300);
+    } catch (err: any) {
+      console.error(err);
+      const t = String(err?.message || err);
+      if (t.includes('401')) {
+        setMsg('401 Unauthorized — адмін-токен неправильний або відсутній.');
+        setShowTokenInput(true);
+      } else if (t.includes('failed to parse') || t.includes('WRONGTYPE')) {
+        setMsg('Помилка KV. Спробуй ще раз або очисти тестові ключі через /api/debug/kv.');
+      } else {
+        setMsg(`Помилка створення: ${t}`);
+      }
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   }
 
   return (
-    <main className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-4">Нова кампанія</h1>
+    <div className="max-w-3xl mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-4">Створити кампанію</h1>
 
-      {err && (
-        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-red-700">
-          {err}
+      {/* Банер про токен */}
+      {!adminToken && (
+        <div className="mb-4 rounded-lg border p-3 bg-yellow-50">
+          <div className="font-medium">Немає адмін-токена</div>
+          <div className="text-sm">
+            Введи значення ENV <code>ADMIN_PASS</code> (напр. <code>11111</code>) нижче і збережи.
+          </div>
         </div>
       )}
+
+      {/* Ввід/оновлення токена */}
+      {showTokenInput && (
+        <div className="mb-6 rounded-xl border p-4">
+          <label className="block text-sm mb-1">Admin token</label>
+          <input
+            className="w-full border rounded-md px-3 py-2"
+            placeholder="встав тут свій ADMIN_PASS"
+            value={tokenDraft}
+            onChange={(e) => setTokenDraft(e.target.value)}
+          />
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={saveToken}
+              className="px-3 py-2 rounded-md border bg-black text-white disabled:opacity-60"
+            >
+              Зберегти токен
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCookie('admin_token', '');
+                setAdminToken(null);
+                setShowTokenInput(true);
+                setMsg('Токен очищено');
+              }}
+              className="px-3 py-2 rounded-md border"
+            >
+              Очистити токен
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Повідомлення */}
       {msg && (
-        <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-green-700">
+        <div className="mb-4 rounded-lg border p-3 bg-slate-50 whitespace-pre-wrap">
           {msg}
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-4 bg-white rounded-lg border p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-sm text-gray-600">Назва</span>
-            <input
-              className="border rounded-lg px-3 py-2"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Назва кампанії"
-              required
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-sm text-gray-600">Pipeline ID</span>
-            <input
-              className="border rounded-lg px-3 py-2"
-              value={pipeline}
-              onChange={(e) => setPipeline(e.target.value)}
-              placeholder="наприклад 111"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-sm text-gray-600">Status ID</span>
-            <input
-              className="border rounded-lg px-3 py-2"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              placeholder="наприклад 222"
-            />
-          </label>
+      {/* Форма створення */}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm mb-1">Назва</label>
+          <input
+            className="w-full border rounded-md px-3 py-2"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Campaign"
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <fieldset className="border rounded-lg p-3">
-            <legend className="px-1 text-sm text-gray-700">V1 правило</legend>
-            <div className="flex gap-2 items-center">
+          <div>
+            <label className="block text-sm mb-1">Base pipeline ID</label>
+            <input
+              type="number"
+              className="w-full border rounded-md px-3 py-2"
+              value={basePipelineId}
+              onChange={(e) => setBasePipelineId(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Base status ID</label>
+            <input
+              type="number"
+              className="w-full border rounded-md px-3 py-2"
+              value={baseStatusId}
+              onChange={(e) => setBaseStatusId(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border p-4">
+          <div className="font-medium mb-3">Правила</div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm mb-1">V1 — оператор</label>
               <select
-                className="border rounded-lg px-2 py-2"
+                className="w-full border rounded-md px-3 py-2"
                 value={v1op}
-                onChange={(e) => setV1op(e.target.value as Op)}
+                onChange={(e) => setV1op(e.target.value as any)}
               >
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </select>
+              <label className="block text-sm mt-3 mb-1">V1 — значення</label>
               <input
-                className="border rounded-lg px-3 py-2 flex-1"
+                className="w-full border rounded-md px-3 py-2"
                 value={v1val}
                 onChange={(e) => setV1val(e.target.value)}
-                placeholder="значення"
+                placeholder="напр. ціна"
               />
             </div>
-          </fieldset>
 
-          <fieldset className="border rounded-lg p-3">
-            <legend className="px-1 text-sm text-gray-700">V2 правило</legend>
-            <div className="flex gap-2 items-center">
+            <div>
+              <label className="block text-sm mb-1">V2 — оператор</label>
               <select
-                className="border rounded-lg px-2 py-2"
+                className="w-full border rounded-md px-3 py-2"
                 value={v2op}
-                onChange={(e) => setV2op(e.target.value as Op)}
+                onChange={(e) => setV2op(e.target.value as any)}
               >
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
               </select>
+              <label className="block text-sm mt-3 mb-1">V2 — значення</label>
               <input
-                className="border rounded-lg px-3 py-2 flex-1"
+                className="w-full border rounded-md px-3 py-2"
                 value={v2val}
                 onChange={(e) => setV2val(e.target.value)}
-                placeholder="значення"
+                placeholder="напр. привіт"
               />
             </div>
-          </fieldset>
+          </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             type="submit"
-            disabled={submitting}
-            className="rounded-lg px-4 py-2 border bg-black text-white disabled:opacity-50"
+            disabled={busy}
+            className="px-4 py-2 rounded-md border bg-black text-white disabled:opacity-60"
           >
-            {submitting ? 'Зберігаю…' : 'Зберегти'}
+            {busy ? 'Зберігаю…' : 'Створити'}
           </button>
-          <a href="/admin/campaigns" className="rounded-lg px-4 py-2 border">
+          <button
+            type="button"
+            className="px-4 py-2 rounded-md border"
+            onClick={() => router.push('/admin/campaigns')}
+          >
             До списку
-          </a>
+          </button>
         </div>
-
-        <p className="text-xs text-gray-500">
-          Підказка: можна відкрити сторінку так — <code>/admin/campaigns/new?token=11111</code>,
-          щоб токен автоматично підхопився та записався в cookie.
-        </p>
       </form>
-    </main>
+    </div>
   );
 }
