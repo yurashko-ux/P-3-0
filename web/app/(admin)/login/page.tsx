@@ -2,80 +2,60 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function AdminLoginPage() {
-  const [token, setToken] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [value, setValue] = useState('');
 
-  const onSubmit = async (e: React.FormEvent) => {
+  function setCookie(name: string, val: string, days = 30) {
+    const d = new Date();
+    d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000);
+    document.cookie = `${name}=${encodeURIComponent(val)}; path=/; SameSite=Lax; max-age=${days * 24 * 60 * 60}`;
+  }
+
+  const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/auth/set', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // token має збігатися з ADMIN_PASS у Vercel Env
-        body: JSON.stringify({ token }),
-        cache: 'no-store',
-      });
+    const token = value.trim();
+    if (!token) return;
 
-      if (res.ok) {
-        // успіх → бекенд поставить httpOnly cookie, переходимо в адмінку
-        router.push('/admin/campaigns');
-      } else {
-        const data = await res.json().catch(() => null);
-        setError(data?.error || `HTTP ${res.status}`);
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Network error');
-    } finally {
-      setLoading(false);
-    }
+    // ставимо основний cookie, який перевіряє middleware
+    setCookie('admin_token', token);
+    // сумісність зі старими перевірками
+    setCookie('admin', token);
+    setCookie('admin_pass', token);
+
+    // редирект в адмінку
+    window.location.href = '/admin';
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm bg-white rounded-2xl shadow p-6 space-y-5"
-      >
-        <h1 className="text-2xl font-semibold">Admin Login</h1>
+    <div className="min-h-[70vh] flex items-center justify-center p-6">
+      <div className="w-full max-w-2xl rounded-2xl border border-gray-200 p-8 shadow-sm bg-white">
+        <h1 className="text-4xl font-bold tracking-tight mb-8">Логін адміна</h1>
 
-        <label className="block text-sm">
-          <span className="text-gray-700">Admin token</span>
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
-            placeholder="Enter ADMIN_PASS"
-            autoFocus
-          />
-        </label>
+        <form onSubmit={onSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ADMIN_PASS</label>
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Введи ADMIN_PASS"
+              className="w-full rounded-2xl border border-gray-300 bg-gray-50 px-4 py-4 text-lg outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
-        {error && (
-          <p className="text-sm text-red-600">
-            {error}
+          <button
+            type="submit"
+            className="w-full rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xl font-semibold py-4 transition-colors"
+          >
+            Зайти
+          </button>
+
+          <p className="text-gray-600">
+            Ставимо куки <code>admin_token</code>, <code>admin_pass</code> і <code>admin</code> (сумісність). Після логіну
+            повернемося на: <code>/admin</code>
           </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading || !token}
-          className="w-full rounded-xl bg-black text-white py-2 disabled:opacity-50"
-        >
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-
-        <p className="text-xs text-gray-500">
-          Підказка: значення має дорівнювати <code>ADMIN_PASS</code> у Vercel →
-          Project → Settings → Environment Variables.
-        </p>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
