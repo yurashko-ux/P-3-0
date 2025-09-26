@@ -1,64 +1,62 @@
 // web/app/api/auth/set/route.ts
 import { NextResponse } from 'next/server';
 
+const COOKIE_NAME = 'admin_token';
+
+// без кешу на edge
 export const dynamic = 'force-dynamic';
 
-function envAdminPass() {
-  const v = process.env.ADMIN_PASS ?? '';
-  return String(v).trim();
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const token = url.searchParams.get('token');
+  if (token) {
+    // дозволяємо ?token=... як швидкий спосіб логіну
+    return await setToken(token);
+  }
+
+  // просто перевірка стану
+  const hasCookie = req.headers.get('cookie')?.includes(`${COOKIE_NAME}=`) ?? false;
+  return NextResponse.json({ ok: true, authed: hasCookie });
 }
 
 export async function POST(req: Request) {
-  let token: string | undefined;
+  const body = await safeJson(req);
+  const token = (body?.token ?? '').toString();
+  return await setToken(token);
+}
 
-  try {
-    const body = await req.json().catch(() => ({}));
-    token = typeof body?.token === 'string' ? body.token.trim() : undefined;
-  } catch {
-    // ignore
+async function setToken(token: string) {
+  const PASS = process.env.ADMIN_PASS ?? '';
+  const ok = token && PASS && token === PASS;
+
+  const res = NextResponse.json(
+    ok
+      ? { ok: true, message: 'Authenticated' }
+      : { ok: false, error: 'Unauthorized: invalid admin token' },
+    { status: ok ? 200 : 401 }
+  );
+
+  // якщо валідний — ставимо захищене кукі, інакше — видаляємо
+  if (ok) {
+    res.cookies.set(COOKIE_NAME, token, {
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30, // 30 днів
+    });
+  } else {
+    // важливо: без додаткових аргументів — інакше Next 14 лається типами
+    res.cookies.delete(COOKIE_NAME);
   }
 
-  const ADMIN = envAdminPass();
-  const resOk = () =>
-    NextResponse.json({ ok: true, message: 'Token accepted' }, { status: 200 });
-  const resBad = (msg = 'Invalid admin token') =>
-    NextResponse.json({ ok: false, error: msg }, { status: 401 });
-
-  // якщо ENV не задано — краще нікого не пускати
-  if (!ADMIN) {
-    const res = resBad('ADMIN_PASS env not configured');
-    // прибираємо потенційно стару куку
-    (res as any).cookies?.delete?.('admin_token');
-    return res;
-  }
-
-  if (!token) {
-    const res = resBad('Missing token');
-    (res as any).cookies?.delete?.('admin_token');
-    return res;
-  }
-
-  if (token !== ADMIN) {
-    const res = resBad('Invalid admin token');
-    (res as any).cookies?.delete?.('admin_token');
-    return res;
-  }
-
-  // валідний токен → ставимо куку
-  const res = resOk();
-  // httpOnly залишаємо false, бо UI читає document.cookie
-  res.cookies.set('admin_token', token, {
-    path: '/',
-    sameSite: 'lax',
-    httpOnly: false,
-    maxAge: 60 * 60 * 24 * 7, // 7 днів
-    secure: true,
-  });
   return res;
 }
 
-// опціонально: GET для швидкої перевірки статусу
-export async function GET() {
-  const message = envAdminPass() ? 'Auth API ready' : 'ADMIN_PASS not set';
-  return NextResponse.json({ ok: true, message });
+async function safeJson(req: Request) {
+  try {
+    return await req.json();
+  } catch {
+    return null;
+  }
 }
