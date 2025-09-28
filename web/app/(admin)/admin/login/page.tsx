@@ -2,9 +2,10 @@
 'use client';
 
 import * as React from 'react';
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export default function AdminLoginPage() {
+function LoginInner() {
   const sp = useSearchParams();
   const hasErr = sp.get('err') === '1';
   const [token, setToken] = React.useState('');
@@ -22,7 +23,7 @@ export default function AdminLoginPage() {
         </div>
       )}
 
-      {/* ВАЖЛИВО: метод GET — додає ?token=..., middleware поставить куку або поверне ?err=1 */}
+      {/* ВАЖЛИВО: method="GET" -> додає ?token=..., middleware поставить/перевірить куку */}
       <form method="GET" action="" style={{
         border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
         display: 'grid', gap: 16
@@ -65,5 +66,13 @@ export default function AdminLoginPage() {
         </a>
       </div>
     </main>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Завантаження…</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }
