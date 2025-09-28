@@ -2,71 +2,64 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-// Значення має бути налаштоване у Vercel → Project → Settings → Environment Variables
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 
-/**
- * Правила доступу:
- * - /admin/login (та /admin/logout) — завжди дозволено (щоб не було редирект-лупа)
- * - всі інші /admin/* — тільки з валідним admin_token (або admin/admin_pass) == ADMIN_PASS
- * - ?token=... у будь-якому URL ставить кукі та чистить URL
- */
+function readCookie(req: NextRequest, name: string): string | null {
+  const raw = req.cookies.get(name)?.value;
+  return raw ? decodeURIComponent(raw) : null;
+}
+
+function isAuthed(req: NextRequest): boolean {
+  const cookieToken = readCookie(req, 'admin_token') || '';
+  const headerToken = req.headers.get('x-admin-token') || '';
+  const token = cookieToken || headerToken;
+  return Boolean(ADMIN_PASS && token && token === ADMIN_PASS);
+}
+
 export function middleware(req: NextRequest) {
-  const url = req.nextUrl;
-  const pathname = url.pathname;
+  const { pathname, searchParams } = req.nextUrl;
 
-  // 0) Якщо є ?token=..., ставимо кукі та чистимо URL
-  const tokenFromQuery = url.searchParams.get('token');
+  // пропускаємо все, що не /admin/*
+  if (!pathname.startsWith('/admin')) {
+    return NextResponse.next();
+  }
+
+  // /admin/login завжди дозволений (щоб не було циклів)
+  const isLoginPage = pathname === '/admin/login';
+
+  // якщо прийшов ?token=..., зберігаємо в куку і чистимо URL
+  const tokenFromQuery = searchParams.get('token');
   if (tokenFromQuery) {
-    const clean = url.clone();
-    clean.searchParams.delete('token');
-
-    const res = NextResponse.redirect(clean);
-
-    // основний кукі
+    const res = NextResponse.redirect(
+      new URL(pathname, req.url) // редірект на ту ж сторінку без query
+    );
     res.cookies.set('admin_token', tokenFromQuery, {
       path: '/',
       sameSite: 'lax',
       httpOnly: false,
     });
-
-    // сумісність зі старими назвами
-    res.cookies.set('admin', tokenFromQuery, { path: '/', sameSite: 'lax' });
-    res.cookies.set('admin_pass', tokenFromQuery, { path: '/', sameSite: 'lax' });
-
     return res;
   }
 
-  // 1) Захищаємо лише /admin/*
-  if (!pathname.startsWith('/admin')) {
+  // якщо вже авторизований — пропускаємо
+  if (isAuthed(req)) {
     return NextResponse.next();
   }
 
-  // 2) Дозволені винятки (щоб не було ERR_TOO_MANY_REDIRECTS)
-  if (pathname === '/admin/login' || pathname === '/admin/logout') {
+  // неавторизований:
+  // - якщо вже на /admin/login → показуємо сторінку логіну
+  // - інакше редіректимо на /admin/login
+  if (isLoginPage) {
     return NextResponse.next();
   }
 
-  // 3) Зчитуємо кукі
-  const cookieToken =
-    req.cookies.get('admin_token')?.value ||
-    req.cookies.get('admin')?.value ||
-    req.cookies.get('admin_pass')?.value;
-
-  const isValid = Boolean(ADMIN_PASS) && cookieToken === ADMIN_PASS;
-
-  if (isValid) {
-    return NextResponse.next();
-  }
-
-  // 4) Якщо токен невалідний — відправляємо на форму логіну
-  const loginUrl = url.clone();
-  loginUrl.pathname = '/admin/login';
-  loginUrl.search = ''; // без параметрів
-  return NextResponse.redirect(loginUrl);
+  const to = new URL('/admin/login', req.url);
+  return NextResponse.redirect(to);
 }
 
-// Перехоплюємо тільки /admin/*
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: [
+    // захищаємо всі admin-шляхи, але статичні та api поза /admin чіпати не треба
+    '/admin/:path*',
+  ],
 };
