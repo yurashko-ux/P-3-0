@@ -1,16 +1,16 @@
 // web/app/(admin)/admin/page.tsx
-'use client';
-
 import Link from 'next/link';
+
+export const dynamic = 'force-dynamic';
 
 export default function AdminHome() {
   return (
-    <main style={{ maxWidth: 1000, margin: '48px auto', padding: '0 20px' }}>
-      <header style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 40, fontWeight: 800, letterSpacing: -0.5, margin: 0 }}>
+    <main style={{ maxWidth: 1040, margin: '48px auto', padding: '0 20px' }}>
+      <header style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 44, fontWeight: 800, letterSpacing: -0.5, margin: 0 }}>
           Адмін-панель
         </h1>
-        <p style={{ marginTop: 8, color: 'rgba(0,0,0,0.55)' }}>
+        <p style={{ marginTop: 10, color: 'rgba(0,0,0,0.55)' }}>
           Оберіть дію: створити нову кампанію або переглянути існуючі.
         </p>
       </header>
@@ -18,18 +18,19 @@ export default function AdminHome() {
       <section
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
           gap: 20,
           alignItems: 'stretch',
         }}
       >
+        {/* Кампанії — список */}
         <Card>
-          <CardHeader emoji="📋" title="Кампанії" subtitle="Перегляд та керування існуючими" />
+          <CardHeader emoji="📋" title="Кампанії" subtitle="Перегляд та керування" />
           <CardBody>
-            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.7)' }}>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
               <li>Сортування за датою</li>
-              <li>Активація/деактивація</li>
-              <li>Перегляд лічильників</li>
+              <li>Активація / деактивація</li>
+              <li>Лічильники v1 / v2 / EXP</li>
             </ul>
           </CardBody>
           <CardFooter>
@@ -37,13 +38,14 @@ export default function AdminHome() {
           </CardFooter>
         </Card>
 
+        {/* Нова кампанія */}
         <Card accent>
           <CardHeader emoji="✨" title="Нова кампанія" subtitle="Швидке створення з правилами v1/v2" />
           <CardBody>
-            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.7)' }}>
-              <li>Назва та базові ID воронки</li>
-              <li>Тригери v1/v2 (equals/contains)</li>
-              <li>Опційний EXP блок</li>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Назва, базові ID воронки</li>
+              <li>Тригери (equals / contains)</li>
+              <li>Опційний EXP-блок</li>
             </ul>
           </CardBody>
           <CardFooter>
@@ -55,16 +57,22 @@ export default function AdminHome() {
   );
 }
 
-/* ---------- прості UI-компоненти ---------- */
+/* ===== Прості UI-примітиви ===== */
 
-function Card({ children, accent = false }: { children: React.ReactNode; accent?: boolean }) {
+function Card({
+  children,
+  accent = false,
+}: {
+  children: React.ReactNode;
+  accent?: boolean;
+}) {
   return (
     <div
       style={{
-        borderRadius: 18,
-        border: '1px solid #eaecef',
+        borderRadius: 20,
+        border: '1px solid #e8ebf0',
         background: '#fff',
-        boxShadow: '0 6px 20px rgba(0,0,0,0.06)',
+        boxShadow: '0 8px 26px rgba(0,0,0,0.06)',
         overflow: 'hidden',
         outline: accent ? '2px solid #2a6df5' : 'none',
         outlineOffset: -1,
@@ -88,23 +96,25 @@ function CardHeader({
   emoji?: string;
 }) {
   return (
-    <div style={{ padding: '20px 22px 8px 22px' }}>
+    <div style={{ padding: '22px 24px 10px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {emoji && <span style={{ fontSize: 26 }}>{emoji}</span>}
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>{title}</h2>
+        {emoji && <span style={{ fontSize: 28 }}>{emoji}</span>}
+        <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>{title}</h2>
       </div>
-      {subtitle && <p style={{ margin: '8px 0 0 0', color: 'rgba(0,0,0,0.55)' }}>{subtitle}</p>}
+      {subtitle && (
+        <p style={{ margin: '8px 0 0 0', color: 'rgba(0,0,0,0.55)' }}>{subtitle}</p>
+      )}
     </div>
   );
 }
 
 function CardBody({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '8px 22px 8px 22px', flex: 1 }}>{children}</div>;
+  return <div style={{ padding: '10px 24px', flex: 1 }}>{children}</div>;
 }
 
 function CardFooter({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ padding: '16px 22px 20px 22px', display: 'flex', gap: 12, alignItems: 'center' }}>
+    <div style={{ padding: '16px 24px 22px 24px', display: 'flex', gap: 12 }}>
       {children}
     </div>
   );
