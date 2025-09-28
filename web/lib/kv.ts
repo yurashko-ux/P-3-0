@@ -1,6 +1,6 @@
 // web/lib/kv.ts
-// Thin REST client for Vercel KV (Upstash-compatible) with explicit read/write tokens.
-// Provides list/create helpers for Campaigns using LIST index + per-item JSON.
+// Thin REST client for Vercel KV (Upstash-compatible) with tolerant token handling.
+// If READ token is missing/invalid, reads automatically fall back to WRITE token.
 
 type Campaign = {
   id: string;
@@ -24,30 +24,41 @@ type Campaign = {
 const INDEX_KEY = 'campaign:index';
 const ITEM_KEY = (id: string) => `campaign:${id}`;
 
-const KV_REST_API_URL = process.env.KV_REST_API_URL!;
-const KV_READ_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN!;
-const KV_WRITE_TOKEN = process.env.KV_REST_API_TOKEN!;
+const KV_REST_API_URL = process.env.KV_REST_API_URL || '';
+const KV_READ_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || '';
+const KV_WRITE_TOKEN = process.env.KV_REST_API_TOKEN || '';
 
 function assertEnv() {
   if (!KV_REST_API_URL) throw new Error('KV_REST_API_URL is missing');
-  if (!KV_READ_TOKEN) throw new Error('KV_REST_API_READ_ONLY_TOKEN is missing');
-  if (!KV_WRITE_TOKEN) throw new Error('KV_REST_API_TOKEN (write) is missing');
+  if (!KV_READ_TOKEN && !KV_WRITE_TOKEN) {
+    throw new Error('KV tokens missing: set KV_REST_API_TOKEN (write) and/or KV_REST_API_READ_ONLY_TOKEN (read)');
+  }
 }
 assertEnv();
 
+// Choose token: for reads prefer READ, else fall back to WRITE. For writes require WRITE.
+function pickToken(write: boolean): string {
+  if (write) {
+    if (!KV_WRITE_TOKEN) throw new Error('KV write token missing (KV_REST_API_TOKEN)');
+    return KV_WRITE_TOKEN;
+  }
+  return KV_READ_TOKEN || KV_WRITE_TOKEN;
+}
+
 async function kvFetch(path: string, init: RequestInit, write = false) {
   const headers = new Headers(init.headers);
-  headers.set('Authorization', `Bearer ${write ? KV_WRITE_TOKEN : KV_READ_TOKEN}`);
+  const token = pickToken(write);
+  headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
 
   const url = KV_REST_API_URL.replace(/\/$/, '') + path;
   const res = await fetch(url, { ...init, headers, cache: 'no-store' });
 
   if (!res.ok) {
-    // Surface detailed error message for easier debugging in logs/console
+    // Surface detailed error for logs; DO NOT throw opaque digest without context
     let body = '';
     try { body = await res.text(); } catch {}
-    console.error('KV error', { path, status: res.status, body });
+    console.error('KV error', { path, status: res.status, body, write });
     throw new Error(`KV ${write ? 'write' : 'read'} failed: ${res.status}`);
   }
   return res;
@@ -82,7 +93,18 @@ export const kvRead = {
     return kvLRange(key, start, stop);
   },
   async listCampaigns(): Promise<Campaign[]> {
-    const ids = await kvLRange(INDEX_KEY, 0, -1);
+    // Primary index
+    let ids = await kvLRange(INDEX_KEY, 0, -1);
+
+    // Backward-compat: also look at legacy key if primary is empty
+    if (!ids || ids.length === 0) {
+      try {
+        ids = await kvLRange('campaigns:index', 0, -1);
+      } catch {
+        // ignore
+      }
+    }
+
     const items: Campaign[] = [];
     for (const id of ids) {
       const raw = await kvGet<string>(ITEM_KEY(id));
@@ -126,6 +148,9 @@ export const kvWrite = {
 
     await kvSet(ITEM_KEY(id), JSON.stringify(full));
     await kvLPush(INDEX_KEY, id);
+    // Also push to legacy index for backward-compat (until міграцію завершимо)
+    try { await kvLPush('campaigns:index', id); } catch { /* ignore */ }
+
     return full;
   },
 };
