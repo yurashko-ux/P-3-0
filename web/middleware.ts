@@ -2,42 +2,48 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-// важливо: це значення має бути задане у Vercel → Project → Settings → Environment Variables
+// Значення має бути налаштоване у Vercel → Project → Settings → Environment Variables
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 
 /**
- * Правила:
- * - /admin/* доступні тільки якщо cookie admin_token (або admin/admin_pass) === ADMIN_PASS
- * - ?token=... у будь-якому URL автоматично зберігає кукі та чистить урл
+ * Правила доступу:
+ * - /admin/login (та /admin/logout) — завжди дозволено (щоб не було редирект-лупа)
+ * - всі інші /admin/* — тільки з валідним admin_token (або admin/admin_pass) == ADMIN_PASS
+ * - ?token=... у будь-якому URL ставить кукі та чистить URL
  */
 export function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
 
-  // 1) Обробка magic-параметра ?token=
+  // 0) Якщо є ?token=..., ставимо кукі та чистимо URL
   const tokenFromQuery = url.searchParams.get('token');
   if (tokenFromQuery) {
     const clean = url.clone();
     clean.searchParams.delete('token');
 
     const res = NextResponse.redirect(clean);
-    // ставимо основний кукі
+
+    // основний кукі
     res.cookies.set('admin_token', tokenFromQuery, {
       path: '/',
       sameSite: 'lax',
       httpOnly: false,
     });
-    // сумісність зі старими перевірками
+
+    // сумісність зі старими назвами
     res.cookies.set('admin', tokenFromQuery, { path: '/', sameSite: 'lax' });
     res.cookies.set('admin_pass', tokenFromQuery, { path: '/', sameSite: 'lax' });
+
     return res;
   }
 
-  // 2) Перевіряємо доступ лише до /admin/*
-  const protectsAdmin = pathname.startsWith('/admin');
+  // 1) Захищаємо лише /admin/*
+  if (!pathname.startsWith('/admin')) {
+    return NextResponse.next();
+  }
 
-  if (!protectsAdmin) {
-    // все інше пропускаємо
+  // 2) Дозволені винятки (щоб не було ERR_TOO_MANY_REDIRECTS)
+  if (pathname === '/admin/login' || pathname === '/admin/logout') {
     return NextResponse.next();
   }
 
@@ -53,17 +59,14 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4) Якщо не валідно — шлемо на /admin/login
+  // 4) Якщо токен невалідний — відправляємо на форму логіну
   const loginUrl = url.clone();
   loginUrl.pathname = '/admin/login';
-  loginUrl.search = ''; // без сміття
+  loginUrl.search = ''; // без параметрів
   return NextResponse.redirect(loginUrl);
 }
 
-/**
- * Matcher: захищаємо тільки /admin/*
- * (API й інші сторінки не чіпаємо, щоб нічого не зламати)
- */
+// Перехоплюємо тільки /admin/*
 export const config = {
   matcher: ['/admin/:path*'],
 };
