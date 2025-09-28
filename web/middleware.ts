@@ -2,52 +2,49 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-const ADMIN_PREFIX = '/admin';
-const LOGIN_PATH = '/admin/login';
-const ADMIN_PASS = process.env.ADMIN_PASS || '11111';
+// ⛳️ Захищаємо лише адмін-роути
+export const config = {
+  matcher: ['/admin/:path*'],
+};
 
-export function middleware(req: NextRequest) {
-  const { pathname, searchParams, origin } = req.nextUrl;
+export default function middleware(req: NextRequest) {
+  const url = req.nextUrl;
+  const pathname = url.pathname;
 
-  // 1) Поза /admin — нічого не робимо
-  if (!pathname.startsWith(ADMIN_PREFIX)) {
-    return NextResponse.next();
-  }
+  // 1) Якщо прийшли з ?token=..., ставимо кукі та чистимо URL
+  const tokenFromQuery = url.searchParams.get('token');
+  if (tokenFromQuery && tokenFromQuery.trim().length > 0) {
+    // чистий URL без токена
+    const clean = new URL(url);
+    clean.searchParams.delete('token');
 
-  // 2) Дозволяємо бачити сторінку логіну без перевірок
-  if (pathname === LOGIN_PATH) {
-    return NextResponse.next();
-  }
-
-  // 3) Якщо прийшов ?token=..., ставимо кукі та редіректимо на той самий шлях без query
-  const tokenFromQuery = searchParams.get('token');
-  if (tokenFromQuery) {
-    const clean = new URL(pathname, origin); // той самий шлях, але без параметрів
+    // редіректимо на чистий URL і виставляємо кукі
     const res = NextResponse.redirect(clean);
-    res.cookies.set({
-      name: 'admin_token',
-      value: tokenFromQuery,
+    res.cookies.set('admin_token', tokenFromQuery.trim(), {
       path: '/',
-      // httpOnly:false щоб клієнтські сторінки могли читати при потребі
-      httpOnly: false,
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 днів
+      sameSite: 'lax', // важливо: нижній регістр
+      httpOnly: false, // можна читати на клієнті, нам це ок
+      secure: true,
     });
     return res;
   }
 
-  // 4) Перевіряємо кукі
-  const tokenFromCookie = req.cookies.get('admin_token')?.value;
-  if (tokenFromCookie === ADMIN_PASS) {
+  // 2) Читаємо кукі
+  const cookieToken = req.cookies.get('admin_token')?.value || '';
+
+  // 3) Якщо ми на сторінці логіну — пускаємо завжди (щоб уника́ти циклу)
+  if (pathname === '/admin/login') {
     return NextResponse.next();
   }
 
-  // 5) Якщо токена немає/хибний — ведемо на логін
-  const toLogin = new URL(LOGIN_PATH, origin);
-  return NextResponse.redirect(toLogin);
-}
+  // 4) Якщо немає токена — редірект на логін
+  if (!cookieToken) {
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = '/admin/login';
+    loginUrl.search = ''; // без зайвих параметрів
+    return NextResponse.redirect(loginUrl);
+  }
 
-export const config = {
-  // Перехоплюємо ТІЛЬКИ адмін-маршрути
-  matcher: [`${ADMIN_PREFIX}/:path*`],
-};
+  // 5) Інакше все гаразд — пускаємо далі
+  return NextResponse.next();
+}
