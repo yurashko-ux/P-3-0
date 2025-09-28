@@ -1,75 +1,55 @@
 // web/app/api/campaigns/activate/route.ts
-import { NextResponse } from 'next/server';
-import { redis } from '@/lib/redis';
+// Toggle active=true/false for a campaign by id.
+// Body: { id: string, active?: boolean }  // if active omitted, it will be toggled
+// Auth: X-Admin-Token header or admin_token cookie (must equal ADMIN_PASS)
 
+import { NextRequest, NextResponse } from 'next/server';
+import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Ключі як у решті ендпоінтів
-const ITEM_KEY = (id: string | number) => `campaigns:item:${id}`;
-
-function unauthorized(msg = 'Unauthorized: missing or invalid admin token') {
-  return NextResponse.json({ ok: false, error: msg }, { status: 401 });
+function isAdmin(req: NextRequest) {
+  const header = req.headers.get('x-admin-token') || '';
+  const cookie = req.cookies.get('admin_token')?.value || '';
+  const token = header || cookie;
+  return !!token && token === process.env.ADMIN_PASS;
 }
 
-export async function POST(req: Request) {
-  // Перевіряємо адмін-токен (заголовок або cookie)
-  const adminHeader = req.headers.get('x-admin-token') || req.headers.get('X-Admin-Token');
-  const adminCookie = (req.headers.get('cookie') || '')
-    .split(';')
-    .map(s => s.trim())
-    .find(s => s.startsWith('admin_token='))
-    ?.split('=')[1];
-
-  const ADMIN_PASS = process.env.ADMIN_PASS || process.env.ADMIN_TOKEN || '11111';
-  if ((adminHeader || adminCookie) !== ADMIN_PASS) {
-    return unauthorized();
+export async function POST(req: NextRequest) {
+  if (!isAdmin(req)) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
-  let body: any;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: 'Bad JSON body' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const id = (body?.id ?? '').toString().trim();
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'missing id' }, { status: 400 });
+    }
+
+    const itemKey = campaignKeys.ITEM_KEY(id);
+    const raw = await kvRead.getRaw(itemKey);
+    if (!raw) {
+      return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+    }
+
+    let obj: any;
+    try { obj = JSON.parse(raw); } catch {
+      return NextResponse.json({ ok: false, error: 'corrupt item' }, { status: 500 });
+    }
+
+    const nextActive = typeof body.active === 'boolean' ? body.active : !(obj.active !== false);
+    obj.active = nextActive;
+
+    // persist
+    await kvWrite.setRaw(itemKey, JSON.stringify(obj));
+
+    // optional: move id to head of index to reflect recent update
+    try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch { /* ignore */ }
+
+    return NextResponse.json({ ok: true, item: obj });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || 'toggle failed' }, { status: 500 });
   }
-
-  const id = body?.id ?? body?.campaign_id ?? body?.campaignId;
-  if (!id) {
-    return NextResponse.json({ ok: false, error: 'Missing "id"' }, { status: 400 });
-  }
-
-  const desiredActive: boolean | undefined =
-    typeof body?.active === 'boolean' ? body.active : undefined;
-
-  // Читаємо поточний запис
-  const raw = await redis.get(ITEM_KEY(id));
-  if (!raw) {
-    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
-  }
-
-  let item: any;
-  try {
-    item = JSON.parse(raw);
-  } catch {
-    // якщо колись записали рядком — зробимо з нього обʼєкт
-    item = { name: String(raw) };
-  }
-
-  // Обчислюємо нове значення active: або з body, або toggle
-  const nextActive =
-    typeof desiredActive === 'boolean' ? desiredActive : !Boolean(item.active);
-
-  const updated = { ...item, active: nextActive };
-
-  // Зберігаємо назад
-  await redis.set(ITEM_KEY(id), JSON.stringify(updated));
-
-  // УВАГА: тут НІЯКОГО zadd — ми більше не торкаємось sorted set.
-  // Індекс (список id) лишається як є; у більшості UI це ок.
-
-  return NextResponse.json({
-    ok: true,
-    id,
-    active: nextActive,
-    item: updated,
-  }, { headers: { 'Cache-Control': 'no-store' } });
 }
