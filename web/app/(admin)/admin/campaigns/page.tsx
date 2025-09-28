@@ -1,10 +1,11 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component: читає кампанії з двох індексів: 'campaign:index' і 'campaigns:index' (сумісність).
-// Має fallback через write-токен, якщо RO-токен дивиться в інший інстанс.
+// Server Component: безпечне читання кампаній з KV.
+// Будь-які збої у KV -> м'який банер + порожній список, без server-side exception.
 
 import Link from 'next/link';
-import { kvRead, campaignKeys } from '@/lib/kv';
+import { kvRead } from '@/lib/kv';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Rule = { op: 'contains' | 'equals'; value: string };
@@ -36,74 +37,19 @@ function ruleLabel(r?: Rule) {
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
-async function fetchByIndexKeyRO(indexKey: string): Promise<Campaign[]> {
-  const ids = await kvRead.lrange(indexKey, 0, -1);
-  const items: Campaign[] = [];
-  for (const id of ids) {
-    const raw = await kvRead.getRaw(indexKey === campaignKeys.INDEX_KEY ? campaignKeys.ITEM_KEY(id) : `campaign:${id}`);
-    if (!raw) continue;
-    try { items.push(JSON.parse(raw)); } catch {}
-  }
-  return items;
-}
-
-// Fallback через write-токен для будь-якого ключа індексу
-async function fetchByIndexKeyWrite(indexKey: string): Promise<Campaign[]> {
-  const base = process.env.KV_REST_API_URL || '';
-  const token = process.env.KV_REST_API_TOKEN || '';
-  if (!base || !token) return [];
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-  const urlBase = base.replace(/\/$/, '');
-
-  const r1 = await fetch(`${urlBase}/lrange/${encodeURIComponent(indexKey)}/0/-1`, {
-    method: 'GET',
-    headers,
-    cache: 'no-store',
-  });
-  if (!r1.ok) return [];
-  const j1 = await r1.json().catch(() => ({}));
-  const ids: string[] = j1?.result ?? [];
-
-  const items: Campaign[] = [];
-  for (const id of ids) {
-    const itemKey = indexKey === campaignKeys.INDEX_KEY ? campaignKeys.ITEM_KEY(id) : `campaign:${id}`;
-    const r2 = await fetch(`${urlBase}/get/${encodeURIComponent(itemKey)}`, {
-      method: 'GET',
-      headers,
-      cache: 'no-store',
-    });
-    if (!r2.ok) continue;
-    const j2 = await r2.json().catch(() => ({}));
-    const raw: string | null = j2?.result ?? null;
-    if (!raw) continue;
-    try { items.push(JSON.parse(raw)); } catch {}
-  }
-  return items;
-}
-
 export default async function CampaignsPage() {
-  // 1) Пробуємо читати з обох індексів через RO
-  const roA = await fetchByIndexKeyRO(campaignKeys.INDEX_KEY);        // 'campaign:index'
-  const roB = await fetchByIndexKeyRO('campaigns:index');             // старий ключ
+  let items: Campaign[] = [];
+  let errMsg: string | null = null;
 
-  let items = [...roA, ...roB];
-  let usedFallback = false;
-
-  // 2) Якщо порожньо — fallback через write-токен по обох ключах
-  if (items.length === 0) {
-    const fbA = await fetchByIndexKeyWrite(campaignKeys.INDEX_KEY);
-    const fbB = await fetchByIndexKeyWrite('campaigns:index');
-    const fb = [...fbA, ...fbB];
-    if (fb.length > 0) {
-      items = fb;
-      usedFallback = true;
-    }
+  try {
+    const res = await kvRead.listCampaigns();
+    items = Array.isArray(res) ? (res as Campaign[]) : [];
+  } catch (e: any) {
+    errMsg = e?.message || 'KV read failed';
+    // не кидаємо — просто показуємо банер нижче
   }
 
-  // 3) Сортуємо за датою
+  // Сортуємо за датою (нові зверху)
   items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
 
   return (
@@ -126,17 +72,19 @@ export default async function CampaignsPage() {
         </Link>
       </header>
 
-      {usedFallback && (
-        <div style={{
-          marginBottom: 12,
-          padding: '10px 12px',
-          borderRadius: 10,
-          border: '1px solid #e8ebf0',
-          background: '#fff8e6',
-          color: '#6b4e00',
-        }}>
-          Використано fallback через <code>KV_REST_API_TOKEN</code>.
-          Перевірте, що <code>KV_REST_API_READ_ONLY_TOKEN</code> налаштований для того ж KV, що і write-токен.
+      {errMsg && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid #e8ebf0',
+            background: '#fff8e6',
+            color: '#6b4e00',
+          }}
+        >
+          Не вдалось прочитати кампанії з KV: <code>{errMsg}</code>.
+          Перевірте <code>KV_REST_API_URL</code>, токени <code>KV_REST_API_READ_ONLY_TOKEN</code> / <code>KV_REST_API_TOKEN</code>.
         </div>
       )}
 
@@ -166,77 +114,3 @@ export default async function CampaignsPage() {
                   Кампаній поки немає
                 </td>
               </tr>
-            ) : (
-              items.map((c) => (
-                <tr key={c.id} style={{ borderTop: '1px solid #eef0f3' }}>
-                  <td style={td}>{fmtDate(c.created_at)}</td>
-                  <td style={td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span
-                        title={c.active ? 'Активна' : 'Неактивна'}
-                        style={{
-                          width: 10, height: 10, borderRadius: 10,
-                          background: c.active ? '#16a34a' : '#9ca3af',
-                          display: 'inline-block',
-                        }}
-                      />
-                      <strong>{c.name || '—'}</strong>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>ID: {c.id}</div>
-                  </td>
-                  <td style={td}>
-                    <div>v1: {ruleLabel(c.rules?.v1)}</div>
-                    <div>v2: {ruleLabel(c.rules?.v2)}</div>
-                  </td>
-                  <td style={td}>
-                    <div>{c.base_pipeline_name || `#${c.base_pipeline_id ?? '—'}`}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
-                      статус: {c.base_status_name || `#${c.base_status_id ?? '—'}`}
-                    </div>
-                  </td>
-                  <td style={td}>
-                    <div>v1: {c.v1_count ?? 0}</div>
-                    <div>v2: {c.v2_count ?? 0}</div>
-                    <div>exp: {c.exp_count ?? 0}</div>
-                  </td>
-                  <td style={tdRight}>
-                    <span style={pill(c.active ? '#16a34a' : '#9ca3af')}>
-                      {c.active ? 'Активна' : 'Неактивна'}
-                    </span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </main>
-  );
-}
-
-const th: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '14px 16px',
-  fontWeight: 700,
-  color: 'rgba(0,0,0,0.7)',
-  borderBottom: '1px solid #eef0f3',
-};
-const thRight: React.CSSProperties = { ...th, textAlign: 'right' };
-
-const td: React.CSSProperties = {
-  padding: '14px 16px',
-  verticalAlign: 'top',
-};
-const tdRight: React.CSSProperties = { ...td, textAlign: 'right' };
-
-function pill(bg: string): React.CSSProperties {
-  return {
-    display: 'inline-block',
-    padding: '6px 10px',
-    borderRadius: 999,
-    color: '#fff',
-    background: bg,
-    fontSize: 12,
-    fontWeight: 700,
-  };
-}
