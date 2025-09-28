@@ -1,11 +1,12 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component з м'якою обробкою помилок: ніяких необроблених throw.
-// Якщо KV недоступний/некоректні токени — показуємо діагностичний банер, але сторінка не падає.
+// Server Component: Node.js runtime (НЕ Edge), щоб мати доступ до process.env для fallback через write-токен.
+// Без падінь: м'яка обробка помилок + діагностика.
 
 import Link from 'next/link';
 import { kvRead, campaignKeys } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'; // <— критично для доступу до process.env токенів у проді
 
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
@@ -30,27 +31,22 @@ function fmtDate(ts?: number) {
     return d.toLocaleString('uk-UA');
   } catch { return String(ts); }
 }
-
 function ruleLabel(r?: Rule) {
   if (!r || !r.value) return '—';
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
+// Fallback через write-токен (працює лише в Node.js runtime, бо потрібні process.env)
 async function fetchWithWriteToken(indexKey: string): Promise<Campaign[]> {
   const base = process.env.KV_REST_API_URL || '';
   const token = process.env.KV_REST_API_TOKEN || '';
   if (!base || !token) return [];
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   const urlBase = base.replace(/\/$/, '');
 
   try {
     const r1 = await fetch(`${urlBase}/lrange/${encodeURIComponent(indexKey)}/0/-1`, {
-      method: 'GET',
-      headers,
-      cache: 'no-store',
+      method: 'GET', headers, cache: 'no-store',
     });
     if (!r1.ok) return [];
     const j1 = await r1.json().catch(() => ({}));
@@ -76,32 +72,41 @@ async function fetchWithWriteToken(indexKey: string): Promise<Campaign[]> {
 
 export default async function CampaignsPage() {
   let items: Campaign[] = [];
-  let diag: { message: string; hint?: string } | null = null;
   let usedFallback = false;
+  let envDiag: string[] = [];
+
+  const hasBase = !!process.env.KV_REST_API_URL;
+  const hasRO   = !!process.env.KV_REST_API_READ_ONLY_TOKEN;
+  const hasWR   = !!process.env.KV_REST_API_TOKEN;
+
+  if (!hasBase) envDiag.push('KV_REST_API_URL відсутній');
+  if (!hasRO)   envDiag.push('KV_REST_API_READ_ONLY_TOKEN відсутній');
+  if (!hasWR)   envDiag.push('KV_REST_API_TOKEN (write) відсутній');
 
   try {
-    // 1) Основне читання через kvRead (RO → fallback у kv.ts може піти на WRITE)
+    // 1) Основне читання через kvRead (RO → у kv.ts є свій fallback)
     items = await kvRead.listCampaigns();
 
-    // 2) Підтримка застарілого індексу, якщо порожньо
+    // 2) Якщо порожньо — пробуємо обидва можливих індекси через WRITE токен
     if (!items || items.length === 0) {
       const fbA = await fetchWithWriteToken(campaignKeys.INDEX_KEY); // 'campaign:index'
       const fbB = await fetchWithWriteToken('campaigns:index');      // legacy
-      items = [...fbA, ...fbB];
-      if (items.length > 0) usedFallback = true;
+      const fb = [...fbA, ...fbB];
+      if (fb.length > 0) {
+        items = fb;
+        usedFallback = true;
+      }
     }
   } catch (e: any) {
-    // Контрольоване повідомлення замість падіння сторінки
-    diag = {
-      message: e?.message || 'Не вдалося прочитати KV.',
-      hint:
-        'Перевірте KV_REST_API_URL, KV_REST_API_TOKEN (write) і KV_REST_API_READ_ONLY_TOKEN (read-only) у середовищі Vercel.',
-    };
-    // Навіть у разі помилки пробуємо абсолютний fallback через write-токен
+    envDiag.push(`Помилка читання KV: ${e?.message || 'невідомо'}`);
+    // І все одно пробуємо абсолютний fallback:
     const fbA = await fetchWithWriteToken(campaignKeys.INDEX_KEY);
     const fbB = await fetchWithWriteToken('campaigns:index');
-    items = [...fbA, ...fbB];
-    if (items.length > 0) usedFallback = true;
+    const fb = [...fbA, ...fbB];
+    if (fb.length > 0) {
+      items = fb;
+      usedFallback = true;
+    }
   }
 
   // Сортуємо за датою
@@ -127,31 +132,25 @@ export default async function CampaignsPage() {
         </Link>
       </header>
 
-      {diag && (
+      {(usedFallback || envDiag.length > 0) && (
         <div style={{
           marginBottom: 12,
           padding: '12px 14px',
           borderRadius: 10,
-          border: '1px solid #fde68a',
-          background: '#fffbeb',
-          color: '#713f12',
-        }}>
-          <strong>Проблема читання KV:</strong> {diag.message}
-          {diag.hint && <div style={{ marginTop: 6 }}>{diag.hint}</div>}
-        </div>
-      )}
-
-      {usedFallback && (
-        <div style={{
-          marginBottom: 12,
-          padding: '10px 12px',
-          borderRadius: 10,
           border: '1px solid #e8ebf0',
-          background: '#fff8e6',
+          background: usedFallback ? '#fff8e6' : '#fffbeb',
           color: '#6b4e00',
         }}>
-          Використано fallback через <code>KV_REST_API_TOKEN</code>.
-          Вирівняйте <code>KV_REST_API_READ_ONLY_TOKEN</code> з тим самим інстансом KV.
+          {usedFallback ? (
+            <>Список отримано через fallback із <code>KV_REST_API_TOKEN</code>. Перевірте RO-токен, щоб читати без fallback.</>
+          ) : (
+            <>
+              <strong>Діагностика середовища KV:</strong>
+              <ul style={{ margin: '6px 0 0 16px' }}>
+                {envDiag.map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+            </>
+          )}
         </div>
       )}
 
