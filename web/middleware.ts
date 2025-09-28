@@ -8,45 +8,54 @@ export default function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
 
-  // 1) Capture ?token=... → set cookie → redirect на /admin (домашня сторінка адмінки)
-  const qToken = url.searchParams.get('token');
-  if (qToken && qToken.trim()) {
-    const dest = url.clone();
-    dest.pathname = '/admin'; // <— головна адмінки
-    dest.search = '';
+  const ADMIN_PASS = process.env.ADMIN_PASS || '';
 
-    const res = NextResponse.redirect(dest);
-    res.cookies.set('admin_token', qToken.trim(), {
-      path: '/',
-      sameSite: 'lax',
-      httpOnly: false,
-      secure: true,
-      maxAge: 60 * 60 * 24 * 7,
-    });
-    return res;
-  }
-
-  const cookieToken = req.cookies.get('admin_token')?.value || '';
-
-  // 2) /admin/login: якщо вже є cookie — ведемо на /admin (а не на /admin/campaigns)
+  // 1) Якщо це логін-сторінка — дозволяємо, але обробляємо ?token=
   if (pathname === '/admin/login') {
-    if (cookieToken) {
-      const dest = url.clone();
-      dest.pathname = '/admin'; // <— головна адмінки
-      dest.search = '';
-      return NextResponse.redirect(dest);
+    const qToken = url.searchParams.get('token');
+    if (qToken !== null) {
+      const token = (qToken || '').trim();
+
+      // Перевіряємо лише на повний збіг з ADMIN_PASS
+      if (ADMIN_PASS && token === ADMIN_PASS) {
+        const clean = new URL(url);
+        clean.searchParams.delete('token');
+        clean.searchParams.delete('err');
+
+        const res = NextResponse.redirect(clean);
+        res.cookies.set('admin_token', token, {
+          path: '/',
+          sameSite: 'lax',
+          httpOnly: false,
+          secure: true,
+          maxAge: 60 * 60 * 24 * 7, // 7d
+        });
+        return res;
+      } else {
+        const back = new URL(url);
+        back.searchParams.delete('token');
+        back.searchParams.set('err', '1');
+        const res = NextResponse.redirect(back);
+        // на всяк випадок стираємо невірну куку
+        res.cookies.set('admin_token', '', { path: '/', maxAge: 0 });
+        return res;
+      }
     }
+    // просто віддати сторінку логіну
     return NextResponse.next();
   }
 
-  // 3) інші /admin/* сторінки вимагають cookie
-  if (!cookieToken) {
+  // 2) Для всіх інших /admin/* — має бути валідна кука
+  const cookieToken = req.cookies.get('admin_token')?.value || '';
+  const isOk = ADMIN_PASS && cookieToken === ADMIN_PASS;
+
+  if (!isOk) {
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
-    loginUrl.search = '';
+    loginUrl.searchParams.set('err', '1'); // підказка на UI
     return NextResponse.redirect(loginUrl);
   }
 
-  // 4) пропускаємо запит
+  // 3) Все гаразд — пропускаємо запит
   return NextResponse.next();
 }
