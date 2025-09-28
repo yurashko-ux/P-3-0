@@ -8,37 +8,38 @@ export default function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
 
-  // 1) Capture ?token=... → set cookie → redirect to the same path без токена
+  // 1) Capture ?token=... → set cookie → redirect на /admin (домашня сторінка адмінки)
   const qToken = url.searchParams.get('token');
   if (qToken && qToken.trim()) {
-    const clean = url.clone();
-    clean.searchParams.delete('token');
+    const dest = url.clone();
+    dest.pathname = '/admin'; // <— головна адмінки
+    dest.search = '';
 
-    const res = NextResponse.redirect(clean);
+    const res = NextResponse.redirect(dest);
     res.cookies.set('admin_token', qToken.trim(), {
       path: '/',
       sameSite: 'lax',
-      httpOnly: false,       // we want client to read it for server actions if needed
-      secure: true,          // required on vercel.app (https)
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      httpOnly: false,
+      secure: true,
+      maxAge: 60 * 60 * 24 * 7,
     });
     return res;
   }
 
   const cookieToken = req.cookies.get('admin_token')?.value || '';
 
-  // 2) Allow login page, but якщо cookie вже є — веземо одразу в /admin/campaigns
+  // 2) /admin/login: якщо вже є cookie — ведемо на /admin (а не на /admin/campaigns)
   if (pathname === '/admin/login') {
     if (cookieToken) {
       const dest = url.clone();
-      dest.pathname = '/admin/campaigns';
+      dest.pathname = '/admin'; // <— головна адмінки
       dest.search = '';
       return NextResponse.redirect(dest);
     }
     return NextResponse.next();
   }
 
-  // 3) Інші /admin/* шляхи вимагають cookie
+  // 3) інші /admin/* сторінки вимагають cookie
   if (!cookieToken) {
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
@@ -46,6 +47,6 @@ export default function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 4) Пропускаємо запит
+  // 4) пропускаємо запит
   return NextResponse.next();
 }
