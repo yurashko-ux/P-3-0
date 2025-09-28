@@ -1,6 +1,6 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component: читає кампанії з KV. Якщо RO-токен порожній/не той інстанс,
-// виконує fallback через write-токен і показує банер.
+// Server Component: читає кампанії з двох індексів: 'campaign:index' і 'campaigns:index' (сумісність).
+// Має fallback через write-токен, якщо RO-токен дивиться в інший інстанс.
 
 import Link from 'next/link';
 import { kvRead, campaignKeys } from '@/lib/kv';
@@ -36,19 +36,29 @@ function ruleLabel(r?: Rule) {
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
-// --- Fallback через write-токен (на випадок, якщо RO дивиться в інший інстанс) ---
-async function fetchWithWriteToken(): Promise<Campaign[]> {
-  const base = process.env.KV_REST_API_URL || '';
-  const token = process.env.KV_REST_API_TOKEN || ''; // write
-  if (!base || !token) return [];
+async function fetchByIndexKeyRO(indexKey: string): Promise<Campaign[]> {
+  const ids = await kvRead.lrange(indexKey, 0, -1);
+  const items: Campaign[] = [];
+  for (const id of ids) {
+    const raw = await kvRead.getRaw(indexKey === campaignKeys.INDEX_KEY ? campaignKeys.ITEM_KEY(id) : `campaign:${id}`);
+    if (!raw) continue;
+    try { items.push(JSON.parse(raw)); } catch {}
+  }
+  return items;
+}
 
+// Fallback через write-токен для будь-якого ключа індексу
+async function fetchByIndexKeyWrite(indexKey: string): Promise<Campaign[]> {
+  const base = process.env.KV_REST_API_URL || '';
+  const token = process.env.KV_REST_API_TOKEN || '';
+  if (!base || !token) return [];
   const headers = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
   };
+  const urlBase = base.replace(/\/$/, '');
 
-  // 1) lrange index
-  const r1 = await fetch(`${base.replace(/\/$/, '')}/lrange/${encodeURIComponent(campaignKeys.INDEX_KEY)}/0/-1`, {
+  const r1 = await fetch(`${urlBase}/lrange/${encodeURIComponent(indexKey)}/0/-1`, {
     method: 'GET',
     headers,
     cache: 'no-store',
@@ -57,10 +67,10 @@ async function fetchWithWriteToken(): Promise<Campaign[]> {
   const j1 = await r1.json().catch(() => ({}));
   const ids: string[] = j1?.result ?? [];
 
-  // 2) get items
   const items: Campaign[] = [];
   for (const id of ids) {
-    const r2 = await fetch(`${base.replace(/\/$/, '')}/get/${encodeURIComponent(campaignKeys.ITEM_KEY(id))}`, {
+    const itemKey = indexKey === campaignKeys.INDEX_KEY ? campaignKeys.ITEM_KEY(id) : `campaign:${id}`;
+    const r2 = await fetch(`${urlBase}/get/${encodeURIComponent(itemKey)}`, {
       method: 'GET',
       headers,
       cache: 'no-store',
@@ -75,19 +85,25 @@ async function fetchWithWriteToken(): Promise<Campaign[]> {
 }
 
 export default async function CampaignsPage() {
-  let items = (await kvRead.listCampaigns()) as Campaign[];
+  // 1) Пробуємо читати з обох індексів через RO
+  const roA = await fetchByIndexKeyRO(campaignKeys.INDEX_KEY);        // 'campaign:index'
+  const roB = await fetchByIndexKeyRO('campaigns:index');             // старий ключ
+
+  let items = [...roA, ...roB];
   let usedFallback = false;
 
-  if (!items || items.length === 0) {
-    // fallback через write-токен
-    const fb = await fetchWithWriteToken();
+  // 2) Якщо порожньо — fallback через write-токен по обох ключах
+  if (items.length === 0) {
+    const fbA = await fetchByIndexKeyWrite(campaignKeys.INDEX_KEY);
+    const fbB = await fetchByIndexKeyWrite('campaigns:index');
+    const fb = [...fbA, ...fbB];
     if (fb.length > 0) {
       items = fb;
       usedFallback = true;
     }
   }
 
-  // Сортуємо за датою (новіші зверху — ми LPUSH-или індекс)
+  // 3) Сортуємо за датою
   items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
 
   return (
@@ -120,7 +136,7 @@ export default async function CampaignsPage() {
           color: '#6b4e00',
         }}>
           Використано fallback через <code>KV_REST_API_TOKEN</code>.
-          Перевірте значення <code>KV_REST_API_READ_ONLY_TOKEN</code> — ймовірно, воно вказує на інший інстанс KV.
+          Перевірте, що <code>KV_REST_API_READ_ONLY_TOKEN</code> налаштований для того ж KV, що і write-токен.
         </div>
       )}
 
@@ -144,7 +160,7 @@ export default async function CampaignsPage() {
             </tr>
           </thead>
           <tbody>
-            {(!items || items.length === 0) ? (
+            {items.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: 80, textAlign: 'center', color: 'rgba(0,0,0,0.5)', fontSize: 28 }}>
                   Кампаній поки немає
