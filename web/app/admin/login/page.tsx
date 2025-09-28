@@ -1,67 +1,86 @@
 // web/app/admin/login/page.tsx
 'use client';
 
-import { useMemo, useState } from 'react';
-
-function getNextFromLocation(defaultPath = '/admin') {
-  if (typeof window === 'undefined') return defaultPath;
-  try {
-    const sp = new URLSearchParams(window.location.search);
-    return sp.get('next') || defaultPath;
-  } catch {
-    return defaultPath;
-  }
-}
-
-function setCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 30) {
-  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-  document.cookie =
-    `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax;` +
-    (isHttps ? ' Secure;' : '');
-}
+import { useState } from 'react';
 
 export default function AdminLoginPage() {
-  const [pass, setPass] = useState('');
-  const next = useMemo(() => getNextFromLocation('/admin'), []);
+  const [token, setToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function onSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!pass) return;
-
-    try { localStorage.setItem('admin_pass', pass); } catch {}
-    // ставимо ОБИДВА куки для сумісності
-    setCookie('admin_pass', pass); // новий механізм (порівнюється з ADMIN_PASS)
-    setCookie('admin', '1');       // старий механізм (флаг)
-
-    window.location.href = next || '/admin';
+    setError(null);
+    const t = token.trim();
+    if (!t) {
+      setError('Введіть токен адміністратора.');
+      return;
+    }
+    setBusy(true);
+    try {
+      // Додаємо ?token= до URL — middleware поставить cookie і прибере параметр
+      const here = window.location.pathname; // /admin/login
+      window.location.assign(`${here}?token=${encodeURIComponent(t)}`);
+    } catch {
+      setError('Не вдалося виконати вхід.');
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="mx-auto max-w-xl p-6">
-      <div className="rounded-2xl border p-6 bg-white">
-        <h1 className="text-3xl font-semibold mb-6">Логін адміна</h1>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <label className="block">
-            <div className="text-sm mb-2">ADMIN_PASS</div>
-            <input
-              type="password"
-              className="w-full rounded-2xl border px-4 py-3 bg-blue-50"
-              placeholder="Введи ADMIN_PASS"
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
-              autoFocus
-            />
-          </label>
+    <main style={{ maxWidth: 420, margin: '64px auto', padding: 24 }}>
+      <h1 style={{ fontSize: 24, marginBottom: 16 }}>Вхід до адмін-панелі</h1>
+      <p style={{ marginBottom: 12, opacity: 0.8 }}>
+        Введіть адміністративний токен. Після відправки сторінка додасть <code>?token=</code> до URL,
+        middleware збереже cookie <code>admin_token</code> і прибере токен з адреси.
+      </p>
 
-          <button type="submit" className="w-full rounded-2xl bg-blue-600 text-white py-3">
-            Зайти
-          </button>
+      <form onSubmit={handleSubmit}>
+        <label htmlFor="token" style={{ display: 'block', fontSize: 14, marginBottom: 8 }}>
+          Адмін-токен
+        </label>
+        <input
+          id="token"
+          type="password"
+          autoComplete="current-password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="Введіть ADMIN_PASS"
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 8,
+            border: '1px solid #ccc',
+            marginBottom: 12,
+          }}
+        />
+        {error && (
+          <div style={{ color: '#b00020', marginBottom: 12 }}>
+            {error}
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 10,
+            border: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            background: busy ? '#bbb' : '#000',
+            color: '#fff',
+            cursor: busy ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {busy ? 'Вхід…' : 'Увійти'}
+        </button>
+      </form>
 
-          <p className="text-sm text-gray-600">
-            Ставимо куки <code>admin_pass</code> і <code>admin</code> (сумісність). Після логіну повернемося на: <code>{next}</code>
-          </p>
-        </form>
+      <div style={{ marginTop: 16 }}>
+        <small style={{ opacity: 0.7 }}>
+          Підказка: можна також перейти напряму на <code>/admin/login?token=ВАШ_ТОКЕН</code>.
+        </small>
       </div>
-    </div>
+    </main>
   );
 }
