@@ -2,64 +2,107 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-const ADMIN_LOGIN = '/admin/login';
+/**
+ * Правила:
+ * - Доступ до /admin/* і /api/campaigns* тільки з валідною кукою admin_token.
+ * - /admin/login та /api/auth/login пропускаємо без перевірки.
+ * - Якщо в URL є ?token=..., middleware виставляє куку admin_token і редіректить на той самий шлях без query.
+ * - Якщо токен невалідний —:
+ *   - для сторінок /admin/* → редірект на /admin/login
+ *   - для /api/campaigns* → 401 JSON
+ */
+export function middleware(req: NextRequest) {
+  const url = new URL(req.url);
 
-// які шляхи перевіряємо
-export const config = {
-  matcher: ['/admin/:path*', '/api/campaigns/:path*'],
-};
+  // ⚙️ Єдиний "джерело правди" для пароля
+  // (fallback '11111' лишаю для зручності, щоб не зламати ваш поточний флоу)
+  const ADMIN = process.env.ADMIN_PASS || '11111';
 
-export default function middleware(req: NextRequest) {
-  const url = req.nextUrl.clone();
   const pathname = url.pathname;
 
-  const ADMIN = process.env.ADMIN_PASS || '';
-  // зчитуємо токен з кукі
-  let token = req.cookies.get('admin_token')?.value || '';
+  // 1) Шляхи, що не потребують авторизації
+  const publicPaths = new Set<string>([
+    '/admin/login',
+    '/login',
+    '/api/auth/login',
+  ]);
+  if (
+    publicPaths.has(pathname) ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/assets') ||
+    pathname === '/'
+  ) {
+    // але якщо є ?token=..., все одно поставимо куку і приберемо query
+    const maybe = handleQueryToken(req, ADMIN);
+    if (maybe) return maybe;
+    return NextResponse.next();
+  }
 
-  // якщо прийшов ?token= — зберігаємо у куку і прибираємо з URL
+  // 2) Якщо є ?token=..., ставимо куку і редіректимо на чисту URL
+  const tokenized = handleQueryToken(req, ADMIN);
+  if (tokenized) return tokenized;
+
+  // 3) Перевірка куки
+  const token = req.cookies.get('admin_token')?.value || '';
+  const isOk = typeof token === 'string' && token.length > 0 && token === ADMIN;
+
+  // 4) Якщо все добре — пропускаємо
+  if (isOk) {
+    return NextResponse.next();
+  }
+
+  // 5) Інакше — блокуємо за правилами
+  if (pathname.startsWith('/api/campaigns')) {
+    return NextResponse.json(
+      { ok: false, error: 'Unauthorized: missing or invalid admin token' },
+      { status: 401 }
+    );
+  }
+
+  // Будь-які інші admin-сторінки — на логін
+  if (pathname.startsWith('/admin')) {
+    const loginURL = new URL('/admin/login', req.url);
+    return NextResponse.redirect(loginURL);
+  }
+
+  // За замовчуванням — пропускаємо (неадмінські сторінки)
+  return NextResponse.next();
+}
+
+/**
+ * Якщо в URL прийшов ?token=..., виставляємо куку та редіректимо на чистий URL без query.
+ * Повертає NextResponse або null.
+ */
+function handleQueryToken(req: NextRequest, ADMIN: string): NextResponse | null {
+  const url = new URL(req.url);
   const tokenFromQuery = url.searchParams.get('token');
-  if (tokenFromQuery) {
-    token = tokenFromQuery;
-    url.searchParams.delete('token');
-    const res = NextResponse.redirect(url);
-    res.cookies.set('admin_token', tokenFromQuery, {
-      path: '/',
-      httpOnly: false,
-      secure: true,
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7,
-    });
-    return res;
-  }
+  if (!tokenFromQuery) return null;
 
-  // прокидуємо токен у заголовок для бекових роутів (щоб UI не додавав сам)
-  const requestHeaders = new Headers(req.headers);
-  if (token) requestHeaders.set('x-admin-token', token);
-
-  // --- захист адмін-розділу ---
-  const isAdminArea = pathname.startsWith('/admin');
-  const isLoginPage = pathname === ADMIN_LOGIN;
-
-  // якщо на сторінці логіну і вже авторизовані — редірект у /admin
-  if (isAdminArea && isLoginPage && ADMIN && token === ADMIN) {
-    const res = NextResponse.redirect(new URL('/admin', req.url));
-    res.headers.set('x-from-mw', 'login-ok-redirect');
-    return res;
-  }
-
-  // якщо це будь-яка адмін-сторінка (окрім /admin/login) — перевіряємо токен
-  if (isAdminArea && !isLoginPage) {
-    if (!ADMIN) {
-      // щоб не застакатись без пароля у проді — показуємо логін
-      return NextResponse.redirect(new URL(ADMIN_LOGIN, req.url));
-    }
-    if (token !== ADMIN) {
-      return NextResponse.redirect(new URL(ADMIN_LOGIN, req.url));
-    }
-  }
-
-  // передаємо далі, додаючи наші заголовки (з x-admin-token)
-  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  // Ставимо куку (навіть якщо токен не валідний — далі перевірка все одно відсіче)
+  const res = NextResponse.redirect(stripToken(url));
+  res.cookies.set('admin_token', tokenFromQuery, {
+    path: '/',
+    httpOnly: false, // UI може читати і показувати стан
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 7, // 7 днів
+  });
   return res;
 }
+
+/** Прибирає ?token=... з URL */
+function stripToken(url: URL): URL {
+  const clean = new URL(url.toString());
+  clean.searchParams.delete('token');
+  return clean;
+}
+
+// Де працює middleware
+export const config = {
+  matcher: [
+    '/admin/:path*',      // усі адмін-сторінки
+    '/api/campaigns',     // список
+    '/api/campaigns/:path*', // CRUD
+  ],
+};
