@@ -1,8 +1,10 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component (Node.js) з Server Actions: toggle active + delete.
+// FIX: жодних onClick/onSubmit-функцій у Server Component (інакше Next дає Digest).
+// Видалення робимо Server Action + redirect('?deleted=1').
 
 import Link from 'next/link';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
@@ -68,45 +70,48 @@ async function refreshAction() {
   revalidatePath('/admin/campaigns');
 }
 
-// --- Server Action: DELETE campaign (DEL + LREM у всіх індексах) ---
+// --- Server Action: DELETE campaign ---
 async function deleteCampaignAction(formData: FormData) {
   'use server';
   const id = String(formData.get('id') || '').trim();
   if (!id) return;
 
-  // 1) Видаляємо сам елемент
   const base = process.env.KV_REST_API_URL || '';
   const token = process.env.KV_REST_API_TOKEN || '';
-  if (!base || !token) return;
-  const urlBase = base.replace(/\/$/, '');
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if (base && token) {
+    const urlBase = base.replace(/\/$/, '');
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  // DEL campaign:<id>
-  await fetch(`${urlBase}/del/${encodeURIComponent(campaignKeys.ITEM_KEY(id))}`, {
-    method: 'POST',
-    headers,
-    cache: 'no-store',
-  }).catch(() => {});
+    // DEL campaign:<id>
+    try {
+      await fetch(`${urlBase}/del/${encodeURIComponent(campaignKeys.ITEM_KEY(id))}`, {
+        method: 'POST', headers, cache: 'no-store',
+      });
+    } catch {}
 
-  // 2) Прибираємо з основного і legacy індексів: LREM count=0 (прибрати всі входження)
-  const lrem = async (indexKey: string) => {
-    await fetch(`${urlBase}/lrem/${encodeURIComponent(indexKey)}/0`, {
-      method: 'POST',
-      headers,
-      cache: 'no-store',
-      body: JSON.stringify({ value: id }),
-    }).catch(() => {});
-  };
-  await lrem(campaignKeys.INDEX_KEY);
-  await lrem('campaigns:index');
+    // LREM з обох індексів
+    const lrem = async (indexKey: string) => {
+      try {
+        await fetch(`${urlBase}/lrem/${encodeURIComponent(indexKey)}/0`, {
+          method: 'POST', headers, cache: 'no-store',
+          body: JSON.stringify({ value: id }),
+        });
+      } catch {}
+    };
+    await lrem(campaignKeys.INDEX_KEY);
+    await lrem('campaigns:index');
+  }
 
+  // Перемальовуємо і показуємо прапорець успіху
   revalidatePath('/admin/campaigns');
+  redirect('/admin/campaigns?deleted=1');
 }
 
 export default async function CampaignsPage(props: { searchParams?: Record<string, string | string[] | undefined> }) {
   const sp = props.searchParams || {};
-  const created = String(sp.created || '') === '1';
+  const created  = String(sp.created  || '') === '1';
   const migrated = String(sp.migrated || '') === '1';
+  const deleted  = String(sp.deleted  || '') === '1';
 
   let items: Campaign[] = [];
   try {
@@ -161,7 +166,7 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
         </div>
       </header>
 
-      {(created || migrated) && (
+      {(created || migrated || deleted) && (
         <div
           style={{
             marginBottom: 12,
@@ -172,8 +177,9 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
             color: '#065f46',
           }}
         >
-          {created && <div>✅ Кампанію створено. Список оновлено.</div>}
+          {created  && <div>✅ Кампанію створено. Список оновлено.</div>}
           {migrated && <div>✅ Міграцію виконано. Індекс та елементи нормалізовано.</div>}
+          {deleted  && <div>🗑️ Кампанію видалено.</div>}
         </div>
       )}
 
@@ -240,35 +246,14 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <form action={toggleActiveAction}>
                         <input type="hidden" name="id" value={c.id} />
-                        <button
-                          type="submit"
-                          title="Перемкнути активність"
-                          style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}
-                        >
+                        <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}>
                           {c.active ? 'Активна' : 'Неактивна'}
                         </button>
                       </form>
 
-                      <form
-                        action={deleteCampaignAction}
-                        onSubmit={() => {
-                          // просте підтвердження на стороні клієнта
-                          // (Next перетворить це на progressive enhancement; у SSR і так без підтвердження)
-                        }}
-                      >
+                      <form action={deleteCampaignAction}>
                         <input type="hidden" name="id" value={c.id} />
-                        <button
-                          type="submit"
-                          title="Видалити кампанію"
-                          style={dangerBtn}
-                          onClick={(e) => {
-                            // клієнтське підтвердження (не блокує SSR)
-                            // eslint-disable-next-line no-alert
-                            if (typeof window !== 'undefined' && !window.confirm('Видалити кампанію? Дію не можна скасувати.')) {
-                              e.preventDefault();
-                            }
-                          }}
-                        >
+                        <button type="submit" title="Видалити кампанію" style={dangerBtn}>
                           Видалити
                         </button>
                       </form>
