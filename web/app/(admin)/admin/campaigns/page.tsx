@@ -1,12 +1,13 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component: Node.js runtime (НЕ Edge), щоб мати доступ до process.env для fallback через write-токен.
-// Без падінь: м'яка обробка помилок + діагностика.
+// Server Component (Node.js runtime) зі Server Action для toggle активності.
+// Без клієнтського JS та без редіректів на JSON.
 
 import Link from 'next/link';
-import { kvRead, campaignKeys } from '@/lib/kv';
+import { revalidatePath } from 'next/cache';
+import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs'; // <— критично для доступу до process.env токенів у проді
+export const runtime = 'nodejs';
 
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
@@ -24,93 +25,53 @@ type Campaign = {
   exp_count?: number;
 };
 
-function fmtDate(ts?: number) {
+function toTs(idOrTs?: string | number) {
+  if (!idOrTs) return undefined;
+  const n = Number(idOrTs);
+  return Number.isFinite(n) ? n : undefined;
+}
+function fmtDateMaybeFromId(c: Campaign) {
+  const ts = c.created_at ?? toTs(c.id);
   if (!ts) return '—';
   try {
-    const d = new Date(ts);
-    return d.toLocaleString('uk-UA');
-  } catch { return String(ts); }
+    return new Date(ts).toLocaleString('uk-UA');
+  } catch {
+    return '—';
+  }
 }
 function ruleLabel(r?: Rule) {
   if (!r || !r.value) return '—';
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
-// Fallback через write-токен (працює лише в Node.js runtime, бо потрібні process.env)
-async function fetchWithWriteToken(indexKey: string): Promise<Campaign[]> {
-  const base = process.env.KV_REST_API_URL || '';
-  const token = process.env.KV_REST_API_TOKEN || '';
-  if (!base || !token) return [];
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  const urlBase = base.replace(/\/$/, '');
+// --- Server Action: toggle active ---
+async function toggleActiveAction(formData: FormData) {
+  'use server';
+  const id = String(formData.get('id') || '').trim();
+  if (!id) return;
 
-  try {
-    const r1 = await fetch(`${urlBase}/lrange/${encodeURIComponent(indexKey)}/0/-1`, {
-      method: 'GET', headers, cache: 'no-store',
-    });
-    if (!r1.ok) return [];
-    const j1 = await r1.json().catch(() => ({}));
-    const ids: string[] = j1?.result ?? [];
+  const key = campaignKeys.ITEM_KEY(id);
+  const raw = await kvRead.getRaw(key);
+  if (!raw) return;
+  let obj: any;
+  try { obj = JSON.parse(raw); } catch { return; }
+  obj.active = !(obj.active !== false); // toggle
 
-    const items: Campaign[] = [];
-    for (const id of ids) {
-      const itemKey = indexKey === campaignKeys.INDEX_KEY ? campaignKeys.ITEM_KEY(id) : `campaign:${id}`;
-      const r2 = await fetch(`${urlBase}/get/${encodeURIComponent(itemKey)}`, {
-        method: 'GET', headers, cache: 'no-store',
-      });
-      if (!r2.ok) continue;
-      const j2 = await r2.json().catch(() => ({}));
-      const raw: string | null = j2?.result ?? null;
-      if (!raw) continue;
-      try { items.push(JSON.parse(raw)); } catch {}
-    }
-    return items;
-  } catch {
-    return [];
-  }
+  await kvWrite.setRaw(key, JSON.stringify(obj));
+  // необов'язково: підсовуємо id в голову індексу
+  try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch {}
+
+  revalidatePath('/admin/campaigns');
 }
 
 export default async function CampaignsPage() {
   let items: Campaign[] = [];
-  let usedFallback = false;
-  let envDiag: string[] = [];
-
-  const hasBase = !!process.env.KV_REST_API_URL;
-  const hasRO   = !!process.env.KV_REST_API_READ_ONLY_TOKEN;
-  const hasWR   = !!process.env.KV_REST_API_TOKEN;
-
-  if (!hasBase) envDiag.push('KV_REST_API_URL відсутній');
-  if (!hasRO)   envDiag.push('KV_REST_API_READ_ONLY_TOKEN відсутній');
-  if (!hasWR)   envDiag.push('KV_REST_API_TOKEN (write) відсутній');
-
   try {
-    // 1) Основне читання через kvRead (RO → у kv.ts є свій fallback)
     items = await kvRead.listCampaigns();
-
-    // 2) Якщо порожньо — пробуємо обидва можливих індекси через WRITE токен
-    if (!items || items.length === 0) {
-      const fbA = await fetchWithWriteToken(campaignKeys.INDEX_KEY); // 'campaign:index'
-      const fbB = await fetchWithWriteToken('campaigns:index');      // legacy
-      const fb = [...fbA, ...fbB];
-      if (fb.length > 0) {
-        items = fb;
-        usedFallback = true;
-      }
-    }
-  } catch (e: any) {
-    envDiag.push(`Помилка читання KV: ${e?.message || 'невідомо'}`);
-    // І все одно пробуємо абсолютний fallback:
-    const fbA = await fetchWithWriteToken(campaignKeys.INDEX_KEY);
-    const fbB = await fetchWithWriteToken('campaigns:index');
-    const fb = [...fbA, ...fbB];
-    if (fb.length > 0) {
-      items = fb;
-      usedFallback = true;
-    }
+  } catch {
+    items = [];
   }
-
-  // Сортуємо за датою
-  items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+  items.sort((a, b) => (toTs(b.created_at ?? b.id) ?? 0) - (toTs(a.created_at ?? a.id) ?? 0));
 
   return (
     <main style={{ maxWidth: 1200, margin: '36px auto', padding: '0 20px' }}>
@@ -132,28 +93,6 @@ export default async function CampaignsPage() {
         </Link>
       </header>
 
-      {(usedFallback || envDiag.length > 0) && (
-        <div style={{
-          marginBottom: 12,
-          padding: '12px 14px',
-          borderRadius: 10,
-          border: '1px solid #e8ebf0',
-          background: usedFallback ? '#fff8e6' : '#fffbeb',
-          color: '#6b4e00',
-        }}>
-          {usedFallback ? (
-            <>Список отримано через fallback із <code>KV_REST_API_TOKEN</code>. Перевірте RO-токен, щоб читати без fallback.</>
-          ) : (
-            <>
-              <strong>Діагностика середовища KV:</strong>
-              <ul style={{ margin: '6px 0 0 16px' }}>
-                {envDiag.map((t, i) => <li key={i}>{t}</li>)}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
-
       <div
         style={{
           border: '1px solid #e8ebf0',
@@ -174,7 +113,7 @@ export default async function CampaignsPage() {
             </tr>
           </thead>
           <tbody>
-            {(items.length === 0) ? (
+            {items.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: 80, textAlign: 'center', color: 'rgba(0,0,0,0.5)', fontSize: 28 }}>
                   Кампаній поки немає
@@ -183,7 +122,7 @@ export default async function CampaignsPage() {
             ) : (
               items.map((c) => (
                 <tr key={c.id} style={{ borderTop: '1px solid #eef0f3' }}>
-                  <td style={td}>{fmtDate(c.created_at)}</td>
+                  <td style={td}>{fmtDateMaybeFromId(c)}</td>
                   <td style={td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span
@@ -214,9 +153,16 @@ export default async function CampaignsPage() {
                     <div>exp: {c.exp_count ?? 0}</div>
                   </td>
                   <td style={tdRight}>
-                    <span style={pill(c.active ? '#16a34a' : '#9ca3af')}>
-                      {c.active ? 'Активна' : 'Неактивна'}
-                    </span>
+                    <form action={toggleActiveAction}>
+                      <input type="hidden" name="id" value={c.id} />
+                      <button
+                        type="submit"
+                        title="Перемкнути активність"
+                        style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}
+                      >
+                        {c.active ? 'Активна' : 'Неактивна'}
+                      </button>
+                    </form>
                   </td>
                 </tr>
               ))
@@ -243,7 +189,7 @@ const td: React.CSSProperties = {
 };
 const tdRight: React.CSSProperties = { ...td, textAlign: 'right' };
 
-function pill(bg: string): React.CSSProperties {
+function pillBtn(bg: string): React.CSSProperties {
   return {
     display: 'inline-block',
     padding: '6px 10px',
@@ -252,5 +198,7 @@ function pill(bg: string): React.CSSProperties {
     background: bg,
     fontSize: 12,
     fontWeight: 700,
+    border: 'none',
+    cursor: 'pointer',
   };
 }
