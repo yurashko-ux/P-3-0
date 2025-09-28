@@ -1,61 +1,131 @@
 // web/app/(admin)/login/page.tsx
 'use client';
 
-import { useState } from 'react';
+import * as React from 'react';
 
 export default function AdminLoginPage() {
-  const [value, setValue] = useState('');
+  const [password, setPassword] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [info, setInfo] = React.useState<string | null>(null);
 
-  function setCookie(name: string, val: string, days = 30) {
-    const d = new Date();
-    d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000);
-    document.cookie = `${name}=${encodeURIComponent(val)}; path=/; SameSite=Lax; max-age=${days * 24 * 60 * 60}`;
+  // Автологін по ?token=... (не використовуємо useSearchParams, щоб не було проблем зі Suspense)
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) {
+      // при автологіні пробуємо раз і показуємо статус
+      void doLogin(token, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function doLogin(pass: string, isAuto = false) {
+    setLoading(true);
+    setError(null);
+    setInfo(isAuto ? 'Виконую автологін…' : null);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // можна передати або {password}, або {token} — бекенд обробляє обидва
+        body: JSON.stringify({ password: pass }),
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        const data = await safeJson(res);
+        const msg =
+          data?.error ||
+          (res.status === 401
+            ? 'Невірний пароль'
+            : `Помилка авторизації (${res.status})`);
+        throw new Error(msg);
+      }
+
+      // Якщо тут — бекенд виставив cookie admin_token.
+      setInfo('Успішний вхід. Перенаправляю…');
+
+      // Перенаправляємо в адмінку (можна змінити на /admin/campaigns)
+      window.location.replace('/admin');
+    } catch (e: any) {
+      setError(e?.message || 'Щось пішло не так');
+      setInfo(null);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const onSubmit = (e: React.FormEvent) => {
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const token = value.trim();
-    if (!token) return;
-
-    // ставимо основний cookie, який перевіряє middleware
-    setCookie('admin_token', token);
-    // сумісність зі старими перевірками
-    setCookie('admin', token);
-    setCookie('admin_pass', token);
-
-    // редирект в адмінку
-    window.location.href = '/admin';
-  };
+    if (!password.trim()) {
+      setError('Введіть пароль');
+      return;
+    }
+    void doLogin(password.trim(), false);
+  }
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center p-6">
-      <div className="w-full max-w-2xl rounded-2xl border border-gray-200 p-8 shadow-sm bg-white">
-        <h1 className="text-4xl font-bold tracking-tight mb-8">Логін адміна</h1>
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="w-full max-w-md rounded-2xl shadow-lg bg-white p-6 space-y-6">
+        <header className="text-center">
+          <h1 className="text-2xl font-semibold">Адмін вхід</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Введіть ADMIN_PASS для доступу
+          </p>
+        </header>
 
-        <form onSubmit={onSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">ADMIN_PASS</label>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <label className="block">
+            <span className="block text-sm font-medium text-gray-700 mb-1">
+              Пароль
+            </span>
             <input
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Введи ADMIN_PASS"
-              className="w-full rounded-2xl border border-gray-300 bg-gray-50 px-4 py-4 text-lg outline-none focus:ring-2 focus:ring-blue-500"
+              type="password"
+              autoComplete="current-password"
+              className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/20"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Введіть ADMIN_PASS"
+              disabled={loading}
             />
-          </div>
+          </label>
 
           <button
             type="submit"
-            className="w-full rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xl font-semibold py-4 transition-colors"
+            disabled={loading}
+            className="w-full rounded-xl px-4 py-2 bg-black text-white hover:opacity-90 transition disabled:opacity-50"
           >
-            Зайти
+            {loading ? 'Вхід…' : 'Увійти'}
           </button>
-
-          <p className="text-gray-600">
-            Ставимо куки <code>admin_token</code>, <code>admin_pass</code> і <code>admin</code> (сумісність). Після логіну
-            повернемося на: <code>/admin</code>
-          </p>
         </form>
+
+        {info && (
+          <div className="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-xl p-3">
+            {info}
+          </div>
+        )}
+
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">
+            {error}
+          </div>
+        )}
+
+        <div className="text-xs text-gray-500">
+          Підтримується автологін: додайте <code>?token=ВАШ_ADMIN_PASS</code> до
+          URL, і сторінка сама зробить вхід.
+        </div>
       </div>
-    </div>
+    </main>
   );
+}
+
+async function safeJson(res: Response) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
