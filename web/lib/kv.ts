@@ -1,6 +1,6 @@
 // web/lib/kv.ts
 // Thin REST client for Vercel KV (Upstash-compatible) with tolerant token handling.
-// If READ token is missing/invalid, reads automatically fall back to WRITE token.
+// IMPORTANT: Do NOT throw at module import time — only log warnings. Pages can handle errors gracefully.
 
 type Campaign = {
   id: string;
@@ -28,26 +28,32 @@ const KV_REST_API_URL = process.env.KV_REST_API_URL || '';
 const KV_READ_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || '';
 const KV_WRITE_TOKEN = process.env.KV_REST_API_TOKEN || '';
 
-function assertEnv() {
-  if (!KV_REST_API_URL) throw new Error('KV_REST_API_URL is missing');
+// ⚠️ Лише warn на етапі імпорту, без throw — щоб сторінки не падали Digest-ом
+(function warnEnv() {
+  if (!KV_REST_API_URL) console.warn('[kv] KV_REST_API_URL is missing');
   if (!KV_READ_TOKEN && !KV_WRITE_TOKEN) {
-    throw new Error('KV tokens missing: set KV_REST_API_TOKEN (write) and/or KV_REST_API_READ_ONLY_TOKEN (read)');
+    console.warn('[kv] KV tokens missing: set KV_REST_API_TOKEN (write) and/or KV_REST_API_READ_ONLY_TOKEN (read)');
   }
-}
-assertEnv();
+})();
 
-// Choose token: for reads prefer READ, else fall back to WRITE. For writes require WRITE.
-function pickToken(write: boolean): string {
-  if (write) {
-    if (!KV_WRITE_TOKEN) throw new Error('KV write token missing (KV_REST_API_TOKEN)');
-    return KV_WRITE_TOKEN;
-  }
-  return KV_READ_TOKEN || KV_WRITE_TOKEN;
+// Вибір токена: для read — READ або падіння на WRITE; для write — тільки WRITE
+function pickToken(write: boolean): string | null {
+  if (write) return KV_WRITE_TOKEN || null;
+  return KV_READ_TOKEN || KV_WRITE_TOKEN || null;
 }
 
 async function kvFetch(path: string, init: RequestInit, write = false) {
-  const headers = new Headers(init.headers);
   const token = pickToken(write);
+  if (!KV_REST_API_URL) {
+    throw new Error('KV base URL missing (KV_REST_API_URL)');
+  }
+  if (!token) {
+    throw new Error(write
+      ? 'KV write token missing (KV_REST_API_TOKEN)'
+      : 'KV read/write tokens missing (KV_REST_API_READ_ONLY_TOKEN / KV_REST_API_TOKEN)');
+  }
+
+  const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
 
@@ -55,7 +61,6 @@ async function kvFetch(path: string, init: RequestInit, write = false) {
   const res = await fetch(url, { ...init, headers, cache: 'no-store' });
 
   if (!res.ok) {
-    // Surface detailed error for logs; DO NOT throw opaque digest without context
     let body = '';
     try { body = await res.text(); } catch {}
     console.error('KV error', { path, status: res.status, body, write });
@@ -94,26 +99,32 @@ export const kvRead = {
   },
   async listCampaigns(): Promise<Campaign[]> {
     // Primary index
-    let ids = await kvLRange(INDEX_KEY, 0, -1);
+    let ids: string[] = [];
+    try {
+      ids = await kvLRange(INDEX_KEY, 0, -1);
+    } catch (e) {
+      console.warn('[kv] listCampaigns primary index read failed:', (e as Error).message);
+    }
 
-    // Backward-compat: also look at legacy key if primary is empty
+    // Backward-compat: legacy key
     if (!ids || ids.length === 0) {
       try {
-        ids = await kvLRange('campaigns:index', 0, -1);
-      } catch {
+        const legacy = await kvLRange('campaigns:index', 0, -1);
+        if (legacy?.length) ids = legacy;
+      } catch (e) {
         // ignore
       }
     }
 
     const items: Campaign[] = [];
     for (const id of ids) {
-      const raw = await kvGet<string>(ITEM_KEY(id));
-      if (!raw) continue;
       try {
+        const raw = await kvGet<string>(ITEM_KEY(id));
+        if (!raw) continue;
         const parsed = JSON.parse(raw) as Campaign;
         items.push(parsed);
-      } catch {
-        // skip corrupt rows
+      } catch (e) {
+        console.warn('[kv] failed to read/parse item', id, (e as Error).message);
       }
     }
     return items;
@@ -148,14 +159,13 @@ export const kvWrite = {
 
     await kvSet(ITEM_KEY(id), JSON.stringify(full));
     await kvLPush(INDEX_KEY, id);
-    // Also push to legacy index for backward-compat (until міграцію завершимо)
+    // Push to legacy index for backward-compat (поки не завершимо міграцію)
     try { await kvLPush('campaigns:index', id); } catch { /* ignore */ }
 
     return full;
   },
 };
 
-// Small utility exported for reuse in API routes if needed later
 export const campaignKeys = {
   INDEX_KEY,
   ITEM_KEY,
