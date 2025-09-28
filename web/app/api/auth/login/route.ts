@@ -3,80 +3,78 @@ import { NextResponse } from 'next/server';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 
-function setAdminCookies(res: NextResponse, value: string) {
-  // основний
-  res.cookies.set('admin_token', value, {
-    path: '/',
-    sameSite: 'lax',
-    httpOnly: false,
-  });
-  // сумісність зі старими назвами (якщо десь у коді ще читається)
-  res.cookies.set('admin', value, { path: '/', sameSite: 'lax' });
-  res.cookies.set('admin_pass', value, { path: '/', sameSite: 'lax' });
+function ok<T>(data: T, setCookie?: { name: string; value: string }) {
+  const res = NextResponse.json({ ok: true, ...((data as any) || {}) });
+  if (setCookie) {
+    res.cookies.set(setCookie.name, setCookie.value, {
+      path: '/',
+      sameSite: 'lax',
+      httpOnly: false, // дозволяємо читати на клієнті (для простоти UI)
+    });
+  }
+  // вимикаємо кеш
+  res.headers.set('Cache-Control', 'no-store');
+  return res;
 }
 
-// POST: приймаємо { token } або { password }
+function fail(status: number, error: string) {
+  const res = NextResponse.json({ ok: false, error }, { status });
+  res.headers.set('Cache-Control', 'no-store');
+  return res;
+}
+
+// POST /api/auth/login  { password?: string, token?: string }
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({} as any));
-    const token = (body?.token ?? body?.password ?? '').toString();
+    const body = await req.json().catch(() => ({}));
+    const password: string =
+      body?.password ?? body?.token ?? req.headers.get('x-admin-token') ?? '';
 
     if (!ADMIN_PASS) {
-      return NextResponse.json(
-        { ok: false, error: 'ADMIN_PASS is not set on server' },
-        { status: 500 },
-      );
+      return fail(500, 'ADMIN_PASS is not configured in environment');
     }
 
-    if (!token || token !== ADMIN_PASS) {
-      return NextResponse.json(
-        { ok: false, error: 'Unauthorized' },
-        { status: 401 },
-      );
+    if (password !== ADMIN_PASS) {
+      return fail(401, 'Invalid password');
     }
 
-    const res = NextResponse.json({ ok: true });
-    res.headers.set('Cache-Control', 'no-store');
-    setAdminCookies(res, token);
-    return res;
+    return ok({ user: 'admin' }, { name: 'admin_token', value: ADMIN_PASS });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: 'Unexpected error', detail: String(e?.message || e) },
-      { status: 500 },
-    );
+    return fail(500, 'Unexpected error');
   }
 }
 
-// GET: /api/auth/login?token=... — альтернативний спосіб (зручно для тесту)
+// GET /api/auth/login → перевірка статусу
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const token = url.searchParams.get('token') || '';
+  const token =
+    // 1) query ?token=...
+    url.searchParams.get('token') ||
+    // 2) header
+    (typeof Headers !== 'undefined'
+      ? new Headers(req.headers).get('x-admin-token')
+      : null) ||
+    // 3) cookie admin_token=...
+    (() => {
+      const cookie = (req.headers.get('cookie') || '')
+        .split(';')
+        .map((s) => s.trim());
+      const kv = Object.fromEntries(
+        cookie
+          .map((c) => {
+            const i = c.indexOf('=');
+            return i >= 0 ? [c.slice(0, i), decodeURIComponent(c.slice(i + 1))] : [c, ''];
+          })
+      );
+      return kv['admin_token'] || null;
+    })();
 
   if (!ADMIN_PASS) {
-    return NextResponse.json(
-      { ok: false, error: 'ADMIN_PASS is not set on server' },
-      { status: 500 },
-    );
+    return fail(500, 'ADMIN_PASS is not configured in environment');
   }
 
-  if (!token || token !== ADMIN_PASS) {
-    return NextResponse.json(
-      { ok: false, error: 'Unauthorized' },
-      { status: 401 },
-    );
+  if (token === ADMIN_PASS) {
+    return ok({ authed: true });
   }
-
-  const res = NextResponse.json({ ok: true });
-  res.headers.set('Cache-Control', 'no-store');
-  setAdminCookies(res, token);
-  return res;
-}
-
-// DELETE: логаут — прибираємо куки
-export async function DELETE() {
-  const res = NextResponse.json({ ok: true });
-  res.cookies.delete('admin_token');
-  res.cookies.delete('admin');
-  res.cookies.delete('admin_pass');
-  return res;
+  return fail(401, 'Not authenticated');
 }
