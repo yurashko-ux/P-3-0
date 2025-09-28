@@ -1,5 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component (Node.js) з Server Action для toggle + банери успіху/діагностики і кнопка "Оновити".
+// Server Component (Node.js) з Server Actions: toggle active + delete.
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -68,8 +68,42 @@ async function refreshAction() {
   revalidatePath('/admin/campaigns');
 }
 
+// --- Server Action: DELETE campaign (DEL + LREM у всіх індексах) ---
+async function deleteCampaignAction(formData: FormData) {
+  'use server';
+  const id = String(formData.get('id') || '').trim();
+  if (!id) return;
+
+  // 1) Видаляємо сам елемент
+  const base = process.env.KV_REST_API_URL || '';
+  const token = process.env.KV_REST_API_TOKEN || '';
+  if (!base || !token) return;
+  const urlBase = base.replace(/\/$/, '');
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // DEL campaign:<id>
+  await fetch(`${urlBase}/del/${encodeURIComponent(campaignKeys.ITEM_KEY(id))}`, {
+    method: 'POST',
+    headers,
+    cache: 'no-store',
+  }).catch(() => {});
+
+  // 2) Прибираємо з основного і legacy індексів: LREM count=0 (прибрати всі входження)
+  const lrem = async (indexKey: string) => {
+    await fetch(`${urlBase}/lrem/${encodeURIComponent(indexKey)}/0`, {
+      method: 'POST',
+      headers,
+      cache: 'no-store',
+      body: JSON.stringify({ value: id }),
+    }).catch(() => {});
+  };
+  await lrem(campaignKeys.INDEX_KEY);
+  await lrem('campaigns:index');
+
+  revalidatePath('/admin/campaigns');
+}
+
 export default async function CampaignsPage(props: { searchParams?: Record<string, string | string[] | undefined> }) {
-  // банери за query (?created=1, ?migrated=1)
   const sp = props.searchParams || {};
   const created = String(sp.created || '') === '1';
   const migrated = String(sp.migrated || '') === '1';
@@ -203,16 +237,42 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                     <div>exp: {c.exp_count ?? 0}</div>
                   </td>
                   <td style={tdRight}>
-                    <form action={toggleActiveAction}>
-                      <input type="hidden" name="id" value={c.id} />
-                      <button
-                        type="submit"
-                        title="Перемкнути активність"
-                        style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <form action={toggleActiveAction}>
+                        <input type="hidden" name="id" value={c.id} />
+                        <button
+                          type="submit"
+                          title="Перемкнути активність"
+                          style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}
+                        >
+                          {c.active ? 'Активна' : 'Неактивна'}
+                        </button>
+                      </form>
+
+                      <form
+                        action={deleteCampaignAction}
+                        onSubmit={() => {
+                          // просте підтвердження на стороні клієнта
+                          // (Next перетворить це на progressive enhancement; у SSR і так без підтвердження)
+                        }}
                       >
-                        {c.active ? 'Активна' : 'Неактивна'}
-                      </button>
-                    </form>
+                        <input type="hidden" name="id" value={c.id} />
+                        <button
+                          type="submit"
+                          title="Видалити кампанію"
+                          style={dangerBtn}
+                          onClick={(e) => {
+                            // клієнтське підтвердження (не блокує SSR)
+                            // eslint-disable-next-line no-alert
+                            if (typeof window !== 'undefined' && !window.confirm('Видалити кампанію? Дію не можна скасувати.')) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          Видалити
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -252,3 +312,14 @@ function pillBtn(bg: string): React.CSSProperties {
     cursor: 'pointer',
   };
 }
+const dangerBtn: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '6px 10px',
+  borderRadius: 999,
+  color: '#fff',
+  background: '#dc2626',
+  fontSize: 12,
+  fontWeight: 700,
+  border: 'none',
+  cursor: 'pointer',
+};
