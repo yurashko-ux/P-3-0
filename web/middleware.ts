@@ -4,58 +4,94 @@ import { NextResponse } from 'next/server';
 
 export const config = { matcher: ['/admin/:path*'] };
 
+function setAuthCookie(res: NextResponse, value: string) {
+  res.cookies.set('admin_token', value, {
+    path: '/',
+    sameSite: 'lax',
+    httpOnly: false,
+    secure: true,
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+  });
+}
+
 export default function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
+  const ADMIN_PASS = process.env.ADMIN_PASS || ''; // якщо пусто — dev-режим
 
-  const ADMIN_PASS = process.env.ADMIN_PASS || '';
+  // logout: завжди можна викликати
+  if (pathname === '/admin/logout') {
+    const back = url.clone();
+    back.pathname = '/admin/login';
+    back.search = '';
+    const res = NextResponse.redirect(back);
+    res.cookies.set('admin_token', '', { path: '/', maxAge: 0 });
+    return res;
+  }
 
-  // 1) Якщо це логін-сторінка — дозволяємо, але обробляємо ?token=
+  // login-сторінка: показуємо її, але обробляємо ?token=
   if (pathname === '/admin/login') {
     const qToken = url.searchParams.get('token');
     if (qToken !== null) {
       const token = (qToken || '').trim();
 
-      // Перевіряємо лише на повний збіг з ADMIN_PASS
-      if (ADMIN_PASS && token === ADMIN_PASS) {
-        const clean = new URL(url);
-        clean.searchParams.delete('token');
-        clean.searchParams.delete('err');
-
-        const res = NextResponse.redirect(clean);
-        res.cookies.set('admin_token', token, {
-          path: '/',
-          sameSite: 'lax',
-          httpOnly: false,
-          secure: true,
-          maxAge: 60 * 60 * 24 * 7, // 7d
-        });
-        return res;
-      } else {
+      // PROD: потрібен точний збіг
+      if (ADMIN_PASS) {
+        if (token && token === ADMIN_PASS) {
+          const clean = new URL(url);
+          clean.searchParams.delete('token');
+          clean.searchParams.delete('err');
+          const res = NextResponse.redirect(clean);
+          setAuthCookie(res, token);
+          return res;
+        }
         const back = new URL(url);
         back.searchParams.delete('token');
         back.searchParams.set('err', '1');
         const res = NextResponse.redirect(back);
-        // на всяк випадок стираємо невірну куку
         res.cookies.set('admin_token', '', { path: '/', maxAge: 0 });
         return res;
       }
+
+      // DEV: якщо пароля нема в env — приймаємо будь-який непорожній токен
+      if (token) {
+        const clean = new URL(url);
+        clean.searchParams.delete('token');
+        clean.searchParams.delete('err');
+        const res = NextResponse.redirect(clean);
+        setAuthCookie(res, token);
+        return res;
+      }
+
+      // порожній токен
+      const back = new URL(url);
+      back.searchParams.delete('token');
+      back.searchParams.set('err', '1');
+      return NextResponse.redirect(back);
     }
-    // просто віддати сторінку логіну
     return NextResponse.next();
   }
 
-  // 2) Для всіх інших /admin/* — має бути валідна кука
+  // Будь-який інший /admin/*
   const cookieToken = req.cookies.get('admin_token')?.value || '';
-  const isOk = ADMIN_PASS && cookieToken === ADMIN_PASS;
 
-  if (!isOk) {
-    const loginUrl = url.clone();
-    loginUrl.pathname = '/admin/login';
-    loginUrl.searchParams.set('err', '1'); // підказка на UI
-    return NextResponse.redirect(loginUrl);
+  if (ADMIN_PASS) {
+    // PROD: лише точний збіг
+    if (cookieToken !== ADMIN_PASS) {
+      const loginUrl = url.clone();
+      loginUrl.pathname = '/admin/login';
+      loginUrl.searchParams.set('err', '1');
+      return NextResponse.redirect(loginUrl);
+    }
+    return NextResponse.next();
+  } else {
+    // DEV: достатньо, щоб була будь-яка непорожня кука
+    if (!cookieToken) {
+      const loginUrl = url.clone();
+      loginUrl.pathname = '/admin/login';
+      loginUrl.searchParams.set('err', '1');
+      return NextResponse.redirect(loginUrl);
+    }
+    return NextResponse.next();
   }
-
-  // 3) Все гаразд — пропускаємо запит
-  return NextResponse.next();
 }
