@@ -1,9 +1,9 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component: читає кампанії безпосередньо з KV через kvRead (read-only токен).
-// Уникаємо клієнтського fetch та 401 через куки. Також вимикаємо кешування.
+// Server Component: читає кампанії з KV. Якщо RO-токен порожній/не той інстанс,
+// виконує fallback через write-токен і показує банер.
 
-import { kvRead } from '@/lib/kv';
 import Link from 'next/link';
+import { kvRead, campaignKeys } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,12 +36,63 @@ function ruleLabel(r?: Rule) {
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
+// --- Fallback через write-токен (на випадок, якщо RO дивиться в інший інстанс) ---
+async function fetchWithWriteToken(): Promise<Campaign[]> {
+  const base = process.env.KV_REST_API_URL || '';
+  const token = process.env.KV_REST_API_TOKEN || ''; // write
+  if (!base || !token) return [];
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // 1) lrange index
+  const r1 = await fetch(`${base.replace(/\/$/, '')}/lrange/${encodeURIComponent(campaignKeys.INDEX_KEY)}/0/-1`, {
+    method: 'GET',
+    headers,
+    cache: 'no-store',
+  });
+  if (!r1.ok) return [];
+  const j1 = await r1.json().catch(() => ({}));
+  const ids: string[] = j1?.result ?? [];
+
+  // 2) get items
+  const items: Campaign[] = [];
+  for (const id of ids) {
+    const r2 = await fetch(`${base.replace(/\/$/, '')}/get/${encodeURIComponent(campaignKeys.ITEM_KEY(id))}`, {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+    });
+    if (!r2.ok) continue;
+    const j2 = await r2.json().catch(() => ({}));
+    const raw: string | null = j2?.result ?? null;
+    if (!raw) continue;
+    try { items.push(JSON.parse(raw)); } catch {}
+  }
+  return items;
+}
+
 export default async function CampaignsPage() {
-  const items = (await kvRead.listCampaigns()) as Campaign[];
+  let items = (await kvRead.listCampaigns()) as Campaign[];
+  let usedFallback = false;
+
+  if (!items || items.length === 0) {
+    // fallback через write-токен
+    const fb = await fetchWithWriteToken();
+    if (fb.length > 0) {
+      items = fb;
+      usedFallback = true;
+    }
+  }
+
+  // Сортуємо за датою (новіші зверху — ми LPUSH-или індекс)
+  items.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
 
   return (
     <main style={{ maxWidth: 1200, margin: '36px auto', padding: '0 20px' }}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <h1 style={{ fontSize: 40, fontWeight: 800, margin: 0 }}>Кампанії</h1>
         <Link
           href="/admin/campaigns/new"
@@ -58,6 +109,20 @@ export default async function CampaignsPage() {
           + Нова кампанія
         </Link>
       </header>
+
+      {usedFallback && (
+        <div style={{
+          marginBottom: 12,
+          padding: '10px 12px',
+          borderRadius: 10,
+          border: '1px solid #e8ebf0',
+          background: '#fff8e6',
+          color: '#6b4e00',
+        }}>
+          Використано fallback через <code>KV_REST_API_TOKEN</code>.
+          Перевірте значення <code>KV_REST_API_READ_ONLY_TOKEN</code> — ймовірно, воно вказує на інший інстанс KV.
+        </div>
+      )}
 
       <div
         style={{
@@ -79,7 +144,7 @@ export default async function CampaignsPage() {
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {(!items || items.length === 0) ? (
               <tr>
                 <td colSpan={6} style={{ padding: 80, textAlign: 'center', color: 'rgba(0,0,0,0.5)', fontSize: 28 }}>
                   Кампаній поки немає
@@ -119,7 +184,6 @@ export default async function CampaignsPage() {
                     <div>exp: {c.exp_count ?? 0}</div>
                   </td>
                   <td style={tdRight}>
-                    {/* Заглушки дій — пізніше підв'яжемо ендпойнти */}
                     <span style={pill(c.active ? '#16a34a' : '#9ca3af')}>
                       {c.active ? 'Активна' : 'Неактивна'}
                     </span>
