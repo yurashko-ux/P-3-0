@@ -9,7 +9,6 @@ export default function AdminLoginPage() {
   const hasErr = sp.get('err') === '1';
   const [token, setToken] = React.useState('');
 
-  // Форма з method="GET" додає ?token=... в URL — middleware обробляє і ставить куку
   return (
     <main style={{ maxWidth: 720, margin: '48px auto', padding: '0 20px' }}>
       <h1 style={{ fontSize: 42, fontWeight: 900, marginBottom: 16 }}>Логін адміна</h1>
@@ -23,6 +22,7 @@ export default function AdminLoginPage() {
         </div>
       )}
 
+      {/* ВАЖЛИВО: метод GET — додає ?token=..., middleware поставить куку або поверне ?err=1 */}
       <form method="GET" action="" style={{
         border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
         display: 'grid', gap: 16
@@ -33,7 +33,7 @@ export default function AdminLoginPage() {
           </label>
           <input
             id="token"
-            name="token" // <— критично: саме це читає middleware
+            name="token"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Введіть ADMIN_PASS"
