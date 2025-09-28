@@ -1,6 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component (Node.js runtime) зі Server Action для toggle активності.
-// Без клієнтського JS та без редіректів на JSON.
+// Server Component (Node.js) з Server Action для toggle + банери успіху/діагностики і кнопка "Оновити".
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -58,13 +57,23 @@ async function toggleActiveAction(formData: FormData) {
   obj.active = !(obj.active !== false); // toggle
 
   await kvWrite.setRaw(key, JSON.stringify(obj));
-  // необов'язково: підсовуємо id в голову індексу
   try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch {}
 
   revalidatePath('/admin/campaigns');
 }
 
-export default async function CampaignsPage() {
+// --- Server Action: manual refresh (revalidate) ---
+async function refreshAction() {
+  'use server';
+  revalidatePath('/admin/campaigns');
+}
+
+export default async function CampaignsPage(props: { searchParams?: Record<string, string | string[] | undefined> }) {
+  // банери за query (?created=1, ?migrated=1)
+  const sp = props.searchParams || {};
+  const created = String(sp.created || '') === '1';
+  const migrated = String(sp.migrated || '') === '1';
+
   let items: Campaign[] = [];
   try {
     items = await kvRead.listCampaigns();
@@ -76,22 +85,63 @@ export default async function CampaignsPage() {
   return (
     <main style={{ maxWidth: 1200, margin: '36px auto', padding: '0 20px' }}>
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h1 style={{ fontSize: 40, fontWeight: 800, margin: 0 }}>Кампанії</h1>
-        <Link
-          href="/admin/campaigns/new"
+        <div>
+          <h1 style={{ fontSize: 40, fontWeight: 800, margin: 0 }}>Кампанії</h1>
+          <div style={{ color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>
+            Всього: <strong>{items.length}</strong>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <form action={refreshAction}>
+            <button
+              type="submit"
+              title="Оновити список"
+              style={{
+                textDecoration: 'none',
+                background: '#f3f4f6',
+                color: '#111827',
+                padding: '10px 14px',
+                borderRadius: 12,
+                fontWeight: 700,
+                border: '1px solid #e5e7eb',
+                cursor: 'pointer',
+              }}
+            >
+              Оновити
+            </button>
+          </form>
+          <Link
+            href="/admin/campaigns/new"
+            style={{
+              textDecoration: 'none',
+              background: '#2a6df5',
+              color: '#fff',
+              padding: '10px 14px',
+              borderRadius: 12,
+              fontWeight: 700,
+              boxShadow: '0 8px 20px rgba(42,109,245,0.35)',
+            }}
+          >
+            + Нова кампанія
+          </Link>
+        </div>
+      </header>
+
+      {(created || migrated) && (
+        <div
           style={{
-            textDecoration: 'none',
-            background: '#2a6df5',
-            color: '#fff',
-            padding: '10px 14px',
-            borderRadius: 12,
-            fontWeight: 700,
-            boxShadow: '0 8px 20px rgba(42,109,245,0.35)',
+            marginBottom: 12,
+            padding: '12px 14px',
+            borderRadius: 10,
+            border: '1px solid #c7f3cd',
+            background: '#ecfdf5',
+            color: '#065f46',
           }}
         >
-          + Нова кампанія
-        </Link>
-      </header>
+          {created && <div>✅ Кампанію створено. Список оновлено.</div>}
+          {migrated && <div>✅ Міграцію виконано. Індекс та елементи нормалізовано.</div>}
+        </div>
+      )}
 
       <div
         style={{
@@ -133,7 +183,7 @@ export default async function CampaignsPage() {
                           display: 'inline-block',
                         }}
                       />
-                      <strong>{c.name || '—'}</strong>
+                      <strong>{c.name || 'UI-created'}</strong>
                     </div>
                     <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>ID: {c.id}</div>
                   </td>
