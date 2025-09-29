@@ -1,13 +1,8 @@
 // web/app/(admin)/admin/campaigns/page.tsx
 import React from 'react';
+import { cookies } from 'next/headers';
 
-type Rule = {
-  op: 'equals' | 'contains';
-  value: string;
-  pipeline_id?: number;
-  status_id?: number;
-};
-
+type Rule = { op: 'equals' | 'contains'; value: string; pipeline_id?: number; status_id?: number };
 type Campaign = {
   id: string;
   name: string;
@@ -25,36 +20,32 @@ type Campaign = {
 };
 
 async function fetchCampaigns(): Promise<Campaign[]> {
+  const token =
+    cookies().get('admin_token')?.value || cookies().get('admin_pass')?.value || '';
   try {
     const res = await fetch('/api/campaigns', {
       cache: 'no-store',
-      // cookies з адмін-токеном автоматично передаються у RSC при відносному URL
+      headers: token ? { 'X-Admin-Token': token } : {},
+      // відносний URL => куки все одно поїдуть; заголовок — страховка від 401
     });
     if (!res.ok) return [];
-    const j = (await res.json().catch(() => ({}))) as any;
-    const items = (j?.items ?? []) as Campaign[];
-    return items.filter((c) => !!c && typeof c.id === 'string');
+    const data = (await res.json().catch(() => ({}))) as any;
+    return (data?.items ?? []) as Campaign[];
   } catch {
     return [];
   }
 }
 
-function CellLabel({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 12, color: '#6b7280' }}>{children}</div>;
-}
 function Mono({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      style={{
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      }}
-    >
+    <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace' }}>
       {children}
     </span>
   );
 }
-
+function CellLabel({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 12, color: '#6b7280' }}>{children}</div>;
+}
 function RuleBadge({ label, r }: { label: string; r?: Rule }) {
   if (!r) return null;
   return (
@@ -79,37 +70,22 @@ function RuleBadge({ label, r }: { label: string; r?: Rule }) {
 export const dynamic = 'force-dynamic';
 
 export default async function AdminCampaignsPage() {
-  const campaigns = await fetchCampaigns();
+  const items = await fetchCampaigns();
 
   return (
     <div style={{ padding: 24 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-        }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0 }}>Кампанії</h1>
         <a
           href="/admin/campaigns/new"
-          style={{
-            textDecoration: 'none',
-            background: '#2a6df5',
-            color: '#fff',
-            padding: '10px 14px',
-            borderRadius: 12,
-            fontWeight: 800,
-            boxShadow: '0 10px 22px rgba(42,109,245,0.28)',
-          }}
+          style={{ textDecoration: 'none', background: '#2a6df5', color: '#fff', padding: '10px 14px', borderRadius: 12, fontWeight: 800, boxShadow: '0 10px 22px rgba(42,109,245,0.28)' }}
         >
           + Нова кампанія
         </a>
       </div>
 
       <div style={{ marginBottom: 16, color: '#6b7280' }}>
-        Всього: <b>{campaigns.length}</b>
+        Всього: <b>{items.length}</b>
       </div>
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, overflow: 'hidden' }}>
@@ -117,7 +93,6 @@ export default async function AdminCampaignsPage() {
           style={{
             display: 'grid',
             gridTemplateColumns: '160px 1fr 1fr 1fr 160px',
-            gap: 0,
             padding: '10px 12px',
             background: '#f9fafb',
             fontWeight: 700,
@@ -130,18 +105,15 @@ export default async function AdminCampaignsPage() {
           <div>Лічильник</div>
         </div>
 
-        {campaigns.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
-            Кампаній поки немає
-          </div>
+        {items.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>Кампаній поки немає</div>
         ) : (
-          campaigns.map((c) => (
+          items.map((c) => (
             <div
               key={c.id}
               style={{
                 display: 'grid',
                 gridTemplateColumns: '160px 1fr 1fr 1fr 160px',
-                gap: 0,
                 padding: '12px',
                 borderTop: '1px solid #eef2f7',
                 alignItems: 'start',
@@ -162,7 +134,7 @@ export default async function AdminCampaignsPage() {
               {/* Назва */}
               <div>
                 <div style={{ fontWeight: 800 }}>{c.name || '—'}</div>
-                <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ marginTop: 6 }}>
                   <span
                     style={{
                       display: 'inline-block',
@@ -179,7 +151,7 @@ export default async function AdminCampaignsPage() {
                 </div>
               </div>
 
-              {/* Сутність (правила) */}
+              {/* Сутність */}
               <div style={{ display: 'grid', gap: 6 }}>
                 <RuleBadge label="v1" r={c.rules?.v1} />
                 <RuleBadge label="v2" r={c.rules?.v2} />
@@ -218,21 +190,11 @@ export default async function AdminCampaignsPage() {
 
               {/* Лічильники + дії */}
               <div>
-                <div>
-                  v1: <b>{c.v1_count ?? 0}</b>
-                </div>
-                <div>
-                  v2: <b>{c.v2_count ?? 0}</b>
-                </div>
-                <div>
-                  exp: <b>{c.exp_count ?? 0}</b>
-                </div>
+                <div>v1: <b>{c.v1_count ?? 0}</b></div>
+                <div>v2: <b>{c.v2_count ?? 0}</b></div>
+                <div>exp: <b>{c.exp_count ?? 0}</b></div>
 
-                <form
-                  action={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`}
-                  method="post"
-                  style={{ marginTop: 10 }}
-                >
+                <form action={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`} method="post" style={{ marginTop: 10 }}>
                   <button
                     type="submit"
                     style={{
