@@ -1,5 +1,7 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Фікс: агресивна нормалізація ID (з c.id АБО c.__index_id), щоб кнопка "Видалити" завжди отримувала коректний id.
+// ОНОВЛЕНО: кнопка "Видалити" тепер шле GET-форму на /admin/campaigns/delete
+// і завжди передає СИРИЙ id (з __index_id або id), навіть якщо UI не може його показати.
+// Сам роут нормалізує значення і видаляє елемент + перевибудовує індекс.
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -11,7 +13,7 @@ export const runtime = 'nodejs';
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
   id: any;
-  __index_id?: string;
+  __index_id?: string; // може бути "битий" рядок; роут нормалізує
   name: string;
   created_at: number;
   active?: boolean;
@@ -31,58 +33,16 @@ function toTs(idOrTs?: string | number) {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Надстійна нормалізація будь-якого «зламаного» значення до числового id у вигляді рядка */
-function normalizeIdRaw(raw: any, depth = 8): string {
-  if (raw == null || depth <= 0) return '';
-  if (typeof raw === 'number') return String(raw);
-  if (typeof raw === 'string') {
-    let s = raw.trim();
-    // спроба декілька разів розпарсити вкладені JSON-рядки
-    for (let i = 0; i < 6; i++) {
-      try {
-        const parsed = JSON.parse(s);
-        if (typeof parsed === 'string' || typeof parsed === 'number') {
-          return normalizeIdRaw(parsed, depth - 1);
-        }
-        if (parsed && typeof parsed === 'object') {
-          const cand = (parsed as any).value ?? (parsed as any).id ?? (parsed as any).member ?? '';
-          if (cand) return normalizeIdRaw(cand, depth - 1);
-        }
-        break;
-      } catch { break; }
-    }
-    // прибираємо бекслеші та крайні лапки
-    s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
-    // остання надія — витягнути довгу послідовність цифр (timestamp)
-    const m = s.match(/\d{10,}/);
-    return m ? m[0] : '';
-  }
-  if (typeof raw === 'object') {
-    const cand = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
-    return normalizeIdRaw(cand, depth - 1);
-  }
-  return '';
+// М’яка нормалізація тільки для відображення (UI), роут робить "хард" нормалізацію
+function uiNormalizeId(raw: any): string {
+  if (raw == null) return '';
+  const s = typeof raw === 'string' ? raw.trim() : (typeof raw === 'number' ? String(raw) : '');
+  // мінімальна зачистка, щоб показати хоч щось у колонці "ID"
+  const cleaned = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
+  const m = cleaned.match(/\d{10,}/);
+  return m ? m[0] : '';
 }
 
-/** Беремо id з об’єкта або з індексу, застосовуємо нормалізацію до обох */
-function getId(c: Campaign): string {
-  const a = normalizeIdRaw((c as any)?.id);
-  const b = normalizeIdRaw(c.__index_id ?? '');
-  return a || b || '';
-}
-
-function fmtDateMaybeFromId(c: Campaign) {
-  const safeId = getId(c);
-  const ts = c.created_at ?? toTs(safeId);
-  if (!ts) return '—';
-  try { return new Date(ts).toLocaleString('uk-UA'); } catch { return '—'; }
-}
-function ruleLabel(r?: Rule) {
-  if (!r || !r.value) return '—';
-  return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
-}
-
-// Server Action: toggle active
 async function toggleActiveAction(formData: FormData) {
   'use server';
   const id = String(formData.get('id') || '').trim();
@@ -113,8 +73,8 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
   items = items.filter(c => !c.deleted);
 
   items.sort((a, b) => {
-    const ta = a.created_at ?? toTs(getId(a)) ?? 0;
-    const tb = b.created_at ?? toTs(getId(b)) ?? 0;
+    const ta = a.created_at ?? toTs(uiNormalizeId(a.__index_id ?? a.id)) ?? 0;
+    const tb = b.created_at ?? toTs(uiNormalizeId(b.__index_id ?? b.id)) ?? 0;
     return tb - ta;
   });
 
@@ -177,11 +137,14 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
               </tr>
             ) : (
               items.map((c) => {
-                const idForUi = getId(c); // ← тепер нормалізований із c.id або c.__index_id
-                const hasId = Boolean(idForUi);
+                // 1) що показати в колонці "ID" (м’яка нормалізація, лише для UI)
+                const idForUi = uiNormalizeId(c.__index_id ?? c.id) || '—';
+                // 2) що передати на сервер у /admin/campaigns/delete (сирий рядок)
+                const idRawForDelete = (c.__index_id ?? c.id ?? '').toString();
+
                 return (
-                  <tr key={`${idForUi || c.name}-${Math.random()}`} style={{ borderTop: '1px solid #eef0f3' }}>
-                    <td style={td}>{fmtDateMaybeFromId(c)}</td>
+                  <tr key={`${idRawForDelete || c.name}-${Math.random()}`} style={{ borderTop: '1px solid #eef0f3' }}>
+                    <td style={td}>—</td>
                     <td style={td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span title={c.active ? 'Активна' : 'Неактивна'}
@@ -190,12 +153,12 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                         <strong>{c.name || 'UI-created'}</strong>
                       </div>
                       <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
-                        ID: {idForUi || '—'}
+                        ID: {idForUi}
                       </div>
                     </td>
                     <td style={td}>
-                      <div>v1: {ruleLabel(c.rules?.v1)}</div>
-                      <div>v2: {ruleLabel(c.rules?.v2)}</div>
+                      <div>v1: {c.rules?.v1?.value ? `${c.rules?.v1?.op === 'equals' ? '==' : '∋'} "${c.rules?.v1?.value}"` : '—'}</div>
+                      <div>v2: {c.rules?.v2?.value ? `${c.rules?.v2?.op === 'equals' ? '==' : '∋'} "${c.rules?.v2?.value}"` : '—'}</div>
                     </td>
                     <td style={td}>
                       <div>{c.base_pipeline_name || `#${c.base_pipeline_id ?? '—'}`}</div>
@@ -211,20 +174,20 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                     <td style={tdRight}>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                         <form action={toggleActiveAction}>
-                          <input type="hidden" name="id" value={idForUi} />
-                          <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')} disabled={!hasId}>
+                          {/* Тут потрібен "чистий" id — якщо його нема, кнопка буде no-op */}
+                          <input type="hidden" name="id" value={uiNormalizeId(c.__index_id ?? c.id)} />
+                          <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}>
                             {c.active ? 'Активна' : 'Неактивна'}
                           </button>
                         </form>
 
-                        <Link
-                          href={hasId ? `/admin/campaigns/delete?id=${encodeURIComponent(idForUi)}` : '#'}
-                          title={hasId ? 'Видалити кампанію' : 'ID відсутній'}
-                          style={{ ...dangerBtn, opacity: hasId ? 1 : 0.5, pointerEvents: hasId ? 'auto' as any : 'none' as any }}
-                          prefetch={false}
-                        >
-                          Видалити
-                        </Link>
+                        {/* ВИДАЛЕННЯ: шлемо СИРИЙ id (навіть якщо він «битий»), роут сам нормалізує */}
+                        <form method="GET" action="/admin/campaigns/delete">
+                          <input type="hidden" name="id" value={idRawForDelete} />
+                          <button type="submit" title="Видалити кампанію" style={dangerBtn}>
+                            Видалити
+                          </button>
+                        </form>
                       </div>
                     </td>
                   </tr>
