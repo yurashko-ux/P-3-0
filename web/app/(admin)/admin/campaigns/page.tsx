@@ -1,5 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Фікс: якщо нормалізований c.id порожній — використовуємо c.__index_id для відображення і кнопки "Видалити".
+// Фікс: агресивна нормалізація ID (з c.id АБО c.__index_id), щоб кнопка "Видалити" завжди отримувала коректний id.
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
   id: any;
-  __index_id?: string; // ← приходить із listCampaigns()
+  __index_id?: string;
   name: string;
   created_at: number;
   active?: boolean;
@@ -31,11 +31,44 @@ function toTs(idOrTs?: string | number) {
   return Number.isFinite(n) ? n : undefined;
 }
 
-// — простіша нормалізація: беремо id або __index_id
+/** Надстійна нормалізація будь-якого «зламаного» значення до числового id у вигляді рядка */
+function normalizeIdRaw(raw: any, depth = 8): string {
+  if (raw == null || depth <= 0) return '';
+  if (typeof raw === 'number') return String(raw);
+  if (typeof raw === 'string') {
+    let s = raw.trim();
+    // спроба декілька разів розпарсити вкладені JSON-рядки
+    for (let i = 0; i < 6; i++) {
+      try {
+        const parsed = JSON.parse(s);
+        if (typeof parsed === 'string' || typeof parsed === 'number') {
+          return normalizeIdRaw(parsed, depth - 1);
+        }
+        if (parsed && typeof parsed === 'object') {
+          const cand = (parsed as any).value ?? (parsed as any).id ?? (parsed as any).member ?? '';
+          if (cand) return normalizeIdRaw(cand, depth - 1);
+        }
+        break;
+      } catch { break; }
+    }
+    // прибираємо бекслеші та крайні лапки
+    s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
+    // остання надія — витягнути довгу послідовність цифр (timestamp)
+    const m = s.match(/\d{10,}/);
+    return m ? m[0] : '';
+  }
+  if (typeof raw === 'object') {
+    const cand = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
+    return normalizeIdRaw(cand, depth - 1);
+  }
+  return '';
+}
+
+/** Беремо id з об’єкта або з індексу, застосовуємо нормалізацію до обох */
 function getId(c: Campaign): string {
-  const raw = (c as any)?.id;
-  const s = typeof raw === 'string' ? raw.trim() : (typeof raw === 'number' ? String(raw) : '');
-  return s || (c.__index_id ?? '');
+  const a = normalizeIdRaw((c as any)?.id);
+  const b = normalizeIdRaw(c.__index_id ?? '');
+  return a || b || '';
 }
 
 function fmtDateMaybeFromId(c: Campaign) {
@@ -144,7 +177,7 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
               </tr>
             ) : (
               items.map((c) => {
-                const idForUi = getId(c);             // ← використовує id або __index_id
+                const idForUi = getId(c); // ← тепер нормалізований із c.id або c.__index_id
                 const hasId = Boolean(idForUi);
                 return (
                   <tr key={`${idForUi || c.name}-${Math.random()}`} style={{ borderTop: '1px solid #eef0f3' }}>
