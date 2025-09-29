@@ -1,5 +1,4 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-import 'server-only';
 import React from 'react';
 
 type Rule = {
@@ -26,26 +25,34 @@ type Campaign = {
 };
 
 async function fetchCampaigns(): Promise<Campaign[]> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ''}/api/campaigns`, {
-    cache: 'no-store',
-    headers: {
-      // якщо стоїть кука — вистачить, але на випадок RSC:
-      'X-Admin-Token': process.env.ADMIN_PASS ?? '',
-    },
-  });
-  if (!res.ok) return [];
-  const j = await res.json().catch(() => ({}));
-  const items = (j?.items ?? []) as Campaign[];
-
-  // захист від кривого індексу: беремо id ТІЛЬКИ з item.id
-  return items.filter((c) => !!c && typeof c.id === 'string');
+  try {
+    const res = await fetch('/api/campaigns', {
+      cache: 'no-store',
+      // cookies з адмін-токеном автоматично передаються у RSC при відносному URL
+    });
+    if (!res.ok) return [];
+    const j = (await res.json().catch(() => ({}))) as any;
+    const items = (j?.items ?? []) as Campaign[];
+    return items.filter((c) => !!c && typeof c.id === 'string');
+  } catch {
+    return [];
+  }
 }
 
 function CellLabel({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 12, color: '#6b7280' }}>{children}</div>;
 }
 function Mono({ children }: { children: React.ReactNode }) {
-  return <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}>{children}</span>;
+  return (
+    <span
+      style={{
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+      }}
+    >
+      {children}
+    </span>
+  );
 }
 
 function RuleBadge({ label, r }: { label: string; r?: Rule }) {
@@ -55,8 +62,16 @@ function RuleBadge({ label, r }: { label: string; r?: Rule }) {
       <span style={{ fontWeight: 700 }}>{label}:</span>
       <span>{r.op}</span>
       <Mono>“{r.value}”</Mono>
-      {r.pipeline_id ? <span>→ pipe <Mono>#{r.pipeline_id}</Mono></span> : null}
-      {r.status_id ? <span>status <Mono>#{r.status_id}</Mono></span> : null}
+      {r.pipeline_id ? (
+        <span>
+          → pipe <Mono>#{r.pipeline_id}</Mono>
+        </span>
+      ) : null}
+      {r.status_id ? (
+        <span>
+          status <Mono>#{r.status_id}</Mono>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -68,7 +83,14 @@ export default async function AdminCampaignsPage() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 16,
+        }}
+      >
         <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0 }}>Кампанії</h1>
         <a
           href="/admin/campaigns/new"
@@ -86,7 +108,9 @@ export default async function AdminCampaignsPage() {
         </a>
       </div>
 
-      <div style={{ marginBottom: 16, color: '#6b7280' }}>Всього: <b>{campaigns.length}</b></div>
+      <div style={{ marginBottom: 16, color: '#6b7280' }}>
+        Всього: <b>{campaigns.length}</b>
+      </div>
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, overflow: 'hidden' }}>
         <div
@@ -107,7 +131,9 @@ export default async function AdminCampaignsPage() {
         </div>
 
         {campaigns.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>Кампаній поки немає</div>
+          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
+            Кампаній поки немає
+          </div>
         ) : (
           campaigns.map((c) => (
             <div
@@ -161,8 +187,16 @@ export default async function AdminCampaignsPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700 }}>exp:</span>
                     <span>{c.exp.days} дн.</span>
-                    {c.exp.pipeline_id ? <span>→ pipe <Mono>#{c.exp.pipeline_id}</Mono></span> : null}
-                    {c.exp.status_id ? <span>status <Mono>#{c.exp.status_id}</Mono></span> : null}
+                    {c.exp.pipeline_id ? (
+                      <span>
+                        → pipe <Mono>#{c.exp.pipeline_id}</Mono>
+                      </span>
+                    ) : null}
+                    {c.exp.status_id ? (
+                      <span>
+                        status <Mono>#{c.exp.status_id}</Mono>
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -194,7 +228,11 @@ export default async function AdminCampaignsPage() {
                   exp: <b>{c.exp_count ?? 0}</b>
                 </div>
 
-                <form action={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`} method="post" style={{ marginTop: 10 }}>
+                <form
+                  action={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`}
+                  method="post"
+                  style={{ marginTop: 10 }}
+                >
                   <button
                     type="submit"
                     style={{
