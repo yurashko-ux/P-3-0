@@ -1,12 +1,13 @@
 // web/lib/kv.ts
-// KV helper: гарантуємо, що listCampaigns() повертає об'єкти з полем id (і created_at, якщо його можна взяти з id).
+// KV helper: безпечні обгортки + нормалізація campaign.id/created_at,
+// а також createCampaign() для /api/campaigns.
 
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
   ITEM_KEY: (id: string) => `campaign:${id}`,
 };
 
-// --- низькорівневі REST-обгортки (залиште ваші існуючі; нижче — безпечна реалізація) ---
+// ====== low-level REST helpers ======
 const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
 const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
 const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
@@ -36,15 +37,22 @@ async function kvLRange(key: string, start = 0, stop = -1) {
   const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
   if (!res) return [] as string[];
   try {
-    // Vercel KV REST повертає [{value:"id"}] або ["id"], підтримуємо обидва
+    // Підтримуємо формати ["id"] та [{value:"id"}]
     const arr = await res.json();
     return arr.map((x: any) => (typeof x === 'string' ? x : x?.value)).filter(Boolean);
   } catch {
     return [];
   }
 }
+async function kvLPush(key: string, value: string) {
+  if (!BASE || !WR_TOKEN) return;
+  await rest(`lpush/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify({ value }),
+  }).catch(() => {});
+}
 
-// --- публічні API для коду застосунку ---
+// ====== public API ======
 export const kvRead = {
   async getRaw(key: string) {
     return kvGetRaw(key);
@@ -53,7 +61,7 @@ export const kvRead = {
     return kvLRange(key, start, stop);
   },
 
-  // ВАЖЛИВО: гарантуємо id/created_at
+  // Повертаємо кампанії гарантовано з id та created_at (якщо можливо витягнути з id)
   async listCampaigns<T extends Record<string, any> = any>(): Promise<T[]> {
     const ids = (await kvLRange(campaignKeys.INDEX_KEY, 0, -1)) as string[];
     const out: T[] = [];
@@ -63,16 +71,14 @@ export const kvRead = {
       if (!raw) continue;
       try {
         const obj = JSON.parse(raw);
-        // якщо в JSON немає id — підставляємо його з індексу
         if (!obj.id) obj.id = id;
-        // якщо немає created_at — пробуємо взяти з id (timestamp)
         if (!obj.created_at) {
           const ts = Number(id);
           if (Number.isFinite(ts)) obj.created_at = ts;
         }
         out.push(obj);
       } catch {
-        // пропускаємо биті JSON
+        // ignore broken json
       }
     }
     return out;
@@ -84,12 +90,41 @@ export const kvWrite = {
     return kvSetRaw(key, value);
   },
   async lpush(key: string, value: string) {
-    if (!BASE || !WR_TOKEN) return;
-    await rest(`lpush/${encodeURIComponent(key)}`, {
-      method: 'POST',
-      body: JSON.stringify({ value }),
-    }).catch(() => {});
+    return kvLPush(key, value);
+  },
+
+  // Створення кампанії: запис елемента + додавання id у LIST-індекс
+  async createCampaign(input: any) {
+    const id = String(input?.id || Date.now());
+    const created_at =
+      typeof input?.created_at === 'number'
+        ? input.created_at
+        : (Number(id) && Number.isFinite(Number(id)) ? Number(id) : Date.now());
+
+    const item = {
+      id,
+      name: input?.name || 'UI-created',
+      created_at,
+      active: Boolean(input?.active ?? false),
+
+      base_pipeline_id: input?.base_pipeline_id ?? null,
+      base_status_id: input?.base_status_id ?? null,
+      base_pipeline_name: input?.base_pipeline_name ?? null,
+      base_status_name: input?.base_status_name ?? null,
+
+      rules: input?.rules || {},
+      exp: input?.exp || {},
+
+      v1_count: Number(input?.v1_count ?? 0),
+      v2_count: Number(input?.v2_count ?? 0),
+      exp_count: Number(input?.exp_count ?? 0),
+
+      deleted: false,
+    };
+
+    await kvSetRaw(campaignKeys.ITEM_KEY(id), JSON.stringify(item));
+    await kvLPush(campaignKeys.INDEX_KEY, id);
+
+    return item;
   },
 };
-
-export type { };
