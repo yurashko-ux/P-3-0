@@ -1,5 +1,6 @@
 // web/lib/kv.ts
-// — оновлено kvLRange: коректно парсить і масив, і {result:[]}, і {data:[]}, і рядок.
+// ОНОВЛЕНО: під час listCampaigns() насильно нормалізуємо obj.id,
+// навіть якщо в JSON лежить екранований/вкладений об'єкт.
 
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
@@ -27,12 +28,17 @@ async function kvGetRaw(key: string) {
   return res.text();
 }
 
+async function kvSetRaw(key: string, value: string) {
+  if (!BASE || !WR_TOKEN) return;
+  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+}
+
+// — robust LRANGE парсер (масив / {result}/ {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
   if (!BASE || !RD_TOKEN) return [] as string[];
   const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
   if (!res) return [] as string[];
 
-  // NB: інколи це масив, інколи об’єкт з result/data, інколи рядок JSON
   let txt = '';
   try { txt = await res.text(); } catch { return []; }
 
@@ -58,20 +64,41 @@ async function kvLRange(key: string, start = 0, stop = -1) {
         ? x
         : (x?.value ?? x?.member ?? x?.id ?? '')
     )
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(String);
 }
 
-async function kvSetRaw(key: string, value: string) {
-  if (!BASE || !WR_TOKEN) return;
-  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
-}
-
-async function kvLPush(key: string, value: string) {
-  if (!BASE || !WR_TOKEN) return;
-  await rest(`lpush/${encodeURIComponent(key)}`, {
-    method: 'POST',
-    body: JSON.stringify({ value }),
-  }).catch(() => {});
+// === НОВЕ: універсальна нормалізація будь-якої форми id ===
+function normalizeIdRaw(raw: any, depth = 6): string {
+  if (raw == null || depth <= 0) return '';
+  if (typeof raw === 'number') return String(raw);
+  if (typeof raw === 'string') {
+    let s = raw.trim();
+    // багаторазова спроба розпарсити вкладені JSON-рядки
+    for (let i = 0; i < 5; i++) {
+      try {
+        const parsed = JSON.parse(s);
+        if (typeof parsed === 'string' || typeof parsed === 'number') {
+          return normalizeIdRaw(parsed, depth - 1);
+        }
+        if (parsed && typeof parsed === 'object') {
+          const cand = (parsed as any).value ?? (parsed as any).id ?? (parsed as any).member ?? '';
+          if (cand) return normalizeIdRaw(cand, depth - 1);
+        }
+        break;
+      } catch { break; }
+    }
+    // прибрати екранування/лапки
+    s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
+    const m = s.match(/\d{10,}/);
+    if (m) return m[0];
+    return '';
+  }
+  if (typeof raw === 'object') {
+    const cand = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
+    return normalizeIdRaw(cand, depth - 1);
+  }
+  return '';
 }
 
 export const kvRead = {
@@ -81,21 +108,31 @@ export const kvRead = {
   async lrange(key: string, start = 0, stop = -1) {
     return kvLRange(key, start, stop);
   },
+
+  // ВАЖЛИВО: насильно виставляємо obj.id=правильному значенню,
+  // навіть якщо в збереженому JSON воно розбите/екрановане.
   async listCampaigns<T extends Record<string, any> = any>(): Promise<T[]> {
     const ids = (await kvLRange(campaignKeys.INDEX_KEY, 0, -1)) as string[];
     const out: T[] = [];
+
     for (const id of ids) {
       const raw = await kvGetRaw(campaignKeys.ITEM_KEY(id));
       if (!raw) continue;
       try {
         const obj = JSON.parse(raw);
-        if (!obj.id) obj.id = id;
+
+        const safeFromObj = normalizeIdRaw(obj?.id);
+        const safeId = safeFromObj || String(id);
+        obj.id = safeId; // ← тепер завжди строка-число
+
         if (!obj.created_at) {
-          const ts = Number(id);
+          const ts = Number(safeId);
           if (Number.isFinite(ts)) obj.created_at = ts;
         }
         out.push(obj);
-      } catch {}
+      } catch {
+        // пропускаємо биті JSON
+      }
     }
     return out;
   },
@@ -103,7 +140,13 @@ export const kvRead = {
 
 export const kvWrite = {
   async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
-  async lpush(key: string, value: string) { return kvLPush(key, value); },
+  async lpush(key: string, value: string) {
+    if (!BASE || !WR_TOKEN) return;
+    await rest(`lpush/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      body: JSON.stringify({ value }),
+    }).catch(() => {});
+  },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
     const created_at =
@@ -129,7 +172,10 @@ export const kvWrite = {
     };
 
     await kvSetRaw(campaignKeys.ITEM_KEY(id), JSON.stringify(item));
-    await kvLPush(campaignKeys.INDEX_KEY, id);
+    await rest(`lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
+      method: 'POST',
+      body: JSON.stringify({ value: id }),
+    }).catch(() => {});
     return item;
   },
 };
