@@ -1,5 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// ЗМІНИ: прибрано логіку ?delete=..., кнопка "Видалити" = лінк на /admin/campaigns/delete?id=...
+// Фікс: нормалізація id для відображення та для кнопки "Видалити"
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
-  id: string;
+  id: any; // може бути string | number | {value: string} (історичні дані)
   name: string;
   created_at: number;
   active?: boolean;
@@ -29,8 +29,23 @@ function toTs(idOrTs?: string | number) {
   const n = Number(idOrTs ?? NaN);
   return Number.isFinite(n) ? n : undefined;
 }
+
+// НОВЕ: акуратно дістаємо справжній id з будь-якої форми
+function getId(c: Campaign): string {
+  const raw = (c as any)?.id;
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number') return String(raw);
+  if (raw && typeof raw === 'object') {
+    // підтримуємо різні варіанти збережених структур
+    const v = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
+    return v ? String(v) : '';
+  }
+  return '';
+}
+
 function fmtDateMaybeFromId(c: Campaign) {
-  const ts = c.created_at ?? toTs(c.id);
+  const safeId = getId(c);
+  const ts = c.created_at ?? toTs(safeId);
   if (!ts) return '—';
   try { return new Date(ts).toLocaleString('uk-UA'); } catch { return '—'; }
 }
@@ -68,10 +83,15 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
   let items: Campaign[] = [];
   try { items = await kvRead.listCampaigns(); } catch { items = []; }
 
-  // ховаємо soft-deleted, якщо колись будуть
+  // ховаємо soft-deleted, якщо є
   items = items.filter(c => !c.deleted);
 
-  items.sort((a, b) => (toTs(b.created_at ?? b.id) ?? 0) - (toTs(a.created_at ?? a.id) ?? 0));
+  // сортування за датою/ID
+  items.sort((a, b) => {
+    const ta = a.created_at ?? toTs(getId(a)) ?? 0;
+    const tb = b.created_at ?? toTs(getId(b)) ?? 0;
+    return tb - ta;
+  });
 
   return (
     <main style={{ maxWidth: 1200, margin: '36px auto', padding: '0 20px' }}>
@@ -132,55 +152,58 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                 </td>
               </tr>
             ) : (
-              items.map((c) => (
-                <tr key={c.id} style={{ borderTop: '1px solid #eef0f3' }}>
-                  <td style={td}>{fmtDateMaybeFromId(c)}</td>
-                  <td style={td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span title={c.active ? 'Активна' : 'Неактивна'}
-                            style={{ width: 10, height: 10, borderRadius: 10,
-                                     background: c.active ? '#16a34a' : '#9ca3af', display: 'inline-block' }} />
-                      <strong>{c.name || 'UI-created'}</strong>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>ID: {c.id}</div>
-                  </td>
-                  <td style={td}>
-                    <div>v1: {ruleLabel(c.rules?.v1)}</div>
-                    <div>v2: {ruleLabel(c.rules?.v2)}</div>
-                  </td>
-                  <td style={td}>
-                    <div>{c.base_pipeline_name || `#${c.base_pipeline_id ?? '—'}`}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
-                      статус: {c.base_status_name || `#${c.base_status_id ?? '—'}`}
-                    </div>
-                  </td>
-                  <td style={td}>
-                    <div>v1: {c.v1_count ?? 0}</div>
-                    <div>v2: {c.v2_count ?? 0}</div>
-                    <div>exp: {c.exp_count ?? 0}</div>
-                  </td>
-                  <td style={tdRight}>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <form action={toggleActiveAction}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}>
-                          {c.active ? 'Активна' : 'Неактивна'}
-                        </button>
-                      </form>
+              items.map((c) => {
+                const safeId = getId(c); // <— нормалізований id
+                return (
+                  <tr key={`${safeId}-${c.name}`} style={{ borderTop: '1px solid #eef0f3' }}>
+                    <td style={td}>{fmtDateMaybeFromId(c)}</td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span title={c.active ? 'Активна' : 'Неактивна'}
+                              style={{ width: 10, height: 10, borderRadius: 10,
+                                       background: c.active ? '#16a34a' : '#9ca3af', display: 'inline-block' }} />
+                        <strong>{c.name || 'UI-created'}</strong>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>ID: {safeId || '—'}</div>
+                    </td>
+                    <td style={td}>
+                      <div>v1: {ruleLabel(c.rules?.v1)}</div>
+                      <div>v2: {ruleLabel(c.rules?.v2)}</div>
+                    </td>
+                    <td style={td}>
+                      <div>{c.base_pipeline_name || `#${c.base_pipeline_id ?? '—'}`}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
+                        статус: {c.base_status_name || `#${c.base_status_id ?? '—'}`}
+                      </div>
+                    </td>
+                    <td style={td}>
+                      <div>v1: {c.v1_count ?? 0}</div>
+                      <div>v2: {c.v2_count ?? 0}</div>
+                      <div>exp: {c.exp_count ?? 0}</div>
+                    </td>
+                    <td style={tdRight}>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <form action={toggleActiveAction}>
+                          <input type="hidden" name="id" value={safeId} />
+                          <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}>
+                            {c.active ? 'Активна' : 'Неактивна'}
+                          </button>
+                        </form>
 
-                      {/* Лінк на окремий роут hard delete */}
-                      <Link
-                        href={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`}
-                        title="Видалити кампанію"
-                        style={dangerBtn as any}
-                        prefetch={false}
-                      >
-                        Видалити
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                        {/* Використовуємо нормалізований id */}
+                        <Link
+                          href={`/admin/campaigns/delete?id=${encodeURIComponent(safeId)}`}
+                          title="Видалити кампанію"
+                          style={dangerBtn as any}
+                          prefetch={false}
+                        >
+                          Видалити
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
