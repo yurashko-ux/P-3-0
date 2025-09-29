@@ -1,5 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Фікс: нормалізація id для відображення та для кнопки "Видалити"
+// Додано: robust getId() — витягує id навіть якщо це вкладені/екрановані JSON-рядки.
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
-  id: any; // може бути string | number | {value: string} (історичні дані)
+  id: any;
   name: string;
   created_at: number;
   active?: boolean;
@@ -30,17 +30,53 @@ function toTs(idOrTs?: string | number) {
   return Number.isFinite(n) ? n : undefined;
 }
 
-// НОВЕ: акуратно дістаємо справжній id з будь-якої форми
-function getId(c: Campaign): string {
-  const raw = (c as any)?.id;
-  if (typeof raw === 'string') return raw;
+// === НОВЕ: надстійна нормалізація будь-якої форми id ===
+function normalizeIdRaw(raw: any, depth = 6): string {
+  if (raw == null || depth <= 0) return '';
+
+  // примітиви
   if (typeof raw === 'number') return String(raw);
-  if (raw && typeof raw === 'object') {
-    // підтримуємо різні варіанти збережених структур
-    const v = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
-    return v ? String(v) : '';
+  if (typeof raw === 'string') {
+    let s = raw.trim();
+
+    // Спроба розпарсити вкладені/екрановані JSON рядки декілька разів
+    for (let i = 0; i < 5; i++) {
+      try {
+        const parsed = JSON.parse(s);
+        if (typeof parsed === 'string' || typeof parsed === 'number') {
+          return normalizeIdRaw(parsed, depth - 1);
+        }
+        if (parsed && typeof parsed === 'object') {
+          const cand = (parsed as any).value ?? (parsed as any).id ?? (parsed as any).member ?? '';
+          if (cand) return normalizeIdRaw(cand, depth - 1);
+        }
+        break;
+      } catch {
+        break;
+      }
+    }
+
+    // Прибрати ескейпи/зайві лапки
+    s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
+
+    // Спроба вийняти довгу послідовність цифр (типовий timestamp з Date.now)
+    const m = s.match(/\d{10,}/);
+    if (m) return m[0];
+
+    return '';
   }
+
+  // об'єкти { value / id / member }
+  if (typeof raw === 'object') {
+    const cand = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
+    return normalizeIdRaw(cand, depth - 1);
+  }
+
   return '';
+}
+
+function getId(c: Campaign): string {
+  return normalizeIdRaw((c as any)?.id) || '';
 }
 
 function fmtDateMaybeFromId(c: Campaign) {
@@ -153,9 +189,9 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
               </tr>
             ) : (
               items.map((c) => {
-                const safeId = getId(c); // <— нормалізований id
+                const safeId = getId(c);
                 return (
-                  <tr key={`${safeId}-${c.name}`} style={{ borderTop: '1px solid #eef0f3' }}>
+                  <tr key={`${safeId || 'noid'}-${c.name}`} style={{ borderTop: '1px solid #eef0f3' }}>
                     <td style={td}>{fmtDateMaybeFromId(c)}</td>
                     <td style={td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -164,7 +200,9 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                                        background: c.active ? '#16a34a' : '#9ca3af', display: 'inline-block' }} />
                         <strong>{c.name || 'UI-created'}</strong>
                       </div>
-                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>ID: {safeId || '—'}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
+                        ID: {safeId || '—'}
+                      </div>
                     </td>
                     <td style={td}>
                       <div>v1: {ruleLabel(c.rules?.v1)}</div>
@@ -190,7 +228,7 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                           </button>
                         </form>
 
-                        {/* Використовуємо нормалізований id */}
+                        {/* Кнопка Видалити завжди має нормалізований id */}
                         <Link
                           href={`/admin/campaigns/delete?id=${encodeURIComponent(safeId)}`}
                           title="Видалити кампанію"
