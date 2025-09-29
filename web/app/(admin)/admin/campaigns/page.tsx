@@ -1,6 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Server Component (Node.js) з Server Actions: toggle active + SOFT delete (deleted=true).
-// Видалені елементи не показуються у списку.
+// Видалення без Server Actions: ?delete=<id> у URL запускає soft delete на сервері.
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -24,7 +23,7 @@ type Campaign = {
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
-  deleted?: boolean; // <— додали
+  deleted?: boolean;
 };
 
 function toTs(idOrTs?: string | number) {
@@ -35,68 +34,48 @@ function toTs(idOrTs?: string | number) {
 function fmtDateMaybeFromId(c: Campaign) {
   const ts = c.created_at ?? toTs(c.id);
   if (!ts) return '—';
-  try {
-    return new Date(ts).toLocaleString('uk-UA');
-  } catch {
-    return '—';
-  }
+  try { return new Date(ts).toLocaleString('uk-UA'); } catch { return '—'; }
 }
 function ruleLabel(r?: Rule) {
   if (!r || !r.value) return '—';
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
-// --- Server Action: toggle active ---
+// --- Server Action (залишаємо лише toggle) ---
 async function toggleActiveAction(formData: FormData) {
   'use server';
   const id = String(formData.get('id') || '').trim();
   if (!id) return;
-
   const key = campaignKeys.ITEM_KEY(id);
   const raw = await kvRead.getRaw(key);
   if (!raw) return;
   let obj: any;
   try { obj = JSON.parse(raw); } catch { return; }
-  if (obj.deleted) return; // не змінюємо видалені
+  if (obj.deleted) return;
   obj.active = !(obj.active !== false);
-
   await kvWrite.setRaw(key, JSON.stringify(obj));
   try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch {}
-
   revalidatePath('/admin/campaigns');
 }
 
-// --- Server Action: manual refresh (revalidate) ---
-async function refreshAction() {
-  'use server';
-  revalidatePath('/admin/campaigns');
-}
+// --- ручне оновлення ---
+async function refreshAction() { 'use server'; revalidatePath('/admin/campaigns'); }
 
-// --- Server Action: SOFT DELETE campaign ---
-async function deleteCampaignAction(formData: FormData) {
-  'use server';
-  const id = String(formData.get('id') || '').trim();
-  if (!id) return;
-
+// --- SOFT DELETE helper (викликається із самого рендера при ?delete=...) ---
+async function softDeleteById(id: string) {
   const key = campaignKeys.ITEM_KEY(id);
   const raw = await kvRead.getRaw(key);
-  if (!raw) return;
-
+  if (!raw) return false;
   try {
     const obj = JSON.parse(raw);
-    if (obj.deleted === true) {
-      redirect('/admin/campaigns?deleted=1');
-      return;
-    }
-    obj.deleted = true;     // позначаємо як видалену
-    obj.active = false;     // на всяк випадок — деактивуємо
+    if (obj.deleted === true) return true;
+    obj.deleted = true;
+    obj.active = false;
     await kvWrite.setRaw(key, JSON.stringify(obj));
+    return true;
   } catch {
-    // ignore parse errors
+    return false;
   }
-
-  revalidatePath('/admin/campaigns');
-  redirect('/admin/campaigns?deleted=1');
 }
 
 export default async function CampaignsPage(props: { searchParams?: Record<string, string | string[] | undefined> }) {
@@ -104,18 +83,22 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
   const created  = String(sp.created  || '') === '1';
   const migrated = String(sp.migrated || '') === '1';
   const deleted  = String(sp.deleted  || '') === '1';
+  const toDelete = typeof sp.delete === 'string' ? (sp.delete as string) : '';
 
-  let items: Campaign[] = [];
-  try {
-    items = await kvRead.listCampaigns();
-  } catch {
-    items = [];
+  // Якщо прийшов ?delete=<id> — виконуємо soft delete і редіректимося
+  if (toDelete) {
+    await softDeleteById(toDelete);
+    revalidatePath('/admin/campaigns');
+    redirect('/admin/campaigns?deleted=1');
   }
 
-  // Ховаємо «видалені» кампанії
+  let items: Campaign[] = [];
+  try { items = await kvRead.listCampaigns(); } catch { items = []; }
+
+  // Ховаємо видалені
   items = items.filter((c) => !c.deleted);
 
-  // Сортування за датою
+  // Сортування
   items.sort((a, b) => (toTs(b.created_at ?? b.id) ?? 0) - (toTs(a.created_at ?? a.id) ?? 0));
 
   return (
@@ -123,71 +106,41 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
           <h1 style={{ fontSize: 40, fontWeight: 800, margin: 0 }}>Кампанії</h1>
-          <div style={{ color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>
-            Всього: <strong>{items.length}</strong>
-          </div>
+          <div style={{ color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>Всього: <strong>{items.length}</strong></div>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <form action={refreshAction}>
             <button
               type="submit"
               title="Оновити список"
-              style={{
-                textDecoration: 'none',
-                background: '#f3f4f6',
-                color: '#111827',
-                padding: '10px 14px',
-                borderRadius: 12,
-                fontWeight: 700,
-                border: '1px solid #e5e7eb',
-                cursor: 'pointer',
-              }}
+              style={{ textDecoration: 'none', background: '#f3f4f6', color: '#111827',
+                       padding: '10px 14px', borderRadius: 12, fontWeight: 700,
+                       border: '1px solid #e5e7eb', cursor: 'pointer' }}
             >
               Оновити
             </button>
           </form>
-          <Link
-            href="/admin/campaigns/new"
-            style={{
-              textDecoration: 'none',
-              background: '#2a6df5',
-              color: '#fff',
-              padding: '10px 14px',
-              borderRadius: 12,
-              fontWeight: 700,
-              boxShadow: '0 8px 20px rgba(42,109,245,0.35)',
-            }}
-          >
+          <Link href="/admin/campaigns/new"
+            style={{ textDecoration: 'none', background: '#2a6df5', color: '#fff',
+                     padding: '10px 14px', borderRadius: 12, fontWeight: 700,
+                     boxShadow: '0 8px 20px rgba(42,109,245,0.35)' }}>
             + Нова кампанія
           </Link>
         </div>
       </header>
 
       {(created || migrated || deleted) && (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: '12px 14px',
-            borderRadius: 10,
-            border: '1px solid #c7f3cd',
-            background: '#ecfdf5',
-            color: '#065f46',
-          }}
-        >
+        <div style={{
+          marginBottom: 12, padding: '12px 14px', borderRadius: 10,
+          border: '1px solid #c7f3cd', background: '#ecfdf5', color: '#065f46'
+        }}>
           {created  && <div>✅ Кампанію створено. Список оновлено.</div>}
           {migrated && <div>✅ Міграцію виконано. Індекс та елементи нормалізовано.</div>}
           {deleted  && <div>🗑️ Кампанію видалено (soft delete).</div>}
         </div>
       )}
 
-      <div
-        style={{
-          border: '1px solid #e8ebf0',
-          borderRadius: 16,
-          background: '#fff',
-          overflow: 'hidden',
-        }}
-      >
+      <div style={{ border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
           <thead style={{ background: '#fafbfc' }}>
             <tr>
@@ -212,14 +165,9 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                   <td style={td}>{fmtDateMaybeFromId(c)}</td>
                   <td style={td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span
-                        title={c.active ? 'Активна' : 'Неактивна'}
-                        style={{
-                          width: 10, height: 10, borderRadius: 10,
-                          background: c.active ? '#16a34a' : '#9ca3af',
-                          display: 'inline-block',
-                        }}
-                      />
+                      <span title={c.active ? 'Активна' : 'Неактивна'}
+                            style={{ width: 10, height: 10, borderRadius: 10,
+                                     background: c.active ? '#16a34a' : '#9ca3af', display: 'inline-block' }} />
                       <strong>{c.name || 'UI-created'}</strong>
                     </div>
                     <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>ID: {c.id}</div>
@@ -248,12 +196,15 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                         </button>
                       </form>
 
-                      <form action={deleteCampaignAction}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <button type="submit" title="Видалити кампанію" style={dangerBtn}>
-                          Видалити
-                        </button>
-                      </form>
+                      {/* Лінк, що тригерить ?delete=<id> */}
+                      <Link
+                        href={`/admin/campaigns?delete=${encodeURIComponent(c.id)}`}
+                        title="Видалити кампанію"
+                        style={dangerBtn as any}
+                        prefetch={false}
+                      >
+                        Видалити
+                      </Link>
                     </div>
                   </td>
                 </tr>
