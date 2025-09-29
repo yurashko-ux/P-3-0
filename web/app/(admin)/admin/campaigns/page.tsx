@@ -1,9 +1,8 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Видалення без Server Actions: ?delete=<id> у URL запускає soft delete на сервері.
+// ЗМІНИ: прибрано логіку ?delete=..., кнопка "Видалити" = лінк на /admin/campaigns/delete?id=...
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
@@ -27,8 +26,7 @@ type Campaign = {
 };
 
 function toTs(idOrTs?: string | number) {
-  if (!idOrTs) return undefined;
-  const n = Number(idOrTs);
+  const n = Number(idOrTs ?? NaN);
   return Number.isFinite(n) ? n : undefined;
 }
 function fmtDateMaybeFromId(c: Campaign) {
@@ -41,7 +39,7 @@ function ruleLabel(r?: Rule) {
   return `${r.op === 'equals' ? '==' : '∋'} "${r.value}"`;
 }
 
-// --- Server Action (залишаємо лише toggle) ---
+// Server Action: toggle active
 async function toggleActiveAction(formData: FormData) {
   'use server';
   const id = String(formData.get('id') || '').trim();
@@ -58,47 +56,21 @@ async function toggleActiveAction(formData: FormData) {
   revalidatePath('/admin/campaigns');
 }
 
-// --- ручне оновлення ---
+// ручне оновлення
 async function refreshAction() { 'use server'; revalidatePath('/admin/campaigns'); }
-
-// --- SOFT DELETE helper (викликається із самого рендера при ?delete=...) ---
-async function softDeleteById(id: string) {
-  const key = campaignKeys.ITEM_KEY(id);
-  const raw = await kvRead.getRaw(key);
-  if (!raw) return false;
-  try {
-    const obj = JSON.parse(raw);
-    if (obj.deleted === true) return true;
-    obj.deleted = true;
-    obj.active = false;
-    await kvWrite.setRaw(key, JSON.stringify(obj));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export default async function CampaignsPage(props: { searchParams?: Record<string, string | string[] | undefined> }) {
   const sp = props.searchParams || {};
   const created  = String(sp.created  || '') === '1';
   const migrated = String(sp.migrated || '') === '1';
   const deleted  = String(sp.deleted  || '') === '1';
-  const toDelete = typeof sp.delete === 'string' ? (sp.delete as string) : '';
-
-  // Якщо прийшов ?delete=<id> — виконуємо soft delete і редіректимося
-  if (toDelete) {
-    await softDeleteById(toDelete);
-    revalidatePath('/admin/campaigns');
-    redirect('/admin/campaigns?deleted=1');
-  }
 
   let items: Campaign[] = [];
   try { items = await kvRead.listCampaigns(); } catch { items = []; }
 
-  // Ховаємо видалені
-  items = items.filter((c) => !c.deleted);
+  // ховаємо soft-deleted, якщо колись будуть
+  items = items.filter(c => !c.deleted);
 
-  // Сортування
   items.sort((a, b) => (toTs(b.created_at ?? b.id) ?? 0) - (toTs(a.created_at ?? a.id) ?? 0));
 
   return (
@@ -136,7 +108,7 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
         }}>
           {created  && <div>✅ Кампанію створено. Список оновлено.</div>}
           {migrated && <div>✅ Міграцію виконано. Індекс та елементи нормалізовано.</div>}
-          {deleted  && <div>🗑️ Кампанію видалено (soft delete).</div>}
+          {deleted  && <div>🗑️ Кампанію видалено.</div>}
         </div>
       )}
 
@@ -196,9 +168,9 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                         </button>
                       </form>
 
-                      {/* Лінк, що тригерить ?delete=<id> */}
+                      {/* Лінк на окремий роут hard delete */}
                       <Link
-                        href={`/admin/campaigns?delete=${encodeURIComponent(c.id)}`}
+                        href={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`}
                         title="Видалити кампанію"
                         style={dangerBtn as any}
                         prefetch={false}
