@@ -1,9 +1,9 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// FIX: жодних onClick/onSubmit-функцій у Server Component (інакше Next дає Digest).
-// Видалення робимо Server Action + redirect('?deleted=1').
+// Server Component (Node.js) з Server Actions: toggle active + SOFT delete (deleted=true).
+// Видалені елементи не показуються у списку.
 
 import Link from 'next/link';
-import { revalidatePath, } from 'next/cache';
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 
@@ -24,6 +24,7 @@ type Campaign = {
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+  deleted?: boolean; // <— додали
 };
 
 function toTs(idOrTs?: string | number) {
@@ -56,7 +57,8 @@ async function toggleActiveAction(formData: FormData) {
   if (!raw) return;
   let obj: any;
   try { obj = JSON.parse(raw); } catch { return; }
-  obj.active = !(obj.active !== false); // toggle
+  if (obj.deleted) return; // не змінюємо видалені
+  obj.active = !(obj.active !== false);
 
   await kvWrite.setRaw(key, JSON.stringify(obj));
   try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch {}
@@ -70,39 +72,29 @@ async function refreshAction() {
   revalidatePath('/admin/campaigns');
 }
 
-// --- Server Action: DELETE campaign ---
+// --- Server Action: SOFT DELETE campaign ---
 async function deleteCampaignAction(formData: FormData) {
   'use server';
   const id = String(formData.get('id') || '').trim();
   if (!id) return;
 
-  const base = process.env.KV_REST_API_URL || '';
-  const token = process.env.KV_REST_API_TOKEN || '';
-  if (base && token) {
-    const urlBase = base.replace(/\/$/, '');
-    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const key = campaignKeys.ITEM_KEY(id);
+  const raw = await kvRead.getRaw(key);
+  if (!raw) return;
 
-    // DEL campaign:<id>
-    try {
-      await fetch(`${urlBase}/del/${encodeURIComponent(campaignKeys.ITEM_KEY(id))}`, {
-        method: 'POST', headers, cache: 'no-store',
-      });
-    } catch {}
-
-    // LREM з обох індексів
-    const lrem = async (indexKey: string) => {
-      try {
-        await fetch(`${urlBase}/lrem/${encodeURIComponent(indexKey)}/0`, {
-          method: 'POST', headers, cache: 'no-store',
-          body: JSON.stringify({ value: id }),
-        });
-      } catch {}
-    };
-    await lrem(campaignKeys.INDEX_KEY);
-    await lrem('campaigns:index');
+  try {
+    const obj = JSON.parse(raw);
+    if (obj.deleted === true) {
+      redirect('/admin/campaigns?deleted=1');
+      return;
+    }
+    obj.deleted = true;     // позначаємо як видалену
+    obj.active = false;     // на всяк випадок — деактивуємо
+    await kvWrite.setRaw(key, JSON.stringify(obj));
+  } catch {
+    // ignore parse errors
   }
 
-  // Перемальовуємо і показуємо прапорець успіху
   revalidatePath('/admin/campaigns');
   redirect('/admin/campaigns?deleted=1');
 }
@@ -119,6 +111,11 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
   } catch {
     items = [];
   }
+
+  // Ховаємо «видалені» кампанії
+  items = items.filter((c) => !c.deleted);
+
+  // Сортування за датою
   items.sort((a, b) => (toTs(b.created_at ?? b.id) ?? 0) - (toTs(a.created_at ?? a.id) ?? 0));
 
   return (
@@ -179,7 +176,7 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
         >
           {created  && <div>✅ Кампанію створено. Список оновлено.</div>}
           {migrated && <div>✅ Міграцію виконано. Індекс та елементи нормалізовано.</div>}
-          {deleted  && <div>🗑️ Кампанію видалено.</div>}
+          {deleted  && <div>🗑️ Кампанію видалено (soft delete).</div>}
         </div>
       )}
 
