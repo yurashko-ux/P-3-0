@@ -8,23 +8,22 @@ const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
 const INDEX_KEY = 'campaign:index';
 const ITEM_KEY = (id: string) => `campaign:${id}`;
 
-function authHeaders(ro = false) {
+function headersAuth(ro = false) {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${ro ? RD_TOKEN : WR_TOKEN}`,
   };
 }
 
-async function kvGet(path: string, ro = true) {
-  const res = await fetch(`${BASE}/${path}`, { headers: authHeaders(ro), cache: 'no-store' });
+async function restGet(path: string, ro = true) {
+  const res = await fetch(`${BASE}/${path}`, { headers: headersAuth(ro), cache: 'no-store' });
   if (!res.ok) throw new Error(`${path} ${res.status}`);
   return res;
 }
-
-async function kvPost(path: string, body: any, ro = false) {
+async function restPost(path: string, body: any, ro = false) {
   const res = await fetch(`${BASE}/${path}`, {
     method: 'POST',
-    headers: authHeaders(ro),
+    headers: headersAuth(ro),
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} ${res.status}`);
@@ -32,16 +31,25 @@ async function kvPost(path: string, body: any, ro = false) {
 }
 
 async function kvDelKey(key: string) {
-  // del/{key}
-  await kvPost(`del/${encodeURIComponent(key)}`, '', false).catch(() => {});
+  try { await restPost(`del/${encodeURIComponent(key)}`, '', false); } catch {}
 }
 
-// LRANGE з різними форматами, що повертає REST
+// Пробуємо різні варіанти LREM з різними назвами поля у body
+async function kvLRemAny(key: string, memberRaw: string) {
+  const variants = [
+    { path: `lrem/${encodeURIComponent(key)}/0`, body: { value: memberRaw } },
+    { path: `lrem/${encodeURIComponent(key)}/0`, body: { element: memberRaw } },
+    { path: `lrem/${encodeURIComponent(key)}/0`, body: { member: memberRaw } },
+  ];
+  for (const v of variants) {
+    try { await restPost(v.path, v.body, false); } catch {}
+  }
+}
+
 async function kvLRangeAll(key: string): Promise<string[]> {
-  const res = await kvGet(`lrange/${encodeURIComponent(key)}/0/-1`, true).catch(() => null);
+  const res = await restGet(`lrange/${encodeURIComponent(key)}/0/-1`, true).catch(() => null);
   if (!res) return [];
-  let txt = '';
-  try { txt = await res.text(); } catch { return []; }
+  let txt = ''; try { txt = await res.text(); } catch { return []; }
   let data: any = null;
   try { data = JSON.parse(txt); } catch { data = txt; }
 
@@ -55,7 +63,7 @@ async function kvLRangeAll(key: string): Promise<string[]> {
       if (Array.isArray(d2)) arr = d2;
       else if (d2 && Array.isArray(d2.result)) arr = d2.result;
       else if (d2 && Array.isArray(d2.data)) arr = d2.data;
-    } catch { /* ignore */ }
+    } catch {}
   }
 
   return arr
@@ -64,90 +72,75 @@ async function kvLRangeAll(key: string): Promise<string[]> {
     .map(String);
 }
 
-// LPUSH багато значень у правильному порядку (новіші зліва)
-// Для відновлення черги ми робимо LPUSH у зворотному порядку.
 async function kvLPushMany(key: string, values: string[]) {
   for (let i = values.length - 1; i >= 0; i--) {
     const v = values[i];
-    await kvPost(`lpush/${encodeURIComponent(key)}`, { value: v }, false).catch(() => {});
+    try { await restPost(`lpush/${encodeURIComponent(key)}`, { value: v }, false); } catch {}
   }
 }
 
-// Нормалізація будь-якого «битого» id до числового рядка
-function normalizeIdRaw(raw: any, depth = 8): string {
+// Агресивна нормалізація до числового id (timestamp у вигляді рядка)
+function normalizeId(raw: any, depth = 8): string {
   if (raw == null || depth <= 0) return '';
   if (typeof raw === 'number') return String(raw);
   if (typeof raw === 'string') {
     let s = raw.trim();
-    // Багаторазове розпарсення екранованих JSON-рядків
     for (let i = 0; i < 6; i++) {
       try {
         const parsed = JSON.parse(s);
         if (typeof parsed === 'string' || typeof parsed === 'number') {
-          return normalizeIdRaw(parsed, depth - 1);
+          return normalizeId(parsed, depth - 1);
         }
         if (parsed && typeof parsed === 'object') {
           const cand = (parsed as any).value ?? (parsed as any).id ?? (parsed as any).member ?? '';
-          if (cand) return normalizeIdRaw(cand, depth - 1);
+          if (cand) return normalizeId(cand, depth - 1);
         }
         break;
       } catch { break; }
     }
-    // Прибрати екранування/лапки
     s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
-    const m = s.match(/\d{10,}/); // шукаємо довгий timestamp
+    const m = s.match(/\d{10,}/);
     return m ? m[0] : '';
   }
   if (typeof raw === 'object') {
     const cand = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
-    return normalizeIdRaw(cand, depth - 1);
+    return normalizeId(cand, depth - 1);
   }
   return '';
 }
 
 export async function GET(req: NextRequest) {
+  const back = new URL('/admin/campaigns?deleted=1', req.url);
   try {
+    if (!BASE || !WR_TOKEN) return NextResponse.redirect(back);
+
     const url = new URL(req.url);
-    const qId = url.searchParams.get('id') || '';
-    if (!BASE || !WR_TOKEN || !RD_TOKEN) {
-      return NextResponse.redirect(new URL('/admin/campaigns?deleted=1', req.url));
-    }
+    const idRaw = url.searchParams.get('id') || '';
+    if (!idRaw) return NextResponse.redirect(back);
 
-    // 1) Нормалізуємо id із параметра
-    const targetId = normalizeIdRaw(qId);
-    if (!targetId) {
-      // Якщо нічого не розпізнали — просто повертаємось (щоб UI не зависав)
-      return NextResponse.redirect(new URL('/admin/campaigns?deleted=1', req.url));
-    }
+    const idNorm = normalizeId(idRaw);
+    // 1) спробувати LREM по «сирому» значенню, щоб прибрати з індексу
+    await kvLRemAny(INDEX_KEY, idRaw);
+    // 2) спробувати LREM по нормалізованому значенню (раптом в індексі лежить «чисте» число)
+    if (idNorm) await kvLRemAny(INDEX_KEY, idNorm);
 
-    // 2) Зчитуємо індекс
+    // 3) видалити сам елемент
+    if (idNorm) await kvDelKey(ITEM_KEY(idNorm));
+
+    // 4) перевірити індекс; якщо все ще є цей елемент — перебудувати без нього
     const ids = await kvLRangeAll(INDEX_KEY);
-
-    // 3) Видаляємо сам елемент (навіть якщо його ключу немає — ок)
-    await kvDelKey(ITEM_KEY(targetId));
-
-    // 4) Перебудовуємо індекс без цього елемента
-    //    Порівнюємо targetId з нормалізацією кожного рядка з індексу
-    const kept: string[] = [];
-    for (const raw of ids) {
-      const norm = normalizeIdRaw(raw);
-      if (norm && norm === targetId) continue; // пропускаємо саме цей
-      kept.push(raw);
+    const stillHas = ids.some((r) => normalizeId(r) === idNorm || r === idRaw);
+    if (stillHas) {
+      const kept = ids.filter((r) => {
+        const n = normalizeId(r);
+        return !(n && idNorm && n === idNorm) && r !== idRaw;
+      });
+      await kvDelKey(INDEX_KEY);
+      if (kept.length) await kvLPushMany(INDEX_KEY, kept);
     }
 
-    // Спочатку видаляємо старий індекс (як LIST, це звичайний ключ)
-    await kvDelKey(INDEX_KEY);
-    // Потім додаємо назад решту
-    if (kept.length) {
-      await kvLPushMany(INDEX_KEY, kept);
-    }
-
-    // 5) Повертаємось на список із флагом
-    const back = new URL('/admin/campaigns?deleted=1', req.url);
     return NextResponse.redirect(back);
-  } catch (e) {
-    // Навіть у разі помилки — не блокуємо UX
-    const back = new URL('/admin/campaigns?deleted=1', req.url);
+  } catch {
     return NextResponse.redirect(back);
   }
 }
