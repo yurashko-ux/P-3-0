@@ -1,6 +1,5 @@
 // web/lib/kv.ts
-// ОНОВЛЕНО: під час listCampaigns() насильно нормалізуємо obj.id,
-// навіть якщо в JSON лежить екранований/вкладений об'єкт.
+// ❗️НОВЕ: у listCampaigns() додаємо __index_id і гарантуємо obj.id = __index_id, якщо збережений id зламаний.
 
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
@@ -33,7 +32,7 @@ async function kvSetRaw(key: string, value: string) {
   await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
 }
 
-// — robust LRANGE парсер (масив / {result}/ {data} / рядок)
+// — robust LRANGE парсер (масив / {result} / {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
   if (!BASE || !RD_TOKEN) return [] as string[];
   const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
@@ -68,13 +67,12 @@ async function kvLRange(key: string, start = 0, stop = -1) {
     .map(String);
 }
 
-// === НОВЕ: універсальна нормалізація будь-якої форми id ===
+// === універсальна нормалізація будь-якої форми id ===
 function normalizeIdRaw(raw: any, depth = 6): string {
   if (raw == null || depth <= 0) return '';
   if (typeof raw === 'number') return String(raw);
   if (typeof raw === 'string') {
     let s = raw.trim();
-    // багаторазова спроба розпарсити вкладені JSON-рядки
     for (let i = 0; i < 5; i++) {
       try {
         const parsed = JSON.parse(s);
@@ -88,7 +86,6 @@ function normalizeIdRaw(raw: any, depth = 6): string {
         break;
       } catch { break; }
     }
-    // прибрати екранування/лапки
     s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
     const m = s.match(/\d{10,}/);
     if (m) return m[0];
@@ -109,21 +106,24 @@ export const kvRead = {
     return kvLRange(key, start, stop);
   },
 
-  // ВАЖЛИВО: насильно виставляємо obj.id=правильному значенню,
-  // навіть якщо в збереженому JSON воно розбите/екрановане.
+  // 🔧 ГАРАНТУЄМО коректний id:
+  // - додаємо __index_id (id з індексу LIST)
+  // - якщо obj.id зіпсований/порожній — підставляємо __index_id
   async listCampaigns<T extends Record<string, any> = any>(): Promise<T[]> {
     const ids = (await kvLRange(campaignKeys.INDEX_KEY, 0, -1)) as string[];
     const out: T[] = [];
 
-    for (const id of ids) {
-      const raw = await kvGetRaw(campaignKeys.ITEM_KEY(id));
+    for (const indexId of ids) {
+      const raw = await kvGetRaw(campaignKeys.ITEM_KEY(indexId));
       if (!raw) continue;
       try {
         const obj = JSON.parse(raw);
 
         const safeFromObj = normalizeIdRaw(obj?.id);
-        const safeId = safeFromObj || String(id);
-        obj.id = safeId; // ← тепер завжди строка-число
+        const safeId = safeFromObj || String(indexId);
+
+        obj.__index_id = String(indexId); // ← для надійності
+        obj.id = safeId;                  // ← тепер завжди є коректний id (рядок-число)
 
         if (!obj.created_at) {
           const ts = Number(safeId);
@@ -131,7 +131,7 @@ export const kvRead = {
         }
         out.push(obj);
       } catch {
-        // пропускаємо биті JSON
+        // ігноруємо биті JSON
       }
     }
     return out;
