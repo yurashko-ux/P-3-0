@@ -1,5 +1,5 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-// Додано: robust getId() — витягує id навіть якщо це вкладені/екрановані JSON-рядки.
+// Фікс: якщо нормалізований c.id порожній — використовуємо c.__index_id для відображення і кнопки "Видалити".
 
 import Link from 'next/link';
 import { revalidatePath } from 'next/cache';
@@ -11,6 +11,7 @@ export const runtime = 'nodejs';
 type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
   id: any;
+  __index_id?: string; // ← приходить із listCampaigns()
   name: string;
   created_at: number;
   active?: boolean;
@@ -30,53 +31,11 @@ function toTs(idOrTs?: string | number) {
   return Number.isFinite(n) ? n : undefined;
 }
 
-// === НОВЕ: надстійна нормалізація будь-якої форми id ===
-function normalizeIdRaw(raw: any, depth = 6): string {
-  if (raw == null || depth <= 0) return '';
-
-  // примітиви
-  if (typeof raw === 'number') return String(raw);
-  if (typeof raw === 'string') {
-    let s = raw.trim();
-
-    // Спроба розпарсити вкладені/екрановані JSON рядки декілька разів
-    for (let i = 0; i < 5; i++) {
-      try {
-        const parsed = JSON.parse(s);
-        if (typeof parsed === 'string' || typeof parsed === 'number') {
-          return normalizeIdRaw(parsed, depth - 1);
-        }
-        if (parsed && typeof parsed === 'object') {
-          const cand = (parsed as any).value ?? (parsed as any).id ?? (parsed as any).member ?? '';
-          if (cand) return normalizeIdRaw(cand, depth - 1);
-        }
-        break;
-      } catch {
-        break;
-      }
-    }
-
-    // Прибрати ескейпи/зайві лапки
-    s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
-
-    // Спроба вийняти довгу послідовність цифр (типовий timestamp з Date.now)
-    const m = s.match(/\d{10,}/);
-    if (m) return m[0];
-
-    return '';
-  }
-
-  // об'єкти { value / id / member }
-  if (typeof raw === 'object') {
-    const cand = (raw as any).value ?? (raw as any).id ?? (raw as any).member ?? '';
-    return normalizeIdRaw(cand, depth - 1);
-  }
-
-  return '';
-}
-
+// — простіша нормалізація: беремо id або __index_id
 function getId(c: Campaign): string {
-  return normalizeIdRaw((c as any)?.id) || '';
+  const raw = (c as any)?.id;
+  const s = typeof raw === 'string' ? raw.trim() : (typeof raw === 'number' ? String(raw) : '');
+  return s || (c.__index_id ?? '');
 }
 
 function fmtDateMaybeFromId(c: Campaign) {
@@ -107,7 +66,6 @@ async function toggleActiveAction(formData: FormData) {
   revalidatePath('/admin/campaigns');
 }
 
-// ручне оновлення
 async function refreshAction() { 'use server'; revalidatePath('/admin/campaigns'); }
 
 export default async function CampaignsPage(props: { searchParams?: Record<string, string | string[] | undefined> }) {
@@ -119,10 +77,8 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
   let items: Campaign[] = [];
   try { items = await kvRead.listCampaigns(); } catch { items = []; }
 
-  // ховаємо soft-deleted, якщо є
   items = items.filter(c => !c.deleted);
 
-  // сортування за датою/ID
   items.sort((a, b) => {
     const ta = a.created_at ?? toTs(getId(a)) ?? 0;
     const tb = b.created_at ?? toTs(getId(b)) ?? 0;
@@ -134,7 +90,6 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
           <h1 style={{ fontSize: 40, fontWeight: 800, margin: 0 }}>Кампанії</h1>
-          <div style={{ color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>Всього: <strong>{items.length}</strong></div>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <form action={refreshAction}>
@@ -189,9 +144,10 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
               </tr>
             ) : (
               items.map((c) => {
-                const safeId = getId(c);
+                const idForUi = getId(c);             // ← використовує id або __index_id
+                const hasId = Boolean(idForUi);
                 return (
-                  <tr key={`${safeId || 'noid'}-${c.name}`} style={{ borderTop: '1px solid #eef0f3' }}>
+                  <tr key={`${idForUi || c.name}-${Math.random()}`} style={{ borderTop: '1px solid #eef0f3' }}>
                     <td style={td}>{fmtDateMaybeFromId(c)}</td>
                     <td style={td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -201,7 +157,7 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                         <strong>{c.name || 'UI-created'}</strong>
                       </div>
                       <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
-                        ID: {safeId || '—'}
+                        ID: {idForUi || '—'}
                       </div>
                     </td>
                     <td style={td}>
@@ -222,17 +178,16 @@ export default async function CampaignsPage(props: { searchParams?: Record<strin
                     <td style={tdRight}>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                         <form action={toggleActiveAction}>
-                          <input type="hidden" name="id" value={safeId} />
-                          <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')}>
+                          <input type="hidden" name="id" value={idForUi} />
+                          <button type="submit" title="Перемкнути активність" style={pillBtn(c.active ? '#16a34a' : '#9ca3af')} disabled={!hasId}>
                             {c.active ? 'Активна' : 'Неактивна'}
                           </button>
                         </form>
 
-                        {/* Кнопка Видалити завжди має нормалізований id */}
                         <Link
-                          href={`/admin/campaigns/delete?id=${encodeURIComponent(safeId)}`}
-                          title="Видалити кампанію"
-                          style={dangerBtn as any}
+                          href={hasId ? `/admin/campaigns/delete?id=${encodeURIComponent(idForUi)}` : '#'}
+                          title={hasId ? 'Видалити кампанію' : 'ID відсутній'}
+                          style={{ ...dangerBtn, opacity: hasId ? 1 : 0.5, pointerEvents: hasId ? 'auto' as any : 'none' as any }}
                           prefetch={false}
                         >
                           Видалити
