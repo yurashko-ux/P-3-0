@@ -1,6 +1,6 @@
 // web/app/(admin)/admin/campaigns/page.tsx
 import React from 'react';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 type Rule = { op: 'equals' | 'contains'; value: string; pipeline_id?: number; status_id?: number };
 type Campaign = {
@@ -19,14 +19,43 @@ type Campaign = {
   exp_count?: number;
 };
 
-async function fetchCampaigns(): Promise<Campaign[]> {
-  const token =
-    cookies().get('admin_token')?.value || cookies().get('admin_pass')?.value || '';
+export const dynamic = 'force-dynamic';
+
+function Mono({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,"Liberation Mono","Courier New", monospace' }}>
+      {children}
+    </span>
+  );
+}
+
+async function loadCampaigns(): Promise<Campaign[]> {
+  // 1) Витягуємо куки/токен
+  const c = cookies();
+  const adminToken = c.get('admin_token')?.value || c.get('admin_pass')?.value || '';
+  const cookieHeader = [
+    c.get('admin_token')?.value ? `admin_token=${c.get('admin_token')!.value}` : '',
+    c.get('admin_pass')?.value ? `; admin_pass=${c.get('admin_pass')!.value}` : '',
+  ]
+    .join('')
+    .replace(/^; /, '');
+
+  // 2) Абсолютний URL (у проді відносний інколи ріже куки)
+  const h = headers();
+  const host = h.get('x-forwarded-host') || h.get('host') || '';
+  const proto = (h.get('x-forwarded-proto') || 'https') as 'http' | 'https';
+  const origin =
+    process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, '') || (host ? `${proto}://${host}` : '');
+
   try {
-    const res = await fetch('/api/campaigns', {
+    const res = await fetch(`${origin}/api/campaigns`, {
       cache: 'no-store',
-      headers: token ? { 'X-Admin-Token': token } : {},
-      // відносний URL => куки все одно поїдуть; заголовок — страховка від 401
+      headers: {
+        ...(adminToken ? { 'X-Admin-Token': adminToken } : {}),
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        // додатково прокидаємо accept, щоб Vercel не кешував 304
+        accept: 'application/json',
+      },
     });
     if (!res.ok) return [];
     const data = (await res.json().catch(() => ({}))) as any;
@@ -36,41 +65,8 @@ async function fetchCampaigns(): Promise<Campaign[]> {
   }
 }
 
-function Mono({ children }: { children: React.ReactNode }) {
-  return (
-    <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace' }}>
-      {children}
-    </span>
-  );
-}
-function CellLabel({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 12, color: '#6b7280' }}>{children}</div>;
-}
-function RuleBadge({ label, r }: { label: string; r?: Rule }) {
-  if (!r) return null;
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 700 }}>{label}:</span>
-      <span>{r.op}</span>
-      <Mono>“{r.value}”</Mono>
-      {r.pipeline_id ? (
-        <span>
-          → pipe <Mono>#{r.pipeline_id}</Mono>
-        </span>
-      ) : null}
-      {r.status_id ? (
-        <span>
-          status <Mono>#{r.status_id}</Mono>
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-export const dynamic = 'force-dynamic';
-
-export default async function AdminCampaignsPage() {
-  const items = await fetchCampaigns();
+export default async function Page() {
+  const items = await loadCampaigns();
 
   return (
     <div style={{ padding: 24 }}>
@@ -78,7 +74,15 @@ export default async function AdminCampaignsPage() {
         <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0 }}>Кампанії</h1>
         <a
           href="/admin/campaigns/new"
-          style={{ textDecoration: 'none', background: '#2a6df5', color: '#fff', padding: '10px 14px', borderRadius: 12, fontWeight: 800, boxShadow: '0 10px 22px rgba(42,109,245,0.28)' }}
+          style={{
+            textDecoration: 'none',
+            background: '#2a6df5',
+            color: '#fff',
+            padding: '10px 14px',
+            borderRadius: 12,
+            fontWeight: 800,
+            boxShadow: '0 10px 22px rgba(42,109,245,0.28)',
+          }}
         >
           + Нова кампанія
         </a>
@@ -106,7 +110,9 @@ export default async function AdminCampaignsPage() {
         </div>
 
         {items.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>Кампаній поки немає</div>
+          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
+            Кампаній поки немає
+          </div>
         ) : (
           items.map((c) => (
             <div
@@ -119,19 +125,19 @@ export default async function AdminCampaignsPage() {
                 alignItems: 'start',
               }}
             >
-              {/* Дата / ID */}
+              {/* Дата/ID */}
               <div>
-                <CellLabel>ID</CellLabel>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>ID</div>
                 <Mono>{c.id}</Mono>
                 {c.created_at ? (
                   <div style={{ marginTop: 6 }}>
-                    <CellLabel>Дата</CellLabel>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>Дата</div>
                     {new Date(c.created_at).toLocaleString()}
                   </div>
                 ) : null}
               </div>
 
-              {/* Назва */}
+              {/* Назва/статус активності */}
               <div>
                 <div style={{ fontWeight: 800 }}>{c.name || '—'}</div>
                 <div style={{ marginTop: 6 }}>
@@ -151,14 +157,41 @@ export default async function AdminCampaignsPage() {
                 </div>
               </div>
 
-              {/* Сутність */}
+              {/* Сутність (правила) */}
               <div style={{ display: 'grid', gap: 6 }}>
-                <RuleBadge label="v1" r={c.rules?.v1} />
-                <RuleBadge label="v2" r={c.rules?.v2} />
+                {c.rules?.v1 ? (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <b>v1:</b> <span>{c.rules.v1.op}</span> <Mono>“{c.rules.v1.value}”</Mono>
+                    {c.rules.v1.pipeline_id ? (
+                      <span>
+                        → pipe <Mono>#{c.rules.v1.pipeline_id}</Mono>
+                      </span>
+                    ) : null}
+                    {c.rules.v1.status_id ? (
+                      <span>
+                        status <Mono>#{c.rules.v1.status_id}</Mono>
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {c.rules?.v2 ? (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <b>v2:</b> <span>{c.rules.v2.op}</span> <Mono>“{c.rules.v2.value}”</Mono>
+                    {c.rules.v2.pipeline_id ? (
+                      <span>
+                        → pipe <Mono>#{c.rules.v2.pipeline_id}</Mono>
+                      </span>
+                    ) : null}
+                    {c.rules.v2.status_id ? (
+                      <span>
+                        status <Mono>#{c.rules.v2.status_id}</Mono>
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {c.exp?.days ? (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700 }}>exp:</span>
-                    <span>{c.exp.days} дн.</span>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <b>exp:</b> <span>{c.exp.days} дн.</span>
                     {c.exp.pipeline_id ? (
                       <span>
                         → pipe <Mono>#{c.exp.pipeline_id}</Mono>
@@ -173,27 +206,23 @@ export default async function AdminCampaignsPage() {
                 ) : null}
               </div>
 
-              {/* Воронка (база) */}
-              <div style={{ display: 'grid', gap: 6 }}>
+              {/* Базова воронка */}
+              <div style={{ display: 'grid', gap: 2 }}>
                 <div>
-                  <CellLabel>База</CellLabel>
-                  <div>
-                    pipe <Mono>#{c.base_pipeline_id ?? '—'}</Mono>{' '}
-                    {c.base_pipeline_name ? <span>({c.base_pipeline_name})</span> : null}
-                  </div>
-                  <div>
-                    status <Mono>#{c.base_status_id ?? '—'}</Mono>{' '}
-                    {c.base_status_name ? <span>({c.base_status_name})</span> : null}
-                  </div>
+                  pipe <Mono>#{c.base_pipeline_id ?? '—'}</Mono>{' '}
+                  {c.base_pipeline_name ? <span>({c.base_pipeline_name})</span> : null}
+                </div>
+                <div>
+                  status <Mono>#{c.base_status_id ?? '—'}</Mono>{' '}
+                  {c.base_status_name ? <span>({c.base_status_name})</span> : null}
                 </div>
               </div>
 
-              {/* Лічильники + дії */}
+              {/* Лічильники */}
               <div>
                 <div>v1: <b>{c.v1_count ?? 0}</b></div>
                 <div>v2: <b>{c.v2_count ?? 0}</b></div>
                 <div>exp: <b>{c.exp_count ?? 0}</b></div>
-
                 <form action={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`} method="post" style={{ marginTop: 10 }}>
                   <button
                     type="submit"
