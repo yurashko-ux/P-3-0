@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { kvRead, kvWrite } from '@/lib/kv';
 
-const INDEX_KEY = 'campaign:index';
+const INDEX_KEYS = ['campaign:index', 'campaigns:index'];
 const ITEM_KEY = (id: string) => `campaign:${id}`;
 
 export const dynamic = 'force-dynamic';
@@ -55,16 +55,41 @@ async function safeGet(key: string): Promise<string | null> {
   }
 }
 
+async function readAllIds(): Promise<string[]> {
+  const all = new Set<string>();
+  for (const k of INDEX_KEYS) {
+    const rawIds = await safeLRange(k);
+    rawIds
+      .map(normalizeId)
+      .filter((x): x is string => !!x)
+      .forEach((id) => all.add(id));
+  }
+  return Array.from(all);
+}
+
 export async function GET(req: NextRequest) {
   if (!authOk(req)) {
     return NextResponse.json({ ok: false, items: [] }, { status: 401 });
   }
 
-  const rawIds = await safeLRange(INDEX_KEY);
-  const ids = rawIds
-    .map(normalizeId)
-    .filter((x): x is string => !!x);
+  // 1) читаємо ids з обох індексів
+  let ids = await readAllIds();
 
+  // 2) опційно підсіяти одну тестову кампанію — для швидкої перевірки
+  if ((req.nextUrl.searchParams.get('seed') || '') === '1' && typeof kvWrite.createCampaign === 'function') {
+    const sample = await kvWrite.createCampaign({
+      name: 'UI-created',
+      rules: {},
+      exp: {},
+      active: false,
+    });
+    // записуємо id в ОБИДВА індекси, щоб точно зчитувалось
+    try { await kvWrite.lpush(INDEX_KEYS[0], sample.id); } catch {}
+    try { await kvWrite.lpush(INDEX_KEYS[1], sample.id); } catch {}
+    ids = await readAllIds();
+  }
+
+  // 3) вантажимо елементи
   const items: any[] = [];
   for (const id of ids) {
     const raw = await safeGet(ITEM_KEY(id));
@@ -92,13 +117,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    // у вашій обгортці є createCampaign — користуємось нею
+
     if (typeof kvWrite.createCampaign === 'function') {
       const saved = await kvWrite.createCampaign(body);
+      // Пишемо id в ОБИДВА індекси — максимальна сумісність
+      try { await kvWrite.lpush(INDEX_KEYS[0], saved.id); } catch {}
+      try { await kvWrite.lpush(INDEX_KEYS[1], saved.id); } catch {}
       return NextResponse.json({ ok: true, item: saved }, { status: 200 });
     }
 
-    // запасний варіант (на випадок змін у lib)
+    // fallback, якщо createCampaign відсутня
     const id = String(Date.now());
     const item = {
       id,
@@ -112,7 +140,8 @@ export async function POST(req: NextRequest) {
       exp_count: 0,
     };
     await kvWrite.setRaw(ITEM_KEY(id), JSON.stringify(item));
-    await kvWrite.lpush(INDEX_KEY, id);
+    try { await kvWrite.lpush(INDEX_KEYS[0], id); } catch {}
+    try { await kvWrite.lpush(INDEX_KEYS[1], id); } catch {}
     return NextResponse.json({ ok: true, item }, { status: 200 });
   } catch (e) {
     console.error('POST /api/campaigns failed', e);
@@ -120,8 +149,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Soft delete: ставимо deleted: true та перезаписуємо item.
-// Не використовуємо lrem/del, бо їх немає в kvWrite typings.
+// Soft delete: позначаємо deleted=true (індекси не чіпаємо)
 export async function DELETE(req: NextRequest) {
   if (!authOk(req)) {
     return NextResponse.json({ ok: false }, { status: 401 });
@@ -133,14 +161,9 @@ export async function DELETE(req: NextRequest) {
 
   try {
     const raw = await safeGet(ITEM_KEY(id));
-    if (!raw) return NextResponse.json({ ok: true, id }); // id вже «не видно»
-
+    if (!raw) return NextResponse.json({ ok: true, id });
     let obj: any;
-    try {
-      obj = JSON.parse(raw);
-    } catch {
-      obj = { id };
-    }
+    try { obj = JSON.parse(raw); } catch { obj = { id }; }
     obj.deleted = true;
     await kvWrite.setRaw(ITEM_KEY(id), JSON.stringify(obj));
     return NextResponse.json({ ok: true, id }, { status: 200 });
