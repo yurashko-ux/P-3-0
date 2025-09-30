@@ -1,249 +1,116 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-import React from 'react';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 
-type Rule = { op: 'equals' | 'contains'; value: string; pipeline_id?: number; status_id?: number };
+export const dynamic = 'force-dynamic';
+
 type Campaign = {
   id: string;
-  name: string;
+  name?: string;
   created_at?: number;
-  active?: boolean;
-  base_pipeline_id?: number;
-  base_status_id?: number;
-  base_pipeline_name?: string | null;
-  base_status_name?: string | null;
-  rules?: { v1?: Rule; v2?: Rule };
-  exp?: { days?: number; pipeline_id?: number; status_id?: number };
+  base_pipeline_name?: string;
+  base_status_name?: string;
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
 };
 
-export const dynamic = 'force-dynamic';
+async function loadCampaigns(seedIfEmpty = false): Promise<Campaign[]> {
+  const token =
+    cookies().get('admin_token')?.value ||
+    cookies().get('admin_pass')?.value ||
+    '';
 
-function Mono({ children }: { children: React.ReactNode }) {
-  return (
-    <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,"Liberation Mono","Courier New", monospace' }}>
-      {children}
-    </span>
-  );
-}
+  // 1) основний запит
+  const url = `${process.env.NEXT_PUBLIC_BASE_URL ?? ''}/api/campaigns`;
+  let res = await fetch(url, {
+    headers: token ? { 'x-admin-token': token } : {},
+    cache: 'no-store',
+  }).then((r) => r.json() as Promise<{ ok: boolean; items?: Campaign[]; count?: number }>);
 
-async function loadCampaigns(): Promise<Campaign[]> {
-  // 1) Витягуємо куки/токен
-  const c = cookies();
-  const adminToken = c.get('admin_token')?.value || c.get('admin_pass')?.value || '';
-  const cookieHeader = [
-    c.get('admin_token')?.value ? `admin_token=${c.get('admin_token')!.value}` : '',
-    c.get('admin_pass')?.value ? `; admin_pass=${c.get('admin_pass')!.value}` : '',
-  ]
-    .join('')
-    .replace(/^; /, '');
-
-  // 2) Абсолютний URL (у проді відносний інколи ріже куки)
-  const h = headers();
-  const host = h.get('x-forwarded-host') || h.get('host') || '';
-  const proto = (h.get('x-forwarded-proto') || 'https') as 'http' | 'https';
-  const origin =
-    process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, '') || (host ? `${proto}://${host}` : '');
-
-  try {
-    const res = await fetch(`${origin}/api/campaigns`, {
+  // 2) якщо пусто — один раз підсіяти
+  if (seedIfEmpty && (res.count ?? res.items?.length ?? 0) === 0) {
+    await fetch(`${url}?seed=1`, {
+      headers: token ? { 'x-admin-token': token } : {},
       cache: 'no-store',
-      headers: {
-        ...(adminToken ? { 'X-Admin-Token': adminToken } : {}),
-        ...(cookieHeader ? { cookie: cookieHeader } : {}),
-        // додатково прокидаємо accept, щоб Vercel не кешував 304
-        accept: 'application/json',
-      },
-    });
-    if (!res.ok) return [];
-    const data = (await res.json().catch(() => ({}))) as any;
-    return (data?.items ?? []) as Campaign[];
-  } catch {
-    return [];
+    }).catch(() => {});
+    res = await fetch(url, {
+      headers: token ? { 'x-admin-token': token } : {},
+      cache: 'no-store',
+    }).then((r) => r.json() as Promise<{ ok: boolean; items?: Campaign[] }>);
   }
+
+  return res.items ?? [];
 }
 
-export default async function Page() {
-  const items = await loadCampaigns();
+export default async function CampaignsPage() {
+  // пробуємо підсіяти, якщо порожньо
+  const items = await loadCampaigns(true);
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0 }}>Кампанії</h1>
+    <div className="px-6 py-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-extrabold tracking-tight">Кампанії</h1>
         <a
           href="/admin/campaigns/new"
-          style={{
-            textDecoration: 'none',
-            background: '#2a6df5',
-            color: '#fff',
-            padding: '10px 14px',
-            borderRadius: 12,
-            fontWeight: 800,
-            boxShadow: '0 10px 22px rgba(42,109,245,0.28)',
-          }}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-white shadow hover:bg-blue-700"
         >
           + Нова кампанія
         </a>
       </div>
 
-      <div style={{ marginBottom: 16, color: '#6b7280' }}>
-        Всього: <b>{items.length}</b>
-      </div>
+      <p className="mt-3 text-gray-500">Всього: {items.length}</p>
 
-      <div style={{ border: '1px solid #e5e7eb', borderRadius: 14, overflow: 'hidden' }}>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '160px 1fr 1fr 1fr 160px',
-            padding: '10px 12px',
-            background: '#f9fafb',
-            fontWeight: 700,
-          }}
-        >
-          <div>Дата/ID</div>
-          <div>Назва</div>
-          <div>Сутність</div>
-          <div>Воронка</div>
-          <div>Лічильник</div>
-        </div>
-
-        {items.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
-            Кампаній поки немає
-          </div>
-        ) : (
-          items.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '160px 1fr 1fr 1fr 160px',
-                padding: '12px',
-                borderTop: '1px solid #eef2f7',
-                alignItems: 'start',
-              }}
-            >
-              {/* Дата/ID */}
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>ID</div>
-                <Mono>{c.id}</Mono>
-                {c.created_at ? (
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>Дата</div>
-                    {new Date(c.created_at).toLocaleString()}
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Назва/статус активності */}
-              <div>
-                <div style={{ fontWeight: 800 }}>{c.name || '—'}</div>
-                <div style={{ marginTop: 6 }}>
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 999,
-                      background: c.active ? '#DCFCE7' : '#E5E7EB',
-                      color: '#111827',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {c.active ? 'Активна' : 'Неактивна'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Сутність (правила) */}
-              <div style={{ display: 'grid', gap: 6 }}>
-                {c.rules?.v1 ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <b>v1:</b> <span>{c.rules.v1.op}</span> <Mono>“{c.rules.v1.value}”</Mono>
-                    {c.rules.v1.pipeline_id ? (
-                      <span>
-                        → pipe <Mono>#{c.rules.v1.pipeline_id}</Mono>
-                      </span>
-                    ) : null}
-                    {c.rules.v1.status_id ? (
-                      <span>
-                        status <Mono>#{c.rules.v1.status_id}</Mono>
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                {c.rules?.v2 ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <b>v2:</b> <span>{c.rules.v2.op}</span> <Mono>“{c.rules.v2.value}”</Mono>
-                    {c.rules.v2.pipeline_id ? (
-                      <span>
-                        → pipe <Mono>#{c.rules.v2.pipeline_id}</Mono>
-                      </span>
-                    ) : null}
-                    {c.rules.v2.status_id ? (
-                      <span>
-                        status <Mono>#{c.rules.v2.status_id}</Mono>
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                {c.exp?.days ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <b>exp:</b> <span>{c.exp.days} дн.</span>
-                    {c.exp.pipeline_id ? (
-                      <span>
-                        → pipe <Mono>#{c.exp.pipeline_id}</Mono>
-                      </span>
-                    ) : null}
-                    {c.exp.status_id ? (
-                      <span>
-                        status <Mono>#{c.exp.status_id}</Mono>
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Базова воронка */}
-              <div style={{ display: 'grid', gap: 2 }}>
-                <div>
-                  pipe <Mono>#{c.base_pipeline_id ?? '—'}</Mono>{' '}
-                  {c.base_pipeline_name ? <span>({c.base_pipeline_name})</span> : null}
-                </div>
-                <div>
-                  status <Mono>#{c.base_status_id ?? '—'}</Mono>{' '}
-                  {c.base_status_name ? <span>({c.base_status_name})</span> : null}
-                </div>
-              </div>
-
-              {/* Лічильники */}
-              <div>
-                <div>v1: <b>{c.v1_count ?? 0}</b></div>
-                <div>v2: <b>{c.v2_count ?? 0}</b></div>
-                <div>exp: <b>{c.exp_count ?? 0}</b></div>
-                <form action={`/admin/campaigns/delete?id=${encodeURIComponent(c.id)}`} method="post" style={{ marginTop: 10 }}>
-                  <button
-                    type="submit"
-                    style={{
-                      background: '#ef4444',
-                      color: '#fff',
-                      border: 'none',
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      width: '100%',
-                    }}
-                  >
-                    Видалити
-                  </button>
-                </form>
-              </div>
-            </div>
-          ))
-        )}
+      <div className="mt-4 overflow-hidden rounded-xl border border-gray-200">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Дата/ID</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Назва</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Сутність</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Воронка</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Лічильник</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-4 py-10 text-center text-gray-500"
+                >
+                  Кампаній поки немає
+                </td>
+              </tr>
+            ) : (
+              items.map((c) => {
+                const created =
+                  c.created_at ? new Date(c.created_at).toLocaleString() : '—';
+                const counts = `v1: ${c.v1_count ?? 0} · v2: ${c.v2_count ?? 0} · exp: ${c.exp_count ?? 0}`;
+                return (
+                  <tr key={c.id}>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      <div className="flex flex-col">
+                        <span>{created}</span>
+                        <span className="text-gray-400">ID: {c.id}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {c.name || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      {/* короткий опис сутності, якщо є */}
+                      {c.base_status_name ? `статус: ${c.base_status_name}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      {c.base_pipeline_name || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{counts}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
