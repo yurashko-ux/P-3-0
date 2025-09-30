@@ -15,14 +15,11 @@ type Campaign = {
 
 type ApiList = { ok: boolean; items?: Campaign[]; count?: number };
 
-/** Розплутуємо будь-які «дивні» значення id з KV:
- * "1759...", {"value":"1759..."}, "{\"value\":\"1759...\"}", і навіть вкладені кілька разів. */
+/** Розплутуємо «дивні» значення id з KV */
 function normalizeId(raw: unknown): string {
   let cur: unknown = raw;
 
-  // розмотуємо 3 кола: достатньо для наших кейсів
   for (let i = 0; i < 3; i++) {
-    // якщо строка схожа на JSON — парсимо
     if (typeof cur === 'string') {
       const s = cur.trim();
       if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('"') && s.endsWith('"'))) {
@@ -30,23 +27,18 @@ function normalizeId(raw: unknown): string {
           cur = JSON.parse(s);
           continue;
         } catch {
-          // не JSON — повертаємо як є
           return s;
         }
       }
       return s;
     }
-
-    // якщо обʼєкт виду { value: ... } — беремо value
     if (cur && typeof cur === 'object' && 'value' in (cur as any)) {
       // @ts-ignore
       cur = (cur as any).value;
       continue;
     }
-
     break;
   }
-
   if (typeof cur === 'string') return cur;
   return String(cur ?? '');
 }
@@ -72,6 +64,8 @@ export default function ClientList() {
   const [data, setData] = useState<ApiList>({ ok: true, items: [], count: 0 });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -79,7 +73,6 @@ export default function ClientList() {
     try {
       const res = await fetch('/api/campaigns', { cache: 'no-store' });
       const json = (await res.json()) as ApiList;
-      // підчищаємо id одразу
       const items = (json.items ?? []).map((c) => ({ ...c, id: normalizeId(c.id) }));
       setData({ ok: json.ok, items, count: json.count ?? items.length });
     } catch (e: any) {
@@ -95,24 +88,56 @@ export default function ClientList() {
 
   const items = useMemo(() => data.items ?? [], [data]);
 
+  async function handleDelete(id: string) {
+    if (!id) return;
+    if (!confirm('Видалити кампанію?')) return;
+
+    const prev = items;
+    setBusyId(id);
+    setData((d) => ({ ...d, items: (d.items ?? []).filter((x) => x.id !== id), count: (d.count ?? prev.length) - 1 }));
+
+    try {
+      const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.reason || `Помилка видалення (${res.status})`);
+      }
+      setInfo('Кампанію видалено.');
+      setTimeout(() => setInfo(null), 2500);
+    } catch (e: any) {
+      // rollback
+      setData((d) => ({ ...d, items: prev, count: prev.length }));
+      alert(e?.message || 'Не вдалося видалити');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
           Всього: <span className="font-semibold">{data.count ?? items.length}</span>
         </div>
-        <button
-          onClick={load}
-          className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 active:scale-[0.99]"
-          disabled={loading}
-        >
-          {loading ? 'Оновлюю…' : 'Оновити'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={load}
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 active:scale-[0.99]"
+            disabled={loading}
+          >
+            {loading ? 'Оновлюю…' : 'Оновити'}
+          </button>
+        </div>
       </div>
 
       {err && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
           {err}
+        </div>
+      )}
+      {info && (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {info}
         </div>
       )}
 
@@ -125,12 +150,13 @@ export default function ClientList() {
               <th className="sticky top-0 z-10 border-b px-4 py-3">Сутність</th>
               <th className="sticky top-0 z-10 border-b px-4 py-3">Воронка</th>
               <th className="sticky top-0 z-10 border-b px-4 py-3">Лічильник</th>
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Дії</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={5}>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
                   Кампаній поки немає
                 </td>
               </tr>
@@ -160,6 +186,18 @@ export default function ClientList() {
                   <td className="px-4 py-3 text-sm text-gray-700">{essence}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{funnel}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{counter}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => handleDelete(id)}
+                      disabled={busyId === id}
+                      className={`rounded-md px-3 py-1.5 text-sm text-white ${
+                        busyId === id ? 'bg-red-300' : 'bg-red-500 hover:bg-red-600'
+                      }`}
+                      title="Видалити кампанію"
+                    >
+                      {busyId === id ? 'Видаляю…' : 'Видалити'}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
