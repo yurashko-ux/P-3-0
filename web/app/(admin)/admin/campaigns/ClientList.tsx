@@ -3,282 +3,175 @@
 import { useEffect, useMemo, useState } from 'react';
 
 type Counters = { v1?: number; v2?: number; exp?: number };
-
+type BaseInfo = {
+  pipeline?: string;
+  status?: string;
+  pipelineName?: string;
+  statusName?: string;
+};
 type Campaign = {
   id: string;
   name?: string;
   v1?: { value?: string };
   v2?: { value?: string };
-  base?: { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
+  base?: BaseInfo;
   counters?: Counters;
   createdAt?: string | number | Date;
   deleted?: boolean;
 };
 
 type ApiList = { ok: boolean; items?: Campaign[]; count?: number };
-type ApiItem = { ok: boolean; item?: Campaign };
 
-function normalizeId(raw: unknown): string {
-  let cur: unknown = raw;
-
-  for (let i = 0; i < 3; i++) {
-    if (typeof cur === 'string') {
-      const s = cur.trim();
-      if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('"') && s.endsWith('"'))) {
-        try {
-          cur = JSON.parse(s);
-          continue;
-        } catch {
-          return s;
-        }
-      }
-      return s;
-    }
-    if (cur && typeof cur === 'object' && 'value' in (cur as any)) {
-      // @ts-ignore
-      cur = (cur as any).value;
-      continue;
-    }
-    break;
-  }
-  if (typeof cur === 'string') return cur;
-  return String(cur ?? '');
+function dash(v?: string | number | null) {
+  if (v == null || v === '' || v === 'null' || v === 'undefined') return '—';
+  return String(v);
 }
 
-function fmtDate(x?: string | number | Date) {
-  if (!x) return '—';
+function fmtRules(c?: Campaign) {
+  const v1 = c?.v1?.value ?? '';
+  const v2 = c?.v2?.value ?? '';
+  return `v1: ${dash(v1)} · v2: ${dash(v2)}`;
+}
+
+function fmtFunnel(c?: Campaign) {
+  const p = c?.base?.pipelineName || c?.base?.pipeline || '';
+  const s = c?.base?.statusName || c?.base?.status || '';
+  if (!p && !s) return '—';
+  if (p && s) return `${p} → ${s}`;
+  return p || s || '—';
+}
+
+function fmtCounters(c?: Campaign) {
+  const cv1 = c?.counters?.v1 ?? 0;
+  const cv2 = c?.counters?.v2 ?? 0;
+  const exp = c?.counters?.exp ?? 0;
+  return `v1: ${cv1} • v2: ${cv2} • exp: ${exp}`;
+}
+
+async function fetchDetails(id: string): Promise<Campaign | null> {
   try {
-    const d = new Date(x);
-    if (Number.isNaN(+d)) return '—';
-    return d.toLocaleString('uk-UA', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const r = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j?.ok && j?.item) return j.item as Campaign;
+    return null;
   } catch {
-    return '—';
+    return null;
   }
 }
 
-export default function ClientList() {
-  const [data, setData] = useState<ApiList>({ ok: true, items: [], count: 0 });
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const [hydrating, setHydrating] = useState(false);
+export default function ClientList({ initial }: { initial: ApiList }) {
+  // локальний список, який збагачуємо деталями
+  const [rows, setRows] = useState<Campaign[]>(
+    () => (initial.items ?? []).map((x) => ({ ...x }))
+  );
+  const count = useMemo(() => initial.count ?? rows.length, [initial.count, rows.length]);
 
-  async function load() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const res = await fetch('/api/campaigns', { cache: 'no-store' });
-      const json = (await res.json()) as ApiList;
-      const items = (json.items ?? []).map((c) => ({ ...c, id: normalizeId(c.id) }));
-      setData({ ok: json.ok, items, count: json.count ?? items.length });
-      // після першого завантаження запускаємо гідрацію
-      void hydrate(items);
-    } catch (e: any) {
-      setErr(e?.message || 'Помилка завантаження');
-    } finally {
-      setLoading(false);
-    }
-  }
+  // підтягнути деталі для кожного id паралельно
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ids = (rows ?? [])
+        .map((r) => r?.id)
+        .filter((x): x is string => typeof x === 'string' && x.length > 0);
 
-  // Гідрація: підтягнути деталі для тих елементів, де їх немає
-  async function hydrate(list: Campaign[]) {
-    if (!list?.length) return;
-    const need = list.filter(
-      (c) =>
-        !c?.name ||
-        !c?.base?.pipelineName ||
-        !c?.base?.statusName ||
-        typeof c?.counters?.v1 !== 'number' ||
-        typeof c?.counters?.v2 !== 'number' ||
-        typeof c?.counters?.exp !== 'number'
-    );
-    if (!need.length) return;
+      if (ids.length === 0) return;
 
-    setHydrating(true);
-    try {
-      const results = await Promise.allSettled(
-        need.map((c) =>
-          fetch(`/api/campaigns/${encodeURIComponent(c.id)}`, { cache: 'no-store' })
-            .then((r) => r.json() as Promise<ApiItem>)
-            .catch(() => ({ ok: false }) as ApiItem)
-        )
-      );
+      const settled = await Promise.allSettled(ids.map((id) => fetchDetails(id)));
+      if (cancelled) return;
 
-      const detailsMap = new Map<string, Campaign>();
-      results.forEach((r, i) => {
-        if (r.status === 'fulfilled' && r.value?.ok && r.value.item) {
-          const full = r.value.item;
-          full.id = normalizeId(full.id);
-          detailsMap.set(need[i].id, full);
+      const byId = new Map<string, Campaign>();
+      settled.forEach((res, i) => {
+        const id = ids[i];
+        if (res.status === 'fulfilled' && res.value) {
+          byId.set(id, res.value);
         }
       });
 
-      if (detailsMap.size) {
-        setData((d) => {
-          const merged = (d.items ?? []).map((row) => {
-            const more = detailsMap.get(row.id);
-            if (!more) return row;
+      if (byId.size === 0) return;
 
-            // акуратно змерджити дані
-            const base = {
-              pipeline: more.base?.pipeline ?? row.base?.pipeline,
-              status: more.base?.status ?? row.base?.status,
-              pipelineName: more.base?.pipelineName ?? row.base?.pipelineName,
-              statusName: more.base?.statusName ?? row.base?.statusName,
-            };
-            const counters: Counters = {
-              v1: more.counters?.v1 ?? row.counters?.v1 ?? 0,
-              v2: more.counters?.v2 ?? row.counters?.v2 ?? 0,
-              exp: more.counters?.exp ?? row.counters?.exp ?? 0,
-            };
+      setRows((prev) =>
+        prev.map((r) => {
+          const m = byId.get(r.id);
+          return m ? { ...r, ...m } : r;
+        })
+      );
+    })();
 
-            return {
-              ...row,
-              ...more,
-              base,
-              counters,
-            } as Campaign;
-          });
-          return { ...d, items: merged };
-        });
-      }
-    } finally {
-      setHydrating(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
+    return () => {
+      cancelled = true;
+    };
+    // тільки при першому маунті — rows береться зі стартового стану
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const items = useMemo(() => data.items ?? [], [data]);
-
-  async function handleDelete(id: string) {
-    if (!id) return;
+  const onDelete = async (id: string) => {
     if (!confirm('Видалити кампанію?')) return;
-
-    const prev = items;
-    setBusyId(id);
-    setData((d) => ({ ...d, items: (d.items ?? []).filter((x) => x.id !== id), count: (d.count ?? prev.length) - 1 }));
-
     try {
-      const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.reason || `Помилка видалення (${res.status})`);
-      }
-      setInfo('Кампанію видалено.');
-      setTimeout(() => setInfo(null), 2500);
-    } catch (e: any) {
-      setData((d) => ({ ...d, items: prev, count: prev.length }));
-      alert(e?.message || 'Не вдалося видалити');
-    } finally {
-      setBusyId(null);
+      const r = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error('delete failed');
+      // оптимістично прибираємо рядок
+      setRows((prev) => prev.filter((x) => x.id !== id));
+    } catch {
+      alert('Не вдалося видалити. Спробуйте ще раз.');
     }
-  }
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">
-          Всього: <span className="font-semibold">{data.count ?? items.length}</span>
-          {hydrating && <span className="ml-2 text-gray-400">(підтягуємо деталі…)</span>}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 active:scale-[0.99]"
-            disabled={loading}
-          >
-            {loading ? 'Оновлюю…' : 'Оновити'}
-          </button>
-        </div>
-      </div>
+    <div className="w-full">
+      <div className="text-sm text-gray-500 mb-3">Всього: {count}</div>
 
-      {err && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {err}
-        </div>
-      )}
-      {info && (
-        <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          {info}
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0 rounded-xl border">
+      <div className="overflow-x-auto rounded-xl border border-black/5">
+        <table className="min-w-full text-[14px]">
           <thead>
-            <tr className="bg-gray-50 text-left text-sm font-medium text-gray-600">
-              <th className="sticky top-0 z-10 border-b px-4 py-3">Дата/ID</th>
-              <th className="sticky top-0 z-10 border-b px-4 py-3">Назва</th>
-              <th className="sticky top-0 z-10 border-b px-4 py-3">Сутність</th>
-              <th className="sticky top-0 z-10 border-b px-4 py-3">Воронка</th>
-              <th className="sticky top-0 z-10 border-b px-4 py-3">Лічильник</th>
-              <th className="sticky top-0 z-10 border-b px-4 py-3">Дії</th>
+            <tr className="bg-black/5 text-gray-700">
+              <th className="text-left px-4 py-3 w-[240px]">Дата/ID</th>
+              <th className="text-left px-4 py-3 w-[220px]">Назва</th>
+              <th className="text-left px-4 py-3 w-[280px]">Сутність</th>
+              <th className="text-left px-4 py-3 w-[280px]">Воронка</th>
+              <th className="text-left px-4 py-3 w-[220px]">Лічильник</th>
+              <th className="text-left px-4 py-3 w-[140px]">Дії</th>
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 && (
-              <tr>
-                <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
-                  Кампаній поки немає
-                </td>
-              </tr>
-            )}
-
-            {items.map((c) => {
-              const id = normalizeId(c.id);
-              const datePart = fmtDate(c.createdAt);
-              const name = c.name || '—';
-
-              const essence =
-                (c.v1?.value ? `v1: ${c.v1.value}` : 'v1: —') +
-                ' · ' +
-                (c.v2?.value ? `v2: ${c.v2.value}` : 'v2: —');
-
-              const funnel =
-                (c.base?.pipelineName || (c.base?.pipeline ? `#${c.base.pipeline}` : '#—')) +
-                ' · ' +
-                (c.base?.statusName || (c.base?.status ? c.base.status : '—'));
-
-              const counter = `v1: ${c.counters?.v1 ?? 0} · v2: ${c.counters?.v2 ?? 0} · exp: ${c.counters?.exp ?? 0}`;
-
+            {rows.map((c) => {
+              const created =
+                c.createdAt ? new Date(c.createdAt).toLocaleString() : '—';
               return (
-                <tr key={`${id}-${name}`} className="border-t align-top">
-                  <td className="whitespace-nowrap px-4 py-3 text-sm">
-                    <div className="text-gray-700">{datePart}</div>
-                    <div className="text-xs text-gray-400">ID: {id || '—'}</div>
+                <tr key={c.id} className="border-t border-black/5">
+                  <td className="px-4 py-3 align-top">
+                    <div className="text-gray-500">—</div>
+                    <div className="text-gray-400 text-xs">ID: {dash(c.id)}</div>
                   </td>
-                  <td className="px-4 py-3 text-sm">{name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{essence}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{funnel}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{counter}</td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-4 py-3 align-top">{dash(c.name)}</td>
+                  <td className="px-4 py-3 align-top">{fmtRules(c)}</td>
+                  <td className="px-4 py-3 align-top">{fmtFunnel(c)}</td>
+                  <td className="px-4 py-3 align-top">{fmtCounters(c)}</td>
+                  <td className="px-4 py-3 align-top">
                     <button
-                      onClick={() => handleDelete(id)}
-                      disabled={busyId === id}
-                      className={`rounded-md px-3 py-1.5 text-sm text-white ${
-                        busyId === id ? 'bg-red-300' : 'bg-red-500 hover:bg-red-600'
-                      }`}
-                      title="Видалити кампанію"
+                      onClick={() => onDelete(c.id)}
+                      className="rounded-md bg-red-500 text-white px-3 py-1.5 hover:bg-red-600 transition"
                     >
-                      {busyId === id ? 'Видаляю…' : 'Видалити'}
+                      Видалити
                     </button>
                   </td>
                 </tr>
               );
             })}
+
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-gray-400">
+                  Кампаній поки немає
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* При бажанні можна показати дату створення під таблицею */}
+      {/* <div className="mt-2 text-xs text-gray-400">Оновлено: {new Date().toLocaleString()}</div> */}
     </div>
   );
 }
