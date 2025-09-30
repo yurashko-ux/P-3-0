@@ -14,29 +14,48 @@ type Campaign = {
   exp_count?: number;
 };
 
-async function loadCampaigns(seedIfEmpty = false): Promise<Campaign[]> {
+function getOrigin() {
+  // 1) Явно виставлений BASE_URL
+  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL;
+  // 2) Vercel: VERCEL_URL => https://<domain>
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  // 3) локально
+  return 'http://localhost:3000';
+}
+
+async function apiJson<T>(path: string, init?: RequestInit) {
+  const origin = getOrigin();
+  const url = `${origin}${path.startsWith('/') ? path : `/${path}`}`;
+  const res = await fetch(url, { cache: 'no-store', ...init });
+  // щоб легше дебажити 5xx
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`API ${res.status} ${res.statusText} at ${url}: ${text}`);
+  }
+  return (await res.json()) as T;
+}
+
+async function loadCampaigns(seedIfEmpty = false) {
   const token =
     cookies().get('admin_token')?.value ||
     cookies().get('admin_pass')?.value ||
     '';
 
+  type Resp = { ok: boolean; items?: Campaign[]; count?: number };
+
   // 1) основний запит
-  const url = `${process.env.NEXT_PUBLIC_BASE_URL ?? ''}/api/campaigns`;
-  let res = await fetch(url, {
+  let res = await apiJson<Resp>('/api/campaigns', {
     headers: token ? { 'x-admin-token': token } : {},
-    cache: 'no-store',
-  }).then((r) => r.json() as Promise<{ ok: boolean; items?: Campaign[]; count?: number }>);
+  });
 
   // 2) якщо пусто — один раз підсіяти
   if (seedIfEmpty && (res.count ?? res.items?.length ?? 0) === 0) {
-    await fetch(`${url}?seed=1`, {
+    await apiJson<Resp>('/api/campaigns?seed=1', {
       headers: token ? { 'x-admin-token': token } : {},
-      cache: 'no-store',
     }).catch(() => {});
-    res = await fetch(url, {
+    res = await apiJson<Resp>('/api/campaigns', {
       headers: token ? { 'x-admin-token': token } : {},
-      cache: 'no-store',
-    }).then((r) => r.json() as Promise<{ ok: boolean; items?: Campaign[] }>);
+    });
   }
 
   return res.items ?? [];
@@ -74,10 +93,7 @@ export default async function CampaignsPage() {
           <tbody className="divide-y divide-gray-100 bg-white">
             {items.length === 0 ? (
               <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-10 text-center text-gray-500"
-                >
+                <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
                   Кампаній поки немає
                 </td>
               </tr>
@@ -94,11 +110,8 @@ export default async function CampaignsPage() {
                         <span className="text-gray-400">ID: {c.id}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {c.name || '—'}
-                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{c.name || '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {/* короткий опис сутності, якщо є */}
                       {c.base_status_name ? `статус: ${c.base_status_name}` : '—'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
