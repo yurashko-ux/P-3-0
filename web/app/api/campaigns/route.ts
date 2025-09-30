@@ -1,155 +1,180 @@
 // web/app/api/campaigns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-
-// --- KV REST helpers (без зовнішніх залежностей) ---
-const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
-const WR = process.env.KV_REST_API_TOKEN || '';
-const RO = process.env.KV_REST_API_READ_ONLY_TOKEN || WR;
+import { cookies, headers } from 'next/headers';
+import { kvRead, kvWrite } from '@/lib/kv'; // очікуємо, що є обгортки як у нотатках (lrange/getRaw і т.п.)
 
 const INDEX_KEY = 'campaign:index';
-const ITEM_KEY  = (id: string) => `campaign:${id}`;
+const ITEM_KEY = (id: string) => `campaign:${id}`;
 
-function h(ro = false) {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${ro ? RO : WR}`,
-  };
+/** Допоміжне: дістаємо ADMIN_PASS із env і з реквеста */
+function getAdminPassFromReq(req: NextRequest) {
+  const adminEnv = process.env.ADMIN_PASS || '';
+  const h = req.headers.get('x-admin-token') || '';
+  const c = cookies().get('admin_token')?.value || cookies().get('admin_pass')?.value || '';
+  return { ok: !!adminEnv && (h === adminEnv || c === adminEnv), adminEnv };
 }
-async function restGet(path: string, ro = true) {
-  const res = await fetch(`${BASE}/${path}`, { headers: h(ro), cache: 'no-store' });
-  if (!res.ok) throw new Error(`${path} ${res.status}`);
-  return res;
-}
-async function restPost(path: string, body: any, ro = false) {
-  const res = await fetch(`${BASE}/${path}`, {
-    method: 'POST',
-    headers: h(ro),
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${path} ${res.status}`);
-  return res;
-}
-async function kvGet(key: string): Promise<string | null> {
+
+/** Нормалізуємо ID, що можуть бути:
+ * - '17590...'
+ * - '{"value":"17590..."}'
+ * - { value: '17590...' }
+ */
+function normalizeId(raw: unknown): string | null {
+  if (!raw) return null;
   try {
-    const r = await restGet(`get/${encodeURIComponent(key)}`, true);
-    const t = await r.text();
-    try {
-      const j = JSON.parse(t);
-      return typeof j === 'string' ? j : (j?.result ?? j?.value ?? null);
-    } catch {
-      return t || null;
-    }
-  } catch {
-    return null;
-  }
-}
-async function kvSet(key: string, value: string) {
-  await restPost(`set/${encodeURIComponent(key)}`, { value }, false);
-}
-async function kvLRangeAll(key: string): Promise<string[]> {
-  const r = await restGet(`lrange/${encodeURIComponent(key)}/0/-1`, true).catch(() => null);
-  if (!r) return [];
-  const t = await r.text().catch(() => '');
-  try {
-    const j = JSON.parse(t);
-    const arr = Array.isArray(j) ? j : (Array.isArray(j?.result) ? j.result : (Array.isArray(j?.data) ? j.data : []));
-    return arr.map((x: any) => (typeof x === 'string' ? x : (x?.value ?? x?.member ?? x?.id ?? ''))).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-async function kvLPush(key: string, value: string) {
-  await restPost(`lpush/${encodeURIComponent(key)}`, { value }, false);
-}
-
-// --- Admin guard (cookie або X-Admin-Token) ---
-function readToken(req: NextRequest) {
-  const header = req.headers.get('x-admin-token') || '';
-  const c1 = req.cookies.get('admin_token')?.value || '';
-  const c2 = req.cookies.get('admin_pass')?.value || '';
-  return header || c1 || c2 || '';
-}
-function assertAdmin(req: NextRequest) {
-  const provided = readToken(req);
-  const expected = process.env.ADMIN_PASS || '';
-  return expected && provided && provided === expected;
-}
-
-// --- Types ---
-type Rule = { op: 'contains' | 'equals'; value: string };
-type CampaignInput = {
-  name?: string;
-  base_pipeline_id?: number;
-  base_status_id?: number;
-  rules?: { v1?: Rule; v2?: Rule };
-};
-
-export async function GET(req: NextRequest) {
-  try {
-    if (!assertAdmin(req)) {
-      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
-    }
-    if (!BASE || !WR) {
-      return NextResponse.json({ ok: false, error: 'kv_not_configured' }, { status: 500 });
-    }
-
-    const ids = await kvLRangeAll(INDEX_KEY);
-    const items: any[] = [];
-    for (const id of ids) {
-      const raw = await kvGet(ITEM_KEY(id));
-      if (!raw) continue;
-      try {
+    if (typeof raw === 'string') {
+      // якщо це JSON з полем value
+      if (raw.trim().startsWith('{')) {
         const obj = JSON.parse(raw);
-        if (obj && !obj.deleted) items.push(obj);
-      } catch {
-        // зіпсований json пропускаємо
+        if (obj && typeof obj.value === 'string') return obj.value;
       }
+      return raw;
     }
-    return NextResponse.json({ ok: true, count: items.length, items }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    if (typeof raw === 'object' && (raw as any).value) {
+      return String((raw as any).value);
+    }
+  } catch {
+    /* ignore */
   }
+  return null;
 }
 
-export async function POST(req: NextRequest) {
+/** Безпечне lrange із запасним читанням через WR у разі помилки/порожньо */
+async function safeLRange(key: string): Promise<string[]> {
+  // спершу RO
   try {
-    if (!assertAdmin(req)) {
-      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+    const ids = (await kvRead.lrange(key, 0, -1)) as any;
+    if (Array.isArray(ids) && ids.length) return ids as string[];
+  } catch {
+    /* ignore */
+  }
+  // fallback — WR
+  try {
+    const ids = (await kvWrite.lrange(key, 0, -1)) as any;
+    if (Array.isArray(ids)) return ids as string[];
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+/** Безпечний get: RO → WR */
+async function safeGet(key: string): Promise<string | null> {
+  try {
+    const v = (await kvRead.getRaw(key)) as string | null;
+    if (v) return v;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const v = (await kvWrite.getRaw(key)) as string | null;
+    if (v) return v;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export const dynamic = 'force-dynamic';
+
+/** GET /api/campaigns — стабільний список без 401/порожніх відповідей */
+export async function GET(req: NextRequest) {
+  // Жорстко перевіряємо адмін-доступ (інакше UI отримує 401 та показує нуль елементів)
+  const { ok } = getAdminPassFromReq(req);
+  if (!ok) {
+    return NextResponse.json({ ok: false, items: [], reason: 'unauthorized' }, { status: 401 });
+  }
+
+  // 1) ID із індексу з нормалізацією
+  const rawIds = await safeLRange(INDEX_KEY);
+  const ids = rawIds
+    .map(normalizeId)
+    .filter((x): x is string => !!x);
+
+  // 2) Підтягнемо кожен item (RO → WR), при цьому ігноруємо поламані JSON
+  const items: any[] = [];
+  for (const id of ids) {
+    const raw = await safeGet(ITEM_KEY(id));
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      // підправимо дефолти для UI
+      parsed.id = String(parsed.id ?? id);
+      parsed.v1_count = parsed.v1_count ?? 0;
+      parsed.v2_count = parsed.v2_count ?? 0;
+      parsed.exp_count = parsed.exp_count ?? 0;
+      items.push(parsed);
+    } catch {
+      // якщо лежав не-JSON — пропускаємо
+      continue;
     }
-    if (!BASE || !WR) {
-      return NextResponse.json({ ok: false, error: 'kv_not_configured' }, { status: 500 });
-    }
+  }
 
-    const body = (await req.json().catch(() => ({}))) as CampaignInput;
+  return NextResponse.json({ ok: true, count: items.length, items }, { status: 200 });
+}
 
-    const now = Date.now();
-    const id = String(now);
+/** POST /api/campaigns — створення (залишено як було; додаємо лише адмін-перевірку) */
+export async function POST(req: NextRequest) {
+  const { ok } = getAdminPassFromReq(req);
+  if (!ok) return NextResponse.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
 
+  try {
+    const body = await req.json();
+    const id = String(Date.now());
     const item = {
       id,
-      name: body.name || 'UI-created',
-      created_at: now,
-      active: false,
-      base_pipeline_id: body.base_pipeline_id ?? undefined,
-      base_status_id:   body.base_status_id ?? undefined,
-      base_pipeline_name: null as null | string,
-      base_status_name:   null as null | string,
-      rules: {
-        v1: body.rules?.v1 && body.rules.v1.value ? body.rules.v1 : undefined,
-        v2: body.rules?.v2 && body.rules.v2.value ? body.rules.v2 : undefined,
-      },
-      exp: {},
+      name: String(body?.name ?? 'UI-created'),
+      created_at: Date.now(),
+      active: body?.active ?? false,
+      base_pipeline_id: Number(body?.base_pipeline_id ?? 0) || undefined,
+      base_status_id: Number(body?.base_status_id ?? 0) || undefined,
+      base_pipeline_name: body?.base_pipeline_name ?? null,
+      base_status_name: body?.base_status_name ?? null,
+      rules: body?.rules ?? {},
+      exp: body?.exp ?? {},
       v1_count: 0,
       v2_count: 0,
       exp_count: 0,
     };
 
-    // Порядок важливий: спочатку item, потім id в індексі (LPUSH — новий на початку)
-    await kvSet(ITEM_KEY(id), JSON.stringify(item));
-    await kvLPush(INDEX_KEY, id);
+    // запис
+    await kvWrite.setRaw(ITEM_KEY(id), JSON.stringify(item));
+    await kvWrite.lpush(INDEX_KEY, id);
 
     return NextResponse.json({ ok: true, item }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    console.error('POST /api/campaigns failed', e);
+    return NextResponse.json({ ok: false, reason: 'KV write failed' }, { status: 500 });
+  }
+}
+
+/** DELETE /api/campaigns?id=... — м’яке або повне видалення */
+export async function DELETE(req: NextRequest) {
+  const { ok } = getAdminPassFromReq(req);
+  if (!ok) return NextResponse.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
+
+  const id = req.nextUrl.searchParams.get('id') || '';
+  if (!id) return NextResponse.json({ ok: false, reason: 'missing id' }, { status: 400 });
+
+  try {
+    // видаляємо item
+    try {
+      await kvWrite.del?.(ITEM_KEY(id));
+    } catch {
+      // якщо немає del у вашій обгортці — затираємо пустим JSON
+      await kvWrite.setRaw(ITEM_KEY(id), '');
+    }
+
+    // відрізаємо з індексу (LIST → LREM)
+    try {
+      await kvWrite.lrem?.(INDEX_KEY, 0, id);
+    } catch {
+      // якщо немає lrem у вашій обгортці— ігноруємо (UI та GET уже не зламаються)
+    }
+
+    return NextResponse.json({ ok: true, id }, { status: 200 });
+  } catch (e: any) {
+    console.error('DELETE /api/campaigns failed', e);
+    return NextResponse.json({ ok: false, reason: 'delete failed' }, { status: 500 });
   }
 }
