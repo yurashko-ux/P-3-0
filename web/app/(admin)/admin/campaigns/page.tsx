@@ -1,6 +1,4 @@
 // web/app/(admin)/admin/campaigns/page.tsx
-import { cookies } from 'next/headers';
-
 export const dynamic = 'force-dynamic';
 
 type Campaign = {
@@ -15,55 +13,48 @@ type Campaign = {
 };
 
 function getOrigin() {
-  // 1) Явно виставлений BASE_URL
   if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL;
-  // 2) Vercel: VERCEL_URL => https://<domain>
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  // 3) локально
   return 'http://localhost:3000';
 }
 
-async function apiJson<T>(path: string, init?: RequestInit) {
-  const origin = getOrigin();
-  const url = `${origin}${path.startsWith('/') ? path : `/${path}`}`;
-  const res = await fetch(url, { cache: 'no-store', ...init });
-  // щоб легше дебажити 5xx
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status} ${res.statusText} at ${url}: ${text}`);
+async function safeApiJson<T>(path: string): Promise<T | null> {
+  const url =
+    `${getOrigin()}${path.startsWith('/') ? path : `/${path}`}`;
+
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    // інколи API може повернути не JSON
+    const text = await res.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
   }
-  return (await res.json()) as T;
 }
 
-async function loadCampaigns(seedIfEmpty = false) {
-  const token =
-    cookies().get('admin_token')?.value ||
-    cookies().get('admin_pass')?.value ||
-    '';
+async function loadCampaigns(): Promise<Campaign[]> {
+  // 1) основний виклик
+  const res1 = await safeApiJson<{ ok: boolean; items?: Campaign[]; count?: number }>('/api/campaigns');
+  if (res1?.items && Array.isArray(res1.items)) return res1.items;
 
-  type Resp = { ok: boolean; items?: Campaign[]; count?: number };
+  // 2) спроба підсіяти одну кампанію, якщо база порожня
+  await safeApiJson('/api/campaigns?seed=1');
 
-  // 1) основний запит
-  let res = await apiJson<Resp>('/api/campaigns', {
-    headers: token ? { 'x-admin-token': token } : {},
-  });
+  // 3) повторний виклик
+  const res2 = await safeApiJson<{ ok: boolean; items?: Campaign[]; count?: number }>('/api/campaigns');
+  if (res2?.items && Array.isArray(res2.items)) return res2.items;
 
-  // 2) якщо пусто — один раз підсіяти
-  if (seedIfEmpty && (res.count ?? res.items?.length ?? 0) === 0) {
-    await apiJson<Resp>('/api/campaigns?seed=1', {
-      headers: token ? { 'x-admin-token': token } : {},
-    }).catch(() => {});
-    res = await apiJson<Resp>('/api/campaigns', {
-      headers: token ? { 'x-admin-token': token } : {},
-    });
-  }
-
-  return res.items ?? [];
+  // 4) останній захист
+  return [];
 }
 
 export default async function CampaignsPage() {
-  // пробуємо підсіяти, якщо порожньо
-  const items = await loadCampaigns(true);
+  const items = await loadCampaigns();
 
   return (
     <div className="px-6 py-6">
