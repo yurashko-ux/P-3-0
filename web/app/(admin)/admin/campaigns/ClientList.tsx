@@ -116,4 +116,169 @@ export default function ClientList() {
         if (r.status === 'fulfilled' && r.value?.ok && r.value.item) {
           const full = r.value.item;
           full.id = normalizeId(full.id);
-         
+          detailsMap.set(need[i].id, full);
+        }
+      });
+
+      if (detailsMap.size) {
+        setData((d) => {
+          const merged = (d.items ?? []).map((row) => {
+            const more = detailsMap.get(row.id);
+            if (!more) return row;
+
+            // акуратно змерджити дані
+            const base = {
+              pipeline: more.base?.pipeline ?? row.base?.pipeline,
+              status: more.base?.status ?? row.base?.status,
+              pipelineName: more.base?.pipelineName ?? row.base?.pipelineName,
+              statusName: more.base?.statusName ?? row.base?.statusName,
+            };
+            const counters: Counters = {
+              v1: more.counters?.v1 ?? row.counters?.v1 ?? 0,
+              v2: more.counters?.v2 ?? row.counters?.v2 ?? 0,
+              exp: more.counters?.exp ?? row.counters?.exp ?? 0,
+            };
+
+            return {
+              ...row,
+              ...more,
+              base,
+              counters,
+            } as Campaign;
+          });
+          return { ...d, items: merged };
+        });
+      }
+    } finally {
+      setHydrating(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const items = useMemo(() => data.items ?? [], [data]);
+
+  async function handleDelete(id: string) {
+    if (!id) return;
+    if (!confirm('Видалити кампанію?')) return;
+
+    const prev = items;
+    setBusyId(id);
+    setData((d) => ({ ...d, items: (d.items ?? []).filter((x) => x.id !== id), count: (d.count ?? prev.length) - 1 }));
+
+    try {
+      const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.reason || `Помилка видалення (${res.status})`);
+      }
+      setInfo('Кампанію видалено.');
+      setTimeout(() => setInfo(null), 2500);
+    } catch (e: any) {
+      setData((d) => ({ ...d, items: prev, count: prev.length }));
+      alert(e?.message || 'Не вдалося видалити');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-500">
+          Всього: <span className="font-semibold">{data.count ?? items.length}</span>
+          {hydrating && <span className="ml-2 text-gray-400">(підтягуємо деталі…)</span>}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={load}
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 active:scale-[0.99]"
+            disabled={loading}
+          >
+            {loading ? 'Оновлюю…' : 'Оновити'}
+          </button>
+        </div>
+      </div>
+
+      {err && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {err}
+        </div>
+      )}
+      {info && (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {info}
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-separate border-spacing-0 rounded-xl border">
+          <thead>
+            <tr className="bg-gray-50 text-left text-sm font-medium text-gray-600">
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Дата/ID</th>
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Назва</th>
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Сутність</th>
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Воронка</th>
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Лічильник</th>
+              <th className="sticky top-0 z-10 border-b px-4 py-3">Дії</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 && (
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
+                  Кампаній поки немає
+                </td>
+              </tr>
+            )}
+
+            {items.map((c) => {
+              const id = normalizeId(c.id);
+              const datePart = fmtDate(c.createdAt);
+              const name = c.name || '—';
+
+              const essence =
+                (c.v1?.value ? `v1: ${c.v1.value}` : 'v1: —') +
+                ' · ' +
+                (c.v2?.value ? `v2: ${c.v2.value}` : 'v2: —');
+
+              const funnel =
+                (c.base?.pipelineName || (c.base?.pipeline ? `#${c.base.pipeline}` : '#—')) +
+                ' · ' +
+                (c.base?.statusName || (c.base?.status ? c.base.status : '—'));
+
+              const counter = `v1: ${c.counters?.v1 ?? 0} · v2: ${c.counters?.v2 ?? 0} · exp: ${c.counters?.exp ?? 0}`;
+
+              return (
+                <tr key={`${id}-${name}`} className="border-t align-top">
+                  <td className="whitespace-nowrap px-4 py-3 text-sm">
+                    <div className="text-gray-700">{datePart}</div>
+                    <div className="text-xs text-gray-400">ID: {id || '—'}</div>
+                  </td>
+                  <td className="px-4 py-3 text-sm">{name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{essence}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{funnel}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{counter}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => handleDelete(id)}
+                      disabled={busyId === id}
+                      className={`rounded-md px-3 py-1.5 text-sm text-white ${
+                        busyId === id ? 'bg-red-300' : 'bg-red-500 hover:bg-red-600'
+                      }`}
+                      title="Видалити кампанію"
+                    >
+                      {busyId === id ? 'Видаляю…' : 'Видалити'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
