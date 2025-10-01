@@ -1,129 +1,198 @@
+// web/app/(admin)/admin/campaigns/ClientList.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 
 type Counters = { v1?: number; v2?: number; exp?: number };
-type BaseInfo = { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
+
 export type Campaign = {
   id: string;
   name?: string;
+  // гнучке джерело для базової воронки/статусу
+  base?: {
+    pipeline?: string;
+    status?: string;
+    pipelineName?: string;
+    statusName?: string;
+  };
   v1?: string;
   v2?: string;
-  base?: BaseInfo;
   counters?: Counters;
 };
 
-export type ApiList = { ok: boolean; items: Campaign[]; count: number };
+// /api/campaigns => { ok: boolean; items?: any[]; count?: number }
+export type ApiList = {
+  ok: boolean;
+  items?: any[];
+  count?: number;
+};
+
+function unwrapDeep(val: any): any {
+  // 1) { value: ... } -> ...
+  if (val && typeof val === 'object' && 'value' in val) {
+    try {
+      // якщо value — JSON-рядок
+      const maybe = (val as any).value;
+      if (typeof maybe === 'string') {
+        try {
+          const parsed = JSON.parse(maybe);
+          return unwrapDeep(parsed);
+        } catch {
+          return maybe;
+        }
+      }
+      return unwrapDeep(maybe);
+    } catch {
+      return val;
+    }
+  }
+  // 2) JSON-рядок -> об'єкт/значення
+  if (typeof val === 'string') {
+    const s = val.trim();
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      try {
+        return unwrapDeep(JSON.parse(s));
+      } catch {
+        return s;
+      }
+    }
+    return s;
+  }
+  return val;
+}
+
+function normalizeItem(raw: any): Campaign {
+  // id може бути number|string|{value}|JSON
+  let id = unwrapDeep(raw?.id ?? raw?._id ?? '');
+  if (typeof id !== 'string') id = String(id ?? '');
+
+  // назва з різних місць
+  let name = unwrapDeep(raw?.name ?? raw?.title ?? '');
+
+  // базова інформація
+  const baseRaw =
+    raw?.base ??
+    raw?.baseInfo ??
+    {
+      pipeline: raw?.basePipelineId ?? raw?.pipeline,
+      status: raw?.baseStatusId ?? raw?.status,
+      pipelineName: raw?.basePipelineName ?? raw?.pipelineName,
+      statusName: raw?.baseStatusName ?? raw?.statusName,
+    };
+
+  const base = {
+    pipeline: unwrapDeep(baseRaw?.pipeline),
+    status: unwrapDeep(baseRaw?.status),
+    pipelineName: unwrapDeep(baseRaw?.pipelineName),
+    statusName: unwrapDeep(baseRaw?.statusName),
+  };
+
+  // правила (v1/v2) — теж розпаковуємо
+  const v1 = unwrapDeep(raw?.v1 ?? raw?.ruleV1 ?? '');
+  const v2 = unwrapDeep(raw?.v2 ?? raw?.ruleV2 ?? '');
+
+  // лічильники
+  const counters: Counters = {
+    v1: Number(unwrapDeep(raw?.counters?.v1) ?? 0) || 0,
+    v2: Number(unwrapDeep(raw?.counters?.v2) ?? 0) || 0,
+    exp: Number(unwrapDeep(raw?.counters?.exp) ?? 0) || 0,
+  };
+
+  return { id, name, base, v1, v2, counters };
+}
 
 export default function ClientList() {
-  const [data, setData] = useState<ApiList>({ ok: true, items: [], count: 0 });
-  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  async function load() {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/campaigns', { cache: 'no-store' });
-      const json: ApiList = await res.json();
-      setData(json);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/campaigns', { cache: 'no-store' });
+        const json: ApiList = await res.json();
+        const items = (json.items ?? []).map(normalizeItem);
+        if (!cancelled) setData(items);
+      } catch {
+        if (!cancelled) setData([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <tr>
+        <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+          Завантаження…
+        </td>
+      </tr>
+    );
   }
 
-  async function seedAndReload() {
-    setLoading(true);
-    try {
-      await fetch('/api/campaigns?seed=1', { cache: 'no-store' });
-      await load();
-    } finally {
-      setLoading(false);
-    }
+  if (!data.length) {
+    return (
+      <tr>
+        <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+          Кампаній поки немає
+        </td>
+      </tr>
+    );
   }
-
-  useEffect(() => { load(); }, []);
 
   return (
-    <div className="w-full">
-      {/* Порожній стан з кнопкою сіду */}
-      {data.count === 0 && !loading ? (
-        <div className="py-8 text-center text-slate-600">
-          <div className="mb-4">Кампаній поки немає</div>
-          <button
-            onClick={seedAndReload}
-            className="rounded bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700"
-          >
-            Додати тестову
-          </button>
-        </div>
-      ) : null}
+    <>
+      {data.map((item) => {
+        const pipelineName =
+          item.base?.pipelineName || item.base?.pipeline || '—';
+        const statusName = item.base?.statusName || item.base?.status || '—';
 
-      {/* Таблиця (коли є дані або йде завантаження) */}
-      {data.count > 0 ? (
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr className="border-b">
-              <th className="py-2 pr-4">Дата/ID</th>
-              <th className="py-2 pr-4">Назва</th>
-              <th className="py-2 pr-4">Сутність</th>
-              <th className="py-2 pr-4">Воронка</th>
-              <th className="py-2 pr-4">Лічильник</th>
-              <th className="py-2 pr-4">Дії</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.items.map((item) => {
-              const c = item.counters || {};
-              const b = item.base || {};
-              return (
-                <tr key={item.id} className="border-b align-top">
-                  <td className="py-2 pr-4">
-                    —<div className="text-slate-400 text-xs">ID: {item.id}</div>
-                  </td>
-                  <td className="py-2 pr-4">{item.name || '—'}</td>
-                  <td className="py-2 pr-4">
-                    v1: {item.v1 || '—'} · v2: {item.v2 || '—'}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {b.pipelineName || b.pipeline || '—'}
-                    <div className="text-slate-400 text-xs">
-                      {b.statusName || b.status || '—'}
-                    </div>
-                  </td>
-                  <td className="py-2 pr-4">
-                    v1: {c.v1 ?? 0} · v2: {c.v2 ?? 0} · exp: {c.exp ?? 0}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {/* Синхронний сабміт на /api/campaigns/delete (метод POST) */}
-                    <form action="/api/campaigns/delete" method="post">
-                      <input type="hidden" name="id" value={item.id} />
-                      <button
-                        type="submit"
-                        className="rounded bg-red-600 px-3 py-1.5 text-white hover:bg-red-700"
-                      >
-                        Видалити
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : null}
+        return (
+          <tr key={item.id} className="border-b last:border-0">
+            {/* Дата/ID */}
+            <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+              <div>—</div>
+              <div className="text-xs">ID: {item.id || '—'}</div>
+            </td>
 
-      {loading ? (
-        <div className="py-6 text-center text-slate-400">Завантаження…</div>
-      ) : null}
+            {/* Назва */}
+            <td className="px-4 py-3">{item.name || '—'}</td>
 
-      {/* Кнопка ручного оновлення */}
-      <div className="mt-4">
-        <button
-          onClick={load}
-          className="rounded border px-3 py-1.5 hover:bg-slate-50"
-        >
-          Оновити
-        </button>
-      </div>
-    </div>
+            {/* Сутність */}
+            <td className="px-4 py-3">
+              v1: {item.v1 ? String(item.v1) : '—'} · v2: {item.v2 ? String(item.v2) : '—'}
+            </td>
+
+            {/* Воронка */}
+            <td className="px-4 py-3">
+              {pipelineName} {statusName !== '—' ? `• ${statusName}` : ''}
+            </td>
+
+            {/* Лічильник */}
+            <td className="px-4 py-3">
+              v1: {item.counters?.v1 ?? 0} · v2: {item.counters?.v2 ?? 0} · exp:{' '}
+              {item.counters?.exp ?? 0}
+            </td>
+
+            {/* Дії */}
+            <td className="px-4 py-3">
+              <form method="post" action="/api/campaigns/delete">
+                <input type="hidden" name="id" value={item.id} />
+                <button
+                  type="submit"
+                  className="rounded bg-red-600 px-3 py-1.5 text-white hover:bg-red-700"
+                >
+                  Видалити
+                </button>
+              </form>
+            </td>
+          </tr>
+        );
+      })}
+    </>
   );
 }
