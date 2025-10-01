@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-/** Типи, які використовує і сторінка, і цей компонент */
 export type Campaign = {
   id: string;
   name?: string;
@@ -16,21 +15,18 @@ export type Campaign = {
   v1?: string;
   v2?: string;
   createdAt?: string | number | Date;
-
-  // збагачені поля для відображення
   ui: {
     displayId: string;
     displayDate: string;
     displayName: string;
-    displayBase: string; // "Воронка — Статус"
-    displayEntity: string; // "v1: ... · v2: ..."
-    displayCounters: string; // "v1: x · v2: y · exp: z"
+    displayBase: string;
+    displayEntity: string;
+    displayCounters: string;
   };
 };
 
-export type ApiList = { ok: boolean; items?: Campaign[]; count?: number };
+export type ApiList = { ok: boolean; items?: any[]; count?: number };
 
-/** Невибагливе розпакування значення — працює з {value}, JSON-рядками та звичайними типами */
 function unwrapDeep<T = any>(val: any): T {
   try {
     if (val == null) return val as T;
@@ -47,37 +43,33 @@ function unwrapDeep<T = any>(val: any): T {
   }
 }
 
-/** Добуває лічильник з кількох можливих полів */
 function getCounter(raw: any, key: 'v1' | 'v2' | 'exp'): number {
   const r = unwrapDeep(raw);
-  // можливі варіанти розташування
   const fromCounters = unwrapDeep(r?.counters)?.[key];
   if (typeof fromCounters === 'number') return fromCounters;
-
   const fromMetrics = unwrapDeep(r?.metrics)?.[key];
   if (typeof fromMetrics === 'number') return fromMetrics;
-
   const direct = r?.[`${key}_count`] ?? r?.[`${key}Count`] ?? r?.[key];
-  if (typeof direct === 'number') return direct;
-
-  // нічого не знайшли
-  return 0;
+  return typeof direct === 'number' ? direct : 0;
 }
 
-/** Назва воронки / статусу з різних місць */
 function resolveBase(raw: any): { pipelineName?: string; statusName?: string } {
   const base = unwrapDeep(raw?.base) ?? {};
-  // найкращий варіант — уже підготовлені назви
-  let pipelineName = unwrapDeep(base?.pipelineName);
-  let statusName = unwrapDeep(base?.statusName);
+  let pipelineName =
+    unwrapDeep(base?.pipelineName) ??
+    unwrapDeep(base?.pipeline) ?? // інколи можуть класти одразу рядок
+    undefined;
+  let statusName =
+    unwrapDeep(base?.statusName) ??
+    unwrapDeep(base?.status) ??
+    undefined;
 
-  // іноді приходять тільки id — якщо є довідники у payload, спробуємо підставити
+  // якщо маємо лише id та довідники
   if (!pipelineName) {
     const pid = unwrapDeep(base?.pipelineId);
     const dict = unwrapDeep(raw?.dictionaries?.pipelines) ?? unwrapDeep(raw?.meta?.pipelines);
     if (pid && dict && typeof dict === 'object' && dict[pid]) pipelineName = unwrapDeep(dict[pid]);
   }
-
   if (!statusName) {
     const sid = unwrapDeep(base?.statusId);
     const dict = unwrapDeep(raw?.dictionaries?.statuses) ?? unwrapDeep(raw?.meta?.statuses);
@@ -87,23 +79,20 @@ function resolveBase(raw: any): { pipelineName?: string; statusName?: string } {
   return { pipelineName, statusName };
 }
 
-/** Нормалізує одну кампанію під наш UI */
 function normalizeItem(raw: any): Campaign {
-  // id може бути: число, рядок, {value}, або JSON
   let id = unwrapDeep(raw?.id ?? raw?._id ?? '');
   if (id && typeof id !== 'string') id = String(id);
 
   const name =
     unwrapDeep(raw?.name) ??
     unwrapDeep(raw?.title) ??
-    ''; // якщо немає — покажемо "—" у відмальовці
+    '';
 
   const v1 = unwrapDeep(raw?.v1) ?? '';
   const v2 = unwrapDeep(raw?.v2) ?? '';
 
   const createdAtRaw = unwrapDeep(raw?.createdAt ?? raw?.created_at ?? raw?.date);
-  const createdAt =
-    createdAtRaw ? new Date(createdAtRaw) : undefined;
+  const createdAt = createdAtRaw ? new Date(createdAtRaw) : undefined;
 
   const { pipelineName, statusName } = resolveBase(raw);
 
@@ -144,52 +133,53 @@ function normalizeItem(raw: any): Campaign {
   };
 }
 
-/** Рядок таблиці */
 function Row({ item, onDelete }: { item: Campaign; onDelete: (id: string) => void }) {
+  const handleDelete = async () => {
+    try {
+      // лишаємо існуючий бек-роут, який у вас працював
+      const res = await fetch(`/admin/campaigns/delete?id=${encodeURIComponent(item.id)}`, {
+        method: 'POST',
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      onDelete(item.id);
+    } catch (e) {
+      console.error('delete failed', e);
+    }
+  };
+
   return (
     <tr className="border-t">
       <td className="px-4 py-3">
         <div className="text-sm text-gray-900">—</div>
         <div className="text-xs text-gray-500">ID: {item.ui.displayId}</div>
       </td>
-
       <td className="px-4 py-3">{item.ui.displayName}</td>
-
       <td className="px-4 py-3">{item.ui.displayEntity}</td>
-
       <td className="px-4 py-3">{item.ui.displayBase}</td>
-
       <td className="px-4 py-3">{item.ui.displayCounters}</td>
-
       <td className="px-4 py-3">
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              const res = await fetch(`/admin/campaigns/delete?id=${encodeURIComponent(item.id)}`, {
-                method: 'POST'
-              });
-              if (!res.ok) throw new Error('Delete failed');
-              onDelete(item.id);
-            } catch {
-              // no-op
-            }
-          }}
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="rounded-md bg-red-600 px-3 py-1.5 text-white hover:bg-red-700"
         >
-          <button className="rounded-md bg-red-600 px-3 py-1.5 text-white hover:bg-red-700">
-            Видалити
-          </button>
-        </form>
+          Видалити
+        </button>
       </td>
     </tr>
   );
 }
 
-/** Клієнтський список: робить запит та показує рядки */
 export default function ClientList({ initial }: { initial: ApiList }) {
-  const [data, setData] = useState<ApiList>(initial);
+  // Нормалізуємо одразу initial, щоб у UI були «людські» значення
+  const normalizedInitial = useMemo(() => {
+    const items = Array.isArray(initial.items) ? initial.items.map(normalizeItem) : [];
+    return { ok: true, items, count: initial.count ?? items.length } as ApiList;
+  }, [initial]);
 
-  // фетч актуальних даних
+  const [data, setData] = useState<ApiList>(normalizedInitial);
+
   useEffect(() => {
     let abort = false;
     (async () => {
@@ -200,15 +190,9 @@ export default function ClientList({ initial }: { initial: ApiList }) {
         if (json?.ok) {
           const items = Array.isArray(json.items) ? json.items.map(normalizeItem) : [];
           setData({ ok: true, items, count: json.count ?? items.length });
-        } else {
-          setData((prev) => ({
-            ok: true,
-            items: (prev.items ?? []).map(normalizeItem),
-            count: prev.count ?? prev.items?.length ?? 0
-          }));
         }
       } catch {
-        // залишаємо initial, якщо не вдалось фетчнути
+        // ignore, залишимо initial
       }
     })();
     return () => {
@@ -216,10 +200,7 @@ export default function ClientList({ initial }: { initial: ApiList }) {
     };
   }, []);
 
-  const items = useMemo(
-    () => (Array.isArray(data.items) ? data.items : []).map(normalizeItem),
-    [data.items]
-  );
+  const items = useMemo(() => (Array.isArray(data.items) ? data.items : []), [data.items]);
 
   if (!items.length) {
     return (
@@ -236,14 +217,14 @@ export default function ClientList({ initial }: { initial: ApiList }) {
   const handleDelete = (id: string) => {
     setData((prev) => ({
       ok: true,
-      items: (prev.items ?? []).filter((x) => x.id !== id),
-      count: Math.max(0, (prev.count ?? 1) - 1)
+      items: (prev.items ?? []).filter((x: any) => x.id !== id),
+      count: Math.max(0, (prev.count ?? 1) - 1),
     }));
   };
 
   return (
     <tbody>
-      {items.map((item) => (
+      {items.map((item: any) => (
         <Row key={item.id} item={item} onDelete={handleDelete} />
       ))}
     </tbody>
