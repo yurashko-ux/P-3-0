@@ -13,22 +13,20 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-// Допоміжне читання масиву id з KV (може бути строка/JSON/{value}/list)
+const kvAny = kv as any;
+
+// Допоміжне читання масиву id з KV (може бути string/json/{value}/list)
 async function readIdList(key: string): Promise<string[]> {
   try {
     const raw = await kv.get(key as any);
     const arr = unwrapDeep(raw);
     if (Array.isArray(arr)) return uniqIds(arr);
-    // якщо не масив — пробуємо інтерпретувати як одиничне значення
     return uniqIds([arr]);
   } catch (e: any) {
-    // Якщо ключ не масив/строка (WRONGTYPE), спробуємо як Redis-список
     const msg = String(e?.message || e);
     if (msg.includes("WRONGTYPE")) {
       try {
-        // lrange поверне масив або null
-        // @ts-expect-error — метод існує в @vercel/kv
-        const list = await kv.lrange(key, 0, -1);
+        const list = await (kvAny?.lrange?.(key, 0, -1) as Promise<any[] | null>);
         return uniqIds(Array.isArray(list) ? list : []);
       } catch {
         return [];
@@ -49,16 +47,14 @@ async function readItemById(id: string): Promise<unknown | null> {
   } catch (e: any) {
     const msg = String(e?.message || e);
     if (msg.includes("WRONGTYPE")) {
-      // Спроба витягти як hash
+      // пробуємо як hash
       try {
-        // @ts-expect-error — метод існує в @vercel/kv
-        const h = await kv.hgetall(k);
+        const h = await (kvAny?.hgetall?.(k) as Promise<Record<string, any> | null>);
         if (h && typeof h === "object") return h;
       } catch {}
-      // Спроба витягти як список (і взяти перший елемент)
+      // пробуємо як список (беремо перший елемент)
       try {
-        // @ts-expect-error — метод існує в @vercel/kv
-        const list = await kv.lrange(k, 0, 0);
+        const list = await (kvAny?.lrange?.(k, 0, 0) as Promise<any[] | null>);
         if (Array.isArray(list) && list.length) return unwrapDeep(list[0]);
       } catch {}
     }
@@ -95,6 +91,5 @@ export async function GET() {
 }
 
 export async function POST() {
-  // Можемо в майбутньому додати actual "repair" дій—поки просто GET-логіка
   return GET();
 }
