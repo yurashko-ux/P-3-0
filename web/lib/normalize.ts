@@ -1,76 +1,121 @@
 // web/lib/normalize.ts
-export function safeParse<T = unknown>(v: unknown): T | unknown {
-  if (typeof v !== "string") return v;
-  try { return JSON.parse(v); } catch { return v; }
-}
 
-export function unwrapDeep<T = unknown>(input: unknown): T {
-  let cur: any = input;
-  for (let i = 0; i < 200; i++) {
-    const parsed = safeParse(cur);
-    if (parsed !== cur) { cur = parsed; continue; }
-
-    if (cur && typeof cur === "object" && "value" in cur) {
-      cur = (cur as any).value; continue;
-    }
-
-    if (typeof cur === "string" && /^"{/.test(cur)) {
-      const trimmed = cur.replace(/^"+|"+$/g, "");
-      if (trimmed !== cur) { cur = trimmed; continue; }
-    }
-    break;
-  }
-  return cur as T;
-}
-
-export function normalizeId(id: unknown): string {
-  const un = unwrapDeep(id);
-  return String(un).trim();
-}
-
-export function uniqIds(arr: unknown[]): string[] {
-  const out = new Set<string>();
-  for (const x of arr ?? []) {
-    const id = normalizeId(x);
-    if (id) out.add(id);
-  }
-  return [...out];
-}
-
+export type Counters = { v1?: number; v2?: number; exp?: number };
+export type BaseInfo = {
+  pipeline?: string;
+  status?: string;
+  pipelineName?: string;
+  statusName?: string;
+};
 export type Campaign = {
   id: string;
   name?: string;
-  base?: { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
-  current?: { v1?: string; v2?: string };
-  counters?: { v1?: number; v2?: number; exp?: number };
+  counters?: Counters;
+  base?: BaseInfo;
+  deleted?: boolean;
   active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-export function normalizeCampaign(raw: any): Campaign {
-  const obj = unwrapDeep<any>(raw) || {};
-  const id = normalizeId(obj.id ?? obj._id ?? obj.key ?? "");
-  const name = unwrapDeep<string>(obj.name ?? obj.title ?? "");
-  const base = unwrapDeep(obj.base ?? {});
-  const current = unwrapDeep(obj.current ?? {});
-  const counters = unwrapDeep(obj.counters ?? {});
+/**
+ * Розкручує глибоко вкладені значення типу {"value": "..."} або JSON-рядки.
+ */
+export function unwrapDeep(v: any): any {
+  try {
+    let cur = v;
+    let guard = 0;
+    while (guard++ < 50) {
+      if (cur && typeof cur === "object" && "value" in cur) {
+        cur = (cur as any).value;
+        continue;
+      }
+      if (typeof cur === "string") {
+        const s = cur.trim();
+        const looksJson =
+          (s.startsWith("{") && s.endsWith("}")) ||
+          (s.startsWith("[") && s.endsWith("]"));
+        if (looksJson) {
+          try {
+            cur = JSON.parse(s);
+            continue;
+          } catch {
+            // not a valid JSON — stop trying
+          }
+        }
+      }
+      break;
+    }
+    return cur;
+  } catch {
+    return v;
+  }
+}
+
+/**
+ * Нормалізація однієї кампанії.
+ * ВАЖЛИВО: не звертаємось до полів об'єкта як до unknown — все через any/unwrapDeep.
+ */
+export function normalizeItem(raw: any): Campaign {
+  // id може прийти у будь-якому вигляді
+  const idRaw = raw?.id ?? raw?._id ?? raw;
+  let id = String(unwrapDeep(idRaw) ?? "");
+  if (!id) id = String(Date.now());
+
+  const name = unwrapDeep(raw?.name);
+
+  const cAny = unwrapDeep(raw?.counters) ?? {};
+  const counters: Counters = {
+    v1: toNumOrUndef(cAny?.v1),
+    v2: toNumOrUndef(cAny?.v2),
+    exp: toNumOrUndef(cAny?.exp),
+  };
+
+  // КЛЮЧОВЕ МІСЦЕ: не даємо TS "unknown"
+  const bAny = unwrapDeep(raw?.base) ?? {};
+  const base: BaseInfo = {
+    pipeline: toStrOrUndef(bAny?.pipeline),
+    status: toStrOrUndef(bAny?.status),
+    pipelineName: toStrOrUndef(bAny?.pipelineName),
+    statusName: toStrOrUndef(bAny?.statusName),
+  };
+
+  const deleted = Boolean(unwrapDeep(raw?.deleted)) || false;
+  const active = Boolean(unwrapDeep(raw?.active));
+  const createdAt = toStrOrUndef(raw?.createdAt);
+  const updatedAt = toStrOrUndef(raw?.updatedAt);
+
   return {
     id,
-    name: String(name || "").trim() || undefined,
-    base: {
-      pipeline: unwrapDeep(base?.pipeline) ?? undefined,
-      status: unwrapDeep(base?.status) ?? undefined,
-      pipelineName: unwrapDeep(base?.pipelineName) ?? undefined,
-      statusName: unwrapDeep(base?.statusName) ?? undefined,
-    },
-    current: {
-      v1: unwrapDeep(current?.v1) ?? undefined,
-      v2: unwrapDeep(current?.v2) ?? undefined,
-    },
-    counters: {
-      v1: Number(unwrapDeep(counters?.v1) ?? 0) || 0,
-      v2: Number(unwrapDeep(counters?.v2) ?? 0) || 0,
-      exp: Number(unwrapDeep(counters?.exp) ?? 0) || 0,
-    },
-    active: Boolean(unwrapDeep(obj.active)),
+    name: typeof name === "string" ? name.trim() || undefined : undefined,
+    counters,
+    base,
+    deleted,
+    active,
+    createdAt,
+    updatedAt,
   };
+}
+
+/**
+ * Нормалізація списку кампаній.
+ */
+export function normalizeList(list: any): Campaign[] {
+  const arr = unwrapDeep(list);
+  if (!Array.isArray(arr)) return [];
+  return arr.map(normalizeItem);
+}
+
+/* ---------------- helpers ---------------- */
+
+function toNumOrUndef(v: any): number | undefined {
+  const n = Number(unwrapDeep(v));
+  return Number.isFinite(n) && n !== 0 ? n : undefined;
+}
+
+function toStrOrUndef(v: any): string | undefined {
+  const s = unwrapDeep(v);
+  if (s == null) return undefined;
+  const str = String(s).trim();
+  return str ? str : undefined;
 }
