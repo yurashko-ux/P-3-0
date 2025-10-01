@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { store } from '@/web/lib/store';
+// з seed -> campaigns -> api -> app -> (root) -> lib/store
+import { store } from '../../../../lib/store';
 
 export async function POST() {
   const existing = await store.getAll();
