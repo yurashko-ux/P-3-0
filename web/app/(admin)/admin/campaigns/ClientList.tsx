@@ -1,212 +1,178 @@
-// app/(admin)/admin/campaigns/ClientList.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
+/** Публічні типи, щоб не конфліктувати з сторінкою */
+export type Counters = { v1?: number; v2?: number; exp?: number };
+export type BaseInfo = {
+  pipeline?: string;
+  status?: string;
+  pipelineName?: string;
+  statusName?: string;
+};
 export type Campaign = {
-  id: string;
+  id: string | number | { value?: any } | any;
   name?: string;
-  base?: {
-    pipelineId?: string;
-    statusId?: string;
-    pipelineName?: string;
-    statusName?: string;
-  };
   v1?: string;
   v2?: string;
-  createdAt?: string | number | Date;
-  ui: {
-    displayId: string;
-    displayDate: string;
-    displayName: string;
-    displayBase: string;
-    displayEntity: string;
-    displayCounters: string;
-  };
+  base?: BaseInfo | string | any;
+  counters?: Counters | string | any;
+  deleted?: boolean;
 };
+export type ApiList = { ok: boolean; items?: Campaign[]; count?: number };
 
-export type ApiList = { ok: boolean; items?: any[]; count?: number };
-
-function unwrapDeep<T = any>(val: any): T {
+/** Безпечне витягування вкладених value / JSON-рядків */
+function unwrapDeep(input: any): any {
+  let v = input;
   try {
-    if (val == null) return val as T;
-    if (typeof val === 'object' && 'value' in val) return unwrapDeep((val as any).value);
-    if (typeof val === 'string') {
-      const s = val.trim();
-      if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
-        return unwrapDeep(JSON.parse(s));
-      }
+    // якщо формат {"value": "..."} або глибше — витягуємо
+    while (v && typeof v === 'object' && 'value' in v) v = v.value;
+    // якщо це JSON-рядок — парсимо
+    if (typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))) {
+      const parsed = JSON.parse(v);
+      return unwrapDeep(parsed);
     }
-    return val as T;
   } catch {
-    return val as T;
+    // ігноруємо — повернемо як є
   }
+  return v;
 }
 
-function getCounter(raw: any, key: 'v1' | 'v2' | 'exp'): number {
-  const r = unwrapDeep(raw);
-  const fromCounters = unwrapDeep(r?.counters)?.[key];
-  if (typeof fromCounters === 'number') return fromCounters;
-  const fromMetrics = unwrapDeep(r?.metrics)?.[key];
-  if (typeof fromMetrics === 'number') return fromMetrics;
-  const direct = r?.[`${key}_count`] ?? r?.[`${key}Count`] ?? r?.[key];
-  return typeof direct === 'number' ? direct : 0;
-}
+/** Нормалізація одного елемента у більш передбачуваний вигляд */
+function normalizeItem(raw: any) {
+  const idRaw = raw?.id ?? raw?._id ?? '';
+  let id = unwrapDeep(idRaw);
+  if (id && typeof id === 'object' && 'value' in id) id = unwrapDeep(id.value);
 
-function resolveBase(raw: any): { pipelineName?: string; statusName?: string } {
-  const base = unwrapDeep(raw?.base) ?? {};
-  let pipelineName =
-    unwrapDeep(base?.pipelineName) ??
-    unwrapDeep(base?.pipeline) ?? // інколи можуть класти одразу рядок
-    undefined;
-  let statusName =
-    unwrapDeep(base?.statusName) ??
-    unwrapDeep(base?.status) ??
-    undefined;
+  const name = (() => {
+    const n = unwrapDeep(raw?.name);
+    return typeof n === 'string' && n.trim() ? n.trim() : '—';
+  })();
 
-  // якщо маємо лише id та довідники
-  if (!pipelineName) {
-    const pid = unwrapDeep(base?.pipelineId);
-    const dict = unwrapDeep(raw?.dictionaries?.pipelines) ?? unwrapDeep(raw?.meta?.pipelines);
-    if (pid && dict && typeof dict === 'object' && dict[pid]) pipelineName = unwrapDeep(dict[pid]);
-  }
-  if (!statusName) {
-    const sid = unwrapDeep(base?.statusId);
-    const dict = unwrapDeep(raw?.dictionaries?.statuses) ?? unwrapDeep(raw?.meta?.statuses);
-    if (sid && dict && typeof dict === 'object' && dict[sid]) statusName = unwrapDeep(dict[sid]);
-  }
+  const v1 = (() => {
+    const val = unwrapDeep(raw?.v1);
+    return typeof val === 'string' && val.trim() ? val.trim() : '—';
+  })();
 
-  return { pipelineName, statusName };
-}
+  const v2 = (() => {
+    const val = unwrapDeep(raw?.v2);
+    return typeof val === 'string' && val.trim() ? val.trim() : '—';
+  })();
 
-function normalizeItem(raw: any): Campaign {
-  let id = unwrapDeep(raw?.id ?? raw?._id ?? '');
-  if (id && typeof id !== 'string') id = String(id);
+  const baseRaw = unwrapDeep(raw?.base);
+  const base: BaseInfo = {
+    pipeline: unwrapDeep(baseRaw?.pipeline) ?? undefined,
+    status: unwrapDeep(baseRaw?.status) ?? undefined,
+    pipelineName: unwrapDeep(baseRaw?.pipelineName) ?? undefined,
+    statusName: unwrapDeep(baseRaw?.statusName) ?? undefined,
+  };
 
-  const name =
-    unwrapDeep(raw?.name) ??
-    unwrapDeep(raw?.title) ??
-    '';
+  const countersRaw = unwrapDeep(raw?.counters);
+  const counters: Counters = {
+    v1: Number(unwrapDeep(countersRaw?.v1) ?? 0) || 0,
+    v2: Number(unwrapDeep(countersRaw?.v2) ?? 0) || 0,
+    exp: Number(unwrapDeep(countersRaw?.exp) ?? 0) || 0,
+  };
 
-  const v1 = unwrapDeep(raw?.v1) ?? '';
-  const v2 = unwrapDeep(raw?.v2) ?? '';
-
-  const createdAtRaw = unwrapDeep(raw?.createdAt ?? raw?.created_at ?? raw?.date);
-  const createdAt = createdAtRaw ? new Date(createdAtRaw) : undefined;
-
-  const { pipelineName, statusName } = resolveBase(raw);
-
-  const cntV1 = getCounter(raw, 'v1');
-  const cntV2 = getCounter(raw, 'v2');
-  const cntExp = getCounter(raw, 'exp');
-
-  const displayId = id || '—';
-  const displayDate = createdAt ? createdAt.toLocaleDateString() : '—';
-  const displayName = name || '—';
-  const displayBase =
-    pipelineName || statusName
-      ? `${pipelineName ?? '#—'} — ${statusName ?? '#—'}`
-      : '#—';
-  const displayEntity = `v1: ${v1 || '—'} · v2: ${v2 || '—'}`;
-  const displayCounters = `v1: ${cntV1} · v2: ${cntV2} · exp: ${cntExp}`;
-
-  return {
-    id,
-    name,
-    base: {
-      pipelineName,
-      statusName,
-      pipelineId: unwrapDeep(raw?.base?.pipelineId),
-      statusId: unwrapDeep(raw?.base?.statusId)
-    },
-    v1,
-    v2,
-    createdAt,
-    ui: {
-      displayId,
-      displayDate,
-      displayName,
-      displayBase,
-      displayEntity,
-      displayCounters
-    }
+  return { id, name, v1, v2, base, counters, deleted: !!raw?.deleted } as Campaign & {
+    base: BaseInfo;
+    counters: Counters;
   };
 }
 
-function Row({ item, onDelete }: { item: Campaign; onDelete: (id: string) => void }) {
-  const handleDelete = async () => {
-    try {
-      // лишаємо існуючий бек-роут, який у вас працював
-      const res = await fetch(`/admin/campaigns/delete?id=${encodeURIComponent(item.id)}`, {
-        method: 'POST',
-        cache: 'no-store',
-      });
-      if (!res.ok) throw new Error('Delete failed');
-      onDelete(item.id);
-    } catch (e) {
-      console.error('delete failed', e);
-    }
-  };
+/** Рядок таблиці з однією кампанією */
+function Row({ item }: { item: ReturnType<typeof normalizeItem> }) {
+  const { id, name, v1, v2, base, counters, deleted } = item;
+
+  const idDisplay =
+    typeof id === 'string' || typeof id === 'number'
+      ? String(id)
+      : '[object Object]';
+
+  const pipelineLabel =
+    base?.pipelineName || base?.pipeline || '—';
+  const statusLabel =
+    base?.statusName || base?.status || '—';
 
   return (
-    <tr className="border-t">
-      <td className="px-4 py-3">
-        <div className="text-sm text-gray-900">—</div>
-        <div className="text-xs text-gray-500">ID: {item.ui.displayId}</div>
+    <tr className="border-b border-slate-200">
+      <td className="px-4 py-3 text-sm text-slate-700">
+        <div className="flex flex-col">
+          <span className="text-slate-900">—</span>
+          <span className="text-slate-500 text-xs">ID: {idDisplay}</span>
+        </div>
       </td>
-      <td className="px-4 py-3">{item.ui.displayName}</td>
-      <td className="px-4 py-3">{item.ui.displayEntity}</td>
-      <td className="px-4 py-3">{item.ui.displayBase}</td>
-      <td className="px-4 py-3">{item.ui.displayCounters}</td>
-      <td className="px-4 py-3">
-        <button
-          type="button"
-          onClick={handleDelete}
-          className="rounded-md bg-red-600 px-3 py-1.5 text-white hover:bg-red-700"
-        >
-          Видалити
-        </button>
+
+      <td className="px-4 py-3 text-sm text-slate-700">
+        {name || '—'}
+      </td>
+
+      <td className="px-4 py-3 text-sm text-slate-700">
+        v1: {v1} · v2: {v2}
+      </td>
+
+      <td className="px-4 py-3 text-sm text-slate-700">
+        {pipelineLabel} {statusLabel !== '—' ? `· ${statusLabel}` : ''}
+      </td>
+
+      <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
+        v1: {counters.v1} · v2: {counters.v2} · exp: {counters.exp}
+      </td>
+
+      <td className="px-4 py-3 text-right">
+        {deleted ? (
+          <span className="text-xs text-slate-400">видалено</span>
+        ) : (
+          <form
+            action={`/api/campaigns/delete?id=${encodeURIComponent(
+              typeof id === 'string' || typeof id === 'number' ? String(id) : ''
+            )}`}
+            method="POST"
+          >
+            <button
+              type="submit"
+              className="rounded-md bg-red-600 px-3 py-1.5 text-white text-sm hover:bg-red-700"
+              aria-label="Видалити"
+            >
+              Видалити
+            </button>
+          </form>
+        )}
       </td>
     </tr>
   );
 }
 
+/** Клієнтський список: тягне /api/campaigns та показує нормалізовані дані */
 export default function ClientList({ initial }: { initial: ApiList }) {
-  // Нормалізуємо одразу initial, щоб у UI були «людські» значення
-  const normalizedInitial = useMemo(() => {
-    const items = Array.isArray(initial.items) ? initial.items.map(normalizeItem) : [];
-    return { ok: true, items, count: initial.count ?? items.length } as ApiList;
-  }, [initial]);
-
-  const [data, setData] = useState<ApiList>(normalizedInitial);
+  const [data, setData] = useState<ApiList>(initial);
 
   useEffect(() => {
-    let abort = false;
+    let ignore = false;
     (async () => {
       try {
         const res = await fetch('/api/campaigns', { cache: 'no-store' });
-        const json = await res.json();
-        if (abort) return;
-        if (json?.ok) {
-          const items = Array.isArray(json.items) ? json.items.map(normalizeItem) : [];
-          setData({ ok: true, items, count: json.count ?? items.length });
-        }
+        const json: ApiList = await res.json();
+        if (!ignore && json?.ok) setData(json);
       } catch {
-        // ignore, залишимо initial
+        // ігноруємо
       }
     })();
     return () => {
-      abort = true;
+      ignore = true;
     };
   }, []);
 
-  const items = useMemo(() => (Array.isArray(data.items) ? data.items : []), [data.items]);
+  const items = (data?.items ?? []).map(normalizeItem);
 
   if (!items.length) {
     return (
       <tbody>
         <tr>
-          <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
+          <td
+            className="px-4 py-12 text-center text-slate-500"
+            colSpan={6}
+          >
             Кампаній поки немає
           </td>
         </tr>
@@ -214,18 +180,10 @@ export default function ClientList({ initial }: { initial: ApiList }) {
     );
   }
 
-  const handleDelete = (id: string) => {
-    setData((prev) => ({
-      ok: true,
-      items: (prev.items ?? []).filter((x: any) => x.id !== id),
-      count: Math.max(0, (prev.count ?? 1) - 1),
-    }));
-  };
-
   return (
     <tbody>
-      {items.map((item: any) => (
-        <Row key={item.id} item={item} onDelete={handleDelete} />
+      {items.map((it, i) => (
+        <Row key={`${it.id}-${i}`} item={it} />
       ))}
     </tbody>
   );
