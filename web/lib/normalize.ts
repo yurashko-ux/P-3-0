@@ -40,7 +40,7 @@ export function unwrapDeep(v: any): any {
             cur = JSON.parse(s);
             continue;
           } catch {
-            // not a valid JSON — stop trying
+            // не валідний JSON — зупиняємось
           }
         }
       }
@@ -52,14 +52,32 @@ export function unwrapDeep(v: any): any {
   }
 }
 
-/**
- * Нормалізація однієї кампанії.
- * ВАЖЛИВО: не звертаємось до полів об'єкта як до unknown — все через any/unwrapDeep.
- */
+/** Нормалізація ID до плаского string */
+export function normalizeId(raw: any): string {
+  const v = unwrapDeep(raw);
+  if (v == null) return "";
+  return String(v);
+}
+
+/** Дедуп ID зі збереженням порядку */
+export function uniqIds(ids: any[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const it of ids || []) {
+    const id = normalizeId(it);
+    if (!id) continue;
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/** Нормалізація однієї кампанії */
 export function normalizeItem(raw: any): Campaign {
-  // id може прийти у будь-якому вигляді
   const idRaw = raw?.id ?? raw?._id ?? raw;
-  let id = String(unwrapDeep(idRaw) ?? "");
+  let id = normalizeId(idRaw);
   if (!id) id = String(Date.now());
 
   const name = unwrapDeep(raw?.name);
@@ -71,7 +89,6 @@ export function normalizeItem(raw: any): Campaign {
     exp: toNumOrUndef(cAny?.exp),
   };
 
-  // КЛЮЧОВЕ МІСЦЕ: не даємо TS "unknown"
   const bAny = unwrapDeep(raw?.base) ?? {};
   const base: BaseInfo = {
     pipeline: toStrOrUndef(bAny?.pipeline),
@@ -97,9 +114,12 @@ export function normalizeItem(raw: any): Campaign {
   };
 }
 
-/**
- * Нормалізація списку кампаній.
- */
+/** Синонім під існуючі імпорти у route.ts */
+export function normalizeCampaign(raw: any): Campaign {
+  return normalizeItem(raw);
+}
+
+/** Нормалізація списку кампаній */
 export function normalizeList(list: any): Campaign[] {
   const arr = unwrapDeep(list);
   if (!Array.isArray(arr)) return [];
