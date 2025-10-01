@@ -1,55 +1,60 @@
+// web/app/api/campaigns/repair/route.ts
 import { NextResponse } from 'next/server';
 import { kv } from '@vercel/kv';
-import { unwrapDeep, normalizeId } from '@/lib/normalize';
+import {
+  unwrapDeep,
+  uniqIds,
+  normalizeId,
+  normalizeCampaign,
+  type Campaign,
+} from '@/lib/normalize';
 
 export const runtime = 'nodejs';
-const KEY = 'cmp:list:items';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 /**
- * Опціональний endpoint, який:
- *  - знімає «обгортки» {value: ...}
- *  - прибирає дублі за id
- *  - видаляє null/undefined
+ * Легкий «repair»: приводить списки ids до масивів, чистить дублі,
+ * і не дає впасти якщо в Upstash ключі містять не той тип.
  */
-export async function POST() {
-  try {
-    const raw = await kv.get(KEY);
-    const arr = unwrapDeep<any[]>(raw) || [];
-
-    const seen = new Set<string>();
-    const cleaned = [];
-    for (const it of arr) {
-      const id = normalizeId(it?.id);
-      if (!id) continue;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      cleaned.push({
-        id,
-        name: it?.name ?? '—',
-        v1: it?.v1 ?? '—',
-        v2: it?.v2 ?? '—',
-        base: {
-          pipeline: it?.base?.pipeline,
-          status: it?.base?.status,
-          pipelineName: it?.base?.pipelineName,
-          statusName: it?.base?.statusName,
-        },
-        counters: {
-          v1: Number(it?.counters?.v1 ?? 0),
-          v2: Number(it?.counters?.v2 ?? 0),
-          exp: Number(it?.counters?.exp ?? 0),
-        },
-        deleted: !!it?.deleted,
-        createdAt: Number(it?.createdAt ?? Date.now()),
-      });
+export async function GET() {
+  // читаємо те, що могли зберігати як списки id
+  async function readIds(key: string): Promise<string[]> {
+    try {
+      const raw = await kv.get(key);
+      const arr = unwrapDeep<any[]>(raw);
+      if (Array.isArray(arr)) return uniqIds(arr);
+      // якщо колись ключ був «рядком JSON масиву»
+      const fromStr = unwrapDeep<any[]>(String(raw ?? ''));
+      return Array.isArray(fromStr) ? uniqIds(fromStr) : [];
+    } catch {
+      return [];
     }
-
-    await kv.set(KEY, cleaned);
-    return NextResponse.json({ ok: true, repaired: cleaned.length });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? 'Repair error' },
-      { status: 500 }
-    );
   }
+
+  const ro = await readIds('cmp:list:ids:RO');
+  const wr = await readIds('cmp:list:ids:WR');
+
+  // зберігаємо нормалізовано
+  await kv.set('cmp:list:ids:RO', ro);
+  await kv.set('cmp:list:ids:WR', wr);
+
+  // пробуємо почистити/нормалізувати запис «campaigns», якщо це був не той тип
+  try {
+    const val = await kv.get('campaigns'); // міг бути set не тим типом
+    const obj = unwrapDeep<any>(val);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      // ок — залишаємо як є
+    } else {
+      // не очікуваний тип — приберемо, щоб далі не заважав
+      await kv.del('campaigns');
+    }
+  } catch {
+    // ігноруємо
+  }
+
+  return NextResponse.json({
+    ok: true,
+    repaired: { roCount: ro.length, wrCount: wr.length },
+  });
 }
