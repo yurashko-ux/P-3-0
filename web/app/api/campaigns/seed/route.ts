@@ -1,38 +1,34 @@
 // web/app/api/campaigns/seed/route.ts
-export const dynamic = 'force-dynamic';
+import { NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
 
-import { NextResponse } from 'next/server';
-// з seed -> campaigns -> api -> app -> (root) -> lib/store
-import { store } from '../../../../lib/store';
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function id() { return String(Date.now()); }
 
 export async function POST() {
-  const existing = await store.getAll();
-  if (existing.length > 0) {
-    return NextResponse.json({ ok: true, created: 0, note: 'already seeded' });
-  }
-
-  const now = Date.now();
-  await store.create({
-    id: String(now),
-    name: 'UI-created',
-    v1: '—',
-    v2: '—',
-    base: { pipeline: 'p-1', status: 's-1', pipelineName: 'Нові Ліди', statusName: 'Новий' },
+  const a = {
+    id: id(),
+    name: "UI-created",
+    base: { pipelineName: "—", statusName: "—" },
     counters: { v1: 0, v2: 0, exp: 0 },
-    deleted: false,
-    createdAt: now,
-  });
+  };
+  const b = {
+    id: id(),
+    name: "Welcome Flow",
+    base: { pipelineName: "Signup", statusName: "Active" },
+    counters: { v1: 3, v2: 1, exp: 0 },
+  };
 
-  await store.create({
-    id: String(now + 1),
-    name: 'UI-created',
-    v1: '—',
-    v2: '—',
-    base: { pipeline: 'p-2', status: 's-2', pipelineName: 'Клієнти Інші послуги', statusName: 'Перший контакт' },
-    counters: { v1: 0, v2: 0, exp: 0 },
-    deleted: false,
-    createdAt: now + 1,
-  });
+  await kv.set(`cmp:item:${a.id}`, a);
+  await kv.set(`cmp:item:${b.id}`, b);
 
-  return NextResponse.json({ ok: true, created: 2 });
+  // тримаємо списки у двох “каналах” — RO/WR
+  const ro = [`${a.id}`];
+  const wr = [`${b.id}`];
+  await kv.set("cmp:list:ids:RO", ro);
+  await kv.set("cmp:list:ids:WR", wr);
+
+  return NextResponse.json({ ok: true, created: [a.id, b.id] });
 }
