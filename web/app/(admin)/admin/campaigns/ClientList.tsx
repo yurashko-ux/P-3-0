@@ -1,190 +1,251 @@
+// app/(admin)/admin/campaigns/ClientList.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 
-/* ========= Типи ========= */
-export type Counters = { v1?: number; v2?: number; exp?: number };
-export type BaseInfo = {
-  pipeline?: string;
-  status?: string;
-  pipelineName?: string;
-  statusName?: string;
-};
+/** Типи, які використовує і сторінка, і цей компонент */
 export type Campaign = {
   id: string;
   name?: string;
+  base?: {
+    pipelineId?: string;
+    statusId?: string;
+    pipelineName?: string;
+    statusName?: string;
+  };
   v1?: string;
   v2?: string;
-  base?: BaseInfo;
-  counters?: Counters;
-  deleted?: boolean;
+  createdAt?: string | number | Date;
+
+  // збагачені поля для відображення
+  ui: {
+    displayId: string;
+    displayDate: string;
+    displayName: string;
+    displayBase: string; // "Воронка — Статус"
+    displayEntity: string; // "v1: ... · v2: ..."
+    displayCounters: string; // "v1: x · v2: y · exp: z"
+  };
 };
 
 export type ApiList = { ok: boolean; items?: Campaign[]; count?: number };
 
-/* ========= Хелпери ========= */
-
-/** Дістає значення з вкладених { value: ... } або JSON-рядків */
-function unwrapDeep<T = any>(input: any): T {
-  let val = input;
+/** Невибагливе розпакування значення — працює з {value}, JSON-рядками та звичайними типами */
+function unwrapDeep<T = any>(val: any): T {
   try {
-    // JSON у JSON (з кей-велью можуть бути рядки-об’єкти)
-    if (typeof val === 'string' && (val.includes('{') || val.includes('['))) {
-      val = JSON.parse(val);
+    if (val == null) return val as T;
+    if (typeof val === 'object' && 'value' in val) return unwrapDeep((val as any).value);
+    if (typeof val === 'string') {
+      const s = val.trim();
+      if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+        return unwrapDeep(JSON.parse(s));
+      }
     }
+    return val as T;
   } catch {
-    /* ignore */
+    return val as T;
   }
-  // unwrap { value: ... }
-  if (val && typeof val === 'object' && 'value' in val) {
-    return unwrapDeep((val as any).value);
-  }
-  return val as T;
 }
 
-/** Нормалізує «сиру» кампанію з KV/індексу до плоского вигляду */
+/** Добуває лічильник з кількох можливих полів */
+function getCounter(raw: any, key: 'v1' | 'v2' | 'exp'): number {
+  const r = unwrapDeep(raw);
+  // можливі варіанти розташування
+  const fromCounters = unwrapDeep(r?.counters)?.[key];
+  if (typeof fromCounters === 'number') return fromCounters;
+
+  const fromMetrics = unwrapDeep(r?.metrics)?.[key];
+  if (typeof fromMetrics === 'number') return fromMetrics;
+
+  const direct = r?.[`${key}_count`] ?? r?.[`${key}Count`] ?? r?.[key];
+  if (typeof direct === 'number') return direct;
+
+  // нічого не знайшли
+  return 0;
+}
+
+/** Назва воронки / статусу з різних місць */
+function resolveBase(raw: any): { pipelineName?: string; statusName?: string } {
+  const base = unwrapDeep(raw?.base) ?? {};
+  // найкращий варіант — уже підготовлені назви
+  let pipelineName = unwrapDeep(base?.pipelineName);
+  let statusName = unwrapDeep(base?.statusName);
+
+  // іноді приходять тільки id — якщо є довідники у payload, спробуємо підставити
+  if (!pipelineName) {
+    const pid = unwrapDeep(base?.pipelineId);
+    const dict = unwrapDeep(raw?.dictionaries?.pipelines) ?? unwrapDeep(raw?.meta?.pipelines);
+    if (pid && dict && typeof dict === 'object' && dict[pid]) pipelineName = unwrapDeep(dict[pid]);
+  }
+
+  if (!statusName) {
+    const sid = unwrapDeep(base?.statusId);
+    const dict = unwrapDeep(raw?.dictionaries?.statuses) ?? unwrapDeep(raw?.meta?.statuses);
+    if (sid && dict && typeof dict === 'object' && dict[sid]) statusName = unwrapDeep(dict[sid]);
+  }
+
+  return { pipelineName, statusName };
+}
+
+/** Нормалізує одну кампанію під наш UI */
 function normalizeItem(raw: any): Campaign {
-  // id може бути number | string | {value} | JSON-рядок
-  let id = unwrapDeep<string | number>(raw?.id ?? raw?._id ?? '');
-  if (typeof id !== 'string') id = String(id ?? '');
+  // id може бути: число, рядок, {value}, або JSON
+  let id = unwrapDeep(raw?.id ?? raw?._id ?? '');
+  if (id && typeof id !== 'string') id = String(id);
 
-  const v1 = unwrapDeep<string>(raw?.v1 ?? '');
-  const v2 = unwrapDeep<string>(raw?.v2 ?? '');
-  const name = unwrapDeep<string>(raw?.name ?? '');
+  const name =
+    unwrapDeep(raw?.name) ??
+    unwrapDeep(raw?.title) ??
+    ''; // якщо немає — покажемо "—" у відмальовці
 
-  const base: BaseInfo = {
-    pipeline: unwrapDeep<string>(raw?.base?.pipeline ?? raw?.pipeline ?? ''),
-    status: unwrapDeep<string>(raw?.base?.status ?? raw?.status ?? ''),
-    pipelineName: unwrapDeep<string>(raw?.base?.pipelineName ?? ''),
-    statusName: unwrapDeep<string>(raw?.base?.statusName ?? ''),
+  const v1 = unwrapDeep(raw?.v1) ?? '';
+  const v2 = unwrapDeep(raw?.v2) ?? '';
+
+  const createdAtRaw = unwrapDeep(raw?.createdAt ?? raw?.created_at ?? raw?.date);
+  const createdAt =
+    createdAtRaw ? new Date(createdAtRaw) : undefined;
+
+  const { pipelineName, statusName } = resolveBase(raw);
+
+  const cntV1 = getCounter(raw, 'v1');
+  const cntV2 = getCounter(raw, 'v2');
+  const cntExp = getCounter(raw, 'exp');
+
+  const displayId = id || '—';
+  const displayDate = createdAt ? createdAt.toLocaleDateString() : '—';
+  const displayName = name || '—';
+  const displayBase =
+    pipelineName || statusName
+      ? `${pipelineName ?? '#—'} — ${statusName ?? '#—'}`
+      : '#—';
+  const displayEntity = `v1: ${v1 || '—'} · v2: ${v2 || '—'}`;
+  const displayCounters = `v1: ${cntV1} · v2: ${cntV2} · exp: ${cntExp}`;
+
+  return {
+    id,
+    name,
+    base: {
+      pipelineName,
+      statusName,
+      pipelineId: unwrapDeep(raw?.base?.pipelineId),
+      statusId: unwrapDeep(raw?.base?.statusId)
+    },
+    v1,
+    v2,
+    createdAt,
+    ui: {
+      displayId,
+      displayDate,
+      displayName,
+      displayBase,
+      displayEntity,
+      displayCounters
+    }
   };
-
-  const counters: Counters = {
-    v1: Number(unwrapDeep<number>(raw?.counters?.v1 ?? 0)) || 0,
-    v2: Number(unwrapDeep<number>(raw?.counters?.v2 ?? 0)) || 0,
-    exp: Number(unwrapDeep<number>(raw?.counters?.exp ?? 0)) || 0,
-  };
-
-  return { id, name, v1, v2, base, counters, deleted: !!raw?.deleted };
 }
 
-/* ========= Компонент списку ========= */
+/** Рядок таблиці */
+function Row({ item, onDelete }: { item: Campaign; onDelete: (id: string) => void }) {
+  return (
+    <tr className="border-t">
+      <td className="px-4 py-3">
+        <div className="text-sm text-gray-900">—</div>
+        <div className="text-xs text-gray-500">ID: {item.ui.displayId}</div>
+      </td>
 
-type Props = { initial: ApiList };
+      <td className="px-4 py-3">{item.ui.displayName}</td>
 
-/**
- * Рендерить <tbody> зі списком кампаній.
- * Очікується, що таблиця та <thead> лежать у батьківському компоненті/сторінці.
- */
-export default function ClientList({ initial }: Props) {
-  const [items, setItems] = useState<Campaign[]>(
-    (initial?.items ?? []).map(normalizeItem)
+      <td className="px-4 py-3">{item.ui.displayEntity}</td>
+
+      <td className="px-4 py-3">{item.ui.displayBase}</td>
+
+      <td className="px-4 py-3">{item.ui.displayCounters}</td>
+
+      <td className="px-4 py-3">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              const res = await fetch(`/admin/campaigns/delete?id=${encodeURIComponent(item.id)}`, {
+                method: 'POST'
+              });
+              if (!res.ok) throw new Error('Delete failed');
+              onDelete(item.id);
+            } catch {
+              // no-op
+            }
+          }}
+        >
+          <button className="rounded-md bg-red-600 px-3 py-1.5 text-white hover:bg-red-700">
+            Видалити
+          </button>
+        </form>
+      </td>
+    </tr>
   );
-  const [loading, setLoading] = useState(false);
+}
 
-  // Робимо фетч при маунті, щоб підхопити актуальні дані
+/** Клієнтський список: робить запит та показує рядки */
+export default function ClientList({ initial }: { initial: ApiList }) {
+  const [data, setData] = useState<ApiList>(initial);
+
+  // фетч актуальних даних
   useEffect(() => {
-    let cancelled = false;
+    let abort = false;
     (async () => {
       try {
-        setLoading(true);
         const res = await fetch('/api/campaigns', { cache: 'no-store' });
-        const data: ApiList = await res.json();
-        if (!cancelled && data?.ok) {
-          setItems((data.items ?? []).map(normalizeItem));
+        const json = await res.json();
+        if (abort) return;
+        if (json?.ok) {
+          const items = Array.isArray(json.items) ? json.items.map(normalizeItem) : [];
+          setData({ ok: true, items, count: json.count ?? items.length });
+        } else {
+          setData((prev) => ({
+            ok: true,
+            items: (prev.items ?? []).map(normalizeItem),
+            count: prev.count ?? prev.items?.length ?? 0
+          }));
         }
       } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) setLoading(false);
+        // залишаємо initial, якщо не вдалось фетчнути
       }
     })();
     return () => {
-      cancelled = true;
+      abort = true;
     };
   }, []);
 
-  const empty = !items?.length;
+  const items = useMemo(
+    () => (Array.isArray(data.items) ? data.items : []).map(normalizeItem),
+    [data.items]
+  );
 
-  async function handleDelete(id: string) {
-    if (!id) return;
-    // м’яка підстраховка: підтвердження
-    const yes = confirm('Видалити кампанію? Це дію не можна скасувати.');
-    if (!yes) return;
-
-    try {
-      setLoading(true);
-
-      // 1) пробуємо DELETE API
-      const del = await fetch(`/api/campaigns?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      });
-
-      // 2) якщо бек не підтримує DELETE — fallback на сторінковий роут
-      if (!del.ok) {
-        await fetch(`/admin/campaigns/delete?id=${encodeURIComponent(id)}`, {
-          method: 'GET',
-          cache: 'no-store',
-        });
-      }
-
-      // локально прибираємо запис
-      setItems((prev) => prev.filter((x) => x.id !== id));
-    } catch {
-      /* ignore */
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const rows = useMemo(() => {
-    if (empty) {
-      return (
+  if (!items.length) {
+    return (
+      <tbody>
         <tr>
-          <td colSpan={6} className="text-center text-gray-500 py-8">
+          <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
             Кампаній поки немає
           </td>
         </tr>
-      );
-    }
+      </tbody>
+    );
+  }
 
-    return items.map((it) => {
-      const idText = it.id || '—';
-      const nameText = it.name || '—';
-      const vText = `v1: ${it.v1 || '—'} · v2: ${it.v2 || '—'}`;
+  const handleDelete = (id: string) => {
+    setData((prev) => ({
+      ok: true,
+      items: (prev.items ?? []).filter((x) => x.id !== id),
+      count: Math.max(0, (prev.count ?? 1) - 1)
+    }));
+  };
 
-      // Якщо немає назв воронки/статусу — друкуємо «#—»
-      const pipe =
-        it.base?.pipelineName ||
-        it.base?.pipeline ||
-        '#—';
-      const counters = `v1: ${it.counters?.v1 ?? 0} · v2: ${it.counters?.v2 ?? 0} · exp: ${
-        it.counters?.exp ?? 0
-      }`;
-
-      return (
-        <tr key={it.id} className="border-b last:border-0">
-          <td className="align-top py-3">
-            <div>—</div>
-            <div className="text-gray-500 text-sm">ID: {idText}</div>
-          </td>
-          <td className="align-top py-3">{nameText}</td>
-          <td className="align-top py-3">{vText}</td>
-          <td className="align-top py-3">{pipe}</td>
-          <td className="align-top py-3">{counters}</td>
-          <td className="align-top py-3">
-            <button
-              onClick={() => handleDelete(it.id)}
-              disabled={loading}
-              className="rounded-md bg-red-500 px-3 py-1.5 text-white hover:bg-red-600 disabled:opacity-50"
-            >
-              Видалити
-            </button>
-          </td>
-        </tr>
-      );
-    });
-  }, [items, empty, loading]);
-
-  return <tbody>{rows}</tbody>;
+  return (
+    <tbody>
+      {items.map((item) => (
+        <Row key={item.id} item={item} onDelete={handleDelete} />
+      ))}
+    </tbody>
+  );
 }
