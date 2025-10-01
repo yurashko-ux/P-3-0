@@ -4,25 +4,35 @@ import { kv } from "@vercel/kv";
 import { unwrapDeep } from "@/lib/normalize";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 export async function GET() {
+  const now = new Date().toISOString();
+
   const env = {
-    KV_REST_API_URL: Boolean(process.env.KV_REST_API_URL),
-    KV_REST_API_TOKEN: Boolean(process.env.KV_REST_API_TOKEN),
-    KV_REST_API_READ_ONLY_TOKEN: Boolean(process.env.KV_REST_API_READ_ONLY_TOKEN),
+    KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+    KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
+    KV_REST_API_READ_ONLY_TOKEN: !!process.env.KV_REST_API_READ_ONLY_TOKEN,
   };
 
-  const ro = unwrapDeep<any[]>(await kv.get("cmp:list:ids:RO")) ?? [];
-  const wr = unwrapDeep<any[]>(await kv.get("cmp:list:ids:WR")) ?? [];
+  // ЖОДНИХ дженеріків у unwrapDeep — лише просте розпакування
+  const roRaw = await kv.get("cmp:list:ids:RO");
+  const wrRaw = await kv.get("cmp:list:ids:WR");
+
+  const idsRO = (unwrapDeep(roRaw) as any[]) ?? [];
+  const idsWR = (unwrapDeep(wrRaw) as any[]) ?? [];
+
+  // Для зручності — зробимо маленьку "вітрину" вибірки
+  const sample = (idsWR.length ? idsWR : idsRO)
+    .slice(0, 1)
+    .map((id) => ({ id, active: false }));
 
   return NextResponse.json({
     ok: true,
+    time: now,
     env,
-    idsRO_len: ro.length,
-    idsWR_len: wr.length,
-    idsRO_sample: ro.slice(0, 3),
-    idsWR_sample: wr.slice(0, 3),
+    idsRO,
+    idsWR,
+    sample,
+    seeded: null,
   });
 }
