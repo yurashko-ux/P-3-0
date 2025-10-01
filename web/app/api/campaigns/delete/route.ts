@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { store } from '@/web/lib/store';
+// з delete -> campaigns -> api -> app -> (root) -> lib/store
+import { store } from '../../../../lib/store';
 
 export async function POST(req: Request) {
   const form = await req.formData();
@@ -13,6 +14,5 @@ export async function POST(req: Request) {
   }
 
   await store.remove(id);
-  // повертаємося на список (без 405)
   return NextResponse.redirect(new URL('/admin/campaigns', req.url));
 }
