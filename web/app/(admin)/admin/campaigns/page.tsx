@@ -1,3 +1,7 @@
+// web/app/(admin)/admin/campaigns/page.tsx
+
+export const dynamic = 'force-dynamic'; // забороняємо SSG для цієї сторінки
+
 import ClientList from './ClientList';
 
 export default function Page() {
@@ -13,16 +17,17 @@ export default function Page() {
           >
             + Нова кампанія
           </a>
-          <button
-            onClick={() => location.reload()}
+          {/* Оновити — без onClick у Server Component */}
+          <a
+            href="/admin/campaigns"
             className="rounded border px-3 py-1.5 hover:bg-slate-50"
           >
             Оновити
-          </button>
+          </a>
         </div>
       </div>
 
-      {/* ClientList сам завантажує дані з /api/campaigns, пропси не потрібні */}
+      {/* Увесь інтерактив і запити робить клієнтський компонент */}
       <ClientList />
     </div>
   );
