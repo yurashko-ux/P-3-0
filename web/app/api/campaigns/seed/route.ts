@@ -1,59 +1,37 @@
 // web/app/api/campaigns/seed/route.ts
-import { NextResponse } from "next/server";
-import { headers } from "next/headers";
+export const dynamic = 'force-dynamic';
 
-export const dynamic = "force-dynamic";
+import { NextResponse } from 'next/server';
+import { store } from '@/web/lib/store';
 
 export async function POST() {
-  const h = headers();
-  const host = h.get("host")!;
-  // На Vercel все за HTTPS, але лишимо перевірку:
-  const proto = (h.get("x-forwarded-proto") || "").includes("http") ? "https" : "https";
-  const base = `${proto}://${host}`;
-
-  const adminToken = process.env.ADMIN_PASS || "11111";
-
-  const payloads = [
-    {
-      name: "Demo campaign A",
-      base_pipeline_id: 111,
-      base_status_id: 222,
-      rules: { v1: { op: "contains", value: "ціна" }, v2: { op: "equals", value: "привіт" } },
-    },
-    {
-      name: "Demo campaign B",
-      base_pipeline_id: 6,
-      base_status_id: 68,
-      rules: { v1: { op: "contains", value: "замов" }, v2: { op: "contains", value: "оплата" } },
-    },
-  ];
-
-  const created: any[] = [];
-  for (const body of payloads) {
-    const res = await fetch(`${base}/api/campaigns`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Admin-Token": adminToken,
-      },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
-    const json = await res.json().catch(() => ({}));
-    created.push({ status: res.status, ok: res.ok, json });
+  const existing = await store.getAll();
+  if (existing.length > 0) {
+    return NextResponse.json({ ok: true, created: 0, note: 'already seeded' });
   }
 
-  const list = await fetch(`${base}/api/campaigns`, {
-    cache: "no-store",
-    headers: { cookie: h.get("cookie") ?? "" },
-  }).then((r) => r.json()).catch(() => ({ ok: false }));
+  const now = Date.now();
+  await store.create({
+    id: String(now),
+    name: 'UI-created',
+    v1: '—',
+    v2: '—',
+    base: { pipeline: 'p-1', status: 's-1', pipelineName: 'Нові Ліди', statusName: 'Новий' },
+    counters: { v1: 0, v2: 0, exp: 0 },
+    deleted: false,
+    createdAt: now,
+  });
 
-  return NextResponse.json({ ok: true, created, after: list }, { headers: { "Cache-Control": "no-store" } });
-}
+  await store.create({
+    id: String(now + 1),
+    name: 'UI-created',
+    v1: '—',
+    v2: '—',
+    base: { pipeline: 'p-2', status: 's-2', pipelineName: 'Клієнти Інші послуги', statusName: 'Перший контакт' },
+    counters: { v1: 0, v2: 0, exp: 0 },
+    deleted: false,
+    createdAt: now + 1,
+  });
 
-export async function GET() {
-  return NextResponse.json(
-    { ok: false, error: "Use POST" },
-    { status: 405, headers: { "Cache-Control": "no-store" } }
-  );
+  return NextResponse.json({ ok: true, created: 2 });
 }
