@@ -1,174 +1,67 @@
 // web/app/api/campaigns/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { kvRead, kvWrite } from '@/lib/kv';
+import { NextResponse } from 'next/server';
 
-const INDEX_KEYS = ['campaign:index', 'campaigns:index'];
-const ITEM_KEY = (id: string) => `campaign:${id}`;
+type Counters = { v1?: number; v2?: number; exp?: number };
+type BaseInfo = { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
+type Campaign = {
+  id: string;
+  name?: string;
+  v1?: string;
+  v2?: string;
+  base?: BaseInfo;
+  counters?: Counters;
+};
 
-export const dynamic = 'force-dynamic';
-
-function authOk(req: NextRequest) {
-  const env = process.env.ADMIN_PASS || '';
-  if (!env) return false;
-  const h = req.headers.get('x-admin-token') || '';
-  const c =
-    cookies().get('admin_token')?.value ||
-    cookies().get('admin_pass')?.value ||
-    '';
-  return h === env || c === env;
-}
-
-function normalizeId(raw: unknown): string | null {
-  if (!raw) return null;
-  try {
-    if (typeof raw === 'string') {
-      if (raw.trim().startsWith('{')) {
-        const o = JSON.parse(raw);
-        if (o && typeof o.value === 'string') return o.value;
-      }
-      return raw;
+// універсальний “розпаковувач”
+function unwrapDeep<T = any>(v: any): T {
+  if (v == null) return v;
+  let cur = v;
+  // тягнемо .value поки є
+  while (cur && typeof cur === 'object' && 'value' in cur) cur = (cur as any).value;
+  // якщо це JSON-рядок – парсимо
+  if (typeof cur === 'string') {
+    const s = cur.trim();
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      try { return JSON.parse(s); } catch { /* ignore */ }
     }
-    if (typeof raw === 'object' && (raw as any)?.value) {
-      return String((raw as any).value);
-    }
-  } catch {
-    /* ignore */
   }
-  return null;
+  return cur as T;
 }
 
-async function safeLRange(key: string): Promise<string[]> {
+export async function GET() {
   try {
-    const v = (await kvRead.lrange(key, 0, -1)) as any;
-    return Array.isArray(v) ? (v as string[]) : [];
-  } catch {
-    return [];
-  }
-}
+    // TODO: тут ваша логіка отримання “сирих” кампаній
+    // const raw: any[] = await loadFromKVorAPI();
 
-async function safeGet(key: string): Promise<string | null> {
-  try {
-    return (await kvRead.getRaw(key)) as string | null;
-  } catch {
-    return null;
-  }
-}
+    const raw: any[] = []; // заглушка, щоб не падало, замініть на ваші дані
 
-async function readAllIds(): Promise<string[]> {
-  const all = new Set<string>();
-  for (const k of INDEX_KEYS) {
-    const rawIds = await safeLRange(k);
-    rawIds
-      .map(normalizeId)
-      .filter((x): x is string => !!x)
-      .forEach((id) => all.add(id));
-  }
-  return Array.from(all);
-}
+    const items: Campaign[] = raw.map((r) => {
+      const id = String(unwrapDeep(r.id ?? r._id ?? ''));
+      const name = unwrapDeep<string>(r.name ?? '');
+      const v1 = unwrapDeep<string>(r.v1 ?? '');
+      const v2 = unwrapDeep<string>(r.v2 ?? '');
 
-export async function GET(req: NextRequest) {
-  if (!authOk(req)) {
-    return NextResponse.json({ ok: false, items: [] }, { status: 401 });
-  }
+      const baseRaw = unwrapDeep<any>(r.base ?? {});
+      const base: BaseInfo = {
+        pipeline: unwrapDeep<string>(baseRaw?.pipeline ?? ''),
+        status: unwrapDeep<string>(baseRaw?.status ?? ''),
+        pipelineName: unwrapDeep<string>(baseRaw?.pipelineName ?? ''),
+        statusName: unwrapDeep<string>(baseRaw?.statusName ?? ''),
+      };
 
-  // 1) читаємо ids з обох індексів
-  let ids = await readAllIds();
+      const cRaw = unwrapDeep<any>(r.counters ?? {});
+      const counters: Counters = {
+        v1: Number(unwrapDeep(cRaw?.v1 ?? 0) || 0),
+        v2: Number(unwrapDeep(cRaw?.v2 ?? 0) || 0),
+        exp: Number(unwrapDeep(cRaw?.exp ?? 0) || 0),
+      };
 
-  // 2) опційно підсіяти одну тестову кампанію — для швидкої перевірки
-  if ((req.nextUrl.searchParams.get('seed') || '') === '1' && typeof kvWrite.createCampaign === 'function') {
-    const sample = await kvWrite.createCampaign({
-      name: 'UI-created',
-      rules: {},
-      exp: {},
-      active: false,
+      return { id, name, v1, v2, base, counters };
     });
-    // записуємо id в ОБИДВА індекси, щоб точно зчитувалось
-    try { await kvWrite.lpush(INDEX_KEYS[0], sample.id); } catch {}
-    try { await kvWrite.lpush(INDEX_KEYS[1], sample.id); } catch {}
-    ids = await readAllIds();
-  }
 
-  // 3) вантажимо елементи
-  const items: any[] = [];
-  for (const id of ids) {
-    const raw = await safeGet(ITEM_KEY(id));
-    if (!raw) continue;
-    try {
-      const obj = JSON.parse(raw);
-      if (obj?.deleted) continue; // soft-delete
-      obj.id = String(obj.id ?? id);
-      obj.v1_count = obj.v1_count ?? 0;
-      obj.v2_count = obj.v2_count ?? 0;
-      obj.exp_count = obj.exp_count ?? 0;
-      items.push(obj);
-    } catch {
-      continue;
-    }
-  }
-
-  return NextResponse.json({ ok: true, count: items.length, items });
-}
-
-export async function POST(req: NextRequest) {
-  if (!authOk(req)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
-
-  try {
-    const body = await req.json();
-
-    if (typeof kvWrite.createCampaign === 'function') {
-      const saved = await kvWrite.createCampaign(body);
-      // Пишемо id в ОБИДВА індекси — максимальна сумісність
-      try { await kvWrite.lpush(INDEX_KEYS[0], saved.id); } catch {}
-      try { await kvWrite.lpush(INDEX_KEYS[1], saved.id); } catch {}
-      return NextResponse.json({ ok: true, item: saved }, { status: 200 });
-    }
-
-    // fallback, якщо createCampaign відсутня
-    const id = String(Date.now());
-    const item = {
-      id,
-      name: String(body?.name ?? 'UI-created'),
-      created_at: Date.now(),
-      active: !!body?.active,
-      rules: body?.rules ?? {},
-      exp: body?.exp ?? {},
-      v1_count: 0,
-      v2_count: 0,
-      exp_count: 0,
-    };
-    await kvWrite.setRaw(ITEM_KEY(id), JSON.stringify(item));
-    try { await kvWrite.lpush(INDEX_KEYS[0], id); } catch {}
-    try { await kvWrite.lpush(INDEX_KEYS[1], id); } catch {}
-    return NextResponse.json({ ok: true, item }, { status: 200 });
+    return NextResponse.json({ ok: true, items, count: items.length });
   } catch (e) {
-    console.error('POST /api/campaigns failed', e);
-    return NextResponse.json({ ok: false, reason: 'KV write failed' }, { status: 500 });
-  }
-}
-
-// Soft delete: позначаємо deleted=true (індекси не чіпаємо)
-export async function DELETE(req: NextRequest) {
-  if (!authOk(req)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
-  const id = req.nextUrl.searchParams.get('id') || '';
-  if (!id) {
-    return NextResponse.json({ ok: false, reason: 'missing id' }, { status: 400 });
-  }
-
-  try {
-    const raw = await safeGet(ITEM_KEY(id));
-    if (!raw) return NextResponse.json({ ok: true, id });
-    let obj: any;
-    try { obj = JSON.parse(raw); } catch { obj = { id }; }
-    obj.deleted = true;
-    await kvWrite.setRaw(ITEM_KEY(id), JSON.stringify(obj));
-    return NextResponse.json({ ok: true, id }, { status: 200 });
-  } catch (e) {
-    console.error('DELETE /api/campaigns failed', e);
-    return NextResponse.json({ ok: false, reason: 'delete failed' }, { status: 500 });
+    console.error('GET /api/campaigns failed', e);
+    return NextResponse.json({ ok: false, items: [], count: 0 }, { status: 500 });
   }
 }
