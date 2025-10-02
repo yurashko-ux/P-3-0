@@ -11,7 +11,6 @@ function renderTarget(t?: Target) {
 }
 
 async function fetchCampaigns(): Promise<Campaign[]> {
-  // Якщо у тебе вже був власний data-fetching — лишай його.
   const res = await fetch("/api/campaigns", { cache: "no-store" });
   if (!res.ok) throw new Error("Не вдалося завантажити кампанії");
   return res.json();
@@ -67,10 +66,10 @@ export default async function Page() {
                     {c.counters?.v1 ?? 0}/{c.counters?.v2 ?? 0}/{c.counters?.exp ?? 0}
                   </td>
                   <td className="py-2 pr-4">
-                    <form>
+                    <form action={`/api/campaigns/${c.id}`} method="post">
+                      <input type="hidden" name="_method" value="DELETE" />
                       <button
-                        formaction={`/api/campaigns/${c.id}`}
-                        formMethod="delete"
+                        type="submit"
                         className="px-2 py-1 rounded shadow"
                       >
                         Видалити
