@@ -19,14 +19,13 @@ type Campaign = {
   texp?: IdName;
   counters: Counters;
   createdAt: number;
-  // можливі назви для кількості днів EXP
+  // варіанти назви поля для днів
   expDays?: number;
   expireDays?: number;
   expire?: number;
   vexp?: number;
 };
 
-// ---- KV helpers ----
 const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
@@ -52,7 +51,6 @@ async function readCampaigns(): Promise<Campaign[]> {
   return existing.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
-// ---- UI helpers ----
 function fmtDate(ts?: number) {
   try {
     if (!ts) return "—";
@@ -77,7 +75,6 @@ function getExpireDays(c: Campaign): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-// ---- Page ----
 export default async function Page() {
   const campaigns = await readCampaigns();
 
@@ -112,13 +109,14 @@ export default async function Page() {
               <th className="px-2 py-3 w-[260px]">Цільова воронка</th>
               <th className="px-2 py-3 w-[280px]">Цільовий статус</th>
               <th className="px-2 py-3 w-[140px]">Лічильник</th>
+              <th className="px-2 py-3 w-[90px]">Expire</th>
               <th className="px-4 py-3 w-[120px] text-right">Дії</th>
             </tr>
           </thead>
           <tbody>
             {campaigns.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                   Порожньо. Створіть першу кампанію.
                 </td>
               </tr>
@@ -132,13 +130,15 @@ export default async function Page() {
                       <div>{fmtDate(c.createdAt)}</div>
                       <div className="text-slate-400 text-xs">#{c.id}</div>
                     </td>
+
                     {/* Назва */}
                     <td className="px-2 py-3 text-sm">{nn(c.name)}</td>
+
                     {/* База */}
                     <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
                     <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
 
-                    {/* Цільова воронка — ВЕРТИКАЛЬНО: V1/V2/EXP */}
+                    {/* Цільова воронка — вертикально V1/V2/EXP */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
                         <div>
@@ -156,7 +156,7 @@ export default async function Page() {
                       </div>
                     </td>
 
-                    {/* Цільовий статус — вертикально; EXP з днями */}
+                    {/* Цільовий статус — вертикально; EXP (N дн.) */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
                         <div>
@@ -193,6 +193,9 @@ export default async function Page() {
                         </div>
                       </div>
                     </td>
+
+                    {/* Expire — просто число днів */}
+                    <td className="px-2 py-3 text-sm">{days != null ? days : "—"}</td>
 
                     {/* Дії */}
                     <td className="px-4 py-3 text-right">
