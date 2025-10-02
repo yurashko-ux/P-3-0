@@ -1,18 +1,22 @@
 // web/lib/keycrm.ts
 /**
- * STRICT до твоїх ENV із канви:
- *  - KEYCRM_API_URL (default https://openapi.keycrm.app/v1)
- *  - KEYCRM_BEARER (повний рядок заголовка) АБО KEYCRM_API_TOKEN (ми зберемо Bearer ...)
- *
- * Ендпоїнти:
- *   GET /pipelines?per_page=200
- *   GET /pipelines/{pipelineId}/statuses?per_page=200
+ * STRICT до ENV з канви:
+ *  KEYCRM_API_URL (default https://openapi.keycrm.app/v1)
+ *  KEYCRM_BEARER  (повний вміст заголовка) АБО
+ *  KEYCRM_API_TOKEN (якщо не має префікса — додамо "Bearer ")
  */
 
 const BASE = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
-const AUTH =
-  process.env.KEYCRM_BEARER ??
-  (process.env.KEYCRM_API_TOKEN ? `Bearer ${process.env.KEYCRM_API_TOKEN}` : "");
+
+// — стабільно будуємо Authorization: якщо відсутній префікс — додаємо
+function buildAuth(): string {
+  const bearer = process.env.KEYCRM_BEARER?.trim();
+  const token  = process.env.KEYCRM_API_TOKEN?.trim();
+  if (bearer) return bearer;
+  if (token) return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+  return "";
+}
+const AUTH = buildAuth();
 
 export type PipelineDTO = { id: string; name: string };
 export type StatusDTO = { id: string; name: string };
@@ -61,7 +65,7 @@ export async function fetchStatuses(pipelineId: string): Promise<StatusDTO[]> {
   }));
 }
 
-/** Витягання назв із невеликим кешем у процесі (для пост-енрічменту на бекенді) */
+// — невеликий процесний кеш для назв
 const pipelineCache = new Map<string, string>();
 const statusCache = new Map<string, Map<string, string>>();
 
@@ -83,8 +87,9 @@ export async function getStatusName(pipelineId: string, statusId: string): Promi
   return byPipe.get(statusId) ?? statusId;
 }
 
-// Заглушка для сумісності старих імпортів
-export type KcFindArgs = Record<string, unknown>;
-export async function kcFindCardIdByAny(_q: string | KcFindArgs) {
-  return { ok: false, id: null as string | null };
-}
+// Сервісна інфа для diag-роутів (не обов’язково використовувати)
+export const __KEYCRM_ENV = {
+  BASE,
+  AUTH,
+  startsWithBearer: !!AUTH && AUTH.toLowerCase().startsWith("bearer "),
+};
