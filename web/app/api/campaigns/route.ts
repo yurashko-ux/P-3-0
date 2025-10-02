@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { Campaign, Target } from "@/lib/types";
-import { getPipelineNameCached, getStatusNameCached } from "@/lib/keycrm-cache";
+import { getPipelinesMap, getStatusesMap } from "@/lib/keycrm-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +33,16 @@ async function getIdsArray(): Promise<string[]> {
 }
 async function setIdsArray(ids: string[]) {
   await kv.set(IDS_KEY, ids);
+}
+
+// ---- локальні name-хелпери на базі KV-кешу довідників ----
+async function getPipelineNameCached(pipelineId: string): Promise<string> {
+  const map = await getPipelinesMap(false);
+  return map[pipelineId] ?? pipelineId;
+}
+async function getStatusNameCached(pipelineId: string, statusId: string): Promise<string> {
+  const map = await getStatusesMap(pipelineId, false);
+  return map[statusId] ?? statusId;
 }
 
 async function safeEnrich(b?: Target): Promise<Target | undefined> {
