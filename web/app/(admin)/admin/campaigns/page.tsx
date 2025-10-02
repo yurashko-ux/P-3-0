@@ -32,19 +32,20 @@ function Chip({ children, title }: { children: React.ReactNode; title?: string }
   );
 }
 
-function Muted({ children }: { children: React.ReactNode }) {
-  return <span className="text-gray-400">{children}</span>;
+// ✅ додано title?: string
+function Muted({ children, title }: { children: React.ReactNode; title?: string }) {
+  return (
+    <span className="text-gray-400" title={title}>
+      {children}
+    </span>
+  );
 }
 
 function formatDate(n?: number) {
   if (!n) return '—';
   try {
     const d = new Date(Number(n));
-    const dd = d.toLocaleDateString('uk-UA', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
+    const dd = d.toLocaleDateString('uk-UA', { year: 'numeric', month: '2-digit', day: '2-digit' });
     const tt = d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
     return `${dd} ${tt}`;
   } catch {
