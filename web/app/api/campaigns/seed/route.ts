@@ -1,58 +1,61 @@
-import { NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
-import { unwrapDeep } from '@/lib/normalize';
-import type { Campaign } from '@/lib/types';
+// web/app/api/campaigns/seed/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const KEY = 'cmp:list:items';
+const IDS_KEY = "cmp:ids";
+const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
-export async function POST() {
-  try {
-    const now = Date.now();
-    const demo: Campaign[] = [
-      {
-        id: String(now),
-        name: 'UI-created',
-        v1: '—',
-        v2: '—',
-        base: {
-          pipeline: 'p-2',
-          status: 's-2',
-          pipelineName: 'Клієнти Інші послуги',
-          statusName: 'Перший контакт',
-        },
-        counters: { v1: 0, v2: 0, exp: 0 },
-        deleted: false,
-        createdAt: now,
-      },
-      {
-        id: String(now - 1),
-        name: 'UI-created',
-        v1: '—',
-        v2: '—',
-        base: {
-          pipeline: 'p-1',
-          status: 's-1',
-          pipelineName: 'Нові Ліди',
-          statusName: 'Новий',
-        },
-        counters: { v1: 0, v2: 0, exp: 0 },
-        deleted: false,
-        createdAt: now - 1,
-      },
-    ];
+type Target = {
+  pipeline?: string;
+  status?: string;
+  pipelineName?: string;
+  statusName?: string;
+};
+type Campaign = {
+  id: string;
+  name: string;
+  base?: Target;
+  t1?: Target;
+  t2?: Target;
+  texp?: Target;
+  counters: { v1: number; v2: number; exp: number };
+  createdAt: number;
+  expDays?: number; // для відображення днів
+};
 
-    const raw = await kv.get(KEY);
-    const list = (unwrapDeep<any[]>(raw) || []).filter((x) => !x?.deleted);
-    const merged = [...demo, ...list];
-    await kv.set(KEY, merged);
+async function seedOnce() {
+  const id = String(Date.now());
+  const demo: Campaign = {
+    id,
+    name: "Demo",
+    base: { pipelineName: "Ігнор", statusName: "Успішний" },
+    t1: { pipelineName: "Запит ціни", statusName: "Нема в наявності" },
+    t2: { pipelineName: "Консультації", statusName: "Дотискання" },
+    texp: { pipelineName: "Повторний", statusName: "Перший контакт" },
+    counters: { v1: 0, v2: 0, exp: 0 },
+    createdAt: Date.now(),
+    expDays: 7,
+  };
 
-    return NextResponse.json({ ok: true, created: demo.length });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? 'Seed error' },
-      { status: 500 }
-    );
-  }
+  await kv.set(ITEM_KEY(id), demo);
+
+  const ids = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
+  const next = Array.isArray(ids) ? [id, ...ids.filter(Boolean)] : [id];
+  await kv.set(IDS_KEY, next);
+
+  return id;
+}
+
+// підтримуємо і GET, і POST
+export async function GET(_req: NextRequest) {
+  const id = await seedOnce();
+  return NextResponse.json({ ok: true, id });
+}
+
+export async function POST(_req: NextRequest) {
+  const id = await seedOnce();
+  return NextResponse.json({ ok: true, id });
 }
