@@ -2,19 +2,34 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState } from "react";
 
 export default function DeleteButton({ id }: { id: string }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   async function onClick() {
+    if (!confirm("Видалити кампанію?")) return;
+    setPending(true);
     try {
-      await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
-    } catch {
-      // ignore — можна додати toast у майбутньому
+      const res = await fetch(`/api/campaigns/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        console.error("DELETE failed", res.status, t);
+        alert(`Не вдалося видалити (HTTP ${res.status}).`);
+        return;
+      }
+      // успіх
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+      alert("Помилка мережі під час видалення.");
     } finally {
-      startTransition(() => router.refresh());
+      setPending(false);
     }
   }
 
