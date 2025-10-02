@@ -87,7 +87,22 @@ export async function getStatusName(pipelineId: string, statusId: string): Promi
   return byPipe.get(statusId) ?? statusId;
 }
 
-// Сервісна інфа для diag-роутів (не обов’язково використовувати)
+// — заглушка для сумісності (щоб імпорт у /api/keycrm/search/route.ts не ламав білд)
+export type KcFindArgs = {
+  username?: string;
+  fullname?: string;
+  pipeline_id?: string | number;
+  status_id?: string | number;
+  per_page?: number;
+  max_pages?: number;
+};
+export async function kcFindCardIdByAny(
+  _q: string | KcFindArgs
+): Promise<{ ok: boolean; id?: string | null } | null> {
+  return { ok: false, id: null };
+}
+
+// Сервісна інфа для діагностики (опціонально)
 export const __KEYCRM_ENV = {
   BASE,
   AUTH,
