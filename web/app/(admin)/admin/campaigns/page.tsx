@@ -18,7 +18,6 @@ type Campaign = {
   name?: string;
   createdAt?: number;
 
-  // базові
   base?: {
     pipeline?: string;
     status?: string;
@@ -26,14 +25,12 @@ type Campaign = {
     statusName?: string;
   };
 
-  // цілі (опційно — форма може ще не зберігати все)
   targets?: {
     v1?: Target;
     v2?: Target;
     exp?: Target;
   };
 
-  // сутність
   v1?: string | number;
   v2?: string | number;
 
@@ -71,7 +68,10 @@ function CellStack({
 
 function Chip({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <span title={title} className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
+    <span
+      title={title}
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"
+    >
       {children}
     </span>
   );
