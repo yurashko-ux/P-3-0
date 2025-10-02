@@ -37,3 +37,4 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({ ok: true, hint: "POST something here to inspect payload" });
 }
+
