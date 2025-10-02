@@ -1,6 +1,7 @@
 // web/app/(admin)/admin/campaigns/page.tsx
 import Link from "next/link";
 import { kv } from "@vercel/kv";
+import { headers } from "next/headers";
 import DeleteButton from "@/components/DeleteButton";
 
 type IdName = {
@@ -19,7 +20,6 @@ type Campaign = {
   texp?: IdName;
   counters: Counters;
   createdAt: number;
-  // варіанти назви поля для днів
   expDays?: number;
   expireDays?: number;
   expire?: number;
@@ -30,25 +30,51 @@ const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 async function readIds(): Promise<string[]> {
+  // канонічний масив
   const arr = await kv.get<string[] | null>(IDS_KEY);
   if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  // старий list як запасний варіант
   try {
     const list = await kv.lrange<string>(IDS_KEY, 0, -1);
-    return Array.isArray(list) ? list.filter(Boolean) : [];
-  } catch {
-    return [];
-  }
+    if (Array.isArray(list) && list.length) return list.filter(Boolean);
+  } catch {}
+  return [];
 }
 
-async function readCampaigns(): Promise<Campaign[]> {
+async function readFromKV(): Promise<Campaign[]> {
   const ids = await readIds();
   if (!ids.length) return [];
   const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
-  const existing: Campaign[] = [];
-  items.forEach((it) => {
-    if (it && typeof it === "object") existing.push(it as Campaign);
-  });
-  return existing.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  const out: Campaign[] = [];
+  items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
+  return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+function buildBaseUrl() {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+  return `${proto}://${host}`;
+}
+
+async function readWithFallback(): Promise<Campaign[]> {
+  // 1) напряму з KV (швидко, без мережі)
+  const kvData = await readFromKV();
+  if (kvData.length) return kvData;
+
+  // 2) fallback: API, якщо бек уже агрегує правильно
+  try {
+    const base = buildBaseUrl();
+    const r = await fetch(`${base}/api/campaigns`, {
+      cache: "no-store",
+      next: { revalidate: 0 },
+    });
+    if (r.ok) {
+      const arr = (await r.json()) as Campaign[];
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+  } catch {}
+  return [];
 }
 
 function fmtDate(ts?: number) {
@@ -76,7 +102,7 @@ function getExpireDays(c: Campaign): number | undefined {
 }
 
 export default async function Page() {
-  const campaigns = await readCampaigns();
+  const campaigns = await readWithFallback();
 
   return (
     <div className="p-4 sm:p-6">
@@ -125,79 +151,40 @@ export default async function Page() {
                 const days = getExpireDays(c);
                 return (
                   <tr key={c.id} className="border-b align-top">
-                    {/* Дата */}
                     <td className="px-4 py-3 text-sm text-slate-800">
                       <div>{fmtDate(c.createdAt)}</div>
                       <div className="text-slate-400 text-xs">#{c.id}</div>
                     </td>
-
-                    {/* Назва */}
                     <td className="px-2 py-3 text-sm">{nn(c.name)}</td>
-
-                    {/* База */}
                     <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
                     <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
 
-                    {/* Цільова воронка — вертикально V1/V2/EXP */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
-                        <div>
-                          <span className="text-slate-500 mr-2">V1</span>
-                          {nn(c.t1?.pipelineName)}
-                        </div>
-                        <div>
-                          <span className="text-slate-500 mr-2">V2</span>
-                          {nn(c.t2?.pipelineName)}
-                        </div>
-                        <div>
-                          <span className="text-slate-500 mr-2">EXP</span>
-                          {nn(c.texp?.pipelineName)}
-                        </div>
+                        <div><span className="text-slate-500 mr-2">V1</span>{nn(c.t1?.pipelineName)}</div>
+                        <div><span className="text-slate-500 mr-2">V2</span>{nn(c.t2?.pipelineName)}</div>
+                        <div><span className="text-slate-500 mr-2">EXP</span>{nn(c.texp?.pipelineName)}</div>
                       </div>
                     </td>
 
-                    {/* Цільовий статус — вертикально; EXP (N дн.) */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
-                        <div>
-                          <span className="text-slate-500 mr-2">V1</span>
-                          {nn(c.t1?.statusName)}
-                        </div>
-                        <div>
-                          <span className="text-slate-500 mr-2">V2</span>
-                          {nn(c.t2?.statusName)}
-                        </div>
-                        <div>
-                          <span className="text-slate-500 mr-2">
-                            {days != null ? `EXP (${days} дн.)` : "EXP"}
-                          </span>
-                          {nn(c.texp?.statusName)}
-                        </div>
+                        <div><span className="text-slate-500 mr-2">V1</span>{nn(c.t1?.statusName)}</div>
+                        <div><span className="text-slate-500 mr-2">V2</span>{nn(c.t2?.statusName)}</div>
+                        <div><span className="text-slate-500 mr-2">{days != null ? `EXP (${days} дн.)` : "EXP"}</span>{nn(c.texp?.statusName)}</div>
                       </div>
                     </td>
 
-                    {/* Лічильник — вертикально */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
-                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                          <span className="text-slate-500 mr-1">V1:</span>
-                          <span>{c.counters?.v1 ?? 0}</span>
-                        </div>
-                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                          <span className="text-slate-500 mr-1">V2:</span>
-                          <span>{c.counters?.v2 ?? 0}</span>
-                        </div>
-                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                          <span className="text-slate-500 mr-1">EXP:</span>
-                          <span>{c.counters?.exp ?? 0}</span>
-                        </div>
+                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"><span className="text-slate-500 mr-1">V1:</span><span>{c.counters?.v1 ?? 0}</span></div>
+                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"><span className="text-slate-500 mr-1">V2:</span><span>{c.counters?.v2 ?? 0}</span></div>
+                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"><span className="text-slate-500 mr-1">EXP:</span><span>{c.counters?.exp ?? 0}</span></div>
                       </div>
                     </td>
 
-                    {/* Expire — просто число днів */}
                     <td className="px-2 py-3 text-sm">{days != null ? days : "—"}</td>
 
-                    {/* Дії */}
                     <td className="px-4 py-3 text-right">
                       <DeleteButton id={c.id} />
                     </td>
