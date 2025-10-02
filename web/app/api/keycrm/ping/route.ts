@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// будуємо Authorization так само, як у lib/keycrm.ts
 function buildAuth(): string {
   const bearer = process.env.KEYCRM_BEARER?.trim();
   const token  = process.env.KEYCRM_API_TOKEN?.trim();
@@ -15,9 +16,9 @@ function maskAuth(a?: string) {
   if (!a) return "(no auth)";
   if (a.toLowerCase().startsWith("bearer ")) {
     const t = a.slice(7);
-    return "Bearer " + (t.length <= 8 ? "***" : t.slice(0, 6) + "…***");
+    return "Authorization: Bearer " + (t.length <= 8 ? "***" : t.slice(0, 6) + "…***");
   }
-  return a.length <= 8 ? "***" : a.slice(0, 6) + "…***";
+  return "Authorization: " + (a.length <= 8 ? "***" : a.slice(0, 6) + "…***");
 }
 
 export async function GET() {
@@ -47,6 +48,7 @@ export async function GET() {
     return NextResponse.json({
       ok: false,
       url,
+      startsWithBearer: !!auth && auth.toLowerCase().startsWith("bearer "),
       authHeaderPreview: maskAuth(auth),
       error: String(e?.message || e),
     });
