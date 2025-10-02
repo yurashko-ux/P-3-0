@@ -1,5 +1,6 @@
 // web/app/(admin)/admin/campaigns/page.tsx
 import Link from "next/link";
+import { headers } from "next/headers";
 
 type IdName = {
   pipeline?: string;
@@ -17,7 +18,7 @@ type Campaign = {
   texp?: IdName;
   counters: Counters;
   createdAt: number;
-  // опційні поля – на всяк випадок
+  // можливі назви поля для днів експірації
   expDays?: number;
   expireDays?: number;
   expire?: number;
@@ -29,7 +30,7 @@ function fmtDate(ts?: number) {
     if (!ts) return "—";
     const d = new Date(ts);
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}, ${pad(
       d.getHours()
     )}:${pad(d.getMinutes())}`;
   } catch {
@@ -50,21 +51,21 @@ function getExpireDays(c: Campaign): number | undefined {
     (typeof (c as any)?.vexp === "number" ? (c as any)?.vexp : undefined);
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
+function buildBaseUrl() {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+  return `${proto}://${host}`;
+}
 
 async function getCampaigns(): Promise<Campaign[]> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/campaigns`, {
-    // у проді відносний шлях теж працює; NEXT_PUBLIC_BASE_URL не обов’язковий
+  // гарантуємо абсолютний URL на сервері
+  const base = buildBaseUrl();
+  const res = await fetch(`${base}/api/campaigns`, {
     cache: "no-store",
-    // fallback для відносного посилання
     next: { revalidate: 0 },
   }).catch(() => null as any);
-
-  if (!res || !("ok" in res) || !res.ok) {
-    // спроба з відносним шляхом, якщо BASE_URL не заданий
-    const res2 = await fetch(`/api/campaigns`, { cache: "no-store", next: { revalidate: 0 } });
-    if (!res2.ok) return [];
-    return (await res2.json()) as Campaign[];
-  }
+  if (!res || !res.ok) return [];
   return (await res.json()) as Campaign[];
 }
 
@@ -91,16 +92,16 @@ export default async function Page() {
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white">
+      <div className="rounded-xl border bg-white overflow-hidden">
         <table className="w-full table-fixed">
           <thead>
             <tr className="text-left text-slate-600 text-sm border-b">
-              <th className="px-4 py-3 w-[170px]">Дата</th>
+              <th className="px-4 py-3 w-[180px]">Дата</th>
               <th className="px-2 py-3 w-[160px]">Назва</th>
               <th className="px-2 py-3 w-[200px]">Базова Воронка</th>
               <th className="px-2 py-3 w-[160px]">Базовий Статус</th>
               <th className="px-2 py-3">Цільова воронка</th>
-              <th className="px-2 py-3 w-[260px]">Цільовий статус</th>
+              <th className="px-2 py-3 w-[280px]">Цільовий статус</th>
               <th className="px-2 py-3 w-[140px]">Лічильник</th>
               <th className="px-4 py-3 w-[120px] text-right">Дії</th>
             </tr>
@@ -124,14 +125,14 @@ export default async function Page() {
                     </td>
                     {/* Назва */}
                     <td className="px-2 py-3 text-sm">{nn(c.name)}</td>
-                    {/* Базова воронка / статус */}
+                    {/* Базова */}
                     <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
                     <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
-                    {/* Цільова воронка - в один рядок */}
+                    {/* Цільова воронка — один рядок */}
                     <td className="px-2 py-3 text-sm whitespace-nowrap">
                       {joinTargets(c.t1?.pipelineName, c.t2?.pipelineName, c.texp?.pipelineName)}
                     </td>
-                    {/* Цільовий статус - вертикально, EXP з днями */}
+                    {/* Цільовий статус — вертикально; EXP з днями */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
                         <div>
@@ -150,7 +151,7 @@ export default async function Page() {
                         </div>
                       </div>
                     </td>
-                    {/* Лічильник - вертикально */}
+                    {/* Лічильник — вертикально */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
                         <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
