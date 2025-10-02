@@ -53,7 +53,7 @@ export async function getPipelineName(pipelineId: string): Promise<string> {
   if (pipelineCache.has(pipelineId)) return pipelineCache.get(pipelineId)!;
   const list = await fetchPipelines();
   for (const p of list) pipelineCache.set(p.id, p.name);
-  return pipelineCache.get(pipelineId) ?? pipelineId;
+  return pipelineCache.get(pipelineId) ?? pipelineId; // graceful fallback
 }
 
 export async function getStatusName(
@@ -68,15 +68,30 @@ export async function getStatusName(
   for (const s of list) map.set(s.id, s.name);
   statusCache.set(pipelineId, map);
 
-  return map.get(statusId) ?? statusId;
+  return map.get(statusId) ?? statusId; // graceful fallback
 }
 
 /**
- * Stub для сумісності з app/api/keycrm/search/route.ts
- * TODO: Реалізувати фактичний пошук картки в KeyCRM (за телефоном/email/id…).
+ * Сумісний stub для app/api/keycrm/search/route.ts
+ * Підтримує як простий рядок (пошук за будь-чим), так і об'єкт з полями.
+ * TODO: Замінити на реальний виклик KeyCRM пошуку, коли буде специфікація.
  */
-export async function kcFindCardIdByAny(query: string): Promise<string | null> {
-  // Поки повертаємо null, щоб не ламати прод. Коли з'явиться вимога — додамо реальний виклик API.
-  if (!query?.trim()) return null;
-  return null;
+export type KcFindArgs = {
+  username?: string;
+  fullname?: string;
+  pipeline_id?: string | number;
+  status_id?: string | number;
+  per_page?: number;
+  max_pages?: number;
+};
+
+export async function kcFindCardIdByAny(
+  query: string | KcFindArgs
+): Promise<{ ok: boolean; id?: string | null } | null> {
+  // Поки що це заглушка, яка тільки валідно типізована для білду.
+  // Повертаємо null/ok:false, щоб не ламати існуючу логіку виклику.
+  if (!query || (typeof query === "string" && !query.trim())) {
+    return { ok: false, id: null };
+  }
+  return { ok: false, id: null };
 }
