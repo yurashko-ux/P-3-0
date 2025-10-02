@@ -1,168 +1,72 @@
 // web/lib/keycrm.ts
+
 /**
- * Minimal KeyCRM client: mock-first, real calls за ENABLE_REAL_KC=true.
- * Дає стабільні іменовані експорти, які очікують існуючі маршрути.
+ * Якщо у тебе вже є fetchPipelines/fetchStatuses — залишаємо їх,
+ * нижче — референс імплементації + helper-и назв із простим кешем.
  */
 
-const ENABLE_REAL = process.env.ENABLE_REAL_KC === 'true';
-const API_URL = process.env.KEYCRM_API_URL || '';
-const API_TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || '';
+const KEYCRM_API_URL = process.env.KEYCRM_API_URL ?? "https://openapi.keycrm.app/v1";
+const KEYCRM_BEARER =
+  process.env.KEYCRM_BEARER ?? `Bearer ${process.env.KEYCRM_API_TOKEN ?? ""}`;
 
-type Idish = number | string;
+type PipelineDTO = { id: string; name: string };
+type StatusDTO = { id: string; name: string };
 
-type Card = {
-  id: number;
-  title: string;
-  pipeline_id?: number;
-  status_id?: number;
-  username?: string;
-};
-
-type SearchResult = { cards: Card[] };
-type MoveInput = { card_id: number; pipeline_id: Idish; status_id: Idish };
-
-async function realFetch(path: string, init?: RequestInit) {
-  if (!API_URL || !API_TOKEN)
-    throw new Error('KeyCRM real mode requires KEYCRM_API_URL and KEYCRM_API_TOKEN');
-  const headers = new Headers(init?.headers || {});
-  headers.set('Authorization', `Bearer ${API_TOKEN}`);
-  headers.set('Content-Type', 'application/json');
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers, cache: 'no-store' });
+export async function fetchPipelines(): Promise<PipelineDTO[]> {
+  const res = await fetch(`${KEYCRM_API_URL}/pipelines`, {
+    headers: { Authorization: KEYCRM_BEARER },
+    cache: "no-store",
+  });
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`KeyCRM ${path} ${res.status}: ${body}`);
+    console.error("KeyCRM pipelines error:", res.status, await safeText(res));
+    throw new Error(`KeyCRM pipelines failed: ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+  const list = (Array.isArray(data) ? data : data?.data) ?? [];
+  return list.map((p: any) => ({ id: String(p.id), name: String(p.name) }));
 }
 
-/* -------------------- базові методи -------------------- */
-
-export async function findByUsername(username: string): Promise<SearchResult> {
-  if (ENABLE_REAL) {
-    const data = await realFetch(`/cards/search?username=${encodeURIComponent(username)}`);
-    return data as SearchResult;
+export async function fetchStatuses(pipelineId: string): Promise<StatusDTO[]> {
+  const res = await fetch(`${KEYCRM_API_URL}/pipelines/${pipelineId}/statuses`, {
+    headers: { Authorization: KEYCRM_BEARER },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    console.error("KeyCRM statuses error:", res.status, await safeText(res));
+    throw new Error(`KeyCRM statuses failed: ${res.status}`);
   }
-  return { cards: [] };
+  const data = await res.json();
+  const list = (Array.isArray(data) ? data : data?.data) ?? [];
+  return list.map((s: any) => ({ id: String(s.id), name: String(s.name) }));
 }
 
-export async function searchByTitleContains(query: string): Promise<SearchResult> {
-  if (ENABLE_REAL) {
-    const data = await realFetch(`/cards/search?title=${encodeURIComponent(query)}`);
-    return data as SearchResult;
-  }
-  return { cards: [] };
+async function safeText(r: Response) {
+  try { return await r.text(); } catch { return ""; }
 }
 
-export async function moveCard(input: MoveInput): Promise<{ ok: true }> {
-  const payload = {
-    pipeline_id: Number(input.pipeline_id),
-    status_id: Number(input.status_id),
-  };
-  if (ENABLE_REAL) {
-    await realFetch(`/cards/${input.card_id}/move`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    return { ok: true };
-  }
-  return { ok: true };
+// ---- Name helpers (in-memory cache на процес) ----
+
+const pipelineCache = new Map<string, string>();
+const statusCache = new Map<string, Map<string, string>>(); // pipelineId -> (statusId -> name)
+
+export async function getPipelineName(pipelineId: string): Promise<string> {
+  if (pipelineCache.has(pipelineId)) return pipelineCache.get(pipelineId)!;
+  const list = await fetchPipelines();
+  for (const p of list) pipelineCache.set(p.id, p.name);
+  return pipelineCache.get(pipelineId) ?? pipelineId; // graceful fallback
 }
 
-export async function getPipelines(): Promise<Array<{ id: number; name: string }>> {
-  if (ENABLE_REAL) {
-    const data = await realFetch(`/pipelines`);
-    return data as Array<{ id: number; name: string }>;
-  }
-  return [{ id: 1, name: 'Default' }];
+export async function getStatusName(
+  pipelineId: string,
+  statusId: string
+): Promise<string> {
+  const byPipe = statusCache.get(pipelineId);
+  if (byPipe?.has(statusId)) return byPipe.get(statusId)!;
+
+  const list = await fetchStatuses(pipelineId);
+  const map = byPipe ?? new Map<string, string>();
+  for (const s of list) map.set(s.id, s.name);
+  statusCache.set(pipelineId, map);
+
+  return map.get(statusId) ?? statusId; // graceful fallback
 }
-
-export async function getStatuses(pipeline_id: number): Promise<Array<{ id: number; name: string }>> {
-  if (ENABLE_REAL) {
-    const data = await realFetch(`/pipelines/${pipeline_id}/statuses`);
-    return data as Array<{ id: number; name: string }>;
-  }
-  return [{ id: 38, name: 'New' }];
-}
-
-export async function getCardById(id: number): Promise<Card | null> {
-  if (ENABLE_REAL) {
-    const data = await realFetch(`/cards/${id}`);
-    return data as Card;
-  }
-  return null;
-}
-
-/* -------------------- сумісні обгортки для існуючих роутів -------------------- */
-
-/**
- * kcFindCardIdByAny:
- *  - приймає username / title / fullname та додаткові поля (pipeline_id, status_id, per_page, max_pages, ...).
- *  - пробує username, інакше шукає за title/fullname (contains).
- *  - повертає перший знайдений card.id або null.
- */
-export async function kcFindCardIdByAny(input: {
-  username?: string;
-  title?: string;
-  fullname?: string;
-  pipeline_id?: Idish;
-  status_id?: Idish;
-  per_page?: number;
-  max_pages?: number;
-} & Record<string, any>): Promise<number | null> {
-  const username = input?.username?.trim();
-  const title = input?.title?.trim() || input?.fullname?.trim();
-
-  if (username) {
-    const res = await findByUsername(username);
-    if (res.cards[0]?.id) return res.cards[0].id;
-  }
-  if (title) {
-    const res = await searchByTitleContains(title);
-    if (res.cards[0]?.id) return res.cards[0].id;
-  }
-  return null;
-}
-
-/**
- * kcMoveCard:
- *  - підтримує 2 сигнатури:
- *    1) kcMoveCard(card_id, pipeline_id, status_id)
- *    2) kcMoveCard({ id, pipeline_id, status_id })
- */
-export async function kcMoveCard(
-  arg1: number | { id: Idish; pipeline_id: Idish; status_id: Idish },
-  pipeline_id?: Idish,
-  status_id?: Idish
-): Promise<{ ok: true }> {
-  let card_id: number;
-  let p: Idish;
-  let s: Idish;
-
-  if (typeof arg1 === 'number') {
-    card_id = arg1;
-    p = pipeline_id as Idish;
-    s = status_id as Idish;
-  } else {
-    card_id = Number(arg1.id);
-    p = arg1.pipeline_id;
-    s = arg1.status_id;
-  }
-
-  return moveCard({ card_id, pipeline_id: p, status_id: s });
-}
-
-/* -------------------- default export (для старих імпортів) -------------------- */
-const keycrm = {
-  findByUsername,
-  searchByTitleContains,
-  moveCard,
-  getPipelines,
-  getStatuses,
-  getCardById,
-  kcFindCardIdByAny,
-  kcMoveCard,
-};
-export default keycrm;
-
-// Явні ре-експорти (на випадок tree-shaking/типових конфліктів)
-export { kcFindCardIdByAny as _kcFindCardIdByAny, kcMoveCard as _kcMoveCard };
