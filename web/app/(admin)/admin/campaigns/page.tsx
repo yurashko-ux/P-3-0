@@ -5,73 +5,97 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Counters = { v1: number; v2: number; exp: number };
-type Base = {
+
+type Target = {
   pipeline?: string;
   status?: string;
   pipelineName?: string;
   statusName?: string;
 };
-type Item = {
+
+type Campaign = {
   id: string;
   name?: string;
-  v1?: string;
-  v2?: string;
-  base?: Base;
-  counters?: Counters;
   createdAt?: number;
+
+  // базові
+  base?: {
+    pipeline?: string;
+    status?: string;
+    pipelineName?: string;
+    statusName?: string;
+  };
+
+  // цілі (опційно — форма може ще не зберігати все)
+  targets?: {
+    v1?: Target;
+    v2?: Target;
+    exp?: Target;
+  };
+
+  // сутність
+  v1?: string | number;
+  v2?: string | number;
+
+  counters?: Counters;
 };
+
+function fmtDate(n?: number) {
+  if (!n) return '—';
+  const d = new Date(Number(n));
+  return `${d.toLocaleDateString('uk-UA')} ${d
+    .toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
+    .replace(':', ':')}`;
+}
+
+function CellStack({
+  rows,
+  labels,
+}: {
+  rows: Array<string | number | undefined>;
+  labels?: string[];
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {rows.map((v, i) => (
+        <div key={i} className="flex items-baseline gap-2">
+          {labels?.[i] ? (
+            <span className="w-8 shrink-0 text-gray-400">{labels[i]}</span>
+          ) : null}
+          <span>{v ?? '—'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Chip({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <span
-      title={title}
-      className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs leading-5"
-    >
+    <span title={title} className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
       {children}
     </span>
   );
-}
-
-// ✅ додано title?: string
-function Muted({ children, title }: { children: React.ReactNode; title?: string }) {
-  return (
-    <span className="text-gray-400" title={title}>
-      {children}
-    </span>
-  );
-}
-
-function formatDate(n?: number) {
-  if (!n) return '—';
-  try {
-    const d = new Date(Number(n));
-    const dd = d.toLocaleDateString('uk-UA', { year: 'numeric', month: '2-digit', day: '2-digit' });
-    const tt = d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-    return `${dd} ${tt}`;
-  } catch {
-    return String(n);
-  }
 }
 
 export default function CampaignsPage() {
   const router = useRouter();
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState('');
+  const [err, setErr] = useState('');
 
-  const hasData = useMemo(() => (items || []).length > 0, [items]);
+  const hasData = useMemo(() => items.length > 0, [items]);
 
   async function load() {
     setLoading(true);
-    setError('');
+    setErr('');
     try {
       const r = await fetch('/api/campaigns', { cache: 'no-store' });
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || 'Помилка завантаження');
-      setItems(j.items || []);
+      setItems(j.items ?? []);
     } catch (e: any) {
-      setError(e?.message || 'Помилка завантаження');
+      setErr(e?.message || 'Помилка завантаження');
     } finally {
       setLoading(false);
     }
@@ -98,9 +122,9 @@ export default function CampaignsPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-4xl font-extrabold tracking-tight">Кампанії</h1>
-        <div className="flex items-center gap-3">
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="text-4xl font-extrabold">Кампанії</h1>
+        <div className="flex gap-3">
           <button
             onClick={() => router.push('/admin/campaigns/new')}
             className="rounded-md bg-blue-600 px-4 py-2 text-white"
@@ -113,9 +137,9 @@ export default function CampaignsPage() {
         </div>
       </div>
 
-      {error && (
+      {err && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
+          {err}
         </div>
       )}
 
@@ -123,10 +147,12 @@ export default function CampaignsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-700">
             <tr>
-              <th className="px-4 py-3 text-left">Дата/ID</th>
+              <th className="px-4 py-3 text-left">Дата</th>
               <th className="px-4 py-3 text-left">Назва</th>
-              <th className="px-4 py-3 text-left">Сутність</th>
-              <th className="px-4 py-3 text-left">Воронка</th>
+              <th className="px-4 py-3 text-left">Базова Воронка</th>
+              <th className="px-4 py-3 text-left">Базовий Статус</th>
+              <th className="px-4 py-3 text-left">Цільва воронка</th>
+              <th className="px-4 py-3 text-left">Цільовий статус</th>
               <th className="px-4 py-3 text-left">Лічильник</th>
               <th className="px-4 py-3 text-right">Дії</th>
             </tr>
@@ -135,61 +161,61 @@ export default function CampaignsPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-8 text-center" colSpan={6}>
+                <td className="px-4 py-10 text-center" colSpan={8}>
                   Завантаження…
                 </td>
               </tr>
             ) : !hasData ? (
               <tr>
-                <td className="px-4 py-12 text-center text-gray-500" colSpan={6}>
+                <td className="px-4 py-12 text-center text-gray-500" colSpan={8}>
                   Кампаній поки немає
                 </td>
               </tr>
             ) : (
               items.map((it) => {
-                const created = formatDate(it.createdAt);
-                const pipelineName = it.base?.pipelineName || '—';
-                const statusName = it.base?.statusName || '—';
-                const v1 = it.v1 ?? '—';
-                const v2 = it.v2 ?? '—';
-                const c = it.counters || { v1: 0, v2: 0, exp: 0 };
+                const c: Counters = it.counters ?? { v1: 0, v2: 0, exp: 0 };
+                const tV1 = it.targets?.v1;
+                const tV2 = it.targets?.v2;
+                const tExp = it.targets?.exp;
 
                 return (
                   <tr key={it.id} className="border-t">
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
-                        <span className="font-medium">{created}</span>
-                        <Muted>#{it.id}</Muted>
+                        <span className="font-medium">{fmtDate(it.createdAt)}</span>
+                        <span className="text-gray-400">#{it.id}</span>
                       </div>
                     </td>
 
-                    <td className="px-4 py-3">{it.name || <Muted>без назви</Muted>}</td>
+                    <td className="px-4 py-3">{it.name || <span className="text-gray-400">без назви</span>}</td>
+
+                    <td className="px-4 py-3">{it.base?.pipelineName ?? '—'}</td>
+
+                    <td className="px-4 py-3">{it.base?.statusName ?? '—'}</td>
 
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Chip title="Значення 1">v1: {v1}</Chip>
-                        <Chip title="Значення 2">v2: {v2}</Chip>
-                      </div>
+                      <CellStack
+                        labels={['V1', 'V2', 'EXP']}
+                        rows={[
+                          tV1?.pipelineName ?? '—',
+                          tV2?.pipelineName ?? '—',
+                          tExp?.pipelineName ?? '—',
+                        ]}
+                      />
                     </td>
 
                     <td className="px-4 py-3">
-                      {pipelineName !== '—' ? (
-                        <div className="flex flex-col">
-                          <span className="font-medium" title={it.base?.pipeline}>
-                            {pipelineName}
-                          </span>
-                          <Muted title={it.base?.status}>{statusName}</Muted>
-                        </div>
-                      ) : (
-                        <Muted>—</Muted>
-                      )}
+                      <CellStack
+                        labels={['V1', 'V2']}
+                        rows={[tV1?.statusName ?? '—', tV2?.statusName ?? '—']}
+                      />
                     </td>
 
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Chip title="Лічильник v1">v1: {c.v1 ?? 0}</Chip>
-                        <Chip title="Лічильник v2">v2: {c.v2 ?? 0}</Chip>
-                        <Chip title="Дні до експірації">exp: {c.exp ?? 0}</Chip>
+                        <Chip title="Лічильник V1">V1: {c.v1 ?? 0}</Chip>
+                        <Chip title="Лічильник V2">V2: {c.v2 ?? 0}</Chip>
+                        <Chip title="Дні до експірації">EXP: {c.exp ?? 0}</Chip>
                       </div>
                     </td>
 
