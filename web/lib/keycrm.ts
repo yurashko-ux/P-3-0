@@ -1,20 +1,17 @@
 // web/lib/keycrm.ts
-/**
- * STRICT до ENV з канви:
- *  KEYCRM_API_URL (default https://openapi.keycrm.app/v1)
- *  KEYCRM_BEARER  (повний вміст заголовка) АБО
- *  KEYCRM_API_TOKEN (якщо не має префікса — додамо "Bearer ")
- */
-
 const BASE = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
 
-// — стабільно будуємо Authorization: якщо відсутній префікс — додаємо
+function ensureBearer(v?: string) {
+  if (!v) return "";
+  const s = v.trim();
+  return s.toLowerCase().startsWith("bearer ") ? s : `Bearer ${s}`;
+}
+
 function buildAuth(): string {
-  const bearer = process.env.KEYCRM_BEARER?.trim();
-  const token  = process.env.KEYCRM_API_TOKEN?.trim();
-  if (bearer) return bearer;
-  if (token) return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
-  return "";
+  // Нормалізуємо ОБИДВА джерела
+  const bearer = ensureBearer(process.env.KEYCRM_BEARER);
+  const token  = ensureBearer(process.env.KEYCRM_API_TOKEN);
+  return bearer || token || "";
 }
 const AUTH = buildAuth();
 
@@ -65,7 +62,7 @@ export async function fetchStatuses(pipelineId: string): Promise<StatusDTO[]> {
   }));
 }
 
-// — невеликий процесний кеш для назв
+// кеш назв
 const pipelineCache = new Map<string, string>();
 const statusCache = new Map<string, Map<string, string>>();
 
@@ -79,30 +76,20 @@ export async function getPipelineName(pipelineId: string): Promise<string> {
 
 export async function getStatusName(pipelineId: string, statusId: string): Promise<string> {
   if (!pipelineId || !statusId) return "";
-  const byPipe = statusCache.get(pipelineId) ?? new Map<string, string>();
-  statusCache.set(pipelineId, byPipe);
-  if (byPipe.has(statusId)) return byPipe.get(statusId)!;
+  const map = statusCache.get(pipelineId) ?? new Map<string, string>();
+  statusCache.set(pipelineId, map);
+  if (map.has(statusId)) return map.get(statusId)!;
   const list = await fetchStatuses(pipelineId);
-  for (const s of list) byPipe.set(s.id, s.name);
-  return byPipe.get(statusId) ?? statusId;
+  for (const s of list) map.set(s.id, s.name);
+  return map.get(statusId) ?? statusId;
 }
 
-// — заглушка для сумісності (щоб імпорт у /api/keycrm/search/route.ts не ламав білд)
-export type KcFindArgs = {
-  username?: string;
-  fullname?: string;
-  pipeline_id?: string | number;
-  status_id?: string | number;
-  per_page?: number;
-  max_pages?: number;
-};
-export async function kcFindCardIdByAny(
-  _q: string | KcFindArgs
-): Promise<{ ok: boolean; id?: string | null } | null> {
-  return { ok: false, id: null };
+// заглушки для сумісності
+export type KcFindArgs = { [k: string]: unknown };
+export async function kcFindCardIdByAny(_q: string | KcFindArgs) {
+  return { ok: false, id: null as string | null };
 }
 
-// Сервісна інфа для діагностики (опціонально)
 export const __KEYCRM_ENV = {
   BASE,
   AUTH,
