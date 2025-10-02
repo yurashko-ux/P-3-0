@@ -1,7 +1,12 @@
 // web/app/(admin)/admin/campaigns/page.tsx
+import { kv } from "@vercel/kv";
 import { Campaign, Target } from "@/lib/types";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const IDS_KEY = "cmp:ids";
+const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 function renderTarget(t?: Target) {
   if (!t) return "—";
@@ -10,14 +15,22 @@ function renderTarget(t?: Target) {
   return `${p} / ${s}`;
 }
 
-async function fetchCampaigns(): Promise<Campaign[]> {
-  const res = await fetch("/api/campaigns", { cache: "no-store" });
-  if (!res.ok) throw new Error("Не вдалося завантажити кампанії");
-  return res.json();
+async function getCampaigns(): Promise<Campaign[]> {
+  try {
+    const ids = ((await kv.get<string[]>(IDS_KEY)) ?? []).filter(Boolean);
+    if (!ids.length) return [];
+    const keys = ids.map(ITEM_KEY);
+    const items = await kv.mget<Campaign[]>(...keys);
+    return (items ?? []).filter(Boolean) as Campaign[];
+  } catch (err) {
+    // Нічого не крешимо на проді — просто покажемо порожню таблицю
+    console.error("campaigns list error:", err);
+    return [];
+  }
 }
 
 export default async function Page() {
-  const items = await fetchCampaigns();
+  const items = await getCampaigns();
 
   return (
     <div className="p-6 space-y-4">
@@ -27,6 +40,7 @@ export default async function Page() {
           <a href="/admin/campaigns/new" className="px-3 py-2 rounded-xl shadow">
             Нова кампанія
           </a>
+          {/* Простий перерендер сторінки (SSR) */}
           <form action="/admin/campaigns" method="get">
             <button type="submit" className="px-3 py-2 rounded-xl shadow">
               Оновити
@@ -52,11 +66,11 @@ export default async function Page() {
           </thead>
           <tbody>
             {items.map((c) => {
-              const date = new Date(c.createdAt).toLocaleString("uk-UA");
+              const date = c?.createdAt ? new Date(c.createdAt).toLocaleString("uk-UA") : "—";
               return (
                 <tr key={c.id} className="border-b">
                   <td className="py-2 pr-4 whitespace-nowrap">{date}</td>
-                  <td className="py-2 pr-4">{c.name}</td>
+                  <td className="py-2 pr-4">{c.name ?? "—"}</td>
                   <td className="py-2 pr-4">{c.base?.pipelineName ?? "—"}</td>
                   <td className="py-2 pr-4">{c.base?.statusName ?? "—"}</td>
                   <td className="py-2 pr-4">{renderTarget(c.t1)}</td>
@@ -68,10 +82,7 @@ export default async function Page() {
                   <td className="py-2 pr-4">
                     <form action={`/api/campaigns/${c.id}`} method="post">
                       <input type="hidden" name="_method" value="DELETE" />
-                      <button
-                        type="submit"
-                        className="px-2 py-1 rounded shadow"
-                      >
+                      <button type="submit" className="px-2 py-1 rounded shadow">
                         Видалити
                       </button>
                     </form>
