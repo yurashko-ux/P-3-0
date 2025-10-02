@@ -18,10 +18,6 @@ function ok(payload: any) {
   return NextResponse.json(payload, { status: 200 });
 }
 
-function bool(x: any) {
-  return !!x;
-}
-
 async function getIdsArray(): Promise<string[]> {
   const arr = await kv.get<string[] | null>(IDS_KEY);
   return Array.isArray(arr) ? arr.filter(Boolean) : [];
