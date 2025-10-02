@@ -5,12 +5,17 @@ export function baseUrl() {
   return (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
 }
 
+function ensureBearer(v?: string) {
+  if (!v) return "";
+  const s = v.trim();
+  return s.toLowerCase().startsWith("bearer ") ? s : `Bearer ${s}`;
+}
+
 export function buildAuth(): string {
-  const bearer = process.env.KEYCRM_BEARER?.trim();
-  const token = process.env.KEYCRM_API_TOKEN?.trim();
-  if (bearer) return bearer;
-  if (token) return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
-  return "";
+  // Нормалізуємо ОБИДВА джерела
+  const bearer = ensureBearer(process.env.KEYCRM_BEARER);
+  const token  = ensureBearer(process.env.KEYCRM_API_TOKEN);
+  return bearer || token || "";
 }
 
 export function authHeaders() {
