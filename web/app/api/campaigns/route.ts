@@ -14,35 +14,13 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-// ---- IDS helpers: підтримка обох форматів (масив JSON — канонічний; list — тимчасовий) ----
-type IdsMode = "array" | "list" | "missing";
-
-async function getIds(): Promise<{ ids: string[]; mode: IdsMode }> {
-  // 1) Канонічний формат — масив JSON
+async function getIdsArray(): Promise<string[]> {
   const arr = await kv.get<string[] | null>(IDS_KEY);
-  if (Array.isArray(arr)) {
-    return { ids: arr.filter(Boolean), mode: "array" };
-  }
-  // 2) Спроба прочитати як Redis list (якщо випадково створений)
-  try {
-    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
-    if (Array.isArray(list) && list.length > 0) {
-      return { ids: list.filter(Boolean), mode: "list" };
-    }
-  } catch {
-    // ignore WRONGTYPE etc
-  }
-  return { ids: [], mode: "missing" };
+  return Array.isArray(arr) ? arr.filter(Boolean) : [];
 }
 
-async function saveIdsAsArray(ids: string[]) {
+async function setIdsArray(ids: string[]) {
   await kv.set(IDS_KEY, ids);
-}
-
-async function saveIds(ids: string[], mode: IdsMode) {
-  // Завжди мігруємо у канонічний формат: JSON-масив.
-  // Це безпечніше для Next/Vercel (просте kv.get/kv.set).
-  await saveIdsAsArray(ids);
 }
 
 async function enrichNames(b?: Target): Promise<Target | undefined> {
@@ -60,7 +38,7 @@ function newId() {
 
 // -------- GET /api/campaigns --------
 export async function GET() {
-  const { ids } = await getIds();
+  const ids = await getIdsArray();
   if (!ids.length) return NextResponse.json<Campaign[]>([]);
   const keys = ids.map(ITEM_KEY);
   const items = await kv.mget<Campaign[]>(...keys);
@@ -112,13 +90,13 @@ export async function POST(req: NextRequest) {
     createdAt: Date.now(),
   };
 
-  // 1) Записати сам елемент
+  // 1) Запис елемента
   await kv.set(ITEM_KEY(item.id), item);
 
-  // 2) Оновити індекс у канонічному форматі (масив JSON)
-  const { ids } = await getIds(); // прочитаємо, що є (масив або list)
-  const next = [item.id, ...ids];
-  await saveIds(next, "array");
+  // 2) Оновлення індексу у форматі JSON-масиву (канонічний)
+  const ids = await getIdsArray();
+  ids.unshift(item.id);
+  await setIdsArray(ids);
 
   return NextResponse.json(item, { status: 201 });
 }
