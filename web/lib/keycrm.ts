@@ -1,34 +1,32 @@
 // web/lib/keycrm.ts
 /**
- * KeyCRM client (STRICT to provided ENV).
- * Uses ONLY:
+ * STRICT до твоїх ENV із канви:
  *  - KEYCRM_API_URL (default https://openapi.keycrm.app/v1)
- *  - KEYCRM_BEARER (full header value, e.g. "Bearer XXX") OR
- *  - KEYCRM_API_TOKEN (we build "Authorization: Bearer <token>")
+ *  - KEYCRM_BEARER (повний рядок заголовка) АБО KEYCRM_API_TOKEN (ми зберемо Bearer ...)
  *
- * Endpoints:
- *   GET /pipelines
- *   GET /pipelines/{pipelineId}/statuses
+ * Ендпоїнти:
+ *   GET /pipelines?per_page=200
+ *   GET /pipelines/{pipelineId}/statuses?per_page=200
  */
 
 const BASE = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
-
-const AUTH_HEADER_VALUE =
+const AUTH =
   process.env.KEYCRM_BEARER ??
   (process.env.KEYCRM_API_TOKEN ? `Bearer ${process.env.KEYCRM_API_TOKEN}` : "");
-
-function headers() {
-  const h: Record<string, string> = { Accept: "application/json" };
-  if (AUTH_HEADER_VALUE) h.Authorization = AUTH_HEADER_VALUE;
-  return h;
-}
 
 export type PipelineDTO = { id: string; name: string };
 export type StatusDTO = { id: string; name: string };
 
-function normalizeList(x: any): any[] {
+function headers() {
+  const h: Record<string, string> = { Accept: "application/json" };
+  if (AUTH) h.Authorization = AUTH;
+  return h;
+}
+
+function normList(x: any): any[] {
   if (Array.isArray(x)) return x;
   if (x?.data && Array.isArray(x.data)) return x.data;
+  if (x?.items && Array.isArray(x.items)) return x.items;
   return [];
 }
 
@@ -47,46 +45,45 @@ async function safeJson(url: string): Promise<any | null> {
 }
 
 export async function fetchPipelines(): Promise<PipelineDTO[]> {
-  const data = await safeJson(`${BASE}/pipelines`);
-  const list = normalizeList(data);
-  return list.map((p: any) => ({
+  const data = await safeJson(`${BASE}/pipelines?per_page=200`);
+  return normList(data).map((p: any) => ({
     id: String(p.id),
     name: String(p.name ?? p.title ?? p.label ?? p.slug ?? p.id),
   }));
 }
 
 export async function fetchStatuses(pipelineId: string): Promise<StatusDTO[]> {
-  const data = await safeJson(`${BASE}/pipelines/${encodeURIComponent(pipelineId)}/statuses`);
-  const list = normalizeList(data);
-  return list.map((s: any) => ({
+  const pid = encodeURIComponent(pipelineId);
+  const data = await safeJson(`${BASE}/pipelines/${pid}/statuses?per_page=200`);
+  return normList(data).map((s: any) => ({
     id: String(s.id),
     name: String(s.name ?? s.title ?? s.label ?? s.slug ?? s.id),
   }));
 }
 
-// ---- name helpers with in-process cache (no external envs) ----
+/** Витягання назв із невеликим кешем у процесі (для пост-енрічменту на бекенді) */
 const pipelineCache = new Map<string, string>();
 const statusCache = new Map<string, Map<string, string>>();
 
 export async function getPipelineName(pipelineId: string): Promise<string> {
   if (!pipelineId) return "";
   if (pipelineCache.has(pipelineId)) return pipelineCache.get(pipelineId)!;
-  const ps = await fetchPipelines();
-  for (const p of ps) pipelineCache.set(p.id, p.name);
+  const list = await fetchPipelines();
+  for (const p of list) pipelineCache.set(p.id, p.name);
   return pipelineCache.get(pipelineId) ?? pipelineId;
 }
 
 export async function getStatusName(pipelineId: string, statusId: string): Promise<string> {
   if (!pipelineId || !statusId) return "";
-  const map = statusCache.get(pipelineId) ?? new Map<string, string>();
-  statusCache.set(pipelineId, map);
-  if (map.has(statusId)) return map.get(statusId)!;
-  const ss = await fetchStatuses(pipelineId);
-  for (const s of ss) map.set(s.id, s.name);
-  return map.get(statusId) ?? statusId;
+  const byPipe = statusCache.get(pipelineId) ?? new Map<string, string>();
+  statusCache.set(pipelineId, byPipe);
+  if (byPipe.has(statusId)) return byPipe.get(statusId)!;
+  const list = await fetchStatuses(pipelineId);
+  for (const s of list) byPipe.set(s.id, s.name);
+  return byPipe.get(statusId) ?? statusId;
 }
 
-// Compatibility stub (not used now)
+// Заглушка для сумісності старих імпортів
 export type KcFindArgs = Record<string, unknown>;
 export async function kcFindCardIdByAny(_q: string | KcFindArgs) {
   return { ok: false, id: null as string | null };
