@@ -1,8 +1,8 @@
 // web/lib/keycrm.ts
 
 /**
- * Якщо у тебе вже є fetchPipelines/fetchStatuses — залишаємо їх,
- * нижче — референс імплементації + helper-и назв із простим кешем.
+ * Якщо у тебе вже є fetchPipelines/fetchStatuses — залиш їх.
+ * Нижче — референс імплементації + helper-и назв із простим кешем.
  */
 
 const KEYCRM_API_URL = process.env.KEYCRM_API_URL ?? "https://openapi.keycrm.app/v1";
@@ -53,7 +53,7 @@ export async function getPipelineName(pipelineId: string): Promise<string> {
   if (pipelineCache.has(pipelineId)) return pipelineCache.get(pipelineId)!;
   const list = await fetchPipelines();
   for (const p of list) pipelineCache.set(p.id, p.name);
-  return pipelineCache.get(pipelineId) ?? pipelineId; // graceful fallback
+  return pipelineCache.get(pipelineId) ?? pipelineId;
 }
 
 export async function getStatusName(
@@ -68,5 +68,15 @@ export async function getStatusName(
   for (const s of list) map.set(s.id, s.name);
   statusCache.set(pipelineId, map);
 
-  return map.get(statusId) ?? statusId; // graceful fallback
+  return map.get(statusId) ?? statusId;
+}
+
+/**
+ * Stub для сумісності з app/api/keycrm/search/route.ts
+ * TODO: Реалізувати фактичний пошук картки в KeyCRM (за телефоном/email/id…).
+ */
+export async function kcFindCardIdByAny(query: string): Promise<string | null> {
+  // Поки повертаємо null, щоб не ламати прод. Коли з'явиться вимога — додамо реальний виклик API.
+  if (!query?.trim()) return null;
+  return null;
 }
