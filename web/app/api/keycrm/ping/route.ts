@@ -1,52 +1,47 @@
 // web/app/api/keycrm/ping/route.ts
 import { NextResponse } from "next/server";
+import { __KEYCRM_DEBUG } from "@/lib/keycrm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BASE = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
-const AUTH =
-  process.env.KEYCRM_BEARER ??
-  (process.env.KEYCRM_API_TOKEN ? `Bearer ${process.env.KEYCRM_API_TOKEN}` : "");
-
-function mask(v?: string) {
-  if (!v) return "";
-  const s = String(v);
-  return s.length <= 12 ? "***" : s.slice(0, 8) + "…***";
+function maskAuth(a?: string) {
+  if (!a) return "(no auth header)";
+  if (a.toLowerCase().startsWith("bearer ")) {
+    const tail = a.slice(7);
+    const masked = tail.length <= 8 ? "***" : tail.slice(0, 6) + "…***";
+    return "Authorization: Bearer " + masked;
+  }
+  const masked = a.length <= 8 ? "***" : a.slice(0, 6) + "…***";
+  return "Authorization: " + masked;
 }
 
 export async function GET() {
+  const { BASE, AUTH, startsWithBearer } = __KEYCRM_DEBUG;
   const url = `${BASE}/pipelines?per_page=1`;
-  let status = 0;
-  let text = "";
-  let json: any = null;
-
   try {
     const res = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        ...(AUTH ? { Authorization: AUTH } : {}),
-      },
+      headers: { Accept: "application/json", ...(AUTH ? { Authorization: AUTH } : {}) },
       cache: "no-store",
     });
-    status = res.status;
     const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json")) json = await res.json().catch(() => null);
-    else text = (await res.text()).slice(0, 500);
+    const payload = ct.includes("application/json") ? await res.json().catch(() => null) : null;
+    const snippet = !payload ? (await res.text().catch(() => "")).slice(0, 400) : undefined;
     return NextResponse.json({
       ok: res.ok,
-      status,
+      status: res.status,
       url,
-      authHeaderPreview: AUTH ? `Authorization: ${mask(AUTH)}` : "(no auth header)",
-      jsonKeys: json ? Object.keys(json) : [],
-      snippet: text || undefined,
+      startsWithBearer,
+      authHeaderPreview: maskAuth(AUTH),
+      jsonKeys: payload ? Object.keys(payload) : [],
+      snippet,
     });
   } catch (e: any) {
     return NextResponse.json({
       ok: false,
-      status,
       url,
-      authHeaderPreview: AUTH ? `Authorization: ${mask(AUTH)}` : "(no auth header)",
+      startsWithBearer,
+      authHeaderPreview: maskAuth(AUTH),
       error: String(e?.message || e),
     });
   }
