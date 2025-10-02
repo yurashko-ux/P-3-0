@@ -9,6 +9,6 @@ export async function GET(
   _req: Request,
   { params }: { params: { pipelineId: string } }
 ) {
-  const data = await fetchStatuses(params.pipelineId); // strictly uses provided ENV
+  const data = await fetchStatuses(params.pipelineId);
   return NextResponse.json({ ok: true, data });
 }
