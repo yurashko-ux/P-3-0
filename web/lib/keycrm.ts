@@ -1,81 +1,98 @@
 // web/lib/keycrm.ts
-
 /**
- * Якщо у тебе вже є fetchPipelines/fetchStatuses — залиш їх.
- * Нижче — референс імплементації + helper-и назв із простим кешем.
+ * SAFE-версія інтеграції з KeyCRM із багатоваріантними шляхами.
+ * НІКОЛИ не кидає помилки назовні: повертає [] / fallback-дані.
  */
 
-const KEYCRM_API_URL = process.env.KEYCRM_API_URL ?? "https://openapi.keycrm.app/v1";
-const KEYCRM_BEARER =
-  process.env.KEYCRM_BEARER ?? `Bearer ${process.env.KEYCRM_API_TOKEN ?? ""}`;
+const BASE = process.env.KEYCRM_API_URL?.replace(/\/+$/, "") || "https://openapi.keycrm.app/v1";
+const AUTH =
+  process.env.KEYCRM_BEARER ??
+  (process.env.KEYCRM_API_TOKEN ? `Bearer ${process.env.KEYCRM_API_TOKEN}` : "");
 
 type PipelineDTO = { id: string; name: string };
 type StatusDTO = { id: string; name: string };
 
-export async function fetchPipelines(): Promise<PipelineDTO[]> {
-  const res = await fetch(`${KEYCRM_API_URL}/pipelines`, {
-    headers: { Authorization: KEYCRM_BEARER },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    console.error("KeyCRM pipelines error:", res.status, await safeText(res));
-    throw new Error(`KeyCRM pipelines failed: ${res.status}`);
+// — утиліта «пробуй кілька шляхів, поки не вийде»
+async function tryJson(paths: string[]): Promise<any | null> {
+  for (const p of paths) {
+    try {
+      const url = `${BASE}${p}`;
+      const res = await fetch(url, {
+        headers: {
+          ...(AUTH ? { Authorization: AUTH } : {}),
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        console.warn("KeyCRM non-OK:", res.status, p);
+        continue;
+      }
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      console.warn("KeyCRM fetch error:", p, e);
+    }
   }
-  const data = await res.json();
-  const list = (Array.isArray(data) ? data : data?.data) ?? [];
-  return list.map((p: any) => ({ id: String(p.id), name: String(p.name) }));
+  return null;
+}
+
+function normalizeList(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (data?.data && Array.isArray(data.data)) return data.data;
+  if (data?.items && Array.isArray(data.items)) return data.items;
+  return [];
+}
+
+// ------- Публічні SAFE функції -------
+
+export async function fetchPipelines(): Promise<PipelineDTO[]> {
+  const data = await tryJson([
+    "/pipelines",
+    "/crm/pipelines",
+    "/sales/pipelines",
+    "/v1/pipelines",
+  ]);
+  const list = normalizeList(data);
+  return list.map((p: any) => ({ id: String(p.id), name: String(p.name ?? p.title ?? p.label ?? p.slug ?? p.id) }));
 }
 
 export async function fetchStatuses(pipelineId: string): Promise<StatusDTO[]> {
-  const res = await fetch(`${KEYCRM_API_URL}/pipelines/${pipelineId}/statuses`, {
-    headers: { Authorization: KEYCRM_BEARER },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    console.error("KeyCRM statuses error:", res.status, await safeText(res));
-    throw new Error(`KeyCRM statuses failed: ${res.status}`);
-  }
-  const data = await res.json();
-  const list = (Array.isArray(data) ? data : data?.data) ?? [];
-  return list.map((s: any) => ({ id: String(s.id), name: String(s.name) }));
+  const pid = encodeURIComponent(pipelineId);
+  const data = await tryJson([
+    `/pipelines/${pid}/statuses`,
+    `/crm/pipelines/${pid}/statuses`,
+    `/sales/pipelines/${pid}/statuses`,
+    `/v1/pipelines/${pid}/statuses`,
+  ]);
+  const list = normalizeList(data);
+  return list.map((s: any) => ({ id: String(s.id), name: String(s.name ?? s.title ?? s.label ?? s.slug ?? s.id) }));
 }
 
-async function safeText(r: Response) {
-  try { return await r.text(); } catch { return ""; }
-}
-
-// ---- Name helpers (in-memory cache на процес) ----
-
+// --- Кеш у пам'яті процеса (дублер KV) ---
 const pipelineCache = new Map<string, string>();
-const statusCache = new Map<string, Map<string, string>>(); // pipelineId -> (statusId -> name)
+const statusCache = new Map<string, Map<string, string>>();
 
 export async function getPipelineName(pipelineId: string): Promise<string> {
+  if (!pipelineId) return "";
   if (pipelineCache.has(pipelineId)) return pipelineCache.get(pipelineId)!;
   const list = await fetchPipelines();
   for (const p of list) pipelineCache.set(p.id, p.name);
-  return pipelineCache.get(pipelineId) ?? pipelineId; // graceful fallback
+  return pipelineCache.get(pipelineId) ?? pipelineId;
 }
 
-export async function getStatusName(
-  pipelineId: string,
-  statusId: string
-): Promise<string> {
-  const byPipe = statusCache.get(pipelineId);
-  if (byPipe?.has(statusId)) return byPipe.get(statusId)!;
+export async function getStatusName(pipelineId: string, statusId: string): Promise<string> {
+  if (!pipelineId || !statusId) return "";
+  const byPipe = statusCache.get(pipelineId) ?? new Map<string, string>();
+  statusCache.set(pipelineId, byPipe);
+  if (byPipe.has(statusId)) return byPipe.get(statusId)!;
 
   const list = await fetchStatuses(pipelineId);
-  const map = byPipe ?? new Map<string, string>();
-  for (const s of list) map.set(s.id, s.name);
-  statusCache.set(pipelineId, map);
-
-  return map.get(statusId) ?? statusId; // graceful fallback
+  for (const s of list) byPipe.set(s.id, s.name);
+  return byPipe.get(statusId) ?? statusId;
 }
 
-/**
- * Сумісний stub для app/api/keycrm/search/route.ts
- * Підтримує як простий рядок (пошук за будь-чим), так і об'єкт з полями.
- * TODO: Замінити на реальний виклик KeyCRM пошуку, коли буде специфікація.
- */
+// ---- Сумісний заглушковий пошук (не використовується, але потрібен імпортам) ----
 export type KcFindArgs = {
   username?: string;
   fullname?: string;
@@ -84,14 +101,8 @@ export type KcFindArgs = {
   per_page?: number;
   max_pages?: number;
 };
-
 export async function kcFindCardIdByAny(
-  query: string | KcFindArgs
+  _query: string | KcFindArgs
 ): Promise<{ ok: boolean; id?: string | null } | null> {
-  // Поки що це заглушка, яка тільки валідно типізована для білду.
-  // Повертаємо null/ok:false, щоб не ламати існуючу логіку виклику.
-  if (!query || (typeof query === "string" && !query.trim())) {
-    return { ok: false, id: null };
-  }
   return { ok: false, id: null };
 }
