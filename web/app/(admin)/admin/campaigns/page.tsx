@@ -1,6 +1,7 @@
 // web/app/(admin)/admin/campaigns/page.tsx
 import Link from "next/link";
 import { kv } from "@vercel/kv";
+import DeleteButton from "@/components/DeleteButton";
 
 type IdName = {
   pipeline?: string;
@@ -25,16 +26,13 @@ type Campaign = {
   vexp?: number;
 };
 
-// ---- KV helpers (без мережі) ----
+// ---- KV helpers ----
 const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 async function readIds(): Promise<string[]> {
-  // канонічний варіант — масив
   const arr = await kv.get<string[] | null>(IDS_KEY);
   if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
-
-  // fallback на випадок старого списку (list)
   try {
     const list = await kv.lrange<string>(IDS_KEY, 0, -1);
     return Array.isArray(list) ? list.filter(Boolean) : [];
@@ -46,14 +44,12 @@ async function readIds(): Promise<string[]> {
 async function readCampaigns(): Promise<Campaign[]> {
   const ids = await readIds();
   if (!ids.length) return [];
-  const keys = ids.map(ITEM_KEY);
-  const items = await kv.mget<(Campaign | null)[]>(...keys);
-  const onlyExisting: Campaign[] = [];
+  const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
+  const existing: Campaign[] = [];
   items.forEach((it) => {
-    if (it && typeof it === "object") onlyExisting.push(it as Campaign);
+    if (it && typeof it === "object") existing.push(it as Campaign);
   });
-  // сортуємо за createdAt (спадання), щоб було стабільно
-  return onlyExisting.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  return existing.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 // ---- UI helpers ----
@@ -71,9 +67,6 @@ function fmtDate(ts?: number) {
 }
 function nn(x?: string) {
   return (x && String(x).trim()) || "—";
-}
-function joinTargets(p1?: string, p2?: string, p3?: string) {
-  return [`V1: ${nn(p1)}`, `V2: ${nn(p2)}`, `EXP: ${nn(p3)}`].join(" • ");
 }
 function getExpireDays(c: Campaign): number | undefined {
   const v =
@@ -116,7 +109,7 @@ export default async function Page() {
               <th className="px-2 py-3 w-[160px]">Назва</th>
               <th className="px-2 py-3 w-[200px]">Базова Воронка</th>
               <th className="px-2 py-3 w-[160px]">Базовий Статус</th>
-              <th className="px-2 py-3">Цільова воронка</th>
+              <th className="px-2 py-3 w-[260px]">Цільова воронка</th>
               <th className="px-2 py-3 w-[280px]">Цільовий статус</th>
               <th className="px-2 py-3 w-[140px]">Лічильник</th>
               <th className="px-4 py-3 w-[120px] text-right">Дії</th>
@@ -144,10 +137,25 @@ export default async function Page() {
                     {/* База */}
                     <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
                     <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
-                    {/* Цільова воронка — в один рядок */}
-                    <td className="px-2 py-3 text-sm whitespace-nowrap">
-                      {joinTargets(c.t1?.pipelineName, c.t2?.pipelineName, c.texp?.pipelineName)}
+
+                    {/* Цільова воронка — ВЕРТИКАЛЬНО: V1/V2/EXP */}
+                    <td className="px-2 py-3 text-sm">
+                      <div className="flex flex-col gap-1">
+                        <div>
+                          <span className="text-slate-500 mr-2">V1</span>
+                          {nn(c.t1?.pipelineName)}
+                        </div>
+                        <div>
+                          <span className="text-slate-500 mr-2">V2</span>
+                          {nn(c.t2?.pipelineName)}
+                        </div>
+                        <div>
+                          <span className="text-slate-500 mr-2">EXP</span>
+                          {nn(c.texp?.pipelineName)}
+                        </div>
+                      </div>
                     </td>
+
                     {/* Цільовий статус — вертикально; EXP з днями */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
@@ -167,6 +175,7 @@ export default async function Page() {
                         </div>
                       </div>
                     </td>
+
                     {/* Лічильник — вертикально */}
                     <td className="px-2 py-3 text-sm">
                       <div className="flex flex-col gap-1">
@@ -184,17 +193,10 @@ export default async function Page() {
                         </div>
                       </div>
                     </td>
+
                     {/* Дії */}
                     <td className="px-4 py-3 text-right">
-                      <form>
-                        <button
-                          formAction={`/api/campaigns/${c.id}`}
-                          formMethod="delete"
-                          className="rounded-lg bg-red-600 text-white px-4 py-1.5 text-sm shadow hover:bg-red-700"
-                        >
-                          Видалити
-                        </button>
-                      </form>
+                      <DeleteButton id={c.id} />
                     </td>
                   </tr>
                 );
