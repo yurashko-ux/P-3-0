@@ -1,41 +1,42 @@
 // web/app/api/keycrm/sync/route.ts
-// Заглушка-роут: показує, як викликати синк конкретної пари.
-// Істинний синк відбувається у /api/keycrm/sync/pair
+import { NextRequest, NextResponse } from "next/server";
+import { fetchPipelines, fetchStatuses } from "@/lib/keycrm";
+import { kv } from "@vercel/kv";
 
-import { NextRequest, NextResponse } from 'next/server';
-import { assertAdmin } from '@/lib/auth';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export const dynamic = 'force-dynamic';
+const K_PIPELINES = "kcrm:pipelines";
+const K_STATUSES = (p: string) => `kcrm:st:${p}`;
 
+async function setDict(key: string, map: Record<string,string>) {
+  await kv.set(key, { map, updatedAt: Date.now() });
+}
+
+function unauthorized() {
+  return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+}
+
+// GET/POST /api/keycrm/sync?secret=ADMIN_PASS
 export async function GET(req: NextRequest) {
-  try {
-    await assertAdmin(req);
-    const url = new URL(req.url);
-    const p = url.searchParams.get('pipeline_id');
-    const s = url.searchParams.get('status_id');
-    const per_page = url.searchParams.get('per_page') || '50';
-    const max_pages = url.searchParams.get('max_pages') || '2';
+  const secret = req.nextUrl.searchParams.get("secret") || req.headers.get("x-admin-pass") || "";
+  if (!process.env.ADMIN_PASS || secret !== process.env.ADMIN_PASS) return unauthorized();
 
-    if (p && s) {
-      // підказка на прямий виклик pair-синку
-      const pairUrl =
-        `/api/keycrm/sync/pair?pipeline_id=${encodeURIComponent(p)}&status_id=${encodeURIComponent(
-          s!
-        )}&per_page=${encodeURIComponent(per_page)}&max_pages=${encodeURIComponent(max_pages)}`;
-      return NextResponse.json({
-        ok: true,
-        hint: 'Use /api/keycrm/sync/pair for actual indexing of a single pair',
-        next: pairUrl,
-      });
-    }
+  const pipes = await fetchPipelines(); // safe
+  const pMap = Object.fromEntries(pipes.map(p => [String(p.id), String(p.name)]));
+  await setDict(K_PIPELINES, pMap);
 
-    return NextResponse.json({
-      ok: true,
-      pairs: 0,
-      hint:
-        'Pass ?pipeline_id=<number>&status_id=<number>&per_page=50&max_pages=2 or call /api/keycrm/sync/pair directly',
-    });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 400 });
+  let totalSt = 0;
+  for (const p of pipes) {
+    const sts = await fetchStatuses(String(p.id));
+    const sMap = Object.fromEntries(sts.map(s => [String(s.id), String(s.name)]));
+    await setDict(K_STATUSES(String(p.id)), sMap);
+    totalSt += sts.length;
   }
+
+  return NextResponse.json({ ok: true, pipelines: pipes.length, statuses: totalSt });
+}
+
+export async function POST(req: NextRequest) {
+  return GET(req);
 }
