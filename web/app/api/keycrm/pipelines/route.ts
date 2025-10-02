@@ -6,6 +6,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const data = await fetchPipelines(); // strictly uses provided ENV
+  const data = await fetchPipelines(); // використовує лише твої ENV
   return NextResponse.json({ ok: true, data });
 }
