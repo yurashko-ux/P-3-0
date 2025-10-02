@@ -1,6 +1,6 @@
 // web/app/(admin)/admin/campaigns/page.tsx
 import Link from "next/link";
-import { headers } from "next/headers";
+import { kv } from "@vercel/kv";
 
 type IdName = {
   pipeline?: string;
@@ -18,13 +18,45 @@ type Campaign = {
   texp?: IdName;
   counters: Counters;
   createdAt: number;
-  // можливі назви поля для кількості днів експірації
+  // можливі назви для кількості днів EXP
   expDays?: number;
   expireDays?: number;
   expire?: number;
   vexp?: number;
 };
 
+// ---- KV helpers (без мережі) ----
+const IDS_KEY = "cmp:ids";
+const ITEM_KEY = (id: string) => `cmp:item:${id}`;
+
+async function readIds(): Promise<string[]> {
+  // канонічний варіант — масив
+  const arr = await kv.get<string[] | null>(IDS_KEY);
+  if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+
+  // fallback на випадок старого списку (list)
+  try {
+    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
+    return Array.isArray(list) ? list.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function readCampaigns(): Promise<Campaign[]> {
+  const ids = await readIds();
+  if (!ids.length) return [];
+  const keys = ids.map(ITEM_KEY);
+  const items = await kv.mget<(Campaign | null)[]>(...keys);
+  const onlyExisting: Campaign[] = [];
+  items.forEach((it) => {
+    if (it && typeof it === "object") onlyExisting.push(it as Campaign);
+  });
+  // сортуємо за createdAt (спадання), щоб було стабільно
+  return onlyExisting.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+// ---- UI helpers ----
 function fmtDate(ts?: number) {
   try {
     if (!ts) return "—";
@@ -51,34 +83,10 @@ function getExpireDays(c: Campaign): number | undefined {
     (typeof (c as any)?.vexp === "number" ? (c as any)?.vexp : undefined);
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
-function buildBaseUrl() {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-  return `${proto}://${host}`;
-}
 
-async function fetchCampaigns(): Promise<Campaign[]> {
-  // 1) спершу відносний шлях (очікуваний кейс для Next сервер-компонентів)
-  try {
-    const r1 = await fetch(`/api/campaigns`, { cache: "no-store", next: { revalidate: 0 } });
-    if (r1.ok) return (await r1.json()) as Campaign[];
-  } catch {
-    // ignore and fallback
-  }
-  // 2) fallback — абсолютний URL (на випадок особливостей проксі)
-  try {
-    const base = buildBaseUrl();
-    const r2 = await fetch(`${base}/api/campaigns`, { cache: "no-store", next: { revalidate: 0 } });
-    if (r2.ok) return (await r2.json()) as Campaign[];
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
+// ---- Page ----
 export default async function Page() {
-  const campaigns = await fetchCampaigns();
+  const campaigns = await readCampaigns();
 
   return (
     <div className="p-4 sm:p-6">
@@ -133,10 +141,10 @@ export default async function Page() {
                     </td>
                     {/* Назва */}
                     <td className="px-2 py-3 text-sm">{nn(c.name)}</td>
-                    {/* Базова */}
+                    {/* База */}
                     <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
                     <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
-                    {/* Цільова воронка — одним рядком */}
+                    {/* Цільова воронка — в один рядок */}
                     <td className="px-2 py-3 text-sm whitespace-nowrap">
                       {joinTargets(c.t1?.pipelineName, c.t2?.pipelineName, c.texp?.pipelineName)}
                     </td>
