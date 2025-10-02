@@ -8,6 +8,7 @@ export async function POST(req: NextRequest) {
   const ct = req.headers.get("content-type") || "";
   let parsed: any = null;
   let raw = "";
+
   try {
     if (ct.includes("application/json")) {
       parsed = await req.json();
@@ -16,13 +17,20 @@ export async function POST(req: NextRequest) {
       ct.includes("application/x-www-form-urlencoded")
     ) {
       const fd = await req.formData();
-      parsed = {};
-      for (const [k, v] of fd.entries()) parsed[k] = typeof v === "string" ? v : String(v);
+      const obj: Record<string, string> = {};
+      // Використовуємо forEach — він є у всіх реалізаціях FormData
+      fd.forEach((v, k) => {
+        obj[k] = typeof v === "string" ? v : String(v);
+      });
+      parsed = obj;
     } else {
-      raw = await req.text(); // на всяк випадок
+      raw = await req.text(); // fallback
     }
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message, contentType: ct }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: e?.message, contentType: ct },
+      { status: 400 }
+    );
   }
 
   return NextResponse.json({
@@ -37,4 +45,3 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({ ok: true, hint: "POST something here to inspect payload" });
 }
-
