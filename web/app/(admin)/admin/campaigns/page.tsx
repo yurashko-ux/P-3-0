@@ -18,7 +18,7 @@ type Campaign = {
   texp?: IdName;
   counters: Counters;
   createdAt: number;
-  // можливі назви поля для днів експірації
+  // можливі назви поля для кількості днів експірації
   expDays?: number;
   expireDays?: number;
   expire?: number;
@@ -58,19 +58,27 @@ function buildBaseUrl() {
   return `${proto}://${host}`;
 }
 
-async function getCampaigns(): Promise<Campaign[]> {
-  // гарантуємо абсолютний URL на сервері
-  const base = buildBaseUrl();
-  const res = await fetch(`${base}/api/campaigns`, {
-    cache: "no-store",
-    next: { revalidate: 0 },
-  }).catch(() => null as any);
-  if (!res || !res.ok) return [];
-  return (await res.json()) as Campaign[];
+async function fetchCampaigns(): Promise<Campaign[]> {
+  // 1) спершу відносний шлях (очікуваний кейс для Next сервер-компонентів)
+  try {
+    const r1 = await fetch(`/api/campaigns`, { cache: "no-store", next: { revalidate: 0 } });
+    if (r1.ok) return (await r1.json()) as Campaign[];
+  } catch {
+    // ignore and fallback
+  }
+  // 2) fallback — абсолютний URL (на випадок особливостей проксі)
+  try {
+    const base = buildBaseUrl();
+    const r2 = await fetch(`${base}/api/campaigns`, { cache: "no-store", next: { revalidate: 0 } });
+    if (r2.ok) return (await r2.json()) as Campaign[];
+  } catch {
+    // ignore
+  }
+  return [];
 }
 
 export default async function Page() {
-  const campaigns = await getCampaigns();
+  const campaigns = await fetchCampaigns();
 
   return (
     <div className="p-4 sm:p-6">
@@ -128,7 +136,7 @@ export default async function Page() {
                     {/* Базова */}
                     <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
                     <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
-                    {/* Цільова воронка — один рядок */}
+                    {/* Цільова воронка — одним рядком */}
                     <td className="px-2 py-3 text-sm whitespace-nowrap">
                       {joinTargets(c.t1?.pipelineName, c.t2?.pipelineName, c.texp?.pipelineName)}
                     </td>
