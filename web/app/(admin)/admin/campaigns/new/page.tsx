@@ -2,263 +2,378 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-type Opt = { id: string; name: string };
-type Pair = { pipeline?: string; status?: string };
+type Option = { id: string; name: string };
+type Target = {
+  pipeline?: string;
+  status?: string;
+  pipelineName?: string;
+  statusName?: string;
+};
+
+type RefData = {
+  pipelines: Option[];
+  statusesByPipe: Record<string, Option[]>;
+};
+
+const fetchJSON = async <T,>(url: string): Promise<T> => {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return (await r.json()) as T;
+};
 
 export default function NewCampaignPage() {
-  // ---- form
+  const router = useRouter();
+
+  // довідники
+  const [pipelines, setPipelines] = useState<Option[]>([]);
+  const [statusesByPipe, setStatusesByPipe] = useState<Record<string, Option[]>>({});
+  const [loadingRefs, setLoadingRefs] = useState(false);
+  const [errRefs, setErrRefs] = useState<string | null>(null);
+
+  // форма
   const [name, setName] = useState("");
+  const [base, setBase] = useState<Target>({});
+  const [t1, setT1] = useState<Target>({});
+  const [t2, setT2] = useState<Target>({});
+  const [texp, setTexp] = useState<Target>({});
   const [v1, setV1] = useState("1");
   const [v2, setV2] = useState("2");
+  const [exp, setExp] = useState<number>(7); // ⬅️ редаговане поле кількості днів
 
-  const [base, setBase] = useState<Pair>({});
-  const [t1, setT1] = useState<Pair>({});
-  const [t2, setT2] = useState<Pair>({});
-  const [texp, setTexp] = useState<Pair>({});
+  const pipelineNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of pipelines) map[p.id] = p.name;
+    return map;
+  }, [pipelines]);
 
-  // ---- dicts
-  const [pipes, setPipes] = useState<Opt[]>([]);
-  const [stByPipe, setStByPipe] = useState<Record<string, Opt[]>>({});
-  const [dictLoading, setDictLoading] = useState(false);
-  const [dictError, setDictError] = useState<string | null>(null);
+  const statusNameById = (pipelineId?: string) => {
+    const arr = (pipelineId && statusesByPipe[pipelineId]) || [];
+    const map: Record<string, string> = {};
+    for (const s of arr) map[s.id] = s.name;
+    return map;
+  };
 
-  // fetch pipelines
-  async function loadPipelines() {
-    setDictLoading(true);
-    setDictError(null);
-    try {
-      const res = await fetch("/api/keycrm/pipelines", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-      setPipes(Array.isArray(data.data) ? data.data : []);
-    } catch (e: any) {
-      setPipes([]);
-      setDictError("Не вдалося завантажити воронки");
-      console.warn("pipelines load failed:", e?.message || e);
-    } finally {
-      setDictLoading(false);
-    }
-  }
-  useEffect(() => { loadPipelines(); }, []);
-
-  // which pipelines need statuses
-  const needStatuses = useMemo(() => {
-    const ids = [base.pipeline, t1.pipeline, t2.pipeline, texp.pipeline].filter(Boolean) as string[];
-    return Array.from(new Set(ids));
-  }, [base.pipeline, t1.pipeline, t2.pipeline, texp.pipeline]);
-
-  // fetch statuses per pipeline
+  // завантаження довідників
   useEffect(() => {
-    let canceled = false;
     (async () => {
-      for (const pid of needStatuses) {
-        if (stByPipe[pid]) continue;
-        try {
-          const res = await fetch(`/api/keycrm/statuses/${pid}`, { cache: "no-store" });
-          const data = await res.json();
-          const list = Array.isArray(data?.data) ? data.data as Opt[] : [];
-          if (!canceled) setStByPipe(prev => ({ ...prev, [pid]: list }));
-        } catch (e) {
-          if (!canceled) setStByPipe(prev => ({ ...prev, [pid]: [] }));
-        }
+      setLoadingRefs(true);
+      setErrRefs(null);
+      try {
+        const pls = await fetchJSON<{ ok: boolean; data: Option[] }>("/api/keycrm/pipelines");
+        setPipelines(pls.data || []);
+
+        // завантажимо статуси для всіх воронок (щоб селект статусів не мигав і був доступний одразу)
+        const all: Record<string, Option[]> = {};
+        await Promise.all(
+          (pls.data || []).map(async (p) => {
+            try {
+              const st = await fetchJSON<{ ok: boolean; data: Option[] }>(`/api/keycrm/statuses/${encodeURIComponent(p.id)}`);
+              all[p.id] = st.data || [];
+            } catch {
+              all[p.id] = [];
+            }
+          })
+        );
+        setStatusesByPipe(all);
+      } catch (e) {
+        setErrRefs("Не вдалося завантажити воронки");
+      } finally {
+        setLoadingRefs(false);
       }
     })();
-    return () => { canceled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needStatuses.join("|")]);
+  }, []);
 
-  // helpers
-  const sBase = base.pipeline ? stByPipe[base.pipeline] ?? [] : [];
-  const sT1   = t1.pipeline   ? stByPipe[t1.pipeline]   ?? [] : [];
-  const sT2   = t2.pipeline   ? stByPipe[t2.pipeline]   ?? [] : [];
-  const sExp  = texp.pipeline ? stByPipe[texp.pipeline] ?? [] : [];
+  // helpers для оновлення Target, автоматично проставляємо ...Name
+  function handleTargetPipeline(setter: (t: Target) => void, current: Target, pipeline?: string) {
+    const pipelineName = pipeline ? pipelineNameById[pipeline] : undefined;
+    // якщо змінили pipeline — скидаємо status
+    setter({ pipeline, pipelineName, status: undefined, statusName: undefined });
+  }
+  function handleTargetStatus(setter: (t: Target) => void, current: Target, status?: string) {
+    const sName = status ? statusNameById(current.pipeline)[status] : undefined;
+    setter({ ...current, status, statusName: sName });
+  }
 
-  // submit JSON
-  const [submitting, setSubmitting] = useState(false);
-  const [submitErr, setSubmitErr] = useState<string | null>(null);
+  // сабміт
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitErr(null);
-    setSubmitting(true);
-
-    const payload = {
-      name: name.trim(),
-      v1: v1 || undefined,
-      v2: v2 || undefined,
-      base: pairOrUndef(base),
-      t1: pairOrUndef(t1),
-      t2: pairOrUndef(t2),
-      texp: pairOrUndef(texp),
-    };
+    setSaving(true);
+    setError(null);
 
     try {
-      const res = await fetch("/api/campaigns", {
+      const payload = {
+        name: name.trim(),
+        base,
+        t1,
+        t2,
+        texp,
+        v1: v1 || undefined,
+        v2: v2 || undefined,
+        exp: Number.isFinite(Number(exp)) ? Number(exp) : undefined, // ⬅️ відправляємо як exp
+      };
+
+      const r = await fetch("/api/campaigns", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      const data = isJson ? await res.json() : null;
 
-      if (!res.ok) {
-        setSubmitErr(data?.error || `Помилка створення (${res.status})`);
-      } else {
-        window.location.href = "/admin/campaigns";
+      if (!r.ok) {
+        const msg = await r.text().catch(() => "");
+        throw new Error(msg || `HTTP ${r.status}`);
       }
+      // успіх → назад до списку
+      router.push("/admin/campaigns");
+      router.refresh();
     } catch (e: any) {
-      setSubmitErr(e?.message || "Мережева помилка");
+      setError("Не вдалося зберегти кампанію");
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      <h1 className="text-3xl font-extrabold mb-3">Нова кампанія</h1>
+    <div className="p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-3xl font-extrabold tracking-tight">Нова кампанія</h1>
+        <Link href="/admin/campaigns" className="rounded-lg border px-4 py-2 shadow-sm">
+          Скасувати
+        </Link>
+      </div>
 
-      <form onSubmit={onSubmit} className="space-y-4 text-sm leading-tight">
-        {/* БАЗА */}
-        <Card title="База">
-          <Grid3>
-            <Field label="Назва кампанії">
+      <form onSubmit={onSubmit} className="space-y-6">
+        {/* База */}
+        <section className="rounded-2xl border p-4 sm:p-6">
+          <h2 className="text-2xl font-bold mb-4">База</h2>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-1">
+              <label className="block text-sm text-slate-600 mb-1">Назва кампанії</label>
               <input
-                className="w-full border rounded-xl px-3 py-2 h-9"
+                required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2"
                 placeholder="Назва"
-                required
               />
-            </Field>
-            <Field label="Базова воронка">
-              <Select
-                value={base.pipeline ?? ""}
-                onChange={(v) => setBase({ pipeline: v || undefined, status: undefined })}
-                options={pipes}
-                loading={dictLoading}
-              />
-            </Field>
-            <Field label="Базовий статус">
-              <Select
-                value={base.status ?? ""}
-                onChange={(v) => setBase((b) => ({ ...b, status: v || undefined }))}
-                options={sBase}
-                disabled={!base.pipeline}
-                loading={dictLoading && !!base.pipeline}
-              />
-            </Field>
-          </Grid3>
-        </Card>
+            </div>
 
-        {/* ВАРІАНТ №1 */}
-        <Card title="Варіант №1">
-          <Grid3>
-            <Field label="Значення">
+            {/* Базова воронка */}
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Базова воронка</label>
+              <select
+                value={base.pipeline || ""}
+                onChange={(e) => handleTargetPipeline(setBase, base, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs}
+              >
+                <option value="">—</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Базовий статус */}
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Базовий статус</label>
+              <select
+                value={base.status || ""}
+                onChange={(e) => handleTargetStatus(setBase, base, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs || !base.pipeline}
+              >
+                <option value="">—</option>
+                {(statusesByPipe[base.pipeline || ""] || []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
+
+        {/* Вариант №1 */}
+        <section className="rounded-2xl border p-4 sm:p-6">
+          <h2 className="text-2xl font-bold mb-4">Варіант №1</h2>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Значення</label>
               <input
-                className="w-full border rounded-xl px-3 py-2 h-9"
                 value={v1}
                 onChange={(e) => setV1(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2"
                 placeholder="1"
               />
-            </Field>
-            <Field label="Воронка">
-              <Select
-                value={t1.pipeline ?? ""}
-                onChange={(v) => setT1({ pipeline: v || undefined, status: undefined })}
-                options={pipes}
-                loading={dictLoading}
-              />
-            </Field>
-            <Field label="Статус">
-              <Select
-                value={t1.status ?? ""}
-                onChange={(v) => setT1((t) => ({ ...t, status: v || undefined }))}
-                options={sT1}
-                disabled={!t1.pipeline}
-                loading={dictLoading && !!t1.pipeline}
-              />
-            </Field>
-          </Grid3>
-        </Card>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Воронка</label>
+              <select
+                value={t1.pipeline || ""}
+                onChange={(e) => handleTargetPipeline(setT1, t1, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs}
+              >
+                <option value="">—</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Статус</label>
+              <select
+                value={t1.status || ""}
+                onChange={(e) => handleTargetStatus(setT1, t1, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs || !t1.pipeline}
+              >
+                <option value="">—</option>
+                {(statusesByPipe[t1.pipeline || ""] || []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
 
-        {/* ВАРІАНТ №2 */}
-        <Card title="Варіант №2">
-          <Grid3>
-            <Field label="Значення">
+        {/* Вариант №2 */}
+        <section className="rounded-2xl border p-4 sm:p-6">
+          <h2 className="text-2xl font-bold mb-4">Варіант №2</h2>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Значення</label>
               <input
-                className="w-full border rounded-xl px-3 py-2 h-9"
                 value={v2}
                 onChange={(e) => setV2(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2"
                 placeholder="2"
               />
-            </Field>
-            <Field label="Воронка">
-              <Select
-                value={t2.pipeline ?? ""}
-                onChange={(v) => setT2({ pipeline: v || undefined, status: undefined })}
-                options={pipes}
-                loading={dictLoading}
-              />
-            </Field>
-            <Field label="Статус">
-              <Select
-                value={t2.status ?? ""}
-                onChange={(v) => setT2((t) => ({ ...t, status: v || undefined }))}
-                options={sT2}
-                disabled={!t2.pipeline}
-                loading={dictLoading && !!t2.pipeline}
-              />
-            </Field>
-          </Grid3>
-        </Card>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Воронка</label>
+              <select
+                value={t2.pipeline || ""}
+                onChange={(e) => handleTargetPipeline(setT2, t2, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs}
+              >
+                <option value="">—</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Статус</label>
+              <select
+                value={t2.status || ""}
+                onChange={(e) => handleTargetStatus(setT2, t2, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs || !t2.pipeline}
+              >
+                <option value="">—</option>
+                {(statusesByPipe[t2.pipeline || ""] || []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
 
-        {/* EXPIRE */}
-        <Card title="Expire">
-          <Grid3>
-            <Field label="Кількість днів до експірації">
-              <input className="w-full border rounded-xl px-3 py-2 h-9" value="7" disabled />
-            </Field>
-            <Field label="Воронка">
-              <Select
-                value={texp.pipeline ?? ""}
-                onChange={(v) => setTexp({ pipeline: v || undefined, status: undefined })}
-                options={pipes}
-                loading={dictLoading}
+        {/* Expire */}
+        <section className="rounded-2xl border p-4 sm:p-6">
+          <h2 className="text-2xl font-bold mb-4">Expire</h2>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Кількість днів до експірації</label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={Number.isFinite(exp) ? exp : 0}
+                onChange={(e) => setExp(e.target.value === "" ? 0 : Number(e.target.value))}
+                className="w-full rounded-xl border px-3 py-2"
+                placeholder="7"
               />
-            </Field>
-            <Field label="Статус">
-              <Select
-                value={texp.status ?? ""}
-                onChange={(v) => setTexp((t) => ({ ...t, status: v || undefined }))}
-                options={sExp}
-                disabled={!texp.pipeline}
-                loading={dictLoading && !!texp.pipeline}
-              />
-            </Field>
-          </Grid3>
-        </Card>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Воронка</label>
+              <select
+                value={texp.pipeline || ""}
+                onChange={(e) => handleTargetPipeline(setTexp, texp, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs}
+              >
+                <option value="">—</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Статус</label>
+              <select
+                value={texp.status || ""}
+                onChange={(e) => handleTargetStatus(setTexp, texp, e.target.value || undefined)}
+                className="w-full rounded-xl border px-3 py-2"
+                disabled={loadingRefs || !texp.pipeline}
+              >
+                <option value="">—</option>
+                {(statusesByPipe[texp.pipeline || ""] || []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
 
-        {(dictError || submitErr) && (
-          <div className="rounded-md bg-red-50 text-red-700 p-2">
-            {dictError || submitErr}
+        {errRefs && (
+          <div className="rounded-xl border border-red-300 bg-red-50 text-red-700 px-4 py-3">
+            {errRefs}
+          </div>
+        )}
+        {error && (
+          <div className="rounded-xl border border-red-300 bg-red-50 text-red-700 px-4 py-3">
+            {error}
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex gap-3">
           <button
             type="submit"
-            disabled={submitting}
-            className="px-4 py-2 rounded-xl shadow bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+            disabled={saving}
+            className="rounded-lg bg-blue-600 text-white px-4 py-2 font-medium shadow hover:bg-blue-700 disabled:opacity-60"
           >
             Зберегти
           </button>
-          <a href="/admin/campaigns" className="px-4 py-2 rounded-xl shadow">Скасувати</a>
+          <Link href="/admin/campaigns" className="rounded-lg border px-4 py-2 shadow-sm">
+            Скасувати
+          </Link>
           <button
             type="button"
-            onClick={loadPipelines}
-            className="px-3 py-2 rounded-xl border"
-            title="Оновити довідники"
+            onClick={() => router.refresh()}
+            className="rounded-lg border px-4 py-2 shadow-sm"
           >
             Оновити довідники
           </button>
@@ -266,52 +381,4 @@ export default function NewCampaignPage() {
       </form>
     </div>
   );
-}
-
-/* ---- UI primitives (compact) ---- */
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border p-3">
-      <h2 className="font-semibold text-lg mb-2">{title}</h2>
-      {children}
-    </section>
-  );
-}
-function Grid3({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{children}</div>;
-}
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-xs text-gray-600 mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
-function Select({
-  value, onChange, options, disabled, loading,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: Opt[];
-  disabled?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <select
-      className="w-full border rounded-xl px-3 py-2 h-9 disabled:opacity-60"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-    >
-      <option value="">{loading ? "Завантаження…" : "—"}</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>{o.name}</option>
-      ))}
-    </select>
-  );
-}
-function pairOrUndef(p: Pair): Pair | undefined {
-  if (!p.pipeline && !p.status) return undefined;
-  return { pipeline: p.pipeline, status: p.status };
 }
