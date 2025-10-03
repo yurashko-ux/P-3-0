@@ -12,32 +12,26 @@ type Target = { pipeline?: string; status?: string; pipelineName?: string; statu
 type Counters = { v1: number; v2: number; exp: number };
 type Campaign = {
   id: string; name: string; base?: Target; t1?: Target; t2?: Target; texp?: Target;
-  v1?: string; v2?: string; expDays?: number; expireDays?: number; expire?: number; vexp?: number;
+  v1?: string; v2?: string;
+  expDays?: number; expireDays?: number; expire?: number; vexp?: number; exp?: number; // ⬅️ додав exp
   counters: Counters; createdAt: number;
 };
 
-// — helpers —
-const unique = (arr: string[]) => {
-  const seen = new Set<string>(); const out: string[] = [];
-  for (const x of arr) if (x && !seen.has(x)) { seen.add(x); out.push(x); }
-  return out;
-};
+const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
 
 async function readIdsMerged(): Promise<string[]> {
   const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
   let list: string[] = [];
   try { list = await kv.lrange<string>(IDS_KEY, 0, -1); } catch {}
-  return unique([...(Array.isArray(arr) ? arr : []), ...(Array.isArray(list) ? list : [])]);
+  return unique([...(Array.isArray(arr)?arr:[]), ...(Array.isArray(list)?list:[])]);
 }
-
 async function writeIdsMerged(newId: string) {
   const merged = await readIdsMerged();
-  const next = unique([newId, ...merged]);
-  await kv.set(IDS_KEY, next);
+  await kv.set(IDS_KEY, unique([newId, ...merged]));
 }
 
-function pickStr(x: any){ if(x==null) return; const s=String(x).trim(); return s||undefined; }
-function pickNum(x: any){ const n=Number(x); return Number.isFinite(n)?n:undefined; }
+const pickStr = (x: any) => (x==null?undefined: (String(x).trim()||undefined));
+const pickNum = (x: any) => { const n=Number(x); return Number.isFinite(n)?n:undefined; };
 
 function targetFromFlat(src: Record<string, any>, prefix: string): Target | undefined {
   const get = (...ks: string[]) => ks.map(k => src[k]).find(v => v!=null);
@@ -45,7 +39,10 @@ function targetFromFlat(src: Record<string, any>, prefix: string): Target | unde
   const status   = get(`${prefix}.status`,`${prefix}_status`,`${prefix}Status`) ?? src[prefix]?.status;
   const pipelineName = get(`${prefix}.pipelineName`,`${prefix}_pipelineName`,`${prefix}PipelineName`) ?? src[prefix]?.pipelineName;
   const statusName   = get(`${prefix}.statusName`,`${prefix}_statusName`,`${prefix}StatusName`)   ?? src[prefix]?.statusName;
-  const out: Target = { pipeline: pickStr(pipeline), status: pickStr(status), pipelineName: pickStr(pipelineName), statusName: pickStr(statusName) };
+  const out: Target = {
+    pipeline: pickStr(pipeline), status: pickStr(status),
+    pipelineName: pickStr(pipelineName), statusName: pickStr(statusName),
+  };
   return (out.pipeline||out.status||out.pipelineName||out.statusName) ? out : undefined;
 }
 
@@ -78,15 +75,25 @@ export async function POST(req: NextRequest) {
   const t1   = targetFromFlat(body,"t1");
   const t2   = targetFromFlat(body,"t2");
   const texp = targetFromFlat(body,"texp");
-  const v1 = pickStr(body.v1); const v2 = pickStr(body.v2);
-  const expDays = pickNum(body.expDays) ?? pickNum(body.expireDays) ?? pickNum(body.expire) ?? pickNum(body.vexp);
+
+  const v1 = pickStr(body.v1);
+  const v2 = pickStr(body.v2);
+
+  // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
+  const expDays =
+    pickNum(body.expDays) ??
+    pickNum(body.exp) ??
+    pickNum(body.exp_value) ??
+    pickNum(body.expireDays) ??
+    pickNum(body.expire) ??
+    pickNum(body.vexp);
 
   const [eBase,e1,e2,eExp] = await Promise.all([enrichNames(base),enrichNames(t1),enrichNames(t2),enrichNames(texp)]);
 
   const campaign: Campaign = {
     id, name: pickStr(body.name) ?? "Без назви",
     base: eBase, t1: e1, t2: e2, texp: eExp, v1, v2,
-    ...(expDays!=null ? {expDays}: {}),
+    ...(expDays!=null ? { expDays, exp: expDays } : {}), // збережемо ще й як `exp` для зручності рендеру
     counters: { v1:0, v2:0, exp:0 }, createdAt: now
   };
 
