@@ -1,5 +1,5 @@
 // web/app/api/campaigns/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 
 export const runtime = "nodejs";
@@ -7,53 +7,23 @@ export const dynamic = "force-dynamic";
 
 const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
+const unique = (a:string[]) => Array.from(new Set(a.filter(Boolean)));
 
-async function getIdsArray(): Promise<string[]> {
-  const arr = await kv.get<string[] | null>(IDS_KEY);
-  return Array.isArray(arr) ? arr.filter(Boolean) : [];
-}
-async function setIdsArray(ids: string[]) {
-  await kv.set(IDS_KEY, ids);
-}
-
-async function deleteById(id: string) {
-  await kv.del(ITEM_KEY(id));
-  const ids = await getIdsArray();
-  const next = ids.filter((x) => x !== id);
-  await setIdsArray(next);
-  return { ok: true, id };
+async function readIdsMerged(): Promise<string[]> {
+  const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
+  let list: string[] = [];
+  try { list = await kv.lrange<string>(IDS_KEY, 0, -1); } catch {}
+  return unique([...(Array.isArray(arr)?arr:[]), ...(Array.isArray(list)?list:[])]);
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
-  const res = await deleteById(params.id);
-  return NextResponse.json(res);
-}
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const { id } = params;
+  if (!id) return NextResponse.json({ ok:false, error:"no id" }, { status:400 });
 
-// Підтримка HTML-форми: POST + _method=DELETE
-export async function POST(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
-  let method = "";
-  const ct = req.headers.get("content-type") || "";
-  try {
-    if (ct.includes("application/json")) {
-      const body = await req.json();
-      method = String(body?._method || "");
-    } else {
-      const fd = await req.formData();
-      method = String(fd.get("_method") || "");
-    }
-  } catch {}
-  if (method.toUpperCase() !== "DELETE") {
-    return NextResponse.json(
-      { error: "Unsupported POST. Use _method=DELETE." },
-      { status: 405 }
-    );
-  }
-  const res = await deleteById(params.id);
-  return NextResponse.json(res);
+  await kv.del(ITEM_KEY(id)).catch(()=>null);
+  const merged = await readIdsMerged();
+  const next = unique(merged.filter(x => x !== id));
+  await kv.set(IDS_KEY, next);
+
+  return new NextResponse(null, { status: 204 });
 }
