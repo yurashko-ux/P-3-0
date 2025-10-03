@@ -1,176 +1,223 @@
 // web/app/(admin)/admin/campaigns/new/page.tsx
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-type Option = { id: string; name: string };
-type Target = {
+// Компактні утиліти UI
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border bg-white px-4 py-4 sm:px-5 sm:py-5">
+      <h2 className="mb-3 text-lg font-semibold tracking-tight">{title}</h2>
+      <div className="grid gap-3 sm:gap-4">{children}</div>
+    </div>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return <div className="text-sm text-slate-600 mb-1">{children}</div>;
+}
+
+type IdName = { id: string; name: string };
+
+type TargetState = {
   pipeline?: string;
   status?: string;
   pipelineName?: string;
   statusName?: string;
 };
 
-type RefData = {
-  pipelines: Option[];
-  statusesByPipe: Record<string, Option[]>;
+type FormState = {
+  name: string;
+  base: TargetState;
+  v1: string;
+  v2: string;
+  expDays?: number | '';
+  t1: TargetState;
+  t2: TargetState;
+  texp: TargetState;
 };
 
-const fetchJSON = async <T,>(url: string): Promise<T> => {
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`${r.status}`);
-  return (await r.json()) as T;
-};
+const emptyTarget: TargetState = { pipeline: '', status: '' };
 
 export default function NewCampaignPage() {
   const router = useRouter();
 
-  // довідники
-  const [pipelines, setPipelines] = useState<Option[]>([]);
-  const [statusesByPipe, setStatusesByPipe] = useState<Record<string, Option[]>>({});
-  const [loadingRefs, setLoadingRefs] = useState(false);
-  const [errRefs, setErrRefs] = useState<string | null>(null);
+  // компактний state
+  const [pipelines, setPipelines] = useState<IdName[]>([]);
+  const [statusesByPipe, setStatusesByPipe] = useState<Record<string, IdName[]>>({});
 
-  // форма
-  const [name, setName] = useState("");
-  const [base, setBase] = useState<Target>({});
-  const [t1, setT1] = useState<Target>({});
-  const [t2, setT2] = useState<Target>({});
-  const [texp, setTexp] = useState<Target>({});
-  const [v1, setV1] = useState("1");
-  const [v2, setV2] = useState("2");
-  const [exp, setExp] = useState<number>(7); // ⬅️ редаговане поле кількості днів
-
-  const pipelineNameById = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const p of pipelines) map[p.id] = p.name;
-    return map;
-  }, [pipelines]);
-
-  const statusNameById = (pipelineId?: string) => {
-    const arr = (pipelineId && statusesByPipe[pipelineId]) || [];
-    const map: Record<string, string> = {};
-    for (const s of arr) map[s.id] = s.name;
-    return map;
-  };
-
-  // завантаження довідників
-  useEffect(() => {
-    (async () => {
-      setLoadingRefs(true);
-      setErrRefs(null);
-      try {
-        const pls = await fetchJSON<{ ok: boolean; data: Option[] }>("/api/keycrm/pipelines");
-        setPipelines(pls.data || []);
-
-        // завантажимо статуси для всіх воронок (щоб селект статусів не мигав і був доступний одразу)
-        const all: Record<string, Option[]> = {};
-        await Promise.all(
-          (pls.data || []).map(async (p) => {
-            try {
-              const st = await fetchJSON<{ ok: boolean; data: Option[] }>(`/api/keycrm/statuses/${encodeURIComponent(p.id)}`);
-              all[p.id] = st.data || [];
-            } catch {
-              all[p.id] = [];
-            }
-          })
-        );
-        setStatusesByPipe(all);
-      } catch (e) {
-        setErrRefs("Не вдалося завантажити воронки");
-      } finally {
-        setLoadingRefs(false);
-      }
-    })();
-  }, []);
-
-  // helpers для оновлення Target, автоматично проставляємо ...Name
-  function handleTargetPipeline(setter: (t: Target) => void, current: Target, pipeline?: string) {
-    const pipelineName = pipeline ? pipelineNameById[pipeline] : undefined;
-    // якщо змінили pipeline — скидаємо status
-    setter({ pipeline, pipelineName, status: undefined, statusName: undefined });
-  }
-  function handleTargetStatus(setter: (t: Target) => void, current: Target, status?: string) {
-    const sName = status ? statusNameById(current.pipeline)[status] : undefined;
-    setter({ ...current, status, statusName: sName });
-  }
-
-  // сабміт
+  const [loadingDicts, setLoadingDicts] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
+  const [form, setForm] = useState<FormState>({
+    name: '',
+    base: { ...emptyTarget },
+    v1: '1',
+    v2: '2',
+    expDays: 7,
+    t1: { ...emptyTarget },
+    t2: { ...emptyTarget },
+    texp: { ...emptyTarget },
+  });
+
+  // --- Завантаження воронок ---
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoadingDicts(true);
+        setError(null);
+        const r = await fetch('/api/keycrm/pipelines', { cache: 'no-store' });
+        const js = await r.json();
+        if (!alive) return;
+        if (!js?.ok) throw new Error('Не вдалося завантажити воронки');
+        setPipelines(js.data as IdName[]);
+      } catch (e: any) {
+        setError(e?.message || 'Помилка завантаження воронок');
+      } finally {
+        if (alive) setLoadingDicts(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // --- Завантаження статусів для конкретної воронки (з кешуванням у state) ---
+  const loadStatuses = async (pipelineId: string) => {
+    if (!pipelineId || statusesByPipe[pipelineId]) return;
+    try {
+      const r = await fetch(`/api/keycrm/statuses/${encodeURIComponent(pipelineId)}`, {
+        cache: 'no-store',
+      });
+      const js = await r.json();
+      if (!js?.ok) throw new Error('Не вдалося завантажити статуси');
+      setStatusesByPipe((prev) => ({ ...prev, [pipelineId]: js.data as IdName[] }));
+    } catch (e) {
+      // мʼяко ігноруємо, помилку видно в полях
+    }
+  };
+
+  const statusesBase = useMemo(
+    () => (form.base.pipeline ? statusesByPipe[form.base.pipeline] || [] : []),
+    [form.base.pipeline, statusesByPipe]
+  );
+  const statusesT1 = useMemo(
+    () => (form.t1.pipeline ? statusesByPipe[form.t1.pipeline] || [] : []),
+    [form.t1.pipeline, statusesByPipe]
+  );
+  const statusesT2 = useMemo(
+    () => (form.t2.pipeline ? statusesByPipe[form.t2.pipeline] || [] : []),
+    [form.t2.pipeline, statusesByPipe]
+  );
+  const statusesTExp = useMemo(
+    () => (form.texp.pipeline ? statusesByPipe[form.texp.pipeline] || [] : []),
+    [form.texp.pipeline, statusesByPipe]
+  );
+
+  // --- helpers ---
+  const handleTargetChange = (
+    key: 'base' | 't1' | 't2' | 'texp',
+    patch: Partial<TargetState>
+  ) => {
+    setForm((f) => {
+      const next = { ...f[key], ...patch } as TargetState;
+
+      // якщо змінилась воронка — підвантажимо статуси і скинемо статус
+      if (patch.pipeline !== undefined) {
+        if (patch.pipeline) loadStatuses(patch.pipeline);
+        next.status = '';
+        next.pipelineName = pipelines.find((p) => p.id === patch.pipeline)?.name || '';
+      }
+      if (patch.status !== undefined && patch.status) {
+        const list =
+          (next.pipeline && statusesByPipe[next.pipeline]) ? statusesByPipe[next.pipeline] : [];
+        next.statusName = list.find((s) => s.id === patch.status)?.name || '';
+      }
+      return { ...f, [key]: next };
+    });
+  };
+
+  // --- submit ---
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim()) {
+      setError('Назва обовʼязкова');
+      return;
+    }
     setSaving(true);
     setError(null);
 
-    try {
-      const payload = {
-        name: name.trim(),
-        base,
-        t1,
-        t2,
-        texp,
-        v1: v1 || undefined,
-        v2: v2 || undefined,
-        exp: Number.isFinite(Number(exp)) ? Number(exp) : undefined, // ⬅️ відправляємо як exp
-      };
+    const payload = {
+      name: form.name.trim(),
+      v1: form.v1 || undefined,
+      v2: form.v2 || undefined,
+      expDays:
+        form.expDays === '' ? undefined : Number.isFinite(Number(form.expDays)) ? Number(form.expDays) : undefined,
+      base: normalizeTarget(form.base),
+      t1: normalizeTarget(form.t1),
+      t2: normalizeTarget(form.t2),
+      texp: normalizeTarget(form.texp),
+    };
 
-      const r = await fetch("/api/campaigns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+    try {
+      const r = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       if (!r.ok) {
-        const msg = await r.text().catch(() => "");
-        throw new Error(msg || `HTTP ${r.status}`);
+        const txt = await r.text().catch(() => '');
+        throw new Error(txt || 'Не вдалося зберегти кампанію');
       }
-      // успіх → назад до списку
-      router.push("/admin/campaigns");
+      router.push('/admin/campaigns');
       router.refresh();
     } catch (e: any) {
-      setError("Не вдалося зберегти кампанію");
+      setError(e?.message || 'Помилка збереження');
     } finally {
       setSaving(false);
     }
-  }
+  };
+
+  const disabled = loadingDicts || saving;
 
   return (
-    <div className="p-4 sm:p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-3xl font-extrabold tracking-tight">Нова кампанія</h1>
-        <Link href="/admin/campaigns" className="rounded-lg border px-4 py-2 shadow-sm">
+    <div className="mx-auto max-w-4xl p-4 sm:p-6">
+      {/* Хедер */}
+      <div className="mb-3 sm:mb-4 flex items-center justify-between">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Нова кампанія</h1>
+        <button
+          type="button"
+          onClick={() => router.push('/admin/campaigns')}
+          className="rounded-lg border px-3 py-1.5 text-sm shadow-sm"
+        >
           Скасувати
-        </Link>
+        </button>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-4 sm:space-y-5">
         {/* База */}
-        <section className="rounded-2xl border p-4 sm:p-6">
-          <h2 className="text-2xl font-bold mb-4">База</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-1">
-              <label className="block text-sm text-slate-600 mb-1">Назва кампанії</label>
+        <Section title="База">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-5">
+              <Label>Назва кампанії</Label>
               <input
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2"
                 placeholder="Назва"
+                disabled={disabled}
               />
             </div>
-
-            {/* Базова воронка */}
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Базова воронка</label>
+            <div className="sm:col-span-3">
+              <Label>Базова воронка</Label>
               <select
-                value={base.pipeline || ""}
-                onChange={(e) => handleTargetPipeline(setBase, base, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.base.pipeline || ''}
+                onChange={(e) => handleTargetChange('base', { pipeline: e.target.value })}
+                disabled={disabled}
               >
                 <option value="">—</option>
                 {pipelines.map((p) => (
@@ -180,18 +227,16 @@ export default function NewCampaignPage() {
                 ))}
               </select>
             </div>
-
-            {/* Базовий статус */}
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Базовий статус</label>
+            <div className="sm:col-span-4">
+              <Label>Базовий статус</Label>
               <select
-                value={base.status || ""}
-                onChange={(e) => handleTargetStatus(setBase, base, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs || !base.pipeline}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.base.status || ''}
+                onChange={(e) => handleTargetChange('base', { status: e.target.value })}
+                disabled={disabled || !form.base.pipeline}
               >
                 <option value="">—</option>
-                {(statusesByPipe[base.pipeline || ""] || []).map((s) => (
+                {statusesBase.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -199,28 +244,28 @@ export default function NewCampaignPage() {
               </select>
             </div>
           </div>
-        </section>
+        </Section>
 
-        {/* Вариант №1 */}
-        <section className="rounded-2xl border p-4 sm:p-6">
-          <h2 className="text-2xl font-bold mb-4">Варіант №1</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Значення</label>
+        {/* Варіант №1 */}
+        <Section title="Варіант №1">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-2">
+              <Label>Значення</Label>
               <input
-                value={v1}
-                onChange={(e) => setV1(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2"
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.v1}
+                onChange={(e) => setForm((f) => ({ ...f, v1: e.target.value }))}
+                disabled={disabled}
                 placeholder="1"
               />
             </div>
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Воронка</label>
+            <div className="sm:col-span-5">
+              <Label>Воронка</Label>
               <select
-                value={t1.pipeline || ""}
-                onChange={(e) => handleTargetPipeline(setT1, t1, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.t1.pipeline || ''}
+                onChange={(e) => handleTargetChange('t1', { pipeline: e.target.value })}
+                disabled={disabled}
               >
                 <option value="">—</option>
                 {pipelines.map((p) => (
@@ -230,16 +275,16 @@ export default function NewCampaignPage() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Статус</label>
+            <div className="sm:col-span-5">
+              <Label>Статус</Label>
               <select
-                value={t1.status || ""}
-                onChange={(e) => handleTargetStatus(setT1, t1, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs || !t1.pipeline}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.t1.status || ''}
+                onChange={(e) => handleTargetChange('t1', { status: e.target.value })}
+                disabled={disabled || !form.t1.pipeline}
               >
                 <option value="">—</option>
-                {(statusesByPipe[t1.pipeline || ""] || []).map((s) => (
+                {statusesT1.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -247,28 +292,28 @@ export default function NewCampaignPage() {
               </select>
             </div>
           </div>
-        </section>
+        </Section>
 
-        {/* Вариант №2 */}
-        <section className="rounded-2xl border p-4 sm:p-6">
-          <h2 className="text-2xl font-bold mb-4">Варіант №2</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Значення</label>
+        {/* Варіант №2 */}
+        <Section title="Варіант №2">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-2">
+              <Label>Значення</Label>
               <input
-                value={v2}
-                onChange={(e) => setV2(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2"
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.v2}
+                onChange={(e) => setForm((f) => ({ ...f, v2: e.target.value }))}
+                disabled={disabled}
                 placeholder="2"
               />
             </div>
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Воронка</label>
+            <div className="sm:col-span-5">
+              <Label>Воронка</Label>
               <select
-                value={t2.pipeline || ""}
-                onChange={(e) => handleTargetPipeline(setT2, t2, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.t2.pipeline || ''}
+                onChange={(e) => handleTargetChange('t2', { pipeline: e.target.value })}
+                disabled={disabled}
               >
                 <option value="">—</option>
                 {pipelines.map((p) => (
@@ -278,16 +323,16 @@ export default function NewCampaignPage() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Статус</label>
+            <div className="sm:col-span-5">
+              <Label>Статус</Label>
               <select
-                value={t2.status || ""}
-                onChange={(e) => handleTargetStatus(setT2, t2, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs || !t2.pipeline}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.t2.status || ''}
+                onChange={(e) => handleTargetChange('t2', { status: e.target.value })}
+                disabled={disabled || !form.t2.pipeline}
               >
                 <option value="">—</option>
-                {(statusesByPipe[t2.pipeline || ""] || []).map((s) => (
+                {statusesT2.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -295,31 +340,32 @@ export default function NewCampaignPage() {
               </select>
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* Expire */}
-        <section className="rounded-2xl border p-4 sm:p-6">
-          <h2 className="text-2xl font-bold mb-4">Expire</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Кількість днів до експірації</label>
+        <Section title="Expire">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-2">
+              <Label>Кількість днів до експірації</Label>
               <input
                 type="number"
                 min={0}
-                step={1}
-                value={Number.isFinite(exp) ? exp : 0}
-                onChange={(e) => setExp(e.target.value === "" ? 0 : Number(e.target.value))}
-                className="w-full rounded-xl border px-3 py-2"
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.expDays ?? ''}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, expDays: e.target.value === '' ? '' : Number(e.target.value) }))
+                }
+                disabled={disabled}
                 placeholder="7"
               />
             </div>
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Воронка</label>
+            <div className="sm:col-span-5">
+              <Label>Воронка</Label>
               <select
-                value={texp.pipeline || ""}
-                onChange={(e) => handleTargetPipeline(setTexp, texp, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.texp.pipeline || ''}
+                onChange={(e) => handleTargetChange('texp', { pipeline: e.target.value })}
+                disabled={disabled}
               >
                 <option value="">—</option>
                 {pipelines.map((p) => (
@@ -329,16 +375,16 @@ export default function NewCampaignPage() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-slate-600 mb-1">Статус</label>
+            <div className="sm:col-span-5">
+              <Label>Статус</Label>
               <select
-                value={texp.status || ""}
-                onChange={(e) => handleTargetStatus(setTexp, texp, e.target.value || undefined)}
-                className="w-full rounded-xl border px-3 py-2"
-                disabled={loadingRefs || !texp.pipeline}
+                className="w-full rounded-lg border px-3 py-2"
+                value={form.texp.status || ''}
+                onChange={(e) => handleTargetChange('texp', { status: e.target.value })}
+                disabled={disabled || !form.texp.pipeline}
               >
                 <option value="">—</option>
-                {(statusesByPipe[texp.pipeline || ""] || []).map((s) => (
+                {statusesTExp.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -346,39 +392,42 @@ export default function NewCampaignPage() {
               </select>
             </div>
           </div>
-        </section>
+        </Section>
 
-        {errRefs && (
-          <div className="rounded-xl border border-red-300 bg-red-50 text-red-700 px-4 py-3">
-            {errRefs}
-          </div>
-        )}
+        {/* Кнопки */}
         {error && (
-          <div className="rounded-xl border border-red-300 bg-red-50 text-red-700 px-4 py-3">
+          <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
-
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={saving}
+            disabled={disabled}
             className="rounded-lg bg-blue-600 text-white px-4 py-2 font-medium shadow hover:bg-blue-700 disabled:opacity-60"
           >
-            Зберегти
+            {saving ? 'Збереження…' : 'Зберегти'}
           </button>
-          <Link href="/admin/campaigns" className="rounded-lg border px-4 py-2 shadow-sm">
-            Скасувати
-          </Link>
           <button
             type="button"
-            onClick={() => router.refresh()}
+            onClick={() => router.push('/admin/campaigns')}
             className="rounded-lg border px-4 py-2 shadow-sm"
           >
-            Оновити довідники
+            Скасувати
           </button>
         </div>
       </form>
     </div>
   );
+}
+
+// нормалізуємо Target до бекенду: якщо pipeline/status порожні — не шлемо
+function normalizeTarget(t: TargetState): TargetState | undefined {
+  if (!t?.pipeline && !t?.status) return undefined;
+  const out: TargetState = {};
+  if (t.pipeline) out.pipeline = t.pipeline;
+  if (t.status) out.status = t.status;
+  if (t.pipelineName) out.pipelineName = t.pipelineName;
+  if (t.statusName) out.statusName = t.statusName;
+  return out;
 }
