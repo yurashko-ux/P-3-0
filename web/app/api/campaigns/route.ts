@@ -1,142 +1,186 @@
 // web/app/api/campaigns/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
-import { Campaign, Target } from "@/lib/types";
-import { getPipelinesMap, getStatusesMap } from "@/lib/keycrm-cache";
-
+import { getPipelineName, getStatusName } from "@/lib/keycrm"; // не падатиме, якщо токен не валідний — ми зловимо
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
-const json = (data: any, status = 200) =>
-  new NextResponse(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8" },
-  });
+// ---- types (мʼякі) ----
+type Target = {
+  pipeline?: string;
+  status?: string;
+  pipelineName?: string;
+  statusName?: string;
+};
+type Counters = { v1: number; v2: number; exp: number };
+type Campaign = {
+  id: string;
+  name: string;
+  base?: Target;
+  t1?: Target;
+  t2?: Target;
+  texp?: Target;
+  v1?: string;
+  v2?: string;
+  expDays?: number;
+  expireDays?: number;
+  expire?: number;
+  vexp?: number;
+  counters: Counters;
+  createdAt: number;
+};
 
-function badRequest(message: string, extra?: any) {
-  return json({ error: message, ...extra }, 400);
-}
-function unsupported(message: string) {
-  return json({ error: message }, 415);
-}
-function serverError(message: string, extra?: any) {
-  return json({ error: message, ...extra }, 500);
-}
-
-// ---- helpers: індекс ТІЛЬКИ JSON-масив ----
-async function getIdsArray(): Promise<string[]> {
+// ---------- helpers ----------
+async function readIds(): Promise<string[]> {
   const arr = await kv.get<string[] | null>(IDS_KEY);
-  return Array.isArray(arr) ? arr.filter(Boolean) : [];
-}
-async function setIdsArray(ids: string[]) {
-  await kv.set(IDS_KEY, ids);
-}
-
-// ---- локальні name-хелпери на базі KV-кешу довідників ----
-async function getPipelineNameCached(pipelineId: string): Promise<string> {
-  const map = await getPipelinesMap(false);
-  return map[pipelineId] ?? pipelineId;
-}
-async function getStatusNameCached(pipelineId: string, statusId: string): Promise<string> {
-  const map = await getStatusesMap(pipelineId, false);
-  return map[statusId] ?? statusId;
-}
-
-async function safeEnrich(b?: Target): Promise<Target | undefined> {
-  if (!b || !b.pipeline || !b.status) return b;
-
-  let pipelineName = b.pipelineName;
-  let statusName = b.statusName;
-
+  if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
   try {
-    if (!pipelineName) pipelineName = await getPipelineNameCached(b.pipeline);
-    if (!statusName) statusName = await getStatusNameCached(b.pipeline, b.status);
+    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
+    return Array.isArray(list) ? list.filter(Boolean) : [];
   } catch {
-    // імена добʼємо пізніше repair/sync
+    return [];
   }
-
-  return { ...b, pipelineName: pipelineName ?? b.pipeline, statusName: statusName ?? b.status };
 }
 
-const newId = () => `${Date.now()}`;
+function pickStr(x: any): string | undefined {
+  if (x == null) return undefined;
+  const s = String(x).trim();
+  return s.length ? s : undefined;
+}
+function pickNum(x: any): number | undefined {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : undefined;
+}
 
-// -------- GET /api/campaigns --------
+function targetFromFlat(src: Record<string, any>, prefix: string): Target | undefined {
+  // підтримуємо: base.pipeline / base.status
+  //              base_pipeline / base_status
+  //              basePipeline / baseStatus
+  const get = (...keys: string[]) =>
+    keys.map((k) => src[k]).find((v) => v !== undefined && v !== null);
+
+  const pipeline =
+    get(`${prefix}.pipeline`, `${prefix}_pipeline`, `${prefix}Pipeline`) ??
+    (src[prefix]?.pipeline as any);
+  const status =
+    get(`${prefix}.status`, `${prefix}_status`, `${prefix}Status`) ??
+    (src[prefix]?.status as any);
+
+  const pipelineName =
+    get(`${prefix}.pipelineName`, `${prefix}_pipelineName`, `${prefix}PipelineName`) ??
+    (src[prefix]?.pipelineName as any);
+  const statusName =
+    get(`${prefix}.statusName`, `${prefix}_statusName`, `${prefix}StatusName`) ??
+    (src[prefix]?.statusName as any);
+
+  const out: Target = {
+    pipeline: pickStr(pipeline),
+    status: pickStr(status),
+    pipelineName: pickStr(pipelineName),
+    statusName: pickStr(statusName),
+  };
+  if (!out.pipeline && !out.status && !out.pipelineName && !out.statusName) return undefined;
+  return out;
+}
+
+async function enrichNames(t?: Target): Promise<Target | undefined> {
+  if (!t) return t;
+  const out: Target = { ...t };
+  // лише якщо нема кешу — спробуємо KeyCRM; якщо кине 401/429 — мовчки лишимо як є
+  try {
+    if (out.pipeline && !out.pipelineName) {
+      out.pipelineName = String(await getPipelineName(out.pipeline)).trim() || out.pipelineName;
+    }
+  } catch {}
+  try {
+    if (out.pipeline && out.status && !out.statusName) {
+      out.statusName =
+        String(await getStatusName(out.pipeline, out.status)).trim() || out.statusName;
+    }
+  } catch {}
+  return out;
+}
+
+async function storeCampaign(c: Campaign) {
+  await kv.set(ITEM_KEY(c.id), c);
+  const ids = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
+  const next = Array.isArray(ids) ? [c.id, ...ids.filter(Boolean)] : [c.id];
+  await kv.set(IDS_KEY, next);
+}
+
+// ---------- GET ----------
 export async function GET() {
-  try {
-    const ids = await getIdsArray();
-    if (!ids.length) return json([]);
-    const keys = ids.map(ITEM_KEY);
-    const items = await kv.mget<(Campaign | null)[]>(...keys);
-    const list = (items ?? []).filter(Boolean) as Campaign[];
-    return json(list);
-  } catch (e: any) {
-    console.error("GET /api/campaigns failed:", e);
-    return serverError("internal error");
-  }
+  const ids = await readIds();
+  if (!ids.length) return NextResponse.json<Campaign[]>([]);
+  const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
+  const out: Campaign[] = [];
+  items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
+  out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  return NextResponse.json(out);
 }
 
-// -------- POST /api/campaigns (ТІЛЬКИ JSON) --------
+// ---------- POST ----------
 export async function POST(req: NextRequest) {
-  try {
-    const ct = req.headers.get("content-type") || "";
-    if (!ct.includes("application/json")) {
-      return unsupported("Content-Type must be application/json");
+  // 1) зчитуємо тіло як JSON або FormData
+  const ct = req.headers.get("content-type") || "";
+  let body: any = {};
+  if (ct.includes("application/json")) {
+    try {
+      body = (await req.json()) ?? {};
+    } catch {
+      body = {};
     }
-
-    const body = (await req.json()) as Partial<Campaign> | undefined;
-    if (!body) return badRequest("empty body");
-
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    if (!name) return badRequest("name is required");
-
-    // валідація парності
-    for (const [label, block] of [
-      ["base", body.base],
-      ["t1", body.t1],
-      ["t2", body.t2],
-      ["texp", body.texp],
-    ] as const) {
-      if (block?.pipeline && !block?.status) {
-        return badRequest(`'${label}.status' is required when '${label}.pipeline' is set`);
-      }
-      if (block?.status && !block?.pipeline) {
-        return badRequest(`'${label}.pipeline' is required when '${label}.status' is set`);
-      }
+  } else {
+    const fd = await req.formData().catch(() => null);
+    if (fd) {
+      fd.forEach((v, k) => {
+        (body as any)[k] = typeof v === "string" ? v : String(v);
+      });
     }
-
-    // SAFE-enrich (через KV-кеш)
-    const [base, t1, t2, texp] = await Promise.all([
-      safeEnrich(body.base),
-      safeEnrich(body.t1),
-      safeEnrich(body.t2),
-      safeEnrich(body.texp),
-    ]);
-
-    const item: Campaign = {
-      id: newId(),
-      name,
-      v1: body.v1,
-      v2: body.v2,
-      base,
-      t1,
-      t2,
-      texp,
-      counters: body.counters ?? { v1: 0, v2: 0, exp: 0 },
-      deleted: false,
-      createdAt: Date.now(),
-    };
-
-    await kv.set(ITEM_KEY(item.id), item);
-    const ids = await getIdsArray();
-    ids.unshift(item.id);
-    await setIdsArray(ids);
-
-    return json(item, 201);
-  } catch (err: any) {
-    console.error("POST /api/campaigns failed:", err);
-    return serverError(err?.message || "internal error");
   }
+
+  // 2) будуємо цільовий обʼєкт
+  const now = Date.now();
+  const id = String(now);
+
+  const base = targetFromFlat(body, "base");
+  const t1 = targetFromFlat(body, "t1");
+  const t2 = targetFromFlat(body, "t2");
+  const texp = targetFromFlat(body, "texp");
+
+  const v1 = pickStr(body.v1);
+  const v2 = pickStr(body.v2);
+  const expDays =
+    pickNum(body.expDays) ?? pickNum(body.expireDays) ?? pickNum(body.expire) ?? pickNum(body.vexp);
+
+  // 3) дозаповнюємо назви (не обовʼязково — але красиво)
+  const [eBase, e1, e2, eExp] = await Promise.all([
+    enrichNames(base),
+    enrichNames(t1),
+    enrichNames(t2),
+    enrichNames(texp),
+  ]);
+
+  const campaign: Campaign = {
+    id,
+    name: pickStr(body.name) ?? "Без назви",
+    base: eBase,
+    t1: e1,
+    t2: e2,
+    texp: eExp,
+    v1,
+    v2,
+    ...(expDays != null ? { expDays } : {}),
+    counters: { v1: 0, v2: 0, exp: 0 },
+    createdAt: now,
+  };
+
+  // 4) зберігаємо
+  await storeCampaign(campaign);
+
+  // 5) відповідаємо 201
+  return NextResponse.json({ ok: true, id }, { status: 201 });
 }
