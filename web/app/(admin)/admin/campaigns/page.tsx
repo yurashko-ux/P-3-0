@@ -32,6 +32,7 @@ type Campaign = {
   v2?: string;
 
   // інколи EXP можуть зберігатися як різні поля — лишаємо на майбутнє
+  exp?: number;
   expDays?: number;
   expireDays?: number;
   expire?: number;
@@ -181,9 +182,9 @@ export default async function Page() {
                       </div>
                       <div>
                         <span className="text-slate-500 mr-2">EXP</span>
-                        {/* показуємо тільки значення, без днів */}
                         {(() => {
                           const v =
+                            (c as any)?.exp ??          // ← тепер спочатку читаємо exp
                             (c as any)?.expDays ??
                             (c as any)?.expireDays ??
                             (c as any)?.expire ??
