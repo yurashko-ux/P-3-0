@@ -20,6 +20,12 @@ type Campaign = {
   texp?: IdName;
   counters: Counters;
   createdAt: number;
+
+  // значення варіантів
+  v1?: string;
+  v2?: string;
+
+  // можливі назви для EXP-днів/значення
   expDays?: number;
   expireDays?: number;
   expire?: number;
@@ -30,10 +36,8 @@ const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 async function readIds(): Promise<string[]> {
-  // канонічний масив
   const arr = await kv.get<string[] | null>(IDS_KEY);
   if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
-  // старий list як запасний варіант
   try {
     const list = await kv.lrange<string>(IDS_KEY, 0, -1);
     if (Array.isArray(list) && list.length) return list.filter(Boolean);
@@ -58,17 +62,12 @@ function buildBaseUrl() {
 }
 
 async function readWithFallback(): Promise<Campaign[]> {
-  // 1) напряму з KV (швидко, без мережі)
   const kvData = await readFromKV();
   if (kvData.length) return kvData;
 
-  // 2) fallback: API, якщо бек уже агрегує правильно
   try {
     const base = buildBaseUrl();
-    const r = await fetch(`${base}/api/campaigns`, {
-      cache: "no-store",
-      next: { revalidate: 0 },
-    });
+    const r = await fetch(`${base}/api/campaigns`, { cache: "no-store", next: { revalidate: 0 } });
     if (r.ok) {
       const arr = (await r.json()) as Campaign[];
       if (Array.isArray(arr) && arr.length) return arr;
@@ -92,13 +91,17 @@ function fmtDate(ts?: number) {
 function nn(x?: string) {
   return (x && String(x).trim()) || "—";
 }
-function getExpireDays(c: Campaign): number | undefined {
+function getExpValue(c: Campaign): string {
+  // показуємо число днів/значення EXP, якщо воно задане,
+  // інакше — «—»
   const v =
     (c as any)?.expDays ??
     (c as any)?.expireDays ??
     (c as any)?.expire ??
-    (typeof (c as any)?.vexp === "number" ? (c as any)?.vexp : undefined);
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    (c as any)?.vexp;
+  if (v === 0) return "0";
+  if (v == null) return "—";
+  return String(v);
 }
 
 export default async function Page() {
@@ -132,10 +135,10 @@ export default async function Page() {
               <th className="px-2 py-3 w-[160px]">Назва</th>
               <th className="px-2 py-3 w-[200px]">Базова Воронка</th>
               <th className="px-2 py-3 w-[160px]">Базовий Статус</th>
+              <th className="px-2 py-3 w-[120px]">Варіант</th>
               <th className="px-2 py-3 w-[260px]">Цільова воронка</th>
               <th className="px-2 py-3 w-[280px]">Цільовий статус</th>
               <th className="px-2 py-3 w-[140px]">Лічильник</th>
-              <th className="px-2 py-3 w-[90px]">Expire</th>
               <th className="px-4 py-3 w-[120px] text-right">Дії</th>
             </tr>
           </thead>
@@ -147,50 +150,99 @@ export default async function Page() {
                 </td>
               </tr>
             ) : (
-              campaigns.map((c) => {
-                const days = getExpireDays(c);
-                return (
-                  <tr key={c.id} className="border-b align-top">
-                    <td className="px-4 py-3 text-sm text-slate-800">
-                      <div>{fmtDate(c.createdAt)}</div>
-                      <div className="text-slate-400 text-xs">#{c.id}</div>
-                    </td>
-                    <td className="px-2 py-3 text-sm">{nn(c.name)}</td>
-                    <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
-                    <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
+              campaigns.map((c) => (
+                <tr key={c.id} className="border-b align-top">
+                  {/* Дата */}
+                  <td className="px-4 py-3 text-sm text-slate-800">
+                    <div>{fmtDate(c.createdAt)}</div>
+                    <div className="text-slate-400 text-xs">#{c.id}</div>
+                  </td>
 
-                    <td className="px-2 py-3 text-sm">
-                      <div className="flex flex-col gap-1">
-                        <div><span className="text-slate-500 mr-2">V1</span>{nn(c.t1?.pipelineName)}</div>
-                        <div><span className="text-slate-500 mr-2">V2</span>{nn(c.t2?.pipelineName)}</div>
-                        <div><span className="text-slate-500 mr-2">EXP</span>{nn(c.texp?.pipelineName)}</div>
+                  {/* Назва */}
+                  <td className="px-2 py-3 text-sm">{nn(c.name)}</td>
+
+                  {/* База */}
+                  <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
+                  <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
+
+                  {/* Варіант — V1/V2/EXP значення */}
+                  <td className="px-2 py-3 text-sm">
+                    <div className="flex flex-col gap-1">
+                      <div>
+                        <span className="text-slate-500 mr-2">V1</span>
+                        {nn(c.v1)}
                       </div>
-                    </td>
-
-                    <td className="px-2 py-3 text-sm">
-                      <div className="flex flex-col gap-1">
-                        <div><span className="text-slate-500 mr-2">V1</span>{nn(c.t1?.statusName)}</div>
-                        <div><span className="text-slate-500 mr-2">V2</span>{nn(c.t2?.statusName)}</div>
-                        <div><span className="text-slate-500 mr-2">{days != null ? `EXP (${days} дн.)` : "EXP"}</span>{nn(c.texp?.statusName)}</div>
+                      <div>
+                        <span className="text-slate-500 mr-2">V2</span>
+                        {nn(c.v2)}
                       </div>
-                    </td>
-
-                    <td className="px-2 py-3 text-sm">
-                      <div className="flex flex-col gap-1">
-                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"><span className="text-slate-500 mr-1">V1:</span><span>{c.counters?.v1 ?? 0}</span></div>
-                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"><span className="text-slate-500 mr-1">V2:</span><span>{c.counters?.v2 ?? 0}</span></div>
-                        <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"><span className="text-slate-500 mr-1">EXP:</span><span>{c.counters?.exp ?? 0}</span></div>
+                      <div>
+                        <span className="text-slate-500 mr-2">EXP</span>
+                        {getExpValue(c)}
                       </div>
-                    </td>
+                    </div>
+                  </td>
 
-                    <td className="px-2 py-3 text-sm">{days != null ? days : "—"}</td>
+                  {/* Цільова воронка — вертикально V1/V2/EXP */}
+                  <td className="px-2 py-3 text-sm">
+                    <div className="flex flex-col gap-1">
+                      <div>
+                        <span className="text-slate-500 mr-2">V1</span>
+                        {nn(c.t1?.pipelineName)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500 mr-2">V2</span>
+                        {nn(c.t2?.pipelineName)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500 mr-2">EXP</span>
+                        {nn(c.texp?.pipelineName)}
+                      </div>
+                    </div>
+                  </td>
 
-                    <td className="px-4 py-3 text-right">
-                      <DeleteButton id={c.id} />
-                    </td>
-                  </tr>
-                );
-              })
+                  {/* Цільовий статус — вертикально; EXP може мати дні у дужках, але тепер — тільки назва */}
+                  <td className="px-2 py-3 text-sm">
+                    <div className="flex flex-col gap-1">
+                      <div>
+                        <span className="text-slate-500 mr-2">V1</span>
+                        {nn(c.t1?.statusName)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500 mr-2">V2</span>
+                        {nn(c.t2?.statusName)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500 mr-2">EXP</span>
+                        {nn(c.texp?.statusName)}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Лічильники — вертикально */}
+                  <td className="px-2 py-3 text-sm">
+                    <div className="flex flex-col gap-1">
+                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
+                        <span className="text-slate-500 mr-1">V1:</span>
+                        <span>{c.counters?.v1 ?? 0}</span>
+                      </div>
+                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
+                        <span className="text-slate-500 mr-1">V2:</span>
+                        <span>{c.counters?.v2 ?? 0}</span>
+                      </div>
+                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
+                        <span className="text-slate-500 mr-1">EXP:</span>
+                        <span>{c.counters?.exp ?? 0}</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Дії */}
+                  <td className="px-4 py-3 text-right">
+                    <DeleteButton id={c.id} />
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
