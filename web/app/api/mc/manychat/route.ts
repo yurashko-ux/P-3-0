@@ -58,8 +58,17 @@ function matchRule(text: string, rule?: Rule): boolean {
 export async function POST(req: NextRequest) {
   // Optional verification of ManyChat secret if you use it:
   const mcToken = process.env.MC_TOKEN;
-  const headerToken = req.headers.get('x-mc-token') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
-  if (mcToken && headerToken && headerToken !== mcToken) {
+  const headerToken =
+    req.headers.get('x-mc-token') ||
+    req.headers
+      .get('authorization')
+      ?.replace(/^Bearer\s+/i, '') ||
+    '';
+  const queryToken = req.nextUrl?.searchParams.get('token') || '';
+  if (
+    mcToken &&
+    !(headerToken === mcToken || queryToken === mcToken)
+  ) {
     return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
   }
 
