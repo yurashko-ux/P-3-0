@@ -25,8 +25,11 @@ type Campaign = {
 
 // ----- helpers -----
 
-function normStr(s: unknown) {
-  return (typeof s === 'string' ? s : '').trim();
+export function normStr(s: unknown) {
+  if (typeof s !== 'string') return '';
+  const trimmed = s.trim();
+  if (!trimmed) return '';
+  return trimmed.normalize('NFKC');
 }
 
 function extractNormalized(body: any) {
@@ -45,10 +48,17 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
+function toMatchable(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.normalize('NFKC').toLowerCase();
+}
+
+export function matchRule(text: string, rule?: Rule): boolean {
   if (!rule || !rule.value) return false;
-  const needle = rule.value.toLowerCase();
-  const hay = (text || '').toLowerCase();
+  const needle = toMatchable(rule.value);
+  const hay = toMatchable(text);
   if (rule.op === 'equals') return hay === needle;
   // default contains
   return hay.includes(needle);
