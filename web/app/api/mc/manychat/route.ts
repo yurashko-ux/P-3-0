@@ -10,6 +10,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Rule = { op: 'contains' | 'equals'; value: string };
+type AppliedRule = 'v1' | 'v2' | 'both' | null;
+
 type Campaign = {
   id: string;
   name: string;
@@ -22,6 +24,20 @@ type Campaign = {
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+};
+
+type MatchEntry = {
+  id: string;
+  name: string;
+  v1: boolean;
+  v2: boolean;
+  rule: AppliedRule;
+};
+
+type Operation = {
+  campaignId: string;
+  rule: AppliedRule;
+  cardId: string | null;
 };
 
 function normalize(body: any) {
@@ -78,16 +94,41 @@ export async function POST(req: NextRequest) {
 
   // Compute matches
   const text = norm.text || '';
-  const matches = active.map((c) => {
-    const v1 = matchRule(text, c.rules?.v1);
-    const v2 = matchRule(text, c.rules?.v2);
-    return { id: c.id, name: c.name, v1, v2 };
-  }).filter(m => m.v1 || m.v2);
+  const matches: MatchEntry[] = [];
+  const operations: Operation[] = [];
+
+  for (const campaign of active) {
+    const v1 = matchRule(text, campaign.rules?.v1);
+    const v2 = matchRule(text, campaign.rules?.v2);
+
+    if (!v1 && !v2) continue;
+
+    const appliedRule: AppliedRule = v1 && v2 ? 'both' : v1 ? 'v1' : v2 ? 'v2' : null;
+
+    matches.push({
+      id: campaign.id,
+      name: campaign.name,
+      v1,
+      v2,
+      rule: appliedRule,
+    });
+
+    operations.push({
+      campaignId: campaign.id,
+      rule: appliedRule,
+      cardId: null,
+    });
+  }
 
   // (Optional) very light logging to help with diagnostics:
   try {
     const logKey = `logs:mc:${new Date().toISOString().slice(0, 10)}`; // per-day key
-    const record = JSON.stringify({ ts: Date.now(), norm, matchesCount: matches.length });
+    const record = JSON.stringify({
+      ts: Date.now(),
+      norm,
+      matchesCount: matches.length,
+      operationsCount: operations.length,
+    });
     // Use LPUSH for logs (best-effort; ignore errors)
     await kvWrite.lpush(logKey, record);
   } catch {
