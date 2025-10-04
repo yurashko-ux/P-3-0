@@ -19,6 +19,12 @@ type Campaign = {
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
 
+const normalizeVariant = (value?: string | null) => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toLowerCase() : undefined;
+};
+
 async function readIdsMerged(): Promise<string[]> {
   const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
   let list: string[] = [];
@@ -78,6 +84,49 @@ export async function POST(req: NextRequest) {
 
   const v1 = pickStr(body.v1);
   const v2 = pickStr(body.v2);
+
+  const ids = await readIdsMerged();
+  const taken = new Map<string, { id: string; variant: "v1" | "v2"; value: string }>();
+  if (ids.length) {
+    const existingItems = await kv.mget<(Campaign | null)[]>(...ids.map((cid) => ITEM_KEY(cid)));
+    existingItems.forEach((item, index) => {
+      if (!item || typeof item !== "object") return;
+      const campaign = item as Campaign;
+      const existingId = campaign.id ?? ids[index];
+      const register = (variant: "v1" | "v2", value?: string) => {
+        const trimmed = pickStr(value);
+        const normalized = normalizeVariant(trimmed);
+        if (!normalized || taken.has(normalized)) return;
+        taken.set(normalized, { id: existingId, variant, value: trimmed! });
+      };
+      register("v1", campaign.v1);
+      register("v2", campaign.v2);
+    });
+  }
+
+  const checkCollision = (variant: "v1" | "v2", value?: string) => {
+    const normalized = normalizeVariant(value);
+    if (!normalized) return null;
+    const conflict = taken.get(normalized);
+    if (!conflict) return null;
+    const conflictValue = conflict.value;
+    const conflictPart = conflictValue ? `${conflict.variant}="${conflictValue}"` : conflict.variant;
+    return `Variant ${variant}="${value}" is already used as ${conflictPart} by campaign ${conflict.id}`;
+  };
+
+  const v1Conflict = checkCollision("v1", v1);
+  if (v1Conflict) {
+    return NextResponse.json({ ok: false, error: v1Conflict }, { status: 409 });
+  }
+  const normalizedV1 = normalizeVariant(v1);
+  if (normalizedV1) {
+    taken.set(normalizedV1, { id, variant: "v1", value: v1! });
+  }
+
+  const v2Conflict = checkCollision("v2", v2);
+  if (v2Conflict) {
+    return NextResponse.json({ ok: false, error: v2Conflict }, { status: 409 });
+  }
 
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
