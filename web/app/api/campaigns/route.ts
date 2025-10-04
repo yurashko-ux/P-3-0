@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
+import { checkCampaignVariantsUniqueness } from "@/lib/campaigns-unique";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
   else { const fd = await req.formData().catch(()=>null); fd?.forEach((v,k)=> body[k]= typeof v==="string"? v:String(v)); }
 
   const now = Date.now(); const id = String(now);
+  const name = pickStr(body.name) ?? "Без назви";
   const base = targetFromFlat(body,"base");
   const t1   = targetFromFlat(body,"t1");
   const t2   = targetFromFlat(body,"t2");
@@ -78,6 +80,40 @@ export async function POST(req: NextRequest) {
 
   const v1 = pickStr(body.v1);
   const v2 = pickStr(body.v2);
+
+  const existingIds = await readIdsMerged();
+  const existingRaw = existingIds.length
+    ? await kv.mget<(Campaign | null)[]>(...existingIds.map((it)=>ITEM_KEY(it)))
+    : [];
+  const existingForCheck = existingRaw
+    .map((item) => (item && typeof item === "object" ? (item as Campaign) : null))
+    .filter((item): item is Campaign => Boolean(item))
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      rules: {
+        v1: item.v1 ? { op: "equals", value: item.v1 } : undefined,
+        v2: item.v2 ? { op: "equals", value: item.v2 } : undefined,
+      },
+    }));
+
+  const candidateForCheck = {
+    id,
+    name,
+    rules: {
+      v1: v1 ? { op: "equals", value: v1 } : undefined,
+      v2: v2 ? { op: "equals", value: v2 } : undefined,
+    },
+  };
+
+  const uniqueness = checkCampaignVariantsUniqueness(candidateForCheck, existingForCheck);
+  if (!uniqueness.ok) {
+    const firstConflict = uniqueness.conflicts[0];
+    const fieldName = firstConflict?.which?.toUpperCase?.() || "V";
+    const conflictId = firstConflict?.campaignId ?? "";
+    const message = `Значення ${fieldName} вже використовується в кампанії ${conflictId}.`;
+    return NextResponse.json({ ok: false, error: message }, { status: 409 });
+  }
 
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
@@ -91,7 +127,7 @@ export async function POST(req: NextRequest) {
   const [eBase,e1,e2,eExp] = await Promise.all([enrichNames(base),enrichNames(t1),enrichNames(t2),enrichNames(texp)]);
 
   const campaign: Campaign = {
-    id, name: pickStr(body.name) ?? "Без назви",
+    id, name,
     base: eBase, t1: e1, t2: e2, texp: eExp, v1, v2,
     ...(expDays!=null ? { expDays, exp: expDays } : {}), // збережемо ще й як `exp` для зручності рендеру
     counters: { v1:0, v2:0, exp:0 }, createdAt: now
