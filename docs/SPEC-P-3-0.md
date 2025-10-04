@@ -546,6 +546,7 @@ curl -s -X POST "${DEPLOY}/api/mc/ingest?token=${MC_TOKEN}" \
 **Functionality acceptance**
 
 * Е2Е тест ManiChat → `/api/mc/ingest` → матч → move → лічильник +1 → видно в `/admin/campaigns` після Refresh.
+* Перевірити ManyChat → KeyCRM: тестовий IG username у базовій воронці кампанії має знайтись через `findCardSimple` та бути переміщеним у цільовий pipeline/status (відслідкувати відповідь `/api/mc/ingest` і лог `logs:mc:*`).
 * NEG‑кейси: невірний токен, порожній `username`, не знайдена картка — дія пропущена, лог створений.
 
 **Observability**
