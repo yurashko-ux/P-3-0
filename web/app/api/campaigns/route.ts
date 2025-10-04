@@ -1,6 +1,10 @@
 // web/app/api/campaigns/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
+import {
+  checkCampaignVariantsUniqueness,
+  type Campaign as UniqueCampaign,
+} from "@/lib/campaigns-unique";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +22,28 @@ type Campaign = {
 };
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
+
+const normalizeVariant = (value?: string) => {
+  const trimmed = value == null ? undefined : String(value).trim().toLowerCase();
+  return trimmed || undefined;
+};
+
+const toUniqueCampaign = (id: string, v1?: string, v2?: string): UniqueCampaign => {
+  const nv1 = normalizeVariant(v1);
+  const nv2 = normalizeVariant(v2);
+  const hasRules = nv1 || nv2;
+  return {
+    id,
+    ...(hasRules
+      ? {
+          rules: {
+            v1: nv1 ? { op: "equals", value: nv1 } : null,
+            v2: nv2 ? { op: "equals", value: nv2 } : null,
+          },
+        }
+      : {}),
+  };
+};
 
 async function readIdsMerged(): Promise<string[]> {
   const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
@@ -78,6 +104,38 @@ export async function POST(req: NextRequest) {
 
   const v1 = pickStr(body.v1);
   const v2 = pickStr(body.v2);
+
+  const existingIds = await readIdsMerged();
+  let existingVariants: UniqueCampaign[] = [];
+  if (existingIds.length) {
+    const items = await kv.mget<(Campaign | null)[]>(
+      ...existingIds.map((cid) => ITEM_KEY(cid))
+    );
+    existingVariants = items
+      .map((it) => (it && typeof it === "object" ? (it as Campaign) : null))
+      .filter((it): it is Campaign => Boolean(it?.id))
+      .map((it) => toUniqueCampaign(String(it.id), it.v1, it.v2));
+  }
+
+  const uniqueness = checkCampaignVariantsUniqueness(
+    toUniqueCampaign(id, v1, v2),
+    existingVariants
+  );
+  if (!uniqueness.ok) {
+    const conflicts = uniqueness.conflicts
+      .map(
+        (conflict) =>
+          `[${conflict.which.toUpperCase()}] "${conflict.value}" already used in campaign ${conflict.campaignId}`
+      )
+      .join("; ");
+    const message =
+      "Variant values must be unique across campaigns." +
+      (conflicts ? ` Conflicts: ${conflicts}` : "");
+    return NextResponse.json(
+      { ok: false, error: message },
+      { status: 409 }
+    );
+  }
 
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
