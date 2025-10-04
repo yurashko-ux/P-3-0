@@ -24,32 +24,51 @@ type Campaign = {
   exp_count?: number;
 };
 
-function normalize(body: any) {
+function sanitize(value: unknown, fallback = ''): string {
+  const fallbackClean =
+    typeof fallback === 'string' ? fallback.trim().normalize('NFKC') : '';
+  if (typeof value !== 'string') return fallbackClean;
+  const trimmed = value.trim();
+  if (!trimmed) return fallbackClean;
+  return trimmed.normalize('NFKC');
+}
+
+export function normalize(body: any) {
   // Fallback-safe extraction for ManyChat IG → { title, handle, text }
-  const title =
+  const titleRaw =
     body?.message?.title ??
     body?.data?.title ??
     body?.title ??
     'IG Message';
-  const handle =
+  const handleRaw =
     body?.subscriber?.username ??
     body?.user?.username ??
     body?.sender?.username ??
     body?.handle ??
     '';
-  const text =
+  const textRaw =
     body?.message?.text ??
     body?.data?.text ??
     body?.text ??
     body?.message ??
     '';
+  const title = sanitize(titleRaw, 'IG Message');
+  const handle = sanitize(handleRaw);
+  const text = sanitize(textRaw);
   return { title, handle, text };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
+function toMatchable(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.normalize('NFKC').toLowerCase();
+}
+
+export function matchRule(text: string, rule?: Rule): boolean {
   if (!rule || !rule.value) return false;
-  const t = (text || '').toLowerCase();
-  const v = rule.value.toLowerCase();
+  const t = toMatchable(text);
+  const v = toMatchable(rule.value);
   if (rule.op === 'equals') return t === v;
   if (rule.op === 'contains') return t.includes(v);
   return false;
