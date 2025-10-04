@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
+    "outDir": "../tests/.dist",
+    "rootDir": "..",
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/kv": ["tests/.stubs/lib/kv.ts"]
+    },
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "../app/api/mc/manychat/route.ts",
+    "../app/api/keycrm/sync/pair/route.ts",
+    "./.stubs/lib/kv.ts"
+  ]
+}
