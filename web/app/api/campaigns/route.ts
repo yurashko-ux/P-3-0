@@ -79,6 +79,48 @@ export async function POST(req: NextRequest) {
   const v1 = pickStr(body.v1);
   const v2 = pickStr(body.v2);
 
+  const normalizeDupValue = (value?: string | null) => {
+    if (value == null) return undefined;
+    const trimmed = String(value).trim();
+    if (!trimmed) return undefined;
+    return {
+      raw: trimmed,
+      normalized: trimmed.toLowerCase(),
+    } as const;
+  };
+
+  const requestedValues = [v1, v2]
+    .map((value) => normalizeDupValue(value))
+    .filter((value): value is { raw: string; normalized: string } => Boolean(value?.normalized));
+
+  if (requestedValues.length) {
+    const ids = await readIdsMerged();
+    if (ids.length) {
+      const existing = new Set<string>();
+      try {
+        const items = await kv.mget(...ids.map((id) => ITEM_KEY(id)));
+        const list = Array.isArray(items) ? items : [];
+        for (const item of list) {
+          if (item && typeof item === "object") {
+            const campaignItem = item as Partial<Campaign>;
+            const fromV1 = normalizeDupValue(campaignItem.v1);
+            const fromV2 = normalizeDupValue(campaignItem.v2);
+            if (fromV1) existing.add(fromV1.normalized);
+            if (fromV2) existing.add(fromV2.normalized);
+          }
+        }
+      } catch {}
+
+      const conflict = requestedValues.find((value) => existing.has(value.normalized));
+      if (conflict) {
+        return NextResponse.json(
+          { ok: false, error: `Конфлікт: значення «${conflict.raw}» вже використовується.` },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
     pickNum(body.expDays) ??
