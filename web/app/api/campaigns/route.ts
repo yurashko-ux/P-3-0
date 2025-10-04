@@ -2,6 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
+import {
+  checkCampaignVariantsUniqueness,
+  type Campaign as UniqueCampaign,
+} from "@/lib/campaigns-unique";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -15,6 +19,25 @@ type Campaign = {
   v1?: string; v2?: string;
   expDays?: number; expireDays?: number; expire?: number; vexp?: number; exp?: number; // ⬅️ додав exp
   counters: Counters; createdAt: number;
+};
+
+const toUniqueCampaign = (campaign: Campaign): UniqueCampaign => {
+  const v1 = campaign.v1?.trim();
+  const v2 = campaign.v2?.trim();
+
+  const rules =
+    v1 || v2
+      ? {
+          v1: v1 ? { op: "equals", value: v1 } : null,
+          v2: v2 ? { op: "equals", value: v2 } : null,
+        }
+      : undefined;
+
+  return {
+    id: campaign.id,
+    name: campaign.name,
+    ...(rules ? { rules } : {}),
+  };
 };
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
@@ -96,6 +119,37 @@ export async function POST(req: NextRequest) {
     ...(expDays!=null ? { expDays, exp: expDays } : {}), // збережемо ще й як `exp` для зручності рендеру
     counters: { v1:0, v2:0, exp:0 }, createdAt: now
   };
+
+  const existingIds = await readIdsMerged();
+  let existingCampaigns: Campaign[] = [];
+  if (existingIds.length) {
+    const existingItems = await kv.mget<(Campaign | null)[]>(
+      ...existingIds.map((existingId) => ITEM_KEY(existingId))
+    );
+    existingCampaigns = existingItems.filter(
+      (item): item is Campaign => !!item && typeof item === "object"
+    );
+  }
+
+  const uniqueness = checkCampaignVariantsUniqueness(
+    toUniqueCampaign(campaign),
+    existingCampaigns.map(toUniqueCampaign)
+  );
+
+  if (!uniqueness.ok && "conflicts" in uniqueness) {
+    const [firstConflict] = uniqueness.conflicts;
+    if (firstConflict) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "variant_conflict",
+          conflict: firstConflict,
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ ok: false, error: "variant_conflict" }, { status: 409 });
+  }
 
   await kv.set(ITEM_KEY(id), campaign);
   await writeIdsMerged(id);
