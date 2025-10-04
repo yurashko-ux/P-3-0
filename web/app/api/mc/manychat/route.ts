@@ -24,32 +24,43 @@ type Campaign = {
   exp_count?: number;
 };
 
-function normalize(body: any) {
+const clean = (value: unknown, fallback = ''): string => {
+  const base = typeof value === 'string' ? value : fallback;
+  return base.trim().normalize('NFKC');
+};
+
+export function normalize(body: any) {
   // Fallback-safe extraction for ManyChat IG → { title, handle, text }
-  const title =
+  const title = clean(
     body?.message?.title ??
-    body?.data?.title ??
-    body?.title ??
-    'IG Message';
-  const handle =
+      body?.data?.title ??
+      body?.title ??
+      'IG Message',
+    'IG Message'
+  );
+  const handle = clean(
     body?.subscriber?.username ??
-    body?.user?.username ??
-    body?.sender?.username ??
-    body?.handle ??
-    '';
-  const text =
+      body?.user?.username ??
+      body?.sender?.username ??
+      body?.handle ??
+      ''
+  );
+  const text = clean(
     body?.message?.text ??
-    body?.data?.text ??
-    body?.text ??
-    body?.message ??
-    '';
+      body?.data?.text ??
+      body?.text ??
+      body?.message ??
+      ''
+  );
   return { title, handle, text };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
+const cleanForMatch = (value: string) => (value || '').trim().normalize('NFKC').toLowerCase();
+
+export function matchRule(text: string, rule?: Rule): boolean {
   if (!rule || !rule.value) return false;
-  const t = (text || '').toLowerCase();
-  const v = rule.value.toLowerCase();
+  const t = cleanForMatch(text);
+  const v = cleanForMatch(rule.value);
   if (rule.op === 'equals') return t === v;
   if (rule.op === 'contains') return t.includes(v);
   return false;

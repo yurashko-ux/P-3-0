@@ -45,10 +45,12 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
+const cleanForMatch = (value: string) => (value || '').trim().normalize('NFKC').toLowerCase();
+
+export function matchRule(text: string, rule?: Rule): boolean {
   if (!rule || !rule.value) return false;
-  const needle = rule.value.toLowerCase();
-  const hay = (text || '').toLowerCase();
+  const needle = cleanForMatch(rule.value);
+  const hay = cleanForMatch(text);
   if (rule.op === 'equals') return hay === needle;
   // default contains
   return hay.includes(needle);
