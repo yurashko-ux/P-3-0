@@ -2,11 +2,21 @@
 // Пошук картки у KeyCRM з фокусом на БАЗОВУ воронку/статус (scope=campaign),
 // універсальне порівняння social_id (з/без "@") і, за потреби, перевірка social_name.
 
-const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/$/, "");
+const BASE_HINT =
+  "Додай KEYCRM_API_URL (рекомендовано) або KEYCRM_BASE_URL у Vercel Env.";
+const RAW_BASE = process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || "";
+const BASE: string | null = RAW_BASE ? RAW_BASE.replace(/\/+$/, "") : null;
 const TOKEN = process.env.KEYCRM_API_TOKEN || "";
 
+function ensureBase() {
+  if (!BASE) {
+    throw new Error(`KeyCRM base URL is not configured. ${BASE_HINT}`);
+  }
+  return BASE;
+}
+
 function kcUrl(path: string) {
-  return `${BASE}/${path.replace(/^\//, "")}`;
+  return `${ensureBase()}/${path.replace(/^\/+/, "")}`;
 }
 async function kcGet(path: string) {
   const res = await fetch(kcUrl(path), {
@@ -90,6 +100,10 @@ function readMeta(json: any) {
 
 /** Лише пошук (без move), з жорстким фільтром по pipeline/status коли scope=campaign */
 export async function findCardSimple(args: FindArgs) {
+  if (!BASE) {
+    console.warn(`[keycrm] Missing base URL. ${BASE_HINT}`);
+    return { ok: false, error: "missing_keycrm_base_url", hint: BASE_HINT };
+  }
   const scope: ScopeMode = args.scope || "global";
   const usernameRaw = norm(args.username);
   const usernameLow = low(args.username);
