@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
   // Optional verification of ManyChat secret if you use it:
   const mcToken = process.env.MC_TOKEN;
   const headerToken = req.headers.get('x-mc-token') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
-  if (mcToken && headerToken && headerToken !== mcToken) {
+  const queryToken = req.nextUrl.searchParams.get('token') || '';
+  if (mcToken && headerToken && headerToken !== mcToken && queryToken !== mcToken) {
     return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
   }
 
@@ -94,11 +95,37 @@ export async function POST(req: NextRequest) {
     // ignore log errors
   }
 
+  let sync: {
+    status: number;
+    ok: boolean;
+    body: any;
+  } | null = null;
+
+  try {
+    const pairUrl = `${req.nextUrl.origin}/api/keycrm/sync/pair`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const forwardToken = mcToken || headerToken || queryToken;
+    if (forwardToken) {
+      headers['Authorization'] = `Bearer ${forwardToken}`;
+    }
+    const res = await fetch(pairUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(norm),
+      cache: 'no-store',
+    });
+    const body = await res.json().catch(() => ({}));
+    sync = { status: res.status, ok: Boolean(body?.ok && res.ok), body };
+  } catch (err: any) {
+    sync = { status: 0, ok: false, body: { ok: false, error: 'delegate_failed', detail: String(err?.message || err) } };
+  }
+
   return NextResponse.json({
     ok: true,
     normalized: norm,
     matches,
     totals: { campaigns: campaigns.length, active: active.length },
+    sync,
   });
 }
 
