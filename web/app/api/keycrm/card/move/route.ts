@@ -49,12 +49,14 @@ export async function POST(req: NextRequest) {
   });
 
   if (!res.ok) {
+    const details = 'details' in res ? res.details : undefined;
+    const sent = 'sent' in res ? res.sent : undefined;
     return bad(502, 'keycrm move failed', {
-      attempt: res.details?.attempt ?? null,
-      status: res.details?.status ?? null,
-      responseText: res.details?.text ?? null,
-      responseJson: res.details?.json ?? null,
-      sent: res.sent ?? { card_id, to_pipeline_id, to_status_id },
+      attempt: details?.attempt ?? null,
+      status: details?.status ?? null,
+      responseText: details?.text ?? null,
+      responseJson: details?.json ?? null,
+      sent: sent ?? { card_id, to_pipeline_id, to_status_id },
       base: base.replace(/.{20}$/, '********'), // трохи маскуємо
     });
   }
