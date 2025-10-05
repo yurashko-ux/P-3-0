@@ -46,10 +46,16 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   const [baseStatusId, setBaseStatusId] = React.useState<string>('');
   React.useEffect(() => {
     const sts = getStatuses(pipes, basePipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === baseStatusId)) {
+    if (!sts.length) {
+      if (baseStatusId) {
+        setBaseStatusId('');
+      }
+      return;
+    }
+    if (!sts.find((s) => String(s.id) === baseStatusId)) {
       setBaseStatusId(String(sts[0].id));
     }
-  }, [basePipeId]);
+  }, [basePipeId, baseStatusId, pipes]);
 
   // Варіант №1
   const [v1Value, setV1Value] = React.useState('');
@@ -57,10 +63,16 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   const [v1StatusId, setV1StatusId] = React.useState<string>('');
   React.useEffect(() => {
     const sts = getStatuses(pipes, v1PipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === v1StatusId)) {
+    if (!sts.length) {
+      if (v1StatusId) {
+        setV1StatusId('');
+      }
+      return;
+    }
+    if (!sts.find((s) => String(s.id) === v1StatusId)) {
       setV1StatusId(String(sts[0].id));
     }
-  }, [v1PipeId]);
+  }, [pipes, v1PipeId, v1StatusId]);
 
   // Варіант №2
   const [v2Value, setV2Value] = React.useState('');
@@ -68,10 +80,16 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   const [v2StatusId, setV2StatusId] = React.useState<string>('');
   React.useEffect(() => {
     const sts = getStatuses(pipes, v2PipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === v2StatusId)) {
+    if (!sts.length) {
+      if (v2StatusId) {
+        setV2StatusId('');
+      }
+      return;
+    }
+    if (!sts.find((s) => String(s.id) === v2StatusId)) {
       setV2StatusId(String(sts[0].id));
     }
-  }, [v2PipeId]);
+  }, [pipes, v2PipeId, v2StatusId]);
 
   // Expire
   const [expDays, setExpDays] = React.useState<string>('7');
@@ -79,10 +97,16 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   const [expStatusId, setExpStatusId] = React.useState<string>('');
   React.useEffect(() => {
     const sts = getStatuses(pipes, expPipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === expStatusId)) {
+    if (!sts.length) {
+      if (expStatusId) {
+        setExpStatusId('');
+      }
+      return;
+    }
+    if (!sts.find((s) => String(s.id) === expStatusId)) {
       setExpStatusId(String(sts[0].id));
     }
-  }, [expPipeId]);
+  }, [expPipeId, expStatusId, pipes]);
 
   function toNum(v: string) {
     const n = Number(v);
