@@ -63,6 +63,18 @@ function Select({
   );
 }
 
+function formatConflictMessage(payload: any): string | null {
+  const conflicts = Array.isArray(payload?.conflicts) ? payload.conflicts : [];
+  if (!conflicts.length) return payload?.message ?? null;
+  const list = conflicts
+    .map(
+      (c: any) =>
+        `${String(c?.which || '').toUpperCase()} = "${String(c?.value || '')}" (кампанія ${c?.campaignId})`
+    )
+    .join('; ');
+  return payload?.message || `Значення варіантів вже використовуються: ${list}`;
+}
+
 export default function CampaignForm() {
   const router = useRouter();
 
@@ -181,6 +193,13 @@ export default function CampaignForm() {
         cache: "no-store",
       });
       const j = await r.json().catch(() => ({}));
+      if (r.status === 409) {
+        setSubmitErr(
+          formatConflictMessage(j) ||
+            "Значення варіантів мають бути унікальними між кампаніями."
+        );
+        return;
+      }
       if (!r.ok || !j?.ok) throw new Error(j?.error || `save failed (${r.status})`);
       window.location.href = "/admin/campaigns?created=1";
     } catch (err: any) {
