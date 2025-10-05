@@ -69,7 +69,10 @@ export default function NewCampaignPage() {
       try {
         setLoadingDicts(true);
         setError(null);
-        const r = await fetch('/api/keycrm/pipelines', { cache: 'no-store' });
+        const r = await fetch('/api/keycrm/pipelines', {
+          cache: 'no-store',
+          credentials: 'include',
+        });
         const js = await r.json();
         if (!alive) return;
         if (!js?.ok) throw new Error('Не вдалося завантажити воронки');
@@ -91,6 +94,7 @@ export default function NewCampaignPage() {
     try {
       const r = await fetch(`/api/keycrm/statuses/${encodeURIComponent(pipelineId)}`, {
         cache: 'no-store',
+        credentials: 'include',
       });
       const js = await r.json();
       if (!js?.ok) throw new Error('Не вдалося завантажити статуси');
@@ -167,6 +171,7 @@ export default function NewCampaignPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'include',
       });
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
