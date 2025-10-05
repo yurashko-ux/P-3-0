@@ -15,7 +15,11 @@ export type MoveAttemptResult = {
   json?: any;
 };
 
-const DEFAULT_BASE = (process.env.KEYCRM_BASE_URL || '').replace(/\/+$/, '');
+const DEFAULT_BASE = (
+  process.env.KEYCRM_BASE_URL && process.env.KEYCRM_BASE_URL.trim()
+    ? process.env.KEYCRM_BASE_URL
+    : 'https://openapi.keycrm.app/v1'
+).replace(/\/+$/, '');
 const DEFAULT_TOKEN = process.env.KEYCRM_API_TOKEN || '';
 
 function join(base: string, path: string) {
@@ -95,7 +99,7 @@ export type KeycrmMoveOptions = {
 
 export type KeycrmMoveResult =
   | ({ ok: true; via: string; status: number; response: any })
-  | ({ ok: false; error: string; details?: Omit<MoveAttemptResult, 'ok'>; need?: { token: boolean; baseUrl: boolean }; sent?: MoveRequest });
+  | ({ ok: false; error: string; details?: Omit<MoveAttemptResult, 'ok'>; need?: { token?: boolean; baseUrl?: boolean }; sent?: MoveRequest });
 
 function toStrOrNull(value: string | number | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -115,11 +119,11 @@ export async function keycrmMoveCard(options: KeycrmMoveOptions): Promise<Keycrm
   const token = (options.token ?? DEFAULT_TOKEN).trim();
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE).trim();
 
-  if (!token || !baseUrl) {
+  if (!token) {
     return {
       ok: false,
       error: 'keycrm_not_configured',
-      need: { token: !token, baseUrl: !baseUrl },
+      need: { token: true },
       sent: { card_id, to_pipeline_id, to_status_id },
     };
   }

@@ -20,10 +20,12 @@ function ok(data: any = {}) {
 
 export async function POST(req: NextRequest) {
   const token = process.env.KEYCRM_API_TOKEN || '';
-  const base = process.env.KEYCRM_BASE_URL || ''; // напр., https://api.keycrm.app/v1
-  if (!token || !base) {
+  const base =
+    (process.env.KEYCRM_BASE_URL && process.env.KEYCRM_BASE_URL.trim()) ||
+    'https://openapi.keycrm.app/v1';
+  if (!token) {
     return bad(500, 'keycrm not configured', {
-      need: { KEYCRM_API_TOKEN: !!token, KEYCRM_BASE_URL: !!base },
+      need: { KEYCRM_API_TOKEN: true },
     });
   }
 
