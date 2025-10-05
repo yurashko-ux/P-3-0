@@ -185,8 +185,16 @@ export default function EditCampaignPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const j = await r.json();
-      if (!j?.ok) throw new Error(j?.error || 'save failed');
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 409) {
+        const msg =
+          j?.message ||
+          j?.error ||
+          'Такий базовий статус уже використовується, оберіть інший';
+        setError(msg);
+        return;
+      }
+      if (!r.ok || !j?.ok) throw new Error(j?.error || `save failed (${r.status})`);
       router.push('/admin/campaigns?updated=1');
     } catch (e: any) {
       setError(String(e?.message || e));
