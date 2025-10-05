@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import { findCardSimple } from '@/lib/keycrm-find';
-import { keycrmMoveCard } from '@/lib/keycrm-move';
+import { keycrmMoveCard, type KeycrmMoveResult } from '@/lib/keycrm-move';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -240,14 +240,15 @@ export async function POST(req: NextRequest) {
     });
 
     if (!move.ok) {
+      const failure = move as Extract<KeycrmMoveResult, { ok: false }>;
       return NextResponse.json({
         ok: false,
-        error: move.error,
+        error: failure.error,
         campaign: campaignInfo,
         route: chosen.route,
         input: norm,
         lookup: find,
-        move,
+        move: failure,
       }, { status: 502 });
     }
 
