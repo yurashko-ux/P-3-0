@@ -2,6 +2,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
+import {
+  checkCampaignVariantsUniqueness,
+  summarizeConflicts,
+  type Campaign as UniqueCampaign,
+} from "@/lib/campaigns-unique";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -27,11 +32,85 @@ async function readIdsMerged(): Promise<string[]> {
 }
 async function writeIdsMerged(newId: string) {
   const merged = await readIdsMerged();
+  if (merged.includes(newId)) {
+    await kv.set(IDS_KEY, merged);
+    return;
+  }
   await kv.set(IDS_KEY, unique([newId, ...merged]));
+}
+
+async function readAllCampaigns(): Promise<Campaign[]> {
+  const ids = await readIdsMerged();
+  if (!ids.length) return [];
+  const items = await kv.mget<(Campaign | null)[]>(...ids.map((id) => ITEM_KEY(id)));
+  const out: Campaign[] = [];
+  items.forEach((it) => {
+    if (it && typeof it === "object") out.push(it as Campaign);
+  });
+  return out;
 }
 
 const pickStr = (x: any) => (x==null?undefined: (String(x).trim()||undefined));
 const pickNum = (x: any) => { const n=Number(x); return Number.isFinite(n)?n:undefined; };
+
+const pickVariantValue = (src: Record<string, any>, key: "v1" | "v2") => {
+  const rule = src?.rules?.[key];
+  if (rule && typeof rule === "object") {
+    const val = pickStr(rule.value);
+    if (val) return val;
+  }
+  const cond = src?.[`${key}_condition`];
+  if (cond && typeof cond === "object") {
+    const val = pickStr(cond.value);
+    if (val) return val;
+  }
+  const direct = src?.[key];
+  if (direct && typeof direct === "object") {
+    const val = pickStr((direct as any).value);
+    if (val) return val;
+  }
+  const candidates = [
+    src?.[`${key}_value`],
+    src?.[`${key}Value`],
+    direct,
+  ];
+  for (const cand of candidates) {
+    if (cand == null || typeof cand === "object") continue;
+    const val = pickStr(cand);
+    if (val) return val;
+  }
+  return undefined;
+};
+
+function toUniqueCampaignShape(raw: any): UniqueCampaign {
+  const rawId =
+    raw?.id ??
+    raw?.campaignId ??
+    raw?.campaign_id ??
+    raw?.ID ??
+    raw?.Id ??
+    raw?.uuid ??
+    raw?.uid;
+  const id =
+    typeof rawId === "number"
+      ? rawId
+      : typeof rawId === "string" && rawId.trim()
+      ? rawId.trim()
+      : rawId != null
+      ? String(rawId)
+      : "unknown";
+
+  const v1 = pickVariantValue(raw, "v1");
+  const v2 = pickVariantValue(raw, "v2");
+
+  const rules: UniqueCampaign["rules"] = {};
+  if (v1) rules.v1 = { op: raw?.rules?.v1?.op ?? "equals", value: v1 };
+  if (v2) rules.v2 = { op: raw?.rules?.v2?.op ?? "equals", value: v2 };
+
+  const shaped: UniqueCampaign = { id, name: raw?.name };
+  if (rules.v1 || rules.v2) shaped.rules = rules;
+  return shaped;
+}
 
 function targetFromFlat(src: Record<string, any>, prefix: string): Target | undefined {
   const get = (...ks: string[]) => ks.map(k => src[k]).find(v => v!=null);
@@ -70,14 +149,20 @@ export async function POST(req: NextRequest) {
   if (ct.includes("application/json")) { try { body = await req.json(); } catch {} }
   else { const fd = await req.formData().catch(()=>null); fd?.forEach((v,k)=> body[k]= typeof v==="string"? v:String(v)); }
 
-  const now = Date.now(); const id = String(now);
+  const now = Date.now();
+  const providedId =
+    pickStr(body.id) ??
+    pickStr(body.ID) ??
+    pickStr(body.campaignId) ??
+    pickStr(body.campaign_id);
+  const id = providedId ?? String(now);
   const base = targetFromFlat(body,"base");
   const t1   = targetFromFlat(body,"t1");
   const t2   = targetFromFlat(body,"t2");
   const texp = targetFromFlat(body,"texp");
 
-  const v1 = pickStr(body.v1);
-  const v2 = pickStr(body.v2);
+  const v1 = pickVariantValue(body, "v1");
+  const v2 = pickVariantValue(body, "v2");
 
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
@@ -96,6 +181,25 @@ export async function POST(req: NextRequest) {
     ...(expDays!=null ? { expDays, exp: expDays } : {}), // збережемо ще й як `exp` для зручності рендеру
     counters: { v1:0, v2:0, exp:0 }, createdAt: now
   };
+
+  const existing = await readAllCampaigns();
+  const candidateUnique = toUniqueCampaignShape({ ...campaign, rules: body?.rules });
+  const candidateIdStr = String(candidateUnique.id ?? "");
+  const othersUnique = existing
+    .map((it) => toUniqueCampaignShape(it))
+    .filter((it) => String(it.id ?? "") !== candidateIdStr);
+  const uniqueness = checkCampaignVariantsUniqueness(candidateUnique, othersUnique);
+  if (!uniqueness.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "variants_conflict",
+        message: summarizeConflicts(uniqueness),
+        conflicts: uniqueness.conflicts,
+      },
+      { status: 409 }
+    );
+  }
 
   await kv.set(ITEM_KEY(id), campaign);
   await writeIdsMerged(id);

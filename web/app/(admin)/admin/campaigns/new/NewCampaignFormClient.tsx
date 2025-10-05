@@ -44,6 +44,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   const [name, setName] = React.useState('');
   const [basePipeId, setBasePipeId] = React.useState<string>(pipes[0]?.id ? String(pipes[0].id) : '');
   const [baseStatusId, setBaseStatusId] = React.useState<string>('');
+  const [error, setError] = React.useState<string | null>(null);
   React.useEffect(() => {
     const sts = getStatuses(pipes, basePipeId);
     if (sts.length && !sts.find((s) => String(s.id) === baseStatusId)) {
@@ -91,6 +92,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
 
     const body: any = {
       name: name?.trim() || 'UI-created',
@@ -133,8 +135,24 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
       body: JSON.stringify(body),
     });
     const j = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      const conflicts = Array.isArray(j?.conflicts)
+        ? j.conflicts
+            .map((c: any) =>
+              `${String(c?.which || '').toUpperCase()} = "${String(c?.value || '')}" (кампанія ${c?.campaignId})`
+            )
+            .join('; ')
+        : null;
+      setError(
+        j?.message ||
+          (conflicts
+            ? `Значення варіантів вже використовуються: ${conflicts}`
+            : 'Значення варіантів мають бути унікальними між кампаніями.')
+      );
+      return;
+    }
     if (!res.ok || !j?.ok) {
-      alert(`Не вдалося зберегти: ${j?.error || res.statusText}`);
+      setError(j?.error || j?.message || res.statusText || 'Не вдалося зберегти кампанію');
       return;
     }
     window.location.href = '/admin/campaigns?created=1';
@@ -142,6 +160,20 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
 
   return (
     <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 /* було 18 */ }}>
+      {error && (
+        <div
+          style={{
+            border: '1px solid #fca5a5',
+            background: '#fee2e2',
+            color: '#b91c1c',
+            padding: '10px 14px',
+            borderRadius: 12,
+            fontSize: 14,
+          }}
+        >
+          {error}
+        </div>
+      )}
       {/* Прибрали дубльований <h1>. H1 вже рендериться в page.tsx */}
 
       {/* БАЗА — 3 колонки */}
