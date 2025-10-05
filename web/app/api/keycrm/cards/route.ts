@@ -3,13 +3,17 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const BASE = process.env.KEYCRM_BASE_URL ?? "https://openapi.keycrm.app/v1";
+const BASE = (
+  process.env.KEYCRM_API_URL ||
+  process.env.KEYCRM_BASE_URL ||
+  "https://openapi.keycrm.app/v1"
+).replace(/\/+$/, "");
 const TOKEN = process.env.KEYCRM_API_TOKEN ?? "";
 
 // внутрішній хелпер для запитів до KeyCRM
 async function kcFetch(path: string, init?: RequestInit) {
   if (!TOKEN) {
-    throw new Error("Missing KEYCRM_API_TOKEN");
+    throw new Error("Missing KEYCRM_API_TOKEN (check KEYCRM_API_URL/KEYCRM_BASE_URL)");
   }
   const res = await fetch(`${BASE}${path}`, {
     // KeyCRM очікує Bearer токен

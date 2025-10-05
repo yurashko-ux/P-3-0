@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const BASE = process.env.KEYCRM_BASE_URL ?? "https://openapi.keycrm.app/v1";
+const BASE = (
+  process.env.KEYCRM_API_URL ||
+  process.env.KEYCRM_BASE_URL ||
+  "https://openapi.keycrm.app/v1"
+).replace(/\/+$/, "");
 const TOKEN = process.env.KEYCRM_API_TOKEN;
 const ADMIN_PASS = process.env.ADMIN_PASS;
 
@@ -20,7 +24,10 @@ export async function GET(req: Request) {
   try {
     if (!TOKEN) {
       return NextResponse.json(
-        { ok: false, error: "Missing KEYCRM_API_TOKEN env" },
+        {
+          ok: false,
+          error: "Missing KEYCRM_API_TOKEN env (check KEYCRM_API_URL/KEYCRM_BASE_URL)",
+        },
         { status: 500 }
       );
     }

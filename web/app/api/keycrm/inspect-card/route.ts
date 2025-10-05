@@ -5,7 +5,11 @@ import { cookies } from "next/headers";
 export const dynamic = "force-dynamic";
 
 const ADMIN = process.env.ADMIN_PASS ?? "";
-const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+const BASE = (
+  process.env.KEYCRM_API_URL ||
+  process.env.KEYCRM_BASE_URL ||
+  "https://openapi.keycrm.app/v1"
+).replace(/\/+$/, "");
 const TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || "";
 
 function okAuth(req: Request) {
@@ -19,7 +23,13 @@ function okAuth(req: Request) {
 
 async function kcGet(path: string) {
   if (!TOKEN) {
-    return { ok: false, status: 401, json: { error: "KEYCRM token missing" } };
+    return {
+      ok: false,
+      status: 401,
+      json: {
+        error: "KEYCRM token missing (check KEYCRM_API_TOKEN and KEYCRM_API_URL/KEYCRM_BASE_URL)",
+      },
+    };
   }
   const r = await fetch(`${BASE}${path}`, {
     headers: { Authorization: `Bearer ${TOKEN}` },
