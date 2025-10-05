@@ -2,11 +2,15 @@
 // Пошук картки у KeyCRM з фокусом на БАЗОВУ воронку/статус (scope=campaign),
 // універсальне порівняння social_id (з/без "@") і, за потреби, перевірка social_name.
 
-const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/$/, "");
+const DEFAULT_BASE = "https://openapi.keycrm.app/v1";
+const rawBase = process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || "";
+const BASE = (rawBase || DEFAULT_BASE).replace(/\/+$/, "");
+const isBaseConfigured = Boolean(rawBase);
 const TOKEN = process.env.KEYCRM_API_TOKEN || "";
 
 function kcUrl(path: string) {
-  return `${BASE}/${path.replace(/^\//, "")}`;
+  const cleanPath = path.replace(/^\/+/, "");
+  return cleanPath ? `${BASE}/${cleanPath}` : BASE;
 }
 async function kcGet(path: string) {
   const res = await fetch(kcUrl(path), {
@@ -105,6 +109,13 @@ export async function findCardSimple(args: FindArgs) {
 
   if (!TOKEN) {
     return { ok: false, error: "missing_keycrm_token", hint: "Додай KEYCRM_API_TOKEN у Vercel Env." };
+  }
+  if (!isBaseConfigured) {
+    return {
+      ok: false,
+      error: "missing_keycrm_url",
+      hint: "Додай KEYCRM_API_URL або KEYCRM_BASE_URL у Vercel Env.",
+    };
   }
   if (!usernameRaw && !fullName) {
     return { ok: false, error: "no_lookup_keys", hint: "Передай username або full_name." };
