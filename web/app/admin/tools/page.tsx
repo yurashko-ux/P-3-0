@@ -16,6 +16,11 @@ export default function ToolsIndex() {
             Move tester (/api/keycrm/card/move)
           </a>
         </li>
+        <li>
+          <a href="/admin/tools/expire" className="text-blue-700 hover:underline">
+            Manual EXP collect (cmp:base-entered:* helper)
+          </a>
+        </li>
       </ul>
       <p className="mt-4 text-sm text-gray-500">Переконайся, що ти увійшов через /admin/login.</p>
     </div>
