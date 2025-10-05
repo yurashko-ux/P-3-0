@@ -72,6 +72,56 @@ export async function POST(req: NextRequest) {
 
   const norm = normalize(payload);
 
+  type PairResponse = {
+    ok: boolean;
+    matched?: boolean;
+    route?: 'v1' | 'v2' | 'none';
+    campaign?: { id: string; name: string } | null;
+    error?: string;
+  };
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (mcToken) headers['x-mc-token'] = mcToken;
+
+  let pair: PairResponse | null = null;
+  try {
+    const pairUrl = new URL('/api/keycrm/sync/pair', req.url);
+    const resp = await fetch(pairUrl.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(norm),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      console.error('ManyChat → KeyCRM pair failed', {
+        status: resp.status,
+        body: text,
+      });
+      const status = resp.status >= 500 ? resp.status : 502;
+      return NextResponse.json(
+        { ok: false, error: 'pair request failed', status: resp.status, detail: text },
+        { status },
+      );
+    }
+    pair = await resp.json().catch(() => null);
+    if (!pair || pair.ok === false) {
+      console.error('ManyChat → KeyCRM pair responded with error', { pair });
+      return NextResponse.json(
+        { ok: false, error: pair?.error || 'pair response error' },
+        { status: 500 },
+      );
+    }
+    if (!pair.matched) {
+      console.warn('ManyChat → KeyCRM pair unmatched', { norm, pair });
+    }
+  } catch (err) {
+    console.error('ManyChat → KeyCRM pair exception', err);
+    return NextResponse.json(
+      { ok: false, error: 'pair request exception' },
+      { status: 502 },
+    );
+  }
+
   // Read campaigns via LIST index
   const campaigns = (await kvRead.listCampaigns()) as Campaign[];
   const active = campaigns.filter(c => c.active !== false);
@@ -99,6 +149,9 @@ export async function POST(req: NextRequest) {
     normalized: norm,
     matches,
     totals: { campaigns: campaigns.length, active: active.length },
+    keycrm: pair?.matched
+      ? { matched: true, route: pair.route, campaign: pair.campaign ?? undefined }
+      : { matched: false },
   });
 }
 
