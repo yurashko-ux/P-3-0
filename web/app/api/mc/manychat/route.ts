@@ -5,11 +5,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { cleanInput, matchRuleNormalized, type Rule } from '@/lib/text-match';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
   id: string;
   name: string;
@@ -24,35 +24,31 @@ type Campaign = {
   exp_count?: number;
 };
 
-function normalize(body: any) {
+export function normalize(body: any) {
   // Fallback-safe extraction for ManyChat IG → { title, handle, text }
-  const title =
+  const title = cleanInput(
     body?.message?.title ??
-    body?.data?.title ??
-    body?.title ??
-    'IG Message';
-  const handle =
+      body?.data?.title ??
+      body?.title,
+    'IG Message'
+  );
+  const handle = cleanInput(
     body?.subscriber?.username ??
-    body?.user?.username ??
-    body?.sender?.username ??
-    body?.handle ??
-    '';
-  const text =
+      body?.user?.username ??
+      body?.sender?.username ??
+      body?.handle
+  );
+  const text = cleanInput(
     body?.message?.text ??
-    body?.data?.text ??
-    body?.text ??
-    body?.message ??
-    '';
+      body?.data?.text ??
+      body?.text ??
+      body?.message
+  );
   return { title, handle, text };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const t = (text || '').toLowerCase();
-  const v = rule.value.toLowerCase();
-  if (rule.op === 'equals') return t === v;
-  if (rule.op === 'contains') return t.includes(v);
-  return false;
+export function matchRule(text: string, rule?: Rule): boolean {
+  return matchRuleNormalized(text, rule);
 }
 
 export async function POST(req: NextRequest) {

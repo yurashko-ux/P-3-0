@@ -8,11 +8,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { cleanInput, matchRuleNormalized, type Rule } from '@/lib/text-match';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
 type Campaign = {
   id: string;
   name: string;
@@ -25,8 +25,8 @@ type Campaign = {
 
 // ----- helpers -----
 
-function normStr(s: unknown) {
-  return (typeof s === 'string' ? s : '').trim();
+export function normStr(s: unknown) {
+  return cleanInput(s);
 }
 
 function extractNormalized(body: any) {
@@ -45,13 +45,8 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const needle = rule.value.toLowerCase();
-  const hay = (text || '').toLowerCase();
-  if (rule.op === 'equals') return hay === needle;
-  // default contains
-  return hay.includes(needle);
+export function matchRule(text: string, rule?: Rule): boolean {
+  return matchRuleNormalized(text, rule);
 }
 
 function chooseRoute(text: string, rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2' | 'none' {
