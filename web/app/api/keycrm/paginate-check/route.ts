@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+const BASE = (
+  process.env.KEYCRM_API_URL ||
+  process.env.KEYCRM_BASE_URL ||
+  "https://openapi.keycrm.app/v1"
+).replace(/\/+$/, "");
 const TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || "";
 
 function headers() {
@@ -11,7 +15,15 @@ function headers() {
 }
 
 async function kcGet(path: string) {
-  if (!TOKEN) return { ok: false, status: 401, json: { error: "KEYCRM token missing" }, url: BASE + path };
+  if (!TOKEN)
+    return {
+      ok: false,
+      status: 401,
+      json: {
+        error: "KEYCRM token missing (check KEYCRM_API_TOKEN and KEYCRM_API_URL/KEYCRM_BASE_URL)",
+      },
+      url: BASE + path,
+    };
   const url = `${BASE}${path}`;
   const r = await fetch(url, { headers: headers(), cache: "no-store" }).catch(() => null);
   if (!r) return { ok: false, status: 502, json: { error: "fetch failed" }, url };
