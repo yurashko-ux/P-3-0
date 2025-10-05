@@ -21,7 +21,17 @@ export type Campaign = {
   t1?: Target;
   t2?: Target;
   texp?: Target;
+  expDays?: number;
+  exp?: number | { days?: number; pipeline?: string; status?: string; pipeline_id?: string; status_id?: string };
+  expireDays?: number;
+  expire?: number;
+  vexp?: number;
+  rules?: Record<string, any>;
   counters: Counters;
+  v1_count?: number;
+  v2_count?: number;
+  exp_count?: number;
+  active?: boolean;
   deleted?: boolean;
   createdAt: number;    // epoch ms
 };
