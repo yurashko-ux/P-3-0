@@ -119,7 +119,7 @@ export async function keycrmMoveCard(options: KeycrmMoveOptions): Promise<Keycrm
     return {
       ok: false,
       error: 'keycrm_not_configured',
-      need: { token: Boolean(token), baseUrl: Boolean(baseUrl) },
+      need: { token: !token, baseUrl: !baseUrl },
       sent: { card_id, to_pipeline_id, to_status_id },
     };
   }
