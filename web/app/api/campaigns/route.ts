@@ -19,6 +19,35 @@ type Campaign = {
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
 
+const normalizeVariant = (value: unknown): string | null => {
+  if (value == null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  return normalized.length ? normalized : null;
+};
+
+const extractVariantValue = (source: any, key: "v1" | "v2") => {
+  const direct = source?.[key];
+  const fromRules = source?.rules?.[key]?.value;
+  return pickStr(direct ?? fromRules);
+};
+
+const collectNormalizedVariants = (source: any): Set<string> => {
+  const possible = [
+    source?.v1,
+    source?.v2,
+    source?.variant1?.value,
+    source?.variant2?.value,
+    source?.rules?.v1?.value,
+    source?.rules?.v2?.value,
+  ];
+
+  const normalized = possible
+    .map((value) => normalizeVariant(value))
+    .filter((value): value is string => Boolean(value));
+
+  return new Set(normalized);
+};
+
 async function readIdsMerged(): Promise<string[]> {
   const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
   let list: string[] = [];
@@ -76,8 +105,75 @@ export async function POST(req: NextRequest) {
   const t2   = targetFromFlat(body,"t2");
   const texp = targetFromFlat(body,"texp");
 
-  const v1 = pickStr(body.v1);
-  const v2 = pickStr(body.v2);
+  const v1 = extractVariantValue(body, "v1");
+  const v2 = extractVariantValue(body, "v2");
+
+  const candidateVariants = [
+    { key: "v1" as const, value: v1, norm: normalizeVariant(v1) },
+    { key: "v2" as const, value: v2, norm: normalizeVariant(v2) },
+  ].filter((item): item is { key: "v1" | "v2"; value: string; norm: string } => Boolean(item.norm));
+
+  const uniqueNorms = new Set(candidateVariants.map((item) => item.norm));
+
+  if (candidateVariants.length !== uniqueNorms.size) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "variant_conflict_same_campaign",
+        message: "V1 і V2 повинні мати різні значення.",
+      },
+      { status: 409 }
+    );
+  }
+
+  if (candidateVariants.length > 0) {
+    const ids = await readIdsMerged();
+
+    if (ids.length) {
+      const existingItems = await kv
+        .mget<(Campaign | null)[]>(...ids.map((id) => ITEM_KEY(id)))
+        .catch(() => [] as (Campaign | null)[]);
+
+      const conflicts: Array<{
+        variant: "v1" | "v2";
+        value: string;
+        campaignId: string;
+        campaignName?: string;
+      }> = [];
+
+      existingItems.forEach((item, index) => {
+        if (!item) return;
+        const campaignId = pickStr(item.id) ?? ids[index] ?? "";
+        if (!campaignId) return;
+
+        const normalizedExisting = collectNormalizedVariants(item);
+        if (!normalizedExisting.size) return;
+
+        candidateVariants.forEach((candidate) => {
+          if (normalizedExisting.has(candidate.norm)) {
+            conflicts.push({
+              variant: candidate.key,
+              value: candidate.value,
+              campaignId,
+              campaignName: pickStr(item.name) ?? undefined,
+            });
+          }
+        });
+      });
+
+      if (conflicts.length > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "variant_conflict",
+            message: "Значення V1/V2 повинні бути унікальними серед усіх кампаній.",
+            conflicts,
+          },
+          { status: 409 }
+        );
+      }
+    }
+  }
 
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
