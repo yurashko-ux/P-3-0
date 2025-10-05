@@ -33,8 +33,8 @@ export function getKeycrmMoveConfig(): MoveConfig | MissingConfig {
   if (!baseUrl || !token) {
     return {
       need: {
-        KEYCRM_API_TOKEN: Boolean(token),
-        KEYCRM_BASE_URL: Boolean(baseUrl),
+        KEYCRM_API_TOKEN: !token,
+        KEYCRM_BASE_URL: !baseUrl,
       },
     };
   }

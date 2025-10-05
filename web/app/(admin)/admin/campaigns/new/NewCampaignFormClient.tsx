@@ -47,6 +47,9 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   React.useEffect(() => {
     const sts = getStatuses(pipes, basePipeId);
     if (!sts.length) {
+      if (baseStatusId) {
+        setBaseStatusId('');
+      }
       return;
     }
     if (!sts.find((s) => String(s.id) === baseStatusId)) {
@@ -61,6 +64,9 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   React.useEffect(() => {
     const sts = getStatuses(pipes, v1PipeId);
     if (!sts.length) {
+      if (v1StatusId) {
+        setV1StatusId('');
+      }
       return;
     }
     if (!sts.find((s) => String(s.id) === v1StatusId)) {
@@ -75,6 +81,9 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   React.useEffect(() => {
     const sts = getStatuses(pipes, v2PipeId);
     if (!sts.length) {
+      if (v2StatusId) {
+        setV2StatusId('');
+      }
       return;
     }
     if (!sts.find((s) => String(s.id) === v2StatusId)) {
@@ -89,6 +98,9 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   React.useEffect(() => {
     const sts = getStatuses(pipes, expPipeId);
     if (!sts.length) {
+      if (expStatusId) {
+        setExpStatusId('');
+      }
       return;
     }
     if (!sts.find((s) => String(s.id) === expStatusId)) {
