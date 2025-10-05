@@ -181,6 +181,14 @@ export default function CampaignForm() {
         cache: "no-store",
       });
       const j = await r.json().catch(() => ({}));
+      if (r.status === 409) {
+        const msg =
+          j?.message ||
+          j?.error ||
+          "Такий базовий статус уже використовується, оберіть інший";
+        setSubmitErr(msg);
+        return;
+      }
       if (!r.ok || !j?.ok) throw new Error(j?.error || `save failed (${r.status})`);
       window.location.href = "/admin/campaigns?created=1";
     } catch (err: any) {

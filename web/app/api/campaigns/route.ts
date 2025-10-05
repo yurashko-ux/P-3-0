@@ -2,11 +2,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
+import {
+  CAMPAIGN_ITEM_KEY,
+  readCampaignIds,
+  writeCampaignId,
+  findActiveBaseConflict,
+} from "@/lib/campaigns";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const IDS_KEY = "cmp:ids";
-const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 type Target = { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
 type Counters = { v1: number; v2: number; exp: number };
@@ -16,19 +19,6 @@ type Campaign = {
   expDays?: number; expireDays?: number; expire?: number; vexp?: number; exp?: number; // ⬅️ додав exp
   counters: Counters; createdAt: number;
 };
-
-const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
-
-async function readIdsMerged(): Promise<string[]> {
-  const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
-  let list: string[] = [];
-  try { list = await kv.lrange<string>(IDS_KEY, 0, -1); } catch {}
-  return unique([...(Array.isArray(arr)?arr:[]), ...(Array.isArray(list)?list:[])]);
-}
-async function writeIdsMerged(newId: string) {
-  const merged = await readIdsMerged();
-  await kv.set(IDS_KEY, unique([newId, ...merged]));
-}
 
 const pickStr = (x: any) => (x==null?undefined: (String(x).trim()||undefined));
 const pickNum = (x: any) => { const n=Number(x); return Number.isFinite(n)?n:undefined; };
@@ -54,9 +44,9 @@ async function enrichNames(t?: Target){ if(!t) return t; const out={...t};
 
 // ---------- GET ----------
 export async function GET() {
-  const ids = await readIdsMerged();
+  const ids = await readCampaignIds();
   if (!ids.length) return NextResponse.json<Campaign[]>([]);
-  const items = await kv.mget<(Campaign|null)[]>(...ids.map((id)=>ITEM_KEY(id)));
+  const items = await kv.mget<(Campaign|null)[]>(...ids.map((id)=>CAMPAIGN_ITEM_KEY(id)));
   const out: Campaign[] = [];
   items.forEach((it)=> it && typeof it==="object" && out.push(it as Campaign));
   out.sort((a,b)=> (b.createdAt??0)-(a.createdAt??0));
@@ -90,6 +80,32 @@ export async function POST(req: NextRequest) {
 
   const [eBase,e1,e2,eExp] = await Promise.all([enrichNames(base),enrichNames(t1),enrichNames(t2),enrichNames(texp)]);
 
+  const rawActive = (() => {
+    if (typeof body?.active === "boolean") return body.active;
+    if (typeof body?.enabled === "boolean") return body.enabled;
+    const as = typeof body?.active === "string" ? body.active.trim().toLowerCase() : "";
+    if (as) return !(as === "false" || as === "0");
+    const es = typeof body?.enabled === "string" ? body.enabled.trim().toLowerCase() : "";
+    if (es) return !(es === "false" || es === "0");
+    return undefined;
+  })();
+  const willBeActive = rawActive ?? true;
+
+  if (willBeActive) {
+    const conflict = await findActiveBaseConflict(eBase);
+    if (conflict) {
+      return NextResponse.json(
+        {
+          ok:false,
+          error:"duplicate-base",
+          message:"Активна кампанія з таким базовим статусом уже існує",
+          conflictId: conflict.id,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const campaign: Campaign = {
     id, name: pickStr(body.name) ?? "Без назви",
     base: eBase, t1: e1, t2: e2, texp: eExp, v1, v2,
@@ -97,8 +113,8 @@ export async function POST(req: NextRequest) {
     counters: { v1:0, v2:0, exp:0 }, createdAt: now
   };
 
-  await kv.set(ITEM_KEY(id), campaign);
-  await writeIdsMerged(id);
+  await kv.set(CAMPAIGN_ITEM_KEY(id), campaign);
+  await writeCampaignId(id);
 
   return NextResponse.json({ ok:true, id }, { status: 201 });
 }
