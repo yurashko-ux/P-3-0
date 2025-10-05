@@ -73,6 +73,10 @@ export const redis = {
     // LPUSH key v1 v2 ...
     return callSingle<number>(['LPUSH', key, ...values]);
   },
+  async ltrim(key: string, start: number, stop: number) {
+    // LTRIM key start stop
+    return callSingle<number>(['LTRIM', key, String(start), String(stop)]);
+  },
   async lrange(key: string, start: number, stop: number) {
     // LRANGE key start stop
     return callSingle<string[]>(['LRANGE', key, String(start), String(stop)]);
