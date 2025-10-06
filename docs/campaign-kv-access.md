@@ -102,6 +102,16 @@ Content-Type: application/json; charset=utf-8
 >   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | jq .
 > ```
 >
+> Якщо `jq` у системі немає, приберіть пайп (`| jq .`) або скористайтеся `python -m json.tool`:
+>
+> ```bash
+> curl -fsS \
+>   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | python -m json.tool
+> ```
+>
+> Помилка `ERR wrong number of arguments for 'keys' command` означає, що запит випадково пішов на `/keys` без закодованої `*` або з параметрами, тому перевірте, що використовується саме шлях `/lrange/...` без додаткових query-параметрів і всі двокрапки (`:`) замінено на `%3A`.
+>
 > Якщо відповідь — масив із ідентифікаторами (наприклад, `["cmp:item:123","cmp:item:456"]`), значить, дані кампаній присутні й `kvRead.listCampaigns` зможе їх побачити. Статус 200 із `[]` означає, що доступ є, але індекс поки порожній; у такому випадку перевірте, що процес синхронізації KeyCRM → KV відпрацьовує коректно.
 >
 > Далі можна вибрати один з ідентифікаторів та перечитати саму кампанію (ключ `cmp:item:<ID>` зберігається як JSON-рядок):
@@ -111,6 +121,8 @@ Content-Type: application/json; charset=utf-8
 >   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
 >   "https://hot-louse-21041.upstash.io/get/cmp%3Aitem%3A123" | jq .
 > ```
+>
+> > **Примітка.** На деяких macOS-консолях `jq` відсутнє за замовчуванням. Його можна встановити через `brew install jq` або замінити на `python -m json.tool`, як показано вище.
 >
 > Підставте потрібний ідентифікатор замість `123`, щоб перевірити, чи містить кампанія очікувані V1/V2.
 
@@ -135,6 +147,16 @@ Content-Type: application/json; charset=utf-8
      -H "Authorization: Bearer $KV_REST_API_TOKEN" \
      "$KV_REST_API_URL/lrange/cmp%3Aids/0/-1" | jq .
    ```
+
+   Якщо побачите згадану вище помилку про `keys`, переконайтеся, що в шляху немає символу `*` без URL-кодування. У крайньому разі можна обійти індекс через `SCAN`:
+
+   ```bash
+   curl -fsS \
+     -H "Authorization: Bearer $KV_REST_API_TOKEN" \
+     "$KV_REST_API_URL/scan/0/cmp%3A%2A/5" | jq .
+   ```
+
+   Команда поверне масив на кшталт `["cmp:ids","cmp:item:123", ...]`, звідки можна взяти потрібний ключ.
 
    *Як інтерпретувати:*
    - JSON-масив зі значеннями → REST-шлях повертає фактичні дані індексу.
