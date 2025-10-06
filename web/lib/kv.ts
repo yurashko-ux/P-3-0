@@ -1,5 +1,6 @@
 // web/lib/kv.ts
 // ❗️НОВЕ: у listCampaigns() додаємо __index_id і гарантуємо obj.id = __index_id, якщо збережений id зламаний.
+import { readFile } from 'node:fs/promises';
 
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
@@ -131,6 +132,128 @@ function normalizeIdRaw(raw: any, depth = 6): string {
   return '';
 }
 
+type OfflineSnapshot = {
+  ids: string[];
+  items: Map<string, string>;
+};
+
+let offlineSnapshotPromise: Promise<OfflineSnapshot | null> | null = null;
+
+async function loadOfflineSnapshot(): Promise<OfflineSnapshot | null> {
+  if (offlineSnapshotPromise) return offlineSnapshotPromise;
+
+  offlineSnapshotPromise = (async () => {
+    const inline = (process.env.KV_CAMPAIGNS_SNAPSHOT_JSON || '').trim();
+    const filePath = (process.env.KV_CAMPAIGNS_SNAPSHOT_FILE || '').trim();
+
+    let payload = inline;
+    if (!payload && filePath) {
+      try {
+        payload = await readFile(filePath, 'utf8');
+      } catch {
+        payload = '';
+      }
+    }
+
+    if (!payload) return null;
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+
+    const ids = new Set<string>();
+    const items = new Map<string, string>();
+
+    const pushCampaign = (value: any, hint?: any) => {
+      if (value == null) return;
+
+      let obj: any = value;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        try {
+          obj = JSON.parse(trimmed);
+        } catch {
+          obj = { id: trimmed };
+        }
+      }
+
+      if (typeof obj !== 'object' || Array.isArray(obj)) return;
+
+      const candidates = [
+        obj.id,
+        obj.__index_id,
+        obj.campaignId,
+        obj.campaign_id,
+        obj.key,
+        hint,
+      ];
+
+      let resolved = '';
+      for (const candidate of candidates) {
+        const normalized = normalizeIdRaw(candidate);
+        if (normalized) {
+          resolved = normalized;
+          break;
+        }
+      }
+
+      if (!resolved) return;
+
+      ids.add(resolved);
+      try {
+        items.set(resolved, JSON.stringify(obj));
+      } catch {
+        // Якщо об'єкт неможливо серіалізувати, ігноруємо його.
+      }
+    };
+
+    if (Array.isArray(parsed)) {
+      parsed.forEach((entry) => pushCampaign(entry));
+    } else if (parsed && typeof parsed === 'object') {
+      const candidateArrays = [
+        parsed.index,
+        parsed.ids,
+        parsed.list,
+        parsed.data,
+        parsed.campaigns,
+      ];
+
+      for (const arr of candidateArrays) {
+        if (!Array.isArray(arr)) continue;
+        arr.forEach((entry) => {
+          if (parsed.items && typeof parsed.items === 'object') {
+            const normalized = normalizeIdRaw(entry);
+            if (normalized && normalized in parsed.items) {
+              pushCampaign((parsed.items as Record<string, any>)[normalized], normalized);
+              return;
+            }
+          }
+          pushCampaign(entry);
+        });
+      }
+
+      if (parsed.items && typeof parsed.items === 'object') {
+        for (const [key, value] of Object.entries(parsed.items as Record<string, any>)) {
+          pushCampaign(value, key);
+        }
+      }
+    }
+
+    if (!ids.size) return null;
+
+    return {
+      ids: Array.from(ids),
+      items,
+    } satisfies OfflineSnapshot;
+  })();
+
+  return offlineSnapshotPromise;
+}
+
 export const kvRead = {
   async getRaw(key: string) {
     return kvGetRaw(key);
@@ -170,6 +293,16 @@ export const kvRead = {
         ids.push(id);
       }
     }
+
+    const offline = await loadOfflineSnapshot();
+    if (offline) {
+      for (const offlineId of offline.ids) {
+        if (!offlineId || seen.has(offlineId)) continue;
+        seen.add(offlineId);
+        ids.push(offlineId);
+      }
+    }
+
     const out: T[] = [];
 
     for (const indexId of ids) {
@@ -178,9 +311,16 @@ export const kvRead = {
         campaignKeys.ITEM_KEY(indexId),
         ...campaignKeys.ALT_ITEM_KEYS.map((fn) => fn(indexId)),
       ];
+      if (offline?.items.has(indexId)) {
+        raw = offline.items.get(indexId) ?? null;
+      }
       for (const key of itemKeys) {
-        raw = await kvGetRaw(key);
         if (raw && raw !== 'null' && raw !== 'undefined') break;
+        const candidate = await kvGetRaw(key);
+        if (candidate && candidate !== 'null' && candidate !== 'undefined') {
+          raw = candidate;
+          break;
+        }
       }
       if (!raw || raw === 'null' || raw === 'undefined') continue;
       try {
