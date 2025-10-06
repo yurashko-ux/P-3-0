@@ -18,13 +18,12 @@ async function kcGet(path: string) {
 }
 
 type ScopeMode = "campaign" | "global";
-type Strategy = "social" | "title" | "both";
+type Strategy = "social" | "full_name" | "both";
 type TitleMode = "exact" | "contains";
 
 type FindArgs = {
   social_id?: string;      // contact.social_id (може містити "@")
-  username?: string;       // застарілий синонім ManyChat (буде видалено)
-  full_name?: string;      // для title "Чат з <ПІБ>"
+  full_name?: string;      // contact.full_name або назва картки
   social_name?: string;    // instagram | telegram | ...
   pipeline_id?: number;    // якщо scope=campaign
   status_id?: number;      // якщо scope=campaign
@@ -92,13 +91,12 @@ function readMeta(json: any) {
 /** Лише пошук (без move), з жорстким фільтром по pipeline/status коли scope=campaign */
 export async function findCardSimple(args: FindArgs) {
   const scope: ScopeMode = args.scope || "global";
-  const socialIdRaw = norm(args.social_id || args.username);
-  const socialIdLow = low(args.social_id || args.username);
-  const socialIdNoAt = stripAt(socialIdLow);
+  const socialIdRaw = norm(args.social_id);
+  const socialIdLow = low(args.social_id);
+  const socialIdNoAt = socialIdLow ? stripAt(socialIdLow) : "";
 
-  const deprecatedUsernameRaw = args.username ? norm(args.username) : null;
-
-  const fullName = norm(args.full_name);
+  const fullNameRaw = norm(args.full_name);
+  const fullNameLow = low(args.full_name);
   const socialName = low(args.social_name);
 
   const max_pages = Math.max(1, Math.min(50, args.max_pages ?? 3));
@@ -109,7 +107,7 @@ export async function findCardSimple(args: FindArgs) {
   if (!TOKEN) {
     return { ok: false, error: "missing_keycrm_token", hint: "Додай KEYCRM_API_TOKEN у Vercel Env." };
   }
-  if (!socialIdRaw && !fullName) {
+  if (!socialIdRaw && !fullNameRaw) {
     return { ok: false, error: "no_lookup_keys", hint: "Передай social_id або full_name." };
   }
   if (scope === "campaign" && (!args.pipeline_id || !args.status_id)) {
@@ -170,8 +168,10 @@ export async function findCardSimple(args: FindArgs) {
       const title = norm(c.title);
       const contactSocialRaw = norm(c.contact?.social_id || "");
       const contactSocialLow = low(contactSocialRaw);
-      const contactSocialNoAt = stripAt(contactSocialLow);
+      const contactSocialNoAt = contactSocialLow ? stripAt(contactSocialLow) : "";
       const contactSocialName = low(c.contact?.social_name || "");
+      const contactFullNameRaw = norm(c.contact?.full_name || "");
+      const contactFullNameLow = low(c.contact?.full_name || "");
 
       const socialHit =
         (strategy === "social" || strategy === "both") && socialIdRaw
@@ -183,14 +183,18 @@ export async function findCardSimple(args: FindArgs) {
             ) && (!socialName || contactSocialName === socialName)
           : false;
 
-      const titleHit =
-        (strategy === "title" || strategy === "both") && fullName
-          ? title_mode === "exact"
-            ? eqTitleExact(title, fullName)
-            : titleContains(title, fullName)
+      const fullNameHit =
+        (strategy === "full_name" || strategy === "both") && fullNameRaw
+          ? contactFullNameLow === fullNameLow ||
+            (title_mode === "exact"
+              ? eqTitleExact(title, fullNameRaw)
+              : titleContains(title, fullNameRaw))
           : false;
 
-      if (socialHit || titleHit) {
+      if (socialHit || fullNameHit) {
+        const matchedBy: Array<"social_id" | "full_name"> = [];
+        if (socialHit) matchedBy.push("social_id");
+        if (fullNameHit) matchedBy.push("full_name");
         matched = {
           id: c.id,
           title: c.title,
@@ -198,6 +202,8 @@ export async function findCardSimple(args: FindArgs) {
           status_id: c.status_id,
           contact_social: c.contact?.social_id || null,
           contact_social_name: c.contact?.social_name || null,
+          contact_full_name: c.contact?.full_name || null,
+          matched_by: matchedBy,
         };
         break;
       }
@@ -211,8 +217,7 @@ export async function findCardSimple(args: FindArgs) {
   return {
     ok: true,
     social_id: socialIdRaw || null,
-    username: deprecatedUsernameRaw,
-    full_name: fullName || null,
+    full_name: fullNameRaw || null,
     scope,
     used: {
       pagination,

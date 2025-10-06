@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * GET /api/keycrm/find?social_id=kolachnyk.v&full_name=Viktoria%20Kolachnyk
  *   [optional] pipeline_id=1&status_id=38
  *   [optional] max_pages=3&page_size=50
- *   [optional] strategy=social|title|both (default: both)
+ *   [optional] strategy=social|full_name|both (default: both)
  *   [optional] title_mode=exact|contains (default: exact)
  *   [optional] scope=campaign|global (default: campaign якщо є активна, інакше global)
  */
@@ -19,8 +19,6 @@ export async function GET(req: Request) {
     const q = (k: string) => url.searchParams.get(k) || undefined;
 
     const social_id = q("social_id")?.trim() || undefined;
-    const username = q("username")?.trim() || undefined; // застаріле ім'я параметра
-    const handle = social_id || username;
     const full_name = q("full_name")?.trim();
     const social_name = q("social_name")?.trim();
 
@@ -29,7 +27,7 @@ export async function GET(req: Request) {
 
     const max_pages = q("max_pages") ? Math.max(1, Number(q("max_pages"))) : 3;
     const page_size = q("page_size") ? Math.max(1, Number(q("page_size"))) : 50;
-    const strategy = (q("strategy") as "social" | "title" | "both") || "both";
+    const strategy = (q("strategy") as "social" | "full_name" | "both") || "both";
     const title_mode = (q("title_mode") as "exact" | "contains") || "exact";
     let scope = (q("scope") as "campaign" | "global" | undefined) || undefined;
 
@@ -44,8 +42,7 @@ export async function GET(req: Request) {
     }
 
     const res = await findCardSimple({
-      social_id: handle,
-      username,
+      social_id,
       full_name,
       social_name,
       pipeline_id,
