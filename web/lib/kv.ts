@@ -9,9 +9,19 @@ export const campaignKeys = {
   ALT_ITEM_KEYS: [(id: string) => `cmp:item:${id}`] as const,
 };
 
-const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
-const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
-const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
+const BASE = (
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  ''
+).replace(/\/$/, '');
+const WR_TOKEN =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  '';
+const RD_TOKEN =
+  process.env.KV_REST_API_READ_ONLY_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  WR_TOKEN;
 
 let directKv: typeof import('@vercel/kv').kv | null = null;
 try {
