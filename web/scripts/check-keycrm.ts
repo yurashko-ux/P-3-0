@@ -56,6 +56,9 @@ const HELP = `
 
 Без переходу у теку web (замініть шлях на свій):
   KEYCRM_API_TOKEN=... npm run --prefix /шлях/до/P-3-0/web check:keycrm -- kolachnyk.v
+
+HTTP-посилання (після запуску Next.js локально на 3000 порту):
+  http://localhost:3000/api/keycrm/check?username=kolachnyk.v
 `;
 
 function parseArgs(argv: string[]): Parsed {
