@@ -28,7 +28,7 @@
 
    ```bash
    curl -i -H "Authorization: Bearer $KV_REST_API_TOKEN" \
-     "$KV_REST_API_URL/keys?limit=1"
+     "$KV_REST_API_URL/keys/*?limit=1"
    ```
 
 2. Успішна відповідь має статус `HTTP/1.1 200 OK` і JSON зі списком ключів (навіть якщо він пустий). Це означає, що REST-токен чинний і доступ до KV є.
@@ -38,7 +38,7 @@
 >
 > ```bash
 > curl -i -H "Authorization: Bearer AVIxAAI..." \
->   "https://hot-louse-21041.upstash.io/keys?limit=1"
+>   "https://hot-louse-21041.upstash.io/keys/*?limit=1"
 > ```
 >
 > У команді вище підставлено самі значення, тому `$` не потрібен. Знак `$` використовуйте лише тоді, коли читаєте значення зі змінної середовища (`$KV_REST_API_TOKEN`).
@@ -50,7 +50,7 @@
    ```bash
    curl -fsS \
      -H "Authorization: Bearer $KV_REST_API_TOKEN" \
-     "$KV_REST_API_URL/keys?limit=5" | jq .
+     "$KV_REST_API_URL/keys/*?limit=5" | jq .
    ```
 
    *Як інтерпретувати:*
