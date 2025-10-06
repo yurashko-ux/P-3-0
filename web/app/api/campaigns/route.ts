@@ -6,6 +6,7 @@ import { kvRead } from "@/lib/kv";
 import {
   pickRuleCandidate,
   resolveRule,
+  normalizeCandidate,
   type CampaignLike,
 } from "@/lib/campaign-rules";
 export const runtime = "nodejs";
@@ -17,6 +18,8 @@ const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 type Target = { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
 type Counters = { v1: number; v2: number; exp: number };
 type RuleSummary = { value: string; op: "contains" | "equals" };
+
+type RuleMatch = { slot: "v1" | "v2"; value: string };
 
 type Campaign = {
   id: string;
@@ -38,6 +41,7 @@ type Campaign = {
   __index_id?: string;
   rules?: Record<string, any> | null;
   rulesNormalized?: { v1?: RuleSummary | null; v2?: RuleSummary | null };
+  ruleMatches?: RuleMatch[];
 };
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
@@ -279,16 +283,91 @@ async function normalizeTarget(src: Record<string, any>, slot: Slot): Promise<Ta
   return enrichNames(rough);
 }
 
+const slotsFromParams = (params: URLSearchParams): ("v1" | "v2")[] => {
+  const requested = params.getAll("slot").map((s) => s?.trim().toLowerCase());
+  const normalized = requested
+    .filter((s): s is "v1" | "v2" => s === "v1" || s === "v2")
+    .slice(0, 2);
+  if (normalized.length) return normalized;
+  const single = params.get("slot")?.trim().toLowerCase();
+  if (single === "v1" || single === "v2") return [single];
+  return ["v1", "v2"];
+};
+
+const collectRuleStrings = (raw: CampaignLike, slot: "v1" | "v2"): string[] => {
+  const out = new Set<string>();
+  const resolved = resolveRule(pickRuleCandidate(raw, slot));
+  if (resolved?.value) {
+    const norm = normalizeCandidate(resolved.value).trim();
+    if (norm) out.add(norm);
+  }
+  const direct = normalizeCandidate((raw as any)[slot]).trim();
+  if (direct) out.add(direct);
+
+  const rules = (raw as any)?.rules;
+  if (rules && typeof rules === "object") {
+    const viaRules = normalizeCandidate((rules as Record<string, unknown>)[slot]).trim();
+    if (viaRules) out.add(viaRules);
+  }
+
+  return Array.from(out);
+};
+
+const ruleMatchesCacheKey = (raw: Record<string, any>) =>
+  pickStr(raw?.id) || pickStr(raw?.__index_id) || "";
+
 // ---------- GET ----------
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const params = req.nextUrl.searchParams;
   const rawCampaigns = (await kvRead.listCampaigns<Record<string, any>>()) ?? [];
   if (!rawCampaigns.length) {
     return NextResponse.json<Campaign[]>([]);
   }
 
+  const needleRaw =
+    params.get("value") ??
+    params.get("rule") ??
+    params.get("q") ??
+    params.get("needle") ??
+    "";
+  const needle = normalizeCandidate(needleRaw).trim();
+  const matchMode = (params.get("match") || "contains").trim().toLowerCase();
+  const mode: "contains" | "equals" = matchMode === "equals" || matchMode === "equal" ? "equals" : "contains";
+  const activeOnly = (params.get("active") || "").trim().toLowerCase() === "true";
+  const slots = slotsFromParams(params);
+
+  const matchesById = new Map<string, RuleMatch[]>();
+
+  let filtered = rawCampaigns;
+  if (activeOnly) {
+    filtered = filtered.filter((raw) => raw?.active !== false);
+  }
+
+  if (needle) {
+    const needleLow = needle.toLowerCase();
+    filtered = filtered.filter((raw) => {
+      const matches: RuleMatch[] = [];
+      for (const slot of slots) {
+        const values = collectRuleStrings(raw as CampaignLike, slot);
+        for (const value of values) {
+          const valueLow = value.toLowerCase();
+          const matched = mode === "equals" ? valueLow === needleLow : valueLow.includes(needleLow);
+          if (matched) {
+            matches.push({ slot, value });
+            break;
+          }
+        }
+      }
+      if (!matches.length) return false;
+      const key = ruleMatchesCacheKey(raw);
+      if (key) matchesById.set(key, matches);
+      return true;
+    });
+  }
+
   const normalized: Campaign[] = [];
 
-  for (const raw of rawCampaigns) {
+  for (const raw of filtered) {
     const id = pickStr(raw?.id) || pickStr(raw?.__index_id);
     if (!id) continue;
 
@@ -343,12 +422,24 @@ export async function GET() {
         v1: ruleV1 ? { value: ruleV1.value, op: ruleV1.op } : null,
         v2: ruleV2 ? { value: ruleV2.value, op: ruleV2.op } : null,
       },
+      ruleMatches: matchesById.get(id),
     });
   }
 
   normalized.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 
-  return NextResponse.json(normalized);
+  const response = NextResponse.json(normalized);
+  response.headers.set("x-total-campaigns", String(rawCampaigns.length));
+  response.headers.set("x-total-returned", String(normalized.length));
+  if (needle) {
+    response.headers.set("x-rule-needle", needle);
+    response.headers.set("x-rule-mode", mode);
+    response.headers.set("x-rule-slots", slots.join(","));
+  }
+  if (activeOnly) {
+    response.headers.set("x-active-only", "true");
+  }
+  return response;
 }
 
 // ---------- POST ----------
