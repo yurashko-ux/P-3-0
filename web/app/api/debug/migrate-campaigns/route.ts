@@ -85,6 +85,10 @@ export async function POST(req: NextRequest) {
       if (typeof obj.v1_count !== 'number') { obj.v1_count = 0; changed = true; }
       if (typeof obj.v2_count !== 'number') { obj.v2_count = 0; changed = true; }
       if (typeof obj.exp_count !== 'number') { obj.exp_count = 0; changed = true; }
+      if (typeof obj.pair_lookup_success_count !== 'number') { obj.pair_lookup_success_count = 0; changed = true; }
+      if (typeof obj.pair_lookup_fail_count !== 'number') { obj.pair_lookup_fail_count = 0; changed = true; }
+      if (typeof obj.pair_move_success_count !== 'number') { obj.pair_move_success_count = 0; changed = true; }
+      if (typeof obj.pair_move_fail_count !== 'number') { obj.pair_move_fail_count = 0; changed = true; }
 
       if (changed) {
         await kvWrite.setRaw(key, JSON.stringify(obj));

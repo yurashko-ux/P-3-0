@@ -168,6 +168,10 @@ export const kvWrite = {
       v1_count: Number(input?.v1_count ?? 0),
       v2_count: Number(input?.v2_count ?? 0),
       exp_count: Number(input?.exp_count ?? 0),
+      pair_lookup_success_count: Number(input?.pair_lookup_success_count ?? 0),
+      pair_lookup_fail_count: Number(input?.pair_lookup_fail_count ?? 0),
+      pair_move_success_count: Number(input?.pair_move_success_count ?? 0),
+      pair_move_fail_count: Number(input?.pair_move_fail_count ?? 0),
       deleted: false,
     };
 

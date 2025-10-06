@@ -1,48 +1,41 @@
 // web/app/api/keycrm/sync/pair/route.ts
-// Minimal webhook to route incoming MC/IG messages by active campaign rules and bump counters.
-// Accepts:
-//  - normalized: { title?: string, handle?: string, text?: string }
-//  - ManyChat-ish: { event, data: { user: { username }, message: { text } } }  (best-effort extraction)
+// Webhook, що об'єднує логіку ManyChat → KeyCRM:
+//  • нормалізує payload і знаходить кампанію за правилами V1/V2
+//  • шукає картку у базовій воронці кампанії (pipeline+status)
+//  • рухає знайдену картку у цільовий статус, визначений правилом
 //
-// Response: { ok, matched?: boolean, route?: 'v1'|'v2'|'none', campaign?: { id, name }, input: { title, handle, text } }
+// Повертає діагностичний JSON із даними пошуку/руху та вхідним payload.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { readJsonSafe, normalizeManychatPayload } from '@/lib/mc';
+import { kcFindCardIdInScope, kcMoveCard } from '@/lib/keycrm-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
+type Rule = { op: 'contains' | 'equals'; value: string; pipeline_id?: number; status_id?: number };
 type Campaign = {
   id: string;
   name: string;
   active?: boolean;
+  enabled?: boolean;
   rules?: { v1?: Rule; v2?: Rule };
+  base_pipeline_id?: number | string | null;
+  base_status_id?: number | string | null;
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+  pair_lookup_success_count?: number;
+  pair_lookup_fail_count?: number;
+  pair_move_success_count?: number;
+  pair_move_fail_count?: number;
 };
 
 // ----- helpers -----
 
 function normStr(s: unknown) {
   return (typeof s === 'string' ? s : '').trim();
-}
-
-function extractNormalized(body: any) {
-  // already normalized?
-  const title = normStr(body?.title);
-  const handle = normStr(body?.handle);
-  const text = normStr(body?.text);
-
-  if (title || handle || text) {
-    return { title, handle, text };
-  }
-
-  // ManyChat-ish best effort
-  const mcText = normStr(body?.data?.message?.text) || normStr(body?.message?.text);
-  const mcHandle = normStr(body?.data?.user?.username) || normStr(body?.user?.username);
-  return { title: '', handle: mcHandle, text: mcText };
 }
 
 function matchRule(text: string, rule?: Rule): boolean {
@@ -64,25 +57,96 @@ function chooseRoute(text: string, rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2
   return 'none';
 }
 
-async function bumpCounter(id: string, field: 'v1_count' | 'v2_count' | 'exp_count') {
+type CounterField =
+  | 'v1_count'
+  | 'v2_count'
+  | 'exp_count'
+  | 'pair_lookup_success_count'
+  | 'pair_lookup_fail_count'
+  | 'pair_move_success_count'
+  | 'pair_move_fail_count';
+
+type CounterDeltas = Partial<Record<CounterField, number>>;
+
+type CounterTotals = Partial<Record<CounterField, number>>;
+
+async function applyCounterDeltas(id: string, deltas: CounterDeltas): Promise<CounterTotals | null> {
+  const entries = Object.entries(deltas).filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v !== 0) as Array<
+    [CounterField, number]
+  >;
+  if (!entries.length) return null;
+
   const itemKey = campaignKeys.ITEM_KEY(id);
   const raw = await kvRead.getRaw(itemKey);
-  if (!raw) return;
+  if (!raw) return null;
+
+  let obj: Record<string, any>;
   try {
-    const obj = JSON.parse(raw);
-    obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
+    obj = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const totals: CounterTotals = {};
+  let changed = false;
+
+  for (const [field, delta] of entries) {
+    const current = typeof obj[field] === 'number' ? obj[field] : 0;
+    const next = current + delta;
+    obj[field] = next;
+    totals[field] = next;
+    changed = true;
+  }
+
+  if (!changed) return null;
+
+  try {
     await kvWrite.setRaw(itemKey, JSON.stringify(obj));
-    // необов’язково: кладемо id в head, щоб кампанія піднімалась у списку
     try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch {}
-  } catch {}
+  } catch {
+    return null;
+  }
+
+  return totals;
+}
+
+function parseNumber(input: unknown): number | null {
+  if (typeof input === 'number' && Number.isFinite(input)) return input;
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+function collectFullNames(raw?: string): string[] {
+  const names = new Set<string>();
+  const base = normStr(raw);
+  if (!base) return [];
+  names.add(base);
+  // варіант без подвійних пробілів
+  const collapsed = base.replace(/\s+/g, ' ').trim();
+  if (collapsed && !names.has(collapsed)) names.add(collapsed);
+  return Array.from(names);
 }
 
 // ----- route handler -----
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const norm = extractNormalized(body);
+    const body = await readJsonSafe(req as any);
+    const mc = normalizeManychatPayload(body);
+    const handle = mc.username || normStr(body?.handle) || normStr(body?.subscriber?.username);
+    const text = mc.text || normStr(body?.text) || normStr(body?.message?.text);
+    const fullName = mc.fullName || normStr(body?.fullName) || normStr(body?.contact?.full_name);
+    const norm = {
+      title: (typeof body?.title === 'string' && body.title.trim()) || '',
+      handle,
+      text,
+      fullName,
+    };
 
     // 1) беремо всі кампанії та фільтруємо активні
     let campaigns: Campaign[] = [];
@@ -91,29 +155,90 @@ export async function POST(req: NextRequest) {
     } catch {
       campaigns = [];
     }
-    const active = campaigns.filter(c => c?.active !== false);
+    const active = campaigns.filter((c) => c?.active !== false && c?.enabled !== false);
 
     // 2) спроба знайти першу, що матчить
-    let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
+    let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign, rule?: Rule } = { route: 'none' };
     for (const c of active) {
       const route = chooseRoute(norm.text, c.rules);
       if (route !== 'none') {
-        chosen = { route, campaign: c };
+        const rule = route === 'v1' ? c.rules?.v1 : c.rules?.v2;
+        chosen = { route, campaign: c, rule: rule ?? undefined };
         break;
       }
     }
 
-    // 3) якщо знайшли — інкрементуємо лічильник
+    let search: Awaited<ReturnType<typeof kcFindCardIdInScope>> | null = null;
+    let moveResult: Awaited<ReturnType<typeof kcMoveCard>> | null = null;
+    let counterTotals: CounterTotals | null = null;
+    const counterDeltas: CounterDeltas = {};
+
     if (chosen.campaign && chosen.route !== 'none') {
-      await bumpCounter(chosen.campaign.id, chosen.route === 'v1' ? 'v1_count' : 'v2_count');
+      const basePipeline = parseNumber(chosen.campaign.base_pipeline_id);
+      const baseStatus = parseNumber(chosen.campaign.base_status_id);
+
+      if (basePipeline == null || baseStatus == null) {
+        return NextResponse.json({
+          ok: false,
+          error: 'campaign_missing_base_scope',
+          campaign: { id: chosen.campaign.id, name: chosen.campaign.name },
+          input: norm,
+        }, { status: 422 });
+      }
+
+      const fullNames = collectFullNames(fullName);
+
+      search = await kcFindCardIdInScope({
+        username: handle,
+        fullNames,
+        pipeline_id: basePipeline,
+        status_id: baseStatus,
+      });
+
+      if (search) {
+        const lookupField = search.cardId ? 'pair_lookup_success_count' : 'pair_lookup_fail_count';
+        counterDeltas[lookupField] = (counterDeltas[lookupField] ?? 0) + 1;
+      }
+
+      const cardId = search.cardId;
+      if (cardId && chosen.rule) {
+        const targetPipeline = parseNumber(chosen.rule.pipeline_id);
+        const targetStatus = parseNumber(chosen.rule.status_id);
+
+        if (targetPipeline == null || targetStatus == null) {
+          return NextResponse.json({
+            ok: false,
+            error: 'campaign_missing_target',
+            campaign: { id: chosen.campaign.id, name: chosen.campaign.name },
+            route: chosen.route,
+            search,
+            input: norm,
+          }, { status: 422 });
+        }
+
+        moveResult = await kcMoveCard(cardId, targetPipeline, targetStatus);
+
+        const moveField = moveResult.ok ? 'pair_move_success_count' : 'pair_move_fail_count';
+        counterDeltas[moveField] = (counterDeltas[moveField] ?? 0) + 1;
+        if (moveResult.ok) {
+          const variantField = chosen.route === 'v1' ? 'v1_count' : 'v2_count';
+          counterDeltas[variantField] = (counterDeltas[variantField] ?? 0) + 1;
+        }
+      }
+
+      if (Object.keys(counterDeltas).length) {
+        counterTotals = await applyCounterDeltas(chosen.campaign.id, counterDeltas);
+      }
     }
 
-    // TODO (next step): тут же викликати KeyCRM API для створення/руху картки
     return NextResponse.json({
       ok: true,
       matched: chosen.route !== 'none',
       route: chosen.route,
       campaign: chosen.campaign ? { id: chosen.campaign.id, name: chosen.campaign.name } : undefined,
+      search,
+      move: moveResult,
+      counters: counterTotals ? { deltas: counterDeltas, totals: counterTotals } : undefined,
       input: norm,
     });
   } catch (e: any) {

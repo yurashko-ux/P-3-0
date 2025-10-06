@@ -22,6 +22,10 @@ type Campaign = {
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+  pair_lookup_success_count?: number;
+  pair_lookup_fail_count?: number;
+  pair_move_success_count?: number;
+  pair_move_fail_count?: number;
 };
 
 function normalize(body: any) {
