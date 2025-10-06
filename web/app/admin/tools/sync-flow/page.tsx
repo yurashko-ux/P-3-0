@@ -142,6 +142,30 @@ function fmtTarget(target?: CampaignTarget) {
   return parts.length ? parts.join(' · ') : '—';
 }
 
+function present(value: any): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : '—';
+  }
+  if (typeof value === 'boolean') return value ? 'Так' : 'Ні';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '—';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+type ErrorEntry = {
+  step: number;
+  title: string;
+  message: string;
+  hint?: string;
+  context?: { label: string; value: string }[];
+  raw?: any;
+};
+
 // ----- Components -----
 
 function StepCard({
@@ -557,6 +581,127 @@ export default function SyncFlowToolPage() {
     }`;
   }, [selectedCampaign?.base]);
 
+  const errorEntries = useMemo<ErrorEntry[]>(() => {
+    const entries: ErrorEntry[] = [];
+
+    if (step1.status === 'error' && step1.error) {
+      entries.push({
+        step: 1,
+        title: 'Отримання ManyChat події',
+        message: step1.error,
+        hint: 'Перевір вхідний текст та username з ManyChat і повтори відправку вебхуку.',
+        context: [
+          { label: 'Введений текст', value: present(manychatValue) },
+          { label: 'Instagram username', value: present(instagramUsername) },
+          { label: "Повне ім'я", value: present(fullName) },
+        ],
+        raw: step1.data,
+      });
+    }
+
+    if (step2.status === 'error' && step2.error) {
+      const pair = ((step2.data as unknown as PairResponse) || lastPair || null) as PairResponse | null;
+      const campaignId = pair?.campaign?.id || pair?.campaign?.__index_id || '';
+      const normalizedText = pair?.input?.text || pair?.input?.title || pair?.input?.handle || manychatValue;
+      entries.push({
+        step: 2,
+        title: 'Пошук кампанії V1/V2',
+        message: step2.error,
+        hint:
+          'Переконайся, що у KV є активна кампанія з правилом, яке відповідає нормалізованому тексту ManyChat та має заповнені маршрути V1/V2.',
+        context: [
+          { label: 'Нормалізований текст', value: present(normalizedText) },
+          { label: 'Маршрут з вебхуку', value: present(pair?.route ? pair.route.toUpperCase() : '—') },
+          {
+            label: 'Кампанія з вебхуку',
+            value: campaignId ? `${pair?.campaign?.name || 'Без назви'} (#${campaignId})` : '—',
+          },
+          { label: 'Доступна базова воронка', value: present(baseInfo) },
+        ],
+        raw: pair,
+      });
+    }
+
+    if (step3.status === 'error' && step3.error) {
+      const scope = selectedCampaign?.base?.pipeline && selectedCampaign?.base?.status ? 'Кампанія' : 'Глобально';
+      const strategy = instagramUsername.trim() && fullName.trim() ? 'username + ПІБ' : instagramUsername.trim() ? 'username' : 'ПІБ';
+      entries.push({
+        step: 3,
+        title: 'Пошук картки у KeyCRM',
+        message: step3.error,
+        hint: 'Звір правильність username/ПІБ та доступність картки у базовій воронці кампанії.',
+        context: [
+          { label: 'Instagram username', value: present(instagramUsername) },
+          { label: "Повне ім'я", value: present(fullName) },
+          { label: 'Режим пошуку', value: strategy },
+          { label: 'Область пошуку', value: scope },
+          { label: 'Очікуваний card_id', value: present(cardIdOverride || lastFind?.result?.id) },
+        ],
+        raw: step3.data || lastFind,
+      });
+    }
+
+    if (step4.status === 'error' && step4.error) {
+      const effectivePipeline = targetPipelineId || targetPreset?.pipeline || '';
+      const effectiveStatus = targetStatusId || targetPreset?.status || '';
+      const pipelineTitle =
+        pipelines.find((item) => item.id === effectivePipeline)?.title ||
+        targetPreset?.pipelineName ||
+        (effectivePipeline ? `#${effectivePipeline}` : '—');
+      const statusTitle =
+        targetStatuses.find((item) => item.id === effectiveStatus)?.title ||
+        targetPreset?.statusName ||
+        (effectiveStatus ? `#${effectiveStatus}` : '—');
+      const cardId = cardIdOverride.trim() || (lastFind?.result?.id ? String(lastFind.result.id) : '');
+      entries.push({
+        step: 4,
+        title: 'Move картки у KeyCRM',
+        message: step4.error,
+        hint: 'Переконайся, що card_id існує та має доступ до вибраної воронки і статусу. За потреби повтори пошук.',
+        context: [
+          { label: 'card_id для move', value: present(cardId) },
+          { label: 'Цільова воронка', value: present(pipelineTitle) },
+          { label: 'Цільовий статус', value: present(statusTitle) },
+          { label: 'Режим виконання', value: dryRun ? 'Dry-run (без змін)' : 'Реальний move' },
+        ],
+        raw: step4.data,
+      });
+    }
+
+    return entries;
+  }, [
+    baseInfo,
+    cardIdOverride,
+    dryRun,
+    fullName,
+    instagramUsername,
+    lastFind,
+    lastPair,
+    manychatValue,
+    pipelines,
+    selectedCampaign?.base?.pipeline,
+    selectedCampaign?.base?.status,
+    step1.data,
+    step1.error,
+    step1.status,
+    step2.data,
+    step2.error,
+    step2.status,
+    step3.data,
+    step3.error,
+    step3.status,
+    step4.data,
+    step4.error,
+    step4.status,
+    targetPipelineId,
+    targetPreset?.pipeline,
+    targetPreset?.pipelineName,
+    targetPreset?.status,
+    targetPreset?.statusName,
+    targetStatusId,
+    targetStatuses,
+  ]);
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-6 flex items-center justify-between gap-3">
@@ -622,6 +767,48 @@ export default function SyncFlowToolPage() {
           </button>
         </div>
       </section>
+
+      {errorEntries.length > 0 && (
+        <section className="mb-6 rounded-2xl border border-red-200 bg-red-50/70 p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-red-700">Звіт по помилках</h2>
+          <p className="mb-4 mt-1 text-sm text-red-700/80">
+            Зібрали деталі останніх помилок по кроках, щоб швидше зрозуміти причину. Перевір вхідні дані та відповіді
+            сервісів нижче.
+          </p>
+          <div className="space-y-4">
+            {errorEntries.map((entry) => (
+              <div key={`error-${entry.step}-${entry.message}`} className="rounded-xl border border-red-200 bg-white p-4">
+                <header className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2 text-red-600">
+                    <span className="text-base font-semibold">Крок {entry.step}</span>
+                    <span className="text-sm font-medium text-red-500/90">{entry.title}</span>
+                  </div>
+                  <span className="text-sm font-semibold text-red-500">{entry.message}</span>
+                </header>
+                {entry.hint && <p className="mb-3 text-xs text-slate-600">{entry.hint}</p>}
+                {entry.context && entry.context.length > 0 && (
+                  <dl className="mb-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                    {entry.context.map(({ label, value }) => (
+                      <div key={label} className="flex flex-col gap-0.5">
+                        <dt className="font-medium text-slate-500">{label}</dt>
+                        <dd className="rounded bg-slate-100 px-2 py-1 text-slate-700">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {entry.raw && (
+                  <details className="rounded-lg bg-slate-100 p-3 text-xs text-slate-700">
+                    <summary className="cursor-pointer font-semibold text-slate-600">Сирі дані кроку</summary>
+                    <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap text-[11px] leading-4">
+                      {jsonPreview(entry.raw) ?? '—'}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-5">
         <StepCard step="1" title="Отримання ManyChat події" status={step1.status}>
