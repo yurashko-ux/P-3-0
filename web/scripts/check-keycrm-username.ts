@@ -20,7 +20,7 @@ type Parsed = {
   errors: string[];
 };
 
-const HELP = `\nПеревірка пошуку картки в KeyCRM через findCardSimple().\n\nВикористання:\n  npm run check:username -- <username> [--social_name=instagram] [інші прапорці]\n\nОсновні прапорці:\n  --username=<value>        Instagram username (можна передати як позиційний аргумент).\n  --full_name=<value>       Пошук по назві картки «Чат з <ПІБ>».\n  --social_name=<value>     Платформа (instagram, telegram, ...).\n  --pipeline_id=<number>    Обовʼязковий разом із status_id, якщо scope=campaign.\n  --status_id=<number>\n  --scope=campaign|global   За замовчуванням global.\n  --max_pages=<number>      Кількість сторінок для сканування (1..50).\n  --page_size=<number>      Розмір сторінки (1..100).\n  --strategy=social|title|both\n  --title_mode=exact|contains\n\nПриклади:\n  KEYCRM_API_TOKEN=... npm run check:username -- kolachnyk.v\n  KEYCRM_API_TOKEN=... npm run check:username -- --username=@test --social_name=instagram\n`;
+const HELP = `\nПеревірка пошуку картки в KeyCRM через findCardSimple().\n\nВикористання:\n  npm run check:username -- <username> [інші прапорці]\n\nОсновні прапорці:\n  --username=<value>        Instagram username (можна передати як позиційний аргумент).\n  --full_name=<value>       Пошук по назві картки «Чат з <ПІБ>».\n  --social_name=<value>     Платформа (instagram, telegram, ...).\n  --pipeline_id=<number>    Обовʼязковий разом із status_id, якщо scope=campaign.\n  --status_id=<number>\n  --scope=campaign|global   За замовчуванням global.\n  --max_pages=<number>      Кількість сторінок для сканування (1..50).\n  --page_size=<number>      Розмір сторінки (1..100).\n  --strategy=social|title|both\n  --title_mode=exact|contains\n\nПідказки:\n  • Якщо передано username без social_name, використовується instagram.\n\nПриклади:\n  KEYCRM_API_TOKEN=... npm run check:username -- kolachnyk.v\n  KEYCRM_API_TOKEN=... npm run check:username -- --username=@test --social_name=telegram\n`;
 
 function parseArgs(argv: string[]): Parsed {
   const params: CliArgs = {};
@@ -103,6 +103,10 @@ async function main() {
   if (!parsed.params.username && !parsed.params.full_name) {
     console.error("Передай хоча б username або full_name. Дивись --help для прикладів.");
     process.exit(1);
+  }
+
+  if (!parsed.params.social_name && parsed.params.username) {
+    parsed.params.social_name = "instagram";
   }
 
   console.log("➡️  Викликаємо findCardSimple з параметрами:\n", JSON.stringify(parsed.params, null, 2));
