@@ -25,8 +25,11 @@ type CampaignTarget = {
   statusName?: string;
 };
 
+type RuleSummary = { value: string; op: 'contains' | 'equals' };
+
 type Campaign = {
   id: string;
+  __index_id?: string;
   name: string;
   base?: CampaignTarget;
   t1?: CampaignTarget;
@@ -36,6 +39,7 @@ type Campaign = {
   v2?: string;
   expDays?: number;
   counters?: { v1: number; v2: number; exp: number };
+  rulesNormalized?: { v1?: RuleSummary | null; v2?: RuleSummary | null };
 };
 
 type PairResponse = {
@@ -147,6 +151,12 @@ function fmtTarget(target?: CampaignTarget) {
   if (!target) return '—';
   const parts = [target.pipelineName || target.pipeline, target.statusName || target.status].filter(Boolean);
   return parts.length ? parts.join(' · ') : '—';
+}
+
+function describeRule(rule?: { value?: string; op?: string } | null | undefined) {
+  if (!rule || !rule.value) return '—';
+  const mode = (rule.op || '').toLowerCase();
+  return `${rule.value} (${mode === 'equals' ? 'дорівнює' : 'містить'})`;
 }
 
 function resolveItemTitle(id: string | null | undefined, options: Item[], fallback?: string) {
@@ -488,7 +498,7 @@ export default function SyncFlowToolPage() {
       return null;
     }
     const campaignId = pair.campaign.id || pair.campaign.__index_id || '';
-    const campaign = campaigns.find((c) => c.id === campaignId);
+    const campaign = campaigns.find((c) => c.id === campaignId || c.__index_id === campaignId);
     if (!campaign) {
       setStep2({ status: 'error', data: pair as any, error: `Кампанію #${campaignId} не знайдено у KV.` });
       return null;
@@ -715,6 +725,9 @@ export default function SyncFlowToolPage() {
       const pair = ((step2.data as unknown as PairResponse) || lastPair || null) as PairResponse | null;
       const campaignId = pair?.campaign?.id || pair?.campaign?.__index_id || '';
       const normalizedText = pair?.input?.text || pair?.input?.title || pair?.input?.handle || manychatValue;
+      const campaignFromList = campaignId
+        ? campaigns.find((c) => c.id === campaignId || c.__index_id === campaignId)
+        : null;
       entries.push({
         step: 2,
         title: 'Пошук кампанії V1/V2',
@@ -731,21 +744,25 @@ export default function SyncFlowToolPage() {
                 : '—',
           },
           {
-            label: 'Правило V1',
-            value: pair?.debug?.ruleV1
-              ? `${pair.debug.ruleV1.value} (${pair.debug.ruleV1.op === 'equals' ? 'дорівнює' : 'містить'})`
-              : '—',
+            label: 'Правило V1 (вебхук)',
+            value: describeRule(pair?.debug?.ruleV1),
           },
           {
-            label: 'Правило V2',
-            value: pair?.debug?.ruleV2
-              ? `${pair.debug.ruleV2.value} (${pair.debug.ruleV2.op === 'equals' ? 'дорівнює' : 'містить'})`
-              : '—',
+            label: 'Правило V2 (вебхук)',
+            value: describeRule(pair?.debug?.ruleV2),
           },
           { label: 'Маршрут з вебхуку', value: present(pair?.route ? pair.route.toUpperCase() : '—') },
           {
             label: 'Кампанія з вебхуку',
             value: campaignId ? `${pair?.campaign?.name || 'Без назви'} (#${campaignId})` : '—',
+          },
+          {
+            label: 'Правило V1 (кампанія)',
+            value: describeRule(campaignFromList?.rulesNormalized?.v1 ?? selectedCampaign?.rulesNormalized?.v1),
+          },
+          {
+            label: 'Правило V2 (кампанія)',
+            value: describeRule(campaignFromList?.rulesNormalized?.v2 ?? selectedCampaign?.rulesNormalized?.v2),
           },
           { label: 'Базова воронка кампанії', value: present(campaignBaseInfo) },
           {
@@ -843,6 +860,9 @@ export default function SyncFlowToolPage() {
     targetPreset?.statusName,
     targetStatusId,
     targetStatuses,
+    campaigns,
+    selectedCampaign?.rulesNormalized?.v1,
+    selectedCampaign?.rulesNormalized?.v2,
   ]);
 
   return (
@@ -1031,15 +1051,11 @@ export default function SyncFlowToolPage() {
               <div className="mt-2 grid gap-1">
                 <div>
                   <span className="font-medium text-slate-500">Правило V1:</span>{' '}
-                  {step1.data.debug.ruleV1
-                    ? `${step1.data.debug.ruleV1.value} (${step1.data.debug.ruleV1.op === 'equals' ? 'дорівнює' : 'містить'})`
-                    : '—'}
+                  {describeRule(step1.data.debug.ruleV1)}
                 </div>
                 <div>
                   <span className="font-medium text-slate-500">Правило V2:</span>{' '}
-                  {step1.data.debug.ruleV2
-                    ? `${step1.data.debug.ruleV2.value} (${step1.data.debug.ruleV2.op === 'equals' ? 'дорівнює' : 'містить'})`
-                    : '—'}
+                  {describeRule(step1.data.debug.ruleV2)}
                 </div>
               </div>
             </div>
@@ -1085,6 +1101,18 @@ export default function SyncFlowToolPage() {
             <p className="text-sm text-slate-500">
               Ціль для {activeRoute?.toUpperCase()}: <span className="font-medium text-slate-700">{fmtTarget(targetPreset)}</span>
             </p>
+          )}
+          {selectedCampaign?.rulesNormalized && (
+            <div className="mt-2 grid gap-1 text-xs text-slate-500">
+              <div>
+                <span className="font-medium text-slate-500">Правило V1 (кампанія):</span>{' '}
+                {describeRule(selectedCampaign.rulesNormalized.v1)}
+              </div>
+              <div>
+                <span className="font-medium text-slate-500">Правило V2 (кампанія):</span>{' '}
+                {describeRule(selectedCampaign.rulesNormalized.v2)}
+              </div>
+            </div>
           )}
           {step2.error && <p className="text-sm text-red-600">{step2.error}</p>}
           {campaignsError && step2.status === 'error' && (

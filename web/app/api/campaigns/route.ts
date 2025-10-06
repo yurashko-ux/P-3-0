@@ -2,6 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
+import { kvRead } from "@/lib/kv";
+import {
+  pickRuleCandidate,
+  resolveRule,
+  type CampaignLike,
+} from "@/lib/campaign-rules";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -10,11 +16,28 @@ const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 type Target = { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
 type Counters = { v1: number; v2: number; exp: number };
+type RuleSummary = { value: string; op: "contains" | "equals" };
+
 type Campaign = {
-  id: string; name: string; base?: Target; t1?: Target; t2?: Target; texp?: Target;
-  v1?: string; v2?: string;
-  expDays?: number; expireDays?: number; expire?: number; vexp?: number; exp?: number; // ⬅️ додав exp
-  counters: Counters; createdAt: number;
+  id: string;
+  name: string;
+  base?: Target;
+  t1?: Target;
+  t2?: Target;
+  texp?: Target;
+  v1?: string;
+  v2?: string;
+  expDays?: number;
+  expireDays?: number;
+  expire?: number;
+  vexp?: number;
+  exp?: number;
+  counters?: Counters;
+  createdAt?: number;
+  active?: boolean;
+  __index_id?: string;
+  rules?: Record<string, any> | null;
+  rulesNormalized?: { v1?: RuleSummary | null; v2?: RuleSummary | null };
 };
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
@@ -52,15 +75,280 @@ async function enrichNames(t?: Target){ if(!t) return t; const out={...t};
   return out;
 }
 
+type Slot = "base" | "t1" | "t2" | "texp";
+
+const SLOT_VARIANTS: Record<Slot, string[]> = {
+  base: ["base", "Base", "BASE", "source", "Source", "SOURCE", "start", "Start", "START", "default", "Default"],
+  t1: ["t1", "T1", "target1", "Target1", "TARGET1", "route1", "Route1", "ROUTE1", "v1", "V1"],
+  t2: ["t2", "T2", "target2", "Target2", "TARGET2", "route2", "Route2", "ROUTE2", "v2", "V2"],
+  texp: [
+    "texp",
+    "TEXP",
+    "target_exp",
+    "Target_exp",
+    "TARGET_EXP",
+    "targetExp",
+    "TargetExp",
+    "TARGETEXP",
+    "exp",
+    "Exp",
+    "EXP",
+    "vexp",
+    "Vexp",
+    "VEXP",
+  ],
+};
+
+const DIRECT_ID_SUFFIXES = {
+  pipeline: ["_pipeline_id", "_pipeline", "_pipelineId", "PipelineId", "Pipeline", "PipelineID", "Pipeline_id"],
+  status: ["_status_id", "_status", "_statusId", "StatusId", "Status", "StatusID", "Status_id"],
+};
+
+const DIRECT_NAME_SUFFIXES = {
+  pipeline: ["_pipeline_name", "_pipelineLabel", "_pipelineTitle", "_pipelineName", "PipelineName", "PipelineLabel", "PipelineTitle"],
+  status: ["_status_name", "_statusLabel", "_statusTitle", "_statusName", "StatusName", "StatusLabel", "StatusTitle"],
+};
+
+const CANDIDATE_ID_ATTRS = {
+  pipeline: ["pipeline_id", "pipeline", "pipelineId", "pipelineID", "id", "value", "pipelineCode", "pipeline_code", "code"],
+  status: ["status_id", "status", "statusId", "statusID", "id", "value", "statusCode", "status_code", "code"],
+};
+
+const CANDIDATE_NAME_ATTRS = {
+  pipeline: ["pipeline_name", "pipelineName", "pipelineTitle", "pipelineLabel", "title", "label", "name"],
+  status: ["status_name", "statusName", "statusTitle", "statusLabel", "title", "label", "name"],
+};
+
+function uniqStrings(values: (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function collectTargetCandidates(src: Record<string, any>, slot: Slot): any[] {
+  const variants = SLOT_VARIANTS[slot] || [];
+  const seen = new Set<object>();
+  const queue: object[] = [];
+
+  const push = (value: any) => {
+    if (!value || typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    queue.push(value);
+  };
+
+  const addByKey = (key: string) => {
+    push(src[key]);
+    push(src[`${key}Target`]);
+    push(src[`${key}_target`]);
+    push(src[`${key}Preset`]);
+    push(src[`${key}_preset`]);
+    push(src[`${key}Route`]);
+    push(src[`${key}_route`]);
+  };
+
+  for (const key of variants) {
+    addByKey(key);
+    addByKey(key.toLowerCase());
+    addByKey(key.toUpperCase());
+    if (key.length > 0) {
+      const capital = key.charAt(0).toUpperCase() + key.slice(1);
+      addByKey(capital);
+    }
+    push(src.targets?.[key]);
+    push(src.targets?.[key.toLowerCase?.() ?? key]);
+    push(src.targets?.[key.toUpperCase?.() ?? key]);
+    push(src.routes?.[key]);
+    push(src.routes?.[key.toLowerCase?.() ?? key]);
+    push(src.routes?.[key.toUpperCase?.() ?? key]);
+  }
+
+  if (slot === "t1") {
+    push(src.routes?.v1);
+    push(src.routes?.V1);
+    push(src.targets?.v1);
+    push(src.targets?.V1);
+  } else if (slot === "t2") {
+    push(src.routes?.v2);
+    push(src.routes?.V2);
+    push(src.targets?.v2);
+    push(src.targets?.V2);
+  } else if (slot === "texp") {
+    push(src.routes?.exp);
+    push(src.routes?.Exp);
+    push(src.routes?.EXP);
+    push(src.routes?.texp);
+    push(src.routes?.TEXP);
+    push(src.targets?.exp);
+    push(src.targets?.Exp);
+    push(src.targets?.texp);
+    push(src.targets?.TEXP);
+  } else if (slot === "base") {
+    push(src.routes?.base);
+    push(src.targets?.base);
+  }
+
+  const out: object[] = [];
+  while (queue.length) {
+    const obj = queue.shift()!;
+    out.push(obj);
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === "object") {
+        if (!seen.has(value as object)) {
+          seen.add(value as object);
+          queue.push(value as object);
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+function pickFromDirectFields(src: Record<string, any>, variants: string[], suffixes: string[]): string | undefined {
+  for (const key of variants) {
+    for (const suffix of suffixes) {
+      const value = pickStr(src[`${key}${suffix}`]);
+      if (value) return value;
+      const altValue = pickStr(src[`${key}${suffix.replace(/^_/, "").replace(/_(.)/g, (_, c) => c.toUpperCase())}`]);
+      if (altValue) return altValue;
+    }
+  }
+  return undefined;
+}
+
+function pickFromCandidates(candidates: any[], attrs: string[]): string | undefined {
+  const seen = new Set<any>();
+  const queue: any[] = [];
+  for (const cand of candidates) {
+    if (cand && typeof cand === "object" && !seen.has(cand)) {
+      seen.add(cand);
+      queue.push(cand);
+    }
+  }
+  while (queue.length) {
+    const cand = queue.shift();
+    if (!cand || typeof cand !== "object") continue;
+    for (const attr of attrs) {
+      const value = pickStr((cand as any)[attr]);
+      if (value) return value;
+    }
+    for (const value of Object.values(cand)) {
+      if (value && typeof value === "object" && !seen.has(value)) {
+        seen.add(value);
+        queue.push(value);
+      }
+    }
+  }
+  return undefined;
+}
+
+function deriveTarget(src: Record<string, any>, slot: Slot): Target | undefined {
+  const variants = SLOT_VARIANTS[slot] || [];
+  if (!variants.length) return undefined;
+
+  const candidates = collectTargetCandidates(src, slot);
+
+  const pipeline = uniqStrings([
+    pickFromDirectFields(src, variants, DIRECT_ID_SUFFIXES.pipeline),
+    pickFromCandidates(candidates, CANDIDATE_ID_ATTRS.pipeline),
+  ]);
+
+  const status = uniqStrings([
+    pickFromDirectFields(src, variants, DIRECT_ID_SUFFIXES.status),
+    pickFromCandidates(candidates, CANDIDATE_ID_ATTRS.status),
+  ]);
+
+  const pipelineName = uniqStrings([
+    pickFromDirectFields(src, variants, DIRECT_NAME_SUFFIXES.pipeline),
+    pickFromCandidates(candidates, CANDIDATE_NAME_ATTRS.pipeline),
+  ]);
+
+  const statusName = uniqStrings([
+    pickFromDirectFields(src, variants, DIRECT_NAME_SUFFIXES.status),
+    pickFromCandidates(candidates, CANDIDATE_NAME_ATTRS.status),
+  ]);
+
+  if (!pipeline && !status && !pipelineName && !statusName) return undefined;
+  return { pipeline, status, pipelineName, statusName };
+}
+
+async function normalizeTarget(src: Record<string, any>, slot: Slot): Promise<Target | undefined> {
+  const rough = deriveTarget(src, slot);
+  return enrichNames(rough);
+}
+
 // ---------- GET ----------
 export async function GET() {
-  const ids = await readIdsMerged();
-  if (!ids.length) return NextResponse.json<Campaign[]>([]);
-  const items = await kv.mget<(Campaign|null)[]>(...ids.map((id)=>ITEM_KEY(id)));
-  const out: Campaign[] = [];
-  items.forEach((it)=> it && typeof it==="object" && out.push(it as Campaign));
-  out.sort((a,b)=> (b.createdAt??0)-(a.createdAt??0));
-  return NextResponse.json(out);
+  const rawCampaigns = (await kvRead.listCampaigns<Record<string, any>>()) ?? [];
+  if (!rawCampaigns.length) {
+    return NextResponse.json<Campaign[]>([]);
+  }
+
+  const normalized: Campaign[] = [];
+
+  for (const raw of rawCampaigns) {
+    const id = pickStr(raw?.id) || pickStr(raw?.__index_id);
+    if (!id) continue;
+
+    const name = pickStr(raw?.name) || pickStr(raw?.title) || `#${id}`;
+    const createdAt =
+      pickNum(raw?.created_at) ||
+      pickNum(raw?.createdAt) ||
+      pickNum(raw?.created) ||
+      (Number(id) && Number.isFinite(Number(id)) ? Number(id) : undefined);
+
+    const [base, t1, t2, texp] = await Promise.all([
+      normalizeTarget(raw, "base"),
+      normalizeTarget(raw, "t1"),
+      normalizeTarget(raw, "t2"),
+      normalizeTarget(raw, "texp"),
+    ]);
+
+    const counters: Counters = {
+      v1: Number(raw?.v1_count ?? raw?.counters?.v1 ?? 0) || 0,
+      v2: Number(raw?.v2_count ?? raw?.counters?.v2 ?? 0) || 0,
+      exp: Number(raw?.exp_count ?? raw?.counters?.exp ?? 0) || 0,
+    };
+
+    const expDays =
+      pickNum(raw?.expDays) ??
+      pickNum(raw?.exp) ??
+      pickNum(raw?.exp_value) ??
+      pickNum(raw?.expireDays) ??
+      pickNum(raw?.expire) ??
+      pickNum(raw?.vexp);
+
+    const ruleV1 = resolveRule(pickRuleCandidate(raw as CampaignLike, "v1"));
+    const ruleV2 = resolveRule(pickRuleCandidate(raw as CampaignLike, "v2"));
+
+    normalized.push({
+      id,
+      __index_id: pickStr(raw?.__index_id),
+      name,
+      active: raw?.active !== false,
+      base,
+      t1,
+      t2,
+      texp,
+      v1: pickStr(raw?.v1) ?? pickStr(raw?.rules?.v1) ?? pickStr(raw?.v1_rule),
+      v2: pickStr(raw?.v2) ?? pickStr(raw?.rules?.v2) ?? pickStr(raw?.v2_rule),
+      expDays,
+      exp: expDays,
+      counters,
+      createdAt,
+      rules: raw?.rules ?? null,
+      rulesNormalized: {
+        v1: ruleV1 ? { value: ruleV1.value, op: ruleV1.op } : null,
+        v2: ruleV2 ? { value: ruleV2.value, op: ruleV2.op } : null,
+      },
+    });
+  }
+
+  normalized.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+  return NextResponse.json(normalized);
 }
 
 // ---------- POST ----------
