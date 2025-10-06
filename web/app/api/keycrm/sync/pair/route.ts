@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import {
-  normalizeCandidate,
+  collectRuleCandidates,
   chooseCampaignRoute,
   pickRuleCandidate,
   resolveRule,
@@ -50,46 +50,6 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function collectCandidates(
-  value: unknown,
-  seen: Set<string>,
-  depth = 12,
-  visited?: WeakSet<object>,
-) {
-  if (depth <= 0 || value == null) return;
-
-  if (typeof value === 'string') {
-    const normalized = normalizeCandidate(value).trim();
-    if (normalized) seen.add(normalized);
-    return;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    seen.add(String(value));
-    return;
-  }
-
-  const nextVisited = visited ?? new WeakSet<object>();
-
-  if (Array.isArray(value)) {
-    if (nextVisited.has(value as object)) return;
-    nextVisited.add(value as object);
-    for (const item of value) {
-      collectCandidates(item, seen, depth - 1, nextVisited);
-    }
-    return;
-  }
-
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    if (nextVisited.has(obj)) return;
-    nextVisited.add(obj);
-    for (const v of Object.values(obj)) {
-      collectCandidates(v, seen, depth - 1, nextVisited);
-    }
-  }
-}
-
 async function bumpCounter(id: string, field: 'v1_count' | 'v2_count' | 'exp_count') {
   const itemKey = campaignKeys.ITEM_KEY(id);
   const raw = await kvRead.getRaw(itemKey);
@@ -121,12 +81,11 @@ export async function POST(req: NextRequest) {
 
     // 2) спроба знайти першу, що матчить
     let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
-    const candidateSet = new Set<string>();
-    collectCandidates(body, candidateSet);
-    if (norm.text) candidateSet.add(norm.text);
-    if (norm.title) candidateSet.add(norm.title);
-    if (norm.handle) candidateSet.add(norm.handle);
-    const candidates = Array.from(candidateSet).filter(Boolean);
+    const { values: candidates, truncated } = collectRuleCandidates(
+      body,
+      [norm.text, norm.title, norm.handle],
+      { limit: 25 },
+    );
     for (const c of active) {
       const route = chooseCampaignRoute(candidates, c);
       if (route !== 'none') {
@@ -153,7 +112,7 @@ export async function POST(req: NextRequest) {
       debug: {
         candidates: candidates.slice(0, 25),
         candidateCount: candidates.length,
-        truncated: candidates.length > 25,
+        truncated,
         ruleV1: resolvedV1 ? { value: resolvedV1.value, op: resolvedV1.op } : null,
         ruleV2: resolvedV2 ? { value: resolvedV2.value, op: resolvedV2.op } : null,
       },

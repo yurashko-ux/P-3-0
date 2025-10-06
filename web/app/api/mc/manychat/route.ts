@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import {
-  normalizeCandidate,
+  collectRuleCandidates,
   matchRuleAgainstInputs,
   pickRuleCandidate,
   type CampaignLike,
@@ -50,46 +50,6 @@ function normalize(body: any) {
   return { title, handle, text };
 }
 
-function collectCandidates(
-  value: unknown,
-  seen: Set<string>,
-  depth = 12,
-  visited?: WeakSet<object>,
-) {
-  if (depth <= 0 || value == null) return;
-
-  if (typeof value === 'string') {
-    const normalized = normalizeCandidate(value).trim();
-    if (normalized) seen.add(normalized);
-    return;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    seen.add(String(value));
-    return;
-  }
-
-  const nextVisited = visited ?? new WeakSet<object>();
-
-  if (Array.isArray(value)) {
-    if (nextVisited.has(value as object)) return;
-    nextVisited.add(value as object);
-    for (const item of value) {
-      collectCandidates(item, seen, depth - 1, nextVisited);
-    }
-    return;
-  }
-
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    if (nextVisited.has(obj)) return;
-    nextVisited.add(obj);
-    for (const v of Object.values(obj)) {
-      collectCandidates(v, seen, depth - 1, nextVisited);
-    }
-  }
-}
-
 export async function POST(req: NextRequest) {
   // Optional verification of ManyChat secret if you use it:
   const mcToken = process.env.MC_TOKEN;
@@ -112,17 +72,11 @@ export async function POST(req: NextRequest) {
   const active = campaigns.filter(c => c.active !== false);
 
   // Compute matches
-  const candidates = new Set<string>();
-  collectCandidates(payload, candidates);
-  const push = (value: unknown) => {
-    const normalized = normalizeCandidate(value).trim();
-    if (normalized) candidates.add(normalized);
-  };
-  push(norm.text);
-  push(norm.title);
-  push(norm.handle);
-
-  const textCandidates = Array.from(candidates);
+  const { values: textCandidates } = collectRuleCandidates(
+    payload,
+    [norm.text, norm.title, norm.handle],
+    { limit: 50 },
+  );
 
   const matches = active.map((c) => {
     const v1 = matchRuleAgainstInputs(textCandidates, pickRuleCandidate(c, 'v1'));

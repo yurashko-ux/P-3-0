@@ -68,6 +68,75 @@ export function normalizeCandidate(value: unknown, depth = 12): string {
   return String(value);
 }
 
+type CollectOpts = {
+  limit?: number;
+  maxDepth?: number;
+};
+
+export function collectRuleCandidates(
+  payload: unknown,
+  seeds: Iterable<unknown> = [],
+  opts: CollectOpts = {},
+): { values: string[]; truncated: boolean } {
+  const limit = Math.max(1, Math.min(opts.limit ?? 50, 500));
+  const maxDepth = Math.max(1, Math.min(opts.maxDepth ?? 12, 20));
+  const values = new Set<string>();
+  let truncated = false;
+  const visited = typeof WeakSet !== 'undefined' ? new WeakSet<object>() : undefined;
+
+  const add = (raw: unknown) => {
+    if (values.size >= limit) {
+      truncated = true;
+      return;
+    }
+    const normalized = normalizeCandidate(raw).trim();
+    if (!normalized || values.has(normalized)) return;
+    values.add(normalized);
+  };
+
+  const walk = (value: unknown, depth: number) => {
+    if (depth <= 0 || value == null || values.size >= limit) return;
+
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      add(value);
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      if (visited) {
+        if (visited.has(value as object)) return;
+        visited.add(value as object);
+      }
+      for (const item of value) {
+        walk(item, depth - 1);
+        if (values.size >= limit) return;
+      }
+      return;
+    }
+
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      if (visited) {
+        if (visited.has(obj)) return;
+        visited.add(obj);
+      }
+      for (const v of Object.values(obj)) {
+        walk(v, depth - 1);
+        if (values.size >= limit) return;
+      }
+    }
+  };
+
+  for (const seed of seeds) {
+    add(seed);
+    if (values.size >= limit) break;
+  }
+
+  walk(payload, maxDepth);
+
+  return { values: Array.from(values), truncated };
+}
+
 function resolveOp(raw: unknown): 'contains' | 'equals' {
   if (typeof raw !== 'string') return 'contains';
   const lowered = raw.trim().toLowerCase();
