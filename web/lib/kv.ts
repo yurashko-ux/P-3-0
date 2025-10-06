@@ -12,6 +12,14 @@ const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
 const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
 const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
 
+let directKv: typeof import('@vercel/kv').kv | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+  directKv = require('@vercel/kv').kv;
+} catch {
+  directKv = null;
+}
+
 async function rest(path: string, opts: RequestInit = {}, ro = false) {
   const headers = {
     'Content-Type': 'application/json',
@@ -23,20 +31,42 @@ async function rest(path: string, opts: RequestInit = {}, ro = false) {
 }
 
 async function kvGetRaw(key: string) {
-  if (!BASE || !RD_TOKEN) return null as string | null;
-  const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
-  if (!res) return null;
-  return res.text();
+  if (BASE && RD_TOKEN) {
+    const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
+    if (res) return res.text();
+  }
+  if (directKv) {
+    const value = await directKv.get(key).catch(() => null as unknown);
+    if (value == null) return null;
+    return typeof value === 'string' ? value : JSON.stringify(value);
+  }
+  return null as string | null;
 }
 
 async function kvSetRaw(key: string, value: string) {
-  if (!BASE || !WR_TOKEN) return;
-  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+  if (BASE && WR_TOKEN) {
+    await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+    return;
+  }
+  if (directKv) {
+    await directKv.set(key, value).catch(() => {});
+  }
 }
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
-  if (!BASE || !RD_TOKEN) return [] as string[];
+  if (!BASE || !RD_TOKEN) {
+    if (directKv) {
+      try {
+        const arr = await directKv.lrange<string>(key, start, stop);
+        if (Array.isArray(arr)) return arr.map(String);
+      } catch {
+        return [] as string[];
+      }
+      return [] as string[];
+    }
+    return [] as string[];
+  }
   const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
   if (!res) return [] as string[];
 
@@ -183,11 +213,16 @@ export const kvRead = {
 export const kvWrite = {
   async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
   async lpush(key: string, value: string) {
-    if (!BASE || !WR_TOKEN) return;
-    await rest(`lpush/${encodeURIComponent(key)}`, {
-      method: 'POST',
-      body: JSON.stringify({ value }),
-    }).catch(() => {});
+    if (BASE && WR_TOKEN) {
+      await rest(`lpush/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        body: JSON.stringify({ value }),
+      }).catch(() => {});
+      return;
+    }
+    if (directKv) {
+      await directKv.lpush(key, value).catch(() => {});
+    }
   },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
