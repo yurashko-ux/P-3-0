@@ -6,6 +6,16 @@
 
 Щоб пересвідчитись, достатньо в тому ж середовищі виконати запит на `kvRead.getRaw('cmp:item:<ID>')` або `kvRead.lrange('cmp:ids')`. Якщо відповідь порожня — значить, проблема у відсутності доступу до KV, а не в логіці обробки V1/V2.
 
+> **Швидка перевірка прямо зараз.** Якщо потрібно просто скопіювати готову команду з наданими реквізитами (`UPSTASH_REDIS_REST_URL="https://hot-louse-21041.upstash.io"`, `UPSTASH_REDIS_REST_TOKEN="AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE"`), виконайте:
+>
+> ```bash
+> curl -i \
+>   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>   "https://hot-louse-21041.upstash.io/ping"
+> ```
+>
+> Статус `HTTP/1.1 200 OK` та тіло `{"result":"PONG"}` підтверджують, що токен чинний.
+
 > ⚠️ Наявність змінних `KV_REST_API_URL` і `KV_REST_API_TOKEN` не гарантує доступу: токен може бути простроченим, без потрібних прав або прив'язаним до іншого середовища/простору. У такій ситуації `fetch` повертає 401/403 (або порожній JSON), і клієнт так само бачить «порожні» кампанії.
 
 ## Як оновити або перевипустити REST-токен Vercel KV
