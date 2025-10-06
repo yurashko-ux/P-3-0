@@ -110,6 +110,16 @@ Content-Type: application/json; charset=utf-8
 >   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | python -m json.tool
 > ```
 >
+> На macOS часто встановлено лише `python3`, тому команда вище може завершитись `command not found`. У такому разі замініть її на `python3 -m json.tool`:
+>
+> ```bash
+> curl -fsS \
+>   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | python3 -m json.tool
+> ```
+>
+> Якщо ж `python3` також відсутній, залиште лише `curl …` без пайпа або скористайтеся будь-яким іншим JSON-преттіром (наприклад, `node -e 'process.stdin.on("data", c => console.log(JSON.stringify(JSON.parse(c.toString()), null, 2)))'`). Це дозволить побачити сирий JSON-вивід та переконатися, що сервер повертає саме те, що очікуємо.
+>
 > Помилка `ERR wrong number of arguments for 'keys' command` означає, що запит випадково пішов на `/keys` без закодованої `*` або з параметрами, тому перевірте, що використовується саме шлях `/lrange/...` без додаткових query-параметрів і всі двокрапки (`:`) замінено на `%3A`.
 >
 > Якщо відповідь — масив із ідентифікаторами (наприклад, `["cmp:item:123","cmp:item:456"]`), значить, дані кампаній присутні й `kvRead.listCampaigns` зможе їх побачити. Статус 200 із `[]` означає, що доступ є, але індекс поки порожній; у такому випадку перевірте, що процес синхронізації KeyCRM → KV відпрацьовує коректно.
