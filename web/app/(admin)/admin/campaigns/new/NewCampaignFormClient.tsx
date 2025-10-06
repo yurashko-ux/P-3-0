@@ -138,7 +138,11 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok || !j?.ok) {
-      alert(`Не вдалося зберегти: ${j?.error || res.statusText}`);
+      const errorText =
+        (typeof j?.message === 'string' && j.message) ||
+        (typeof j?.error === 'string' && j.error) ||
+        res.statusText;
+      alert(`Не вдалося зберегти: ${errorText}`);
       return;
     }
     window.location.href = '/admin/campaigns?created=1';
