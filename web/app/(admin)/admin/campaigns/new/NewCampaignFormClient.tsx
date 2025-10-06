@@ -44,45 +44,49 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
   const [name, setName] = React.useState('');
   const [basePipeId, setBasePipeId] = React.useState<string>(pipes[0]?.id ? String(pipes[0].id) : '');
   const [baseStatusId, setBaseStatusId] = React.useState<string>('');
+  const baseStatuses = React.useMemo(() => getStatuses(pipes, basePipeId), [pipes, basePipeId]);
   React.useEffect(() => {
-    const sts = getStatuses(pipes, basePipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === baseStatusId)) {
-      setBaseStatusId(String(sts[0].id));
-    }
-  }, [basePipeId, baseStatusId, pipes]);
+    setBaseStatusId((prev) => {
+      if (!baseStatuses.length) return '';
+      return baseStatuses.some((s) => String(s.id) === prev) ? prev : String(baseStatuses[0].id);
+    });
+  }, [baseStatuses]);
 
   // Варіант №1
   const [v1Value, setV1Value] = React.useState('');
   const [v1PipeId, setV1PipeId] = React.useState<string>(basePipeId);
   const [v1StatusId, setV1StatusId] = React.useState<string>('');
+  const v1Statuses = React.useMemo(() => getStatuses(pipes, v1PipeId), [pipes, v1PipeId]);
   React.useEffect(() => {
-    const sts = getStatuses(pipes, v1PipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === v1StatusId)) {
-      setV1StatusId(String(sts[0].id));
-    }
-  }, [pipes, v1PipeId, v1StatusId]);
+    setV1StatusId((prev) => {
+      if (!v1Statuses.length) return '';
+      return v1Statuses.some((s) => String(s.id) === prev) ? prev : String(v1Statuses[0].id);
+    });
+  }, [v1Statuses]);
 
   // Варіант №2
   const [v2Value, setV2Value] = React.useState('');
   const [v2PipeId, setV2PipeId] = React.useState<string>(basePipeId);
   const [v2StatusId, setV2StatusId] = React.useState<string>('');
+  const v2Statuses = React.useMemo(() => getStatuses(pipes, v2PipeId), [pipes, v2PipeId]);
   React.useEffect(() => {
-    const sts = getStatuses(pipes, v2PipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === v2StatusId)) {
-      setV2StatusId(String(sts[0].id));
-    }
-  }, [pipes, v2PipeId, v2StatusId]);
+    setV2StatusId((prev) => {
+      if (!v2Statuses.length) return '';
+      return v2Statuses.some((s) => String(s.id) === prev) ? prev : String(v2Statuses[0].id);
+    });
+  }, [v2Statuses]);
 
   // Expire
   const [expDays, setExpDays] = React.useState<string>('7');
   const [expPipeId, setExpPipeId] = React.useState<string>(basePipeId);
   const [expStatusId, setExpStatusId] = React.useState<string>('');
+  const expStatuses = React.useMemo(() => getStatuses(pipes, expPipeId), [pipes, expPipeId]);
   React.useEffect(() => {
-    const sts = getStatuses(pipes, expPipeId);
-    if (sts.length && !sts.find((s) => String(s.id) === expStatusId)) {
-      setExpStatusId(String(sts[0].id));
-    }
-  }, [expPipeId, expStatusId, pipes]);
+    setExpStatusId((prev) => {
+      if (!expStatuses.length) return '';
+      return expStatuses.some((s) => String(s.id) === prev) ? prev : String(expStatuses[0].id);
+    });
+  }, [expStatuses]);
 
   function toNum(v: string) {
     const n = Number(v);
@@ -177,7 +181,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
               value={baseStatusId}
               onChange={(e) => setBaseStatusId(e.target.value)}
             >
-              {getStatuses(pipes, basePipeId).map((s) => (
+              {baseStatuses.map((s) => (
                 <option key={String(s.id)} value={String(s.id)}>
                   {s.name}
                 </option>
@@ -221,7 +225,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
               value={v1StatusId}
               onChange={(e) => setV1StatusId(e.target.value)}
             >
-              {getStatuses(pipes, v1PipeId).map((s) => (
+              {v1Statuses.map((s) => (
                 <option key={String(s.id)} value={String(s.id)}>
                   {s.name}
                 </option>
@@ -265,7 +269,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
               value={v2StatusId}
               onChange={(e) => setV2StatusId(e.target.value)}
             >
-              {getStatuses(pipes, v2PipeId).map((s) => (
+              {v2Statuses.map((s) => (
                 <option key={String(s.id)} value={String(s.id)}>
                   {s.name}
                 </option>
@@ -311,7 +315,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
               value={expStatusId}
               onChange={(e) => setExpStatusId(e.target.value)}
             >
-              {getStatuses(pipes, expPipeId).map((s) => (
+              {expStatuses.map((s) => (
                 <option key={String(s.id)} value={String(s.id)}>
                   {s.name}
                 </option>
