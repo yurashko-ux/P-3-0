@@ -45,19 +45,28 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const needle = rule.value.trim().toLowerCase();
-  if (!needle) return false;
-  const hay = (text || '').trim().toLowerCase();
-  if (rule.op === 'equals') return hay === needle;
-  // default contains
-  return hay.includes(needle);
+function normalizeCandidate(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  return String(value);
 }
 
-function chooseRoute(text: string, rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2' | 'none' {
-  const r1 = matchRule(text, rules?.v1);
-  const r2 = matchRule(text, rules?.v2);
+function matchRule(inputs: string[], rule?: Rule): boolean {
+  if (!rule || rule.value === undefined || rule.value === null) return false;
+  const needle = normalizeCandidate(rule.value).trim().toLowerCase();
+  if (!needle) return false;
+  return inputs.some(input => {
+    const hay = normalizeCandidate(input).trim().toLowerCase();
+    if (!hay) return false;
+    if (rule.op === 'equals') return hay === needle;
+    // default contains
+    return hay.includes(needle);
+  });
+}
+
+function chooseRoute(inputs: string[], rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2' | 'none' {
+  const r1 = matchRule(inputs, rules?.v1);
+  const r2 = matchRule(inputs, rules?.v2);
   if (r1 && !r2) return 'v1';
   if (r2 && !r1) return 'v2';
   // якщо збігаються обидва або жоден — не вирішуємо (можна додати пріоритети пізніше)
@@ -96,8 +105,9 @@ export async function POST(req: NextRequest) {
 
     // 2) спроба знайти першу, що матчить
     let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
+    const candidates = [norm.text, norm.title, norm.handle].filter(Boolean);
     for (const c of active) {
-      const route = chooseRoute(norm.text, c.rules);
+      const route = chooseRoute(candidates, c.rules);
       if (route !== 'none') {
         chosen = { route, campaign: c };
         break;
