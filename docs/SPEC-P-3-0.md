@@ -19,9 +19,9 @@
 
 **Identifiers & lookup.**
 
-* Instagram `username` у KeyCRM — унікальний; використовуємо його як ключ для пошуку `card_id`.
-* Під час інжесту викликаємо helper `resolveCardByUsername(username)`, який звертається до KeyCRM API та повертає рівно одну активну картку; якщо (аномально) їх декілька — бере найсвіжішу за `updated_at`; якщо жодної — лог `mc_ingest:not_found` і **пропускаємо дію** (MVP: без авто‑створення картки).
-* (Опційно, після MVP) кеш `username → card_id` у KV з TTL 24h для зменшення навантаження на KeyCRM.
+* Instagram `username` з ManyChat трансформується у `contact.social_id` (з та без `@`) та `contact.full_name` при зверненнях до KeyCRM. Сам `username` як окремий ключ у KeyCRM **не** використовується.
+* Під час інжесту (та у діагностичних інструментах) викликаємо helper `findCardSimple`, який спочатку шукає картку за `contact.social_id`, а якщо не знайдено — повторює спробу з `contact.full_name` / назвою картки.
+* (Опційно, після MVP) кеш `social_id → card_id` у KV з TTL 24h для зменшення навантаження на KeyCRM.
 
 **Integrations & endpoints (всередині проекту).**
 
@@ -55,6 +55,28 @@
 2. `GET /api/campaigns` повертає нову кампанію одразу після створення.
 3. Усі fetch з адмінки — з `credentials:'include'`.
 4. Інжест читає `Authorization: Bearer ${MC_TOKEN}` або `?token=`.
+
+### KeyCRM lookup diagnostics
+
+*Покриває локальні/прод-перевірки пошуку карток за `contact.social_id` та `contact.full_name`.*
+
+1. **Мок-тест без KeyCRM.**
+   ```bash
+   cd P-3-0/web
+   npm install
+   npm run test:keycrm:mock
+   ```
+   Скрипт `scripts/test-keycrm-mapping.ts` емулює відповіді KeyCRM і гарантує, що `findCardSimple` спершу знаходить картку за `social_id`, а потім за `full_name`.
+2. **Живий запит через CLI.**
+   ```bash
+   cd P-3-0/web
+   KEYCRM_API_TOKEN=<токен> npm run check:keycrm -- <instagram_handle>
+   ```
+   Опційно додайте `--social_name=instagram` або `--scope=global|campaign`. Скрипт послідовно робить дві спроби (social → full_name) і виводить, яка спрацювала.
+3. **HTTP-ендпоінт (локально або на Vercel).**
+   * Локально після `npm run dev`: `http://localhost:3000/api/keycrm/check?handle=<instagram_handle>`
+   * Прод-URL після деплою: `https://p-3-0.vercel.app/api/keycrm/check?handle=<instagram_handle>`
+   Ендпоінт повертає payload `requested` із фактичними ключами (`social_id`, `full_name`) та результат пошуку. Якщо отримуєте `404`, переконайтесь, що задеплоєна збірка містить маршрут `/api/keycrm/check`.
 
 ---
 

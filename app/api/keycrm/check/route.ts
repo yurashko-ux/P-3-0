@@ -1,4 +1,4 @@
-// app/api/keycrm/find/route.ts
+// app/api/keycrm/check/route.ts
 import { NextResponse } from "next/server";
 import { findCardSimple } from "@/lib/keycrm-find";
 import { getActiveCampaign } from "@/lib/campaigns";
@@ -6,21 +6,29 @@ import { getActiveCampaign } from "@/lib/campaigns";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/keycrm/find?social_id=kolachnyk.v&full_name=Viktoria%20Kolachnyk
+ * GET /api/keycrm/check?instagram=kolachnyk.v
+ *   [optional] handle=kolachnyk.v (alias для instagram)
+ *   [optional] social_id=@kolachnyk.v
+ *   [optional] full_name=Viktoria%20Kolachnyk
+ *   [optional] social_name=instagram
  *   [optional] pipeline_id=1&status_id=38
  *   [optional] max_pages=3&page_size=50
  *   [optional] strategy=social|full_name|both (default: both)
  *   [optional] title_mode=exact|contains (default: exact)
  *   [optional] scope=campaign|global (default: campaign якщо є активна, інакше global)
+ *
+ * Якщо social_id/full_name не передано, вони автоматично підставляються з instagram-логіна.
  */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const q = (k: string) => url.searchParams.get(k) || undefined;
 
-    const social_id = q("social_id")?.trim() || undefined;
-    const full_name = q("full_name")?.trim();
-    const social_name = q("social_name")?.trim();
+    const instagram = q("instagram")?.trim() || q("handle")?.trim();
+
+    const social_id = q("social_id")?.trim() || instagram;
+    const full_name = q("full_name")?.trim() || instagram;
+    const social_name = q("social_name")?.trim() || (social_id ? "instagram" : undefined);
 
     let pipeline_id = q("pipeline_id") ? Number(q("pipeline_id")) : undefined;
     let status_id = q("status_id") ? Number(q("status_id")) : undefined;
@@ -30,6 +38,17 @@ export async function GET(req: Request) {
     const strategy = (q("strategy") as "social" | "full_name" | "both") || "both";
     const title_mode = (q("title_mode") as "exact" | "contains") || "exact";
     let scope = (q("scope") as "campaign" | "global" | undefined) || undefined;
+
+    if (!social_id && !full_name) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "no_lookup_keys",
+          message: "Передай instagram або явні social_id/full_name.",
+        },
+        { status: 200 }
+      );
+    }
 
     // якщо scope не задано — беремо з активної кампанії
     if (!scope) {
@@ -54,7 +73,18 @@ export async function GET(req: Request) {
       scope,
     });
 
-    return NextResponse.json(res, { status: 200 });
+    return NextResponse.json(
+      {
+        ...res,
+        requested: {
+          instagram: instagram || null,
+          social_id: social_id || null,
+          full_name: full_name || null,
+          social_name: social_name || null,
+        },
+      },
+      { status: 200 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, error: "server_error", message: err?.message || String(err) },

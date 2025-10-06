@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:keycrm": "tsx scripts/check-keycrm.ts",
+    "test:keycrm:mock": "tsx scripts/test-keycrm-mapping.ts"
   },
   "dependencies": {
     "next": "14.2.7",
@@ -16,6 +18,7 @@
     "@vercel/kv": "^1.0.1"
   },
   "devDependencies": {
+    "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "@types/react": "^18.3.5",
     "@types/node": "^20.11.30",
