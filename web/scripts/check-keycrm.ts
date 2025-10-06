@@ -36,6 +36,7 @@ const HELP = `
 
 Основні прапорці:
   --instagram=<value>        Те ж саме, що позиційний аргумент.
+  --handle=<value>           Синонім до --instagram (для зручності копіювання).
   --social_id=<value>        Використати конкретний contact.social_id.
   --full_name=<value>        Використати конкретний contact.full_name/назву картки.
   --social_name=<value>      Платформа (instagram, telegram, ...). За замовчуванням instagram.
@@ -51,6 +52,8 @@ const HELP = `
   1. Пошук за contact.social_id (Instagram username з "@" та без).
   2. Пошук за contact.full_name / назвою картки.
 
+HTTP-ендпоінт `/api/keycrm/check` робить ті ж самі кроки у такій послідовності.
+
 Як запустити з кореня репозиторію:
   cd P-3-0/web && KEYCRM_API_TOKEN=... npm run check:keycrm -- kolachnyk.v
 
@@ -58,10 +61,10 @@ const HELP = `
   KEYCRM_API_TOKEN=... npm run --prefix /шлях/до/P-3-0/web check:keycrm -- kolachnyk.v
 
 HTTP-посилання (активне на проді з коректними KEYCRM env):
-  https://p-3-0.vercel.app/api/keycrm/check?instagram=kolachnyk.v
+  https://p-3-0.vercel.app/api/keycrm/check?handle=kolachnyk.v
 
 Локальне тестування (після запуску Next.js на 3000 порту):
-  http://localhost:3000/api/keycrm/check?instagram=kolachnyk.v
+  http://localhost:3000/api/keycrm/check?handle=kolachnyk.v
 
 Юніт-перевірка без реального KeyCRM (використовує мок-дані):
   npm run test:keycrm:mock
@@ -95,6 +98,7 @@ function parseArgs(argv: string[]): Parsed {
 
     switch (rawKey) {
       case "instagram":
+      case "handle":
       case "social_id":
       case "full_name":
       case "social_name":
