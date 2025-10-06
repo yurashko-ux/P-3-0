@@ -52,10 +52,59 @@ async function rest(path: string, opts: RequestInit = {}, ro = false) {
   return res;
 }
 
+async function restCommand<T = unknown>(
+  command: string,
+  args: Array<string | number>,
+  ro = false
+): Promise<T | null> {
+  if (!BASE || !(ro ? RD_TOKEN : WR_TOKEN)) return null;
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${ro ? RD_TOKEN : WR_TOKEN}`,
+  };
+
+  const body = JSON.stringify([
+    command,
+    ...args.map((arg) => (typeof arg === 'string' ? arg : String(arg))),
+  ]);
+
+  try {
+    const res = await fetch(BASE, {
+      method: 'POST',
+      headers,
+      body,
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`${command} ${res.status}`);
+
+    const txt = await res.text();
+    if (!txt) return null;
+
+    try {
+      const parsed = JSON.parse(txt);
+      if (parsed && typeof parsed === 'object' && 'result' in parsed) {
+        return (parsed as { result: T }).result;
+      }
+      return parsed as T;
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
 async function kvGetRaw(key: string) {
   if (BASE && RD_TOKEN) {
     const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
     if (res) return res.text();
+
+    const viaCommand = await restCommand<string | null>('GET', [key], true);
+    if (typeof viaCommand === 'string') return viaCommand;
+    if (viaCommand && typeof viaCommand === 'object') {
+      try { return JSON.stringify(viaCommand); } catch { /* noop */ }
+    }
   }
   if (directKv) {
     const value = await directKv.get(key).catch(() => null as unknown);
@@ -72,7 +121,13 @@ async function kvGetRaw(key: string) {
 
 async function kvSetRaw(key: string, value: string) {
   if (BASE && WR_TOKEN) {
-    await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+    const ok = await rest(`set/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      body: value,
+    }).then(() => true).catch(() => false);
+    if (!ok) {
+      await restCommand('SET', [key, value]).catch(() => null);
+    }
     return;
   }
   if (directKv) {
@@ -108,7 +163,23 @@ async function kvLRange(key: string, start = 0, stop = -1) {
     return [] as string[];
   }
   const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
-  if (!res) return [] as string[];
+  if (!res) {
+    const viaCommand = await restCommand<any>('LRANGE', [key, start, stop], true);
+    if (Array.isArray(viaCommand)) {
+      return viaCommand.map((x) => (x == null ? '' : String(x))).filter(Boolean);
+    }
+    if (viaCommand && typeof viaCommand === 'object') {
+      const arr = (Array.isArray((viaCommand as any).result)
+        ? (viaCommand as any).result
+        : Array.isArray((viaCommand as any).data)
+          ? (viaCommand as any).data
+          : []);
+      if (arr.length) {
+        return arr.map((x: any) => (x == null ? '' : String(x))).filter(Boolean);
+      }
+    }
+    return [] as string[];
+  }
 
   let txt = '';
   try { txt = await res.text(); } catch { return []; }
@@ -393,10 +464,13 @@ export const kvWrite = {
   async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
   async lpush(key: string, value: string) {
     if (BASE && WR_TOKEN) {
-      await rest(`lpush/${encodeURIComponent(key)}`, {
+      const ok = await rest(`lpush/${encodeURIComponent(key)}`, {
         method: 'POST',
         body: JSON.stringify({ value }),
-      }).catch(() => {});
+      }).then(() => true).catch(() => false);
+      if (!ok) {
+        await restCommand('LPUSH', [key, value]).catch(() => null);
+      }
       return;
     }
     if (directKv) {
@@ -435,7 +509,10 @@ export const kvWrite = {
     await rest(`lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
       method: 'POST',
       body: JSON.stringify({ value: id }),
-    }).catch(() => {});
+    })
+      .catch(async () => {
+        await restCommand('LPUSH', [campaignKeys.INDEX_KEY, id]).catch(() => null);
+      });
     return item;
   },
 };

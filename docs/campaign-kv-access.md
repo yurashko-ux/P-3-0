@@ -94,53 +94,53 @@ Content-Type: application/json; charset=utf-8
 >
 > Якщо бачите саме таку відповідь, REST-канал працює й можна переходити до читання ключів `cmp:ids` / `cmp:item:*`.
 
-> **Наступний крок після `PONG`.** Щоб переконатися, що в базі дійсно є кампанії, одразу після успішного ping виконайте запит до індексу `cmp:ids` тими ж реквізитами. Список `cmp:ids` зберігається як Redis List, тому використовуємо команду `LRANGE`:
->
-> ```bash
-> curl -fsS \
->   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
->   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | jq .
-> ```
->
-> Якщо `jq` у системі немає, приберіть пайп (`| jq .`) або скористайтеся `python -m json.tool`:
->
-> ```bash
-> curl -fsS \
->   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
->   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | python -m json.tool
-> ```
->
-> На macOS часто встановлено лише `python3`, тому команда вище може завершитись `command not found`. У такому разі замініть її на `python3 -m json.tool`:
->
-> ```bash
-> curl -fsS \
->   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
->   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1" | python3 -m json.tool
-> ```
->
-> Якщо ж `python3` також відсутній, залиште лише `curl …` без пайпа або скористайтеся будь-яким іншим JSON-преттіром (наприклад, `node -e 'process.stdin.on("data", c => console.log(JSON.stringify(JSON.parse(c.toString()), null, 2)))'`). Це дозволить побачити сирий JSON-вивід та переконатися, що сервер повертає саме те, що очікуємо.
->
-> Помилка `ERR wrong number of arguments for 'keys' command` означає, що запит випадково пішов на `/keys` без закодованої `*` або з параметрами, тому перевірте, що використовується саме шлях `/lrange/...` без додаткових query-параметрів і всі двокрапки (`:`) замінено на `%3A`.
+> **Наступний крок після `PONG`.** Щоб переконатися, що в базі дійсно є кампанії, одразу після успішного ping виконайте команду `LRANGE` через HTTP-пайплайн. Такий варіант не залежить від форматування URL і працює навіть тоді, коли варіант із `/lrange/...` повертає `400 Bad Request`:
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+  -H "Content-Type: application/json" \
+  -d '["LRANGE","cmp:ids","0","-1"]' \
+  "https://hot-louse-21041.upstash.io"
+```
+
+> Помилка `ERR wrong number of arguments for 'keys' command` у попередніх спробах означала, що сервер отримував запит на іншу команду (наприклад, `KEYS`). POST-варіант вище напряму відправляє Redis-команду та усуває залежність від URL-енкодингу `:` або `*`.
+
+Якщо потрібно одразу відформатувати JSON, додайте будь-який зручний преттір:
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+  -H "Content-Type: application/json" \
+  -d '["LRANGE","cmp:ids","0","-1"]' \
+  "https://hot-louse-21041.upstash.io" | python3 -m json.tool
+```
+
+Якщо ні `python3`, ні `jq` не встановлені, можна залишити лише `curl …` або використати будь-яку іншу утиліту для форматування JSON (наприклад, `node -e 'process.stdin.on("data", d => console.log(JSON.stringify(JSON.parse(d.toString()), null, 2)))'`).
 >
 > Якщо відповідь — масив із ідентифікаторами (наприклад, `["cmp:item:123","cmp:item:456"]`), значить, дані кампаній присутні й `kvRead.listCampaigns` зможе їх побачити. Статус 200 із `[]` означає, що доступ є, але індекс поки порожній; у такому випадку перевірте, що процес синхронізації KeyCRM → KV відпрацьовує коректно.
 >
-> **Потрібна готова команда без додаткових утиліт.** Нижче наведено повністю розписаний запит саме з вашими Upstash реквізитами; можна просто скопіювати та вставити його в термінал. Команда поверне сирий JSON-масив індексів кампаній (без `jq` чи `python`):
->
-> ```bash
-> curl -fsS \
->   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
->   "https://hot-louse-21041.upstash.io/lrange/cmp%3Aids/0/-1"
-> ```
+> **Потрібна готова команда без додаткових утиліт.** Нижче наведено повністю розписаний POST-запит саме з вашими Upstash реквізитами; можна просто скопіювати та вставити його в термінал. Команда поверне сирий JSON-масив індексів кампаній (без `jq` чи `python`):
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+  -H "Content-Type: application/json" \
+  -d '["LRANGE","cmp:ids","0","-1"]' \
+  "https://hot-louse-21041.upstash.io"
+```
 >
 > Якщо відповідь виглядає як `[]`, індекс порожній; якщо ж бачите елементи на кшталт `"cmp:item:123"`, значить, кампанії присутні й можна перейти до читання конкретних записів.
 >
 > Далі можна вибрати один з ідентифікаторів та перечитати саму кампанію (ключ `cmp:item:<ID>` зберігається як JSON-рядок):
 >
-> ```bash
-> curl -fsS \
->   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
->   "https://hot-louse-21041.upstash.io/get/cmp%3Aitem%3A123" | jq .
-> ```
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+  -H "Content-Type: application/json" \
+  -d '["GET","cmp:item:123"]' \
+  "https://hot-louse-21041.upstash.io" | jq .
+```
 >
 > > **Примітка.** На деяких macOS-консолях `jq` відсутнє за замовчуванням. Його можна встановити через `brew install jq` або замінити на `python -m json.tool`, як показано вище.
 >
