@@ -45,6 +45,34 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
+function collectCandidates(value: unknown, seen: Set<string>, depth = 6) {
+  if (depth <= 0 || value == null) return;
+
+  if (typeof value === 'string') {
+    const normalized = normalizeCandidate(value).trim();
+    if (normalized) seen.add(normalized);
+    return;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    seen.add(String(value));
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectCandidates(item, seen, depth - 1);
+    }
+    return;
+  }
+
+  if (typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectCandidates(v, seen, depth - 1);
+    }
+  }
+}
+
 const VALUE_KEYS = ['value', 'label', 'text', 'title', 'name', 'id', 'key', 'code'];
 
 function normalizeCandidate(value: unknown, depth = 5): string {
@@ -156,7 +184,12 @@ export async function POST(req: NextRequest) {
 
     // 2) спроба знайти першу, що матчить
     let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
-    const candidates = [norm.text, norm.title, norm.handle].filter(Boolean);
+    const candidateSet = new Set<string>();
+    collectCandidates(body, candidateSet);
+    if (norm.text) candidateSet.add(norm.text);
+    if (norm.title) candidateSet.add(norm.title);
+    if (norm.handle) candidateSet.add(norm.handle);
+    const candidates = Array.from(candidateSet).filter(Boolean);
     for (const c of active) {
       const route = chooseRoute(candidates, c.rules);
       if (route !== 'none') {
