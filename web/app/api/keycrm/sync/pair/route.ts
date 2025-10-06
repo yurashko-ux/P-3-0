@@ -26,6 +26,10 @@ type Campaign = {
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
+  pair_lookup_success_count?: number;
+  pair_lookup_fail_count?: number;
+  pair_move_success_count?: number;
+  pair_move_fail_count?: number;
 };
 
 // ----- helpers -----
@@ -53,17 +57,57 @@ function chooseRoute(text: string, rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2
   return 'none';
 }
 
-async function bumpCounter(id: string, field: 'v1_count' | 'v2_count' | 'exp_count') {
+type CounterField =
+  | 'v1_count'
+  | 'v2_count'
+  | 'exp_count'
+  | 'pair_lookup_success_count'
+  | 'pair_lookup_fail_count'
+  | 'pair_move_success_count'
+  | 'pair_move_fail_count';
+
+type CounterDeltas = Partial<Record<CounterField, number>>;
+
+type CounterTotals = Partial<Record<CounterField, number>>;
+
+async function applyCounterDeltas(id: string, deltas: CounterDeltas): Promise<CounterTotals | null> {
+  const entries = Object.entries(deltas).filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v !== 0) as Array<
+    [CounterField, number]
+  >;
+  if (!entries.length) return null;
+
   const itemKey = campaignKeys.ITEM_KEY(id);
   const raw = await kvRead.getRaw(itemKey);
-  if (!raw) return;
+  if (!raw) return null;
+
+  let obj: Record<string, any>;
   try {
-    const obj = JSON.parse(raw);
-    obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
+    obj = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const totals: CounterTotals = {};
+  let changed = false;
+
+  for (const [field, delta] of entries) {
+    const current = typeof obj[field] === 'number' ? obj[field] : 0;
+    const next = current + delta;
+    obj[field] = next;
+    totals[field] = next;
+    changed = true;
+  }
+
+  if (!changed) return null;
+
+  try {
     await kvWrite.setRaw(itemKey, JSON.stringify(obj));
-    // необов’язково: кладемо id в head, щоб кампанія піднімалась у списку
     try { await kvWrite.lpush(campaignKeys.INDEX_KEY, id); } catch {}
-  } catch {}
+  } catch {
+    return null;
+  }
+
+  return totals;
 }
 
 function parseNumber(input: unknown): number | null {
@@ -124,13 +168,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3) якщо знайшли — інкрементуємо лічильник
-    if (chosen.campaign && chosen.route !== 'none') {
-      await bumpCounter(chosen.campaign.id, chosen.route === 'v1' ? 'v1_count' : 'v2_count');
-    }
-
     let search: Awaited<ReturnType<typeof kcFindCardIdInScope>> | null = null;
     let moveResult: Awaited<ReturnType<typeof kcMoveCard>> | null = null;
+    let counterTotals: CounterTotals | null = null;
+    const counterDeltas: CounterDeltas = {};
 
     if (chosen.campaign && chosen.route !== 'none') {
       const basePipeline = parseNumber(chosen.campaign.base_pipeline_id);
@@ -154,6 +195,11 @@ export async function POST(req: NextRequest) {
         status_id: baseStatus,
       });
 
+      if (search) {
+        const lookupField = search.cardId ? 'pair_lookup_success_count' : 'pair_lookup_fail_count';
+        counterDeltas[lookupField] = (counterDeltas[lookupField] ?? 0) + 1;
+      }
+
       const cardId = search.cardId;
       if (cardId && chosen.rule) {
         const targetPipeline = parseNumber(chosen.rule.pipeline_id);
@@ -171,6 +217,17 @@ export async function POST(req: NextRequest) {
         }
 
         moveResult = await kcMoveCard(cardId, targetPipeline, targetStatus);
+
+        const moveField = moveResult.ok ? 'pair_move_success_count' : 'pair_move_fail_count';
+        counterDeltas[moveField] = (counterDeltas[moveField] ?? 0) + 1;
+        if (moveResult.ok) {
+          const variantField = chosen.route === 'v1' ? 'v1_count' : 'v2_count';
+          counterDeltas[variantField] = (counterDeltas[variantField] ?? 0) + 1;
+        }
+      }
+
+      if (Object.keys(counterDeltas).length) {
+        counterTotals = await applyCounterDeltas(chosen.campaign.id, counterDeltas);
       }
     }
 
@@ -181,6 +238,7 @@ export async function POST(req: NextRequest) {
       campaign: chosen.campaign ? { id: chosen.campaign.id, name: chosen.campaign.name } : undefined,
       search,
       move: moveResult,
+      counters: counterTotals ? { deltas: counterDeltas, totals: counterTotals } : undefined,
       input: norm,
     });
   } catch (e: any) {

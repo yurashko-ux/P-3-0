@@ -100,6 +100,10 @@ export async function POST() {
     v1_count: 0,
     v2_count: 0,
     exp_count: 0,
+    pair_lookup_success_count: 0,
+    pair_lookup_fail_count: 0,
+    pair_move_success_count: 0,
+    pair_move_fail_count: 0,
   };
 
   const setRes = await kvSet(ITEM_KEY(id), item);
