@@ -47,8 +47,9 @@ function extractNormalized(body: any) {
 
 function matchRule(text: string, rule?: Rule): boolean {
   if (!rule || !rule.value) return false;
-  const needle = rule.value.toLowerCase();
-  const hay = (text || '').toLowerCase();
+  const needle = rule.value.trim().toLowerCase();
+  if (!needle) return false;
+  const hay = (text || '').trim().toLowerCase();
   if (rule.op === 'equals') return hay === needle;
   // default contains
   return hay.includes(needle);
