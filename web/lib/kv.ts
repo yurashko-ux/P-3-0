@@ -4,6 +4,8 @@
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
   ITEM_KEY: (id: string) => `campaign:${id}`,
+  ALT_INDEX_KEYS: ['cmp:ids', 'campaigns:index'] as const,
+  ALT_ITEM_KEYS: [(id: string) => `cmp:item:${id}`] as const,
 };
 
 const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
@@ -87,8 +89,9 @@ function normalizeIdRaw(raw: any, depth = 6): string {
       } catch { break; }
     }
     s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
-    const m = s.match(/\d{10,}/);
-    if (m) return m[0];
+    if (/^-?\d+$/.test(s)) return s.replace(/^0+(?=\d)/, '');
+    const m = s.match(/\d+/);
+    if (m) return m[0].replace(/^0+(?=\d)/, '');
     return '';
   }
   if (typeof raw === 'object') {
@@ -110,12 +113,46 @@ export const kvRead = {
   // - додаємо __index_id (id з індексу LIST)
   // - якщо obj.id зіпсований/порожній — підставляємо __index_id
   async listCampaigns<T extends Record<string, any> = any>(): Promise<T[]> {
-    const ids = (await kvLRange(campaignKeys.INDEX_KEY, 0, -1)) as string[];
+    const indexKeys = [campaignKeys.INDEX_KEY, ...campaignKeys.ALT_INDEX_KEYS];
+    const ids: string[] = [];
+    const seen = new Set<string>();
+
+    const readIndex = async (key: string) => {
+      const arr = (await kvLRange(key, 0, -1).catch(() => [])) as string[];
+      if (arr && arr.length) return arr;
+      const raw = await kvGetRaw(key).catch(() => null as string | null);
+      if (!raw) return [] as string[];
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+        if (parsed && Array.isArray(parsed.result)) return parsed.result.map(String).filter(Boolean);
+        if (parsed && Array.isArray(parsed.data)) return parsed.data.map(String).filter(Boolean);
+      } catch {}
+      return [] as string[];
+    };
+
+    for (const key of indexKeys) {
+      const arr = await readIndex(key);
+      for (const raw of arr) {
+        const id = normalizeIdRaw(raw);
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+      }
+    }
     const out: T[] = [];
 
     for (const indexId of ids) {
-      const raw = await kvGetRaw(campaignKeys.ITEM_KEY(indexId));
-      if (!raw) continue;
+      let raw: string | null = null;
+      const itemKeys = [
+        campaignKeys.ITEM_KEY(indexId),
+        ...campaignKeys.ALT_ITEM_KEYS.map((fn) => fn(indexId)),
+      ];
+      for (const key of itemKeys) {
+        raw = await kvGetRaw(key);
+        if (raw && raw !== 'null' && raw !== 'undefined') break;
+      }
+      if (!raw || raw === 'null' || raw === 'undefined') continue;
       try {
         const obj = JSON.parse(raw);
 
@@ -124,6 +161,11 @@ export const kvRead = {
 
         obj.__index_id = String(indexId); // ← для надійності
         obj.id = safeId;                  // ← тепер завжди є коректний id (рядок-число)
+
+        // Вирівнюємо camelCase / snake_case, щоб далі було простіше працювати з об'єктом
+        if (obj.createdAt && !obj.created_at) obj.created_at = obj.createdAt;
+        if (obj.created_at && !obj.createdAt) obj.createdAt = obj.created_at;
+        if (obj.name == null && obj.title) obj.name = obj.title;
 
         if (!obj.created_at) {
           const ts = Number(safeId);
