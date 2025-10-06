@@ -1,23 +1,28 @@
 // web/app/api/keycrm/sync/pair/route.ts
-// Minimal webhook to route incoming MC/IG messages by active campaign rules and bump counters.
-// Accepts:
-//  - normalized: { title?: string, handle?: string, text?: string }
-//  - ManyChat-ish: { event, data: { user: { username }, message: { text } } }  (best-effort extraction)
+// Webhook, що об'єднує логіку ManyChat → KeyCRM:
+//  • нормалізує payload і знаходить кампанію за правилами V1/V2
+//  • шукає картку у базовій воронці кампанії (pipeline+status)
+//  • рухає знайдену картку у цільовий статус, визначений правилом
 //
-// Response: { ok, matched?: boolean, route?: 'v1'|'v2'|'none', campaign?: { id, name }, input: { title, handle, text } }
+// Повертає діагностичний JSON із даними пошуку/руху та вхідним payload.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { readJsonSafe, normalizeManychatPayload } from '@/lib/mc';
+import { kcFindCardIdInScope, kcMoveCard } from '@/lib/keycrm-scope';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
+type Rule = { op: 'contains' | 'equals'; value: string; pipeline_id?: number; status_id?: number };
 type Campaign = {
   id: string;
   name: string;
   active?: boolean;
+  enabled?: boolean;
   rules?: { v1?: Rule; v2?: Rule };
+  base_pipeline_id?: number | string | null;
+  base_status_id?: number | string | null;
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
@@ -27,22 +32,6 @@ type Campaign = {
 
 function normStr(s: unknown) {
   return (typeof s === 'string' ? s : '').trim();
-}
-
-function extractNormalized(body: any) {
-  // already normalized?
-  const title = normStr(body?.title);
-  const handle = normStr(body?.handle);
-  const text = normStr(body?.text);
-
-  if (title || handle || text) {
-    return { title, handle, text };
-  }
-
-  // ManyChat-ish best effort
-  const mcText = normStr(body?.data?.message?.text) || normStr(body?.message?.text);
-  const mcHandle = normStr(body?.data?.user?.username) || normStr(body?.user?.username);
-  return { title: '', handle: mcHandle, text: mcText };
 }
 
 function matchRule(text: string, rule?: Rule): boolean {
@@ -77,12 +66,43 @@ async function bumpCounter(id: string, field: 'v1_count' | 'v2_count' | 'exp_cou
   } catch {}
 }
 
+function parseNumber(input: unknown): number | null {
+  if (typeof input === 'number' && Number.isFinite(input)) return input;
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+function collectFullNames(raw?: string): string[] {
+  const names = new Set<string>();
+  const base = normStr(raw);
+  if (!base) return [];
+  names.add(base);
+  // варіант без подвійних пробілів
+  const collapsed = base.replace(/\s+/g, ' ').trim();
+  if (collapsed && !names.has(collapsed)) names.add(collapsed);
+  return Array.from(names);
+}
+
 // ----- route handler -----
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const norm = extractNormalized(body);
+    const body = await readJsonSafe(req as any);
+    const mc = normalizeManychatPayload(body);
+    const handle = mc.username || normStr(body?.handle) || normStr(body?.subscriber?.username);
+    const text = mc.text || normStr(body?.text) || normStr(body?.message?.text);
+    const fullName = mc.fullName || normStr(body?.fullName) || normStr(body?.contact?.full_name);
+    const norm = {
+      title: (typeof body?.title === 'string' && body.title.trim()) || '',
+      handle,
+      text,
+      fullName,
+    };
 
     // 1) беремо всі кампанії та фільтруємо активні
     let campaigns: Campaign[] = [];
@@ -91,14 +111,15 @@ export async function POST(req: NextRequest) {
     } catch {
       campaigns = [];
     }
-    const active = campaigns.filter(c => c?.active !== false);
+    const active = campaigns.filter((c) => c?.active !== false && c?.enabled !== false);
 
     // 2) спроба знайти першу, що матчить
-    let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
+    let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign, rule?: Rule } = { route: 'none' };
     for (const c of active) {
       const route = chooseRoute(norm.text, c.rules);
       if (route !== 'none') {
-        chosen = { route, campaign: c };
+        const rule = route === 'v1' ? c.rules?.v1 : c.rules?.v2;
+        chosen = { route, campaign: c, rule: rule ?? undefined };
         break;
       }
     }
@@ -108,12 +129,58 @@ export async function POST(req: NextRequest) {
       await bumpCounter(chosen.campaign.id, chosen.route === 'v1' ? 'v1_count' : 'v2_count');
     }
 
-    // TODO (next step): тут же викликати KeyCRM API для створення/руху картки
+    let search: Awaited<ReturnType<typeof kcFindCardIdInScope>> | null = null;
+    let moveResult: Awaited<ReturnType<typeof kcMoveCard>> | null = null;
+
+    if (chosen.campaign && chosen.route !== 'none') {
+      const basePipeline = parseNumber(chosen.campaign.base_pipeline_id);
+      const baseStatus = parseNumber(chosen.campaign.base_status_id);
+
+      if (basePipeline == null || baseStatus == null) {
+        return NextResponse.json({
+          ok: false,
+          error: 'campaign_missing_base_scope',
+          campaign: { id: chosen.campaign.id, name: chosen.campaign.name },
+          input: norm,
+        }, { status: 422 });
+      }
+
+      const fullNames = collectFullNames(fullName);
+
+      search = await kcFindCardIdInScope({
+        username: handle,
+        fullNames,
+        pipeline_id: basePipeline,
+        status_id: baseStatus,
+      });
+
+      const cardId = search.cardId;
+      if (cardId && chosen.rule) {
+        const targetPipeline = parseNumber(chosen.rule.pipeline_id);
+        const targetStatus = parseNumber(chosen.rule.status_id);
+
+        if (targetPipeline == null || targetStatus == null) {
+          return NextResponse.json({
+            ok: false,
+            error: 'campaign_missing_target',
+            campaign: { id: chosen.campaign.id, name: chosen.campaign.name },
+            route: chosen.route,
+            search,
+            input: norm,
+          }, { status: 422 });
+        }
+
+        moveResult = await kcMoveCard(cardId, targetPipeline, targetStatus);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       matched: chosen.route !== 'none',
       route: chosen.route,
       campaign: chosen.campaign ? { id: chosen.campaign.id, name: chosen.campaign.name } : undefined,
+      search,
+      move: moveResult,
       input: norm,
     });
   } catch (e: any) {
