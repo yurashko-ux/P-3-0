@@ -52,6 +52,21 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
+
+        {/* Адмін інструменти */}
+        <Card>
+          <CardHeader emoji="🛠️" title="Тестові інструменти" subtitle="Перевірка ManyChat → KeyCRM потоку" />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Пошук карток у KeyCRM</li>
+              <li>Move у різні воронки/статуси</li>
+              <li>Повний sync-флоу з ManyChat</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/tools/sync-flow">Відкрити інструменти</PrimaryLink>
+          </CardFooter>
+        </Card>
       </section>
     </main>
   );
