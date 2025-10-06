@@ -62,6 +62,9 @@ HTTP-посилання (активне на проді з коректними 
 
 Локальне тестування (після запуску Next.js на 3000 порту):
   http://localhost:3000/api/keycrm/check?instagram=kolachnyk.v
+
+Юніт-перевірка без реального KeyCRM (використовує мок-дані):
+  npm run test:keycrm:mock
 `;
 
 function parseArgs(argv: string[]): Parsed {

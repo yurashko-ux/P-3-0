@@ -24,10 +24,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const q = (k: string) => url.searchParams.get(k) || undefined;
 
-    const instagram =
-      q("instagram")?.trim() ||
-      q("handle")?.trim() ||
-      q("username")?.trim();
+    const instagram = q("instagram")?.trim() || q("handle")?.trim();
 
     const social_id = q("social_id")?.trim() || instagram;
     const full_name = q("full_name")?.trim() || instagram;
