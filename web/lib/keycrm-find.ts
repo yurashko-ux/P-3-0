@@ -160,9 +160,14 @@ export async function findCardSimple(args: FindArgs) {
     // campaign-фільтр ТІЛЬКИ потрібна воронка+статус
     const filtered =
       scope === "campaign"
-        ? rows.filter(
-            (r) => r.pipeline_id === args.pipeline_id && r.status_id === args.status_id
-          )
+        ? rows.filter((r) => {
+            if (args.pipeline_id == null || args.status_id == null) return false;
+            const pipelineMatches =
+              r?.pipeline_id != null && String(r.pipeline_id) === String(args.pipeline_id);
+            const statusMatches =
+              r?.status_id != null && String(r.status_id) === String(args.status_id);
+            return pipelineMatches && statusMatches;
+          })
         : rows;
 
     // підрахунок кандидатів на сторінці
