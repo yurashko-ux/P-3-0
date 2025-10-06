@@ -198,8 +198,8 @@ export async function POST(req: NextRequest) {
     } catch {}
 
     const uniqueness = checkCampaignVariantsUniqueness(candidateVariants, others);
-    if (!uniqueness.ok) {
-      const conflicts = uniqueness.conflicts || [];
+    if (uniqueness.ok === false) {
+      const conflicts = uniqueness.conflicts ?? [];
       const readable = conflicts.map((conf) => {
         const variantLabel = conf.which === "v1" ? "V1" : "V2";
         const originalValue = conf.which === "v1" ? v1 : v2;
