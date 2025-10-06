@@ -78,6 +78,21 @@ Content-Type: application/json; charset=utf-8
 > ```
 >
 > Вона поверне `HTTP/1.1 200 OK` і тіло `{"result":"PONG"}`, якщо токен чинний і доступ до бази працює.
+> Наприклад, валідний виклик видає саме таку відповідь:
+>
+> ```
+> HTTP/1.1 200 OK
+> Access-Control-Allow-Credentials: true
+> Content-Length: 17
+> Content-Type: application/json; charset=utf-8
+> Date: Mon, 06 Oct 2025 22:41:21 GMT
+> Server: Upstash Redis Database (1.14.4)
+> Upstash-Sync-Token: 0
+>
+> {"result":"PONG"}
+> ```
+>
+> Якщо бачите саме таку відповідь, REST-канал працює й можна переходити до читання ключів `cmp:ids` / `cmp:item:*`.
 
 > **Наступний крок після `PONG`.** Щоб переконатися, що в базі дійсно є кампанії, одразу після успішного ping виконайте запит до індексу `cmp:ids` тими ж реквізитами:
 >
