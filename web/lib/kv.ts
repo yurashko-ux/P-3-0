@@ -31,6 +31,17 @@ try {
   directKv = null;
 }
 
+let upstashKv: import('@upstash/redis').Redis | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+  const { Redis } = require('@upstash/redis');
+  if (typeof Redis?.fromEnv === 'function') {
+    upstashKv = Redis.fromEnv();
+  }
+} catch {
+  upstashKv = null;
+}
+
 async function rest(path: string, opts: RequestInit = {}, ro = false) {
   const headers = {
     'Content-Type': 'application/json',
@@ -51,6 +62,11 @@ async function kvGetRaw(key: string) {
     if (value == null) return null;
     return typeof value === 'string' ? value : JSON.stringify(value);
   }
+  if (upstashKv) {
+    const value = await upstashKv.get<string>(key).catch(() => null);
+    if (value == null) return null;
+    return typeof value === 'string' ? value : JSON.stringify(value);
+  }
   return null as string | null;
 }
 
@@ -61,6 +77,10 @@ async function kvSetRaw(key: string, value: string) {
   }
   if (directKv) {
     await directKv.set(key, value).catch(() => {});
+    return;
+  }
+  if (upstashKv) {
+    await upstashKv.set(key, value).catch(() => {});
   }
 }
 
@@ -70,6 +90,15 @@ async function kvLRange(key: string, start = 0, stop = -1) {
     if (directKv) {
       try {
         const arr = await directKv.lrange<string>(key, start, stop);
+        if (Array.isArray(arr)) return arr.map(String);
+      } catch {
+        return [] as string[];
+      }
+      return [] as string[];
+    }
+    if (upstashKv) {
+      try {
+        const arr = await upstashKv.lrange<string>(key, start, stop);
         if (Array.isArray(arr)) return arr.map(String);
       } catch {
         return [] as string[];
@@ -372,6 +401,10 @@ export const kvWrite = {
     }
     if (directKv) {
       await directKv.lpush(key, value).catch(() => {});
+      return;
+    }
+    if (upstashKv) {
+      await upstashKv.lpush(key, value).catch(() => {});
     }
   },
   async createCampaign(input: any) {
