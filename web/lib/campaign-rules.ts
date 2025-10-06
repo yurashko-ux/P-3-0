@@ -160,13 +160,111 @@ const RULE_FALLBACK_KEYS = (
   `${slot}Target`,
 ];
 
+function normalizeRules(raw: CampaignLike['rules']): Record<string, RuleLike> | RuleLike[] | undefined {
+  if (!raw) return undefined;
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return normalizeRules(parsed as any);
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (Array.isArray(raw)) {
+    return raw as RuleLike[];
+  }
+
+  if (typeof raw === 'object') {
+    return raw as Record<string, RuleLike>;
+  }
+
+  return undefined;
+}
+
+function pickFromRuleEntry(entry: RuleLike, slot: 'v1' | 'v2'): RuleLike | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const obj = entry as Record<string, unknown>;
+
+  for (const key of RULE_FALLBACK_KEYS(slot)) {
+    if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] != null) {
+      return obj[key] as RuleLike;
+    }
+  }
+
+  const slotLabel = normalizeCandidate(
+    obj.slot ??
+      obj.key ??
+      obj.name ??
+      obj.field ??
+      obj.column ??
+      obj.rule ??
+      obj.target ??
+      obj.channel ??
+      obj.match ??
+      obj.mode ??
+      obj.type ??
+      obj.kind ??
+      obj.id ??
+      obj.tag,
+  )
+    .trim()
+    .toLowerCase();
+
+  if (slotLabel === slot) {
+    return (
+      (obj.value as RuleLike | undefined) ??
+      (obj.val as RuleLike | undefined) ??
+      (obj.pattern as RuleLike | undefined) ??
+      (obj.needle as RuleLike | undefined) ??
+      (obj.rule as RuleLike | undefined) ??
+      (obj.payload as RuleLike | undefined) ??
+      (obj.body as RuleLike | undefined) ??
+      (obj.src as RuleLike | undefined) ??
+      (obj.source as RuleLike | undefined) ??
+      entry
+    );
+  }
+
+  return undefined;
+}
+
 export function pickRuleCandidate(campaign: CampaignLike, slot: 'v1' | 'v2'): RuleLike | undefined {
-  if (campaign?.rules && campaign.rules[slot] != null) return campaign.rules[slot];
+  const normalized = normalizeRules(campaign?.rules);
+
+  if (normalized && !Array.isArray(normalized)) {
+    for (const [key, value] of Object.entries(normalized)) {
+      if (key && key.toLowerCase() === slot && value != null) {
+        return value;
+      }
+    }
+  }
+
+  if (Array.isArray(normalized)) {
+    for (const entry of normalized) {
+      const picked = pickFromRuleEntry(entry, slot);
+      if (picked != null) return picked;
+    }
+  } else if (normalized && typeof normalized === 'object') {
+    const direct = normalized[slot];
+    if (direct != null) return direct;
+  }
+
+  const fromEntry = pickFromRuleEntry(normalized as any, slot);
+  if (fromEntry != null) return fromEntry;
+
+  if (campaign?.rules && typeof campaign.rules === 'object') {
+    const direct = (campaign.rules as Record<string, RuleLike>)[slot];
+    if (direct != null) return direct;
+  }
+
   for (const key of RULE_FALLBACK_KEYS(slot)) {
     if (Object.prototype.hasOwnProperty.call(campaign, key) && campaign[key] != null) {
       return campaign[key];
     }
   }
+
   return undefined;
 }
 
