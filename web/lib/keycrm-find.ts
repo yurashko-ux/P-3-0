@@ -22,7 +22,8 @@ type Strategy = "social" | "title" | "both";
 type TitleMode = "exact" | "contains";
 
 type FindArgs = {
-  username?: string;       // IG логін (без або з "@")
+  social_id?: string;      // contact.social_id (може містити "@")
+  username?: string;       // застарілий синонім ManyChat (буде видалено)
   full_name?: string;      // для title "Чат з <ПІБ>"
   social_name?: string;    // instagram | telegram | ...
   pipeline_id?: number;    // якщо scope=campaign
@@ -91,9 +92,11 @@ function readMeta(json: any) {
 /** Лише пошук (без move), з жорстким фільтром по pipeline/status коли scope=campaign */
 export async function findCardSimple(args: FindArgs) {
   const scope: ScopeMode = args.scope || "global";
-  const usernameRaw = norm(args.username);
-  const usernameLow = low(args.username);
-  const usernameNoAt = stripAt(usernameLow);
+  const socialIdRaw = norm(args.social_id || args.username);
+  const socialIdLow = low(args.social_id || args.username);
+  const socialIdNoAt = stripAt(socialIdLow);
+
+  const deprecatedUsernameRaw = args.username ? norm(args.username) : null;
 
   const fullName = norm(args.full_name);
   const socialName = low(args.social_name);
@@ -106,8 +109,8 @@ export async function findCardSimple(args: FindArgs) {
   if (!TOKEN) {
     return { ok: false, error: "missing_keycrm_token", hint: "Додай KEYCRM_API_TOKEN у Vercel Env." };
   }
-  if (!usernameRaw && !fullName) {
-    return { ok: false, error: "no_lookup_keys", hint: "Передай username або full_name." };
+  if (!socialIdRaw && !fullName) {
+    return { ok: false, error: "no_lookup_keys", hint: "Передай social_id або full_name." };
   }
   if (scope === "campaign" && (!args.pipeline_id || !args.status_id)) {
     return {
@@ -171,12 +174,12 @@ export async function findCardSimple(args: FindArgs) {
       const contactSocialName = low(c.contact?.social_name || "");
 
       const socialHit =
-        (strategy === "social" || strategy === "both") && usernameRaw
+        (strategy === "social" || strategy === "both") && socialIdRaw
           ? (
               // match з/без "@"
-              contactSocialLow === usernameLow ||
-              contactSocialLow === `@${usernameNoAt}` ||
-              contactSocialNoAt === usernameNoAt
+              contactSocialLow === socialIdLow ||
+              contactSocialLow === `@${socialIdNoAt}` ||
+              contactSocialNoAt === socialIdNoAt
             ) && (!socialName || contactSocialName === socialName)
           : false;
 
@@ -207,7 +210,8 @@ export async function findCardSimple(args: FindArgs) {
 
   return {
     ok: true,
-    username: usernameRaw || null,
+    social_id: socialIdRaw || null,
+    username: deprecatedUsernameRaw,
     full_name: fullName || null,
     scope,
     used: {

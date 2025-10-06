@@ -6,7 +6,7 @@ import { getActiveCampaign } from "@/lib/campaigns";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/keycrm/find?username=kolachnyk.v&full_name=Viktoria%20Kolachnyk
+ * GET /api/keycrm/find?social_id=kolachnyk.v&full_name=Viktoria%20Kolachnyk
  *   [optional] pipeline_id=1&status_id=38
  *   [optional] max_pages=3&page_size=50
  *   [optional] strategy=social|title|both (default: both)
@@ -18,8 +18,11 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const q = (k: string) => url.searchParams.get(k) || undefined;
 
-    const username = q("username")?.trim();
+    const social_id = q("social_id")?.trim() || undefined;
+    const username = q("username")?.trim() || undefined; // застаріле ім'я параметра
+    const handle = social_id || username;
     const full_name = q("full_name")?.trim();
+    const social_name = q("social_name")?.trim();
 
     let pipeline_id = q("pipeline_id") ? Number(q("pipeline_id")) : undefined;
     let status_id = q("status_id") ? Number(q("status_id")) : undefined;
@@ -41,8 +44,10 @@ export async function GET(req: Request) {
     }
 
     const res = await findCardSimple({
+      social_id: handle,
       username,
       full_name,
+      social_name,
       pipeline_id,
       status_id,
       max_pages,

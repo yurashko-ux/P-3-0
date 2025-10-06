@@ -3,7 +3,8 @@
 import { findCardSimple } from "../lib/keycrm-find";
 
 type CliArgs = {
-  username?: string;
+  social_id?: string;
+  username?: string; // застарілий синонім, не показуємо в довідці
   full_name?: string;
   social_name?: string;
   pipeline_id?: number;
@@ -18,18 +19,52 @@ type CliArgs = {
 type Parsed = {
   params: CliArgs;
   errors: string[];
+  warnings: string[];
 };
 
-const HELP = `\nПеревірка пошуку картки в KeyCRM через findCardSimple().\n\nВикористання:\n  npm run check:username -- <username> [інші прапорці]\n\nОсновні прапорці:\n  --username=<value>        Instagram username (можна передати як позиційний аргумент).\n  --full_name=<value>       Пошук по назві картки «Чат з <ПІБ>».\n  --social_name=<value>     Платформа (instagram, telegram, ...).\n  --pipeline_id=<number>    Обовʼязковий разом із status_id, якщо scope=campaign.\n  --status_id=<number>\n  --scope=campaign|global   За замовчуванням global.\n  --max_pages=<number>      Кількість сторінок для сканування (1..50).\n  --page_size=<number>      Розмір сторінки (1..100).\n  --strategy=social|title|both\n  --title_mode=exact|contains\n\nПідказки:\n  • Якщо передано username без social_name, використовується instagram.\n\nЯк запустити:\n  1. Перейдіть у теку проєкту: cd /шлях/до/P-3-0/web\n  2. Запустіть скрипт:    KEYCRM_API_TOKEN=... npm run check:username -- kolachnyk.v\n\nАльтернатива без переходу в теку web (замініть шлях на свій):\n  KEYCRM_API_TOKEN=... npm run --prefix /шлях/до/P-3-0/web check:username -- kolachnyk.v\n\nІнші приклади:\n  KEYCRM_API_TOKEN=... npm run check:username -- --username=@test --social_name=telegram\n`;
+const HELP = `
+Перевірка пошуку картки в KeyCRM через findCardSimple().
+
+Використання:
+  npm run check:keycrm -- <social_id> [інші прапорці]
+
+Основні прапорці:
+  --social_id=<value>       Значення contact.social_id (можна передати позиційно).
+  --full_name=<value>       Пошук по назві картки «Чат з <ПІБ>».
+  --social_name=<value>     Платформа (instagram, telegram, ...).
+  --pipeline_id=<number>    Обовʼязковий разом із status_id, якщо scope=campaign.
+  --status_id=<number>
+  --scope=campaign|global   За замовчуванням global.
+  --max_pages=<number>      Кількість сторінок для сканування (1..50).
+  --page_size=<number>      Розмір сторінки (1..100).
+  --strategy=social|title|both
+  --title_mode=exact|contains
+
+Підказки:
+  • Якщо передано social_id без social_name, використовується instagram.
+  • ManyChat username = contact.social_id, тому логін можна вставити як <social_id>.
+
+Як запустити:
+  1. Перейдіть у теку проєкту: cd /шлях/до/P-3-0/web
+  2. Запустіть скрипт:    KEYCRM_API_TOKEN=... npm run check:keycrm -- kolachnyk.v
+
+Альтернатива без переходу в теку web (замініть шлях на свій):
+  KEYCRM_API_TOKEN=... npm run --prefix /шлях/до/P-3-0/web check:keycrm -- kolachnyk.v
+
+Приклади з повним ім'ям або Telegram:
+  KEYCRM_API_TOKEN=... npm run check:keycrm -- --full_name="John Doe"
+  KEYCRM_API_TOKEN=... npm run check:keycrm -- --social_id=@test --social_name=telegram
+`;
 
 function parseArgs(argv: string[]): Parsed {
   const params: CliArgs = {};
   const errors: string[] = [];
+  const warnings: string[] = [];
   const positional: string[] = [];
 
   for (const arg of argv) {
     if (arg === "--help" || arg === "-h") {
-      return { params: { ...params, username: params.username }, errors: ["help"] };
+      return { params: { ...params }, errors: ["help"], warnings };
     }
 
     if (!arg.startsWith("--")) {
@@ -47,13 +82,17 @@ function parseArgs(argv: string[]): Parsed {
     }
 
     switch (key) {
-      case "username":
+      case "social_id":
       case "full_name":
       case "social_name":
       case "scope":
       case "strategy":
       case "title_mode":
         (params as any)[key] = value;
+        break;
+      case "username":
+        (params as any)[key] = value;
+        warnings.push("--username застарів, використовуйте --social_id.");
         break;
       case "pipeline_id":
       case "status_id":
@@ -72,11 +111,11 @@ function parseArgs(argv: string[]): Parsed {
     }
   }
 
-  if (!params.username && positional[0]) {
-    params.username = positional[0];
+  if (!params.social_id && positional[0]) {
+    params.social_id = positional[0];
   }
 
-  return { params, errors };
+  return { params, errors, warnings };
 }
 
 async function main() {
@@ -100,16 +139,27 @@ async function main() {
     process.exit(1);
   }
 
-  if (!parsed.params.username && !parsed.params.full_name) {
-    console.error("Передай хоча б username або full_name. Дивись --help для прикладів.");
+  if (parsed.warnings.length) {
+    console.warn("Попередження:\n - " + parsed.warnings.join("\n - "));
+  }
+
+  if (!parsed.params.social_id && parsed.params.username) {
+    parsed.params.social_id = parsed.params.username;
+  }
+
+  if (!parsed.params.social_id && !parsed.params.full_name) {
+    console.error("Передай хоча б social_id або full_name. Дивись --help для прикладів.");
     process.exit(1);
   }
 
-  if (!parsed.params.social_name && parsed.params.username) {
+  if (!parsed.params.social_name && parsed.params.social_id) {
     parsed.params.social_name = "instagram";
   }
 
-  console.log("➡️  Викликаємо findCardSimple з параметрами:\n", JSON.stringify(parsed.params, null, 2));
+  const loggedParams = { ...parsed.params } as Record<string, unknown>;
+  delete loggedParams.username;
+
+  console.log("➡️  Викликаємо findCardSimple з параметрами:\n", JSON.stringify(loggedParams, null, 2));
 
   const result = await findCardSimple(parsed.params);
 

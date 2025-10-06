@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check:username": "tsx scripts/check-keycrm-username.ts"
+    "check:keycrm": "tsx scripts/check-keycrm-username.ts",
+    "check:username": "npm run check:keycrm --"
   },
   "dependencies": {
     "next": "14.2.7",
