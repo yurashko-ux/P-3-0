@@ -52,7 +52,7 @@ const HELP = `
   1. Пошук за contact.social_id (Instagram username з "@" та без).
   2. Пошук за contact.full_name / назвою картки.
 
-HTTP-ендпоінт `/api/keycrm/check` робить ті ж самі кроки у такій послідовності.
+HTTP-ендпоінт "/api/keycrm/check" робить ті ж самі кроки у такій послідовності.
 
 Як запустити з кореня репозиторію:
   cd P-3-0/web && KEYCRM_API_TOKEN=... npm run check:keycrm -- kolachnyk.v
