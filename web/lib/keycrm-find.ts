@@ -125,32 +125,19 @@ export async function findCardSimple(args: FindArgs) {
   let actual_page_size: number | null = null;
   let pages_scanned = 0;
   let candidates_total = 0;
-  let consecutiveEmptyCandidates = 0; // рання зупинка в campaign
-
-  const buildQuery = (page: number, perPage: number, style: 'laravel' | 'jsonapi') => {
-    const qs = new URLSearchParams();
-    if (style === 'laravel') {
-      qs.set('page', String(page));
-      qs.set('per_page', String(perPage));
-    } else {
-      qs.set('page[number]', String(page));
-      qs.set('page[size]', String(perPage));
-    }
-    if (scope === 'campaign' && args.pipeline_id && args.status_id) {
-      qs.set('pipeline_id', String(args.pipeline_id));
-      qs.set('status_id', String(args.status_id));
-    }
-    return qs.toString();
-  };
-
   for (let page = 1; page <= max_pages; page++) {
-    const laravelQs = buildQuery(page, requested_page_size, 'laravel');
-    const jsonApiQs = buildQuery(page, requested_page_size, 'jsonapi');
+    const laravelQs = new URLSearchParams();
+    laravelQs.set('page', String(page));
+    laravelQs.set('per_page', String(requested_page_size));
 
-    // пробуємо laravel → jsonapi
-    const r1 = await kcGet(`/pipelines/cards?${laravelQs}`);
+    const jsonApiQs = new URLSearchParams();
+    jsonApiQs.set('page[number]', String(page));
+    jsonApiQs.set('page[size]', String(requested_page_size));
+
+    // пробуємо laravel → jsonapi без форс-фільтрів (KeyCRM може ігнорувати їх в одному зі стилів)
+    const r1 = await kcGet(`/pipelines/cards?${laravelQs.toString()}`);
     const useR1 = r1.ok && Array.isArray(r1.json?.data);
-    const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?${jsonApiQs}`);
+    const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?${jsonApiQs.toString()}`);
 
     const rows: any[] = Array.isArray(resp.json?.data) ? resp.json.data : [];
     const meta = readMeta(resp.json);
@@ -162,10 +149,8 @@ export async function findCardSimple(args: FindArgs) {
       scope === "campaign"
         ? rows.filter((r) => {
             if (args.pipeline_id == null || args.status_id == null) return false;
-            const pipelineMatches =
-              r?.pipeline_id != null && String(r.pipeline_id) === String(args.pipeline_id);
-            const statusMatches =
-              r?.status_id != null && String(r.status_id) === String(args.status_id);
+            const pipelineMatches = r?.pipeline_id != null && r.pipeline_id === args.pipeline_id;
+            const statusMatches = r?.status_id != null && r.status_id === args.status_id;
             return pipelineMatches && statusMatches;
           })
         : rows;
@@ -173,17 +158,6 @@ export async function findCardSimple(args: FindArgs) {
     // підрахунок кандидатів на сторінці
     const candidatesHere = filtered.length;
     candidates_total += candidatesHere;
-
-    if (scope === "campaign") {
-      if (candidatesHere === 0) consecutiveEmptyCandidates++;
-      else consecutiveEmptyCandidates = 0;
-
-      // якщо 2 послідовні сторінки без жодного кандидата — зупиняємось раніше
-      if (consecutiveEmptyCandidates >= 2) {
-        pages_scanned = page;
-        break;
-      }
-    }
 
     for (const c of filtered) {
       checked++;
