@@ -1,7 +1,7 @@
 // web/app/admin/tools/sync-flow/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,6 +142,14 @@ function fmtTarget(target?: CampaignTarget) {
   return parts.length ? parts.join(' · ') : '—';
 }
 
+function resolveItemTitle(id: string | null | undefined, options: Item[], fallback?: string) {
+  if (!id) return '';
+  const match = options.find((opt) => opt.id === id);
+  if (match) return match.title;
+  if (fallback) return fallback;
+  return `#${id}`;
+}
+
 function present(value: any): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'string') {
@@ -230,12 +238,14 @@ function Select({
   onChange,
   options,
   helper,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: Item[];
   helper?: string;
+  disabled?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
@@ -243,6 +253,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
         className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       >
         <option value="">— Обери значення —</option>
@@ -281,6 +292,11 @@ export default function SyncFlowToolPage() {
 
   const [lastPair, setLastPair] = useState<PairResponse | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [basePipelineId, setBasePipelineId] = useState('');
+  const [baseStatusId, setBaseStatusId] = useState('');
+  const [baseStatuses, setBaseStatuses] = useState<Item[]>([]);
+  const basePipelineRef = useRef('');
+  const baseStatusRef = useRef('');
   const [activeRoute, setActiveRoute] = useState<'v1' | 'v2' | null>(null);
   const [lastFind, setLastFind] = useState<FindResponse | null>(null);
 
@@ -331,6 +347,23 @@ export default function SyncFlowToolPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!basePipelineId) {
+      setBaseStatuses([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    (async () => {
+      const items = await fetchItems(`/api/keycrm/statuses?pipeline_id=${encodeURIComponent(basePipelineId)}`);
+      if (!cancelled) setBaseStatuses(items);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [basePipelineId]);
+
+  useEffect(() => {
+    let cancelled = false;
     if (!targetPipelineId) {
       setTargetStatuses([]);
       return () => {
@@ -368,6 +401,11 @@ export default function SyncFlowToolPage() {
       setSelectedCampaign(null);
       setActiveRoute(null);
       setLastPair(null);
+      setBasePipelineId('');
+      setBaseStatusId('');
+      setBaseStatuses([]);
+      basePipelineRef.current = '';
+      baseStatusRef.current = '';
       setTargetPipelineId('');
       setTargetStatusId('');
     }
@@ -451,6 +489,12 @@ export default function SyncFlowToolPage() {
     const target = pair.route === 'v1' ? campaign.t1 : campaign.t2;
     setSelectedCampaign(campaign);
     setActiveRoute(pair.route);
+    const basePipeline = campaign.base?.pipeline ? String(campaign.base.pipeline) : '';
+    const baseStatus = campaign.base?.status ? String(campaign.base.status) : '';
+    setBasePipelineId(basePipeline);
+    setBaseStatusId(baseStatus);
+    basePipelineRef.current = basePipeline;
+    baseStatusRef.current = baseStatus;
     if (target?.pipeline) setTargetPipelineId(target.pipeline);
     if (target?.status) setTargetStatusId(target.status);
     setStep2({
@@ -462,7 +506,7 @@ export default function SyncFlowToolPage() {
     return { campaign, route: pair.route };
   }
 
-  async function executeStep3(campaignData?: { campaign: Campaign; route: 'v1' | 'v2' }): Promise<FindResponse | null> {
+  async function executeStep3(_campaignData?: { campaign: Campaign; route: 'v1' | 'v2' }): Promise<FindResponse | null> {
     resetBelow(3);
     const username = instagramUsername.trim();
     const name = fullName.trim();
@@ -474,13 +518,16 @@ export default function SyncFlowToolPage() {
     if (username) search.set('username', username);
     if (name) search.set('full_name', name);
     search.set('social_name', 'instagram');
-    const campaign = campaignData?.campaign || selectedCampaign;
-    if (campaign?.base?.pipeline && campaign?.base?.status) {
+    const basePipeline = basePipelineRef.current ? String(basePipelineRef.current).trim() : '';
+    const baseStatus = baseStatusRef.current ? String(baseStatusRef.current).trim() : '';
+    if (basePipeline && baseStatus) {
       search.set('scope', 'campaign');
-      search.set('pipeline_id', campaign.base.pipeline);
-      search.set('status_id', campaign.base.status);
+      search.set('pipeline_id', basePipeline);
+      search.set('status_id', baseStatus);
     } else {
       search.set('scope', 'global');
+      if (basePipeline) search.set('pipeline_id', basePipeline);
+      if (baseStatus) search.set('status_id', baseStatus);
     }
     search.set('strategy', username && name ? 'both' : username ? 'social' : 'title');
     search.set('max_pages', '5');
@@ -574,12 +621,70 @@ export default function SyncFlowToolPage() {
     }
   }
 
-  const baseInfo = useMemo(() => {
+  const campaignBaseInfo = useMemo(() => {
     if (!selectedCampaign?.base) return null;
-    return `${selectedCampaign.base.pipelineName || selectedCampaign.base.pipeline || '—'} → ${
-      selectedCampaign.base.statusName || selectedCampaign.base.status || '—'
-    }`;
+    const pipelineTitle = selectedCampaign.base.pipelineName || selectedCampaign.base.pipeline || '—';
+    const statusTitle = selectedCampaign.base.statusName || selectedCampaign.base.status || '—';
+    return `${pipelineTitle} → ${statusTitle}`;
   }, [selectedCampaign?.base]);
+
+  const searchBaseInfo = useMemo(() => {
+    if (!basePipelineId && !baseStatusId) return '';
+    const pipelineTitle = basePipelineId
+      ? resolveItemTitle(
+          basePipelineId,
+          pipelines,
+          basePipelineId === (selectedCampaign?.base?.pipeline || '')
+            ? selectedCampaign?.base?.pipelineName || basePipelineId
+            : basePipelineId
+        )
+      : '';
+    const statusTitle = baseStatusId
+      ? resolveItemTitle(
+          baseStatusId,
+          baseStatuses,
+          baseStatusId === (selectedCampaign?.base?.status || '')
+            ? selectedCampaign?.base?.statusName || baseStatusId
+            : baseStatusId
+        )
+      : '';
+    return `${pipelineTitle || '—'} → ${statusTitle || '—'}`;
+  }, [
+    basePipelineId,
+    baseStatusId,
+    baseStatuses,
+    pipelines,
+    selectedCampaign?.base?.pipeline,
+    selectedCampaign?.base?.pipelineName,
+    selectedCampaign?.base?.status,
+    selectedCampaign?.base?.statusName,
+  ]);
+
+  const baseOverrideActive = useMemo(() => {
+    if (!selectedCampaign) return Boolean(basePipelineId || baseStatusId);
+    const campaignPipeline = selectedCampaign.base?.pipeline || '';
+    const campaignStatus = selectedCampaign.base?.status || '';
+    return campaignPipeline !== (basePipelineId || '') || campaignStatus !== (baseStatusId || '');
+  }, [basePipelineId, baseStatusId, selectedCampaign]);
+
+  const baseStatusOptions = useMemo(() => {
+    const items = [...baseStatuses];
+    const currentId = baseStatusId || selectedCampaign?.base?.status || '';
+    if (currentId && !items.some((opt) => opt.id === currentId)) {
+      const fallbackTitle =
+        currentId === (selectedCampaign?.base?.status || '')
+          ? selectedCampaign?.base?.statusName || currentId
+          : currentId;
+      items.unshift({ id: currentId, title: fallbackTitle || `#${currentId}` });
+    }
+    return items;
+  }, [baseStatuses, baseStatusId, selectedCampaign?.base?.status, selectedCampaign?.base?.statusName]);
+
+  const searchScopeLabel = useMemo(() => {
+    if (basePipelineId && baseStatusId) return 'Кампанія';
+    if (basePipelineId || baseStatusId) return 'Частково (фільтри)';
+    return 'Глобально';
+  }, [basePipelineId, baseStatusId]);
 
   const errorEntries = useMemo<ErrorEntry[]>(() => {
     const entries: ErrorEntry[] = [];
@@ -616,25 +721,34 @@ export default function SyncFlowToolPage() {
             label: 'Кампанія з вебхуку',
             value: campaignId ? `${pair?.campaign?.name || 'Без назви'} (#${campaignId})` : '—',
           },
-          { label: 'Доступна базова воронка', value: present(baseInfo) },
+          { label: 'Базова воронка кампанії', value: present(campaignBaseInfo) },
+          {
+            label: 'Поточна база для пошуку',
+            value: present(searchBaseInfo || (basePipelineId || baseStatusId ? '—' : 'Глобально')),
+          },
         ],
         raw: pair,
       });
     }
 
     if (step3.status === 'error' && step3.error) {
-      const scope = selectedCampaign?.base?.pipeline && selectedCampaign?.base?.status ? 'Кампанія' : 'Глобально';
       const strategy = instagramUsername.trim() && fullName.trim() ? 'username + ПІБ' : instagramUsername.trim() ? 'username' : 'ПІБ';
       entries.push({
         step: 3,
         title: 'Пошук картки у KeyCRM',
         message: step3.error,
-        hint: 'Звір правильність username/ПІБ та доступність картки у базовій воронці кампанії.',
+        hint:
+          'Звір правильність username/ПІБ, а також налаштування базової воронки і статусу, через які виконується пошук.',
         context: [
           { label: 'Instagram username', value: present(instagramUsername) },
           { label: "Повне ім'я", value: present(fullName) },
           { label: 'Режим пошуку', value: strategy },
-          { label: 'Область пошуку', value: scope },
+          { label: 'Область пошуку', value: searchScopeLabel },
+          {
+            label: 'База (воронка → статус)',
+            value: present(searchBaseInfo || (basePipelineId || baseStatusId ? '—' : 'Глобально')),
+          },
+          { label: 'Базова воронка кампанії', value: present(campaignBaseInfo) },
           { label: 'Очікуваний card_id', value: present(cardIdOverride || lastFind?.result?.id) },
         ],
         raw: step3.data || lastFind,
@@ -670,7 +784,10 @@ export default function SyncFlowToolPage() {
 
     return entries;
   }, [
-    baseInfo,
+    basePipelineId,
+    baseStatusId,
+    baseStatuses,
+    campaignBaseInfo,
     cardIdOverride,
     dryRun,
     fullName,
@@ -679,8 +796,8 @@ export default function SyncFlowToolPage() {
     lastPair,
     manychatValue,
     pipelines,
-    selectedCampaign?.base?.pipeline,
-    selectedCampaign?.base?.status,
+    searchBaseInfo,
+    searchScopeLabel,
     step1.data,
     step1.error,
     step1.status,
@@ -747,7 +864,60 @@ export default function SyncFlowToolPage() {
             placeholder="Якщо знаєш card_id — можна задати вручну"
             helper="Якщо залишити порожнім — підставиться значення з кроку пошуку."
           />
+          <Select
+            label="Базова воронка для пошуку"
+            value={basePipelineId}
+            onChange={(v) => {
+              const next = v || '';
+              setBasePipelineId(next);
+              basePipelineRef.current = next;
+              setBaseStatusId('');
+              baseStatusRef.current = '';
+            }}
+            options={pipelines}
+            helper="Використовується на кроці 3. Якщо залишити порожнім — пошук відбудеться глобально."
+          />
+          <Select
+            label="Базовий статус для пошуку"
+            value={baseStatusId}
+            onChange={(v) => {
+              const next = v || '';
+              setBaseStatusId(next);
+              baseStatusRef.current = next;
+            }}
+            options={baseStatusOptions}
+            helper="Оберіть статус у межах базової воронки."
+            disabled={!basePipelineId}
+          />
         </div>
+        {selectedCampaign?.base && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+            <span>
+              Базові значення кампанії:&nbsp;
+              <span className="font-medium text-slate-600">{campaignBaseInfo || '—'}</span>
+            </span>
+            <button
+              type="button"
+              className="rounded-lg border px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              onClick={() => {
+                const pipeline = selectedCampaign.base?.pipeline ? String(selectedCampaign.base.pipeline) : '';
+                const status = selectedCampaign.base?.status ? String(selectedCampaign.base.status) : '';
+                setBasePipelineId(pipeline);
+                basePipelineRef.current = pipeline;
+                setBaseStatusId(status);
+                baseStatusRef.current = status;
+              }}
+            >
+              Повернути значення кампанії
+            </button>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-slate-500">
+          Поточна база пошуку: <span className="font-medium text-slate-600">{searchBaseInfo || 'Глобально'}</span>
+          {baseOverrideActive && (
+            <span className="ml-1 rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Змінено вручну</span>
+          )}
+        </p>
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input
@@ -842,11 +1012,19 @@ export default function SyncFlowToolPage() {
             Визначаємо кампанію та маршрут за ManyChat текстом. Крок очікує активну кампанію з правилами V1/V2 у KV.
           </p>
           {step2.message && <p className="text-sm font-medium text-slate-600">{step2.message}</p>}
-          {baseInfo && (
+          {campaignBaseInfo && (
             <p className="text-sm text-slate-500">
-              Базова воронка: <span className="font-medium text-slate-700">{baseInfo}</span>
+              Базова воронка кампанії: <span className="font-medium text-slate-700">{campaignBaseInfo}</span>
             </p>
           )}
+          <p className="text-sm text-slate-500">
+            Поточна база пошуку: <span className="font-medium text-slate-700">{searchBaseInfo || 'Глобально'}</span>
+            {baseOverrideActive && (
+              <span className="ml-2 inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                Змінено вручну
+              </span>
+            )}
+          </p>
           {targetPreset && (
             <p className="text-sm text-slate-500">
               Ціль для {activeRoute?.toUpperCase()}: <span className="font-medium text-slate-700">{fmtTarget(targetPreset)}</span>
@@ -871,6 +1049,20 @@ export default function SyncFlowToolPage() {
           <p>
             Використовуємо <code>/api/keycrm/find</code> для пошуку картки за social_id або ПІБ у базовій воронці кампанії.
           </p>
+          <p className="text-sm text-slate-500">
+            Режим пошуку: <span className="font-medium text-slate-700">{searchScopeLabel}</span> · База:
+            <span className="ml-1 font-medium text-slate-700">{searchBaseInfo || 'Глобально'}</span>
+            {baseOverrideActive && (
+              <span className="ml-2 inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                Змінено вручну
+              </span>
+            )}
+          </p>
+          {campaignBaseInfo && (
+            <p className="text-xs text-slate-500">
+              Базова воронка кампанії: <span className="font-medium text-slate-700">{campaignBaseInfo}</span>
+            </p>
+          )}
           {step3.message && <p className="text-sm font-medium text-slate-600">{step3.message}</p>}
           {step3.error && <p className="text-sm text-red-600">{step3.error}</p>}
           {step3.data && (
