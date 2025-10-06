@@ -6,7 +6,7 @@
 
 Щоб пересвідчитись, достатньо в тому ж середовищі виконати запит на `kvRead.getRaw('cmp:item:<ID>')` або `kvRead.lrange('cmp:ids')`. Якщо відповідь порожня — значить, проблема у відсутності доступу до KV, а не в логіці обробки V1/V2.
 
-> **Швидка перевірка прямо зараз.** Якщо потрібно просто скопіювати готову команду з наданими реквізитами (`UPSTASH_REDIS_REST_URL="https://hot-louse-21041.upstash.io"`, `UPSTASH_REDIS_REST_TOKEN="AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE"`), виконайте:
+> **Швидка перевірка прямо зараз.** Якщо потрібно просто скопіювати готову команду з наданими реквізитами (`UPSTASH_REDIS_REST_URL="https://hot-louse-21041.upstash.io"`, `UPSTASH_REDIS_REST_TOKEN="AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE"`), виконайте **саме цю** команду без будь-яких додаткових підстановок або змін:
 >
 > ```bash
 > curl -i \
