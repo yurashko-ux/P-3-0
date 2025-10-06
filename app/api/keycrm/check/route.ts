@@ -6,7 +6,10 @@ import { getActiveCampaign } from "@/lib/campaigns";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/keycrm/check?username=kolachnyk.v
+ * GET /api/keycrm/check?instagram=kolachnyk.v
+ *   [optional] handle=kolachnyk.v (alias для instagram)
+ *   [optional] social_id=@kolachnyk.v
+ *   [optional] full_name=Viktoria%20Kolachnyk
  *   [optional] social_name=instagram
  *   [optional] pipeline_id=1&status_id=38
  *   [optional] max_pages=3&page_size=50
@@ -14,16 +17,20 @@ export const dynamic = "force-dynamic";
  *   [optional] title_mode=exact|contains (default: exact)
  *   [optional] scope=campaign|global (default: campaign якщо є активна, інакше global)
  *
- * Якщо social_id/full_name не передано, вони автоматично підставляються з username.
+ * Якщо social_id/full_name не передано, вони автоматично підставляються з instagram-логіна.
  */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const q = (k: string) => url.searchParams.get(k) || undefined;
 
-    const username = q("username")?.trim();
-    const social_id = q("social_id")?.trim() || username;
-    const full_name = q("full_name")?.trim() || username;
+    const instagram =
+      q("instagram")?.trim() ||
+      q("handle")?.trim() ||
+      q("username")?.trim();
+
+    const social_id = q("social_id")?.trim() || instagram;
+    const full_name = q("full_name")?.trim() || instagram;
     const social_name = q("social_name")?.trim() || (social_id ? "instagram" : undefined);
 
     let pipeline_id = q("pipeline_id") ? Number(q("pipeline_id")) : undefined;
@@ -40,7 +47,7 @@ export async function GET(req: Request) {
         {
           ok: false,
           error: "no_lookup_keys",
-          message: "Передай username або явні social_id/full_name.",
+          message: "Передай instagram або явні social_id/full_name.",
         },
         { status: 200 }
       );
@@ -73,7 +80,7 @@ export async function GET(req: Request) {
       {
         ...res,
         requested: {
-          username: username || null,
+          instagram: instagram || null,
           social_id: social_id || null,
           full_name: full_name || null,
           social_name: social_name || null,
