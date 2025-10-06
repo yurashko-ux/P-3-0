@@ -127,11 +127,30 @@ export async function findCardSimple(args: FindArgs) {
   let candidates_total = 0;
   let consecutiveEmptyCandidates = 0; // рання зупинка в campaign
 
+  const buildQuery = (page: number, perPage: number, style: 'laravel' | 'jsonapi') => {
+    const qs = new URLSearchParams();
+    if (style === 'laravel') {
+      qs.set('page', String(page));
+      qs.set('per_page', String(perPage));
+    } else {
+      qs.set('page[number]', String(page));
+      qs.set('page[size]', String(perPage));
+    }
+    if (scope === 'campaign' && args.pipeline_id && args.status_id) {
+      qs.set('pipeline_id', String(args.pipeline_id));
+      qs.set('status_id', String(args.status_id));
+    }
+    return qs.toString();
+  };
+
   for (let page = 1; page <= max_pages; page++) {
+    const laravelQs = buildQuery(page, requested_page_size, 'laravel');
+    const jsonApiQs = buildQuery(page, requested_page_size, 'jsonapi');
+
     // пробуємо laravel → jsonapi
-    const r1 = await kcGet(`/pipelines/cards?page=${page}&per_page=${requested_page_size}`);
+    const r1 = await kcGet(`/pipelines/cards?${laravelQs}`);
     const useR1 = r1.ok && Array.isArray(r1.json?.data);
-    const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?page[number]=${page}&page[size]=${requested_page_size}`);
+    const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?${jsonApiQs}`);
 
     const rows: any[] = Array.isArray(resp.json?.data) ? resp.json.data : [];
     const meta = readMeta(resp.json);
