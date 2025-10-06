@@ -10,8 +10,10 @@ export type RuleLike =
   | { [key: string]: any };
 
 export type CampaignLike = Record<string, any> & {
-  rules?: Record<'v1' | 'v2' | string, RuleLike> | null;
+  rules?: unknown;
 };
+
+type RulesRecord = Record<string, RuleLike>;
 
 const VALUE_KEYS = ['value', 'label', 'text', 'title', 'name', 'id', 'key', 'code'];
 
@@ -229,11 +231,173 @@ const RULE_FALLBACK_KEYS = (
   `${slot}Target`,
 ];
 
-export function pickRuleCandidate(campaign: CampaignLike, slot: 'v1' | 'v2'): RuleLike | undefined {
-  if (campaign?.rules && campaign.rules[slot] != null) return campaign.rules[slot];
+const RULE_SOURCE_KEYS = [
+  'rules',
+  'Rules',
+  'rules_json',
+  'rulesJson',
+  'rulesStr',
+  'rulesString',
+  'rules_data',
+  'rulesData',
+  'rulesRaw',
+  'rules_raw',
+];
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value ?? null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function inferSlotFromHint(hint: unknown): 'v1' | 'v2' | null {
+  if (typeof hint !== 'string') return null;
+  const lowered = hint.trim().toLowerCase();
+  if (!lowered) return null;
+  const compact = lowered.replace(/[^a-z0-9]+/g, '');
+  if (!compact) return null;
+  if (compact.endsWith('v1') || compact === '1' || compact === 'route1' || compact === 'target1') return 'v1';
+  if (compact.endsWith('v2') || compact === '2' || compact === 'route2' || compact === 'target2') return 'v2';
+  if (lowered.includes('v1') || lowered.includes('route1') || lowered.includes('target1')) return 'v1';
+  if (lowered.includes('v2') || lowered.includes('route2') || lowered.includes('target2')) return 'v2';
+  return null;
+}
+
+function ruleValueFromEntry(entry: Record<string, any>, slot: 'v1' | 'v2'): RuleLike | undefined {
   for (const key of RULE_FALLBACK_KEYS(slot)) {
-    if (Object.prototype.hasOwnProperty.call(campaign, key) && campaign[key] != null) {
-      return campaign[key];
+    if (Object.prototype.hasOwnProperty.call(entry, key) && entry[key] != null) {
+      return entry[key];
+    }
+  }
+
+  const fallback =
+    entry.value ??
+    entry.val ??
+    entry.text ??
+    entry.pattern ??
+    entry.needle ??
+    entry.rule ??
+    entry.target ??
+    entry.payload ??
+    entry.data ??
+    entry.match ??
+    entry.expression ??
+    entry.condition ??
+    entry.content;
+
+  if (fallback !== undefined) return fallback;
+  return entry as RuleLike;
+}
+
+function materializeRules(campaign: CampaignLike): RulesRecord | null {
+  const seen = new Set<any>();
+
+  const merge = (source: RulesRecord | null | undefined, incoming: RulesRecord | null | undefined) => {
+    if (!incoming) return source ?? null;
+    const base = source ? { ...source } : {};
+    for (const [key, value] of Object.entries(incoming)) {
+      if (value != null && base[key] == null) {
+        base[key] = value;
+      }
+    }
+    return base;
+  };
+
+  const normaliseRecord = (input: unknown): RulesRecord | null => {
+    if (!input) return null;
+    if (typeof input === 'string') {
+      return normaliseRecord(parseMaybeJson(input));
+    }
+    if (Array.isArray(input)) {
+      const out: RulesRecord = {};
+      for (const raw of input) {
+        if (!raw || typeof raw !== 'object') continue;
+        if (seen.has(raw)) continue;
+        seen.add(raw);
+        const entry = raw as Record<string, any>;
+        let slot: 'v1' | 'v2' | null = null;
+        for (const candidate of ['v1', 'v2'] as const) {
+          if (slot) break;
+          for (const key of RULE_FALLBACK_KEYS(candidate)) {
+            if (Object.prototype.hasOwnProperty.call(entry, key) && entry[key] != null) {
+              slot = candidate;
+              break;
+            }
+          }
+        }
+        if (!slot) {
+          const hint =
+            entry.slot ??
+            entry.key ??
+            entry.name ??
+            entry.field ??
+            entry.route ??
+            entry.target ??
+            entry.id ??
+            entry.code ??
+            entry.type ??
+            entry.mode ??
+            entry.match ??
+            entry.channel ??
+            entry.step;
+          slot = inferSlotFromHint(hint);
+        }
+        if (!slot) continue;
+        if (out[slot] != null) continue;
+        const value = ruleValueFromEntry(entry, slot);
+        if (value != null) {
+          out[slot] = value;
+        }
+      }
+      return Object.keys(out).length ? out : null;
+    }
+    if (typeof input === 'object') {
+      return input as RulesRecord;
+    }
+    return null;
+  };
+
+  let aggregated: RulesRecord | null = null;
+  for (const key of RULE_SOURCE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(campaign, key)) continue;
+    aggregated = merge(aggregated, normaliseRecord((campaign as any)[key]));
+  }
+
+  if (!aggregated) {
+    aggregated = normaliseRecord((campaign as any).rules);
+  }
+
+  return aggregated;
+}
+
+export function pickRuleCandidate(campaign: CampaignLike, slot: 'v1' | 'v2'): RuleLike | undefined {
+  const materialized = materializeRules(campaign);
+  if (materialized && materialized[slot] != null) {
+    return materialized[slot];
+  }
+
+  if (materialized) {
+    for (const key of RULE_FALLBACK_KEYS(slot)) {
+      if (Object.prototype.hasOwnProperty.call(materialized, key) && materialized[key] != null) {
+        return materialized[key];
+      }
+    }
+    for (const [key, value] of Object.entries(materialized)) {
+      const slotGuess = inferSlotFromHint(key);
+      if (slotGuess === slot && value != null) {
+        return value;
+      }
+    }
+  }
+
+  for (const key of RULE_FALLBACK_KEYS(slot)) {
+    if (Object.prototype.hasOwnProperty.call(campaign, key) && (campaign as any)[key] != null) {
+      return (campaign as any)[key];
     }
   }
   return undefined;
