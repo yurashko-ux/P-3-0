@@ -46,6 +46,11 @@ type PairResponse = {
   input?: { title?: string; handle?: string; text?: string };
   error?: string;
   message?: string;
+  debug?: {
+    candidates?: string[];
+    candidateCount?: number;
+    truncated?: boolean;
+  };
 };
 
 type FindResponse = {
@@ -716,6 +721,13 @@ export default function SyncFlowToolPage() {
           'Переконайся, що у KV є активна кампанія з правилом, яке відповідає нормалізованому тексту ManyChat та має заповнені маршрути V1/V2.',
         context: [
           { label: 'Нормалізований текст', value: present(normalizedText) },
+          {
+            label: 'Кандидати для правил',
+            value:
+              (pair?.debug?.candidateCount ?? pair?.debug?.candidates?.length ?? 0) > 0
+                ? `${pair?.debug?.candidateCount ?? pair?.debug?.candidates?.length ?? 0}: ${pair?.debug?.candidates?.join(', ') || ''}${pair?.debug?.truncated ? ' …' : ''}`
+                : '—',
+          },
           { label: 'Маршрут з вебхуку', value: present(pair?.route ? pair.route.toUpperCase() : '—') },
           {
             label: 'Кампанія з вебхуку',
@@ -988,6 +1000,22 @@ export default function SyncFlowToolPage() {
           </p>
           {step1.message && <p className="text-sm font-medium text-slate-600">{step1.message}</p>}
           {step1.error && <p className="text-sm text-red-600">{step1.error}</p>}
+          {step1.data?.debug && (
+            <div className="mt-2 rounded-lg bg-white/60 p-3 text-xs text-slate-600">
+              <p className="font-semibold">
+                Знайдено {step1.data.debug.candidateCount ?? step1.data.debug.candidates?.length ?? 0} потенційних значень для
+                матчінгу
+              </p>
+              {step1.data.debug.candidates && step1.data.debug.candidates.length > 0 ? (
+                <p className="mt-1 break-words">
+                  {step1.data.debug.candidates.join(', ')}
+                  {step1.data.debug.truncated ? ' …' : ''}
+                </p>
+              ) : (
+                <p className="mt-1 italic text-slate-500">З ManyChat payload не вдалося дістати жодного значення.</p>
+              )}
+            </div>
+          )}
           {step1.data && (
             <details className="rounded-lg bg-white/70 p-3 text-xs text-slate-600">
               <summary className="cursor-pointer font-semibold">Відповідь webhook</summary>

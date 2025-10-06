@@ -45,7 +45,12 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function collectCandidates(value: unknown, seen: Set<string>, depth = 6) {
+function collectCandidates(
+  value: unknown,
+  seen: Set<string>,
+  depth = 12,
+  visited?: WeakSet<object>,
+) {
   if (depth <= 0 || value == null) return;
 
   if (typeof value === 'string') {
@@ -59,23 +64,30 @@ function collectCandidates(value: unknown, seen: Set<string>, depth = 6) {
     return;
   }
 
+  const nextVisited = visited ?? new WeakSet<object>();
+
   if (Array.isArray(value)) {
+    if (nextVisited.has(value as object)) return;
+    nextVisited.add(value as object);
     for (const item of value) {
-      collectCandidates(item, seen, depth - 1);
+      collectCandidates(item, seen, depth - 1, nextVisited);
     }
     return;
   }
 
   if (typeof value === 'object') {
-    for (const v of Object.values(value as Record<string, unknown>)) {
-      collectCandidates(v, seen, depth - 1);
+    const obj = value as Record<string, unknown>;
+    if (nextVisited.has(obj)) return;
+    nextVisited.add(obj);
+    for (const v of Object.values(obj)) {
+      collectCandidates(v, seen, depth - 1, nextVisited);
     }
   }
 }
 
 const VALUE_KEYS = ['value', 'label', 'text', 'title', 'name', 'id', 'key', 'code'];
 
-function normalizeCandidate(value: unknown, depth = 5): string {
+function normalizeCandidate(value: unknown, depth = 12): string {
   if (depth <= 0 || value == null) return '';
 
   if (typeof value === 'string') {
@@ -210,6 +222,11 @@ export async function POST(req: NextRequest) {
       route: chosen.route,
       campaign: chosen.campaign ? { id: chosen.campaign.id, name: chosen.campaign.name } : undefined,
       input: norm,
+      debug: {
+        candidates: candidates.slice(0, 25),
+        candidateCount: candidates.length,
+        truncated: candidates.length > 25,
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'pair failed' }, { status: 500 });
