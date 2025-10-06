@@ -59,6 +59,16 @@ Content-Type: application/json; charset=utf-8
 >
 > У команді вище підставлено самі значення, тому `$` не потрібен. Знак `$` використовуйте лише тоді, коли читаєте значення зі змінної середовища (`$KV_REST_API_TOKEN`).
 
+> **Готова команда з наданими токенами.** Якщо потрібно просто скопіювати та виконати запит з поточними Upstash реквізитами (`UPSTASH_REDIS_REST_URL="https://hot-louse-21041.upstash.io"`, `UPSTASH_REDIS_REST_TOKEN="AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE"`), використайте готову команду:
+>
+> ```bash
+> curl -i \
+>   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>   "https://hot-louse-21041.upstash.io/ping"
+> ```
+>
+> Вона поверне `HTTP/1.1 200 OK` і тіло `{"result":"PONG"}`, якщо токен чинний і доступ до бази працює.
+
 ### Розширена перевірка
 
 1. Перевірити, що токен приймається сервером і повертає відповідь на `PING`:
