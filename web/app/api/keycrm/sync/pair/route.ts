@@ -11,8 +11,7 @@ import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import {
   collectRuleCandidates,
   chooseCampaignRoute,
-  pickRuleCandidate,
-  resolveRule,
+  collectRuleSummaries,
   type CampaignLike,
 } from '@/lib/campaign-rules';
 
@@ -94,8 +93,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const resolvedV1 = chosen.campaign ? resolveRule(pickRuleCandidate(chosen.campaign, 'v1')) : null;
-    const resolvedV2 = chosen.campaign ? resolveRule(pickRuleCandidate(chosen.campaign, 'v2')) : null;
+    const [resolvedV1] = chosen.campaign ? collectRuleSummaries(chosen.campaign, 'v1') : [];
+    const [resolvedV2] = chosen.campaign ? collectRuleSummaries(chosen.campaign, 'v2') : [];
 
     // 3) якщо знайшли — інкрементуємо лічильник
     if (chosen.campaign && chosen.route !== 'none') {

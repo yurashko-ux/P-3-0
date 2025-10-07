@@ -139,6 +139,60 @@ export function collectRuleCandidates(
   return { values: Array.from(values), truncated };
 }
 
+export type RuleSummary = { value: string; op: 'contains' | 'equals' };
+
+function dedupeRules(rules: RuleSummary[]): RuleSummary[] {
+  const seen = new Set<string>();
+  const out: RuleSummary[] = [];
+  for (const rule of rules) {
+    const key = `${rule.op}:${rule.value.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(rule);
+  }
+  return out;
+}
+
+export function collectRuleSummaries(
+  campaign: CampaignLike,
+  slot: 'v1' | 'v2',
+): RuleSummary[] {
+  const rules: RuleSummary[] = [];
+
+  const push = (candidate: RuleLike | undefined) => {
+    if (candidate == null) return;
+    const resolved = resolveRule(candidate);
+    if (!resolved || !resolved.value) return;
+    rules.push(resolved);
+  };
+
+  push(pickRuleCandidate(campaign, slot));
+
+  for (const key of RULE_FALLBACK_KEYS(slot)) {
+    if (Object.prototype.hasOwnProperty.call(campaign, key) && (campaign as any)[key] != null) {
+      push((campaign as any)[key]);
+    }
+  }
+
+  const rawRules = (campaign as any)?.rules;
+  if (rawRules && typeof rawRules === 'object') {
+    const entry = (rawRules as Record<string, unknown>)[slot];
+    if (entry != null) push(entry as RuleLike);
+
+    const { values } = collectRuleCandidates(entry ?? null, [], { limit: 12, maxDepth: 6 });
+    for (const value of values) {
+      push(value);
+    }
+  }
+
+  const normalized = (campaign as any)?.rulesNormalized?.[slot];
+  if (normalized && typeof normalized === 'object') {
+    push(normalized as RuleLike);
+  }
+
+  return dedupeRules(rules);
+}
+
 function resolveOp(raw: unknown): 'contains' | 'equals' {
   if (typeof raw !== 'string') return 'contains';
   const lowered = raw.trim().toLowerCase();
@@ -404,10 +458,11 @@ export function pickRuleCandidate(campaign: CampaignLike, slot: 'v1' | 'v2'): Ru
 }
 
 export function chooseCampaignRoute(inputs: string[], campaign: CampaignLike): 'v1' | 'v2' | 'none' {
-  const v1Rule = pickRuleCandidate(campaign, 'v1');
-  const v2Rule = pickRuleCandidate(campaign, 'v2');
-  const r1 = matchRuleAgainstInputs(inputs, v1Rule);
-  const r2 = matchRuleAgainstInputs(inputs, v2Rule);
+  const matchSlot = (slot: 'v1' | 'v2') =>
+    collectRuleSummaries(campaign, slot).some((rule) => matchRuleAgainstInputs(inputs, rule));
+
+  const r1 = matchSlot('v1');
+  const r2 = matchSlot('v2');
   if (r1 && !r2) return 'v1';
   if (r2 && !r1) return 'v2';
   if (r1 && r2) return 'v1';

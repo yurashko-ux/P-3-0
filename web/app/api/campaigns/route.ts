@@ -4,10 +4,10 @@ import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
 import { kvRead } from "@/lib/kv";
 import {
-  pickRuleCandidate,
-  resolveRule,
   normalizeCandidate,
+  collectRuleSummaries,
   type CampaignLike,
+  type RuleSummary as CampaignRuleSummary,
 } from "@/lib/campaign-rules";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,8 +17,6 @@ const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 type Target = { pipeline?: string; status?: string; pipelineName?: string; statusName?: string };
 type Counters = { v1: number; v2: number; exp: number };
-type RuleSummary = { value: string; op: "contains" | "equals" };
-
 type RuleMatch = { slot: "v1" | "v2"; value: string };
 
 type Campaign = {
@@ -40,7 +38,7 @@ type Campaign = {
   active?: boolean;
   __index_id?: string;
   rules?: Record<string, any> | null;
-  rulesNormalized?: { v1?: RuleSummary | null; v2?: RuleSummary | null };
+  rulesNormalized?: { v1?: CampaignRuleSummary | null; v2?: CampaignRuleSummary | null };
   ruleMatches?: RuleMatch[];
 };
 
@@ -353,24 +351,8 @@ const slotsFromParams = (params: URLSearchParams): ("v1" | "v2")[] => {
   return ["v1", "v2"];
 };
 
-const collectRuleStrings = (raw: CampaignLike, slot: "v1" | "v2"): string[] => {
-  const out = new Set<string>();
-  const resolved = resolveRule(pickRuleCandidate(raw, slot));
-  if (resolved?.value) {
-    const norm = normalizeCandidate(resolved.value).trim();
-    if (norm) out.add(norm);
-  }
-  const direct = normalizeCandidate((raw as any)[slot]).trim();
-  if (direct) out.add(direct);
-
-  const rules = (raw as any)?.rules;
-  if (rules && typeof rules === "object") {
-    const viaRules = normalizeCandidate((rules as Record<string, unknown>)[slot]).trim();
-    if (viaRules) out.add(viaRules);
-  }
-
-  return Array.from(out);
-};
+const collectRuleStrings = (raw: CampaignLike, slot: "v1" | "v2"): string[] =>
+  collectRuleSummaries(raw, slot).map((rule) => normalizeCandidate(rule.value).trim()).filter(Boolean);
 
 const ruleMatchesCacheKey = (raw: Record<string, any>) =>
   pickStr(raw?.id) || pickStr(raw?.__index_id) || "";
@@ -458,8 +440,8 @@ export async function GET(req: NextRequest) {
       pickNum(raw?.expire) ??
       pickNum(raw?.vexp);
 
-    const ruleV1 = resolveRule(pickRuleCandidate(raw as CampaignLike, "v1"));
-    const ruleV2 = resolveRule(pickRuleCandidate(raw as CampaignLike, "v2"));
+    const [ruleV1] = collectRuleSummaries(raw as CampaignLike, "v1");
+    const [ruleV2] = collectRuleSummaries(raw as CampaignLike, "v2");
 
     normalized.push({
       id,
@@ -478,8 +460,8 @@ export async function GET(req: NextRequest) {
       createdAt,
       rules: raw?.rules ?? null,
       rulesNormalized: {
-        v1: ruleV1 ? { value: ruleV1.value, op: ruleV1.op } : null,
-        v2: ruleV2 ? { value: ruleV2.value, op: ruleV2.op } : null,
+        v1: ruleV1 ?? null,
+        v2: ruleV2 ?? null,
       },
       ruleMatches: matchesById.get(id),
     });

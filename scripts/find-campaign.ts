@@ -2,10 +2,8 @@
 import process from "node:process";
 import { kvRead } from "@/lib/kv";
 import {
-  collectRuleCandidates,
+  collectRuleSummaries,
   normalizeCandidate,
-  pickRuleCandidate,
-  resolveRule,
   type CampaignLike,
 } from "@/lib/campaign-rules";
 
@@ -93,35 +91,10 @@ type CampaignMatch = {
 };
 
 function collectRuleStrings(raw: CampaignLike, slot: "v1" | "v2"): string[] {
-  const values = new Set<string>();
-
-  const resolved = resolveRule(pickRuleCandidate(raw, slot));
-  if (resolved?.value) {
-    const normalized = normalizeCandidate(resolved.value).trim();
-    if (normalized) values.add(normalized);
-  }
-
-  const direct = normalizeCandidate((raw as any)[slot]).trim();
-  if (direct) values.add(direct);
-
-  const rules = (raw as any)?.rules;
-  if (rules && typeof rules === "object") {
-    const slotRule = (rules as Record<string, unknown>)[slot];
-    const viaRules = normalizeCandidate(slotRule).trim();
-    if (viaRules) values.add(viaRules);
-
-    const fromCandidates = collectRuleCandidates(slotRule ?? null, [], {
-      limit: 6,
-      maxDepth: 4,
-    });
-
-    for (const candidate of fromCandidates.values) {
-      const normalized = normalizeCandidate(candidate).trim();
-      if (normalized) values.add(normalized);
-    }
-  }
-
-  return Array.from(values);
+  const summaries = collectRuleSummaries(raw, slot);
+  return summaries
+    .map((summary) => normalizeCandidate(summary.value).trim())
+    .filter((value) => value.length > 0);
 }
 
 async function findCampaigns(options: Options): Promise<CampaignMatch[]> {
