@@ -1,0 +1,11 @@
+{
+  "name": "p-3-0-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "test": "npm run lint --workspace web"
+  }
+}
