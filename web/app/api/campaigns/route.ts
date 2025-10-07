@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
-import { kvRead } from "@/lib/kv";
+import { kvRead, kvWrite } from "@/lib/kv";
 import {
   normalizeCandidate,
   collectRuleSummaries,
@@ -525,6 +525,9 @@ export async function POST(req: NextRequest) {
   const v1 = pickStr(body.v1);
   const v2 = pickStr(body.v2);
 
+  const rawRules = body && typeof body.rules === "object" && body.rules ? (body.rules as Record<string, any>) : undefined;
+  const rawExpConfig = body && typeof body.exp === "object" && body.exp ? (body.exp as Record<string, any>) : undefined;
+
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
     pickNum(body.expDays) ??
@@ -548,8 +551,66 @@ export async function POST(req: NextRequest) {
     deleted: isDeleted,
   };
 
-  await kv.set(ITEM_KEY(id), campaign);
-  await writeIdsMerged(id);
+  if (rawRules) {
+    campaign.rules = rawRules;
+  }
+  if (rawExpConfig) {
+    (campaign as any).expConfig = rawExpConfig;
+  }
+
+  const ruleSummaries = {
+    v1: collectRuleSummaries({ ...campaign, rules: rawRules ?? undefined }, "v1")[0] ?? null,
+    v2: collectRuleSummaries({ ...campaign, rules: rawRules ?? undefined }, "v2")[0] ?? null,
+  };
+  campaign.rulesNormalized = {
+    v1: ruleSummaries.v1,
+    v2: ruleSummaries.v2,
+  };
+
+  const serialized = JSON.stringify(campaign);
+
+  let stored = false;
+  try {
+    await kv.set(ITEM_KEY(id), campaign);
+    stored = true;
+  } catch (error) {
+    console.warn("[campaigns] kv.set failed, falling back to raw set", error);
+  }
+  if (!stored) {
+    try {
+      await kvWrite.setRaw(ITEM_KEY(id), serialized);
+      stored = true;
+    } catch (error) {
+      console.error("[campaigns] kvWrite.setRaw failed", error);
+    }
+  }
+  if (!stored) {
+    return NextResponse.json({ ok: false, error: "Не вдалося зберегти кампанію" }, { status: 500 });
+  }
+
+  let indexed = false;
+  try {
+    await kv.lpush(IDS_KEY, id);
+    indexed = true;
+  } catch (error) {
+    const message = (error as Error | undefined)?.message ?? "";
+    if (!WRONGTYPE_RE.test(message)) {
+      console.warn("[campaigns] kv.lpush failed, will fallback", error);
+    } else {
+      console.warn("[campaigns] kv.lpush wrongtype, will rebuild", error);
+    }
+  }
+  if (!indexed) {
+    try {
+      await kvWrite.lpush(IDS_KEY, id);
+      indexed = true;
+    } catch (error) {
+      console.error("[campaigns] kvWrite.lpush failed", error);
+    }
+  }
+  if (!indexed) {
+    await writeIdsMerged(id);
+  }
 
   return NextResponse.json({ ok:true, id }, { status: 201 });
 }
