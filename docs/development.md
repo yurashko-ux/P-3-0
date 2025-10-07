@@ -12,7 +12,7 @@ npm install
 
 ## Запуск lint / тестів
 
-Команда `npm test` у корені делегує запуск `npm run lint` у workspace `web`. Таким чином:
+Команда `npm test` у корені делегує запуск `npm run lint` у workspace `web`. Перед першим запуском обов'язково зробіть `npm install`, інакше `next lint` не знайде власний CLI та впаде з помилкою `next: not found`. Після встановлення залежностей можна просто виконати:
 
 ```bash
 npm test

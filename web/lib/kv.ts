@@ -25,7 +25,7 @@ const RD_TOKEN =
 
 let directKv: typeof import('@vercel/kv').kv | null = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+  // eslint-disable-next-line global-require
   directKv = require('@vercel/kv').kv;
 } catch {
   directKv = null;
@@ -33,7 +33,7 @@ try {
 
 let upstashKv: import('@upstash/redis').Redis | null = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+  // eslint-disable-next-line global-require
   const { Redis } = require('@upstash/redis');
   if (typeof Redis?.fromEnv === 'function') {
     upstashKv = Redis.fromEnv();
