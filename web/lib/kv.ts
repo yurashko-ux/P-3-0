@@ -348,6 +348,40 @@ function normalizeIdRaw(raw: any, depth = 6): string {
   return '';
 }
 
+function resolveBoolean(raw: any, fallback: boolean): boolean {
+  if (typeof raw === 'boolean') return raw;
+  if (raw == null) return fallback;
+
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw)) return fallback;
+    if (raw === 0) return false;
+    if (raw === 1) return true;
+    return raw !== 0;
+  }
+
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (['1', 'true', 'yes', 'on', 'active', 'enabled'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off', 'inactive', 'disabled'].includes(normalized)) return false;
+    return fallback;
+  }
+
+  if (typeof raw === 'object') {
+    if (raw && Object.prototype.hasOwnProperty.call(raw as Record<string, unknown>, 'value')) {
+      return resolveBoolean((raw as Record<string, unknown>).value, fallback);
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeActive(rawActive: any, rawDeleted?: any): boolean {
+  const deleted = resolveBoolean(rawDeleted, false);
+  if (deleted) return false;
+  return resolveBoolean(rawActive, true);
+}
+
 type OfflineSnapshot = {
   ids: string[];
   items: Map<string, string>;
@@ -576,6 +610,10 @@ export const kvRead = {
           const ts = Number(safeId);
           if (Number.isFinite(ts)) obj.created_at = ts;
         }
+
+        obj.deleted = resolveBoolean(obj?.deleted, false);
+        obj.active = normalizeActive(obj?.active, obj?.deleted);
+
         out.push(obj);
       } catch {
         // ігноруємо биті JSON
@@ -614,11 +652,13 @@ export const kvWrite = {
         ? input.created_at
         : (Number(id) && Number.isFinite(Number(id)) ? Number(id) : Date.now());
 
+    const deleted = resolveBoolean(input?.deleted, false);
+
     const item = {
       id,
       name: input?.name || 'UI-created',
       created_at,
-      active: Boolean(input?.active ?? false),
+      active: normalizeActive(input?.active, deleted),
       base_pipeline_id: input?.base_pipeline_id ?? null,
       base_status_id: input?.base_status_id ?? null,
       base_pipeline_name: input?.base_pipeline_name ?? null,
@@ -628,7 +668,7 @@ export const kvWrite = {
       v1_count: Number(input?.v1_count ?? 0),
       v2_count: Number(input?.v2_count ?? 0),
       exp_count: Number(input?.exp_count ?? 0),
-      deleted: false,
+      deleted,
     };
 
     await kvSetRaw(campaignKeys.ITEM_KEY(id), JSON.stringify(item));

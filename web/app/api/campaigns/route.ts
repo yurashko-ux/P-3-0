@@ -36,6 +36,7 @@ type Campaign = {
   counters?: Counters;
   createdAt?: number;
   active?: boolean;
+  deleted?: boolean;
   __index_id?: string;
   rules?: Record<string, any> | null;
   rulesNormalized?: { v1?: CampaignRuleSummary | null; v2?: CampaignRuleSummary | null };
@@ -116,6 +117,31 @@ async function writeIdsMerged(newId: string) {
 
 const pickStr = (x: any) => (x==null?undefined: (String(x).trim()||undefined));
 const pickNum = (x: any) => { const n=Number(x); return Number.isFinite(n)?n:undefined; };
+
+const TRUE_STRINGS = new Set(['1','true','yes','on','active','enabled']);
+const FALSE_STRINGS = new Set(['0','false','no','off','inactive','disabled']);
+
+function parseFlag(value: any, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value == null) return fallback;
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return fallback;
+    if (value === 0) return false;
+    if (value === 1) return true;
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (TRUE_STRINGS.has(normalized)) return true;
+    if (FALSE_STRINGS.has(normalized)) return false;
+    return fallback;
+  }
+
+  return fallback;
+}
 
 function targetFromFlat(src: Record<string, any>, prefix: string): Target | undefined {
   const get = (...ks: string[]) => ks.map(k => src[k]).find(v => v!=null);
@@ -510,11 +536,16 @@ export async function POST(req: NextRequest) {
 
   const [eBase,e1,e2,eExp] = await Promise.all([enrichNames(base),enrichNames(t1),enrichNames(t2),enrichNames(texp)]);
 
+  const isDeleted = parseFlag(body.deleted, false);
+  const isActive = isDeleted ? false : parseFlag(body.active, true);
+
   const campaign: Campaign = {
     id, name: pickStr(body.name) ?? "Без назви",
     base: eBase, t1: e1, t2: e2, texp: eExp, v1, v2,
     ...(expDays!=null ? { expDays, exp: expDays } : {}), // збережемо ще й як `exp` для зручності рендеру
-    counters: { v1:0, v2:0, exp:0 }, createdAt: now
+    counters: { v1:0, v2:0, exp:0 }, createdAt: now,
+    active: isActive,
+    deleted: isDeleted,
   };
 
   await kv.set(ITEM_KEY(id), campaign);
