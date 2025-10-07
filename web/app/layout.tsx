@@ -24,17 +24,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {`
             (function(){
               try {
-                var g = typeof globalThis !== 'undefined' ? globalThis : window;
+                var g = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : undefined);
                 if (!g) return;
-                var w = typeof window !== 'undefined' ? window : g;
                 var noop = function lockdownDisabled() { return undefined; };
                 var install = function(target) {
+                  if (!target) return;
                   try {
-                    Object.defineProperty(target, 'lockdown', {
-                      configurable: true,
-                      writable: true,
-                      value: noop,
-                    });
+                    var desc = Object.getOwnPropertyDescriptor(target, 'lockdown');
+                    if (!desc || desc.configurable || desc.writable) {
+                      Object.defineProperty(target, 'lockdown', {
+                        configurable: true,
+                        writable: true,
+                        value: noop,
+                      });
+                    }
                   } catch (_) {
                     try {
                       target.lockdown = noop;
@@ -42,32 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   }
                 };
                 install(g);
-                try {
-                  var originalDefineProperty = Object.defineProperty;
-                  Object.defineProperty = function(target, property, descriptor) {
-                    if ((target === g || target === w) && property === 'lockdown') {
-                      return originalDefineProperty(target, property, {
-                        configurable: true,
-                        writable: true,
-                        value: noop,
-                      });
-                    }
-                    return originalDefineProperty(target, property, descriptor);
-                  };
-                } catch (_) {}
-                try {
-                  var originalReflectDefine = Reflect.defineProperty;
-                  Reflect.defineProperty = function(target, property, descriptor) {
-                    if ((target === g || target === w) && property === 'lockdown') {
-                      return originalReflectDefine(target, property, {
-                        configurable: true,
-                        writable: true,
-                        value: noop,
-                      });
-                    }
-                    return originalReflectDefine(target, property, descriptor);
-                  };
-                } catch (_) {}
+                if (typeof window !== 'undefined') install(window);
               } catch (_) {}
             })();
           `}
