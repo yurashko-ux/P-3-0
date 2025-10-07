@@ -47,7 +47,17 @@ curl -fsS -X POST \
 curl -fsS "http://localhost:3000/api/campaigns?value=1&slot=v1&match=equals"
 ```
 
-У відповіді має бути масив кампаній і поле `ruleMatches`, яке покаже, яке правило спрацювало. Якщо масив порожній, проблема в логіці пошуку ManyChat → KeyCRM, а не в доступі до KV.
+Аналогічний запит для V2:
+
+```bash
+curl -fsS "http://localhost:3000/api/campaigns?value=2&slot=v2&match=equals"
+```
+
+У відповіді має бути масив кампаній і поле `ruleMatches`, яке покаже, яке правило спрацювало. Якщо масив порожній, проблема в логіці пошуку ManyChat → KeyCRM, а не в доступі до KV. Для швидкої перевірки без HTTP можна скористатися CLI-скриптом з кореня репозиторію:
+
+```bash
+npm run find:campaign -- --value 2 --slot v2 --match equals
+```
 
 ---
 
