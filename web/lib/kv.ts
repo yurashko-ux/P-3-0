@@ -193,7 +193,27 @@ async function restCommand<T = unknown>(
 async function kvGetRaw(key: string) {
   if (BASE && RD_TOKEN) {
     const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
-    if (res) return res.text();
+    if (res) {
+      try {
+        const txt = await res.text();
+        if (!txt) return null;
+        try {
+          const parsed = JSON.parse(txt);
+          if (parsed && typeof parsed === 'object' && 'result' in parsed) {
+            const value = (parsed as { result: unknown }).result;
+            if (typeof value === 'string') return value;
+            if (value == null) return null;
+            return JSON.stringify(value);
+          }
+        } catch {
+          // якщо тіло не JSON — повертаємо як є
+          return txt;
+        }
+        return txt;
+      } catch {
+        // прокидуємось до резервного каналу нижче
+      }
+    }
 
     const viaCommand = await restCommand<string | null>('GET', [key], true);
     if (typeof viaCommand === 'string') return viaCommand;
