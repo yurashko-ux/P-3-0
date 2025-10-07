@@ -75,7 +75,7 @@ async function kvScan({ pattern, limit = 200, count }: ScanOptions): Promise<str
   // 2) клієнт Upstash Redis
   if (upstashKv && typeof upstashKv.scan === 'function') {
     try {
-      let cursor: number | string = 0;
+      let cursor = '0';
       for (let i = 0; i < 100 && out.size < safeLimit; i += 1) {
         const [next, keys] = await upstashKv.scan(cursor as any, {
           match: pattern,
@@ -87,8 +87,14 @@ async function kvScan({ pattern, limit = 200, count }: ScanOptions): Promise<str
             if (out.size >= safeLimit) break;
           }
         }
-        cursor = typeof next === 'number' ? next : Number(next) || next || 0;
-        if (cursor === 0 || cursor === '0') break;
+        if (typeof next === 'number') {
+          cursor = String(next);
+        } else if (typeof next === 'string' && next) {
+          cursor = next;
+        } else {
+          cursor = '0';
+        }
+        if (cursor === '0') break;
       }
     } catch {}
   }
