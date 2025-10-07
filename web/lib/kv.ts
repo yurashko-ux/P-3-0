@@ -42,6 +42,95 @@ try {
   upstashKv = null;
 }
 
+type ScanOptions = {
+  pattern: string;
+  limit?: number;
+  count?: number;
+};
+
+async function kvScan({ pattern, limit = 200, count }: ScanOptions): Promise<string[]> {
+  const out = new Set<string>();
+  const safeLimit = Math.max(1, Math.min(limit, 1000));
+  const safeCount = Math.max(1, Math.min(count ?? Math.max(25, safeLimit * 2), 1000));
+
+  const push = (value: unknown) => {
+    if (!value || out.size >= safeLimit) return;
+    out.add(String(value));
+  };
+
+  // 1) пробуємо прямий клієнт Vercel KV, якщо він доступний
+  const direct: any = directKv;
+  if (direct && typeof direct.scanIterator === 'function') {
+    try {
+      const iterator = direct.scanIterator({ match: pattern, count: safeCount });
+      // eslint-disable-next-line no-restricted-syntax
+      for await (const key of iterator as AsyncIterable<string>) {
+        push(key);
+        if (out.size >= safeLimit) break;
+      }
+    } catch {}
+  }
+  if (out.size >= safeLimit) return Array.from(out);
+
+  // 2) клієнт Upstash Redis
+  if (upstashKv && typeof upstashKv.scan === 'function') {
+    try {
+      let cursor: number | string = 0;
+      for (let i = 0; i < 100 && out.size < safeLimit; i += 1) {
+        const [next, keys] = await upstashKv.scan(cursor as any, {
+          match: pattern,
+          count: safeCount,
+        });
+        if (Array.isArray(keys)) {
+          for (const key of keys) {
+            push(key);
+            if (out.size >= safeLimit) break;
+          }
+        }
+        cursor = typeof next === 'number' ? next : Number(next) || next || 0;
+        if (cursor === 0 || cursor === '0') break;
+      }
+    } catch {}
+  }
+  if (out.size >= safeLimit) return Array.from(out);
+
+  // 3) REST команда SCAN
+  if (BASE && RD_TOKEN) {
+    let cursor: string | number = 0;
+    for (let i = 0; i < 200 && out.size < safeLimit; i += 1) {
+      const payload = await restCommand<any>('SCAN', [cursor, 'MATCH', pattern, 'COUNT', safeCount], true);
+      if (!payload) break;
+
+      let nextCursor: string | number | undefined;
+      let keys: unknown[] = [];
+
+      if (Array.isArray(payload)) {
+        [nextCursor, keys] = payload;
+      } else if (typeof payload === 'object') {
+        if (Array.isArray((payload as any).result)) {
+          [nextCursor, keys] = (payload as any).result;
+        } else if (Array.isArray((payload as any).data)) {
+          [nextCursor, keys] = (payload as any).data;
+        }
+      }
+
+      if (Array.isArray(keys)) {
+        for (const key of keys) {
+          push(key);
+          if (out.size >= safeLimit) break;
+        }
+      }
+
+      if (!nextCursor || nextCursor === 0 || nextCursor === '0') {
+        break;
+      }
+      cursor = nextCursor;
+    }
+  }
+
+  return Array.from(out);
+}
+
 async function rest(path: string, opts: RequestInit = {}, ro = false) {
   const headers = {
     'Content-Type': 'application/json',
@@ -421,6 +510,25 @@ export const kvRead = {
         if (!offlineId || seen.has(offlineId)) continue;
         seen.add(offlineId);
         ids.push(offlineId);
+      }
+    }
+
+    if (!ids.length) {
+      const scannedCmp = await kvScan({ pattern: 'cmp:item:*', limit: 400 }).catch(() => [] as string[]);
+      for (const key of scannedCmp) {
+        const id = normalizeIdRaw(key);
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+      }
+      if (!ids.length) {
+        const scannedCampaign = await kvScan({ pattern: 'campaign:*', limit: 200 }).catch(() => [] as string[]);
+        for (const key of scannedCampaign) {
+          const id = normalizeIdRaw(key);
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          ids.push(id);
+        }
       }
     }
 
