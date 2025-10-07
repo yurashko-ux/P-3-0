@@ -6,6 +6,10 @@
     "web"
   ],
   "scripts": {
-    "test": "npm run lint --workspace web"
+    "test": "npm run lint --workspace web",
+    "find:campaign": "tsx scripts/find-campaign.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
   }
 }
