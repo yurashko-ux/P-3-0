@@ -46,15 +46,74 @@ type Campaign = {
 
 const unique = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
 
-async function readIdsMerged(): Promise<string[]> {
-  const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
-  let list: string[] = [];
-  try { list = await kv.lrange<string>(IDS_KEY, 0, -1); } catch {}
-  return unique([...(Array.isArray(arr)?arr:[]), ...(Array.isArray(list)?list:[])]);
+const WRONGTYPE_RE = /WRONGTYPE/i;
+
+async function readIndexList(): Promise<string[]> {
+  try {
+    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
+    if (Array.isArray(list)) {
+      return list.map((value) => String(value)).filter(Boolean);
+    }
+  } catch (error) {
+    const message = (error as Error | undefined)?.message ?? '';
+    if (!WRONGTYPE_RE.test(message)) {
+      return [];
+    }
+
+    const stored = await kv.get<string[] | null>(IDS_KEY).catch(() => null);
+    const recovered = Array.isArray(stored)
+      ? stored.map((value) => String(value)).filter(Boolean)
+      : [];
+
+    if (recovered.length) {
+      await kv.del(IDS_KEY).catch(() => {});
+      await kv.rpush(IDS_KEY, ...recovered).catch(() => {});
+      return recovered;
+    }
+
+    await kv.del(IDS_KEY).catch(() => {});
+    return [];
+  }
+
+  return [];
 }
+
+async function readIdsMerged(): Promise<string[]> {
+  const [list, stored] = await Promise.all([
+    readIndexList(),
+    kv.get<string[] | null>(IDS_KEY).catch(() => null),
+  ]);
+
+  const fromStored = Array.isArray(stored)
+    ? stored.map((value) => String(value)).filter(Boolean)
+    : [];
+
+  return unique([...fromStored, ...list]);
+}
+
 async function writeIdsMerged(newId: string) {
-  const merged = await readIdsMerged();
-  await kv.set(IDS_KEY, unique([newId, ...merged]));
+  const id = pickStr(newId);
+  if (!id) return;
+
+  const existing = await readIdsMerged();
+  if (existing.includes(id)) return;
+
+  try {
+    await kv.lpush(IDS_KEY, id);
+    return;
+  } catch (error) {
+    const message = (error as Error | undefined)?.message ?? '';
+    if (!WRONGTYPE_RE.test(message)) {
+      return;
+    }
+  }
+
+  const recovered = await readIndexList();
+  if (!recovered.includes(id)) recovered.unshift(id);
+  await kv.del(IDS_KEY).catch(() => {});
+  if (recovered.length) {
+    await kv.rpush(IDS_KEY, ...recovered).catch(() => {});
+  }
 }
 
 const pickStr = (x: any) => (x==null?undefined: (String(x).trim()||undefined));
