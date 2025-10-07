@@ -94,6 +94,44 @@ Content-Type: application/json; charset=utf-8
 >
 > Якщо бачите саме таку відповідь, REST-канал працює й можна переходити до читання ключів `cmp:ids` / `cmp:item:*`.
 
+> **Готові команди для подальших кроків з вашими реквізитами.** Щоб не вводити нічого вручну, нижче наведені запити, які можна одразу копіювати в термінал:
+>
+> 1. **Отримати повний індекс кампаній `cmp:ids`:**
+>
+>    ```bash
+>    curl -fsS -X POST \
+>      -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>      -H "Content-Type: application/json" \
+>      -d '["LRANGE","cmp:ids",0,-1]' \
+>      "https://hot-louse-21041.upstash.io"
+>    ```
+>
+>    У відповіді побачите масив ключів на кшталт `"cmp:item:1759656242922"`. Порожній масив `[]` означає, що індекс ще не заповнений.
+>
+> 2. **Знайти всі кампанії, де `v1 = "1"`:**
+>
+>    ```bash
+>    curl -fsS -X POST \
+>      -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>      -H "Content-Type: application/json" \
+>      -d '["EVAL","local val=ARGV[1]; local slot=ARGV[2]; local matches={}; local ids=redis.call(\"LRANGE\",\"cmp:ids\",0,-1); for _,key in ipairs(ids) do local raw=redis.call(\"GET\",key); if raw then local ok,data=pcall(cjson.decode, raw); if ok and tostring(data[slot])==val then table.insert(matches,{id=data.id,name=data.name,slot=slot,value=data[slot]}); end end end return cjson.encode(matches)",0,"1","v1"]' \
+>      "https://hot-louse-21041.upstash.io"
+>    ```
+>
+>    Ця команда поверне JSON із переліком збігів (ID, назва, слот і значення). Якщо відповідь `{"result":"[]"}`, значить, правил із таким значенням немає.
+>
+> 3. **Знайти всі кампанії, де `v2 = "1"` (аналогічно, лише інший слот):**
+>
+>    ```bash
+>    curl -fsS -X POST \
+>      -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
+>      -H "Content-Type: application/json" \
+>      -d '["EVAL","local val=ARGV[1]; local slot=ARGV[2]; local matches={}; local ids=redis.call(\"LRANGE\",\"cmp:ids\",0,-1); for _,key in ipairs(ids) do local raw=redis.call(\"GET\",key); if raw then local ok,data=pcall(cjson.decode, raw); if ok and tostring(data[slot])==val then table.insert(matches,{id=data.id,name=data.name,slot=slot,value=data[slot]}); end end end return cjson.encode(matches)",0,"1","v2"]' \
+>      "https://hot-louse-21041.upstash.io"
+>    ```
+>
+>    Щоб шукати інше значення, замініть останній аргумент `"1"` на потрібне (наприклад, `"2"`).
+
 > **Наступний крок після `PONG`.** Щоб переконатися, що в базі дійсно є кампанії, одразу після успішного ping виконайте команду `LRANGE` через HTTP-пайплайн. Такий варіант не залежить від форматування URL і працює навіть тоді, коли варіант із `/lrange/...` повертає `400 Bad Request`:
 
 ```bash
