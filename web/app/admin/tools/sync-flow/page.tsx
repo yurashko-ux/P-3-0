@@ -829,7 +829,6 @@ export default function SyncFlowToolPage() {
   }, [
     basePipelineId,
     baseStatusId,
-    baseStatuses,
     campaignBaseInfo,
     cardIdOverride,
     dryRun,
