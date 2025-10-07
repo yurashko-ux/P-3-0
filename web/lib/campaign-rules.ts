@@ -163,7 +163,9 @@ export function collectRuleSummaries(
     if (candidate == null) return;
     const resolved = resolveRule(candidate);
     if (!resolved || !resolved.value) return;
-    rules.push(resolved);
+    const normalizedValue = normalizeCandidate(resolved.value).trim();
+    if (!normalizedValue) return;
+    rules.push({ op: resolved.op, value: normalizedValue });
   };
 
   push(pickRuleCandidate(campaign, slot));
@@ -458,8 +460,24 @@ export function pickRuleCandidate(campaign: CampaignLike, slot: 'v1' | 'v2'): Ru
 }
 
 export function chooseCampaignRoute(inputs: string[], campaign: CampaignLike): 'v1' | 'v2' | 'none' {
-  const matchSlot = (slot: 'v1' | 'v2') =>
-    collectRuleSummaries(campaign, slot).some((rule) => matchRuleAgainstInputs(inputs, rule));
+  const normalizedInputs = inputs
+    .map((input) => normalizeCandidate(input).trim())
+    .filter((value) => value.length > 0);
+
+  if (!normalizedInputs.length) return 'none';
+
+  const haystack = normalizedInputs.map((value) => value.toLowerCase());
+
+  const matchSlot = (slot: 'v1' | 'v2') => {
+    const summaries = collectRuleSummaries(campaign, slot);
+    if (!summaries.length) return false;
+
+    return summaries.some(({ value, op }) => {
+      const needle = normalizeCandidate(value).trim().toLowerCase();
+      if (!needle) return false;
+      return haystack.some((hay) => (op === 'equals' ? hay === needle : hay.includes(needle)));
+    });
+  };
 
   const r1 = matchSlot('v1');
   const r2 = matchSlot('v2');
