@@ -100,9 +100,11 @@ Content-Type: application/json; charset=utf-8
 curl -fsS -X POST \
   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
   -H "Content-Type: application/json" \
-  -d '["LRANGE","cmp:ids","0","-1"]' \
+  -d '["LRANGE","cmp:ids",0,-1]' \
   "https://hot-louse-21041.upstash.io"
 ```
+
+> Зверніть увагу: значення меж `0` та `-1` потрібно передавати як числа. Якщо загорнути їх у лапки, Upstash відповість `400 Bad Request` з помилкою `ERR value is not an integer`, і список кампаній не повернеться.
 
 > Помилка `ERR wrong number of arguments for 'keys' command` у попередніх спробах означала, що сервер отримував запит на іншу команду (наприклад, `KEYS`). POST-варіант вище напряму відправляє Redis-команду та усуває залежність від URL-енкодингу `:` або `*`.
 
@@ -112,7 +114,7 @@ curl -fsS -X POST \
 curl -fsS -X POST \
   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
   -H "Content-Type: application/json" \
-  -d '["LRANGE","cmp:ids","0","-1"]' \
+  -d '["LRANGE","cmp:ids",0,-1]' \
   "https://hot-louse-21041.upstash.io" | python3 -m json.tool
 ```
 
@@ -126,7 +128,7 @@ curl -fsS -X POST \
 curl -fsS -X POST \
   -H "Authorization: Bearer AVIxAAIncDEwMzc2NTgwYzgzOTc0NzUzYjIxMzY3Y2U2NzdkNjY1MXAxMjEwNDE" \
   -H "Content-Type: application/json" \
-  -d '["LRANGE","cmp:ids","0","-1"]' \
+  -d '["LRANGE","cmp:ids",0,-1]' \
   "https://hot-louse-21041.upstash.io"
 ```
 >

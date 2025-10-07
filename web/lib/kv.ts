@@ -66,7 +66,7 @@ async function restCommand<T = unknown>(
 
   const body = JSON.stringify([
     command,
-    ...args.map((arg) => (typeof arg === 'string' ? arg : String(arg))),
+    ...args.map((arg) => (typeof arg === 'number' ? arg : String(arg))),
   ]);
 
   try {
@@ -120,48 +120,55 @@ async function kvGetRaw(key: string) {
 }
 
 async function kvSetRaw(key: string, value: string) {
+  let ok = false;
   if (BASE && WR_TOKEN) {
-    const ok = await rest(`set/${encodeURIComponent(key)}`, {
+    ok = await rest(`set/${encodeURIComponent(key)}`, {
       method: 'POST',
       body: value,
     }).then(() => true).catch(() => false);
     if (!ok) {
-      await restCommand('SET', [key, value]).catch(() => null);
+      const viaCommand = await restCommand('SET', [key, value]).catch(() => null);
+      ok = viaCommand != null;
     }
-    return;
   }
-  if (directKv) {
+  if (!ok && directKv) {
     await directKv.set(key, value).catch(() => {});
-    return;
+    ok = true;
   }
-  if (upstashKv) {
+  if (!ok && upstashKv) {
     await upstashKv.set(key, value).catch(() => {});
   }
 }
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
-  if (!BASE || !RD_TOKEN) {
+  const viaClients = async () => {
     if (directKv) {
       try {
         const arr = await directKv.lrange<string>(key, start, stop);
         if (Array.isArray(arr)) return arr.map(String);
       } catch {
-        return [] as string[];
+        /* noop */
       }
-      return [] as string[];
     }
     if (upstashKv) {
       try {
         const arr = await upstashKv.lrange<string>(key, start, stop);
         if (Array.isArray(arr)) return arr.map(String);
       } catch {
-        return [] as string[];
+        /* noop */
       }
-      return [] as string[];
     }
-    return [] as string[];
+    return null as string[] | null;
+  };
+
+  const directResult = await viaClients();
+  if (directResult) return directResult;
+
+  if (!BASE || !RD_TOKEN) {
+    return directResult ?? ([] as string[]);
   }
+
   const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
   if (!res) {
     const viaCommand = await restCommand<any>('LRANGE', [key, start, stop], true);
@@ -178,6 +185,10 @@ async function kvLRange(key: string, start = 0, stop = -1) {
         return arr.map((x: any) => (x == null ? '' : String(x))).filter(Boolean);
       }
     }
+
+    const retry = await viaClients();
+    if (retry) return retry;
+
     return [] as string[];
   }
 
@@ -463,21 +474,22 @@ export const kvRead = {
 export const kvWrite = {
   async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
   async lpush(key: string, value: string) {
+    let ok = false;
     if (BASE && WR_TOKEN) {
-      const ok = await rest(`lpush/${encodeURIComponent(key)}`, {
+      ok = await rest(`lpush/${encodeURIComponent(key)}`, {
         method: 'POST',
         body: JSON.stringify({ value }),
       }).then(() => true).catch(() => false);
       if (!ok) {
-        await restCommand('LPUSH', [key, value]).catch(() => null);
+        const viaCommand = await restCommand('LPUSH', [key, value]).catch(() => null);
+        ok = viaCommand != null;
       }
-      return;
     }
-    if (directKv) {
+    if (!ok && directKv) {
       await directKv.lpush(key, value).catch(() => {});
-      return;
+      ok = true;
     }
-    if (upstashKv) {
+    if (!ok && upstashKv) {
       await upstashKv.lpush(key, value).catch(() => {});
     }
   },
