@@ -259,6 +259,40 @@ export async function findCardSimple(args: FindArgs) {
   let candidates_total = 0;
   const attempts: Record<string, any> = {};
   const contactCache = new Map<string | number, ContactSummary | null>();
+  async function hydrateContact(card: CardSummary): Promise<CardSummary> {
+    const contactKey = card.contact_id ?? card.contact?.id ?? null;
+    if (contactKey == null) {
+      return card;
+    }
+
+    if (contactCache.has(contactKey)) {
+      const cached = contactCache.get(contactKey) || null;
+      return cached ? { ...card, contact: cached } : card;
+    }
+
+    const cacheKey = String(contactKey);
+    const attemptId = `contact_${cacheKey}`;
+    const res = await kcGet(`/contacts/${cacheKey}`);
+    attempts[attemptId] = { method: "GET", ok: res.ok, status: res.status };
+
+    if (!res.ok) {
+      contactCache.set(contactKey, null);
+      return card;
+    }
+
+    const payload =
+      res.json?.data ??
+      res.json?.contact ??
+      res.json?.result ??
+      res.json ??
+      null;
+
+    const summary = payload ? extractContactSummary(payload) : null;
+    attempts[attemptId].contact = summary;
+    contactCache.set(contactKey, summary);
+
+    return summary ? { ...card, contact: summary } : card;
+  }
 
   async function tryContactSearch() {
     const queries: Array<{
@@ -489,7 +523,13 @@ export async function findCardSimple(args: FindArgs) {
     for (const c of filtered) {
       checked++;
 
-      const card = cardFromRow(c);
+      let card = cardFromRow(c);
+      const needsHydration =
+        !card.contact ||
+        (!card.contact.social_id && !card.contact.full_name);
+      if (needsHydration) {
+        card = await hydrateContact(card);
+      }
       const title = norm(card.title || "");
       const contactSocialRaw = norm(card.contact?.social_id || "");
       const contactSocialLow = low(contactSocialRaw);
