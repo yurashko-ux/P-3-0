@@ -5,19 +5,23 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import {
+  collectRuleCandidates,
+  matchRuleAgainstInputs,
+  pickRuleCandidate,
+  type CampaignLike,
+} from '@/lib/campaign-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
-type Campaign = {
+type Campaign = CampaignLike & {
   id: string;
   name: string;
   created_at: number;
   active?: boolean;
   base_pipeline_id?: number;
   base_status_id?: number;
-  rules?: { v1?: Rule; v2?: Rule };
   exp?: Record<string, unknown>;
   v1_count?: number;
   v2_count?: number;
@@ -46,15 +50,6 @@ function normalize(body: any) {
   return { title, handle, text };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const t = (text || '').toLowerCase();
-  const v = rule.value.toLowerCase();
-  if (rule.op === 'equals') return t === v;
-  if (rule.op === 'contains') return t.includes(v);
-  return false;
-}
-
 export async function POST(req: NextRequest) {
   // Optional verification of ManyChat secret if you use it:
   const mcToken = process.env.MC_TOKEN;
@@ -77,10 +72,15 @@ export async function POST(req: NextRequest) {
   const active = campaigns.filter(c => c.active !== false);
 
   // Compute matches
-  const text = norm.text || '';
+  const { values: textCandidates } = collectRuleCandidates(
+    payload,
+    [norm.text, norm.title, norm.handle],
+    { limit: 50 },
+  );
+
   const matches = active.map((c) => {
-    const v1 = matchRule(text, c.rules?.v1);
-    const v2 = matchRule(text, c.rules?.v2);
+    const v1 = matchRuleAgainstInputs(textCandidates, pickRuleCandidate(c, 'v1'));
+    const v2 = matchRuleAgainstInputs(textCandidates, pickRuleCandidate(c, 'v2'));
     return { id: c.id, name: c.name, v1, v2 };
   }).filter(m => m.v1 || m.v2);
 
