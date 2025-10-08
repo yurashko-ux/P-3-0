@@ -178,6 +178,7 @@ export async function findCardSimple(args: FindArgs) {
   const usernameNoAt = stripAt(usernameLow);
 
   const fullName = norm(args.full_name);
+  const fullNameLow = low(fullName);
   const inputSocialName = low(args.social_name);
 
   const max_pages = Math.max(1, Math.min(50, args.max_pages ?? 3));
@@ -210,87 +211,121 @@ export async function findCardSimple(args: FindArgs) {
   const attempts: Record<string, any> = {};
 
   async function tryContactSearch() {
-    if (!usernameNoAt) return;
+    const queries: Array<{
+      value: string;
+      attemptKey: string;
+      match: (contact: ContactSummary) => boolean;
+    }> = [];
 
-    const post = await kcPost("/contacts/search", { query: usernameNoAt });
-    attempts.contact_search = {
-      method: "POST",
-      ok: post.ok,
-      status: post.status,
-      query: usernameNoAt,
-    };
-
-    let search = post;
-
-    if (!post.ok) {
-      const query = encodeURIComponent(usernameNoAt);
-      const get = await kcGet(`/contacts/search?query=${query}`);
-      attempts.contact_search_fallback = {
-        method: "GET",
-        ok: get.ok,
-        status: get.status,
-        query: usernameNoAt,
-      };
-      if (!get.ok) return;
-      search = get;
+    if (usernameNoAt) {
+      queries.push({
+        value: usernameNoAt,
+        attemptKey: "contact_search",
+        match: (contact) => {
+          if (!contact.id || !contact.social_id) return false;
+          const candidate = stripAt(low(contact.social_id));
+          return candidate === usernameNoAt;
+        },
+      });
     }
 
-    const contactsRaw: any[] = Array.isArray(search.json?.data) ? search.json.data : [];
-    const contacts = contactsRaw.map(extractContactSummary);
-    attempts.contact_search.contacts = contacts;
-
-    const matchingContacts = contacts.filter((c) => {
-      if (!c.social_id || !c.id) return false;
-      const candidate = stripAt(low(c.social_id));
-      return candidate === usernameNoAt;
-    });
-
-    if (matchingContacts.length === 0) return;
-
-    for (const contact of matchingContacts) {
-      const cards = await kcGet(`/contacts/${contact.id}/cards`);
-      const entryKey = `contact_${contact.id}_cards`;
-      attempts[entryKey] = { ok: cards.ok, status: cards.status };
-      if (!cards.ok) continue;
-
-      const rows: any[] = Array.isArray(cards.json?.data) ? cards.json.data : [];
-      attempts[entryKey].count = rows.length;
-
-      const filtered = rows.filter((row) => {
-        if (scope !== "campaign") return true;
-        if (args.pipeline_id == null || args.status_id == null) return false;
-        const pipelineMatches = row?.pipeline_id != null && String(row.pipeline_id) === String(args.pipeline_id);
-        const statusMatches = row?.status_id != null && String(row.status_id) === String(args.status_id);
-        return pipelineMatches && statusMatches;
+    if (fullName) {
+      const attemptKey = usernameNoAt ? "contact_search_full_name" : "contact_search";
+      queries.push({
+        value: fullName,
+        attemptKey,
+        match: (contact) => {
+          if (!contact.id || !contact.full_name) return false;
+          return low(contact.full_name) === fullNameLow;
+        },
       });
+    }
 
-      candidates_total += filtered.length;
+    if (!queries.length) return;
 
-      for (const row of filtered) {
-        checked++;
-        const card = cardFromRow(row, contact);
-        const socialId = card.contact?.social_id ? stripAt(low(card.contact.social_id)) : null;
-        const contactSocialNameLow = low(card.contact?.social_name || "");
-        const socialHit =
-          (strategy === "social" || strategy === "both") && usernameRaw
-            ? socialId === usernameNoAt && (!inputSocialName || !contactSocialNameLow || contactSocialNameLow === inputSocialName)
-            : false;
+    for (const { value, attemptKey, match } of queries) {
+      const post = await kcPost("/contacts/search", { query: value });
+      attempts[attemptKey] = {
+        method: "POST",
+        ok: post.ok,
+        status: post.status,
+        query: value,
+      };
 
-        const title = card.title || "";
-        const titleHit =
-          (strategy === "title" || strategy === "both") && fullName
-            ? title_mode === "exact"
-              ? eqTitleExact(title, fullName)
-              : titleContains(title, fullName)
-            : false;
+      let search = post;
 
-        if (socialHit || titleHit) {
-          matched = card;
-          return;
-        }
+      if (!post.ok) {
+        const query = encodeURIComponent(value);
+        const get = await kcGet(`/contacts/search?query=${query}`);
+        attempts[`${attemptKey}_fallback`] = {
+          method: "GET",
+          ok: get.ok,
+          status: get.status,
+          query: value,
+        };
+        if (!get.ok) continue;
+        search = get;
       }
 
-      if (matched) return;
+      const contactsRaw: any[] = Array.isArray(search.json?.data) ? search.json.data : [];
+      const contacts = contactsRaw.map(extractContactSummary);
+      attempts[attemptKey].contacts = contacts;
+
+      const matchingContacts = contacts.filter(match);
+      attempts[attemptKey].matches = matchingContacts;
+
+      if (matchingContacts.length === 0) continue;
+
+      for (const contact of matchingContacts) {
+        if (!contact.id) continue;
+
+        const cards = await kcGet(`/contacts/${contact.id}/cards`);
+        const entryKey = `contact_${contact.id}_cards`;
+        attempts[entryKey] = { ok: cards.ok, status: cards.status };
+        if (!cards.ok) continue;
+
+        const rows: any[] = Array.isArray(cards.json?.data) ? cards.json.data : [];
+        attempts[entryKey].count = rows.length;
+
+        const filtered = rows.filter((row) => {
+          if (scope !== "campaign") return true;
+          if (args.pipeline_id == null || args.status_id == null) return false;
+          const pipelineMatches = row?.pipeline_id != null && String(row.pipeline_id) === String(args.pipeline_id);
+          const statusMatches = row?.status_id != null && String(row.status_id) === String(args.status_id);
+          return pipelineMatches && statusMatches;
+        });
+
+        candidates_total += filtered.length;
+
+        for (const row of filtered) {
+          checked++;
+          const card = cardFromRow(row, contact);
+          const socialId = card.contact?.social_id ? stripAt(low(card.contact.social_id)) : null;
+          const contactSocialNameLow = low(card.contact?.social_name || "");
+          const contactFullNameLow = low(card.contact?.full_name || "");
+          const socialHit =
+            (strategy === "social" || strategy === "both") && usernameRaw
+              ? socialId === usernameNoAt && (!inputSocialName || !contactSocialNameLow || contactSocialNameLow === inputSocialName)
+              : false;
+
+          const title = card.title || "";
+          const titleHit =
+            (strategy === "title" || strategy === "both") && fullName
+              ? title_mode === "exact"
+                ? eqTitleExact(title, fullName)
+                : titleContains(title, fullName)
+              : false;
+
+          const nameHit = fullNameLow ? contactFullNameLow === fullNameLow : false;
+
+          if (socialHit || titleHit || nameHit) {
+            matched = card;
+            return;
+          }
+        }
+
+        if (matched) return;
+      }
     }
   }
 
@@ -363,6 +398,7 @@ export async function findCardSimple(args: FindArgs) {
       const contactSocialLow = low(contactSocialRaw);
       const contactSocialNoAt = stripAt(contactSocialLow);
       const contactSocialName = low(card.contact?.social_name || "");
+      const contactFullNameLow = low(card.contact?.full_name || "");
 
       const socialHit =
         (strategy === "social" || strategy === "both") && usernameRaw
@@ -381,7 +417,9 @@ export async function findCardSimple(args: FindArgs) {
             : titleContains(title, fullName)
           : false;
 
-      if (socialHit || titleHit) {
+      const nameHit = fullNameLow ? contactFullNameLow === fullNameLow : false;
+
+      if (socialHit || titleHit || nameHit) {
         matched = card;
         break;
       }
