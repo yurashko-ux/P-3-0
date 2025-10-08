@@ -76,6 +76,38 @@ type FindArgs = {
 const norm = (s?: string) => (s || "").trim();
 const low  = (s?: string) => norm(s).toLowerCase();
 const stripAt = (s: string) => s.replace(/^@+/, "");
+
+function normalizeHandle(input?: string | null) {
+  if (typeof input !== "string") return null;
+  let value = input.trim().toLowerCase();
+  if (!value) return null;
+
+  // replace line breaks / tabs з пробілом і візьмемо перший токен
+  value = value.replace(/[\s\u00A0]+/g, " ").trim();
+  if (!value) return null;
+
+  const parts = value.split(" ");
+  const preferred = parts.find((part) => /@|instagram|\.|\//.test(part)) || parts.find((part) => part.length > 2);
+  value = preferred || parts[0] || value;
+
+  value = value
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//, "")
+    .replace(/^instagram\.com\//, "")
+    .replace(/^instagram[:=]/, "")
+    .replace(/^instagram\s*/, "")
+    .replace(/^@+/, "")
+    .replace(/\?.*$/, "")
+    .replace(/#.*/, "")
+    .replace(/\/$/, "");
+
+  // У деяких CRM ручних записях handle можуть містити текст на кшталт "@user, instagram".
+  value = value.replace(/[,;].*$/, "");
+
+  // Вилучаємо невалідні символи наприкінці
+  value = value.replace(/[^a-z0-9._-].*$/, "");
+
+  return value || null;
+}
 const toNumber = (value: any): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -184,7 +216,8 @@ export async function findCardSimple(args: FindArgs) {
   const scope: ScopeMode = args.scope || "global";
   const usernameRaw = norm(args.username);
   const usernameLow = low(args.username);
-  const usernameNoAt = stripAt(usernameLow);
+  const usernameCanonical = normalizeHandle(usernameRaw);
+  const usernameNoAt = usernameCanonical || stripAt(usernameLow);
 
   const fullName = norm(args.full_name);
   const fullNameLow = low(fullName);
@@ -226,20 +259,20 @@ export async function findCardSimple(args: FindArgs) {
       match: (contact: ContactSummary) => boolean;
     }> = [];
 
-    if (usernameNoAt) {
+    if (usernameCanonical) {
       queries.push({
-        value: usernameNoAt,
+        value: usernameCanonical,
         attemptKey: "contact_search",
         match: (contact) => {
           if (!contact.id || !contact.social_id) return false;
-          const candidate = stripAt(low(contact.social_id));
-          return candidate === usernameNoAt;
+          const candidate = normalizeHandle(contact.social_id);
+          return candidate === usernameCanonical;
         },
       });
     }
 
     if (fullName) {
-      const attemptKey = usernameNoAt ? "contact_search_full_name" : "contact_search";
+      const attemptKey = usernameCanonical ? "contact_search_full_name" : "contact_search";
       queries.push({
         value: fullName,
         attemptKey,
@@ -317,12 +350,13 @@ export async function findCardSimple(args: FindArgs) {
         for (const row of filtered) {
           checked++;
           const card = cardFromRow(row, contact);
-          const socialId = card.contact?.social_id ? stripAt(low(card.contact.social_id)) : null;
+          const socialId = card.contact?.social_id ? normalizeHandle(card.contact.social_id) : null;
           const contactSocialNameLow = low(card.contact?.social_name || "");
           const contactFullNameLow = low(card.contact?.full_name || "");
           const socialHit =
-            (strategy === "social" || strategy === "both") && usernameRaw
-              ? socialId === usernameNoAt && (!inputSocialName || !contactSocialNameLow || contactSocialNameLow === inputSocialName)
+            (strategy === "social" || strategy === "both") && usernameCanonical
+              ? socialId === usernameCanonical &&
+                (!inputSocialName || !contactSocialNameLow || contactSocialNameLow === inputSocialName)
               : false;
 
           const title = card.title || "";
@@ -414,13 +448,15 @@ export async function findCardSimple(args: FindArgs) {
       const contactSocialRaw = norm(card.contact?.social_id || "");
       const contactSocialLow = low(contactSocialRaw);
       const contactSocialNoAt = stripAt(contactSocialLow);
+      const contactSocialCanonical = normalizeHandle(contactSocialRaw);
       const contactSocialName = low(card.contact?.social_name || "");
       const contactFullNameLow = low(card.contact?.full_name || "");
 
       const socialHit =
-        (strategy === "social" || strategy === "both") && usernameRaw
+        (strategy === "social" || strategy === "both") && usernameCanonical
           ? (
               // match з/без "@"
+              (usernameCanonical && contactSocialCanonical === usernameCanonical) ||
               contactSocialLow === usernameLow ||
               contactSocialLow === `@${usernameNoAt}` ||
               contactSocialNoAt === usernameNoAt

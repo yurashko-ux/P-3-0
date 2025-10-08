@@ -45,7 +45,13 @@ async function main() {
   }
 
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  await run(npmCommand, ['--prefix', webDir, 'run', 'lint'], { stdio });
+  try {
+    await run(npmCommand, ['--prefix', webDir, 'run', 'lint'], { stdio });
+    return;
+  } catch (error) {
+    const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    await run(npxCommand, ['--yes', 'next@14.2.7', 'lint'], { cwd: webDir, stdio });
+  }
 }
 
 main().catch((error) => {
