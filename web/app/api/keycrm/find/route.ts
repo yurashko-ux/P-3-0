@@ -30,7 +30,7 @@ async function handleRequest(params: URLSearchParams) {
   const title_mode = (params.get('title_mode') as TitleMode | null) ?? undefined;
   const scope = (params.get('scope') as Scope | null) ?? undefined;
 
-  const result = await findCardSimple({
+  const args = {
     username: username || undefined,
     full_name: full_name || undefined,
     social_name: social_name || undefined,
@@ -41,9 +41,59 @@ async function handleRequest(params: URLSearchParams) {
     strategy,
     title_mode,
     scope,
-  });
+  } as const;
 
-  return NextResponse.json(result, { status: 200 });
+  const primary = await findCardSimple(args);
+
+  const attempts: Array<{
+    scope: string | null | undefined;
+    ok: unknown;
+    result: unknown;
+    stats: unknown;
+    used: unknown;
+  }> = [
+    {
+      scope: (primary as any)?.scope ?? scope ?? null,
+      ok: (primary as any)?.ok,
+      result: (primary as any)?.result ?? null,
+      stats: (primary as any)?.stats ?? null,
+      used: (primary as any)?.used ?? null,
+    },
+  ];
+
+  const requestedScope = scope ?? null;
+  const shouldFallback =
+    (primary as any)?.ok === true &&
+    !(primary as any)?.result &&
+    (requestedScope === null || requestedScope === 'campaign');
+
+  if (shouldFallback) {
+    const fallback = await findCardSimple({ ...args, scope: 'global' });
+
+    attempts.push({
+      scope: (fallback as any)?.scope ?? 'global',
+      ok: (fallback as any)?.ok,
+      result: (fallback as any)?.result ?? null,
+      stats: (fallback as any)?.stats ?? null,
+      used: (fallback as any)?.used ?? null,
+    });
+
+    const payload: any = {
+      ...fallback,
+      attempts,
+      fallback_scope: 'global',
+      fallback_from_scope: (primary as any)?.scope ?? requestedScope ?? 'campaign',
+      fallback_previous: {
+        result: (primary as any)?.result ?? null,
+        stats: (primary as any)?.stats ?? null,
+        used: (primary as any)?.used ?? null,
+      },
+    };
+
+    return NextResponse.json(payload, { status: 200 });
+  }
+
+  return NextResponse.json({ ...primary, attempts }, { status: 200 });
 }
 
 export async function GET(req: Request) {
