@@ -39,6 +39,15 @@ type ContactSummary = {
   social_name: string | null;
 };
 
+function extractContactRows(json: any): any[] {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json?.data?.data)) return json.data.data;
+  if (Array.isArray(json?.items)) return json.items;
+  if (Array.isArray(json?.results)) return json.results;
+  return [];
+}
+
 type CardSummary = {
   id: number | string | null;
   title: string | null;
@@ -244,39 +253,47 @@ export async function findCardSimple(args: FindArgs) {
     if (!queries.length) return;
 
     for (const { value, attemptKey, match } of queries) {
-      const post = await kcPost("/contacts/search", { query: value });
-      attempts[attemptKey] = {
-        method: "POST",
-        ok: post.ok,
-        status: post.status,
-        query: value,
-      };
+      const encoded = encodeURIComponent(value);
+      const strategies: Array<{ key: string; method: string; exec: () => Promise<KcResponse> }> = [
+        { key: attemptKey, method: "POST", exec: () => kcPost("/contacts/search", { query: value }) },
+        { key: `${attemptKey}_fallback`, method: "GET", exec: () => kcGet(`/contacts/search?query=${encoded}`) },
+        { key: `${attemptKey}_list`, method: "GET", exec: () => kcGet(`/contacts?search=${encoded}`) },
+        { key: `${attemptKey}_list_full_name`, method: "GET", exec: () => kcGet(`/contacts?full_name=${encoded}`) },
+      ];
 
-      let search = post;
+      let foundContacts: ContactSummary[] | null = null;
 
-      if (!post.ok) {
-        const query = encodeURIComponent(value);
-        const get = await kcGet(`/contacts/search?query=${query}`);
-        attempts[`${attemptKey}_fallback`] = {
-          method: "GET",
-          ok: get.ok,
-          status: get.status,
+      for (const strategy of strategies) {
+        const res = await strategy.exec();
+        attempts[strategy.key] = {
+          method: strategy.method,
+          ok: res.ok,
+          status: res.status,
           query: value,
         };
-        if (!get.ok) continue;
-        search = get;
+
+        if (!res.ok) continue;
+
+        const contactsRaw = extractContactRows(res.json);
+        const contacts = contactsRaw.map(extractContactSummary);
+        attempts[strategy.key].contacts = contacts;
+
+        const matchingContacts = contacts.filter(match);
+        attempts[strategy.key].matches = matchingContacts;
+
+        if (matchingContacts.length === 0) {
+          continue;
+        }
+
+        foundContacts = matchingContacts;
+        break;
       }
 
-      const contactsRaw: any[] = Array.isArray(search.json?.data) ? search.json.data : [];
-      const contacts = contactsRaw.map(extractContactSummary);
-      attempts[attemptKey].contacts = contacts;
+      if (!foundContacts || foundContacts.length === 0) {
+        continue;
+      }
 
-      const matchingContacts = contacts.filter(match);
-      attempts[attemptKey].matches = matchingContacts;
-
-      if (matchingContacts.length === 0) continue;
-
-      for (const contact of matchingContacts) {
+      for (const contact of foundContacts) {
         if (!contact.id) continue;
 
         const cards = await kcGet(`/contacts/${contact.id}/cards`);
