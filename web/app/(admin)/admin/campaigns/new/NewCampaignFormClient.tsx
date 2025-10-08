@@ -49,7 +49,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
     if (sts.length && !sts.find((s) => String(s.id) === baseStatusId)) {
       setBaseStatusId(String(sts[0].id));
     }
-  }, [basePipeId]);
+  }, [basePipeId, baseStatusId, pipes]);
 
   // Варіант №1
   const [v1Value, setV1Value] = React.useState('');
@@ -60,7 +60,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
     if (sts.length && !sts.find((s) => String(s.id) === v1StatusId)) {
       setV1StatusId(String(sts[0].id));
     }
-  }, [v1PipeId]);
+  }, [pipes, v1PipeId, v1StatusId]);
 
   // Варіант №2
   const [v2Value, setV2Value] = React.useState('');
@@ -71,7 +71,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
     if (sts.length && !sts.find((s) => String(s.id) === v2StatusId)) {
       setV2StatusId(String(sts[0].id));
     }
-  }, [v2PipeId]);
+  }, [pipes, v2PipeId, v2StatusId]);
 
   // Expire
   const [expDays, setExpDays] = React.useState<string>('7');
@@ -82,7 +82,7 @@ export default function NewCampaignFormClient({ pipes }: { pipes: PipeWithStatus
     if (sts.length && !sts.find((s) => String(s.id) === expStatusId)) {
       setExpStatusId(String(sts[0].id));
     }
-  }, [expPipeId]);
+  }, [expPipeId, expStatusId, pipes]);
 
   function toNum(v: string) {
     const n = Number(v);

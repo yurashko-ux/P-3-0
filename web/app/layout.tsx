@@ -1,6 +1,6 @@
 // web/app/layout.tsx
-import "./globals.css";
 import Script from "next/script";
+import "./globals.css";
 import { Inter } from "next/font/google";
 
 const inter = Inter({
@@ -18,16 +18,33 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="uk" className={inter.className}>
       <head>
-        {/* Тимчасовий захист від third-party SES/lockdown у браузері.
-           Виконується ПЕРЕД усіма іншими скриптами. */}
         <Script id="disable-ses-lockdown" strategy="beforeInteractive">
           {`
-            try {
-              var g = (typeof globalThis !== 'undefined' ? globalThis : window);
-              if (g && typeof g.lockdown === 'function') {
-                try { delete g.lockdown; } catch (_) { try { g.lockdown = undefined; } catch (_) {} }
-              }
-            } catch (_) {}
+(function(){
+  try {
+    var root = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : undefined));
+    if (!root) return;
+
+    var noop = function lockdownDisabled() { return undefined; };
+
+    var protect = function(target) {
+      if (!target) return;
+      try { target.lockdown = noop; } catch (_) {}
+      try {
+        Object.defineProperty(target, 'lockdown', {
+          configurable: true,
+          writable: true,
+          value: noop,
+        });
+      } catch (_) {}
+    };
+
+    protect(root);
+    if (typeof window !== 'undefined') protect(window);
+    if (typeof self !== 'undefined') protect(self);
+    if (typeof global !== 'undefined') protect(global);
+  } catch (_) {}
+})();
           `}
         </Script>
       </head>

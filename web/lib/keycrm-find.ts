@@ -125,13 +125,19 @@ export async function findCardSimple(args: FindArgs) {
   let actual_page_size: number | null = null;
   let pages_scanned = 0;
   let candidates_total = 0;
-  let consecutiveEmptyCandidates = 0; // рання зупинка в campaign
-
   for (let page = 1; page <= max_pages; page++) {
-    // пробуємо laravel → jsonapi
-    const r1 = await kcGet(`/pipelines/cards?page=${page}&per_page=${requested_page_size}`);
+    const laravelQs = new URLSearchParams();
+    laravelQs.set('page', String(page));
+    laravelQs.set('per_page', String(requested_page_size));
+
+    const jsonApiQs = new URLSearchParams();
+    jsonApiQs.set('page[number]', String(page));
+    jsonApiQs.set('page[size]', String(requested_page_size));
+
+    // пробуємо laravel → jsonapi без форс-фільтрів (KeyCRM може ігнорувати їх в одному зі стилів)
+    const r1 = await kcGet(`/pipelines/cards?${laravelQs.toString()}`);
     const useR1 = r1.ok && Array.isArray(r1.json?.data);
-    const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?page[number]=${page}&page[size]=${requested_page_size}`);
+    const resp = useR1 ? r1 : await kcGet(`/pipelines/cards?${jsonApiQs.toString()}`);
 
     const rows: any[] = Array.isArray(resp.json?.data) ? resp.json.data : [];
     const meta = readMeta(resp.json);
@@ -141,25 +147,17 @@ export async function findCardSimple(args: FindArgs) {
     // campaign-фільтр ТІЛЬКИ потрібна воронка+статус
     const filtered =
       scope === "campaign"
-        ? rows.filter(
-            (r) => r.pipeline_id === args.pipeline_id && r.status_id === args.status_id
-          )
+        ? rows.filter((r) => {
+            if (args.pipeline_id == null || args.status_id == null) return false;
+            const pipelineMatches = r?.pipeline_id != null && r.pipeline_id === args.pipeline_id;
+            const statusMatches = r?.status_id != null && r.status_id === args.status_id;
+            return pipelineMatches && statusMatches;
+          })
         : rows;
 
     // підрахунок кандидатів на сторінці
     const candidatesHere = filtered.length;
     candidates_total += candidatesHere;
-
-    if (scope === "campaign") {
-      if (candidatesHere === 0) consecutiveEmptyCandidates++;
-      else consecutiveEmptyCandidates = 0;
-
-      // якщо 2 послідовні сторінки без жодного кандидата — зупиняємось раніше
-      if (consecutiveEmptyCandidates >= 2) {
-        pages_scanned = page;
-        break;
-      }
-    }
 
     for (const c of filtered) {
       checked++;
