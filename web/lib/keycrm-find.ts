@@ -53,6 +53,7 @@ type CardSummary = {
   title: string | null;
   pipeline_id: number | string | null;
   status_id: number | string | null;
+  contact_id: number | string | null;
   contact: ContactSummary | null;
 };
 
@@ -152,11 +153,17 @@ function extractContactSummary(contact: any): ContactSummary {
 
 function cardFromRow(row: any, fallbackContact?: ContactSummary | null): CardSummary {
   const contactSummary = row?.contact ? extractContactSummary(row.contact) : fallbackContact || null;
+  const rawContactId =
+    row?.contact_id ??
+    row?.contact?.id ??
+    fallbackContact?.id ??
+    (typeof row?.contactId !== "undefined" ? row?.contactId : null);
   return {
     id: toNumber(row?.id) ?? row?.id ?? null,
     title: norm(row?.title) || null,
     pipeline_id: row?.pipeline_id ?? row?.pipeline?.id ?? null,
     status_id: row?.status_id ?? row?.status?.id ?? null,
+    contact_id: toNumber(rawContactId) ?? rawContactId ?? null,
     contact: contactSummary,
   };
 }
@@ -251,6 +258,7 @@ export async function findCardSimple(args: FindArgs) {
   let pages_scanned = 0;
   let candidates_total = 0;
   const attempts: Record<string, any> = {};
+  const contactCache = new Map<string | number, ContactSummary | null>();
 
   async function tryContactSearch() {
     const queries: Array<{
@@ -319,6 +327,11 @@ export async function findCardSimple(args: FindArgs) {
         }
 
         foundContacts = matchingContacts;
+        for (const entry of matchingContacts) {
+          if (entry.id != null) {
+            contactCache.set(entry.id, entry);
+          }
+        }
         break;
       }
 
@@ -349,7 +362,40 @@ export async function findCardSimple(args: FindArgs) {
 
         for (const row of filtered) {
           checked++;
-          const card = cardFromRow(row, contact);
+          let card = cardFromRow(row, contact);
+
+          const contactKey = card.contact_id ?? card.contact?.id ?? null;
+          if (contactKey != null) {
+            if (contactCache.has(contactKey)) {
+              const cached = contactCache.get(contactKey) || null;
+              if (cached) {
+                card = { ...card, contact: cached };
+              }
+            } else {
+              const cacheKey = String(contactKey);
+              const attemptId = `contact_${cacheKey}`;
+              if (!attempts[attemptId]) {
+                const contactRes = await kcGet(`/contacts/${cacheKey}`);
+                attempts[attemptId] = { ok: contactRes.ok, status: contactRes.status };
+                if (contactRes.ok) {
+                  const payload =
+                    contactRes.json?.data ??
+                    contactRes.json?.contact ??
+                    contactRes.json ??
+                    null;
+                  const contactSummary = payload ? extractContactSummary(payload) : null;
+                  attempts[attemptId].contact = contactSummary;
+                  contactCache.set(contactKey, contactSummary);
+                  if (contactSummary) {
+                    card = { ...card, contact: contactSummary };
+                  }
+                } else {
+                  contactCache.set(contactKey, null);
+                }
+              }
+            }
+          }
+
           const socialId = card.contact?.social_id ? normalizeHandle(card.contact.social_id) : null;
           const contactSocialNameLow = low(card.contact?.social_name || "");
           const contactFullNameLow = low(card.contact?.full_name || "");
