@@ -255,6 +255,65 @@ async function kvSetRaw(key: string, value: string) {
   }
 }
 
+async function kvDel(key: string): Promise<boolean> {
+  let ok = false;
+  if (BASE && WR_TOKEN) {
+    ok = await rest(`del/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      body: '',
+    }).then(() => true).catch(() => false);
+    if (!ok) {
+      const viaCommand = await restCommand('DEL', [key]).catch(() => null);
+      ok = viaCommand != null;
+    }
+  }
+  if (!ok && directKv) {
+    await directKv.del(key).catch(() => {});
+    ok = true;
+  }
+  if (!ok && upstashKv) {
+    await upstashKv.del(key).catch(() => {});
+    ok = true;
+  }
+  return ok;
+}
+
+async function kvLRem(key: string, count: number, value: string): Promise<boolean> {
+  let ok = false;
+  if (BASE && WR_TOKEN) {
+    const viaCommand = await restCommand('LREM', [key, count, value]).catch(() => null);
+    ok = viaCommand != null;
+    if (!ok) {
+      const path = `lrem/${encodeURIComponent(key)}/${count}`;
+      const variants = [
+        { value },
+        { member: value },
+        { element: value },
+      ];
+      for (const body of variants) {
+        // eslint-disable-next-line no-await-in-loop
+        const attempt = await rest(path, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }).then(() => true).catch(() => false);
+        if (attempt) {
+          ok = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!ok && directKv) {
+    await directKv.lrem(key, count, value).catch(() => {});
+    ok = true;
+  }
+  if (!ok && upstashKv) {
+    await upstashKv.lrem(key, count, value).catch(() => {});
+    ok = true;
+  }
+  return ok;
+}
+
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
   const viaClients = async () => {
@@ -664,6 +723,12 @@ export const kvWrite = {
     if (!ok && upstashKv) {
       await upstashKv.lpush(key, value).catch(() => {});
     }
+  },
+  async lrem(key: string, value: string, count = 0) {
+    return kvLRem(key, count, value);
+  },
+  async del(key: string) {
+    return kvDel(key);
   },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
