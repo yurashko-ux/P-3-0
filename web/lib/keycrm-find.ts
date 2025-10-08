@@ -17,6 +17,21 @@ async function kcGet(path: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
+type ContactSummary = {
+  id: number | string | null;
+  full_name: string | null;
+  social_id: string | null;
+  social_name: string | null;
+};
+
+type CardSummary = {
+  id: number | string | null;
+  title: string | null;
+  pipeline_id: number | string | null;
+  status_id: number | string | null;
+  contact: ContactSummary | null;
+};
+
 type ScopeMode = "campaign" | "global";
 type Strategy = "social" | "title" | "both";
 type TitleMode = "exact" | "contains";
@@ -37,6 +52,58 @@ type FindArgs = {
 const norm = (s?: string) => (s || "").trim();
 const low  = (s?: string) => norm(s).toLowerCase();
 const stripAt = (s: string) => s.replace(/^@+/, "");
+const toNumber = (value: any): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+function extractContactSummary(contact: any): ContactSummary {
+  const socialId = norm(
+    contact?.social_id ||
+      contact?.social?.id ||
+      contact?.instagram_username ||
+      contact?.instagram?.username ||
+      contact?.instagram ||
+      contact?.telegram ||
+      contact?.facebook ||
+      contact?.viber ||
+      contact?.whatsapp ||
+      ""
+  );
+
+  const socialName = norm(
+    contact?.social_name ||
+      contact?.social?.name ||
+      contact?.social?.type ||
+      contact?.social_network ||
+      contact?.social_networks?.[0]?.name ||
+      ""
+  );
+
+  const rawId = contact?.id ?? null;
+
+  return {
+    id: toNumber(rawId) ?? (typeof rawId === "string" && rawId.trim() !== "" ? rawId : null),
+    full_name: norm(contact?.full_name) || null,
+    social_id: socialId || null,
+    social_name: socialName || null,
+  };
+}
+
+function cardFromRow(row: any, fallbackContact?: ContactSummary | null): CardSummary {
+  const contactSummary = row?.contact ? extractContactSummary(row.contact) : fallbackContact || null;
+  return {
+    id: toNumber(row?.id) ?? row?.id ?? null,
+    title: norm(row?.title) || null,
+    pipeline_id: row?.pipeline_id ?? row?.pipeline?.id ?? null,
+    status_id: row?.status_id ?? row?.status?.id ?? null,
+    contact: contactSummary,
+  };
+}
 
 function eqTitleExact(title: string, fullName: string) {
   return title === `Чат з ${fullName}`;
@@ -96,7 +163,7 @@ export async function findCardSimple(args: FindArgs) {
   const usernameNoAt = stripAt(usernameLow);
 
   const fullName = norm(args.full_name);
-  const socialName = low(args.social_name);
+  const inputSocialName = low(args.social_name);
 
   const max_pages = Math.max(1, Math.min(50, args.max_pages ?? 3));
   const requested_page_size = Math.max(1, Math.min(100, args.page_size ?? 50));
@@ -119,12 +186,105 @@ export async function findCardSimple(args: FindArgs) {
   }
 
   let checked = 0;
-  let matched: any = null;
+  let matched: CardSummary | null = null;
 
   let pagination: "laravel" | "jsonapi" | null = null;
   let actual_page_size: number | null = null;
   let pages_scanned = 0;
   let candidates_total = 0;
+  const attempts: Record<string, any> = {};
+
+  async function tryContactSearch() {
+    if (!usernameNoAt) return;
+
+    const query = encodeURIComponent(usernameNoAt);
+    const search = await kcGet(`/contacts/search?query=${query}`);
+    attempts.contact_search = { ok: search.ok, status: search.status, query: usernameNoAt };
+    if (!search.ok) return;
+
+    const contactsRaw: any[] = Array.isArray(search.json?.data) ? search.json.data : [];
+    const contacts = contactsRaw.map(extractContactSummary);
+    attempts.contact_search.contacts = contacts;
+
+    const matchingContacts = contacts.filter((c) => {
+      if (!c.social_id || !c.id) return false;
+      const candidate = stripAt(low(c.social_id));
+      return candidate === usernameNoAt;
+    });
+
+    if (matchingContacts.length === 0) return;
+
+    for (const contact of matchingContacts) {
+      const cards = await kcGet(`/contacts/${contact.id}/cards`);
+      const entryKey = `contact_${contact.id}_cards`;
+      attempts[entryKey] = { ok: cards.ok, status: cards.status };
+      if (!cards.ok) continue;
+
+      const rows: any[] = Array.isArray(cards.json?.data) ? cards.json.data : [];
+      attempts[entryKey].count = rows.length;
+
+      const filtered = rows.filter((row) => {
+        if (scope !== "campaign") return true;
+        if (args.pipeline_id == null || args.status_id == null) return false;
+        const pipelineMatches = row?.pipeline_id != null && String(row.pipeline_id) === String(args.pipeline_id);
+        const statusMatches = row?.status_id != null && String(row.status_id) === String(args.status_id);
+        return pipelineMatches && statusMatches;
+      });
+
+      candidates_total += filtered.length;
+
+      for (const row of filtered) {
+        checked++;
+        const card = cardFromRow(row, contact);
+        const socialId = card.contact?.social_id ? stripAt(low(card.contact.social_id)) : null;
+        const contactSocialNameLow = low(card.contact?.social_name || "");
+        const socialHit =
+          (strategy === "social" || strategy === "both") && usernameRaw
+            ? socialId === usernameNoAt && (!inputSocialName || !contactSocialNameLow || contactSocialNameLow === inputSocialName)
+            : false;
+
+        const title = card.title || "";
+        const titleHit =
+          (strategy === "title" || strategy === "both") && fullName
+            ? title_mode === "exact"
+              ? eqTitleExact(title, fullName)
+              : titleContains(title, fullName)
+            : false;
+
+        if (socialHit || titleHit) {
+          matched = card;
+          return;
+        }
+      }
+
+      if (matched) return;
+    }
+  }
+
+  await tryContactSearch();
+  if (matched) {
+    return {
+      ok: true,
+      username: usernameRaw || null,
+      full_name: fullName || null,
+      scope,
+      used: {
+        strategy,
+        title_mode,
+        social_name: inputSocialName || null,
+        max_pages,
+        requested_page_size,
+        pipeline_id: args.pipeline_id ?? null,
+        status_id: args.status_id ?? null,
+        pagination: null,
+        actual_page_size: null,
+        pages_scanned,
+        contact_attempts: attempts,
+      },
+      stats: { checked, candidates_total },
+      result: matched,
+    };
+  }
   for (let page = 1; page <= max_pages; page++) {
     const laravelQs = new URLSearchParams();
     laravelQs.set('page', String(page));
@@ -164,11 +324,12 @@ export async function findCardSimple(args: FindArgs) {
     for (const c of filtered) {
       checked++;
 
-      const title = norm(c.title);
-      const contactSocialRaw = norm(c.contact?.social_id || "");
+      const card = cardFromRow(c);
+      const title = norm(card.title || "");
+      const contactSocialRaw = norm(card.contact?.social_id || "");
       const contactSocialLow = low(contactSocialRaw);
       const contactSocialNoAt = stripAt(contactSocialLow);
-      const contactSocialName = low(c.contact?.social_name || "");
+      const contactSocialName = low(card.contact?.social_name || "");
 
       const socialHit =
         (strategy === "social" || strategy === "both") && usernameRaw
@@ -177,7 +338,7 @@ export async function findCardSimple(args: FindArgs) {
               contactSocialLow === usernameLow ||
               contactSocialLow === `@${usernameNoAt}` ||
               contactSocialNoAt === usernameNoAt
-            ) && (!socialName || contactSocialName === socialName)
+            ) && (!inputSocialName || !contactSocialName || contactSocialName === inputSocialName)
           : false;
 
       const titleHit =
@@ -188,14 +349,7 @@ export async function findCardSimple(args: FindArgs) {
           : false;
 
       if (socialHit || titleHit) {
-        matched = {
-          id: c.id,
-          title: c.title,
-          pipeline_id: c.pipeline_id,
-          status_id: c.status_id,
-          contact_social: c.contact?.social_id || null,
-          contact_social_name: c.contact?.social_name || null,
-        };
+        matched = card;
         break;
       }
     }
@@ -219,8 +373,9 @@ export async function findCardSimple(args: FindArgs) {
       max_pages,
       strategy,
       title_mode,
-      social_name: socialName || null,
+      social_name: inputSocialName || null,
       pages_scanned,
+      contact_attempts: Object.keys(attempts).length ? attempts : null,
     },
     stats: { checked, candidates_total },
     result: matched,
