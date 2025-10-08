@@ -8,13 +8,28 @@ const TOKEN = process.env.KEYCRM_API_TOKEN || "";
 function kcUrl(path: string) {
   return `${BASE}/${path.replace(/^\//, "")}`;
 }
-async function kcGet(path: string) {
+type KcResponse = { ok: boolean; status: number; json: any };
+
+async function kcRequest(path: string, init?: RequestInit): Promise<KcResponse> {
   const res = await fetch(kcUrl(path), {
-    headers: { Authorization: `Bearer ${TOKEN}` },
+    ...init,
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
     cache: "no-store",
   });
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, json };
+}
+
+async function kcGet(path: string) {
+  return kcRequest(path);
+}
+
+async function kcPost(path: string, body: unknown) {
+  return kcRequest(path, { method: "POST", body: JSON.stringify(body ?? {}) });
 }
 
 type ContactSummary = {
@@ -197,10 +212,28 @@ export async function findCardSimple(args: FindArgs) {
   async function tryContactSearch() {
     if (!usernameNoAt) return;
 
-    const query = encodeURIComponent(usernameNoAt);
-    const search = await kcGet(`/contacts/search?query=${query}`);
-    attempts.contact_search = { ok: search.ok, status: search.status, query: usernameNoAt };
-    if (!search.ok) return;
+    const post = await kcPost("/contacts/search", { query: usernameNoAt });
+    attempts.contact_search = {
+      method: "POST",
+      ok: post.ok,
+      status: post.status,
+      query: usernameNoAt,
+    };
+
+    let search = post;
+
+    if (!post.ok) {
+      const query = encodeURIComponent(usernameNoAt);
+      const get = await kcGet(`/contacts/search?query=${query}`);
+      attempts.contact_search_fallback = {
+        method: "GET",
+        ok: get.ok,
+        status: get.status,
+        query: usernameNoAt,
+      };
+      if (!get.ok) return;
+      search = get;
+    }
 
     const contactsRaw: any[] = Array.isArray(search.json?.data) ? search.json.data : [];
     const contacts = contactsRaw.map(extractContactSummary);
