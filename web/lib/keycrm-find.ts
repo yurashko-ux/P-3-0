@@ -359,180 +359,145 @@ export async function findCardSimple(args: FindArgs) {
     return false;
   }
 
-  async function tryContactSearch() {
-    const queries: Array<{
-      value: string;
-      attemptKey: string;
-      match: (contact: ContactSummary) => boolean;
-    }> = [];
+  const shouldIncludeSearch = (value?: string | null) => value && value.trim().length > 0;
 
-    if (usernameCanonical) {
-      queries.push({
-        value: usernameCanonical,
-        attemptKey: "contact_search",
-        match: (contact) => {
-          if (!contact.id || !contact.social_id) return false;
-          const candidate = normalizeHandle(contact.social_id);
-          return candidate === usernameCanonical;
-        },
-      });
+  async function tryLeadSearch() {
+    const leadQueries: Array<{ value: string; key: string }> = [];
+
+    if (shouldIncludeSearch(usernameCanonical)) {
+      leadQueries.push({ value: usernameCanonical as string, key: "lead_search_username" });
     }
 
-    if (fullName) {
-      const attemptKey = usernameCanonical ? "contact_search_full_name" : "contact_search";
-      queries.push({
-        value: fullName,
-        attemptKey,
-        match: (contact) => {
-          if (!contact.id || !contact.full_name) return false;
-          return low(contact.full_name) === fullNameLow;
-        },
-      });
+    if (shouldIncludeSearch(usernameNoAt) && usernameNoAt !== usernameCanonical) {
+      leadQueries.push({ value: usernameNoAt, key: "lead_search_username_plain" });
     }
 
-    if (!queries.length) return;
+    if (shouldIncludeSearch(fullName)) {
+      leadQueries.push({ value: fullName as string, key: "lead_search_full_name" });
+    }
 
-    for (const { value, attemptKey, match } of queries) {
-      const encoded = encodeURIComponent(value);
-      const strategies: Array<{ key: string; method: string; exec: () => Promise<KcResponse> }> = [
-        { key: attemptKey, method: "POST", exec: () => kcPost("/contacts/search", { query: value }) },
-        { key: `${attemptKey}_fallback`, method: "GET", exec: () => kcGet(`/contacts/search?query=${encoded}`) },
-        { key: `${attemptKey}_list`, method: "GET", exec: () => kcGet(`/contacts?search=${encoded}`) },
-        { key: `${attemptKey}_list_full_name`, method: "GET", exec: () => kcGet(`/contacts?full_name=${encoded}`) },
-      ];
+    for (const { value, key } of leadQueries) {
+      const bodyBase: Record<string, any> = { query: value };
+      if (scope === "campaign") {
+        if (args.pipeline_id != null) bodyBase.pipeline_id = args.pipeline_id;
+        if (args.status_id != null) bodyBase.status_id = args.status_id;
+      }
 
-      let foundContacts: ContactSummary[] | null = null;
+      const primary = await kcPost("/leads/search", bodyBase);
+      attempts[key] = { method: "POST", path: "/leads/search", ok: primary.ok, status: primary.status, query: value };
 
-      for (const strategy of strategies) {
-        const res = await strategy.exec();
-        attempts[strategy.key] = {
-          method: strategy.method,
-          ok: res.ok,
-          status: res.status,
-          query: value,
+      let payload: any = null;
+      let rows: any[] = [];
+
+      if (primary.ok) {
+        payload = primary.json;
+        rows = extractLeadRows(payload);
+      } else {
+        const fallbackBody: Record<string, any> = {
+          page: { number: 1, size: requested_page_size },
+          filter: { search: value },
+        };
+        if (scope === "campaign") {
+          if (args.pipeline_id != null) fallbackBody.filter.pipeline_id = args.pipeline_id;
+          if (args.status_id != null) fallbackBody.filter.status_id = args.status_id;
+        }
+
+        const fallback = await kcPost("/leads", fallbackBody);
+        attempts[key].fallback = {
+          method: "POST",
+          path: "/leads",
+          ok: fallback.ok,
+          status: fallback.status,
         };
 
-        if (!res.ok) continue;
-
-        const contactsRaw = extractContactRows(res.json);
-        const contacts = contactsRaw.map(extractContactSummary);
-        attempts[strategy.key].contacts = contacts;
-
-        const matchingContacts = contacts.filter(match);
-        attempts[strategy.key].matches = matchingContacts;
-
-        if (matchingContacts.length === 0) {
+        if (!fallback.ok) {
+          if (fallback.json) {
+            attempts[key].error = fallback.json;
+          }
           continue;
         }
 
-        foundContacts = matchingContacts;
-        for (const entry of matchingContacts) {
-          if (entry.id != null) {
-            contactCache.set(entry.id, entry);
-          }
-        }
-        break;
+        payload = fallback.json;
+        rows = extractLeadRows(payload);
       }
 
-      if (!foundContacts || foundContacts.length === 0) {
+      attempts[key].count = rows.length;
+
+      leads_pagination = null;
+      leads_actual_page_size = rows.length;
+      leads_pages_scanned = rows.length > 0 ? 1 : 0;
+
+      if (!rows.length) {
         continue;
       }
 
-      for (const contact of foundContacts) {
-        if (!contact.id) continue;
+      const filtered = rows.filter((row) => filterByScope(row));
+      candidates_total += filtered.length;
 
-        const cards = await kcGet(`/contacts/${contact.id}/cards`);
-        const entryKey = `contact_${contact.id}_cards`;
-        attempts[entryKey] = { ok: cards.ok, status: cards.status };
-        if (!cards.ok) continue;
-
-        const rows: any[] = Array.isArray(cards.json?.data) ? cards.json.data : [];
-        attempts[entryKey].count = rows.length;
-
-        const filtered = rows.filter((row) => {
-          return filterByScope(row);
-        });
-
-        candidates_total += filtered.length;
-
-        for (const row of filtered) {
-          checked++;
-          const didMatch = await evaluateCard(row, contact);
-          if (didMatch) {
-            return;
-          }
-        }
-
-        if (matched) return;
-
-        const leadsRes = await kcGet(`/contacts/${contact.id}/leads`);
-        const leadsKey = `contact_${contact.id}_leads`;
-        attempts[leadsKey] = { ok: leadsRes.ok, status: leadsRes.status };
-        if (leadsRes.ok) {
-          const leadRows = extractLeadRows(leadsRes.json);
-          attempts[leadsKey].count = leadRows.length;
-          const filteredLeads = leadRows.filter((row) => filterByScope(row));
-          candidates_total += filteredLeads.length;
-
-          for (const row of filteredLeads) {
-            checked++;
-            const didMatch = await evaluateCard(row, contact);
-            if (didMatch) {
-              return;
-            }
-          }
+      for (const row of filtered) {
+        checked++;
+        const didMatch = await evaluateCard(row);
+        if (didMatch) {
+          return;
         }
       }
     }
   }
-
-  await tryContactSearch();
-  if (matched) {
-    return {
-      ok: true,
-      username: usernameRaw || null,
-      full_name: fullName || null,
-      scope,
-      used: {
-        strategy,
-        title_mode,
-        social_name: inputSocialName || null,
-        max_pages,
-        requested_page_size,
-        pipeline_id: args.pipeline_id ?? null,
-        status_id: args.status_id ?? null,
-        pagination: null,
-        actual_page_size: null,
-        pages_scanned,
-        leads_pagination: null,
-        leads_actual_page_size: null,
-        leads_pages_scanned: null,
-        contact_attempts: attempts,
-      },
-      stats: { checked, candidates_total },
-      result: matched,
-    };
-  }
   async function scanCollection(source: "cards" | "leads") {
     for (let page = 1; page <= max_pages; page++) {
-      const laravelQs = new URLSearchParams();
-      laravelQs.set("page", String(page));
-      laravelQs.set("per_page", String(requested_page_size));
-
-      const jsonApiQs = new URLSearchParams();
-      jsonApiQs.set("page[number]", String(page));
-      jsonApiQs.set("page[size]", String(requested_page_size));
-
-      const basePath = source === "cards" ? "/pipelines/cards" : "/leads";
       const attemptKey = `${source}_page_${page}`;
+      let resp: KcResponse;
 
-      let resp = await kcGet(`${basePath}?${laravelQs.toString()}`);
-      attempts[attemptKey] = { method: "GET", ok: resp.ok, status: resp.status, style: "laravel" };
+      if (source === "cards") {
+        const laravelQs = new URLSearchParams();
+        laravelQs.set("page", String(page));
+        laravelQs.set("per_page", String(requested_page_size));
 
-      if (!resp.ok) {
-        const fallback = await kcGet(`${basePath}?${jsonApiQs.toString()}`);
-        resp = fallback;
-        attempts[attemptKey] = { method: "GET", ok: resp.ok, status: resp.status, style: "jsonapi" };
+        const jsonApiQs = new URLSearchParams();
+        jsonApiQs.set("page[number]", String(page));
+        jsonApiQs.set("page[size]", String(requested_page_size));
+
+        resp = await kcGet(`/pipelines/cards?${laravelQs.toString()}`);
+        attempts[attemptKey] = { method: "GET", ok: resp.ok, status: resp.status, style: "laravel" };
+
+        if (!resp.ok) {
+          const fallback = await kcGet(`/pipelines/cards?${jsonApiQs.toString()}`);
+          resp = fallback;
+          attempts[attemptKey] = { method: "GET", ok: resp.ok, status: resp.status, style: "jsonapi" };
+        }
+      } else {
+        const requestBody: Record<string, any> = {
+          page: { number: page, size: requested_page_size },
+        };
+
+        const filters: Record<string, any> = {};
+        if (scope === "campaign") {
+          if (args.pipeline_id != null) filters.pipeline_id = args.pipeline_id;
+          if (args.status_id != null) filters.status_id = args.status_id;
+        }
+
+        const searchValues: string[] = [];
+        if (shouldIncludeSearch(usernameCanonical)) searchValues.push(usernameCanonical as string);
+        if (shouldIncludeSearch(usernameNoAt) && usernameNoAt !== usernameCanonical) {
+          searchValues.push(usernameNoAt);
+        }
+        if (shouldIncludeSearch(fullName)) searchValues.push(fullName);
+
+        if (searchValues.length) {
+          filters.search = searchValues[0];
+        }
+
+        if (Object.keys(filters).length) {
+          requestBody.filter = filters;
+        }
+
+        resp = await kcPost("/leads", requestBody);
+        attempts[attemptKey] = {
+          method: "POST",
+          ok: resp.ok,
+          status: resp.status,
+          body: requestBody,
+        };
       }
 
       if (!resp.ok) {
@@ -584,12 +549,40 @@ export async function findCardSimple(args: FindArgs) {
     }
   }
 
-  if (!matched) {
-    await scanCollection("cards");
+  await tryLeadSearch();
+  if (matched) {
+    return {
+      ok: true,
+      username: usernameRaw || null,
+      full_name: fullName || null,
+      scope,
+      used: {
+        pagination: null,
+        actual_page_size: null,
+        requested_page_size,
+        pipeline_id: args.pipeline_id ?? null,
+        status_id: args.status_id ?? null,
+        max_pages,
+        strategy,
+        title_mode,
+        social_name: inputSocialName || null,
+        pages_scanned,
+        leads_pagination,
+        leads_actual_page_size,
+        leads_pages_scanned,
+        contact_attempts: Object.keys(attempts).length ? attempts : null,
+      },
+      stats: { checked, candidates_total },
+      result: matched,
+    };
   }
 
   if (!matched) {
     await scanCollection("leads");
+  }
+
+  if (!matched) {
+    await scanCollection("cards");
   }
 
   return {
