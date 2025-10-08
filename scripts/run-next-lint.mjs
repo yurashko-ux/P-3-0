@@ -30,9 +30,7 @@ function run(command, args, options) {
 
 async function main() {
   const nextBin = getBinaryPath(resolve(webDir, 'node_modules', '.bin'), 'next');
-  const npmDir = resolve(process.execPath, '..', '..', 'lib', 'node_modules', 'npm', 'bin');
-  const fallbackNpxDir = resolve(process.execPath, '..');
-  const fallbackCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const nextCli = resolve(webDir, 'node_modules', 'next', 'dist', 'bin', 'next');
 
   const stdio = 'inherit';
 
@@ -41,11 +39,13 @@ async function main() {
     return;
   }
 
-  const candidateBins = [getBinaryPath(npmDir, 'npx'), getBinaryPath(fallbackNpxDir, 'npx')];
-  const resolvedPath = candidateBins.find((bin) => typeof bin === 'string' && existsSync(bin));
-  const command = resolvedPath ?? fallbackCommand;
+  if (existsSync(nextCli)) {
+    await run(process.execPath, [nextCli, 'lint'], { cwd: webDir, stdio });
+    return;
+  }
 
-  await run(command, ['--yes', 'next@14.2.7', 'lint'], { cwd: webDir, stdio });
+  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  await run(npmCommand, ['--prefix', webDir, 'run', 'lint'], { stdio });
 }
 
 main().catch((error) => {
