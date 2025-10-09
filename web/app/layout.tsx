@@ -1,6 +1,7 @@
 // web/app/layout.tsx
 import "./globals.css";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -19,7 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Тимчасовий захист від third-party SES/lockdown у браузері.
            Виконується ПЕРЕД усіма іншими скриптами. */}
-        <script
+        <Script
+          id="p30-lockdown-guard"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               (() => {
@@ -33,51 +36,55 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         : undefined;
                   if (!g) return;
 
-                  const toConfigurableDescriptor = (descriptor) => {
+                  const copyDescriptor = (descriptor, makeConfigurable = false) => {
                     if (!descriptor) return descriptor;
+                    if (!makeConfigurable) return descriptor;
+                    if ('get' in descriptor || 'set' in descriptor) {
+                      return {
+                        configurable: true,
+                        enumerable: descriptor.enumerable ?? false,
+                        get: descriptor.get,
+                        set: descriptor.set,
+                      };
+                    }
                     return {
                       configurable: true,
                       enumerable: descriptor.enumerable ?? false,
                       writable: descriptor.writable ?? false,
                       value: descriptor.value,
-                      get: descriptor.get,
-                      set: descriptor.set,
                     };
                   };
 
                   if (typeof g.Symbol === 'function' && !g.Symbol.__p30Patched) {
                     const originalSymbol = g.Symbol;
 
-                    const proxiedSymbol = new Proxy(originalSymbol, {
-                      apply(target, thisArg, args) {
-                        return Reflect.apply(target, thisArg, args);
-                      },
-                      get(target, prop, receiver) {
-                        if (prop === '__p30Original') return originalSymbol;
-                        const value = Reflect.get(target, prop, receiver);
-                        return typeof value === 'function' ? value.bind(target) : value;
-                      },
-                      getOwnPropertyDescriptor(target, prop) {
-                        if (prop === 'dispose' || prop === 'asyncDispose') {
-                          const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
-                          return toConfigurableDescriptor(descriptor);
-                        }
-                        return Reflect.getOwnPropertyDescriptor(target, prop);
-                      },
-                      deleteProperty(target, prop) {
-                        if (prop === 'dispose' || prop === 'asyncDispose') {
-                          return true;
-                        }
-                        try {
-                          return Reflect.deleteProperty(target, prop);
-                        } catch (_) {
-                          return false;
-                        }
-                      },
-                    });
+                    const SymbolShim = function SymbolShim(...args) {
+                      if (new.target) {
+                        throw new TypeError('Symbol is not a constructor');
+                      }
+                      return originalSymbol(...args);
+                    };
+
+                    try { Object.setPrototypeOf(SymbolShim, originalSymbol); } catch (_) {}
+                    try { SymbolShim.prototype = originalSymbol.prototype; } catch (_) {}
+
+                    const ownKeys = [
+                      ...Object.getOwnPropertyNames(originalSymbol),
+                      ...Object.getOwnPropertySymbols(originalSymbol),
+                    ];
+
+                    for (const key of ownKeys) {
+                      if (key === 'arguments' || key === 'caller') continue;
+                      const desc = Object.getOwnPropertyDescriptor(originalSymbol, key);
+                      if (!desc) continue;
+                      const makeConfigurable = key === 'dispose' || key === 'asyncDispose';
+                      try {
+                        Object.defineProperty(SymbolShim, key, copyDescriptor(desc, makeConfigurable));
+                      } catch (_) {}
+                    }
 
                     try {
-                      Object.defineProperty(proxiedSymbol, '__p30Patched', {
+                      Object.defineProperty(SymbolShim, '__p30Patched', {
                         value: true,
                         enumerable: false,
                       });
@@ -88,10 +95,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         configurable: true,
                         enumerable: false,
                         writable: true,
-                        value: proxiedSymbol,
+                        value: SymbolShim,
                       });
                     } catch (_) {
-                      g.Symbol = proxiedSymbol;
+                      g.Symbol = SymbolShim;
                     }
                   }
 
