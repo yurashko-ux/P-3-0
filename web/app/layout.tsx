@@ -1,6 +1,5 @@
 // web/app/layout.tsx
 import "./globals.css";
-import Script from "next/script";
 import { Inter } from "next/font/google";
 
 const inter = Inter({
@@ -20,74 +19,71 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Тимчасовий захист від third-party SES/lockdown у браузері.
            Виконується ПЕРЕД усіма іншими скриптами. */}
-        <Script id="disable-ses-lockdown" strategy="beforeInteractive">
-          {`
-            (function () {
-              try {
-                var g = typeof globalThis !== 'undefined'
-                  ? globalThis
-                  : typeof self !== 'undefined'
-                    ? self
-                    : typeof window !== 'undefined'
-                      ? window
-                      : undefined;
-                if (!g) return;
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (() => {
+                try {
+                  const g = typeof globalThis !== 'undefined'
+                    ? globalThis
+                    : typeof self !== 'undefined'
+                      ? self
+                      : typeof window !== 'undefined'
+                        ? window
+                        : undefined;
+                  if (!g) return;
 
-                var stub = function () {};
-                var setStub = function (target, key) {
-                  if (!target) return;
-                  try {
-                    target[key] = stub;
-                  } catch (_) {
+                  const defineConfigurable = (target, key, value) => {
+                    if (!target) return;
                     try {
                       Object.defineProperty(target, key, {
-                        value: stub,
                         configurable: true,
+                        enumerable: false,
                         writable: true,
+                        value,
                       });
+                    } catch (err) {
+                      try {
+                        target[key] = value;
+                      } catch (_) {}
+                    }
+                  };
+
+                  if (typeof Symbol === 'function') {
+                    try {
+                      const descDispose = Object.getOwnPropertyDescriptor(Symbol, 'dispose');
+                      if (!descDispose || !descDispose.configurable) {
+                        defineConfigurable(Symbol, 'dispose', descDispose ? descDispose.value : undefined);
+                      }
+
+                      const descAsyncDispose = Object.getOwnPropertyDescriptor(Symbol, 'asyncDispose');
+                      if (!descAsyncDispose || !descAsyncDispose.configurable) {
+                        defineConfigurable(Symbol, 'asyncDispose', descAsyncDispose ? descAsyncDispose.value : undefined);
+                      }
                     } catch (_) {}
                   }
-                };
 
-                var ensureSymbolDeleteFriendly = function (symbolKey) {
-                  try {
-                    if (typeof Symbol !== 'function') return;
-                    var hasOwn = Object.prototype.hasOwnProperty.call(Symbol, symbolKey);
-                    if (!hasOwn) {
-                      Object.defineProperty(Symbol, symbolKey, {
-                        configurable: true,
-                        writable: true,
-                        value: undefined,
-                      });
-                      return;
+                  const stub = function () {};
+                  const ensureStub = (target, key) => {
+                    if (!target) return;
+                    try {
+                      target[key] = stub;
+                    } catch (_) {
+                      defineConfigurable(target, key, stub);
                     }
-                    var desc = Object.getOwnPropertyDescriptor(Symbol, symbolKey);
-                    if (desc && !desc.configurable) {
-                      Object.defineProperty(Symbol, symbolKey, {
-                        configurable: true,
-                        enumerable: desc.enumerable,
-                        writable: true,
-                        value: desc.value,
-                      });
-                    }
-                  } catch (_) {}
-                };
-
-                ensureSymbolDeleteFriendly('dispose');
-                ensureSymbolDeleteFriendly('asyncDispose');
-
-                setStub(g, 'lockdown');
-                if (g.ses) setStub(g.ses, 'lockdown');
-
-                if (typeof g.harden !== 'function') {
-                  g.harden = function (value) {
-                    return value;
                   };
-                }
-              } catch (_) {}
-            })();
-          `}
-        </Script>
+
+                  ensureStub(g, 'lockdown');
+                  if (g.ses) ensureStub(g.ses, 'lockdown');
+
+                  if (typeof g.harden !== 'function') {
+                    g.harden = (value) => value;
+                  }
+                } catch (_) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>
