@@ -1,0 +1,47 @@
+// web/app/api/keycrm/card/find/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { searchKeycrmCardByIdentity } from "@/lib/keycrm-card-search";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function parseNumber(value: string | null): number | null {
+  if (!value) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const needle =
+    url.searchParams.get("needle") ||
+    url.searchParams.get("q") ||
+    url.searchParams.get("query") ||
+    url.searchParams.get("value") ||
+    "";
+
+  if (!needle.trim()) {
+    return NextResponse.json({ ok: false, error: "needle_required" }, { status: 400 });
+  }
+
+  const pipelineId = parseNumber(url.searchParams.get("pipeline_id"));
+  const statusId = parseNumber(url.searchParams.get("status_id"));
+  const perPage = parseNumber(url.searchParams.get("per_page"));
+  const maxPages = parseNumber(url.searchParams.get("max_pages"));
+
+  const result = await searchKeycrmCardByIdentity({
+    needle,
+    pipelineId: pipelineId ?? undefined,
+    statusId: statusId ?? undefined,
+    perPage: perPage ?? undefined,
+    maxPages: maxPages ?? undefined,
+  });
+
+  if (!result.ok) {
+    const status =
+      result.error === "needle_required" ? 400 : result.error === "keycrm_env_missing" ? 500 : 502;
+    return NextResponse.json(result, { status });
+  }
+
+  return NextResponse.json(result);
+}
