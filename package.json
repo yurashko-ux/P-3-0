@@ -1,0 +1,15 @@
+{
+  "name": "p-3-0-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "test": "node scripts/run-next-lint.mjs",
+    "find:campaign": "tsx scripts/find-campaign.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}
