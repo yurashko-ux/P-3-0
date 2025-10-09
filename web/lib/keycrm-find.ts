@@ -455,42 +455,85 @@ export async function findCardSimple(args: FindArgs) {
   async function tryLeadSearch() {
     const leadQueries: Array<{ value: string; key: string }> = [];
 
-    if (shouldIncludeSearch(usernameCanonical)) {
-      leadQueries.push({ value: usernameCanonical as string, key: "lead_search_username" });
-    }
+    const pushQuery = (value: string | null, key: string) => {
+      if (shouldIncludeSearch(value)) {
+        leadQueries.push({ value: value as string, key });
+      }
+    };
 
-    if (shouldIncludeSearch(usernameNoAt) && usernameNoAt !== usernameCanonical) {
-      leadQueries.push({ value: usernameNoAt, key: "lead_search_username_plain" });
+    pushQuery(usernameCanonical, "lead_search_username");
+    if (usernameNoAt && usernameNoAt !== usernameCanonical) {
+      pushQuery(usernameNoAt, "lead_search_username_plain");
     }
+    pushQuery(fullName || null, "lead_search_full_name");
 
-    if (shouldIncludeSearch(fullName)) {
-      leadQueries.push({ value: fullName as string, key: "lead_search_full_name" });
-    }
+    const applyScope = (params: URLSearchParams) => {
+      if (scope !== "campaign") return;
+      if (args.pipeline_id != null) params.set("pipeline_id", String(args.pipeline_id));
+      if (args.status_id != null) params.set("status_id", String(args.status_id));
+    };
+
+    const applyScopeJsonApi = (params: URLSearchParams) => {
+      if (scope !== "campaign") return;
+      if (args.pipeline_id != null) params.set("filter[pipeline_id]", String(args.pipeline_id));
+      if (args.status_id != null) params.set("filter[status_id]", String(args.status_id));
+    };
 
     for (const { value, key } of leadQueries) {
-      const bodyBase: Record<string, any> = { query: value };
-      if (scope === "campaign") {
-        if (args.pipeline_id != null) bodyBase.pipeline_id = args.pipeline_id;
-        if (args.status_id != null) bodyBase.status_id = args.status_id;
+      const laravel = new URLSearchParams();
+      laravel.set("page", "1");
+      laravel.set("per_page", String(requested_page_size));
+      laravel.set("with", "contact");
+      laravel.set("search", value);
+      applyScope(laravel);
+
+      let resp = await kcGet(`/leads?${laravel.toString()}`);
+      attempts[key] = {
+        method: "GET",
+        path: "/leads",
+        ok: resp.ok,
+        status: resp.status,
+        query: value,
+        style: "laravel",
+        qs: laravel.toString(),
+      };
+
+      if (!resp.ok) {
+        const jsonApi = new URLSearchParams();
+        jsonApi.set("page[number]", "1");
+        jsonApi.set("page[size]", String(requested_page_size));
+        jsonApi.set("with", "contact");
+        jsonApi.set("filter[search]", value);
+        applyScopeJsonApi(jsonApi);
+
+        const fallback = await kcGet(`/leads?${jsonApi.toString()}`);
+        resp = fallback;
+        attempts[key] = {
+          method: "GET",
+          path: "/leads",
+          ok: resp.ok,
+          status: resp.status,
+          query: value,
+          style: "jsonapi",
+          qs: jsonApi.toString(),
+        };
       }
 
-      const primary = await kcPost("/leads/search", bodyBase);
-      attempts[key] = { method: "POST", path: "/leads/search", ok: primary.ok, status: primary.status, query: value };
-
-      if (!primary.ok) {
-        if (primary.json) {
-          attempts[key].error = primary.json;
+      if (!resp.ok) {
+        if (resp.json) {
+          attempts[key].error = resp.json;
         }
         continue;
       }
 
-      const payload = primary.json;
+      const payload = resp.json;
       const rows = extractLeadRows(payload);
 
       attempts[key].count = rows.length;
 
-      leads_pagination = null;
-      leads_actual_page_size = rows.length;
+      const meta = readMeta(payload);
+      leads_pagination = meta.style;
+      leads_actual_page_size = meta.actualPerPage ?? rows.length;
       leads_pages_scanned = rows.length > 0 ? 1 : 0;
 
       if (!rows.length) {
@@ -543,8 +586,8 @@ export async function findCardSimple(args: FindArgs) {
 
         if (!searchValues.length) {
           attempts[attemptKey] = {
-            method: "POST",
-            path: "/leads/search",
+            method: "GET",
+            path: "/leads",
             ok: false,
             skipped: true,
             reason: "no_search_values",
@@ -552,24 +595,50 @@ export async function findCardSimple(args: FindArgs) {
           break;
         }
 
-        const requestBody: Record<string, any> = {
-          query: searchValues[0],
-          page: { number: page, size: requested_page_size },
-        };
-
+        const laravel = new URLSearchParams();
+        laravel.set("with", "contact");
+        laravel.set("page", String(page));
+        laravel.set("per_page", String(requested_page_size));
+        laravel.set("search", searchValues[0]);
         if (scope === "campaign") {
-          if (args.pipeline_id != null) requestBody.pipeline_id = args.pipeline_id;
-          if (args.status_id != null) requestBody.status_id = args.status_id;
+          if (args.pipeline_id != null) laravel.set("pipeline_id", String(args.pipeline_id));
+          if (args.status_id != null) laravel.set("status_id", String(args.status_id));
         }
 
-        resp = await kcPost("/leads/search", requestBody);
+        resp = await kcGet(`/leads?${laravel.toString()}`);
         attempts[attemptKey] = {
-          method: "POST",
-          path: "/leads/search",
+          method: "GET",
+          path: "/leads",
           ok: resp.ok,
           status: resp.status,
-          body: requestBody,
+          style: "laravel",
+          query: searchValues[0],
+          qs: laravel.toString(),
         };
+
+        if (!resp.ok) {
+          const jsonApi = new URLSearchParams();
+          jsonApi.set("with", "contact");
+          jsonApi.set("page[number]", String(page));
+          jsonApi.set("page[size]", String(requested_page_size));
+          jsonApi.set("filter[search]", searchValues[0]);
+          if (scope === "campaign") {
+            if (args.pipeline_id != null) jsonApi.set("filter[pipeline_id]", String(args.pipeline_id));
+            if (args.status_id != null) jsonApi.set("filter[status_id]", String(args.status_id));
+          }
+
+          const fallback = await kcGet(`/leads?${jsonApi.toString()}`);
+          resp = fallback;
+          attempts[attemptKey] = {
+            method: "GET",
+            path: "/leads",
+            ok: resp.ok,
+            status: resp.status,
+            style: "jsonapi",
+            query: searchValues[0],
+            qs: jsonApi.toString(),
+          };
+        }
       }
 
       if (!resp.ok) {
