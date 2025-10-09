@@ -24,8 +24,32 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {`
             try {
               var g = (typeof globalThis !== 'undefined' ? globalThis : window);
-              if (g && typeof g.lockdown === 'function') {
-                try { delete g.lockdown; } catch (_) { try { g.lockdown = undefined; } catch (_) {} }
+              if (!g) { return; }
+
+              var noop = function () { return { harden: function (value) { return value; } }; };
+
+              var patchLockdown = function (target, key) {
+                if (!target) { return; }
+                try {
+                  if (typeof target[key] === 'function') {
+                    target[key] = noop;
+                  } else if (target[key] === undefined) {
+                    return;
+                  }
+                } catch (_) {
+                  try {
+                    Object.defineProperty(target, key, { value: noop, configurable: true, writable: true });
+                  } catch (_) {
+                    try { target[key] = undefined; } catch (_) {}
+                  }
+                }
+              };
+
+              patchLockdown(g, 'lockdown');
+              if (g.ses) { patchLockdown(g.ses, 'lockdown'); }
+
+              if (typeof g.harden !== 'function') {
+                g.harden = function (value) { return value; };
               }
             } catch (_) {}
           `}
