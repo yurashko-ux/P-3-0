@@ -45,18 +45,119 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const needle = rule.value.toLowerCase();
-  const hay = (text || '').toLowerCase();
-  if (rule.op === 'equals') return hay === needle;
-  // default contains
-  return hay.includes(needle);
+function collectCandidates(
+  value: unknown,
+  seen: Set<string>,
+  depth = 12,
+  visited?: WeakSet<object>,
+) {
+  if (depth <= 0 || value == null) return;
+
+  if (typeof value === 'string') {
+    const normalized = normalizeCandidate(value).trim();
+    if (normalized) seen.add(normalized);
+    return;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    seen.add(String(value));
+    return;
+  }
+
+  const nextVisited = visited ?? new WeakSet<object>();
+
+  if (Array.isArray(value)) {
+    if (nextVisited.has(value as object)) return;
+    nextVisited.add(value as object);
+    for (const item of value) {
+      collectCandidates(item, seen, depth - 1, nextVisited);
+    }
+    return;
+  }
+
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (nextVisited.has(obj)) return;
+    nextVisited.add(obj);
+    for (const v of Object.values(obj)) {
+      collectCandidates(v, seen, depth - 1, nextVisited);
+    }
+  }
 }
 
-function chooseRoute(text: string, rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2' | 'none' {
-  const r1 = matchRule(text, rules?.v1);
-  const r2 = matchRule(text, rules?.v2);
+const VALUE_KEYS = ['value', 'label', 'text', 'title', 'name', 'id', 'key', 'code'];
+
+function normalizeCandidate(value: unknown, depth = 12): string {
+  if (depth <= 0 || value == null) return '';
+
+  if (typeof value === 'string') {
+    let s = value.trim();
+    if (!s) return '';
+
+    // значення можуть бути JSON-рядками або задубльованими лапками – розпарсимо їх рекурсивно
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(s);
+        const cand = normalizeCandidate(parsed, depth - 1);
+        if (cand) return cand;
+      } catch {}
+    }
+
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+      const unquoted = s.slice(1, -1);
+      const cand = normalizeCandidate(unquoted, depth - 1);
+      if (cand) return cand;
+    }
+
+    return s;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const cand = normalizeCandidate(item, depth - 1);
+      if (cand) return cand;
+    }
+    return '';
+  }
+
+  if (typeof value === 'object') {
+    for (const key of VALUE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const cand = normalizeCandidate((value as any)[key], depth - 1);
+        if (cand) return cand;
+      }
+    }
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      const cand = normalizeCandidate(v, depth - 1);
+      if (cand) return cand;
+    }
+    return '';
+  }
+
+  return String(value);
+}
+
+function matchRule(inputs: string[], rule?: Rule): boolean {
+  if (!rule || rule.value === undefined || rule.value === null) return false;
+  const needle = normalizeCandidate(rule.value).trim().toLowerCase();
+  if (!needle) return false;
+  return inputs.some(input => {
+    const hay = normalizeCandidate(input).trim().toLowerCase();
+    if (!hay) return false;
+    const op = String(rule.op || 'contains').toLowerCase();
+    if (op === 'equals') return hay === needle;
+    // default contains
+    return hay.includes(needle);
+  });
+}
+
+function chooseRoute(inputs: string[], rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2' | 'none' {
+  const r1 = matchRule(inputs, rules?.v1);
+  const r2 = matchRule(inputs, rules?.v2);
   if (r1 && !r2) return 'v1';
   if (r2 && !r1) return 'v2';
   // якщо збігаються обидва або жоден — не вирішуємо (можна додати пріоритети пізніше)
@@ -95,8 +196,14 @@ export async function POST(req: NextRequest) {
 
     // 2) спроба знайти першу, що матчить
     let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
+    const candidateSet = new Set<string>();
+    collectCandidates(body, candidateSet);
+    if (norm.text) candidateSet.add(norm.text);
+    if (norm.title) candidateSet.add(norm.title);
+    if (norm.handle) candidateSet.add(norm.handle);
+    const candidates = Array.from(candidateSet).filter(Boolean);
     for (const c of active) {
-      const route = chooseRoute(norm.text, c.rules);
+      const route = chooseRoute(candidates, c.rules);
       if (route !== 'none') {
         chosen = { route, campaign: c };
         break;
@@ -115,6 +222,11 @@ export async function POST(req: NextRequest) {
       route: chosen.route,
       campaign: chosen.campaign ? { id: chosen.campaign.id, name: chosen.campaign.name } : undefined,
       input: norm,
+      debug: {
+        candidates: candidates.slice(0, 25),
+        candidateCount: candidates.length,
+        truncated: candidates.length > 25,
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'pair failed' }, { status: 500 });
