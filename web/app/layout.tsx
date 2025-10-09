@@ -22,36 +22,70 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
            Виконується ПЕРЕД усіма іншими скриптами. */}
         <Script id="disable-ses-lockdown" strategy="beforeInteractive">
           {`
-            try {
-              var g = (typeof globalThis !== 'undefined' ? globalThis : window);
-              if (!g) { return; }
+            (function () {
+              try {
+                var g = typeof globalThis !== 'undefined'
+                  ? globalThis
+                  : typeof self !== 'undefined'
+                    ? self
+                    : typeof window !== 'undefined'
+                      ? window
+                      : undefined;
+                if (!g) return;
 
-              var noop = function () { return { harden: function (value) { return value; } }; };
-
-              var patchLockdown = function (target, key) {
-                if (!target) { return; }
-                try {
-                  if (typeof target[key] === 'function') {
-                    target[key] = noop;
-                  } else if (target[key] === undefined) {
-                    return;
-                  }
-                } catch (_) {
+                var stub = function () {};
+                var setStub = function (target, key) {
+                  if (!target) return;
                   try {
-                    Object.defineProperty(target, key, { value: noop, configurable: true, writable: true });
+                    target[key] = stub;
                   } catch (_) {
-                    try { target[key] = undefined; } catch (_) {}
+                    try {
+                      Object.defineProperty(target, key, {
+                        value: stub,
+                        configurable: true,
+                        writable: true,
+                      });
+                    } catch (_) {}
                   }
+                };
+
+                var ensureSymbolDeleteFriendly = function (symbolKey) {
+                  try {
+                    if (typeof Symbol !== 'function') return;
+                    var hasOwn = Object.prototype.hasOwnProperty.call(Symbol, symbolKey);
+                    if (!hasOwn) {
+                      Object.defineProperty(Symbol, symbolKey, {
+                        configurable: true,
+                        writable: true,
+                        value: undefined,
+                      });
+                      return;
+                    }
+                    var desc = Object.getOwnPropertyDescriptor(Symbol, symbolKey);
+                    if (desc && !desc.configurable) {
+                      Object.defineProperty(Symbol, symbolKey, {
+                        configurable: true,
+                        enumerable: desc.enumerable,
+                        writable: true,
+                        value: desc.value,
+                      });
+                    }
+                  } catch (_) {}
+                };
+
+                ensureSymbolDeleteFriendly('dispose');
+                ensureSymbolDeleteFriendly('asyncDispose');
+
+                setStub(g, 'lockdown');
+                if (g.ses) setStub(g.ses, 'lockdown');
+
+                if (typeof g.harden !== 'function') {
+                  g.harden = function (value) {
+                    return value;
+                  };
                 }
-              };
-
-              patchLockdown(g, 'lockdown');
-              if (g.ses) { patchLockdown(g.ses, 'lockdown'); }
-
-              if (typeof g.harden !== 'function') {
-                g.harden = function (value) { return value; };
-              }
-            } catch (_) {}
+              } catch (_) {}
+            })();
           `}
         </Script>
       </head>

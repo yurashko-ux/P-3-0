@@ -84,8 +84,13 @@ async function readWithFallback(): Promise<Campaign[]> {
       next: { revalidate: 0 },
     });
     if (r.ok) {
-      const arr = (await r.json()) as Campaign[];
-      if (Array.isArray(arr) && arr.length) return arr;
+      const payload = await r.json().catch(() => null);
+      const arr = Array.isArray(payload)
+        ? (payload as Campaign[])
+        : Array.isArray(payload?.items)
+          ? (payload.items as Campaign[])
+          : [];
+      if (arr.length) return arr;
     }
   } catch {}
   return [];

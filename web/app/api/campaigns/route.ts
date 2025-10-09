@@ -252,5 +252,12 @@ export async function POST(req: NextRequest) {
   await tryKv(() => kv.set(ITEM_KEY(id), campaign));
   await writeIdsMerged(id);
 
-  return NextResponse.json({ ok: true, id, meta: meta(kvState.disabled ? "memory" : "kv", memoryReadIds().length) }, { status: 201 });
+  return NextResponse.json(
+    {
+      ok: true,
+      id,
+      meta: meta(kvState.disabled ? "memory" : "kv", memoryReadIds().length),
+    },
+    { status: 201 }
+  );
 }
