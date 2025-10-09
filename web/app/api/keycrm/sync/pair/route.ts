@@ -8,16 +8,21 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import {
+  normalizeCandidate,
+  chooseCampaignRoute,
+  pickRuleCandidate,
+  resolveRule,
+  type CampaignLike,
+} from '@/lib/campaign-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
-type Campaign = {
+type Campaign = CampaignLike & {
   id: string;
   name: string;
   active?: boolean;
-  rules?: { v1?: Rule; v2?: Rule };
   v1_count?: number;
   v2_count?: number;
   exp_count?: number;
@@ -45,23 +50,44 @@ function extractNormalized(body: any) {
   return { title: '', handle: mcHandle, text: mcText };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const needle = rule.value.toLowerCase();
-  const hay = (text || '').toLowerCase();
-  if (rule.op === 'equals') return hay === needle;
-  // default contains
-  return hay.includes(needle);
-}
+function collectCandidates(
+  value: unknown,
+  seen: Set<string>,
+  depth = 12,
+  visited?: WeakSet<object>,
+) {
+  if (depth <= 0 || value == null) return;
 
-function chooseRoute(text: string, rules?: { v1?: Rule; v2?: Rule }): 'v1' | 'v2' | 'none' {
-  const r1 = matchRule(text, rules?.v1);
-  const r2 = matchRule(text, rules?.v2);
-  if (r1 && !r2) return 'v1';
-  if (r2 && !r1) return 'v2';
-  // якщо збігаються обидва або жоден — не вирішуємо (можна додати пріоритети пізніше)
-  if (r1 && r2) return 'v1'; // простий пріоритет v1, щоб не губити подію
-  return 'none';
+  if (typeof value === 'string') {
+    const normalized = normalizeCandidate(value).trim();
+    if (normalized) seen.add(normalized);
+    return;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    seen.add(String(value));
+    return;
+  }
+
+  const nextVisited = visited ?? new WeakSet<object>();
+
+  if (Array.isArray(value)) {
+    if (nextVisited.has(value as object)) return;
+    nextVisited.add(value as object);
+    for (const item of value) {
+      collectCandidates(item, seen, depth - 1, nextVisited);
+    }
+    return;
+  }
+
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (nextVisited.has(obj)) return;
+    nextVisited.add(obj);
+    for (const v of Object.values(obj)) {
+      collectCandidates(v, seen, depth - 1, nextVisited);
+    }
+  }
 }
 
 async function bumpCounter(id: string, field: 'v1_count' | 'v2_count' | 'exp_count') {
@@ -95,13 +121,22 @@ export async function POST(req: NextRequest) {
 
     // 2) спроба знайти першу, що матчить
     let chosen: { route: 'v1'|'v2'|'none', campaign?: Campaign } = { route: 'none' };
+    const candidateSet = new Set<string>();
+    collectCandidates(body, candidateSet);
+    if (norm.text) candidateSet.add(norm.text);
+    if (norm.title) candidateSet.add(norm.title);
+    if (norm.handle) candidateSet.add(norm.handle);
+    const candidates = Array.from(candidateSet).filter(Boolean);
     for (const c of active) {
-      const route = chooseRoute(norm.text, c.rules);
+      const route = chooseCampaignRoute(candidates, c);
       if (route !== 'none') {
         chosen = { route, campaign: c };
         break;
       }
     }
+
+    const resolvedV1 = chosen.campaign ? resolveRule(pickRuleCandidate(chosen.campaign, 'v1')) : null;
+    const resolvedV2 = chosen.campaign ? resolveRule(pickRuleCandidate(chosen.campaign, 'v2')) : null;
 
     // 3) якщо знайшли — інкрементуємо лічильник
     if (chosen.campaign && chosen.route !== 'none') {
@@ -115,6 +150,13 @@ export async function POST(req: NextRequest) {
       route: chosen.route,
       campaign: chosen.campaign ? { id: chosen.campaign.id, name: chosen.campaign.name } : undefined,
       input: norm,
+      debug: {
+        candidates: candidates.slice(0, 25),
+        candidateCount: candidates.length,
+        truncated: candidates.length > 25,
+        ruleV1: resolvedV1 ? { value: resolvedV1.value, op: resolvedV1.op } : null,
+        ruleV2: resolvedV2 ? { value: resolvedV2.value, op: resolvedV2.op } : null,
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'pair failed' }, { status: 500 });

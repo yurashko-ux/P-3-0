@@ -5,19 +5,23 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import {
+  normalizeCandidate,
+  matchRuleAgainstInputs,
+  pickRuleCandidate,
+  type CampaignLike,
+} from '@/lib/campaign-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
-type Campaign = {
+type Campaign = CampaignLike & {
   id: string;
   name: string;
   created_at: number;
   active?: boolean;
   base_pipeline_id?: number;
   base_status_id?: number;
-  rules?: { v1?: Rule; v2?: Rule };
   exp?: Record<string, unknown>;
   v1_count?: number;
   v2_count?: number;
@@ -46,13 +50,44 @@ function normalize(body: any) {
   return { title, handle, text };
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const t = (text || '').toLowerCase();
-  const v = rule.value.toLowerCase();
-  if (rule.op === 'equals') return t === v;
-  if (rule.op === 'contains') return t.includes(v);
-  return false;
+function collectCandidates(
+  value: unknown,
+  seen: Set<string>,
+  depth = 12,
+  visited?: WeakSet<object>,
+) {
+  if (depth <= 0 || value == null) return;
+
+  if (typeof value === 'string') {
+    const normalized = normalizeCandidate(value).trim();
+    if (normalized) seen.add(normalized);
+    return;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    seen.add(String(value));
+    return;
+  }
+
+  const nextVisited = visited ?? new WeakSet<object>();
+
+  if (Array.isArray(value)) {
+    if (nextVisited.has(value as object)) return;
+    nextVisited.add(value as object);
+    for (const item of value) {
+      collectCandidates(item, seen, depth - 1, nextVisited);
+    }
+    return;
+  }
+
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (nextVisited.has(obj)) return;
+    nextVisited.add(obj);
+    for (const v of Object.values(obj)) {
+      collectCandidates(v, seen, depth - 1, nextVisited);
+    }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -77,10 +112,21 @@ export async function POST(req: NextRequest) {
   const active = campaigns.filter(c => c.active !== false);
 
   // Compute matches
-  const text = norm.text || '';
+  const candidates = new Set<string>();
+  collectCandidates(payload, candidates);
+  const push = (value: unknown) => {
+    const normalized = normalizeCandidate(value).trim();
+    if (normalized) candidates.add(normalized);
+  };
+  push(norm.text);
+  push(norm.title);
+  push(norm.handle);
+
+  const textCandidates = Array.from(candidates);
+
   const matches = active.map((c) => {
-    const v1 = matchRule(text, c.rules?.v1);
-    const v2 = matchRule(text, c.rules?.v2);
+    const v1 = matchRuleAgainstInputs(textCandidates, pickRuleCandidate(c, 'v1'));
+    const v2 = matchRuleAgainstInputs(textCandidates, pickRuleCandidate(c, 'v2'));
     return { id: c.id, name: c.name, v1, v2 };
   }).filter(m => m.v1 || m.v2);
 

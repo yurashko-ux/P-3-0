@@ -16,6 +16,16 @@ export default function ToolsIndex() {
             Move tester (/api/keycrm/card/move)
           </a>
         </li>
+        <li>
+          <a href="/admin/tools/find" className="text-blue-700 hover:underline">
+            Find tester (/api/keycrm/find)
+          </a>
+        </li>
+        <li>
+          <a href="/admin/tools/sync-flow" className="text-blue-700 hover:underline">
+            Sync flow tester (ManyChat → Campaign → Find → Move)
+          </a>
+        </li>
       </ul>
       <p className="mt-4 text-sm text-gray-500">Переконайся, що ти увійшов через /admin/login.</p>
     </div>
