@@ -33,34 +33,66 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         : undefined;
                   if (!g) return;
 
-                  const defineConfigurable = (target, key, value) => {
-                    if (!target) return;
+                  const toConfigurableDescriptor = (descriptor) => {
+                    if (!descriptor) return descriptor;
+                    return {
+                      configurable: true,
+                      enumerable: descriptor.enumerable ?? false,
+                      writable: descriptor.writable ?? false,
+                      value: descriptor.value,
+                      get: descriptor.get,
+                      set: descriptor.set,
+                    };
+                  };
+
+                  if (typeof g.Symbol === 'function' && !g.Symbol.__p30Patched) {
+                    const originalSymbol = g.Symbol;
+
+                    const proxiedSymbol = new Proxy(originalSymbol, {
+                      apply(target, thisArg, args) {
+                        return Reflect.apply(target, thisArg, args);
+                      },
+                      get(target, prop, receiver) {
+                        if (prop === '__p30Original') return originalSymbol;
+                        const value = Reflect.get(target, prop, receiver);
+                        return typeof value === 'function' ? value.bind(target) : value;
+                      },
+                      getOwnPropertyDescriptor(target, prop) {
+                        if (prop === 'dispose' || prop === 'asyncDispose') {
+                          const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+                          return toConfigurableDescriptor(descriptor);
+                        }
+                        return Reflect.getOwnPropertyDescriptor(target, prop);
+                      },
+                      deleteProperty(target, prop) {
+                        if (prop === 'dispose' || prop === 'asyncDispose') {
+                          return true;
+                        }
+                        try {
+                          return Reflect.deleteProperty(target, prop);
+                        } catch (_) {
+                          return false;
+                        }
+                      },
+                    });
+
                     try {
-                      Object.defineProperty(target, key, {
+                      Object.defineProperty(proxiedSymbol, '__p30Patched', {
+                        value: true,
+                        enumerable: false,
+                      });
+                    } catch (_) {}
+
+                    try {
+                      Object.defineProperty(g, 'Symbol', {
                         configurable: true,
                         enumerable: false,
                         writable: true,
-                        value,
+                        value: proxiedSymbol,
                       });
-                    } catch (err) {
-                      try {
-                        target[key] = value;
-                      } catch (_) {}
+                    } catch (_) {
+                      g.Symbol = proxiedSymbol;
                     }
-                  };
-
-                  if (typeof Symbol === 'function') {
-                    try {
-                      const descDispose = Object.getOwnPropertyDescriptor(Symbol, 'dispose');
-                      if (!descDispose || !descDispose.configurable) {
-                        defineConfigurable(Symbol, 'dispose', descDispose ? descDispose.value : undefined);
-                      }
-
-                      const descAsyncDispose = Object.getOwnPropertyDescriptor(Symbol, 'asyncDispose');
-                      if (!descAsyncDispose || !descAsyncDispose.configurable) {
-                        defineConfigurable(Symbol, 'asyncDispose', descAsyncDispose ? descAsyncDispose.value : undefined);
-                      }
-                    } catch (_) {}
                   }
 
                   const stub = function () {};
@@ -69,7 +101,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     try {
                       target[key] = stub;
                     } catch (_) {
-                      defineConfigurable(target, key, stub);
+                      try {
+                        Object.defineProperty(target, key, {
+                          configurable: true,
+                          enumerable: false,
+                          writable: true,
+                          value: stub,
+                        });
+                      } catch (_) {}
                     }
                   };
 
