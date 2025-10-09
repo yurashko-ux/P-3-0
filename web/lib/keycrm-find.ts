@@ -161,18 +161,150 @@ function extractContactSummary(contact: any): ContactSummary {
   };
 }
 
+function coalesce<T>(...values: T[]): T | null {
+  for (const value of values) {
+    if (value === null || typeof value === "undefined") continue;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed as T;
+      continue;
+    }
+    return value;
+  }
+  return null;
+}
+
+function extractContactFromRow(row: any, fallback?: ContactSummary | null): ContactSummary | null {
+  if (!row || typeof row !== "object") {
+    return fallback || null;
+  }
+
+  const candidates: any[] = [];
+
+  const pushCandidate = (candidate: any) => {
+    if (candidate && typeof candidate === "object") {
+      candidates.push(candidate);
+    }
+  };
+
+  pushCandidate(row.contact);
+  pushCandidate(row.contact?.data);
+  pushCandidate(row.client);
+  pushCandidate(row.client?.data);
+  pushCandidate(row.relationships?.contact?.data);
+  pushCandidate(row.relationships?.contact);
+  pushCandidate(row.attributes?.contact);
+
+  const fallbackLike = {
+    id:
+      coalesce<any>(
+        row.contact_id,
+        row.contactId,
+        row.contactID,
+        row.client_id,
+        row.clientId,
+        row.attributes?.contact_id,
+        row.attributes?.client_id,
+        fallback?.id ?? null,
+      ) ?? null,
+    full_name:
+      coalesce<string | null>(
+        row.contact_full_name,
+        row.contactFullName,
+        row.client_full_name,
+        row.clientFullName,
+        row.client_name,
+        row.clientName,
+        row.full_name,
+        row.name,
+        row.attributes?.full_name,
+        row.attributes?.contact_full_name,
+        row.attributes?.client_name,
+        fallback?.full_name ?? null,
+      ) ?? null,
+    social_id:
+      coalesce<string | null>(
+        row.contact_social_id,
+        row.contactSocialId,
+        row.client_social_id,
+        row.clientSocialId,
+        row.social_id,
+        row.socialId,
+        row.instagram_username,
+        row.instagram,
+        row.contact?.instagram_username,
+        row.contact?.instagram,
+        row.attributes?.social_id,
+        row.attributes?.instagram_username,
+        fallback?.social_id ?? null,
+      ) ?? null,
+    social_name:
+      coalesce<string | null>(
+        row.contact_social_name,
+        row.contactSocialName,
+        row.social_name,
+        row.socialName,
+        row.attributes?.social_name,
+        fallback?.social_name ?? null,
+      ) ?? null,
+    social: row.contact_social ?? row.social ?? row.attributes?.social ?? null,
+  };
+
+  pushCandidate(fallbackLike);
+
+  for (const candidate of candidates) {
+    const summary = extractContactSummary(candidate);
+    if (summary.social_id || summary.full_name) {
+      const id =
+        summary.id ??
+        toNumber(row.contact_id ?? row.contactId ?? row.client_id ?? row.clientId ?? summary.id ?? null) ??
+        summary.id ??
+        null;
+      return {
+        id,
+        full_name: summary.full_name,
+        social_id: summary.social_id,
+        social_name: summary.social_name,
+      };
+    }
+  }
+
+  if (fallbackLike.full_name || fallbackLike.social_id) {
+    return {
+      id:
+        toNumber(
+          fallbackLike.id ??
+            row.contact_id ??
+            row.contactId ??
+            row.client_id ??
+            row.clientId ??
+            fallback?.id ??
+            null,
+        ) ?? fallbackLike.id ?? fallback?.id ?? null,
+      full_name: norm(fallbackLike.full_name || "") || null,
+      social_id: norm(fallbackLike.social_id || "") || null,
+      social_name: norm(fallbackLike.social_name || "") || null,
+    };
+  }
+
+  return fallback || null;
+}
+
 function cardFromRow(row: any, fallbackContact?: ContactSummary | null): CardSummary {
-  const contactSummary = row?.contact ? extractContactSummary(row.contact) : fallbackContact || null;
+  const contactSummary = extractContactFromRow(row, fallbackContact);
   const rawContactId =
     row?.contact_id ??
-    row?.contact?.id ??
+    row?.contactId ??
+    row?.client_id ??
+    row?.clientId ??
+    contactSummary?.id ??
     fallbackContact?.id ??
-    (typeof row?.contactId !== "undefined" ? row?.contactId : null);
+    (typeof row?.contact?.id !== "undefined" ? row?.contact?.id : null);
   return {
     id: toNumber(row?.id) ?? row?.id ?? null,
-    title: norm(row?.title) || null,
-    pipeline_id: row?.pipeline_id ?? row?.pipeline?.id ?? null,
-    status_id: row?.status_id ?? row?.status?.id ?? null,
+    title: norm(row?.title || row?.name) || null,
+    pipeline_id: row?.pipeline_id ?? row?.pipeline?.id ?? row?.pipelineId ?? null,
+    status_id: row?.status_id ?? row?.status?.id ?? row?.statusId ?? null,
     contact_id: toNumber(rawContactId) ?? rawContactId ?? null,
     contact: contactSummary,
   };
@@ -271,41 +403,6 @@ export async function findCardSimple(args: FindArgs) {
   let leads_pages_scanned = 0;
   let candidates_total = 0;
   const attempts: Record<string, any> = {};
-  const contactCache = new Map<string | number, ContactSummary | null>();
-  async function hydrateContact(card: CardSummary): Promise<CardSummary> {
-    const contactKey = card.contact_id ?? card.contact?.id ?? null;
-    if (contactKey == null) {
-      return card;
-    }
-
-    if (contactCache.has(contactKey)) {
-      const cached = contactCache.get(contactKey) || null;
-      return cached ? { ...card, contact: cached } : card;
-    }
-
-    const cacheKey = String(contactKey);
-    const attemptId = `contact_${cacheKey}`;
-    const res = await kcGet(`/contacts/${cacheKey}`);
-    attempts[attemptId] = { method: "GET", ok: res.ok, status: res.status };
-
-    if (!res.ok) {
-      contactCache.set(contactKey, null);
-      return card;
-    }
-
-    const payload =
-      res.json?.data ??
-      res.json?.contact ??
-      res.json?.result ??
-      res.json ??
-      null;
-
-    const summary = payload ? extractContactSummary(payload) : null;
-    attempts[attemptId].contact = summary;
-    contactCache.set(contactKey, summary);
-
-    return summary ? { ...card, contact: summary } : card;
-  }
 
   const filterByScope = (row: any) => {
     if (scope !== "campaign") return true;
@@ -316,13 +413,7 @@ export async function findCardSimple(args: FindArgs) {
   };
 
   async function evaluateCard(row: any, fallbackContact?: ContactSummary | null) {
-    let card = cardFromRow(row, fallbackContact);
-    const needsHydration =
-      !card.contact ||
-      (!card.contact.social_id && !card.contact.full_name);
-    if (needsHydration) {
-      card = await hydrateContact(card);
-    }
+    const card = cardFromRow(row, fallbackContact);
 
     const title = norm(card.title || "");
     const contactSocialRaw = norm(card.contact?.social_id || "");
@@ -386,40 +477,15 @@ export async function findCardSimple(args: FindArgs) {
       const primary = await kcPost("/leads/search", bodyBase);
       attempts[key] = { method: "POST", path: "/leads/search", ok: primary.ok, status: primary.status, query: value };
 
-      let payload: any = null;
-      let rows: any[] = [];
-
-      if (primary.ok) {
-        payload = primary.json;
-        rows = extractLeadRows(payload);
-      } else {
-        const fallbackBody: Record<string, any> = {
-          page: { number: 1, size: requested_page_size },
-          filter: { search: value },
-        };
-        if (scope === "campaign") {
-          if (args.pipeline_id != null) fallbackBody.filter.pipeline_id = args.pipeline_id;
-          if (args.status_id != null) fallbackBody.filter.status_id = args.status_id;
+      if (!primary.ok) {
+        if (primary.json) {
+          attempts[key].error = primary.json;
         }
-
-        const fallback = await kcPost("/leads", fallbackBody);
-        attempts[key].fallback = {
-          method: "POST",
-          path: "/leads",
-          ok: fallback.ok,
-          status: fallback.status,
-        };
-
-        if (!fallback.ok) {
-          if (fallback.json) {
-            attempts[key].error = fallback.json;
-          }
-          continue;
-        }
-
-        payload = fallback.json;
-        rows = extractLeadRows(payload);
+        continue;
       }
+
+      const payload = primary.json;
+      const rows = extractLeadRows(payload);
 
       attempts[key].count = rows.length;
 
@@ -452,10 +518,12 @@ export async function findCardSimple(args: FindArgs) {
         const laravelQs = new URLSearchParams();
         laravelQs.set("page", String(page));
         laravelQs.set("per_page", String(requested_page_size));
+        laravelQs.set("with", "contact");
 
         const jsonApiQs = new URLSearchParams();
         jsonApiQs.set("page[number]", String(page));
         jsonApiQs.set("page[size]", String(requested_page_size));
+        jsonApiQs.set("with", "contact");
 
         resp = await kcGet(`/pipelines/cards?${laravelQs.toString()}`);
         attempts[attemptKey] = { method: "GET", ok: resp.ok, status: resp.status, style: "laravel" };
@@ -466,16 +534,6 @@ export async function findCardSimple(args: FindArgs) {
           attempts[attemptKey] = { method: "GET", ok: resp.ok, status: resp.status, style: "jsonapi" };
         }
       } else {
-        const requestBody: Record<string, any> = {
-          page: { number: page, size: requested_page_size },
-        };
-
-        const filters: Record<string, any> = {};
-        if (scope === "campaign") {
-          if (args.pipeline_id != null) filters.pipeline_id = args.pipeline_id;
-          if (args.status_id != null) filters.status_id = args.status_id;
-        }
-
         const searchValues: string[] = [];
         if (shouldIncludeSearch(usernameCanonical)) searchValues.push(usernameCanonical as string);
         if (shouldIncludeSearch(usernameNoAt) && usernameNoAt !== usernameCanonical) {
@@ -483,17 +541,31 @@ export async function findCardSimple(args: FindArgs) {
         }
         if (shouldIncludeSearch(fullName)) searchValues.push(fullName);
 
-        if (searchValues.length) {
-          filters.search = searchValues[0];
+        if (!searchValues.length) {
+          attempts[attemptKey] = {
+            method: "POST",
+            path: "/leads/search",
+            ok: false,
+            skipped: true,
+            reason: "no_search_values",
+          };
+          break;
         }
 
-        if (Object.keys(filters).length) {
-          requestBody.filter = filters;
+        const requestBody: Record<string, any> = {
+          query: searchValues[0],
+          page: { number: page, size: requested_page_size },
+        };
+
+        if (scope === "campaign") {
+          if (args.pipeline_id != null) requestBody.pipeline_id = args.pipeline_id;
+          if (args.status_id != null) requestBody.status_id = args.status_id;
         }
 
-        resp = await kcPost("/leads", requestBody);
+        resp = await kcPost("/leads/search", requestBody);
         attempts[attemptKey] = {
           method: "POST",
+          path: "/leads/search",
           ok: resp.ok,
           status: resp.status,
           body: requestBody,
