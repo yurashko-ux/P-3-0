@@ -1,6 +1,10 @@
 // web/app/api/keycrm/card/find/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { searchKeycrmCardByIdentity } from "@/lib/keycrm-card-search";
+import {
+  KeycrmCardSearchError,
+  KeycrmCardSearchResult,
+  searchKeycrmCardByIdentity,
+} from "@/lib/keycrm-card-search";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +13,12 @@ function parseNumber(value: string | null): number | null {
   if (!value) return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function isSearchError(
+  result: KeycrmCardSearchResult | KeycrmCardSearchError
+): result is KeycrmCardSearchError {
+  return result.ok === false;
 }
 
 export async function GET(req: NextRequest) {
@@ -37,9 +47,13 @@ export async function GET(req: NextRequest) {
     maxPages: maxPages ?? undefined,
   });
 
-  if (!result.ok) {
+  if (isSearchError(result)) {
     const status =
-      result.error === "needle_required" ? 400 : result.error === "keycrm_env_missing" ? 500 : 502;
+      result.error === "needle_required"
+        ? 400
+        : result.error === "keycrm_env_missing"
+          ? 500
+          : 502;
     return NextResponse.json(result, { status });
   }
 
