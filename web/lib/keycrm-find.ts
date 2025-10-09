@@ -452,6 +452,164 @@ export async function findCardSimple(args: FindArgs) {
 
   const shouldIncludeSearch = (value?: string | null) => value && value.trim().length > 0;
 
+  async function tryLeadContacts() {
+    const leadQueries: Array<{ value: string; key: string }> = [];
+
+    const pushQuery = (value: string | null, key: string) => {
+      if (shouldIncludeSearch(value)) {
+        leadQueries.push({ value: value as string, key });
+      }
+    };
+
+    pushQuery(usernameCanonical, "lead_contact_username");
+    if (usernameNoAt && usernameNoAt !== usernameCanonical) {
+      pushQuery(usernameNoAt, "lead_contact_username_plain");
+    }
+    pushQuery(fullName || null, "lead_contact_full_name");
+
+    const contactPaths = ["/lead/contacts", "/leads/contacts"] as const;
+    const seenContacts = new Set<string>();
+
+    const fetchLeadsByContact = async (
+      contactId: string,
+      contactSummary: ContactSummary | null,
+    ): Promise<void> => {
+      const attemptKey = `lead_contact_${contactId}`;
+      if (seenContacts.has(contactId)) {
+        return;
+      }
+      seenContacts.add(contactId);
+
+      const laravel = new URLSearchParams();
+      laravel.set("with", "contact");
+      laravel.set("page", "1");
+      laravel.set("per_page", String(requested_page_size));
+      laravel.set("contact_id", contactId);
+      if (scope === "campaign") {
+        if (args.pipeline_id != null) laravel.set("pipeline_id", String(args.pipeline_id));
+        if (args.status_id != null) laravel.set("status_id", String(args.status_id));
+      }
+
+      let resp = await kcGet(`/leads?${laravel.toString()}`);
+      attempts[attemptKey] = {
+        method: "GET",
+        path: "/leads",
+        ok: resp.ok,
+        status: resp.status,
+        style: "laravel",
+        contact_id: contactId,
+        qs: laravel.toString(),
+      };
+
+      if (!resp.ok) {
+        const jsonApi = new URLSearchParams();
+        jsonApi.set("with", "contact");
+        jsonApi.set("page[number]", "1");
+        jsonApi.set("page[size]", String(requested_page_size));
+        jsonApi.set("filter[contact_id]", contactId);
+        if (scope === "campaign") {
+          if (args.pipeline_id != null) jsonApi.set("filter[pipeline_id]", String(args.pipeline_id));
+          if (args.status_id != null) jsonApi.set("filter[status_id]", String(args.status_id));
+        }
+
+        const fallback = await kcGet(`/leads?${jsonApi.toString()}`);
+        resp = fallback;
+        attempts[attemptKey] = {
+          method: "GET",
+          path: "/leads",
+          ok: resp.ok,
+          status: resp.status,
+          style: "jsonapi",
+          contact_id: contactId,
+          qs: jsonApi.toString(),
+        };
+      }
+
+      if (!resp.ok) {
+        attempts[attemptKey].error = resp.json;
+        return;
+      }
+
+      const rows = extractLeadRows(resp.json);
+      attempts[attemptKey].count = rows.length;
+
+      const meta = readMeta(resp.json);
+      leads_pagination = leads_pagination ?? meta.style;
+      leads_actual_page_size = leads_actual_page_size ?? meta.actualPerPage ?? rows.length;
+      leads_pages_scanned = Math.max(leads_pages_scanned, rows.length > 0 ? 1 : leads_pages_scanned);
+
+      const filtered = rows.filter((row) => filterByScope(row));
+      candidates_total += filtered.length;
+
+      for (const row of filtered) {
+        checked++;
+        const didMatch = await evaluateCard(row, contactSummary);
+        if (didMatch) {
+          return;
+        }
+      }
+    };
+
+    for (const { value, key } of leadQueries) {
+      for (const path of contactPaths) {
+        const laravel = new URLSearchParams();
+        laravel.set("page", "1");
+        laravel.set("per_page", String(requested_page_size));
+        laravel.set("search", value);
+
+        let resp = await kcGet(`${path}?${laravel.toString()}`);
+        const attemptKey = `${key}_${path.replace(/\//g, "_")}`;
+        attempts[attemptKey] = {
+          method: "GET",
+          path,
+          ok: resp.ok,
+          status: resp.status,
+          style: "laravel",
+          query: value,
+          qs: laravel.toString(),
+        };
+
+        if (!resp.ok) {
+          const jsonApi = new URLSearchParams();
+          jsonApi.set("page[number]", "1");
+          jsonApi.set("page[size]", String(requested_page_size));
+          jsonApi.set("filter[search]", value);
+
+          const fallback = await kcGet(`${path}?${jsonApi.toString()}`);
+          resp = fallback;
+          attempts[attemptKey] = {
+            method: "GET",
+            path,
+            ok: resp.ok,
+            status: resp.status,
+            style: "jsonapi",
+            query: value,
+            qs: jsonApi.toString(),
+          };
+        }
+
+        if (!resp.ok) {
+          attempts[attemptKey].error = resp.json;
+          continue;
+        }
+
+        const contactRows = extractContactRows(resp.json);
+        attempts[attemptKey].count = contactRows.length;
+
+        for (const row of contactRows) {
+          const summary = extractContactSummary(row);
+          const contactId = summary.id != null ? String(summary.id) : null;
+          if (!contactId) continue;
+
+          await fetchLeadsByContact(contactId, summary);
+          if (matched) {
+            return;
+          }
+        }
+      }
+    }
+  }
+
   async function tryLeadSearch() {
     const leadQueries: Array<{ value: string; key: string }> = [];
 
@@ -688,6 +846,34 @@ export async function findCardSimple(args: FindArgs) {
         break;
       }
     }
+  }
+
+  await tryLeadContacts();
+  if (matched) {
+    return {
+      ok: true,
+      username: usernameRaw || null,
+      full_name: fullName || null,
+      scope,
+      used: {
+        pagination: null,
+        actual_page_size: null,
+        requested_page_size,
+        pipeline_id: args.pipeline_id ?? null,
+        status_id: args.status_id ?? null,
+        max_pages,
+        strategy,
+        title_mode,
+        social_name: inputSocialName || null,
+        pages_scanned,
+        leads_pagination,
+        leads_actual_page_size,
+        leads_pages_scanned,
+        contact_attempts: Object.keys(attempts).length ? attempts : null,
+      },
+      stats: { checked, candidates_total },
+      result: matched,
+    };
   }
 
   await tryLeadSearch();
