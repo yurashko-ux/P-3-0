@@ -39,13 +39,23 @@ export async function GET(req: NextRequest) {
   const perPage = parseNumber(url.searchParams.get("per_page"));
   const maxPages = parseNumber(url.searchParams.get("max_pages"));
 
-  const result = await searchKeycrmCardByIdentity({
-    needle,
-    pipelineId: pipelineId ?? undefined,
-    statusId: statusId ?? undefined,
-    perPage: perPage ?? undefined,
-    maxPages: maxPages ?? undefined,
-  });
+  let result: KeycrmCardSearchResult | KeycrmCardSearchError;
+
+  try {
+    result = await searchKeycrmCardByIdentity({
+      needle,
+      pipelineId: pipelineId ?? undefined,
+      statusId: statusId ?? undefined,
+      perPage: perPage ?? undefined,
+      maxPages: maxPages ?? undefined,
+    });
+  } catch (err) {
+    const details = err instanceof Error ? err.message : err;
+    return NextResponse.json(
+      { ok: false, error: "keycrm_search_unhandled", details },
+      { status: 500 }
+    );
+  }
 
   if (isSearchError(result)) {
     const status =
