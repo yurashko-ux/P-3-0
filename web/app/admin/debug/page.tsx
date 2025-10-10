@@ -2,6 +2,8 @@
 import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 
+import { KeycrmCardSearchWidget } from "@/components/admin/keycrm-card-search-widget";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -164,6 +166,14 @@ export default async function DebugPage() {
           Допоміжна діагностика KV / fallback. Дані оновлюються при кожному запиті.
         </p>
       </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-800">Пошук карток KeyCRM</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Шукає card_id за повним ім'ям або social_id контакту/клієнта. Дані беруться з API KeyCRM.
+        </p>
+        <KeycrmCardSearchWidget />
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-800">Статус KV</h2>
