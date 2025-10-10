@@ -6,6 +6,11 @@ import type {
   KeycrmCardSearchError,
   KeycrmCardSearchResult,
 } from "@/lib/keycrm-card-search";
+import type {
+  KeycrmPipeline,
+  KeycrmPipelineListError,
+  KeycrmPipelineListResult,
+} from "@/lib/keycrm-pipelines";
 
 const INITIAL_HINT =
   "Введіть повне ім'я або social_id (наприклад, instagram логін) та натисніть пошук.";
@@ -20,12 +25,86 @@ export function KeycrmCardSearchWidget() {
   const [query, setQuery] = useState("");
   const [pipelineId, setPipelineId] = useState("");
   const [statusId, setStatusId] = useState("");
+  const [pipelines, setPipelines] = useState<KeycrmPipeline[]>([]);
+  const [pipelinesStatus, setPipelinesStatus] = useState<
+    | { state: "loading" }
+    | {
+        state: "loaded";
+        source: "remote" | "cache" | "stale";
+        fetchedAt: string | null;
+        note?: string;
+      }
+    | { state: "error"; message: string }
+  >({ state: "loading" });
   const [state, setState] = useState<SearchState>({ status: "idle", message: INITIAL_HINT });
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPipelines() {
+      setPipelinesStatus({ state: "loading" });
+      try {
+        const res = await fetch("/api/keycrm/pipelines", {
+          headers: { accept: "application/json" },
+        });
+        const json = (await res.json().catch(() => null)) as KeycrmPipelineListResult | null;
+
+        if (!json) {
+          if (!cancelled) {
+            setPipelinesStatus({ state: "error", message: "Не вдалося прочитати список воронок" });
+          }
+          return;
+        }
+
+        if (json.ok) {
+          if (!cancelled) {
+            setPipelines(json.pipelines);
+            setPipelinesStatus({ state: "loaded", source: json.source, fetchedAt: json.fetchedAt });
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          const error = json as KeycrmPipelineListError;
+          setPipelines(error.pipelines);
+          if (error.pipelines.length) {
+            setPipelinesStatus({
+              state: "loaded",
+              source: "stale",
+              fetchedAt: error.fetchedAt,
+              note:
+                error.error === "keycrm_env_missing"
+                  ? "KeyCRM не налаштовано. Показуємо останній кешований список."
+                  : "Не вдалося оновити воронки. Показуємо кешований список.",
+            });
+          } else {
+            setPipelinesStatus({
+              state: "error",
+              message: error.error === "keycrm_env_missing" ? "KeyCRM не налаштовано" : "Не вдалося отримати воронки",
+            });
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPipelinesStatus({
+            state: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    void loadPipelines();
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -136,6 +215,52 @@ export function KeycrmCardSearchWidget() {
 
   const match = state.status === "success" ? state.result.match : null;
   const errorDetails = state.status === "error" ? state.error.details : undefined;
+  const currentPipeline = useMemo(() => {
+    if (!pipelineId) return null;
+    const selected = Number(pipelineId);
+    if (!Number.isFinite(selected)) return null;
+    return pipelines.find((pipeline) => pipeline.id === selected) ?? null;
+  }, [pipelineId, pipelines]);
+
+  useEffect(() => {
+    if (!currentPipeline) {
+      setStatusId("");
+      return;
+    }
+
+    if (!statusId) {
+      return;
+    }
+
+    const selectedStatusId = Number(statusId);
+    if (!Number.isFinite(selectedStatusId)) {
+      setStatusId("");
+      return;
+    }
+
+    const exists = currentPipeline.statuses.some((status) => status.id === selectedStatusId);
+    if (!exists) {
+      setStatusId("");
+    }
+  }, [currentPipeline, statusId]);
+
+  const pipelineHelperText = useMemo(() => {
+    if (pipelinesStatus.state === "loading") {
+      return "Завантажуємо воронки з KeyCRM…";
+    }
+    if (pipelinesStatus.state === "error") {
+      return `Не вдалося отримати воронки: ${pipelinesStatus.message}`;
+    }
+    if (pipelinesStatus.state === "loaded") {
+      if (pipelinesStatus.note) {
+        return pipelinesStatus.note;
+      }
+      if (pipelinesStatus.source === "stale") {
+        return "Показуємо кешований список воронок (оновлення наразі недоступне)";
+      }
+    }
+    return null;
+  }, [pipelinesStatus]);
 
   return (
     <div className="space-y-4">
@@ -163,30 +288,47 @@ export function KeycrmCardSearchWidget() {
 
         <div className="grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
           <label className="flex flex-col">
-            <span className="mb-1 font-medium">pipeline_id (воронка)</span>
-            <input
+            <span className="mb-1 font-medium">Воронка</span>
+            <select
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              type="number"
               name="pipeline_id"
               value={pipelineId}
-              onChange={(event) => setPipelineId(event.target.value)}
-              placeholder="Напр. 1"
-              min={0}
-            />
+              onChange={(event) => {
+                setPipelineId(event.target.value);
+                setStatusId("");
+              }}
+              disabled={pipelinesStatus.state === "loading" && !pipelines.length}
+            >
+              <option value="">Усі воронки</option>
+              {pipelines.map((pipeline) => (
+                <option key={pipeline.id} value={pipeline.id}>
+                  {pipeline.title}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col">
-            <span className="mb-1 font-medium">status_id (статус)</span>
-            <input
+            <span className="mb-1 font-medium">Статус</span>
+            <select
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              type="number"
               name="status_id"
               value={statusId}
               onChange={(event) => setStatusId(event.target.value)}
-              placeholder="Напр. 38"
-              min={0}
-            />
+              disabled={!currentPipeline || currentPipeline.statuses.length === 0}
+            >
+              <option value="">Усі статуси</option>
+              {currentPipeline?.statuses.map((status) => (
+                <option key={status.id} value={status.id}>
+                  {status.title}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
+
+        {pipelineHelperText && (
+          <p className="text-xs text-slate-500">{pipelineHelperText}</p>
+        )}
       </form>
 
       {state.status === "idle" && <p className="text-sm text-slate-500">{state.message}</p>}
