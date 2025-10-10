@@ -52,17 +52,40 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function toArray(value: unknown): any[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if (Array.isArray(obj.data)) {
+      return obj.data;
+    }
+    if (Array.isArray(obj.items)) {
+      return obj.items;
+    }
+    if (Array.isArray(obj.list)) {
+      return obj.list;
+    }
+    return Object.values(obj);
+  }
+  return [];
+}
+
 function normalizePipeline(raw: any): KeycrmPipeline | null {
   const id = toNumber(raw?.id);
   if (id === null) {
     return null;
   }
 
-  const statusesRaw: any[] = Array.isArray(raw?.statuses)
-    ? raw.statuses
-    : Array.isArray(raw?.pipeline_statuses)
-      ? raw.pipeline_statuses
-      : [];
+  const statusesRaw: any[] = [
+    ...toArray(raw?.statuses),
+    ...toArray(raw?.pipeline_statuses),
+    ...toArray(raw?.statuses?.data),
+    ...toArray(raw?.statuses?.items),
+    ...toArray(raw?.statuses?.list),
+  ];
+
+  const seenStatusIds = new Set<number>();
 
   const statuses: KeycrmPipelineStatus[] = statusesRaw
     .map((status) => {
@@ -70,6 +93,10 @@ function normalizePipeline(raw: any): KeycrmPipeline | null {
       if (statusId === null) {
         return null;
       }
+      if (seenStatusIds.has(statusId)) {
+        return null;
+      }
+      seenStatusIds.add(statusId);
       return {
         id: statusId,
         title: String(status?.title ?? status?.name ?? `Статус #${statusId}`),
@@ -159,7 +186,7 @@ export async function fetchKeycrmPipelines(
         ? json.data
         : [];
 
-    const pipelines = list
+    let pipelines = list
       .map(normalizePipeline)
       .filter((pipeline): pipeline is KeycrmPipeline => pipeline !== null)
       .sort((a, b) => {
@@ -170,6 +197,46 @@ export async function fetchKeycrmPipelines(
         }
         return posA - posB;
       });
+
+    const pipelinesMissingStatuses = pipelines.filter((pipeline) => pipeline.statuses.length === 0);
+
+    if (pipelinesMissingStatuses.length) {
+      const updates = new Map<number, KeycrmPipelineStatus[]>();
+
+      for (const pipeline of pipelinesMissingStatuses) {
+        try {
+          const detailRes = await fetch(keycrmUrl(`/pipelines/${pipeline.id}?with[]=statuses`), {
+            headers: keycrmHeaders(),
+            cache: "no-store",
+          });
+
+          if (!detailRes.ok) {
+            continue;
+          }
+
+          const detailJson = await detailRes.json().catch(() => null);
+          const normalized = normalizePipeline(detailJson?.data ?? detailJson ?? {});
+          if (normalized && normalized.statuses.length) {
+            updates.set(pipeline.id, normalized.statuses);
+          }
+        } catch (detailErr) {
+          console.warn("Failed to load KeyCRM pipeline statuses", {
+            pipelineId: pipeline.id,
+            error: formatError(detailErr),
+          });
+        }
+      }
+
+      if (updates.size) {
+        pipelines = pipelines.map((pipeline) => {
+          const updatedStatuses = updates.get(pipeline.id);
+          if (!updatedStatuses || !updatedStatuses.length) {
+            return pipeline;
+          }
+          return { ...pipeline, statuses: updatedStatuses };
+        });
+      }
+    }
 
     const fetchedAt = new Date().toISOString();
 
