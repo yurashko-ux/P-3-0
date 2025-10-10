@@ -43,7 +43,41 @@ export type KeycrmCardSearchError = {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const norm = (value?: string | null) => (value ?? "").trim().toLowerCase();
-const normSocial = (value?: string | null) => norm(value).replace(/^@+/, "");
+const normSocial = (value?: string | null) => {
+  let normalized = norm(value);
+  if (!normalized) return "";
+
+  // Drop leading @ characters that користувачі часто додають у хендлах.
+  normalized = normalized.replace(/^@+/, "");
+
+  if (!normalized) return "";
+
+  // Приберемо протокол, www. та хеш/параметри, якщо social_id збережений як повний URL.
+  normalized = normalized.replace(/^https?:\/\//, "");
+  normalized = normalized.replace(/^www\./, "");
+
+  const hashIndex = normalized.indexOf("#");
+  if (hashIndex !== -1) {
+    normalized = normalized.slice(0, hashIndex);
+  }
+
+  const queryIndex = normalized.indexOf("?");
+  if (queryIndex !== -1) {
+    normalized = normalized.slice(0, queryIndex);
+  }
+
+  normalized = normalized.replace(/\/+$/, "");
+
+  if (!normalized) return "";
+
+  const segments = normalized.split("/").filter(Boolean);
+
+  if (segments.length >= 2) {
+    return segments[segments.length - 1];
+  }
+
+  return segments[0] ?? normalized;
+};
 
 const normalizeId = (value: unknown): number | null => {
   if (typeof value === "number") {
