@@ -42,14 +42,26 @@ type Campaign = {
 const IDS_KEY = "cmp:ids";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
+function logKvError(message: string, err: unknown) {
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(`[campaigns] ${message}`, err);
+  }
+}
+
 async function readIds(): Promise<string[]> {
   noStore();
-  const arr = await kv.get<string[] | null>(IDS_KEY);
-  if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  try {
+    const arr = await kv.get<string[] | null>(IDS_KEY);
+    if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  } catch (err) {
+    logKvError("kv.get failed", err);
+  }
   try {
     const list = await kv.lrange<string>(IDS_KEY, 0, -1);
     if (Array.isArray(list) && list.length) return list.filter(Boolean);
-  } catch {}
+  } catch (err) {
+    logKvError("kv.lrange failed", err);
+  }
   return [];
 }
 
@@ -57,10 +69,15 @@ async function readFromKV(): Promise<Campaign[]> {
   noStore();
   const ids = await readIds();
   if (!ids.length) return [];
-  const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
-  const out: Campaign[] = [];
-  items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
-  return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  try {
+    const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
+    const out: Campaign[] = [];
+    items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
+    return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  } catch (err) {
+    logKvError("kv.mget failed", err);
+    return [];
+  }
 }
 
 function buildBaseUrl() {
