@@ -45,6 +45,21 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const norm = (value?: string | null) => (value ?? "").trim().toLowerCase();
 const normSocial = (value?: string | null) => norm(value).replace(/^@+/, "");
 
+const normalizeId = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  return null;
+};
+
 class KeycrmHttpError extends Error {
   readonly status: number;
   readonly responseBody: string;
@@ -209,8 +224,8 @@ export async function searchKeycrmCardByIdentity(
 
   const perPage = clamp(options.perPage ?? 50, 1, 100);
   const maxPages = clamp(options.maxPages ?? 20, 1, 100);
-  const pipelineId = Number.isFinite(options.pipelineId ?? NaN) ? options.pipelineId ?? null : null;
-  const statusId = Number.isFinite(options.statusId ?? NaN) ? options.statusId ?? null : null;
+  const pipelineId = normalizeId(options.pipelineId);
+  const statusId = normalizeId(options.statusId);
 
   let pagesScanned = 0;
   let cardsChecked = 0;
@@ -221,8 +236,11 @@ export async function searchKeycrmCardByIdentity(
       pagesScanned = page;
 
       for (const card of data) {
-        if (pipelineId != null && card?.pipeline_id !== pipelineId) continue;
-        if (statusId != null && card?.status_id !== statusId) continue;
+        const cardPipelineId = normalizeId(card?.pipeline_id ?? card?.pipeline?.id);
+        const cardStatusId = normalizeId(card?.status_id ?? card?.status?.id);
+
+        if (pipelineId != null && cardPipelineId !== pipelineId) continue;
+        if (statusId != null && cardStatusId !== statusId) continue;
 
         const candidates = collectCandidates(card);
         const hit = matchCandidates(needle, candidates);
