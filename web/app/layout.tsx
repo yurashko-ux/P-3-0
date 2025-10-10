@@ -21,7 +21,40 @@ const applyLockdownGuard = () => {
     return;
   }
 
-  const blockedKeys = new Set<PropertyKey>(["dispose", "asyncDispose"]);
+  const blockedKeyList: PropertyKey[] = ["dispose", "asyncDispose"];
+  const symbolDispose = (Symbol as typeof Symbol & { dispose?: symbol }).dispose;
+  const symbolAsyncDispose = (Symbol as typeof Symbol & { asyncDispose?: symbol }).asyncDispose;
+  if (symbolDispose) {
+    blockedKeyList.push(symbolDispose);
+  }
+  if (symbolAsyncDispose) {
+    blockedKeyList.push(symbolAsyncDispose);
+  }
+  const blockedKeys = new Set<PropertyKey>(blockedKeyList);
+
+  const forceConfigurable = (target: object, key: PropertyKey) => {
+    try {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (!descriptor) return;
+      if (descriptor.configurable) return;
+
+      const base: PropertyDescriptor = "get" in descriptor || "set" in descriptor
+        ? { ...descriptor }
+        : {
+            configurable: true,
+            enumerable: descriptor.enumerable ?? false,
+            writable: true,
+            value: descriptor.value,
+          };
+
+      base.configurable = true;
+      Reflect.defineProperty(target, key, base);
+    } catch {
+      // ignore
+    }
+  };
+
+  blockedKeyList.forEach((key) => forceConfigurable(targetSymbol, key));
 
   const stub = function () {};
   const ensureStub = (target: Record<string, unknown> | undefined | null, key: string) => {
@@ -67,22 +100,7 @@ const applyLockdownGuard = () => {
     deleteProperty(target, prop) {
       if (blockedKeys.has(prop)) {
         try {
-          const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
-          if (descriptor && !descriptor.configurable) {
-            try {
-              const updated = "get" in descriptor || "set" in descriptor
-                ? { ...descriptor, configurable: true }
-                : {
-                    configurable: true,
-                    enumerable: descriptor.enumerable ?? false,
-                    writable: true,
-                    value: descriptor.value,
-                  };
-              Reflect.defineProperty(target, prop, updated);
-            } catch {
-              // ignore inability to flip configurability
-            }
-          }
+          forceConfigurable(target, prop);
 
           if (Reflect.getOwnPropertyDescriptor(target, prop)?.configurable) {
             Reflect.deleteProperty(target, prop);
@@ -190,8 +208,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   if (!g) return;
 
                   if (typeof g.Symbol === 'function' && !g.Symbol.__p30ProxyGuard) {
-                    const blockedKeys = new Set(['dispose', 'asyncDispose']);
+                    const blockedKeyList = ['dispose', 'asyncDispose'];
+                    if (g.Symbol.dispose) blockedKeyList.push(g.Symbol.dispose);
+                    if (g.Symbol.asyncDispose) blockedKeyList.push(g.Symbol.asyncDispose);
+                    const blockedKeys = new Set(blockedKeyList);
                     const originalSymbol = g.Symbol;
+
+                    const forceConfigurable = (target, key) => {
+                      try {
+                        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+                        if (!descriptor || descriptor.configurable) return;
+                        const base = 'get' in descriptor || 'set' in descriptor
+                          ? { ...descriptor }
+                          : {
+                              configurable: true,
+                              enumerable: descriptor.enumerable ?? false,
+                              writable: true,
+                              value: descriptor.value,
+                            };
+                        base.configurable = true;
+                        Reflect.defineProperty(target, key, base);
+                      } catch (_) {}
+                    };
+
+                    blockedKeyList.forEach((key) => forceConfigurable(originalSymbol, key));
 
                     const proxiedSymbol = new Proxy(originalSymbol, {
                       apply(target, thisArg, argArray) {
@@ -218,20 +258,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                       deleteProperty(target, prop) {
                         if (blockedKeys.has(prop)) {
                           try {
-                            const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
-                            if (descriptor && !descriptor.configurable) {
-                              try {
-                                const updated = 'get' in descriptor || 'set' in descriptor
-                                  ? { ...descriptor, configurable: true }
-                                  : {
-                                      configurable: true,
-                                      enumerable: descriptor.enumerable ?? false,
-                                      writable: true,
-                                      value: descriptor.value,
-                                    };
-                                Reflect.defineProperty(target, prop, updated);
-                              } catch (_) {}
-                            }
+                            forceConfigurable(target, prop);
 
                             if (Reflect.getOwnPropertyDescriptor(target, prop)?.configurable) {
                               Reflect.deleteProperty(target, prop);
