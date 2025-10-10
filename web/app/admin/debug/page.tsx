@@ -170,7 +170,8 @@ export default async function DebugPage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-800">Пошук карток KeyCRM</h2>
         <p className="mt-2 text-sm text-slate-500">
-          Шукає card_id за повним ім'ям або social_id контакту/клієнта. Дані беруться з API KeyCRM.
+          Шукає card_id за повним ім'ям або social_id контакту/клієнта. За потреби звузьте запит
+          фільтрами pipeline_id та status_id, щоб уникнути rate limit.
         </p>
         <KeycrmCardSearchWidget />
       </section>

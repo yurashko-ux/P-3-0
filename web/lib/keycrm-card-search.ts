@@ -45,8 +45,25 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const norm = (value?: string | null) => (value ?? "").trim().toLowerCase();
 const normSocial = (value?: string | null) => norm(value).replace(/^@+/, "");
 
-function collectCandidates(card: any) {
-  const candidates: { path: string; value: string | null }[] = [];
+class KeycrmHttpError extends Error {
+  readonly status: number;
+  readonly responseBody: string;
+  readonly retryAfter: string | null;
+
+  constructor(status: number, statusText: string, body: string, retryAfter: string | null) {
+    const prefix = `KeyCRM ${status} ${statusText}`.trim();
+    super(body ? `${prefix}: ${body}` : prefix);
+    this.name = "KeycrmHttpError";
+    this.status = status;
+    this.responseBody = body;
+    this.retryAfter = retryAfter;
+  }
+}
+
+type Candidate = { path: string; value: string | null };
+
+function collectCandidates(card: any): Candidate[] {
+  const candidates: Candidate[] = [];
 
   const contact = card?.contact ?? null;
   const clients: any[] = [];
@@ -87,7 +104,7 @@ function collectCandidates(card: any) {
   return candidates;
 }
 
-function matchCard(needle: string, card: any) {
+function matchCandidates(needle: string, candidates: Candidate[]) {
   const needleNorm = norm(needle);
   const needleSocial = normSocial(needle);
 
@@ -95,7 +112,7 @@ function matchCard(needle: string, card: any) {
     return null;
   }
 
-  for (const candidate of collectCandidates(card)) {
+  for (const candidate of candidates) {
     const raw = candidate.value ?? "";
     const candidateNorm = norm(raw);
     const candidateSocial = normSocial(raw);
@@ -137,8 +154,8 @@ async function fetchCardsPage(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`KeyCRM ${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
+    const body = await res.text().catch(() => "");
+    throw new KeycrmHttpError(res.status, res.statusText, body, res.headers.get("retry-after"));
   }
 
   const json = await res.json();
@@ -169,8 +186,8 @@ async function fetchCardDetails(id: number | string) {
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`KeyCRM ${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
+    const body = await res.text().catch(() => "");
+    throw new KeycrmHttpError(res.status, res.statusText, body, res.headers.get("retry-after"));
   }
 
   return await res.json();
@@ -207,7 +224,8 @@ export async function searchKeycrmCardByIdentity(
         if (pipelineId != null && card?.pipeline_id !== pipelineId) continue;
         if (statusId != null && card?.status_id !== statusId) continue;
 
-        const hit = matchCard(needle, card);
+        const candidates = collectCandidates(card);
+        const hit = matchCandidates(needle, candidates);
         cardsChecked++;
 
         if (hit) {
@@ -231,9 +249,15 @@ export async function searchKeycrmCardByIdentity(
           };
         }
 
-        if (card?.id != null) {
+        const hasClientCandidates = candidates.some((candidate) => candidate.path.startsWith("client"));
+        const shouldFetchDetails =
+          card?.id != null &&
+          (candidates.length === 0 || (!hasClientCandidates && !Array.isArray(card?.client?.profiles)));
+
+        if (shouldFetchDetails && card?.id != null) {
           const details = await fetchCardDetails(card.id);
-          const detailedHit = matchCard(needle, details);
+          const detailedCandidates = collectCandidates(details);
+          const detailedHit = matchCandidates(needle, detailedCandidates);
 
           if (detailedHit) {
             return {
@@ -263,6 +287,43 @@ export async function searchKeycrmCardByIdentity(
       }
     }
   } catch (err) {
+    if (err instanceof KeycrmHttpError) {
+      if (err.status === 429) {
+        let parsed: unknown = err.responseBody;
+        try {
+          parsed = err.responseBody ? JSON.parse(err.responseBody) : err.responseBody;
+        } catch {
+          parsed = err.responseBody;
+        }
+        return {
+          ok: false,
+          error: "keycrm_rate_limited",
+          details: {
+            status: err.status,
+            message: err.message,
+            retryAfter: err.retryAfter,
+            response: parsed,
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: "keycrm_request_failed",
+        details: {
+          status: err.status,
+          message: err.message,
+          response: (() => {
+            try {
+              return err.responseBody ? JSON.parse(err.responseBody) : err.responseBody;
+            } catch {
+              return err.responseBody;
+            }
+          })(),
+        },
+      };
+    }
+
     return { ok: false, error: "keycrm_request_failed", details: err instanceof Error ? err.message : err };
   }
 

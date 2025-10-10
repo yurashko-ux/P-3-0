@@ -63,7 +63,9 @@ export async function GET(req: NextRequest) {
         ? 400
         : result.error === "keycrm_env_missing"
           ? 500
-          : 502;
+          : result.error === "keycrm_rate_limited"
+            ? 429
+            : 502;
     return NextResponse.json(result, { status });
   }
 
