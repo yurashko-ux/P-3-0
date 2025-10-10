@@ -8,6 +8,8 @@ import type {
 } from "@/lib/keycrm-card-search";
 import type {
   KeycrmPipeline,
+  KeycrmPipelineDetailError,
+  KeycrmPipelineDetailResult,
   KeycrmPipelineListError,
   KeycrmPipelineListResult,
 } from "@/lib/keycrm-pipelines";
@@ -26,6 +28,11 @@ export function KeycrmCardSearchWidget() {
   const [pipelineId, setPipelineId] = useState("");
   const [statusId, setStatusId] = useState("");
   const [pipelines, setPipelines] = useState<KeycrmPipeline[]>([]);
+  const [statusHydration, setStatusHydration] = useState<
+    | { state: "idle" }
+    | { state: "loading" }
+    | { state: "error"; message: string }
+  >({ state: "idle" });
   const [pipelinesStatus, setPipelinesStatus] = useState<
     | { state: "loading" }
     | {
@@ -38,10 +45,15 @@ export function KeycrmCardSearchWidget() {
   >({ state: "loading" });
   const [state, setState] = useState<SearchState>({ status: "idle", message: INITIAL_HINT });
   const abortRef = useRef<AbortController | null>(null);
+  const statusAbortRef = useRef<AbortController | null>(null);
+  const statusFetchPipelineRef = useRef<number | null>(null);
+  const failedPipelinesRef = useRef<Set<number>>(new Set());
+  const lastPipelineIdRef = useRef<string>("");
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      statusAbortRef.current?.abort();
     };
   }, []);
 
@@ -244,6 +256,149 @@ export function KeycrmCardSearchWidget() {
     }
   }, [currentPipeline, statusId]);
 
+  useEffect(() => {
+    const trimmed = pipelineId.trim();
+
+    if (trimmed !== lastPipelineIdRef.current) {
+      lastPipelineIdRef.current = trimmed;
+      if (trimmed) {
+        const numeric = Number(trimmed);
+        if (Number.isFinite(numeric)) {
+          failedPipelinesRef.current.delete(numeric);
+        }
+      }
+    }
+
+    if (!trimmed) {
+      if (statusAbortRef.current) {
+        statusAbortRef.current.abort();
+        statusAbortRef.current = null;
+      }
+      statusFetchPipelineRef.current = null;
+      if (statusHydration.state !== "idle") {
+        setStatusHydration({ state: "idle" });
+      }
+      return;
+    }
+
+    const selectedId = Number(trimmed);
+    if (!Number.isFinite(selectedId) || selectedId <= 0) {
+      if (statusHydration.state !== "error" || statusHydration.message !== "Некоректний pipeline_id") {
+        setStatusHydration({ state: "error", message: "Некоректний pipeline_id" });
+      }
+      return;
+    }
+
+    const pipeline = pipelines.find((item) => item.id === selectedId) ?? null;
+
+    if (pipeline && pipeline.statuses.length > 0) {
+      if (statusAbortRef.current) {
+        statusAbortRef.current.abort();
+        statusAbortRef.current = null;
+      }
+      statusFetchPipelineRef.current = null;
+      failedPipelinesRef.current.delete(selectedId);
+      if (statusHydration.state !== "idle") {
+        setStatusHydration({ state: "idle" });
+      }
+      return;
+    }
+
+    if (failedPipelinesRef.current.has(selectedId) && !statusAbortRef.current) {
+      return;
+    }
+
+    if (statusFetchPipelineRef.current === selectedId && statusAbortRef.current) {
+      return;
+    }
+
+    const controller = new AbortController();
+    if (statusAbortRef.current) {
+      statusAbortRef.current.abort();
+    }
+    statusAbortRef.current = controller;
+    statusFetchPipelineRef.current = selectedId;
+    setStatusHydration({ state: "loading" });
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/keycrm/pipelines?pipeline_id=${selectedId}`, {
+          signal: controller.signal,
+          headers: { accept: "application/json" },
+        });
+
+        const json = (await res.json().catch(() => null)) as KeycrmPipelineDetailResult | null;
+
+        if (!json) {
+          failedPipelinesRef.current.add(selectedId);
+          setStatusHydration({ state: "error", message: "KeyCRM повернув порожню відповідь" });
+          return;
+        }
+
+        if (json.ok) {
+          setPipelines((prev) => {
+            const index = prev.findIndex((item) => item.id === json.pipeline.id);
+            if (index === -1) {
+              return [...prev, json.pipeline].sort((a, b) => {
+                const posA = a.position ?? Number.MAX_SAFE_INTEGER;
+                const posB = b.position ?? Number.MAX_SAFE_INTEGER;
+                if (posA === posB) {
+                  return a.id - b.id;
+                }
+                return posA - posB;
+              });
+            }
+            return prev.map((item, i) => (i === index ? json.pipeline : item));
+          });
+          failedPipelinesRef.current.delete(selectedId);
+          setStatusHydration({ state: "idle" });
+          return;
+        }
+
+        const error = json as KeycrmPipelineDetailError;
+        if (error.pipeline) {
+          setPipelines((prev) => {
+            const index = prev.findIndex((item) => item.id === error.pipeline!.id);
+            if (index === -1) {
+              return [...prev, error.pipeline!];
+            }
+            return prev.map((item, i) => (i === index ? error.pipeline! : item));
+          });
+        }
+        setStatusHydration({
+          state: "error",
+          message:
+            error.error === "keycrm_env_missing"
+              ? "KeyCRM не налаштовано"
+              : error.error === "keycrm_pipeline_not_found"
+                ? "Таку воронку не знайдено"
+                : "Не вдалося завантажити статуси цієї воронки",
+        });
+        failedPipelinesRef.current.add(selectedId);
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") {
+          return;
+        }
+        failedPipelinesRef.current.add(selectedId);
+        setStatusHydration({
+          state: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        if (statusAbortRef.current === controller) {
+          statusAbortRef.current = null;
+        }
+        if (statusFetchPipelineRef.current === selectedId) {
+          statusFetchPipelineRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [pipelineId, pipelines]);
+
   const pipelineHelperText = useMemo(() => {
     if (pipelinesStatus.state === "loading") {
       return "Завантажуємо воронки з KeyCRM…";
@@ -314,7 +469,11 @@ export function KeycrmCardSearchWidget() {
               name="status_id"
               value={statusId}
               onChange={(event) => setStatusId(event.target.value)}
-              disabled={!currentPipeline || currentPipeline.statuses.length === 0}
+              disabled={
+                !currentPipeline ||
+                statusHydration.state === "loading" ||
+                currentPipeline.statuses.length === 0
+              }
             >
               <option value="">Усі статуси</option>
               {currentPipeline?.statuses.map((status) => (
@@ -323,6 +482,12 @@ export function KeycrmCardSearchWidget() {
                 </option>
               ))}
             </select>
+            {statusHydration.state === "loading" && (
+              <span className="mt-1 text-xs text-slate-500">Завантажуємо статуси…</span>
+            )}
+            {statusHydration.state === "error" && (
+              <span className="mt-1 text-xs text-red-600">{statusHydration.message}</span>
+            )}
           </label>
         </div>
 

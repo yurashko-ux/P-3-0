@@ -19,6 +19,25 @@ export type KeycrmPipeline = {
   statuses: KeycrmPipelineStatus[];
 };
 
+export type KeycrmPipelineDetailSuccess = {
+  ok: true;
+  pipeline: KeycrmPipeline;
+  fetchedAt: string;
+  source: "remote" | "cache";
+};
+
+export type KeycrmPipelineDetailError = {
+  ok: false;
+  error: string;
+  details?: unknown;
+  pipeline: KeycrmPipeline | null;
+  fetchedAt: string | null;
+};
+
+export type KeycrmPipelineDetailResult =
+  | KeycrmPipelineDetailSuccess
+  | KeycrmPipelineDetailError;
+
 export type KeycrmPipelineListSuccess = {
   ok: true;
   pipelines: KeycrmPipeline[];
@@ -46,6 +65,52 @@ type PipelineCache = {
 };
 
 let cache: PipelineCache | null = null;
+
+type PipelineDetailCacheEntry = {
+  pipeline: KeycrmPipeline;
+  fetchedAt: string;
+  expiresAt: number;
+  source: "remote" | "cache";
+};
+
+const detailCache = new Map<number, PipelineDetailCacheEntry>();
+
+function rememberPipeline(
+  pipeline: KeycrmPipeline,
+  options: { fetchedAt: string; expiresAt: number; source: "remote" | "cache" }
+) {
+  detailCache.set(pipeline.id, {
+    pipeline,
+    fetchedAt: options.fetchedAt,
+    expiresAt: options.expiresAt,
+    source: options.source,
+  });
+
+  if (!cache) {
+    cache = {
+      data: [pipeline],
+      fetchedAt: options.fetchedAt,
+      expiresAt: options.expiresAt,
+    };
+    return;
+  }
+
+  const index = cache.data.findIndex((item) => item.id === pipeline.id);
+  const data = index === -1 ? [...cache.data, pipeline] : cache.data.map((item, i) => (i === index ? pipeline : item));
+
+  cache = {
+    data: data.sort((a, b) => {
+      const posA = a.position ?? Number.MAX_SAFE_INTEGER;
+      const posB = b.position ?? Number.MAX_SAFE_INTEGER;
+      if (posA === posB) {
+        return a.id - b.id;
+      }
+      return posA - posB;
+    }),
+    fetchedAt: options.fetchedAt,
+    expiresAt: options.expiresAt,
+  };
+}
 
 function toNumber(value: unknown): number | null {
   const num = Number(value);
@@ -240,11 +305,19 @@ export async function fetchKeycrmPipelines(
 
     const fetchedAt = new Date().toISOString();
 
+    const expiresAt = now + CACHE_TTL_MS;
+
     cache = {
       data: pipelines,
       fetchedAt,
-      expiresAt: now + CACHE_TTL_MS,
+      expiresAt,
     };
+
+    for (const pipeline of pipelines) {
+      if (pipeline.statuses.length) {
+        rememberPipeline(pipeline, { fetchedAt, expiresAt, source: "remote" });
+      }
+    }
 
     return { ok: true, pipelines, fetchedAt, source: "remote" };
   } catch (err) {
@@ -266,6 +339,108 @@ export async function fetchKeycrmPipelines(
       pipelines: [],
       fetchedAt: null,
       source: "none",
+    };
+  }
+}
+
+export async function fetchKeycrmPipelineDetail(
+  pipelineId: number,
+  options: { forceRefresh?: boolean } = {}
+): Promise<KeycrmPipelineDetailResult> {
+  const now = Date.now();
+
+  const cached = detailCache.get(pipelineId);
+  if (!options.forceRefresh && cached && cached.expiresAt > now) {
+    return { ok: true, pipeline: cached.pipeline, fetchedAt: cached.fetchedAt, source: cached.source };
+  }
+
+  if (!options.forceRefresh && cache) {
+    const fromCache = cache.data.find((pipeline) => pipeline.id === pipelineId);
+    if (fromCache && fromCache.statuses.length) {
+      const entry = {
+        pipeline: fromCache,
+        fetchedAt: cache.fetchedAt,
+        expiresAt: cache.expiresAt,
+        source: "cache" as const,
+      };
+      detailCache.set(pipelineId, entry);
+      return { ok: true, pipeline: entry.pipeline, fetchedAt: entry.fetchedAt, source: entry.source };
+    }
+  }
+
+  try {
+    assertKeycrmEnv();
+  } catch (err) {
+    if (cached) {
+      return {
+        ok: false,
+        error: "keycrm_env_missing",
+        details: formatError(err),
+        pipeline: cached.pipeline,
+        fetchedAt: cached.fetchedAt,
+      };
+    }
+
+    return {
+      ok: false,
+      error: "keycrm_env_missing",
+      details: formatError(err),
+      pipeline: null,
+      fetchedAt: null,
+    };
+  }
+
+  try {
+    const qs = new URLSearchParams();
+    qs.append("with[]", "statuses");
+
+    const res = await fetch(keycrmUrl(`/pipelines/${pipelineId}?${qs.toString()}`), {
+      headers: keycrmHeaders(),
+      cache: "no-store",
+    });
+
+    if (res.status === 404) {
+      return {
+        ok: false,
+        error: "keycrm_pipeline_not_found",
+        pipeline: null,
+        fetchedAt: null,
+      };
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const error = body ? `${res.status} ${res.statusText}: ${body}` : `${res.status} ${res.statusText}`;
+      throw new Error(`KeyCRM pipeline request failed: ${error}`);
+    }
+
+    const json = await res.json().catch(() => null);
+    const normalized = normalizePipeline(json?.data ?? json ?? {});
+
+    if (!normalized) {
+      throw new Error(`KeyCRM pipeline response did not include pipeline #${pipelineId}`);
+    }
+
+    const fetchedAt = new Date().toISOString();
+    const expiresAt = now + CACHE_TTL_MS;
+
+    rememberPipeline(normalized, { fetchedAt, expiresAt, source: "remote" });
+
+    return { ok: true, pipeline: normalized, fetchedAt, source: "remote" };
+  } catch (err) {
+    const fallback = cached ?? (cache
+      ? {
+          pipeline: cache.data.find((pipeline) => pipeline.id === pipelineId) ?? null,
+          fetchedAt: cache.fetchedAt,
+        }
+      : null);
+
+    return {
+      ok: false,
+      error: "keycrm_fetch_failed",
+      details: formatError(err),
+      pipeline: fallback?.pipeline ?? null,
+      fetchedAt: fallback?.fetchedAt ?? null,
     };
   }
 }
