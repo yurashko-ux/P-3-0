@@ -30,10 +30,6 @@ export async function GET(req: NextRequest) {
     url.searchParams.get("value") ||
     "";
 
-  if (!needle.trim()) {
-    return NextResponse.json({ ok: false, error: "needle_required" }, { status: 400 });
-  }
-
   const pipelineId = parseNumber(url.searchParams.get("pipeline_id"));
   const statusId = parseNumber(url.searchParams.get("status_id"));
   const perPage = parseNumber(url.searchParams.get("per_page"));

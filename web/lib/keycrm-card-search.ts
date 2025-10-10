@@ -3,7 +3,7 @@ import { assertKeycrmEnv, keycrmHeaders, keycrmUrl } from "@/lib/env";
 
 export type KeycrmCardSearchOptions = {
   /** Значення, яке шукаємо у contact/client/profiles */
-  needle: string;
+  needle?: string;
   /** Фільтр за pipeline_id (опц.) */
   pipelineId?: number;
   /** Фільтр за status_id (опц.) */
@@ -21,12 +21,26 @@ export type KeycrmCardSearchMatch = {
   matchedValue: string | null;
 };
 
+export type KeycrmCardSearchItem = {
+  cardId: number;
+  title: string | null;
+  pipelineId: number | null;
+  pipelineTitle: string | null;
+  statusId: number | null;
+  statusTitle: string | null;
+  contactName: string | null;
+  contactSocialId: string | null;
+  clientName: string | null;
+  clientSocialId: string | null;
+};
+
 export type KeycrmCardSearchResult = {
   ok: true;
   needle: string;
   pagesScanned: number;
   cardsChecked: number;
   match: KeycrmCardSearchMatch | null;
+  items: KeycrmCardSearchItem[];
   filters: {
     pipelineId: number | null;
     statusId: number | null;
@@ -245,10 +259,9 @@ async function fetchCardDetails(id: number | string) {
 export async function searchKeycrmCardByIdentity(
   options: KeycrmCardSearchOptions
 ): Promise<KeycrmCardSearchResult | KeycrmCardSearchError> {
-  const needle = options.needle?.trim();
-  if (!needle) {
-    return { ok: false, error: "needle_required" };
-  }
+  const rawNeedle = options.needle ?? "";
+  const needle = rawNeedle.trim();
+  const listingOnly = needle.length === 0;
 
   try {
     assertKeycrmEnv();
@@ -263,6 +276,7 @@ export async function searchKeycrmCardByIdentity(
 
   let pagesScanned = 0;
   let cardsChecked = 0;
+  const items: KeycrmCardSearchItem[] = [];
 
   try {
     for (let page = 1; page <= maxPages; page++) {
@@ -281,9 +295,39 @@ export async function searchKeycrmCardByIdentity(
           continue;
         }
 
+        const summary: KeycrmCardSearchItem = {
+          cardId: Number(card?.id ?? NaN),
+          title: card?.title ?? null,
+          pipelineId: cardPipelineId,
+          pipelineTitle: (card?.pipeline?.title ?? card?.pipeline_title ?? null) ?? null,
+          statusId: cardStatusId,
+          statusTitle: (card?.status?.title ?? card?.status_title ?? null) ?? null,
+          contactName: card?.contact?.full_name ?? null,
+          contactSocialId: card?.contact?.social_id ?? null,
+          clientName:
+            card?.client?.full_name ??
+            card?.contact?.client?.full_name ??
+            (Array.isArray(card?.clients) && card.clients[0]?.full_name) ??
+            null,
+          clientSocialId:
+            card?.client?.social_id ??
+            card?.contact?.client?.social_id ??
+            (Array.isArray(card?.clients) && card.clients[0]?.social_id) ??
+            null,
+        };
+
+        if (Number.isFinite(summary.cardId)) {
+          items.push(summary);
+        }
+
         const candidates = collectCandidates(card);
-        const hit = matchCandidates(needle, candidates);
         cardsChecked++;
+
+        if (listingOnly) {
+          continue;
+        }
+
+        const hit = matchCandidates(needle, candidates);
 
         if (hit) {
           return {
@@ -297,6 +341,7 @@ export async function searchKeycrmCardByIdentity(
               matchedField: hit.field,
               matchedValue: hit.value,
             },
+            items,
             filters: {
               pipelineId,
               statusId,
@@ -311,7 +356,7 @@ export async function searchKeycrmCardByIdentity(
           card?.id != null &&
           (candidates.length === 0 || (!hasClientCandidates && !Array.isArray(card?.client?.profiles)));
 
-        if (shouldFetchDetails && card?.id != null) {
+        if (!listingOnly && shouldFetchDetails && card?.id != null) {
           const details = await fetchCardDetails(card.id);
           const detailedCandidates = collectCandidates(details);
           const detailedHit = matchCandidates(needle, detailedCandidates);
@@ -328,6 +373,7 @@ export async function searchKeycrmCardByIdentity(
                 matchedField: detailedHit.field,
                 matchedValue: detailedHit.value,
               },
+              items,
               filters: {
                 pipelineId,
                 statusId,
@@ -390,6 +436,7 @@ export async function searchKeycrmCardByIdentity(
     pagesScanned,
     cardsChecked,
     match: null,
+    items,
     filters: {
       pipelineId,
       statusId,

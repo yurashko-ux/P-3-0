@@ -15,7 +15,7 @@ import type {
 } from "@/lib/keycrm-pipelines";
 
 const INITIAL_HINT =
-  "Введіть повне ім'я або social_id (наприклад, instagram логін) та натисніть пошук.";
+  "Введіть повне ім'я або social_id (наприклад, instagram логін) чи залиште поле порожнім і оберіть воронку/статус.";
 
 type SearchState =
   | { status: "idle"; message: string }
@@ -129,8 +129,18 @@ export function KeycrmCardSearchWidget() {
       } = {}
     ) => {
       const trimmed = needle.trim();
-      if (!trimmed) {
-        setState({ status: "idle", message: INITIAL_HINT });
+      const pipelineValue = filters.pipelineId?.trim() ?? "";
+      const statusValue = filters.statusId?.trim() ?? "";
+
+      if (!trimmed && !pipelineValue) {
+        setState({
+          status: "error",
+          error: {
+            ok: false,
+            error: "filters_required",
+            details: "Щоб показати картки без пошукового запиту, оберіть воронку або задайте статус.",
+          },
+        });
         return;
       }
 
@@ -138,12 +148,17 @@ export function KeycrmCardSearchWidget() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      setState({ status: "loading", message: "Шукаємо у KeyCRM…" });
+      setState({
+        status: "loading",
+        message: trimmed ? "Шукаємо у KeyCRM…" : "Збираємо картки з обраної воронки…",
+      });
 
       try {
-        const params = new URLSearchParams({ needle: trimmed });
-        const pipelineValue = filters.pipelineId?.trim();
-        const statusValue = filters.statusId?.trim();
+        const params = new URLSearchParams();
+
+        if (trimmed) {
+          params.set("needle", trimmed);
+        }
 
         if (pipelineValue) {
           params.set("pipeline_id", pipelineValue);
@@ -222,10 +237,13 @@ export function KeycrmCardSearchWidget() {
       statusId: result.filters.statusId,
       perPage: result.filters.perPage,
       maxPages: result.filters.maxPages,
+      itemsCount: result.items.length,
     };
   }, [state]);
 
   const match = state.status === "success" ? state.result.match : null;
+  const items = state.status === "success" ? state.result.items : [];
+  const needleUsed = state.status === "success" ? state.result.needle.trim() : "";
   const errorDetails = state.status === "error" ? state.error.details : undefined;
   const currentPipeline = useMemo(() => {
     if (!pipelineId) return null;
@@ -521,21 +539,23 @@ export function KeycrmCardSearchWidget() {
 
       {state.status === "success" && (
         <div className="space-y-4">
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-            {match ? (
-              <div className="space-y-1">
-                <p className="text-base font-semibold text-emerald-900">
-                  Знайдено картку #{match.cardId}
-                </p>
-                {match.title && <p className="text-sm">Назва: {match.title}</p>}
-                <p className="text-sm">
-                  Збіг у полі <code>{match.matchedField}</code> зі значенням "{match.matchedValue ?? ""}".
-                </p>
-              </div>
-            ) : (
-              <p className="font-semibold">Збігів не знайдено.</p>
-            )}
-          </div>
+          {(match || needleUsed) && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+              {match ? (
+                <div className="space-y-1">
+                  <p className="text-base font-semibold text-emerald-900">
+                    Знайдено картку #{match.cardId}
+                  </p>
+                  {match.title && <p className="text-sm">Назва: {match.title}</p>}
+                  <p className="text-sm">
+                    Збіг у полі <code>{match.matchedField}</code> зі значенням "{match.matchedValue ?? ""}".
+                  </p>
+                </div>
+              ) : (
+                <p className="font-semibold">Збігів не знайдено.</p>
+              )}
+            </div>
+          )}
 
           {resultMeta && (
             <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 sm:grid-cols-3">
@@ -553,6 +573,59 @@ export function KeycrmCardSearchWidget() {
               </div>
               <div>
                 <span className="font-medium text-slate-900">status_id:</span> {resultMeta.statusId ?? "—"}
+              </div>
+              <div>
+                <span className="font-medium text-slate-900">Отримано карток:</span> {resultMeta.itemsCount}
+              </div>
+            </div>
+          )}
+
+          {items.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-slate-700">
+                {needleUsed
+                  ? "Картки, що відповідали фільтрам"
+                  : "Картки у вибраній воронці та статусі"}
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
+                  <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2">Назва</th>
+                      <th className="px-3 py-2">Контакт</th>
+                      <th className="px-3 py-2">Соцмережа</th>
+                      <th className="px-3 py-2">Воронка</th>
+                      <th className="px-3 py-2">Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {items.map((item) => (
+                      <tr key={item.cardId} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-mono text-xs text-slate-500">#{item.cardId}</td>
+                        <td className="px-3 py-2 text-slate-900">{item.title ?? "—"}</td>
+                        <td className="px-3 py-2">{item.contactName ?? item.clientName ?? "—"}</td>
+                        <td className="px-3 py-2">{item.contactSocialId ?? item.clientSocialId ?? "—"}</td>
+                        <td className="px-3 py-2">
+                          {(() => {
+                            if (item.pipelineTitle) return item.pipelineTitle;
+                            const pipeline = pipelines.find((pipeline) => pipeline.id === item.pipelineId);
+                            return pipeline?.title ?? "—";
+                          })()}
+                        </td>
+                        <td className="px-3 py-2">
+                          {(() => {
+                            if (item.statusTitle) return item.statusTitle;
+                            const pipeline = pipelines.find((pipeline) => pipeline.id === item.pipelineId);
+                            if (!pipeline) return "—";
+                            const status = pipeline.statuses.find((status) => status.id === item.statusId);
+                            return status?.title ?? "—";
+                          })()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
