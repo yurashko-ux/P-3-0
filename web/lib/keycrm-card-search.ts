@@ -273,8 +273,13 @@ export async function searchKeycrmCardByIdentity(
         const cardPipelineId = normalizeId(card?.pipeline_id ?? card?.pipeline?.id);
         const cardStatusId = normalizeId(card?.status_id ?? card?.status?.id);
 
-        if (pipelineId != null && cardPipelineId !== pipelineId) continue;
-        if (statusId != null && cardStatusId !== statusId) continue;
+        const pipelineMatches =
+          pipelineId == null || cardPipelineId === pipelineId || cardPipelineId == null;
+        const statusMatches = statusId == null || cardStatusId === statusId || cardStatusId == null;
+
+        if (!pipelineMatches || !statusMatches) {
+          continue;
+        }
 
         const candidates = collectCandidates(card);
         const hit = matchCandidates(needle, candidates);
