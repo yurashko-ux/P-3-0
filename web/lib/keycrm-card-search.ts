@@ -197,49 +197,86 @@ async function fetchCardsPage(
   pipelineId: number | null,
   statusId: number | null
 ) {
-  const qs = new URLSearchParams({
-    page: String(page),
-    per_page: String(perPage),
-  });
+  const baseQuery = () => {
+    const qs = new URLSearchParams();
+    qs.set("page[number]", String(page));
+    qs.set("page[size]", String(perPage));
 
-  if (pipelineId != null) qs.set("pipeline_id", String(pipelineId));
-  if (statusId != null) qs.set("status_id", String(statusId));
+    if (statusId != null) {
+      qs.set("filter[status_id]", String(statusId));
+    }
 
-  // намагаємось одразу підвантажити потрібні зв'язки; API може проігнорувати
-  qs.append("with[]", "contact");
-  qs.append("with[]", "contact.client");
-  qs.append("with[]", "client");
-  qs.append("with[]", "client.profiles");
+    const relations = ["contact", "contact.client", "client", "client.profiles"];
+    for (const relation of relations) {
+      qs.append("include[]", relation);
+      qs.append("with[]", relation);
+    }
 
-  const res = await fetch(keycrmUrl(`/pipelines/cards?${qs.toString()}`), {
-    headers: keycrmHeaders(),
-    cache: "no-store",
-  });
+    return qs;
+  };
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new KeycrmHttpError(res.status, res.statusText, body, res.headers.get("retry-after"));
+  const attempts: { path: string; configure?: (qs: URLSearchParams) => void }[] = [];
+
+  if (pipelineId != null) {
+    attempts.push({ path: `/pipelines/${encodeURIComponent(String(pipelineId))}/cards` });
   }
 
-  const json = await res.json();
-  const data = Array.isArray(json)
-    ? json
-    : Array.isArray(json?.data)
-      ? json.data
-      : [];
+  attempts.push({
+    path: "/pipelines/cards",
+    configure: (qs) => {
+      if (pipelineId != null) {
+        qs.set("filter[pipeline_id]", String(pipelineId));
+      }
+    },
+  });
 
-  const hasNext = (() => {
-    if (json?.links?.next) return true;
-    if (json?.next_page_url) return true;
-    const current = Number(json?.meta?.current_page ?? json?.current_page ?? page);
-    const last = Number(json?.meta?.last_page ?? json?.last_page ?? current);
-    if (Number.isFinite(current) && Number.isFinite(last)) {
-      return current < last;
+  let lastError: KeycrmHttpError | null = null;
+
+  for (const attempt of attempts) {
+    const qs = baseQuery();
+    if (attempt.configure) {
+      attempt.configure(qs);
     }
-    return data.length === perPage;
-  })();
 
-  return { data, hasNext };
+    const res = await fetch(keycrmUrl(`${attempt.path}?${qs.toString()}`), {
+      headers: keycrmHeaders(),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const err = new KeycrmHttpError(res.status, res.statusText, body, res.headers.get("retry-after"));
+
+      if (pipelineId != null && attempt.path !== "/pipelines/cards" && res.status === 404) {
+        lastError = err;
+        continue;
+      }
+
+      throw err;
+    }
+
+    const json = await res.json();
+    const data = Array.isArray(json)
+      ? json
+      : Array.isArray(json?.data)
+        ? json.data
+        : [];
+
+    const hasNext = (() => {
+      if (json?.links?.next) return true;
+      if (json?.next_page_url) return true;
+      const current = Number(json?.meta?.current_page ?? json?.current_page ?? page);
+      const last = Number(json?.meta?.last_page ?? json?.last_page ?? current);
+      if (Number.isFinite(current) && Number.isFinite(last)) {
+        return current < last;
+      }
+      return data.length === perPage;
+    })();
+
+    return { data, hasNext };
+  }
+
+  throw lastError ?? new KeycrmHttpError(404, "Not Found", "", null);
 }
 
 async function fetchCardDetails(id: number | string) {
