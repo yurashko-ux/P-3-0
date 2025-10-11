@@ -7,6 +7,7 @@ export const campaignKeys = {
 };
 
 const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
+const API_PREFIX = BASE.includes('/v0/kv') ? '' : '/v0/kv';
 const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
 const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
 
@@ -15,7 +16,10 @@ async function rest(path: string, opts: RequestInit = {}, ro = false) {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${ro ? RD_TOKEN : WR_TOKEN}`,
   };
-  const res = await fetch(`${BASE}/${path}`, { ...opts, headers, cache: 'no-store' });
+  if (!BASE) throw new Error('KV_REST_API_URL missing');
+  const normalizedBase = BASE.endsWith('/') ? BASE : `${BASE}/`;
+  const url = new URL(`${API_PREFIX.replace(/^\//, '')}/${path}`, normalizedBase).toString();
+  const res = await fetch(url, { ...opts, headers, cache: 'no-store' });
   if (!res.ok) throw new Error(`${path} ${res.status}`);
   return res;
 }
