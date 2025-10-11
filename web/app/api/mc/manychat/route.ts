@@ -306,16 +306,20 @@ export async function GET() {
   if (!feed.length) {
     try {
       const { messages, meta } = await fetchManychatLatest(5);
-      const mapped = messages.map((msg) => ({
-        id: msg.id,
-        receivedAt: msg.receivedAt ?? Date.now(),
-        source: msg.source,
-        title: 'ManyChat',
-        handle: msg.handle,
-        fullName: msg.fullName,
-        text: msg.text,
-        raw: msg.raw,
-      } satisfies LatestMessage));
+      const mapped = messages.map((msg, index) => {
+        const numericId = Number(msg.id);
+        const fallbackId = Date.now() + index;
+        return {
+          id: Number.isFinite(numericId) ? numericId : fallbackId,
+          receivedAt: msg.receivedAt ?? Date.now(),
+          source: msg.source,
+          title: 'ManyChat',
+          handle: msg.handle,
+          fullName: msg.fullName,
+          text: msg.text,
+          raw: msg.raw,
+        } satisfies LatestMessage;
+      });
 
       if (mapped.length) {
         feed.push(...mapped);
