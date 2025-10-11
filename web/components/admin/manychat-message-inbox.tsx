@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 type LatestMessage = {
-  id: number;
-  receivedAt: number;
+  id: number | string | null;
+  receivedAt: number | string | null;
   source: string;
   title: string;
   handle: string | null;
@@ -117,8 +117,30 @@ export function ManychatMessageInbox() {
             <div className="mt-3 space-y-3">
               <div className="rounded-xl border border-slate-200 p-4 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                  <span>ID: {inbox.message.id}</span>
-                  <span>{new Date(inbox.message.receivedAt).toLocaleString()}</span>
+                  <span>
+                    ID:{" "}
+                    {(() => {
+                      if (typeof inbox.message.id === "number" && Number.isFinite(inbox.message.id)) {
+                        return inbox.message.id;
+                      }
+                      if (typeof inbox.message.id === "string") {
+                        const numeric = Number(inbox.message.id.trim());
+                        if (Number.isFinite(numeric)) return numeric;
+                        if (inbox.message.id.trim()) return inbox.message.id.trim();
+                      }
+                      return "—";
+                    })()}
+                  </span>
+                  <span>
+                    {(() => {
+                      const rawTs = typeof inbox.message.receivedAt === "string"
+                        ? Number(inbox.message.receivedAt.trim())
+                        : inbox.message.receivedAt;
+                      return typeof rawTs === "number" && Number.isFinite(rawTs)
+                        ? new Date(rawTs).toLocaleString()
+                        : "Невідомо";
+                    })()}
+                  </span>
                 </div>
                 {(inbox.message.source || inbox.message.title) && (
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">

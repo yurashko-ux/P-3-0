@@ -22,6 +22,124 @@ const MANYCHAT_LATEST_KEY = 'manychat:latest';
 let lastMessage: LatestMessage | null = null;
 let messageCounter = 0;
 
+function coerceString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const num = Number(value.trim());
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
+}
+
+function coerceLatestMessage(input: unknown): LatestMessage | null {
+  if (!input) return null;
+
+  if (typeof input === 'string') {
+    try {
+      const parsed = JSON.parse(input);
+      return coerceLatestMessage(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof input !== 'object') return null;
+
+  const obj: any = input;
+
+  if (obj.latest && typeof obj.latest === 'object') {
+    const nested = coerceLatestMessage(obj.latest);
+    if (nested) return nested;
+  }
+
+  const raw: unknown = obj.raw ?? obj;
+  const candidateHandle =
+    coerceString(obj.handle) ||
+    coerceString(obj.username) ||
+    coerceString(obj.subscriber?.username) ||
+    coerceString(obj.user?.username) ||
+    coerceString(obj.sender?.username) ||
+    coerceString(obj.normalized?.handle) ||
+    coerceString(obj.raw?.subscriber?.username) ||
+    coerceString(obj.raw?.user?.username) ||
+    coerceString(obj.raw?.sender?.username) ||
+    null;
+
+  const candidateFullName =
+    coerceString(obj.fullName) ||
+    coerceString(obj.full_name) ||
+    coerceString(obj.name) ||
+    coerceString(obj.normalized?.fullName) ||
+    coerceString(obj.normalized?.full_name) ||
+    coerceString(obj.subscriber?.name) ||
+    coerceString(obj.user?.full_name) ||
+    coerceString(obj.sender?.name) ||
+    coerceString(obj.raw?.subscriber?.name) ||
+    coerceString(obj.raw?.user?.full_name) ||
+    coerceString(obj.raw?.sender?.name) ||
+    null;
+
+  const candidateText =
+    coerceString(obj.text) ||
+    coerceString(obj.normalized?.text) ||
+    coerceString(obj.message?.text) ||
+    coerceString(obj.data?.text) ||
+    coerceString(obj.message) ||
+    coerceString(obj.raw?.message?.text) ||
+    coerceString(obj.raw?.data?.text) ||
+    coerceString(obj.raw?.message) ||
+    '';
+
+  const candidateTitle =
+    coerceString(obj.title) ||
+    coerceString(obj.normalized?.title) ||
+    coerceString(obj.source) ||
+    'IG Message';
+
+  const idCandidate =
+    coerceNumber(obj.id) ??
+    coerceNumber(obj.message_id) ??
+    coerceNumber(obj.messageId) ??
+    coerceNumber(obj.receivedAt) ??
+    coerceNumber(obj.timestamp) ??
+    coerceNumber(obj.ts) ??
+    coerceNumber(obj.raw?.id);
+
+  const receivedCandidate =
+    coerceNumber(obj.receivedAt) ??
+    coerceNumber(obj.timestamp) ??
+    coerceNumber(obj.ts) ??
+    coerceNumber(obj.created_at) ??
+    coerceNumber(obj.raw?.receivedAt) ??
+    coerceNumber(obj.raw?.timestamp) ??
+    coerceNumber(obj.raw?.ts);
+
+  const id = idCandidate ?? Date.now();
+  const receivedAt = receivedCandidate ?? Date.now();
+
+  return {
+    id,
+    receivedAt,
+    source: coerceString(obj.source) ?? 'manychat',
+    title: candidateTitle ?? 'IG Message',
+    handle: candidateHandle,
+    fullName: candidateFullName,
+    text: candidateText ?? '',
+    raw,
+  };
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -114,6 +232,9 @@ export async function POST(req: NextRequest) {
   };
 
   lastMessage = messagePayload;
+  if (typeof messagePayload.id === 'number' && Number.isFinite(messagePayload.id)) {
+    messageCounter = Math.max(messageCounter, messagePayload.id);
+  }
 
   try {
     await kvWrite.setRaw(MANYCHAT_LATEST_KEY, JSON.stringify(messagePayload));
@@ -157,13 +278,29 @@ export async function GET() {
     try {
       const raw = await kvRead.getRaw(MANYCHAT_LATEST_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as LatestMessage;
-        lastMessage = parsed;
+        const parsed = coerceLatestMessage(raw);
+        if (parsed) {
+          lastMessage = parsed;
+          if (typeof parsed.id === 'number' && Number.isFinite(parsed.id)) {
+            messageCounter = Math.max(messageCounter, parsed.id);
+          }
+        }
       }
     } catch {
       // якщо KV недоступний — просто повертаємо поточний стан
     }
   }
 
-  return NextResponse.json({ ok: true, latest: lastMessage ?? null });
+  const safeMessage = lastMessage ? coerceLatestMessage(lastMessage) : null;
+  if (safeMessage) {
+    lastMessage = safeMessage;
+  } else if (lastMessage) {
+    lastMessage = null;
+  }
+
+  if (safeMessage && typeof safeMessage.id === 'number' && Number.isFinite(safeMessage.id)) {
+    messageCounter = Math.max(messageCounter, safeMessage.id);
+  }
+
+  return NextResponse.json({ ok: true, latest: safeMessage ?? null });
 }
