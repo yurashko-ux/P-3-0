@@ -244,40 +244,74 @@ async function loadConversationMessages(conversationId: string): Promise<Manycha
   return null;
 }
 
+type ConversationAttempt = {
+  path: string;
+  query?: Record<string, string | number | null | undefined>;
+};
+
+const CONVERSATION_ENDPOINTS: ConversationAttempt[] = [
+  { path: '/instagram/conversations', query: { limit: '20' } },
+  { path: '/instagram/conversations/get', query: { limit: '20' } },
+  { path: '/fb/conversations', query: { limit: '20' } },
+  { path: '/fb/conversations/get', query: { limit: '20' } },
+  { path: '/conversations', query: { limit: '20' } },
+  { path: '/conversations/get', query: { limit: '20' } },
+];
+
 export async function fetchManychatLatest(limit = 5): Promise<{ messages: ManychatLatestMessage[]; meta: { source: 'api'; url: string } }> {
-  const { json, url } = await manychatRequest<any>({
-    path: '/instagram/conversations',
-    query: { limit: String(Math.max(1, Math.min(limit, 20))) },
-  });
+  const boundedLimit = Math.max(1, Math.min(limit, 20));
 
-  const collection: any[] =
-    (Array.isArray(json?.data?.conversations) ? json?.data?.conversations : undefined) ??
-    (Array.isArray(json?.data) ? json?.data : undefined) ??
-    (Array.isArray(json?.conversations) ? json?.conversations : undefined) ??
-    (Array.isArray(json?.result) ? json?.result : undefined) ?? [];
+  let lastError: any = null;
+  for (const attempt of CONVERSATION_ENDPOINTS) {
+    try {
+      const { json, url } = await manychatRequest<any>({
+        path: attempt.path,
+        query: { ...attempt.query, limit: String(boundedLimit) },
+      });
 
-  const normalized: ManychatLatestMessage[] = [];
+      const collection: any[] =
+        (Array.isArray(json?.data?.conversations) ? json?.data?.conversations : undefined) ??
+        (Array.isArray(json?.data) ? json?.data : undefined) ??
+        (Array.isArray(json?.conversations) ? json?.conversations : undefined) ??
+        (Array.isArray(json?.result) ? json?.result : undefined) ?? [];
 
-  for (const conversation of collection) {
-    let candidate: ManychatLatestMessage | null = null;
-    if (conversation?.last_message || conversation?.lastMessage) {
-      candidate = normalizeMessage(conversation?.last_message ?? conversation?.lastMessage, conversation);
-    }
-    if (!candidate) {
-      candidate = normalizeMessage(conversation, conversation);
-    }
-    if ((!candidate || !candidate.text) && candidate?.conversationId) {
-      const fallback = await loadConversationMessages(candidate.conversationId);
-      if (fallback) {
-        candidate = { ...fallback, raw: { ...fallback.raw, conversation } };
+      const normalized: ManychatLatestMessage[] = [];
+
+      for (const conversation of collection) {
+        let candidate: ManychatLatestMessage | null = null;
+        if (conversation?.last_message || conversation?.lastMessage) {
+          candidate = normalizeMessage(conversation?.last_message ?? conversation?.lastMessage, conversation);
+        }
+        if (!candidate) {
+          candidate = normalizeMessage(conversation, conversation);
+        }
+        if ((!candidate || !candidate.text) && candidate?.conversationId) {
+          const fallback = await loadConversationMessages(candidate.conversationId);
+          if (fallback) {
+            candidate = { ...fallback, raw: { ...fallback.raw, conversation } };
+          }
+        }
+        if (candidate) {
+          normalized.push(candidate);
+        }
       }
-    }
-    if (candidate) {
-      normalized.push(candidate);
+
+      normalized.sort((a, b) => (b.receivedAt ?? 0) - (a.receivedAt ?? 0));
+
+      return { messages: normalized.slice(0, boundedLimit), meta: { source: 'api', url } };
+    } catch (error) {
+      const status = typeof (error as any)?.status === 'number' ? (error as any).status : null;
+      lastError = error;
+      if (status === 404) {
+        continue;
+      }
+      throw error;
     }
   }
 
-  normalized.sort((a, b) => (b.receivedAt ?? 0) - (a.receivedAt ?? 0));
+  if (lastError) {
+    throw lastError;
+  }
 
-  return { messages: normalized.slice(0, limit), meta: { source: 'api', url } };
+  throw new Error('ManyChat conversations endpoint not available');
 }
