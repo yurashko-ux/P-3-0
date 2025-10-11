@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { normalizeManyChat } from "@/lib/ingest";
+
 export type ManychatTestMessage = {
   id: string;
   username: string | null;
+  handle: string | null;
   fullName: string | null;
   text: string;
   receivedAt: string;
   raw: unknown;
-};
-
-type PostBody = {
-  message?: {
-    username?: unknown;
-    full_name?: unknown;
-    text?: unknown;
-  };
 };
 
 const globalAny = globalThis as typeof globalThis & {
@@ -34,9 +29,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  let body: PostBody;
+  let body: any;
   try {
-    body = (await request.json()) as PostBody;
+    body = await request.json();
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: "invalid_json", message: err instanceof Error ? err.message : String(err) },
@@ -44,32 +39,74 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = body?.message;
-  const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-  if (!text) {
-    return NextResponse.json(
-      { ok: false, error: "text_required", message: "Поле text є обов'язковим" },
-      { status: 400 },
-    );
-  }
+  const message =
+    body?.message ??
+    body?.event?.data ??
+    body?.event ??
+    body?.data ??
+    body;
 
-  const username = typeof payload?.username === "string" ? payload.username.trim() : null;
-  const fullName = typeof payload?.full_name === "string" ? payload.full_name.trim() : null;
+  const normalized = normalizeManyChat({
+    username:
+      message?.username ??
+      message?.subscriber?.username ??
+      message?.user?.username ??
+      message?.handle ??
+      body?.username ??
+      body?.handle ??
+      null,
+    text:
+      message?.text ??
+      message?.message?.text ??
+      message?.data?.text ??
+      message?.message ??
+      message?.content ??
+      body?.text ??
+      null,
+    full_name:
+      message?.full_name ??
+      message?.name ??
+      message?.subscriber?.name ??
+      message?.user?.full_name ??
+      body?.full_name ??
+      body?.name ??
+      null,
+    first_name:
+      message?.first_name ??
+      message?.subscriber?.first_name ??
+      message?.user?.first_name ??
+      body?.first_name ??
+      null,
+    last_name:
+      message?.last_name ??
+      message?.subscriber?.last_name ??
+      message?.user?.last_name ??
+      body?.last_name ??
+      null,
+  });
 
-  const message: ManychatTestMessage = {
+  const text = normalized.text || "";
+  const username = normalized.handleRaw || null;
+  const handle = normalized.handle || null;
+  const fullName = normalized.fullName || null;
+
+  const messageText = text.trim() || "[без тексту]";
+
+  const record: ManychatTestMessage = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     username,
+    handle,
     fullName,
-    text,
+    text: messageText,
     receivedAt: new Date().toISOString(),
     raw: body,
   };
 
   const inbox = getInbox();
-  inbox.unshift(message);
-  if (inbox.length > 50) {
-    inbox.length = 50;
+  inbox.unshift(record);
+  if (inbox.length > 100) {
+    inbox.length = 100;
   }
 
-  return NextResponse.json({ ok: true, message });
+  return NextResponse.json({ ok: true, message: record });
 }
