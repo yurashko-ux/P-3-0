@@ -7,6 +7,7 @@ export const campaignKeys = {
 };
 
 const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
+const API_PREFIX = BASE.includes('/v0/kv') ? '' : '/v0/kv';
 const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
 const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
 
@@ -15,7 +16,10 @@ async function rest(path: string, opts: RequestInit = {}, ro = false) {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${ro ? RD_TOKEN : WR_TOKEN}`,
   };
-  const res = await fetch(`${BASE}/${path}`, { ...opts, headers, cache: 'no-store' });
+  if (!BASE) throw new Error('KV_REST_API_URL missing');
+  const normalizedBase = BASE.endsWith('/') ? BASE : `${BASE}/`;
+  const url = new URL(`${API_PREFIX.replace(/^\//, '')}/${path}`, normalizedBase).toString();
+  const res = await fetch(url, { ...opts, headers, cache: 'no-store' });
   if (!res.ok) throw new Error(`${path} ${res.status}`);
   return res;
 }
@@ -24,12 +28,44 @@ async function kvGetRaw(key: string) {
   if (!BASE || !RD_TOKEN) return null as string | null;
   const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
   if (!res) return null;
-  return res.text();
+
+  let text = '';
+  try {
+    text = await res.text();
+  } catch {
+    return null;
+  }
+
+  if (!text) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const candidate =
+        (parsed as any).result ??
+        (parsed as any).value ??
+        (parsed as any).data ??
+        null;
+      if (typeof candidate === 'string') return candidate;
+      if (candidate && typeof candidate === 'object') {
+        const nested = (candidate as any).value ?? (candidate as any).result ?? null;
+        if (typeof nested === 'string') return nested;
+      }
+    }
+  } catch {
+    // ignore, fall back to raw text
+  }
+
+  return text;
 }
 
 async function kvSetRaw(key: string, value: string) {
   if (!BASE || !WR_TOKEN) return;
-  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+  await rest(`set/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify({ value }),
+  }).catch(() => {});
 }
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
