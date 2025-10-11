@@ -15,7 +15,18 @@ type LatestMessage = {
   raw: unknown;
 };
 
+type WebhookTrace = {
+  receivedAt: number;
+  status: 'accepted' | 'rejected';
+  reason?: string | null;
+  statusCode?: number | null;
+  handle?: string | null;
+  fullName?: string | null;
+  messagePreview?: string | null;
+};
+
 let lastMessage: LatestMessage | null = null;
+let lastTrace: WebhookTrace | null = null;
 let sequence = 0;
 
 export const runtime = 'nodejs';
@@ -100,6 +111,12 @@ export async function POST(req: NextRequest) {
     '';
 
   if (mcToken && headerToken && headerToken !== mcToken) {
+    lastTrace = {
+      receivedAt: Date.now(),
+      status: 'rejected',
+      reason: 'Невірний токен авторизації',
+      statusCode: 401,
+    };
     return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
   }
 
@@ -107,18 +124,31 @@ export async function POST(req: NextRequest) {
   try {
     payload = await req.json();
   } catch {
+    lastTrace = {
+      receivedAt: Date.now(),
+      status: 'rejected',
+      reason: 'Некоректний JSON у тілі запиту',
+      statusCode: 400,
+    };
     return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
   }
 
   const message = normalisePayload(payload);
   lastMessage = message;
+  lastTrace = {
+    receivedAt: message.receivedAt,
+    status: 'accepted',
+    handle: message.handle,
+    fullName: message.fullName,
+    messagePreview: message.text ? message.text.slice(0, 180) : null,
+  };
 
   return NextResponse.json({ ok: true, message });
 }
 
 export async function GET() {
   if (!lastMessage) {
-    return NextResponse.json({ ok: true, latest: null, feed: [] });
+    return NextResponse.json({ ok: true, latest: null, feed: [], trace: lastTrace });
   }
 
   return NextResponse.json({
@@ -126,5 +156,6 @@ export async function GET() {
     latest: lastMessage,
     feed: [lastMessage],
     source: 'memory',
+    trace: lastTrace,
   });
 }

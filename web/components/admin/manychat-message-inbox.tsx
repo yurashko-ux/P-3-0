@@ -12,13 +12,23 @@ type LatestMessage = {
   text: string;
 };
 
+type WebhookTrace = {
+  receivedAt: number;
+  status: "accepted" | "rejected";
+  reason?: string | null;
+  statusCode?: number | null;
+  handle?: string | null;
+  fullName?: string | null;
+  messagePreview?: string | null;
+};
+
 type InboxState =
-  | { status: "loading" }
-  | { status: "ready"; messages: LatestMessage[]; updatedAt: Date; source: string | null }
-  | { status: "error"; message: string };
+  | { status: "loading"; trace: WebhookTrace | null }
+  | { status: "ready"; messages: LatestMessage[]; updatedAt: Date; source: string | null; trace: WebhookTrace | null }
+  | { status: "error"; message: string; trace: WebhookTrace | null };
 
 export function ManychatMessageInbox() {
-  const [inbox, setInbox] = useState<InboxState>({ status: "loading" });
+  const [inbox, setInbox] = useState<InboxState>({ status: "loading", trace: null });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -32,11 +42,21 @@ export function ManychatMessageInbox() {
           signal,
         });
         const json = (await res.json().catch(() => null)) as
-          | { ok?: boolean; latest?: LatestMessage | null; feed?: LatestMessage[]; source?: string }
+          | {
+              ok?: boolean;
+              latest?: LatestMessage | null;
+              feed?: LatestMessage[];
+              source?: string;
+              trace?: WebhookTrace | null;
+            }
           | null;
         if (cancelled) return;
         if (!json || !res.ok) {
-          setInbox({ status: "error", message: `Помилка завантаження (${res.status})` });
+          setInbox({
+            status: "error",
+            message: `Помилка завантаження (${res.status})`,
+            trace: json?.trace ?? null,
+          });
           return;
         }
         setInbox({
@@ -44,11 +64,16 @@ export function ManychatMessageInbox() {
           messages: Array.isArray(json.feed) ? json.feed : json.latest ? [json.latest] : [],
           updatedAt: new Date(),
           source: json.source ?? null,
+          trace: json.trace ?? null,
         });
       } catch (err) {
         if (cancelled) return;
         if ((err as any)?.name === "AbortError") return;
-        setInbox({ status: "error", message: err instanceof Error ? err.message : String(err) });
+        setInbox({
+          status: "error",
+          message: err instanceof Error ? err.message : String(err),
+          trace: null,
+        });
       }
     }
 
@@ -74,10 +99,20 @@ export function ManychatMessageInbox() {
       setRefreshing(true);
       const res = await fetch("/api/mc/manychat", { cache: "no-store" });
       const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; latest?: LatestMessage | null; feed?: LatestMessage[]; source?: string }
+        | {
+            ok?: boolean;
+            latest?: LatestMessage | null;
+            feed?: LatestMessage[];
+            source?: string;
+            trace?: WebhookTrace | null;
+          }
         | null;
       if (!json || !res.ok) {
-        setInbox({ status: "error", message: `Помилка завантаження (${res.status})` });
+        setInbox({
+          status: "error",
+          message: `Помилка завантаження (${res.status})`,
+          trace: json?.trace ?? null,
+        });
         return;
       }
       setInbox({
@@ -85,13 +120,20 @@ export function ManychatMessageInbox() {
         messages: Array.isArray(json.feed) ? json.feed : json.latest ? [json.latest] : [],
         updatedAt: new Date(),
         source: json.source ?? null,
+        trace: json.trace ?? null,
       });
     } catch (err) {
-      setInbox({ status: "error", message: err instanceof Error ? err.message : String(err) });
+      setInbox({
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+        trace: null,
+      });
     } finally {
       setRefreshing(false);
     }
   }
+
+  const trace = inbox.trace ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -112,12 +154,39 @@ export function ManychatMessageInbox() {
         </button>
       </div>
 
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-sm font-semibold text-slate-600">Діагностика вебхука</h3>
+        {trace ? (
+          <div className="mt-2 space-y-1 text-sm text-slate-600">
+            <p>
+              Статус: {trace.status === "accepted" ? "✅ Прийнято" : "⚠️ Відхилено"}
+              {trace.statusCode ? ` · Код ${trace.statusCode}` : ""}
+            </p>
+            <p>
+              Час: {new Date(trace.receivedAt).toLocaleString()}
+            </p>
+            {trace.reason && <p>Деталі: {trace.reason}</p>}
+            {trace.fullName || trace.handle ? (
+              <p>
+                Контакт: {trace.fullName ?? "—"}
+                {trace.handle && <span className="ml-1">(@{trace.handle})</span>}
+              </p>
+            ) : null}
+            {trace.messagePreview && <p>Текст: {trace.messagePreview}</p>}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-slate-500">Вебхук ще не надходив у це середовище.</p>
+        )}
+      </div>
+
       <div className="mt-6">
         <h3 className="text-lg font-semibold text-slate-700">Останні повідомлення</h3>
         {inbox.status === "loading" && <p className="mt-3 text-sm text-slate-500">Завантаження…</p>}
         {inbox.status === "error" && <p className="mt-3 text-sm text-red-500">{inbox.message}</p>}
         {inbox.status === "ready" && inbox.messages.length === 0 && (
-          <p className="mt-3 text-sm text-slate-500">Повідомлень ще немає.</p>
+          <p className="mt-3 text-sm text-slate-500">
+            Повідомлень ще немає. Натисніть «Оновити», щойно ManyChat надішле вебхук, або перевірте діагностику вище.
+          </p>
         )}
         {inbox.status === "ready" && inbox.messages.length > 0 && (
           <>
