@@ -3,9 +3,10 @@
 // й повертає його для тестової адмін-сторінки.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
 type LatestMessage = {
-  id: number;
+  id: number | string;
   receivedAt: number;
   source: string;
   title: string;
@@ -103,6 +104,29 @@ function normalisePayload(payload: unknown): LatestMessage {
   };
 }
 
+function fromManychatApi(message: ManychatLatestMessage, fallback: number): LatestMessage {
+  const id = message.id && message.id !== '' ? message.id : `manychat-${fallback}`;
+  const rawConversation = (message.raw as Record<string, unknown> | undefined)?.conversation as
+    | Record<string, unknown>
+    | undefined;
+  const titleCandidate = rawConversation?.title;
+  const title =
+    typeof titleCandidate === 'string' && titleCandidate.trim().length
+      ? titleCandidate
+      : 'ManyChat';
+
+  return {
+    id,
+    receivedAt: message.receivedAt ?? Date.now(),
+    source: message.source ?? 'manychat:api',
+    title,
+    handle: message.handle ?? null,
+    fullName: message.fullName ?? null,
+    text: message.text ?? '',
+    raw: message.raw,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const mcToken = process.env.MC_TOKEN;
   const headerToken =
@@ -147,8 +171,41 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
+  const diagnostics: Record<string, unknown> = {};
+  const apiKeyAvailable = Boolean(
+    process.env.MANYCHAT_API_KEY ||
+      process.env.MANYCHAT_API_TOKEN ||
+      process.env.MC_API_KEY,
+  );
+
+  if (apiKeyAvailable) {
+    try {
+      const { messages, meta } = await fetchManychatLatest(5);
+      if (messages.length > 0) {
+        const start = sequence;
+        const feed = messages.map((msg, index) => fromManychatApi(msg, start + index + 1));
+        sequence = start + messages.length;
+        const latest = feed[0];
+        return NextResponse.json({
+          ok: true,
+          latest,
+          feed,
+          source: meta.source,
+          trace: lastTrace,
+          diagnostics: { ...diagnostics, api: { ok: true, url: meta.url } },
+        });
+      }
+      diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.api = { ok: false, message };
+    }
+  } else {
+    diagnostics.api = { ok: false, message: 'MANYCHAT_API_KEY is not configured' };
+  }
+
   if (!lastMessage) {
-    return NextResponse.json({ ok: true, latest: null, feed: [], trace: lastTrace });
+    return NextResponse.json({ ok: true, latest: null, feed: [], trace: lastTrace, diagnostics });
   }
 
   return NextResponse.json({
@@ -157,5 +214,6 @@ export async function GET() {
     feed: [lastMessage],
     source: 'memory',
     trace: lastTrace,
+    diagnostics,
   });
 }

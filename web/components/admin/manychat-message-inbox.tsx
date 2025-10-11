@@ -22,13 +22,29 @@ type WebhookTrace = {
   messagePreview?: string | null;
 };
 
+type Diagnostics = {
+  api?: {
+    ok: boolean;
+    message?: string;
+    url?: string;
+    note?: string;
+  } | null;
+};
+
 type InboxState =
-  | { status: "loading"; trace: WebhookTrace | null }
-  | { status: "ready"; messages: LatestMessage[]; updatedAt: Date; source: string | null; trace: WebhookTrace | null }
-  | { status: "error"; message: string; trace: WebhookTrace | null };
+  | { status: "loading"; trace: WebhookTrace | null; diagnostics: Diagnostics | null }
+  | {
+      status: "ready";
+      messages: LatestMessage[];
+      updatedAt: Date;
+      source: string | null;
+      trace: WebhookTrace | null;
+      diagnostics: Diagnostics | null;
+    }
+  | { status: "error"; message: string; trace: WebhookTrace | null; diagnostics: Diagnostics | null };
 
 export function ManychatMessageInbox() {
-  const [inbox, setInbox] = useState<InboxState>({ status: "loading", trace: null });
+  const [inbox, setInbox] = useState<InboxState>({ status: "loading", trace: null, diagnostics: null });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -48,6 +64,7 @@ export function ManychatMessageInbox() {
               feed?: LatestMessage[];
               source?: string;
               trace?: WebhookTrace | null;
+              diagnostics?: Diagnostics | null;
             }
           | null;
         if (cancelled) return;
@@ -56,6 +73,7 @@ export function ManychatMessageInbox() {
             status: "error",
             message: `Помилка завантаження (${res.status})`,
             trace: json?.trace ?? null,
+            diagnostics: json?.diagnostics ?? null,
           });
           return;
         }
@@ -65,6 +83,7 @@ export function ManychatMessageInbox() {
           updatedAt: new Date(),
           source: json.source ?? null,
           trace: json.trace ?? null,
+          diagnostics: json.diagnostics ?? null,
         });
       } catch (err) {
         if (cancelled) return;
@@ -73,6 +92,7 @@ export function ManychatMessageInbox() {
           status: "error",
           message: err instanceof Error ? err.message : String(err),
           trace: null,
+          diagnostics: null,
         });
       }
     }
@@ -105,6 +125,7 @@ export function ManychatMessageInbox() {
             feed?: LatestMessage[];
             source?: string;
             trace?: WebhookTrace | null;
+            diagnostics?: Diagnostics | null;
           }
         | null;
       if (!json || !res.ok) {
@@ -112,6 +133,7 @@ export function ManychatMessageInbox() {
           status: "error",
           message: `Помилка завантаження (${res.status})`,
           trace: json?.trace ?? null,
+          diagnostics: json?.diagnostics ?? null,
         });
         return;
       }
@@ -121,12 +143,14 @@ export function ManychatMessageInbox() {
         updatedAt: new Date(),
         source: json.source ?? null,
         trace: json.trace ?? null,
+        diagnostics: json.diagnostics ?? null,
       });
     } catch (err) {
       setInbox({
         status: "error",
         message: err instanceof Error ? err.message : String(err),
         trace: null,
+        diagnostics: null,
       });
     } finally {
       setRefreshing(false);
@@ -134,6 +158,8 @@ export function ManychatMessageInbox() {
   }
 
   const trace = inbox.trace ?? null;
+  const diagnostics = inbox.diagnostics ?? null;
+  const apiDiag = diagnostics?.api ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -154,29 +180,49 @@ export function ManychatMessageInbox() {
         </button>
       </div>
 
-      <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
-        <h3 className="text-sm font-semibold text-slate-600">Діагностика вебхука</h3>
-        {trace ? (
-          <div className="mt-2 space-y-1 text-sm text-slate-600">
-            <p>
-              Статус: {trace.status === "accepted" ? "✅ Прийнято" : "⚠️ Відхилено"}
-              {trace.statusCode ? ` · Код ${trace.statusCode}` : ""}
-            </p>
-            <p>
-              Час: {new Date(trace.receivedAt).toLocaleString()}
-            </p>
-            {trace.reason && <p>Деталі: {trace.reason}</p>}
-            {trace.fullName || trace.handle ? (
+      <div className="mt-4 space-y-4">
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+          <h3 className="text-sm font-semibold text-slate-600">Діагностика вебхука</h3>
+          {trace ? (
+            <div className="mt-2 space-y-1 text-sm text-slate-600">
               <p>
-                Контакт: {trace.fullName ?? "—"}
-                {trace.handle && <span className="ml-1">(@{trace.handle})</span>}
+                Статус: {trace.status === "accepted" ? "✅ Прийнято" : "⚠️ Відхилено"}
+                {trace.statusCode ? ` · Код ${trace.statusCode}` : ""}
               </p>
-            ) : null}
-            {trace.messagePreview && <p>Текст: {trace.messagePreview}</p>}
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">Вебхук ще не надходив у це середовище.</p>
-        )}
+              <p>
+                Час: {new Date(trace.receivedAt).toLocaleString()}
+              </p>
+              {trace.reason && <p>Деталі: {trace.reason}</p>}
+              {trace.fullName || trace.handle ? (
+                <p>
+                  Контакт: {trace.fullName ?? "—"}
+                  {trace.handle && <span className="ml-1">(@{trace.handle})</span>}
+                </p>
+              ) : null}
+              {trace.messagePreview && <p>Текст: {trace.messagePreview}</p>}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">Вебхук ще не надходив у це середовище.</p>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 p-4">
+          <h3 className="text-sm font-semibold text-amber-700">Статус підключення ManyChat API</h3>
+          {apiDiag ? (
+            <p className="mt-2 text-sm text-amber-700">
+              {apiDiag.ok
+                ? `✅ Дані отримано (${apiDiag.note === "empty" ? "повідомлення відсутні" : "є нові повідомлення"})`
+                : `⚠️ ${apiDiag.message ?? "Не вдалося отримати дані"}`}
+              {apiDiag.url ? (
+                <span className="block text-xs text-amber-600/80">
+                  Джерело: {apiDiag.url}
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-amber-700/80">Очікуємо перше звернення до ManyChat API…</p>
+          )}
+        </div>
       </div>
 
       <div className="mt-6">
