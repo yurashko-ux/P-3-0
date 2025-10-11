@@ -111,6 +111,10 @@ function ok(extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: true, ...(extra ?? {}) });
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function POST(req: NextRequest) {
   const token = process.env.KEYCRM_API_TOKEN || "";
   const base = process.env.KEYCRM_BASE_URL || "";
@@ -133,8 +137,17 @@ export async function POST(req: NextRequest) {
   }
 
   const payload: Record<string, unknown> = {};
-  if (toPipelineId) payload.pipeline_id = toKeycrmValue(toPipelineId);
-  if (toStatusId) payload.status_id = toKeycrmValue(toStatusId);
+  if (toPipelineId) {
+    const value = toKeycrmValue(toPipelineId);
+    payload.pipeline_id = value;
+    payload.to_pipeline_id = value;
+  }
+  if (toStatusId) {
+    const value = toKeycrmValue(toStatusId);
+    payload.status_id = value;
+    payload.pipeline_status_id = value;
+    payload.to_status_id = value;
+  }
 
   try {
     const res = await fetch(join(base, `/pipelines/cards/${encodeURIComponent(cardId)}`), {
@@ -167,18 +180,47 @@ export async function POST(req: NextRequest) {
     }
 
     let verification: CardSnapshot | null = null;
+    const attempts: Array<{
+      snapshot: CardSnapshot | null;
+      pipelineMatches: boolean;
+      statusMatches: boolean;
+    }> = [];
+
     if (toPipelineId || toStatusId) {
-      verification = await fetchSnapshot(base, token, cardId);
+      const maxTries = 4;
+      for (let i = 0; i < maxTries; i += 1) {
+        verification = await fetchSnapshot(base, token, cardId);
+
+        const pipelineMatches =
+          !toPipelineId || verification?.pipelineId === toPipelineId;
+        const statusMatches =
+          !toStatusId || verification?.statusId === toStatusId;
+
+        attempts.push({
+          snapshot: verification,
+          pipelineMatches,
+          statusMatches,
+        });
+
+        if (pipelineMatches && statusMatches) {
+          break;
+        }
+
+        if (i < maxTries - 1) {
+          await wait(400);
+        }
+      }
+
+      const lastAttempt = attempts[attempts.length - 1];
       if (
-        verification &&
-        ((toPipelineId && verification.pipelineId !== toPipelineId) ||
-          (toStatusId && verification.statusId !== toStatusId))
+        lastAttempt &&
+        !(lastAttempt.pipelineMatches && lastAttempt.statusMatches)
       ) {
         return bad(502, "keycrm move unverified", {
           attempt: "pipelines/cards/{id} PUT",
           sent: payload,
           response: json,
-          verify: verification,
+          verify: attempts,
         });
       }
     }
