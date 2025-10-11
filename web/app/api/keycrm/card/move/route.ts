@@ -249,6 +249,11 @@ async function tryMove(
   const jsonApiAttempts: Attempt[] = [];
 
   if (expectedPipelineId != null || expectedStatusId != null) {
+    const coerceAttrValue = (value: string) => {
+      const asNumber = Number(value);
+      return Number.isFinite(asNumber) ? asNumber : value;
+    };
+
     const pipelineTypeList = expectedPipelineId
       ? pipelineRelationshipTypes.length
         ? pipelineRelationshipTypes
@@ -262,12 +267,45 @@ async function tryMove(
 
     const seenCombos = new Set<string>();
 
-    for (const cardType of cardTypeCandidates.length ? cardTypeCandidates : ['pipelines-card']) {
+    const cardTypes = cardTypeCandidates.length ? cardTypeCandidates : ['pipelines-card'];
+
+    for (const cardType of cardTypes) {
+      const attributes: Record<string, unknown> = {};
+      if (expectedPipelineId != null) {
+        attributes.pipeline_id = coerceAttrValue(expectedPipelineId);
+      }
+      if (expectedStatusId != null) {
+        attributes.status_id = coerceAttrValue(expectedStatusId);
+      }
+
+      if (Object.keys(attributes).length) {
+        jsonApiAttempts.push({
+          url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
+          method: 'PATCH',
+          name: `pipelines/cards/{id} PATCH attributes (type=${cardType})`,
+          headers: {
+            'Content-Type': 'application/vnd.api+json',
+            Accept: 'application/vnd.api+json, application/json',
+          },
+          body: {
+            data: {
+              id: String(body.card_id),
+              type: cardType,
+              attributes,
+            },
+          },
+        });
+      }
+
       for (const pipelineType of pipelineTypeList) {
         for (const statusType of statusTypeList) {
           const key = [cardType, pipelineType ?? '-', statusType ?? '-'].join('|');
           if (seenCombos.has(key)) continue;
           seenCombos.add(key);
+
+          if (pipelineType == null && statusType == null) {
+            continue;
+          }
 
           const relationships: Record<string, unknown> = {};
 
@@ -292,9 +330,9 @@ async function tryMove(
           jsonApiAttempts.push({
             url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
             method: 'PATCH',
-            name: `pipelines/cards/{id} PATCH (type=${cardType}, rel=${pipelineType ?? 'default'}/${
-              statusType ?? 'default'
-            })`,
+            name: `pipelines/cards/{id} PATCH relationships (type=${cardType}, rel=${
+              pipelineType ?? 'default'
+            }/${statusType ?? 'default'})`,
             headers: {
               'Content-Type': 'application/vnd.api+json',
               Accept: 'application/vnd.api+json, application/json',
