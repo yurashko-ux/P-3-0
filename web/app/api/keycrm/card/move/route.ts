@@ -33,7 +33,7 @@ type AttemptResult = { ok: boolean; attempt: string; status: number; text: strin
 type Attempt = {
   name: string;
   url: string;
-  method?: 'POST' | 'PATCH';
+  method?: 'POST' | 'PATCH' | 'PUT';
   payload: Record<string, unknown>;
 };
 
@@ -54,6 +54,12 @@ async function tryMove(
   } satisfies Record<string, unknown>;
 
   const attempts: Attempt[] = [
+    {
+      url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
+      method: 'PUT',
+      payload: basePayload,
+      name: 'pipelines/cards/{id} PUT',
+    },
     {
       url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
       payload: basePayload,
