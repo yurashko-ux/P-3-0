@@ -3,6 +3,7 @@ import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 
 import { KeycrmCardSearchWidget } from "@/components/admin/keycrm-card-search-widget";
+import { ManychatMessageInbox } from "@/components/admin/manychat-message-inbox";
 import { ManychatCampaignRouter } from "@/components/admin/manychat-campaign-router";
 
 export const dynamic = "force-dynamic";
@@ -176,6 +177,8 @@ export default async function DebugPage() {
         </p>
         <KeycrmCardSearchWidget />
       </section>
+
+      <ManychatMessageInbox />
 
       <ManychatCampaignRouter />
 
