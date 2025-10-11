@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { ManychatTestMessage } from "@/app/api/admin/test/manychat/messages/route";
+import type { ManychatInboxMessage } from "@/lib/manychat-test-inbox";
 
 type InboxState =
   | { status: "loading" }
-  | { status: "ready"; items: ManychatTestMessage[]; updatedAt: Date }
+  | { status: "ready"; items: ManychatInboxMessage[]; updatedAt: Date }
   | { status: "error"; message: string };
 
 export function ManychatMessageInbox() {
@@ -23,7 +23,7 @@ export function ManychatMessageInbox() {
           signal,
         });
         const json = (await res.json().catch(() => null)) as
-          | { ok?: boolean; items?: ManychatTestMessage[] }
+          | { ok?: boolean; items?: ManychatInboxMessage[] }
           | null;
         if (cancelled) return;
         if (!json || !res.ok) {
@@ -60,7 +60,7 @@ export function ManychatMessageInbox() {
     try {
       const res = await fetch("/api/admin/test/manychat/messages", { cache: "no-store" });
       const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; items?: ManychatTestMessage[] }
+        | { ok?: boolean; items?: ManychatInboxMessage[] }
         | null;
       if (!json || !res.ok) {
         setInbox({ status: "error", message: `Помилка завантаження (${res.status})` });
@@ -110,6 +110,12 @@ export function ManychatMessageInbox() {
                     <span>ID: {item.id}</span>
                     <span>{new Date(item.receivedAt).toLocaleString()}</span>
                   </div>
+                  {(item.source || item.title) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                      {item.source && <span>Джерело: {item.source}</span>}
+                      {item.title && <span>Заголовок: {item.title}</span>}
+                    </div>
+                  )}
                   <div className="mt-2 text-slate-600">
                     <div className="font-medium text-slate-700">
                       {item.fullName || "—"}

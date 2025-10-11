@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { recordManychatMessage } from '@/lib/manychat-test-inbox';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,6 +72,34 @@ export async function POST(req: NextRequest) {
   }
 
   const norm = normalize(payload);
+
+  // Mirror webhook traffic into the in-memory inbox for the admin test page.
+  try {
+    const username =
+      payload?.subscriber?.username ??
+      payload?.user?.username ??
+      payload?.sender?.username ??
+      payload?.username ??
+      null;
+    const fullName =
+      payload?.subscriber?.name ??
+      payload?.user?.full_name ??
+      payload?.sender?.name ??
+      payload?.full_name ??
+      payload?.name ??
+      null;
+    recordManychatMessage({
+      username,
+      handle: norm.handle || username,
+      fullName,
+      text: norm.text,
+      raw: payload,
+      source: 'webhook:/api/mc/manychat',
+      title: norm.title,
+    });
+  } catch {
+    // не зупиняємо вебхук через помилку журналу
+  }
 
   // Read campaigns via LIST index
   const campaigns = (await kvRead.listCampaigns()) as Campaign[];

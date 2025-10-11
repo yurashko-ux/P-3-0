@@ -1,30 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { normalizeManyChat } from "@/lib/ingest";
-
-export type ManychatTestMessage = {
-  id: string;
-  username: string | null;
-  handle: string | null;
-  fullName: string | null;
-  text: string;
-  receivedAt: string;
-  raw: unknown;
-};
-
-const globalAny = globalThis as typeof globalThis & {
-  __manychatTestInbox?: ManychatTestMessage[];
-};
-
-function getInbox(): ManychatTestMessage[] {
-  if (!globalAny.__manychatTestInbox) {
-    globalAny.__manychatTestInbox = [];
-  }
-  return globalAny.__manychatTestInbox;
-}
+import {
+  listManychatMessages,
+  recordManychatMessage,
+  type ManychatInboxMessage,
+} from "@/lib/manychat-test-inbox";
 
 export async function GET() {
-  const inbox = getInbox();
+  const inbox = listManychatMessages();
   return NextResponse.json({ ok: true, items: inbox });
 }
 
@@ -92,21 +76,14 @@ export async function POST(request: Request) {
 
   const messageText = text.trim() || "[без тексту]";
 
-  const record: ManychatTestMessage = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  const record: ManychatInboxMessage = recordManychatMessage({
     username,
     handle,
     fullName,
     text: messageText,
-    receivedAt: new Date().toISOString(),
     raw: body,
-  };
-
-  const inbox = getInbox();
-  inbox.unshift(record);
-  if (inbox.length > 100) {
-    inbox.length = 100;
-  }
+    source: "test:manual",
+  });
 
   return NextResponse.json({ ok: true, message: record });
 }
