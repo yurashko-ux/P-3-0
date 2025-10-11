@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { fetchManychatLatest } from '@/lib/manychat-api';
 
 type LatestMessage = {
   id: number;
@@ -274,19 +275,63 @@ export async function POST(req: NextRequest) {
 
 // Optionally allow GET for quick ping/health
 export async function GET() {
+  const diagnostics: Array<Record<string, unknown>> = [];
   let latest: LatestMessage | null = null;
+  const feed: LatestMessage[] = [];
+  let source: 'kv' | 'api' | 'fallback' | 'none' = 'none';
 
   try {
     const raw = await kvRead.getRaw(MANYCHAT_LATEST_KEY);
     if (raw) {
-      latest = coerceLatestMessage(raw);
+      const normalized = coerceLatestMessage(raw);
+      if (normalized) {
+        latest = normalized;
+        feed.push(normalized);
+        source = 'kv';
+      }
     }
-  } catch {
-    // якщо KV недоступний — просто повертаємо локальний стан
+  } catch (err) {
+    diagnostics.push({ stage: 'kv:get', error: err instanceof Error ? err.message : String(err) });
   }
 
   if (!latest && lastMessage) {
-    latest = coerceLatestMessage(lastMessage);
+    const normalized = coerceLatestMessage(lastMessage);
+    if (normalized) {
+      latest = normalized;
+      if (!feed.length) feed.push(normalized);
+      if (source === 'none') source = 'fallback';
+    }
+  }
+
+  if (!feed.length) {
+    try {
+      const { messages, meta } = await fetchManychatLatest(5);
+      const mapped = messages.map((msg) => ({
+        id: msg.id,
+        receivedAt: msg.receivedAt ?? Date.now(),
+        source: msg.source,
+        title: 'ManyChat',
+        handle: msg.handle,
+        fullName: msg.fullName,
+        text: msg.text,
+        raw: msg.raw,
+      } satisfies LatestMessage));
+
+      if (mapped.length) {
+        feed.push(...mapped);
+        latest = mapped[0];
+        source = 'api';
+      }
+
+      diagnostics.push({ stage: 'manychat:api', url: meta.url, count: mapped.length });
+    } catch (err) {
+      diagnostics.push({
+        stage: 'manychat:api',
+        error: err instanceof Error ? err.message : String(err),
+        status: (err as any)?.status ?? null,
+        response: (err as any)?.response ?? null,
+      });
+    }
   }
 
   if (latest) {
@@ -298,5 +343,11 @@ export async function GET() {
     lastMessage = null;
   }
 
-  return NextResponse.json({ ok: true, latest: latest ?? null });
+  return NextResponse.json({
+    ok: true,
+    source,
+    latest: latest ?? null,
+    feed,
+    diagnostics,
+  });
 }
