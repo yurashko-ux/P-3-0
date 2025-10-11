@@ -1,6 +1,8 @@
 // web/lib/manychat-api.ts
 // Легке SDK для ManyChat REST API з автоматичними fallback-ами парсингу.
 
+import { getEnvValue } from '@/lib/env';
+
 export type ManychatLatestMessage = {
   id: string;
   conversationId: string | null;
@@ -22,7 +24,8 @@ type RequestOptions = {
 };
 
 const API_BASE = (process.env.MANYCHAT_API_BASE || 'https://api.manychat.com').replace(/\/$/, '');
-const API_KEY = process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY || '';
+const API_KEY =
+  getEnvValue('MANYCHAT_API_KEY', 'MANYCHAT_API_TOKEN', 'MC_API_KEY') || '';
 
 function pickString(...values: Array<unknown>): string | null {
   for (const value of values) {

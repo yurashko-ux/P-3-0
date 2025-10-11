@@ -3,6 +3,7 @@
 // й повертає його для тестової адмін-сторінки.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getEnvValue, hasEnvValue } from '@/lib/env';
 import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
 type LatestMessage = {
@@ -128,7 +129,7 @@ function fromManychatApi(message: ManychatLatestMessage, fallback: number): Late
 }
 
 export async function POST(req: NextRequest) {
-  const mcToken = process.env.MC_TOKEN;
+  const mcToken = getEnvValue('MC_TOKEN');
   const headerToken =
     req.headers.get('x-mc-token') ||
     req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
@@ -172,10 +173,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   const diagnostics: Record<string, unknown> = {};
-  const apiKeyAvailable = Boolean(
-    process.env.MANYCHAT_API_KEY ||
-      process.env.MANYCHAT_API_TOKEN ||
-      process.env.MC_API_KEY,
+  const apiKeyAvailable = hasEnvValue(
+    'MANYCHAT_API_KEY',
+    'MANYCHAT_API_TOKEN',
+    'MC_API_KEY',
   );
 
   if (apiKeyAvailable) {
@@ -201,7 +202,11 @@ export async function GET() {
       diagnostics.api = { ok: false, message };
     }
   } else {
-    diagnostics.api = { ok: false, message: 'MANYCHAT_API_KEY is not configured' };
+    diagnostics.api = {
+      ok: false,
+      message:
+        'MANYCHAT_API_KEY (або еквівалентний ManyChat API ключ) не налаштовано',
+    };
   }
 
   if (!lastMessage) {
