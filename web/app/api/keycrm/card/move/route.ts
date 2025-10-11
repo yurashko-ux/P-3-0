@@ -89,6 +89,14 @@ function collectRelationshipInfo(
  * - PATCH /crm/deals/{card_id}            body: { pipeline_id, status_id }
  * Ми спробуємо їх послідовно й повернемо перший успішний.
  */
+type AttemptTrace = {
+  attempt: string;
+  status: number;
+  ok: boolean;
+  text: string;
+  json?: any;
+};
+
 type AttemptResult = {
   ok: boolean;
   attempt: string;
@@ -96,6 +104,7 @@ type AttemptResult = {
   text: string;
   json?: any;
   verified?: CardSnapshot | null;
+  history?: AttemptTrace[];
 };
 
 type Attempt = {
@@ -198,15 +207,27 @@ async function tryMove(
     Accept: 'application/json',
   };
 
-  const simplePayload: Record<string, unknown> = {};
+  const coerceRestValue = (value: number | string) => {
+    const asNumber = Number(value);
+    return Number.isFinite(asNumber) ? asNumber : String(value);
+  };
+
+  const restPayload: Record<string, unknown> = {};
+  const dealsPayload: Record<string, unknown> = {};
   const expectedPipelineId = normalizeId(body.to_pipeline_id);
   const expectedStatusId = normalizeId(body.to_status_id);
 
   if (expectedPipelineId != null) {
-    simplePayload.pipeline_id = expectedPipelineId;
+    const restValue = coerceRestValue(expectedPipelineId);
+    restPayload.pipeline_id = restValue;
+    restPayload.to_pipeline_id = restValue;
+    dealsPayload.pipeline_id = restValue;
   }
   if (expectedStatusId != null) {
-    simplePayload.status_id = expectedStatusId;
+    const restValue = coerceRestValue(expectedStatusId);
+    restPayload.status_id = restValue;
+    restPayload.to_status_id = restValue;
+    dealsPayload.status_id = restValue;
   }
 
   const cardTypeCandidates = dedupe([
@@ -249,9 +270,9 @@ async function tryMove(
   const jsonApiAttempts: Attempt[] = [];
 
   if (expectedPipelineId != null || expectedStatusId != null) {
-    const coerceAttrValue = (value: string) => {
+    const coerceAttrValue = (value: number | string) => {
       const asNumber = Number(value);
-      return Number.isFinite(asNumber) ? asNumber : value;
+      return Number.isFinite(asNumber) ? asNumber : String(value);
     };
 
     const pipelineTypeList = expectedPipelineId
@@ -354,14 +375,14 @@ async function tryMove(
     {
       url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
       name: 'cards/{id}/move',
-      body: Object.keys(simplePayload).length ? simplePayload : null,
+      body: Object.keys(restPayload).length ? restPayload : null,
     },
     {
       url: join(baseUrl, `/pipelines/cards/move`),
       name: 'pipelines/cards/move',
       body: {
         card_id: body.card_id,
-        ...simplePayload,
+        ...restPayload,
       },
     },
     ...jsonApiAttempts,
@@ -369,7 +390,7 @@ async function tryMove(
       url: join(baseUrl, `/crm/deals/${encodeURIComponent(body.card_id)}`),
       method: 'PATCH',
       name: 'crm/deals/{id} PATCH',
-      body: simplePayload,
+      body: dealsPayload,
     },
   ];
 
@@ -379,6 +400,8 @@ async function tryMove(
     status: 0,
     text: '',
   };
+
+  const history: AttemptTrace[] = [];
 
   for (const a of attempts) {
     try {
@@ -408,6 +431,9 @@ async function tryMove(
 
       const success = r.ok && (j == null || j.ok === undefined || j.ok === true);
 
+      const trace: AttemptTrace = { attempt: a.name, status: r.status, ok: success, text, json: j ?? undefined };
+      history.push(trace);
+
       if (success) {
         if (expectedPipelineId != null || expectedStatusId != null) {
           const snapshotAfter = await fetchCardSnapshot(baseUrl, token, body.card_id);
@@ -420,6 +446,7 @@ async function tryMove(
               text,
               json: j ?? undefined,
               verified: null,
+              history,
             };
           }
 
@@ -442,6 +469,7 @@ async function tryMove(
               text,
               json: j ?? undefined,
               verified: snapshotAfter,
+              history,
             };
           }
 
@@ -460,16 +488,19 @@ async function tryMove(
             text,
             json: j ?? undefined,
             verified: snapshotAfter,
+            history,
           };
           continue;
         }
 
-        return { ok: true, attempt: a.name, status: r.status, text, json: j ?? undefined };
+        return { ok: true, attempt: a.name, status: r.status, text, json: j ?? undefined, history };
       }
 
-      last = { ok: false, attempt: a.name, status: r.status, text, json: j ?? undefined };
+      last = { ok: false, attempt: a.name, status: r.status, text, json: j ?? undefined, history };
     } catch (e: any) {
-      last = { ok: false, attempt: a.name, status: 0, text: String(e) };
+      const trace: AttemptTrace = { attempt: a.name, status: 0, ok: false, text: String(e) };
+      history.push(trace);
+      last = { ok: false, attempt: a.name, status: 0, text: String(e), history };
     }
   }
 
@@ -524,6 +555,7 @@ export async function POST(req: NextRequest) {
       responseJson: res.json ?? null,
       sent: { card_id, to_pipeline_id, to_status_id },
       base: base.replace(/.{20}$/, '********'), // трохи маскуємо
+      history: res.history,
       probe: snapshot
         ? {
             cardType: snapshot.type,
@@ -558,5 +590,6 @@ export async function POST(req: NextRequest) {
           statusId: res.verified.statusId,
         }
       : null,
+    history: res.history,
   });
 }
