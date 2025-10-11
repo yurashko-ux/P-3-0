@@ -138,15 +138,10 @@ export async function POST(req: NextRequest) {
 
   const payload: Record<string, unknown> = {};
   if (toPipelineId) {
-    const value = toKeycrmValue(toPipelineId);
-    payload.pipeline_id = value;
-    payload.to_pipeline_id = value;
+    payload.pipeline_id = toKeycrmValue(toPipelineId);
   }
   if (toStatusId) {
-    const value = toKeycrmValue(toStatusId);
-    payload.status_id = value;
-    payload.pipeline_status_id = value;
-    payload.to_status_id = value;
+    payload.pipeline_status_id = toKeycrmValue(toStatusId);
   }
 
   try {
@@ -187,7 +182,7 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     if (toPipelineId || toStatusId) {
-      const maxTries = 4;
+      const maxTries = 8;
       for (let i = 0; i < maxTries; i += 1) {
         verification = await fetchSnapshot(base, token, cardId);
 
@@ -207,7 +202,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (i < maxTries - 1) {
-          await wait(400);
+          await wait(600);
         }
       }
 

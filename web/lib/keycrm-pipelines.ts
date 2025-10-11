@@ -203,22 +203,24 @@ function normalizePipeline(raw: any): KeycrmPipeline | null {
     ...toArray(raw?.statuses?.list),
   ];
 
-  const seenStatusIds = new Set<number>();
+  const seenStatusKeys = new Set<string>();
 
-  const statuses: KeycrmPipelineStatus[] = statusesRaw
+  const statusesUnfiltered: KeycrmPipelineStatus[] = statusesRaw
     .map((status) => {
       const statusId = toNumber(status?.id);
       if (statusId === null) {
         return null;
       }
-      if (seenStatusIds.has(statusId)) {
+      const statusPipelineId = toNumber(status?.pipeline_id ?? raw?.id);
+      const seenKey = `${statusId}:${statusPipelineId ?? ""}`;
+      if (seenStatusKeys.has(seenKey)) {
         return null;
       }
-      seenStatusIds.add(statusId);
+      seenStatusKeys.add(seenKey);
       return {
         id: statusId,
         title: String(status?.title ?? status?.name ?? `Статус #${statusId}`),
-        pipelineId: toNumber(status?.pipeline_id ?? raw?.id),
+        pipelineId: statusPipelineId,
         color: status?.color ? String(status.color) : null,
         isFinal: typeof status?.is_final === "boolean" ? status.is_final : null,
         position: toNumber(status?.position),
@@ -230,6 +232,11 @@ function normalizePipeline(raw: any): KeycrmPipeline | null {
       const posB = b.position ?? Number.MAX_SAFE_INTEGER;
       return posA - posB;
     });
+
+  const statuses = statusesUnfiltered.filter((status) => {
+    if (status.pipelineId === null) return true;
+    return status.pipelineId === id;
+  });
 
   return {
     id,
