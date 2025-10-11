@@ -6,6 +6,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 
+type LatestMessage = {
+  id: number;
+  receivedAt: number;
+  source: string;
+  title: string;
+  handle: string | null;
+  fullName: string | null;
+  text: string;
+  raw: unknown;
+};
+
+const MANYCHAT_LATEST_KEY = 'manychat:latest';
+
+let lastMessage: LatestMessage | null = null;
+let messageCounter = 0;
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -72,6 +88,39 @@ export async function POST(req: NextRequest) {
 
   const norm = normalize(payload);
 
+  const username =
+    payload?.subscriber?.username ??
+    payload?.user?.username ??
+    payload?.sender?.username ??
+    payload?.username ??
+    null;
+  const fullName =
+    payload?.subscriber?.name ??
+    payload?.user?.full_name ??
+    payload?.sender?.name ??
+    payload?.full_name ??
+    payload?.name ??
+    null;
+
+  const messagePayload: LatestMessage = {
+    id: ++messageCounter,
+    receivedAt: Date.now(),
+    source: 'webhook:/api/mc/manychat',
+    title: norm.title,
+    handle: norm.handle || username,
+    fullName,
+    text: norm.text,
+    raw: payload,
+  };
+
+  lastMessage = messagePayload;
+
+  try {
+    await kvWrite.setRaw(MANYCHAT_LATEST_KEY, JSON.stringify(messagePayload));
+  } catch {
+    // збереження ManyChat-журналу — бест-ефорт; ігноруємо помилки KV
+  }
+
   // Read campaigns via LIST index
   const campaigns = (await kvRead.listCampaigns()) as Campaign[];
   const active = campaigns.filter(c => c.active !== false);
@@ -104,10 +153,17 @@ export async function POST(req: NextRequest) {
 
 // Optionally allow GET for quick ping/health
 export async function GET() {
-  const ids = await kvRead.lrange(campaignKeys.INDEX_KEY, 0, 9);
-  return NextResponse.json({
-    ok: true,
-    info: 'ManyChat webhook endpoint',
-    previewIndexHead: ids,
-  });
+  if (!lastMessage) {
+    try {
+      const raw = await kvRead.getRaw(MANYCHAT_LATEST_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as LatestMessage;
+        lastMessage = parsed;
+      }
+    } catch {
+      // якщо KV недоступний — просто повертаємо поточний стан
+    }
+  }
+
+  return NextResponse.json({ ok: true, latest: lastMessage ?? null });
 }
