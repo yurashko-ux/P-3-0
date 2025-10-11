@@ -25,40 +25,57 @@ function join(base: string, path: string) {
  * Деякі інсталяції KeyCRM мають різні шляхи для move:
  * - POST /cards/{card_id}/move            body: { pipeline_id, status_id }
  * - POST /pipelines/cards/move            body: { card_id, pipeline_id, status_id }
- * Ми спробуємо обидва варіанти (у такому порядку), і повернемо перший успішний.
+ * - PATCH /crm/deals/{card_id}            body: { pipeline_id, status_id }
+ * Ми спробуємо їх послідовно й повернемо перший успішний.
  */
+type AttemptResult = { ok: boolean; attempt: string; status: number; text: string; json?: any };
+
+type Attempt = {
+  name: string;
+  url: string;
+  method?: 'POST' | 'PATCH';
+  payload: Record<string, unknown>;
+};
+
 async function tryMove(
   baseUrl: string,
   token: string,
   body: MoveBody
-): Promise<{ ok: boolean; attempt: string; status: number; text: string; json?: any }> {
+): Promise<AttemptResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
   };
 
   // Кандидати (по черзі)
-  const attempts = [
+  const basePayload = {
+    pipeline_id: body.to_pipeline_id ?? undefined,
+    status_id: body.to_status_id ?? undefined,
+  } satisfies Record<string, unknown>;
+
+  const attempts: Attempt[] = [
     {
       url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
-      payload: {
-        pipeline_id: body.to_pipeline_id,
-        status_id: body.to_status_id,
-      },
+      payload: basePayload,
       name: 'cards/{id}/move',
     },
     {
       url: join(baseUrl, `/pipelines/cards/move`),
       payload: {
         card_id: body.card_id,
-        pipeline_id: body.to_pipeline_id,
-        status_id: body.to_status_id,
+        ...basePayload,
       },
       name: 'pipelines/cards/move',
     },
+    {
+      url: join(baseUrl, `/crm/deals/${encodeURIComponent(body.card_id)}`),
+      method: 'PATCH',
+      payload: basePayload,
+      name: 'crm/deals/{id} PATCH',
+    },
   ];
 
-  let last: { ok: boolean; attempt: string; status: number; text: string; json?: any } = {
+  let last: AttemptResult = {
     ok: false,
     attempt: '',
     status: 0,
@@ -68,7 +85,7 @@ async function tryMove(
   for (const a of attempts) {
     try {
       const r = await fetch(a.url, {
-        method: 'POST',
+        method: a.method ?? 'POST',
         headers,
         body: JSON.stringify(a.payload),
         cache: 'no-store',
