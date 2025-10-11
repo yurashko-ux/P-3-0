@@ -3,8 +3,9 @@
 // й повертає його для тестової адмін-сторінки.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { kv } from '@vercel/kv';
+
 import { getEnvValue, hasEnvValue } from '@/lib/env';
-import { kvRead, kvWrite } from '@/lib/kv';
 import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
 type LatestMessage = {
@@ -28,9 +29,29 @@ type WebhookTrace = {
   messagePreview?: string | null;
 };
 
-let lastMessage: LatestMessage | null = null;
-let lastTrace: WebhookTrace | null = null;
-let sequence = 0;
+type GlobalManychatState = {
+  lastMessage: LatestMessage | null;
+  lastTrace: WebhookTrace | null;
+  sequence: number;
+};
+
+const globalState = globalThis as typeof globalThis & {
+  __manychat_state__?: GlobalManychatState;
+};
+
+if (!globalState.__manychat_state__) {
+  globalState.__manychat_state__ = {
+    lastMessage: null,
+    lastTrace: null,
+    sequence: 0,
+  };
+}
+
+const memory = globalState.__manychat_state__;
+
+let lastMessage: LatestMessage | null = memory.lastMessage;
+let lastTrace: WebhookTrace | null = memory.lastTrace;
+let sequence = memory.sequence;
 
 const KV_MESSAGE_KEY = 'manychat:last-message';
 const KV_TRACE_KEY = 'manychat:last-trace';
@@ -171,10 +192,13 @@ export async function POST(req: NextRequest) {
     fullName: message.fullName,
     messagePreview: message.text ? message.text.slice(0, 180) : null,
   };
+  memory.lastMessage = lastMessage;
+  memory.lastTrace = lastTrace;
+  memory.sequence = sequence;
 
   try {
-    await kvWrite.setRaw(KV_MESSAGE_KEY, JSON.stringify(message));
-    await kvWrite.setRaw(KV_TRACE_KEY, JSON.stringify(lastTrace));
+    await kv.set(KV_MESSAGE_KEY, message);
+    await kv.set(KV_TRACE_KEY, lastTrace);
   } catch {
     // ignore kv persistence failures; in-memory fallback will still work
   }
@@ -198,6 +222,9 @@ export async function GET() {
         const feed = messages.map((msg, index) => fromManychatApi(msg, start + index + 1));
         sequence = start + messages.length;
         const latest = feed[0];
+        lastMessage = latest;
+        memory.lastMessage = lastMessage;
+        memory.sequence = sequence;
         return NextResponse.json({
           ok: true,
           latest,
@@ -226,14 +253,20 @@ export async function GET() {
 
   if (!latest) {
     try {
-      const raw = await kvRead.getRaw(KV_MESSAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as LatestMessage;
+      const kvMessage = await kv.get<LatestMessage>(KV_MESSAGE_KEY);
+      if (kvMessage) {
         latest = {
-          ...parsed,
-          receivedAt: typeof parsed?.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
+          ...kvMessage,
+          receivedAt:
+            typeof kvMessage.receivedAt === 'number' && Number.isFinite(kvMessage.receivedAt)
+              ? kvMessage.receivedAt
+              : Date.now(),
         };
         source = 'kv';
+        lastMessage = latest;
+        memory.lastMessage = lastMessage;
+        memory.sequence = Math.max(memory.sequence, sequence);
+        sequence = memory.sequence;
       }
       diagnostics.kv = { ok: Boolean(latest), source: 'get', key: KV_MESSAGE_KEY };
     } catch (error) {
@@ -248,9 +281,10 @@ export async function GET() {
 
   if (!trace) {
     try {
-      const rawTrace = await kvRead.getRaw(KV_TRACE_KEY);
-      if (rawTrace) {
-        trace = JSON.parse(rawTrace) as WebhookTrace;
+      trace = await kv.get<WebhookTrace>(KV_TRACE_KEY);
+      if (trace) {
+        lastTrace = trace;
+        memory.lastTrace = trace;
       }
     } catch {
       // ignore trace hydration failures
