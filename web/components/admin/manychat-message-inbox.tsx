@@ -20,6 +20,7 @@ type InboxState =
 export function ManychatMessageInbox() {
   const [inbox, setInbox] = useState<InboxState>({ status: "loading" });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +66,7 @@ export function ManychatMessageInbox() {
 
   async function refreshInbox() {
     try {
+      setRefreshing(true);
       const res = await fetch("/api/mc/manychat", { cache: "no-store" });
       const json = (await res.json().catch(() => null)) as
         | { ok?: boolean; latest?: LatestMessage | null }
@@ -76,6 +78,8 @@ export function ManychatMessageInbox() {
       setInbox({ status: "ready", message: json.latest ?? null, updatedAt: new Date() });
     } catch (err) {
       setInbox({ status: "error", message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -91,9 +95,10 @@ export function ManychatMessageInbox() {
         <button
           type="button"
           onClick={refreshInbox}
-          className="inline-flex items-center justify-center rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:text-emerald-600"
+          disabled={refreshing}
+          className="inline-flex items-center justify-center rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:text-emerald-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
         >
-          Оновити
+          {refreshing ? "Оновлення…" : "Оновити"}
         </button>
       </div>
 

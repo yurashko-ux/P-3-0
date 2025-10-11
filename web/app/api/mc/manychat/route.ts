@@ -17,6 +17,8 @@ type LatestMessage = {
   raw: unknown;
 };
 
+const MANYCHAT_LATEST_KEY = 'manychat:latest';
+
 let lastMessage: LatestMessage | null = null;
 let messageCounter = 0;
 
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest) {
     payload?.name ??
     null;
 
-  lastMessage = {
+  const messagePayload: LatestMessage = {
     id: ++messageCounter,
     receivedAt: Date.now(),
     source: 'webhook:/api/mc/manychat',
@@ -110,6 +112,14 @@ export async function POST(req: NextRequest) {
     text: norm.text,
     raw: payload,
   };
+
+  lastMessage = messagePayload;
+
+  try {
+    await kvWrite.setRaw(MANYCHAT_LATEST_KEY, JSON.stringify(messagePayload));
+  } catch {
+    // збереження ManyChat-журналу — бест-ефорт; ігноруємо помилки KV
+  }
 
   // Read campaigns via LIST index
   const campaigns = (await kvRead.listCampaigns()) as Campaign[];
@@ -143,8 +153,17 @@ export async function POST(req: NextRequest) {
 
 // Optionally allow GET for quick ping/health
 export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    latest: lastMessage,
-  });
+  if (!lastMessage) {
+    try {
+      const raw = await kvRead.getRaw(MANYCHAT_LATEST_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as LatestMessage;
+        lastMessage = parsed;
+      }
+    } catch {
+      // якщо KV недоступний — просто повертаємо поточний стан
+    }
+  }
+
+  return NextResponse.json({ ok: true, latest: lastMessage ?? null });
 }
