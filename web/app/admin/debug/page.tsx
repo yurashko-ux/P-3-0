@@ -3,6 +3,7 @@ import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 
 import { KeycrmCardSearchWidget } from "@/components/admin/keycrm-card-search-widget";
+import { ManychatCampaignRouter } from "@/components/admin/manychat-campaign-router";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -175,6 +176,8 @@ export default async function DebugPage() {
         </p>
         <KeycrmCardSearchWidget />
       </section>
+
+      <ManychatCampaignRouter />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-800">Статус KV</h2>
