@@ -10,6 +10,15 @@ type MoveBody = {
   to_status_id: string | null;
 };
 
+type CardSnapshot = {
+  type: string | null;
+  pipelineId: string | null;
+  statusId: string | null;
+  pipelineRelationshipTypes: string[];
+  statusRelationshipTypes: string[];
+  raw: unknown;
+};
+
 function bad(status: number, error: string, extra?: any) {
   return NextResponse.json({ ok: false, error, ...extra }, { status });
 }
@@ -21,6 +30,58 @@ function join(base: string, path: string) {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
+function normalizeId(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  return null;
+}
+
+function dedupe<T extends string>(values: (T | null | undefined)[]): T[] {
+  const seen = new Set<T>();
+  for (const value of values) {
+    if (!value) continue;
+    seen.add(value);
+  }
+  return Array.from(seen);
+}
+
+function collectRelationshipInfo(
+  relationships: Record<string, any> | undefined,
+  matcher: (key: string) => boolean
+) {
+  const types = new Set<string>();
+  let firstId: string | null = null;
+
+  if (!relationships || typeof relationships !== 'object') {
+    return { id: null as string | null, types: [] as string[] };
+  }
+
+  for (const [key, rel] of Object.entries(relationships)) {
+    if (!matcher(key)) continue;
+    const data = (rel as any)?.data;
+    const list = Array.isArray(data) ? data : data ? [data] : [];
+
+    for (const entry of list) {
+      const entryId = normalizeId((entry as any)?.id);
+      if (entryId && !firstId) {
+        firstId = entryId;
+      }
+      const entryType = typeof (entry as any)?.type === 'string' ? (entry as any).type : null;
+      if (entryType) {
+        types.add(entryType);
+      }
+    }
+  }
+
+  return { id: firstId, types: Array.from(types) };
+}
+
 /**
  * Деякі інсталяції KeyCRM мають різні шляхи для move:
  * - POST /cards/{card_id}/move            body: { pipeline_id, status_id }
@@ -28,16 +89,24 @@ function join(base: string, path: string) {
  * - PATCH /crm/deals/{card_id}            body: { pipeline_id, status_id }
  * Ми спробуємо їх послідовно й повернемо перший успішний.
  */
-type AttemptResult = { ok: boolean; attempt: string; status: number; text: string; json?: any };
+type AttemptResult = {
+  ok: boolean;
+  attempt: string;
+  status: number;
+  text: string;
+  json?: any;
+  verified?: CardSnapshot | null;
+};
 
 type Attempt = {
   name: string;
   url: string;
   method?: 'POST' | 'PATCH' | 'PUT';
   body?: Record<string, unknown> | string | null;
+  headers?: Record<string, string>;
 };
 
-async function fetchCardSnapshot(baseUrl: string, token: string, cardId: string) {
+async function fetchCardSnapshot(baseUrl: string, token: string, cardId: string): Promise<CardSnapshot | null> {
   const url = join(baseUrl, `/pipelines/cards/${encodeURIComponent(cardId)}`);
   try {
     const res = await fetch(url, {
@@ -68,12 +137,43 @@ async function fetchCardSnapshot(baseUrl: string, token: string, cardId: string)
       return null;
     }
 
-    const resourceType = typeof resource.type === 'string' ? resource.type : null;
+    const resourceType = typeof (resource as any).type === 'string' ? (resource as any).type : null;
+    const attributes =
+      (resource as any)?.attributes && typeof (resource as any).attributes === 'object'
+        ? (resource as any).attributes
+        : (resource as any);
+
+    const relationships =
+      (resource as any)?.relationships && typeof (resource as any).relationships === 'object'
+        ? (resource as any).relationships
+        : undefined;
+
+    const pipelineFromAttr = normalizeId(
+      (attributes as any)?.pipeline_id ??
+        (attributes as any)?.pipelineId ??
+        (resource as any)?.pipeline_id ??
+        (resource as any)?.pipelineId ??
+        (resource as any)?.pipeline?.id
+    );
+    const statusFromAttr = normalizeId(
+      (attributes as any)?.status_id ??
+        (attributes as any)?.statusId ??
+        (resource as any)?.status_id ??
+        (resource as any)?.statusId ??
+        (resource as any)?.status?.id
+    );
+
+    const pipelineRel = collectRelationshipInfo(relationships, (key) => /pipeline/i.test(key));
+    const statusRel = collectRelationshipInfo(relationships, (key) => /status/i.test(key));
 
     return {
       type: resourceType,
+      pipelineId: pipelineFromAttr ?? pipelineRel.id ?? null,
+      statusId: statusFromAttr ?? statusRel.id ?? null,
+      pipelineRelationshipTypes: pipelineRel.types,
+      statusRelationshipTypes: statusRel.types,
       raw: json,
-    } as { type: string | null; raw: unknown };
+    };
   } catch {
     return null;
   }
@@ -81,6 +181,10 @@ async function fetchCardSnapshot(baseUrl: string, token: string, cardId: string)
 
 type TryMoveOptions = {
   cardTypeCandidates?: string[];
+  pipelineRelationshipTypes?: string[];
+  statusRelationshipTypes?: string[];
+  initialPipelineId?: string | null;
+  initialStatusId?: string | null;
 };
 
 async function tryMove(
@@ -89,75 +193,145 @@ async function tryMove(
   body: MoveBody,
   options: TryMoveOptions = {}
 ): Promise<AttemptResult> {
-  const headers: Record<string, string> = {
+  const baseHeaders: Record<string, string> = {
     Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
+    Accept: 'application/json',
   };
 
-  // Кандидати (по черзі)
-  const basePayload: Record<string, unknown> = {};
-  const jsonApiAttributes: Record<string, unknown> = {};
+  const simplePayload: Record<string, unknown> = {};
+  const expectedPipelineId = normalizeId(body.to_pipeline_id);
+  const expectedStatusId = normalizeId(body.to_status_id);
 
-  if (body.to_pipeline_id != null) {
-    basePayload.pipeline_id = body.to_pipeline_id;
-    basePayload.to_pipeline_id = body.to_pipeline_id;
-    jsonApiAttributes.pipeline_id = body.to_pipeline_id;
+  if (expectedPipelineId != null) {
+    simplePayload.pipeline_id = expectedPipelineId;
   }
-  if (body.to_status_id != null) {
-    basePayload.status_id = body.to_status_id;
-    basePayload.to_status_id = body.to_status_id;
-    jsonApiAttributes.status_id = body.to_status_id;
+  if (expectedStatusId != null) {
+    simplePayload.status_id = expectedStatusId;
   }
 
-  const cardTypeCandidates = Array.from(
-    new Set(
-      [
-        ...(options.cardTypeCandidates ?? []),
-        'pipelines-card',
-        'pipelines_card',
-        'pipeline-card',
-        'pipeline_card',
-        'card',
-        'deal',
-      ].filter(Boolean)
-    )
-  );
+  const cardTypeCandidates = dedupe([
+    ...(options.cardTypeCandidates ?? []),
+    'pipelines-card',
+    'pipelines_card',
+    'pipeline-card',
+    'pipeline_card',
+    'card',
+    'deal',
+  ]);
 
-  const jsonApiAttempts: Attempt[] = Object.keys(jsonApiAttributes).length
-    ? cardTypeCandidates.map<Attempt>((type) => ({
-        url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
-        method: 'PATCH',
-        name: `pipelines/cards/{id} PATCH (type=${type})`,
-        body: {
-          data: {
-            id: String(body.card_id),
-            type,
-            attributes: jsonApiAttributes,
-          },
-        },
-      }))
+  const pipelineRelationshipTypes = expectedPipelineId
+    ? dedupe([
+        ...(options.pipelineRelationshipTypes ?? []),
+        'pipelines',
+        'pipeline',
+        'crm-pipelines',
+        'crm_pipeline',
+        'pipelines-pipeline',
+      ])
     : [];
 
+  const statusRelationshipTypes = expectedStatusId
+    ? dedupe([
+        ...(options.statusRelationshipTypes ?? []),
+        'pipeline-statuses',
+        'pipeline_statuses',
+        'pipeline-status',
+        'pipeline_status',
+        'pipelines-statuses',
+        'pipelines_statuses',
+        'status',
+        'statuses',
+        'crm-pipeline-statuses',
+        'crm_pipeline_statuses',
+      ])
+    : [];
+
+  const jsonApiAttempts: Attempt[] = [];
+
+  if (expectedPipelineId != null || expectedStatusId != null) {
+    const pipelineTypeList = expectedPipelineId
+      ? pipelineRelationshipTypes.length
+        ? pipelineRelationshipTypes
+        : ['pipelines']
+      : [null];
+    const statusTypeList = expectedStatusId
+      ? statusRelationshipTypes.length
+        ? statusRelationshipTypes
+        : ['pipeline-statuses', 'pipeline_statuses', 'statuses']
+      : [null];
+
+    const seenCombos = new Set<string>();
+
+    for (const cardType of cardTypeCandidates.length ? cardTypeCandidates : ['pipelines-card']) {
+      for (const pipelineType of pipelineTypeList) {
+        for (const statusType of statusTypeList) {
+          const key = [cardType, pipelineType ?? '-', statusType ?? '-'].join('|');
+          if (seenCombos.has(key)) continue;
+          seenCombos.add(key);
+
+          const relationships: Record<string, unknown> = {};
+
+          if (expectedPipelineId != null) {
+            relationships.pipeline = {
+              data: {
+                id: expectedPipelineId,
+                ...(pipelineType ? { type: pipelineType } : {}),
+              },
+            };
+          }
+
+          if (expectedStatusId != null) {
+            relationships.status = {
+              data: {
+                id: expectedStatusId,
+                ...(statusType ? { type: statusType } : {}),
+              },
+            };
+          }
+
+          jsonApiAttempts.push({
+            url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
+            method: 'PATCH',
+            name: `pipelines/cards/{id} PATCH (type=${cardType}, rel=${pipelineType ?? 'default'}/${
+              statusType ?? 'default'
+            })`,
+            headers: {
+              'Content-Type': 'application/vnd.api+json',
+              Accept: 'application/vnd.api+json, application/json',
+            },
+            body: {
+              data: {
+                id: String(body.card_id),
+                type: cardType,
+                relationships,
+              },
+            },
+          });
+        }
+      }
+    }
+  }
+
   const attempts: Attempt[] = [
-    ...jsonApiAttempts,
     {
       url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
-      body: basePayload,
       name: 'cards/{id}/move',
+      body: Object.keys(simplePayload).length ? simplePayload : null,
     },
     {
       url: join(baseUrl, `/pipelines/cards/move`),
+      name: 'pipelines/cards/move',
       body: {
         card_id: body.card_id,
-        ...basePayload,
+        ...simplePayload,
       },
-      name: 'pipelines/cards/move',
     },
+    ...jsonApiAttempts,
     {
       url: join(baseUrl, `/crm/deals/${encodeURIComponent(body.card_id)}`),
       method: 'PATCH',
-      body: basePayload,
       name: 'crm/deals/{id} PATCH',
+      body: simplePayload,
     },
   ];
 
@@ -172,7 +346,13 @@ async function tryMove(
     try {
       const r = await fetch(a.url, {
         method: a.method ?? 'POST',
-        headers,
+        headers: {
+          ...baseHeaders,
+          ...(a.headers ?? {}),
+          ...(!a.headers?.['Content-Type'] && a.body != null && typeof a.body !== 'string'
+            ? { 'Content-Type': 'application/json' }
+            : {}),
+        },
         body:
           a.body == null
             ? undefined
@@ -184,11 +364,68 @@ async function tryMove(
 
       const text = await r.text();
       let j: any = null;
-      try { j = JSON.parse(text); } catch {}
+      try {
+        j = text ? JSON.parse(text) : null;
+      } catch {}
 
-      // вважаємо успіхом 2xx і (якщо є) ознаку ok/true в json
       const success = r.ok && (j == null || j.ok === undefined || j.ok === true);
+
       if (success) {
+        if (expectedPipelineId != null || expectedStatusId != null) {
+          const snapshotAfter = await fetchCardSnapshot(baseUrl, token, body.card_id);
+
+          if (!snapshotAfter) {
+            return {
+              ok: true,
+              attempt: a.name,
+              status: r.status,
+              text,
+              json: j ?? undefined,
+              verified: null,
+            };
+          }
+
+          const pipelineMatches =
+            expectedPipelineId == null || normalizeId(snapshotAfter.pipelineId) === expectedPipelineId;
+          const statusMatches =
+            expectedStatusId == null || normalizeId(snapshotAfter.statusId) === expectedStatusId;
+          const unchangedPipeline =
+            options.initialPipelineId != null &&
+            normalizeId(snapshotAfter.pipelineId) === normalizeId(options.initialPipelineId);
+          const unchangedStatus =
+            options.initialStatusId != null &&
+            normalizeId(snapshotAfter.statusId) === normalizeId(options.initialStatusId);
+
+          if (pipelineMatches && statusMatches) {
+            return {
+              ok: true,
+              attempt: a.name,
+              status: r.status,
+              text,
+              json: j ?? undefined,
+              verified: snapshotAfter,
+            };
+          }
+
+          const reasons: string[] = [];
+          if (!pipelineMatches && expectedPipelineId != null) {
+            reasons.push(unchangedPipeline ? 'pipeline unchanged' : 'pipeline mismatch');
+          }
+          if (!statusMatches && expectedStatusId != null) {
+            reasons.push(unchangedStatus ? 'status unchanged' : 'status mismatch');
+          }
+
+          last = {
+            ok: false,
+            attempt: `${a.name} (${reasons.join(', ') || 'verification mismatch'})`,
+            status: r.status,
+            text,
+            json: j ?? undefined,
+            verified: snapshotAfter,
+          };
+          continue;
+        }
+
         return { ok: true, attempt: a.name, status: r.status, text, json: j ?? undefined };
       }
 
@@ -225,12 +462,20 @@ export async function POST(req: NextRequest) {
 
   const snapshot = await fetchCardSnapshot(base, token, card_id);
   const typeCandidates = snapshot?.type ? [snapshot.type] : [];
+  const pipelineRelationshipTypes = snapshot?.pipelineRelationshipTypes ?? [];
+  const statusRelationshipTypes = snapshot?.statusRelationshipTypes ?? [];
 
   const res = await tryMove(
     base,
     token,
     { card_id, to_pipeline_id, to_status_id },
-    { cardTypeCandidates: typeCandidates }
+    {
+      cardTypeCandidates: typeCandidates,
+      pipelineRelationshipTypes,
+      statusRelationshipTypes,
+      initialPipelineId: snapshot?.pipelineId ?? null,
+      initialStatusId: snapshot?.statusId ?? null,
+    }
   );
 
   if (!res.ok) {
@@ -241,7 +486,19 @@ export async function POST(req: NextRequest) {
       responseJson: res.json ?? null,
       sent: { card_id, to_pipeline_id, to_status_id },
       base: base.replace(/.{20}$/, '********'), // трохи маскуємо
-      probe: snapshot?.type ? { cardType: snapshot.type } : undefined,
+      probe: snapshot
+        ? {
+            cardType: snapshot.type,
+            pipelineId: snapshot.pipelineId,
+            statusId: snapshot.statusId,
+          }
+        : undefined,
+      verify: res.verified
+        ? {
+            pipelineId: res.verified.pipelineId,
+            statusId: res.verified.statusId,
+          }
+        : undefined,
     });
   }
 
@@ -250,6 +507,18 @@ export async function POST(req: NextRequest) {
     via: res.attempt,
     status: res.status,
     response: res.json ?? res.text,
-    probe: snapshot?.type ? { cardType: snapshot.type } : undefined,
+    probe: snapshot
+      ? {
+          cardType: snapshot.type,
+          pipelineId: snapshot.pipelineId,
+          statusId: snapshot.statusId,
+        }
+      : undefined,
+    verified: res.verified
+      ? {
+          pipelineId: res.verified.pipelineId,
+          statusId: res.verified.statusId,
+        }
+      : null,
   });
 }
