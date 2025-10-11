@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
+import { kvRead, kvWrite } from '@/lib/kv';
 import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
 type LatestMessage = {
@@ -30,6 +31,9 @@ type WebhookTrace = {
 let lastMessage: LatestMessage | null = null;
 let lastTrace: WebhookTrace | null = null;
 let sequence = 0;
+
+const KV_MESSAGE_KEY = 'manychat:last-message';
+const KV_TRACE_KEY = 'manychat:last-trace';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -168,6 +172,13 @@ export async function POST(req: NextRequest) {
     messagePreview: message.text ? message.text.slice(0, 180) : null,
   };
 
+  try {
+    await kvWrite.setRaw(KV_MESSAGE_KEY, JSON.stringify(message));
+    await kvWrite.setRaw(KV_TRACE_KEY, JSON.stringify(lastTrace));
+  } catch {
+    // ignore kv persistence failures; in-memory fallback will still work
+  }
+
   return NextResponse.json({ ok: true, message });
 }
 
@@ -209,16 +220,53 @@ export async function GET() {
     };
   }
 
-  if (!lastMessage) {
-    return NextResponse.json({ ok: true, latest: null, feed: [], trace: lastTrace, diagnostics });
+  let source: 'memory' | 'kv' = 'memory';
+  let latest = lastMessage;
+  let trace = lastTrace;
+
+  if (!latest) {
+    try {
+      const raw = await kvRead.getRaw(KV_MESSAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as LatestMessage;
+        latest = {
+          ...parsed,
+          receivedAt: typeof parsed?.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
+        };
+        source = 'kv';
+      }
+      diagnostics.kv = { ok: Boolean(latest), source: 'get', key: KV_MESSAGE_KEY };
+    } catch (error) {
+      diagnostics.kv = {
+        ok: false,
+        source: 'get',
+        key: KV_MESSAGE_KEY,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  if (!trace) {
+    try {
+      const rawTrace = await kvRead.getRaw(KV_TRACE_KEY);
+      if (rawTrace) {
+        trace = JSON.parse(rawTrace) as WebhookTrace;
+      }
+    } catch {
+      // ignore trace hydration failures
+    }
+  }
+
+  if (!latest) {
+    return NextResponse.json({ ok: true, latest: null, feed: [], trace, diagnostics });
   }
 
   return NextResponse.json({
     ok: true,
-    latest: lastMessage,
-    feed: [lastMessage],
-    source: 'memory',
-    trace: lastTrace,
+    latest,
+    feed: [latest],
+    source,
+    trace,
     diagnostics,
   });
 }
