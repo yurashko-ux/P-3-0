@@ -7,6 +7,9 @@ import {
   type ManychatInboxMessage,
 } from "@/lib/manychat-test-inbox";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function GET() {
   const inbox = listManychatMessages();
   return NextResponse.json({ ok: true, items: inbox });
