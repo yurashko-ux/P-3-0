@@ -302,8 +302,8 @@ async function tryMove(
       if (Object.keys(attributes).length) {
         jsonApiAttempts.push({
           url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
-          method: 'PATCH',
-          name: `pipelines/cards/{id} PATCH attributes (type=${cardType})`,
+          method: 'PUT',
+          name: `pipelines/cards/{id} PUT attributes (type=${cardType})`,
           headers: {
             'Content-Type': 'application/vnd.api+json',
             Accept: 'application/vnd.api+json, application/json',
@@ -350,8 +350,8 @@ async function tryMove(
 
           jsonApiAttempts.push({
             url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
-            method: 'PATCH',
-            name: `pipelines/cards/{id} PATCH relationships (type=${cardType}, rel=${
+            method: 'PUT',
+            name: `pipelines/cards/{id} PUT relationships (type=${cardType}, rel=${
               pipelineType ?? 'default'
             }/${statusType ?? 'default'})`,
             headers: {
@@ -371,7 +371,17 @@ async function tryMove(
     }
   }
 
+  const restPutPayload: Record<string, unknown> = Object.fromEntries(
+    Object.entries(restPayload).filter(([key]) => !key.startsWith('to_'))
+  );
+
   const attempts: Attempt[] = [
+    {
+      url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
+      name: 'pipelines/cards/{id} PUT',
+      method: 'PUT',
+      body: Object.keys(restPutPayload).length ? restPutPayload : null,
+    },
     {
       url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
       name: 'cards/{id}/move',
@@ -439,15 +449,16 @@ async function tryMove(
           const snapshotAfter = await fetchCardSnapshot(baseUrl, token, body.card_id);
 
           if (!snapshotAfter) {
-            return {
-              ok: true,
-              attempt: a.name,
+            last = {
+              ok: false,
+              attempt: `${a.name} (verification missing)`,
               status: r.status,
               text,
               json: j ?? undefined,
               verified: null,
               history,
             };
+            continue;
           }
 
           const pipelineMatches =
