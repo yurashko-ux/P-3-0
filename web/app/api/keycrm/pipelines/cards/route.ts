@@ -68,13 +68,32 @@ export async function GET(req: Request) {
       upstream.searchParams.set("filter[pipeline_id]", pipelineFilter);
     }
 
-    const includeValues = q.getAll("include[]");
-    const withValues = q.getAll("with[]");
-    const relations = includeValues.length > 0 ? includeValues : ["contact", "contact.client", "client", "client.profiles"];
+    const allowedRelations = new Set([
+      "contact",
+      "contact.client",
+      "status",
+      "contactCount",
+      "statusCount",
+      "manager",
+      "managerCount",
+      "payments",
+      "paymentsCount",
+      "products",
+      "productsCount",
+      "products.offer",
+      "customFields",
+      "customFieldsCount",
+    ]);
+
+    const includeValues = q.getAll("include[]").filter((value) => allowedRelations.has(value));
+    const withValues = q.getAll("with[]").filter((value) => allowedRelations.has(value));
+
+    const relations = includeValues.length > 0 ? includeValues : ["contact", "contact.client", "status"];
     for (const relation of relations) {
       upstream.searchParams.append("include[]", relation);
     }
-    for (const relation of (withValues.length > 0 ? withValues : relations)) {
+    const withList = withValues.length > 0 ? withValues : relations;
+    for (const relation of withList) {
       upstream.searchParams.append("with[]", relation);
     }
 

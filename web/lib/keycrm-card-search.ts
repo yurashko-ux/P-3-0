@@ -206,7 +206,7 @@ async function fetchCardsPage(
       qs.set("filter[status_id]", String(statusId));
     }
 
-    const relations = ["contact", "contact.client", "client", "client.profiles"];
+    const relations = ["contact", "contact.client", "status"];
     for (const relation of relations) {
       qs.append("include[]", relation);
       qs.append("with[]", relation);
