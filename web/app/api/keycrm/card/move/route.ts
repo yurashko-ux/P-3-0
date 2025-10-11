@@ -34,13 +34,60 @@ type Attempt = {
   name: string;
   url: string;
   method?: 'POST' | 'PATCH' | 'PUT';
-  payload: Record<string, unknown>;
+  body?: Record<string, unknown> | string | null;
+};
+
+async function fetchCardSnapshot(baseUrl: string, token: string, cardId: string) {
+  const url = join(baseUrl, `/pipelines/cards/${encodeURIComponent(cardId)}`);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      return null;
+    }
+
+    const resource = Array.isArray(json?.data)
+      ? json.data[0]
+      : json?.data ?? (Array.isArray(json) ? json[0] : json);
+
+    if (!resource || typeof resource !== 'object') {
+      return null;
+    }
+
+    const resourceType = typeof resource.type === 'string' ? resource.type : null;
+
+    return {
+      type: resourceType,
+      raw: json,
+    } as { type: string | null; raw: unknown };
+  } catch {
+    return null;
+  }
+}
+
+type TryMoveOptions = {
+  cardTypeCandidates?: string[];
 };
 
 async function tryMove(
   baseUrl: string,
   token: string,
-  body: MoveBody
+  body: MoveBody,
+  options: TryMoveOptions = {}
 ): Promise<AttemptResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -48,26 +95,59 @@ async function tryMove(
   };
 
   // Кандидати (по черзі)
-  const basePayload = {
-    pipeline_id: body.to_pipeline_id ?? undefined,
-    status_id: body.to_status_id ?? undefined,
-  } satisfies Record<string, unknown>;
+  const basePayload: Record<string, unknown> = {};
+  const jsonApiAttributes: Record<string, unknown> = {};
+
+  if (body.to_pipeline_id != null) {
+    basePayload.pipeline_id = body.to_pipeline_id;
+    basePayload.to_pipeline_id = body.to_pipeline_id;
+    jsonApiAttributes.pipeline_id = body.to_pipeline_id;
+  }
+  if (body.to_status_id != null) {
+    basePayload.status_id = body.to_status_id;
+    basePayload.to_status_id = body.to_status_id;
+    jsonApiAttributes.status_id = body.to_status_id;
+  }
+
+  const cardTypeCandidates = Array.from(
+    new Set(
+      [
+        ...(options.cardTypeCandidates ?? []),
+        'pipelines-card',
+        'pipelines_card',
+        'pipeline-card',
+        'pipeline_card',
+        'card',
+        'deal',
+      ].filter(Boolean)
+    )
+  );
+
+  const jsonApiAttempts: Attempt[] = Object.keys(jsonApiAttributes).length
+    ? cardTypeCandidates.map<Attempt>((type) => ({
+        url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
+        method: 'PATCH',
+        name: `pipelines/cards/{id} PATCH (type=${type})`,
+        body: {
+          data: {
+            id: String(body.card_id),
+            type,
+            attributes: jsonApiAttributes,
+          },
+        },
+      }))
+    : [];
 
   const attempts: Attempt[] = [
-    {
-      url: join(baseUrl, `/pipelines/cards/${encodeURIComponent(body.card_id)}`),
-      method: 'PUT',
-      payload: basePayload,
-      name: 'pipelines/cards/{id} PUT',
-    },
+    ...jsonApiAttempts,
     {
       url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
-      payload: basePayload,
+      body: basePayload,
       name: 'cards/{id}/move',
     },
     {
       url: join(baseUrl, `/pipelines/cards/move`),
-      payload: {
+      body: {
         card_id: body.card_id,
         ...basePayload,
       },
@@ -76,7 +156,7 @@ async function tryMove(
     {
       url: join(baseUrl, `/crm/deals/${encodeURIComponent(body.card_id)}`),
       method: 'PATCH',
-      payload: basePayload,
+      body: basePayload,
       name: 'crm/deals/{id} PATCH',
     },
   ];
@@ -93,7 +173,12 @@ async function tryMove(
       const r = await fetch(a.url, {
         method: a.method ?? 'POST',
         headers,
-        body: JSON.stringify(a.payload),
+        body:
+          a.body == null
+            ? undefined
+            : typeof a.body === 'string'
+              ? a.body
+              : JSON.stringify(a.body),
         cache: 'no-store',
       });
 
@@ -138,7 +223,15 @@ export async function POST(req: NextRequest) {
     return ok({ dry: true, card_id, to_pipeline_id, to_status_id });
   }
 
-  const res = await tryMove(base, token, { card_id, to_pipeline_id, to_status_id });
+  const snapshot = await fetchCardSnapshot(base, token, card_id);
+  const typeCandidates = snapshot?.type ? [snapshot.type] : [];
+
+  const res = await tryMove(
+    base,
+    token,
+    { card_id, to_pipeline_id, to_status_id },
+    { cardTypeCandidates: typeCandidates }
+  );
 
   if (!res.ok) {
     return bad(502, 'keycrm move failed', {
@@ -148,6 +241,7 @@ export async function POST(req: NextRequest) {
       responseJson: res.json ?? null,
       sent: { card_id, to_pipeline_id, to_status_id },
       base: base.replace(/.{20}$/, '********'), // трохи маскуємо
+      probe: snapshot?.type ? { cardType: snapshot.type } : undefined,
     });
   }
 
@@ -156,5 +250,6 @@ export async function POST(req: NextRequest) {
     via: res.attempt,
     status: res.status,
     response: res.json ?? res.text,
+    probe: snapshot?.type ? { cardType: snapshot.type } : undefined,
   });
 }
