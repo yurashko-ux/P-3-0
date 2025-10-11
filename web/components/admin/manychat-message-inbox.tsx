@@ -2,11 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { ManychatInboxMessage } from "@/lib/manychat-test-inbox";
+type LatestMessage = {
+  id: number;
+  receivedAt: number;
+  source: string;
+  title: string;
+  handle: string | null;
+  fullName: string | null;
+  text: string;
+};
 
 type InboxState =
   | { status: "loading" }
-  | { status: "ready"; items: ManychatInboxMessage[]; updatedAt: Date }
+  | { status: "ready"; message: LatestMessage | null; updatedAt: Date }
   | { status: "error"; message: string };
 
 export function ManychatMessageInbox() {
@@ -18,20 +26,19 @@ export function ManychatMessageInbox() {
 
     async function loadMessages(signal?: AbortSignal) {
       try {
-        const res = await fetch("/api/admin/test/manychat/messages", {
+        const res = await fetch("/api/mc/manychat", {
           cache: "no-store",
           signal,
         });
         const json = (await res.json().catch(() => null)) as
-          | { ok?: boolean; items?: ManychatInboxMessage[] }
+          | { ok?: boolean; latest?: LatestMessage | null }
           | null;
         if (cancelled) return;
         if (!json || !res.ok) {
           setInbox({ status: "error", message: `Помилка завантаження (${res.status})` });
           return;
         }
-        const items = Array.isArray(json.items) ? json.items : [];
-        setInbox({ status: "ready", items, updatedAt: new Date() });
+        setInbox({ status: "ready", message: json.latest ?? null, updatedAt: new Date() });
       } catch (err) {
         if (cancelled) return;
         if ((err as any)?.name === "AbortError") return;
@@ -58,16 +65,15 @@ export function ManychatMessageInbox() {
 
   async function refreshInbox() {
     try {
-      const res = await fetch("/api/admin/test/manychat/messages", { cache: "no-store" });
+      const res = await fetch("/api/mc/manychat", { cache: "no-store" });
       const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; items?: ManychatInboxMessage[] }
+        | { ok?: boolean; latest?: LatestMessage | null }
         | null;
       if (!json || !res.ok) {
         setInbox({ status: "error", message: `Помилка завантаження (${res.status})` });
         return;
       }
-      const items = Array.isArray(json.items) ? json.items : [];
-      setInbox({ status: "ready", items, updatedAt: new Date() });
+      setInbox({ status: "ready", message: json.latest ?? null, updatedAt: new Date() });
     } catch (err) {
       setInbox({ status: "error", message: err instanceof Error ? err.message : String(err) });
     }
@@ -95,40 +101,37 @@ export function ManychatMessageInbox() {
         <h3 className="text-lg font-semibold text-slate-700">Останні повідомлення</h3>
         {inbox.status === "loading" && <p className="mt-3 text-sm text-slate-500">Завантаження…</p>}
         {inbox.status === "error" && <p className="mt-3 text-sm text-red-500">{inbox.message}</p>}
-        {inbox.status === "ready" && inbox.items.length === 0 && (
+        {inbox.status === "ready" && !inbox.message && (
           <p className="mt-3 text-sm text-slate-500">Повідомлень ще немає.</p>
         )}
-        {inbox.status === "ready" && inbox.items.length > 0 && (
+        {inbox.status === "ready" && inbox.message && (
           <>
             <p className="mt-2 text-xs text-slate-400">
               Оновлено: {inbox.updatedAt.toLocaleTimeString()} (автооновлення кожні 5 секунд)
             </p>
-            <ul className="mt-3 space-y-3">
-              {inbox.items.map((item) => (
-                <li key={item.id} className="rounded-xl border border-slate-200 p-4 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                    <span>ID: {item.id}</span>
-                    <span>{new Date(item.receivedAt).toLocaleString()}</span>
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl border border-slate-200 p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                  <span>ID: {inbox.message.id}</span>
+                  <span>{new Date(inbox.message.receivedAt).toLocaleString()}</span>
+                </div>
+                {(inbox.message.source || inbox.message.title) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                    {inbox.message.source && <span>Джерело: {inbox.message.source}</span>}
+                    {inbox.message.title && <span>Заголовок: {inbox.message.title}</span>}
                   </div>
-                  {(item.source || item.title) && (
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                      {item.source && <span>Джерело: {item.source}</span>}
-                      {item.title && <span>Заголовок: {item.title}</span>}
-                    </div>
-                  )}
-                  <div className="mt-2 text-slate-600">
-                    <div className="font-medium text-slate-700">
-                      {item.fullName || "—"}
-                      {item.username && <span className="ml-1 text-slate-500">({item.username})</span>}
-                      {item.handle && !item.username && (
-                        <span className="ml-1 text-slate-500">(@{item.handle})</span>
-                      )}
-                    </div>
-                    <div className="mt-1 whitespace-pre-wrap text-slate-500">{item.text}</div>
+                )}
+                <div className="mt-2 text-slate-600">
+                  <div className="font-medium text-slate-700">
+                    {inbox.message.fullName || "—"}
+                    {inbox.message.handle && (
+                      <span className="ml-1 text-slate-500">(@{inbox.message.handle})</span>
+                    )}
                   </div>
-                </li>
-              ))}
-            </ul>
+                  <div className="mt-1 whitespace-pre-wrap text-slate-500">{inbox.message.text || ""}</div>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>
