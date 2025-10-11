@@ -24,12 +24,44 @@ async function kvGetRaw(key: string) {
   if (!BASE || !RD_TOKEN) return null as string | null;
   const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
   if (!res) return null;
-  return res.text();
+
+  let text = '';
+  try {
+    text = await res.text();
+  } catch {
+    return null;
+  }
+
+  if (!text) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const candidate =
+        (parsed as any).result ??
+        (parsed as any).value ??
+        (parsed as any).data ??
+        null;
+      if (typeof candidate === 'string') return candidate;
+      if (candidate && typeof candidate === 'object') {
+        const nested = (candidate as any).value ?? (candidate as any).result ?? null;
+        if (typeof nested === 'string') return nested;
+      }
+    }
+  } catch {
+    // ignore, fall back to raw text
+  }
+
+  return text;
 }
 
 async function kvSetRaw(key: string, value: string) {
   if (!BASE || !WR_TOKEN) return;
-  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+  await rest(`set/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify({ value }),
+  }).catch(() => {});
 }
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)

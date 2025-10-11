@@ -274,33 +274,29 @@ export async function POST(req: NextRequest) {
 
 // Optionally allow GET for quick ping/health
 export async function GET() {
-  if (!lastMessage) {
-    try {
-      const raw = await kvRead.getRaw(MANYCHAT_LATEST_KEY);
-      if (raw) {
-        const parsed = coerceLatestMessage(raw);
-        if (parsed) {
-          lastMessage = parsed;
-          if (typeof parsed.id === 'number' && Number.isFinite(parsed.id)) {
-            messageCounter = Math.max(messageCounter, parsed.id);
-          }
-        }
-      }
-    } catch {
-      // якщо KV недоступний — просто повертаємо поточний стан
+  let latest: LatestMessage | null = null;
+
+  try {
+    const raw = await kvRead.getRaw(MANYCHAT_LATEST_KEY);
+    if (raw) {
+      latest = coerceLatestMessage(raw);
     }
+  } catch {
+    // якщо KV недоступний — просто повертаємо локальний стан
   }
 
-  const safeMessage = lastMessage ? coerceLatestMessage(lastMessage) : null;
-  if (safeMessage) {
-    lastMessage = safeMessage;
-  } else if (lastMessage) {
+  if (!latest && lastMessage) {
+    latest = coerceLatestMessage(lastMessage);
+  }
+
+  if (latest) {
+    lastMessage = latest;
+    if (typeof latest.id === 'number' && Number.isFinite(latest.id)) {
+      messageCounter = Math.max(messageCounter, latest.id);
+    }
+  } else {
     lastMessage = null;
   }
 
-  if (safeMessage && typeof safeMessage.id === 'number' && Number.isFinite(safeMessage.id)) {
-    messageCounter = Math.max(messageCounter, safeMessage.id);
-  }
-
-  return NextResponse.json({ ok: true, latest: safeMessage ?? null });
+  return NextResponse.json({ ok: true, latest: latest ?? null });
 }
