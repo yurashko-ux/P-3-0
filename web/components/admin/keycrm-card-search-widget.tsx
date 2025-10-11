@@ -33,6 +33,11 @@ export function KeycrmCardSearchWidget() {
     | { state: "loading" }
     | { state: "error"; message: string }
   >({ state: "idle" });
+  const [targetStatusHydration, setTargetStatusHydration] = useState<
+    | { state: "idle" }
+    | { state: "loading" }
+    | { state: "error"; message: string }
+  >({ state: "idle" });
   const [pipelinesStatus, setPipelinesStatus] = useState<
     | { state: "loading" }
     | {
@@ -44,16 +49,29 @@ export function KeycrmCardSearchWidget() {
     | { state: "error"; message: string }
   >({ state: "loading" });
   const [state, setState] = useState<SearchState>({ status: "idle", message: INITIAL_HINT });
+  const [targetPipelineId, setTargetPipelineId] = useState("");
+  const [targetStatusId, setTargetStatusId] = useState("");
+  const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
+  const [moveState, setMoveState] = useState<
+    | { status: "idle" }
+    | { status: "loading" }
+    | { status: "success"; message: string; response: unknown }
+    | { status: "error"; message: string; details?: unknown }
+  >({ status: "idle" });
   const abortRef = useRef<AbortController | null>(null);
   const statusAbortRef = useRef<AbortController | null>(null);
+  const targetStatusAbortRef = useRef<AbortController | null>(null);
   const statusFetchPipelineRef = useRef<number | null>(null);
+  const targetStatusFetchPipelineRef = useRef<number | null>(null);
   const failedPipelinesRef = useRef<Set<number>>(new Set());
   const lastPipelineIdRef = useRef<string>("");
+  const lastTargetPipelineIdRef = useRef<string>("");
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
       statusAbortRef.current?.abort();
+      targetStatusAbortRef.current?.abort();
     };
   }, []);
 
@@ -147,6 +165,8 @@ export function KeycrmCardSearchWidget() {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+
+      setMoveState({ status: "idle" });
 
       setState({
         status: "loading",
@@ -251,6 +271,54 @@ export function KeycrmCardSearchWidget() {
     if (!Number.isFinite(selected)) return null;
     return pipelines.find((pipeline) => pipeline.id === selected) ?? null;
   }, [pipelineId, pipelines]);
+  const targetPipeline = useMemo(() => {
+    if (!targetPipelineId) return null;
+    const selected = Number(targetPipelineId);
+    if (!Number.isFinite(selected)) return null;
+    return pipelines.find((pipeline) => pipeline.id === selected) ?? null;
+  }, [pipelines, targetPipelineId]);
+
+  useEffect(() => {
+    if (state.status !== "success") {
+      setSelectedCardId(null);
+      return;
+    }
+
+    const existing = state.result.items.some((item) => item.cardId === selectedCardId);
+    if (existing) {
+      return;
+    }
+
+    if (state.result.match) {
+      setSelectedCardId(state.result.match.cardId);
+      return;
+    }
+
+    const fallbackId = state.result.items[0]?.cardId;
+    setSelectedCardId(Number.isFinite(fallbackId) ? fallbackId : null);
+  }, [selectedCardId, state]);
+
+  useEffect(() => {
+    if (!targetPipeline) {
+      setTargetStatusId("");
+      return;
+    }
+
+    if (!targetStatusId) {
+      return;
+    }
+
+    const selectedStatusId = Number(targetStatusId);
+    if (!Number.isFinite(selectedStatusId)) {
+      setTargetStatusId("");
+      return;
+    }
+
+    const exists = targetPipeline.statuses.some((status) => status.id === selectedStatusId);
+    if (!exists) {
+      setTargetStatusId("");
+    }
+  }, [targetPipeline, targetStatusId]);
 
   useEffect(() => {
     if (!currentPipeline) {
@@ -415,7 +483,219 @@ export function KeycrmCardSearchWidget() {
     return () => {
       controller.abort();
     };
-  }, [pipelineId, pipelines]);
+  }, [pipelineId, pipelines, statusHydration.state]);
+
+  useEffect(() => {
+    const trimmed = targetPipelineId.trim();
+
+    if (trimmed !== lastTargetPipelineIdRef.current) {
+      lastTargetPipelineIdRef.current = trimmed;
+      if (trimmed) {
+        const numeric = Number(trimmed);
+        if (Number.isFinite(numeric)) {
+          failedPipelinesRef.current.delete(numeric);
+        }
+      }
+    }
+
+    if (!trimmed) {
+      if (targetStatusAbortRef.current) {
+        targetStatusAbortRef.current.abort();
+        targetStatusAbortRef.current = null;
+      }
+      targetStatusFetchPipelineRef.current = null;
+      if (targetStatusHydration.state !== "idle") {
+        setTargetStatusHydration({ state: "idle" });
+      }
+      return;
+    }
+
+    const selectedId = Number(trimmed);
+    if (!Number.isFinite(selectedId) || selectedId <= 0) {
+      if (
+        targetStatusHydration.state !== "error" ||
+        targetStatusHydration.message !== "Некоректний pipeline_id"
+      ) {
+        setTargetStatusHydration({ state: "error", message: "Некоректний pipeline_id" });
+      }
+      return;
+    }
+
+    const pipeline = pipelines.find((item) => item.id === selectedId) ?? null;
+
+    if (pipeline && pipeline.statuses.length > 0) {
+      if (targetStatusAbortRef.current) {
+        targetStatusAbortRef.current.abort();
+        targetStatusAbortRef.current = null;
+      }
+      targetStatusFetchPipelineRef.current = null;
+      failedPipelinesRef.current.delete(selectedId);
+      if (targetStatusHydration.state !== "idle") {
+        setTargetStatusHydration({ state: "idle" });
+      }
+      return;
+    }
+
+    if (failedPipelinesRef.current.has(selectedId) && !targetStatusAbortRef.current) {
+      return;
+    }
+
+    if (targetStatusFetchPipelineRef.current === selectedId && targetStatusAbortRef.current) {
+      return;
+    }
+
+    const controller = new AbortController();
+    if (targetStatusAbortRef.current) {
+      targetStatusAbortRef.current.abort();
+    }
+    targetStatusAbortRef.current = controller;
+    targetStatusFetchPipelineRef.current = selectedId;
+    setTargetStatusHydration({ state: "loading" });
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/keycrm/pipelines?pipeline_id=${selectedId}`, {
+          signal: controller.signal,
+          headers: { accept: "application/json" },
+        });
+
+        const json = (await res.json().catch(() => null)) as KeycrmPipelineDetailResult | null;
+
+        if (!json) {
+          failedPipelinesRef.current.add(selectedId);
+          setTargetStatusHydration({ state: "error", message: "KeyCRM повернув порожню відповідь" });
+          return;
+        }
+
+        if (json.ok) {
+          setPipelines((prev) => {
+            const index = prev.findIndex((item) => item.id === json.pipeline.id);
+            if (index === -1) {
+              return [...prev, json.pipeline].sort((a, b) => {
+                const posA = a.position ?? Number.MAX_SAFE_INTEGER;
+                const posB = b.position ?? Number.MAX_SAFE_INTEGER;
+                if (posA === posB) {
+                  return a.id - b.id;
+                }
+                return posA - posB;
+              });
+            }
+            return prev.map((item, i) => (i === index ? json.pipeline : item));
+          });
+          failedPipelinesRef.current.delete(selectedId);
+          setTargetStatusHydration({ state: "idle" });
+          return;
+        }
+
+        const error = json as KeycrmPipelineDetailError;
+        if (error.pipeline) {
+          setPipelines((prev) => {
+            const index = prev.findIndex((item) => item.id === error.pipeline!.id);
+            if (index === -1) {
+              return [...prev, error.pipeline!];
+            }
+            return prev.map((item, i) => (i === index ? error.pipeline! : item));
+          });
+        }
+        setTargetStatusHydration({
+          state: "error",
+          message:
+            error.error === "keycrm_env_missing"
+              ? "KeyCRM не налаштовано"
+              : error.error === "keycrm_pipeline_not_found"
+                ? "Таку воронку не знайдено"
+                : "Не вдалося завантажити статуси цієї воронки",
+        });
+        failedPipelinesRef.current.add(selectedId);
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") {
+          return;
+        }
+        failedPipelinesRef.current.add(selectedId);
+        setTargetStatusHydration({
+          state: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        if (targetStatusAbortRef.current === controller) {
+          targetStatusAbortRef.current = null;
+        }
+        if (targetStatusFetchPipelineRef.current === selectedId) {
+          targetStatusFetchPipelineRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [pipelines, targetPipelineId, targetStatusHydration.state]);
+
+  const selectedCard = useMemo(() => {
+    if (!selectedCardId || state.status !== "success") return null;
+    return state.result.items.find((item) => item.cardId === selectedCardId) ?? null;
+  }, [selectedCardId, state]);
+
+  const handleMove = useCallback(async () => {
+    if (!selectedCardId) {
+      setMoveState({ status: "error", message: "Оберіть картку для переміщення" });
+      return;
+    }
+
+    const trimmedPipeline = targetPipelineId.trim();
+    const trimmedStatus = targetStatusId.trim();
+
+    if (!trimmedPipeline || !trimmedStatus) {
+      setMoveState({ status: "error", message: "Оберіть цільову воронку та статус" });
+      return;
+    }
+
+    setMoveState({ status: "loading" });
+
+    try {
+      const res = await fetch("/api/keycrm/card/move", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          card_id: String(selectedCardId),
+          to_pipeline_id: trimmedPipeline,
+          to_status_id: trimmedStatus,
+        }),
+      });
+
+      const json = (await res.json().catch(() => null)) as
+        | { ok: true; [key: string]: unknown }
+        | { ok: false; error?: string; [key: string]: unknown }
+        | null;
+
+      if (!json) {
+        setMoveState({ status: "error", message: "KeyCRM повернув неочікувану відповідь" });
+        return;
+      }
+
+      if (json.ok) {
+        setMoveState({ status: "success", message: "Картку успішно переміщено", response: json });
+        return;
+      }
+
+      setMoveState({
+        status: "error",
+        message: (json as { error?: string }).error ?? "KeyCRM відхилив переміщення",
+        details: json,
+      });
+    } catch (err) {
+      setMoveState({
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, [selectedCardId, targetPipelineId, targetStatusId]);
+
+  const moveDisabled =
+    !selectedCardId ||
+    !targetPipelineId.trim() ||
+    !targetStatusId.trim() ||
+    moveState.status === "loading";
 
   const pipelineHelperText = useMemo(() => {
     if (pipelinesStatus.state === "loading") {
@@ -509,6 +789,58 @@ export function KeycrmCardSearchWidget() {
           </label>
         </div>
 
+        <div className="grid gap-3 rounded-lg border border-indigo-100 bg-indigo-50/70 p-3 text-sm text-indigo-900 sm:grid-cols-2">
+          <div className="space-y-1">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              Цільова воронка
+            </span>
+            <select
+              className="w-full rounded border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              name="target_pipeline_id"
+              value={targetPipelineId}
+              onChange={(event) => {
+                setTargetPipelineId(event.target.value);
+                setTargetStatusId("");
+              }}
+            >
+              <option value="">Не обрано</option>
+              {pipelines.map((pipeline) => (
+                <option key={`target-${pipeline.id}`} value={pipeline.id}>
+                  {pipeline.title} (#{pipeline.id})
+                </option>
+              ))}
+            </select>
+            {targetStatusHydration.state === "loading" && (
+              <span className="text-xs text-indigo-700">Завантажуємо статуси цієї воронки…</span>
+            )}
+            {targetStatusHydration.state === "error" && (
+              <span className="text-xs text-red-600">{targetStatusHydration.message}</span>
+            )}
+          </div>
+          <div className="space-y-1">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              Цільовий статус
+            </span>
+            <select
+              className="w-full rounded border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              name="target_status_id"
+              value={targetStatusId}
+              onChange={(event) => setTargetStatusId(event.target.value)}
+              disabled={!targetPipeline || targetStatusHydration.state === "loading"}
+            >
+              <option value="">Не обрано</option>
+              {(targetPipeline?.statuses ?? []).map((status) => (
+                <option key={`target-status-${status.id}`} value={status.id}>
+                  {status.title} (#{status.id})
+                </option>
+              ))}
+            </select>
+            {targetPipeline && targetPipeline.statuses.length === 0 && targetStatusHydration.state === "idle" && (
+              <span className="text-xs text-indigo-700">Для цієї воронки статуси ще не завантажені.</span>
+            )}
+          </div>
+        </div>
+
         {pipelineHelperText && (
           <p className="text-xs text-slate-500">{pipelineHelperText}</p>
         )}
@@ -591,6 +923,7 @@ export function KeycrmCardSearchWidget() {
                 <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
                   <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
+                      <th className="px-3 py-2">Обрати</th>
                       <th className="px-3 py-2">ID</th>
                       <th className="px-3 py-2">Назва</th>
                       <th className="px-3 py-2">Контакт</th>
@@ -601,7 +934,22 @@ export function KeycrmCardSearchWidget() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {items.map((item) => (
-                      <tr key={item.cardId} className="hover:bg-slate-50">
+                      <tr
+                        key={item.cardId}
+                        className={`cursor-pointer hover:bg-slate-50 ${
+                          selectedCardId === item.cardId ? "bg-indigo-50/70" : ""
+                        }`}
+                        onClick={() => setSelectedCardId(item.cardId)}
+                      >
+                        <td className="px-3 py-2 align-middle">
+                          <input
+                            type="radio"
+                            name="selected_card"
+                            className="h-4 w-4 accent-indigo-600"
+                            checked={selectedCardId === item.cardId}
+                            onChange={() => setSelectedCardId(item.cardId)}
+                          />
+                        </td>
                         <td className="px-3 py-2 font-mono text-xs text-slate-500">#{item.cardId}</td>
                         <td className="px-3 py-2 text-slate-900">{item.title ?? "—"}</td>
                         <td className="px-3 py-2">{item.contactName ?? item.clientName ?? "—"}</td>
@@ -629,6 +977,59 @@ export function KeycrmCardSearchWidget() {
               </div>
             </div>
           )}
+
+          <div className="space-y-3 rounded-xl border border-indigo-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-indigo-900">Переміщення картки</h3>
+            <p className="text-xs text-slate-600">
+              Оберіть картку у таблиці вище та цільову воронку зі статусом. Після переміщення
+              картка з’явиться у вибраній колонці KeyCRM.
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-slate-700">
+                {selectedCard ? (
+                  <>
+                    <span className="font-medium text-slate-900">Вибрана картка:</span>{" "}
+                    #{selectedCard.cardId} · {selectedCard.title ?? "Без назви"}
+                  </>
+                ) : (
+                  <span className="text-slate-500">Картку не обрано</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleMove}
+                disabled={moveDisabled}
+                className={`inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                  moveDisabled
+                    ? "cursor-not-allowed bg-indigo-200 text-indigo-500"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+              >
+                {moveState.status === "loading" ? "Переміщуємо…" : "Перемістити картку"}
+              </button>
+            </div>
+
+            {moveState.status === "error" && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <p className="font-semibold">Не вдалося перемістити</p>
+                <p className="mt-1 text-xs text-red-600">{moveState.message}</p>
+                {moveState.details && (
+                  <pre className="mt-2 max-h-40 overflow-auto rounded bg-white/70 p-2 text-xs text-red-800">
+                    {JSON.stringify(moveState.details, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            {moveState.status === "success" && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <p className="font-semibold">{moveState.message}</p>
+                <pre className="mt-2 max-h-40 overflow-auto rounded bg-white/70 p-2 text-xs text-emerald-900">
+                  {JSON.stringify(moveState.response, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
 
           <div>
             <h3 className="text-sm font-semibold text-slate-700">Сира відповідь API</h3>
