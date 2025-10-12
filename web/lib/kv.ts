@@ -84,6 +84,15 @@ function buildBaseCandidates(): string[] {
 
 const BASE_CANDIDATES = buildBaseCandidates();
 
+export function getKvConfigStatus() {
+  return {
+    hasBaseUrl: BASE_CANDIDATES.length > 0,
+    baseCandidates: BASE_CANDIDATES.slice(),
+    hasWriteToken: Boolean(WR_TOKEN),
+    hasReadToken: Boolean(RD_TOKEN),
+  } as const;
+}
+
 async function rest(
   path: string,
   opts: RequestInit = {},
@@ -192,7 +201,7 @@ async function kvSetRaw(key: string, value: string) {
   }
 
   await rest(`v0/kv/${encodeURIComponent(key)}`, {
-    method: 'POST',
+    method: 'PUT',
     body: JSON.stringify({ value }),
   });
 }

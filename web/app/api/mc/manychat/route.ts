@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
+import { getKvConfigStatus } from '@/lib/kv';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
@@ -26,6 +27,12 @@ type Diagnostics = {
     message?: string;
     url?: string;
     note?: string;
+  } | null;
+  kvConfig?: {
+    hasBaseUrl: boolean;
+    hasReadToken: boolean;
+    hasWriteToken: boolean;
+    candidates: number;
   } | null;
   kv?: {
     ok: boolean;
@@ -216,6 +223,14 @@ export async function GET() {
     'MANYCHAT_API_TOKEN',
     'MC_API_KEY',
   );
+
+  const kvStatus = getKvConfigStatus();
+  diagnostics.kvConfig = {
+    hasBaseUrl: kvStatus.hasBaseUrl,
+    hasReadToken: kvStatus.hasReadToken,
+    hasWriteToken: kvStatus.hasWriteToken,
+    candidates: kvStatus.baseCandidates.length,
+  };
 
   let source: 'memory' | 'kv' | 'api' | 'trace' | null = lastMessage ? 'memory' : null;
   let latest = lastMessage;

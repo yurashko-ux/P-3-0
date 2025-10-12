@@ -29,6 +29,12 @@ type Diagnostics = {
     url?: string;
     note?: string;
   } | null;
+  kvConfig?: {
+    hasBaseUrl: boolean;
+    hasReadToken: boolean;
+    hasWriteToken: boolean;
+    candidates: number;
+  } | null;
   kv?: {
     ok: boolean;
     key: string;
@@ -183,6 +189,7 @@ export function ManychatMessageInbox() {
   const trace = inbox.trace ?? null;
   const diagnostics = inbox.diagnostics ?? null;
   const apiDiag = diagnostics?.api ?? null;
+  const kvConfigDiag = diagnostics?.kvConfig ?? null;
   const kvDiag = diagnostics?.kv ?? null;
   const kvTraceDiag = diagnostics?.kvTrace ?? null;
   const kvFeedDiag = diagnostics?.kvFeed ?? null;
@@ -208,6 +215,14 @@ export function ManychatMessageInbox() {
       </div>
 
       <div className="mt-4 space-y-4">
+        {kvConfigDiag ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-white/60 p-4">
+            <h3 className="text-sm font-semibold text-slate-700">Конфігурація Vercel KV</h3>
+            <p className="mt-2 text-xs text-slate-500">
+              URL: {kvConfigDiag.hasBaseUrl ? '✅ задано' : '⚠️ відсутній'} · Токен читання: {kvConfigDiag.hasReadToken ? '✅' : '⚠️'} · Токен запису: {kvConfigDiag.hasWriteToken ? '✅' : '⚠️'} · Кандидатів бази: {kvConfigDiag.candidates}
+            </p>
+          </div>
+        ) : null}
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
           <h3 className="text-sm font-semibold text-slate-600">Діагностика вебхука</h3>
           {trace ? (
