@@ -61,11 +61,17 @@ async function kvGetRaw(key: string) {
 }
 
 async function kvSetRaw(key: string, value: string) {
-  if (!BASE || !WR_TOKEN) return;
+  if (!BASE) {
+    throw new Error('KV_REST_API_URL missing');
+  }
+  if (!WR_TOKEN) {
+    throw new Error('KV_REST_API_TOKEN missing');
+  }
+
   await rest(`set/${encodeURIComponent(key)}`, {
     method: 'POST',
     body: JSON.stringify({ value }),
-  }).catch(() => {});
+  });
 }
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
@@ -175,13 +181,21 @@ export const kvRead = {
 };
 
 export const kvWrite = {
-  async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
+  async setRaw(key: string, value: string) {
+    return kvSetRaw(key, value);
+  },
   async lpush(key: string, value: string) {
-    if (!BASE || !WR_TOKEN) return;
+    if (!BASE) {
+      throw new Error('KV_REST_API_URL missing');
+    }
+    if (!WR_TOKEN) {
+      throw new Error('KV_REST_API_TOKEN missing');
+    }
+
     await rest(`lpush/${encodeURIComponent(key)}`, {
       method: 'POST',
       body: JSON.stringify({ value }),
-    }).catch(() => {});
+    });
   },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
