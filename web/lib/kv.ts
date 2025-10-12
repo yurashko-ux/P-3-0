@@ -12,15 +12,74 @@ const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
 
 function normalizeBase(url: string): string | null {
   if (!url) return null;
-  const trimmed = url.trim().replace(/\s+$/, '');
+  const trimmed = url.trim();
   if (!trimmed) return null;
-  return trimmed.replace(/\/v0\/kv\/?$/i, '');
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    // fall back to manual sanitising for non-URL strings
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return null;
+  }
+
+  let sanitized = trimmed.replace(/\s+$/, '');
+  sanitized = sanitized.replace(/\/+$/, '');
+
+  const patterns = [/\/v0\/kv$/i, /\/kv$/i, /\/v0$/i];
+  let updated = true;
+  while (updated) {
+    updated = false;
+    for (const pattern of patterns) {
+      if (pattern.test(sanitized)) {
+        sanitized = sanitized.replace(pattern, '');
+        updated = true;
+      }
+    }
+  }
+
+  return sanitized || null;
 }
 
 function buildBaseCandidates(): string[] {
+  const candidates = new Set<string>();
+
+  const trimmed = RAW_BASE.trim();
+  if (trimmed) {
+    const noTrailing = trimmed.replace(/\s+$/, '').replace(/\/+$/, '');
+    if (noTrailing) {
+      candidates.add(noTrailing);
+
+      const lowered = noTrailing.toLowerCase();
+      const variants: string[] = [noTrailing];
+
+      if (lowered.endsWith('/v0/kv')) {
+        variants.push(noTrailing.slice(0, -'/v0/kv'.length));
+      }
+      if (lowered.endsWith('/kv')) {
+        variants.push(noTrailing.slice(0, -'/kv'.length));
+      }
+      if (lowered.endsWith('/v0')) {
+        variants.push(noTrailing.slice(0, -'/v0'.length));
+      }
+
+      for (const variant of variants) {
+        if (variant) {
+          candidates.add(variant.replace(/\/+$/, ''));
+        }
+      }
+    }
+  }
+
   const normalized = normalizeBase(RAW_BASE);
-  if (!normalized) return [];
-  return [normalized];
+  if (normalized) {
+    candidates.add(normalized.replace(/\/+$/, ''));
+  }
+
+  return Array.from(candidates).filter(Boolean);
 }
 
 const BASE_CANDIDATES = buildBaseCandidates();
