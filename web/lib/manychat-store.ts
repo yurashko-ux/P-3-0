@@ -2,6 +2,7 @@
 // Спільне сховище для останнього ManyChat-повідомлення й трасування вебхука.
 
 import { kvWrite, kvRead } from '@/lib/kv';
+import { redis } from '@/lib/redis';
 
 type KvClient = typeof import('@vercel/kv').kv;
 
@@ -52,11 +53,11 @@ export async function persistManychatSnapshot(
   const feedLimit = 25;
 
   let stored = false;
+  let lastError: unknown = null;
 
   if (kvClient) {
     try {
       await kvClient.set(MANYCHAT_MESSAGE_KEY, payloadMessage);
-      stored = true;
       if (payloadTrace) {
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
       }
@@ -64,25 +65,52 @@ export async function persistManychatSnapshot(
         await kvClient.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
         await kvClient.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
       } catch {
-        // Якщо lpush/ltrim недоступні в середовищі, продовжимо через REST нижче.
+        // Якщо lpush/ltrim недоступні в середовищі, продовжимо спроби іншими шляхами.
       }
-    } catch {
-      stored = false;
+      stored = true;
+    } catch (error) {
+      lastError = error;
     }
   }
 
   if (!stored) {
-    await kvWrite.setRaw(MANYCHAT_MESSAGE_KEY, JSON.stringify(payloadMessage));
-    if (payloadTrace) {
-      await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
-    }
     try {
-      await kvWrite.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
-      await kvWrite.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
+      await kvWrite.setRaw(MANYCHAT_MESSAGE_KEY, JSON.stringify(payloadMessage));
+      if (payloadTrace) {
+        await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
+      }
+      try {
+        await kvWrite.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
+        await kvWrite.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
+      } catch {
+        // якщо REST-операції списків недоступні, використаємо резерви нижче
+      }
       stored = true;
-    } catch {
-      // якщо REST-операції списків недоступні, використаємо резерв через setRaw нижче
+    } catch (error) {
+      lastError = error;
     }
+  }
+
+  if (!stored) {
+    try {
+      await redis.set(MANYCHAT_MESSAGE_KEY, JSON.stringify(payloadMessage));
+      if (payloadTrace) {
+        await redis.set(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
+      }
+      try {
+        await redis.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
+        await redis.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
+      } catch {
+        // Якщо навіть redis.ltrim недоступний – головне, що основне повідомлення записане.
+      }
+      stored = true;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!stored && lastError) {
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
   try {
@@ -112,7 +140,7 @@ export async function persistManychatSnapshot(
   }
 }
 
-type StoreSource = 'kv-client' | 'kv-rest';
+type StoreSource = 'kv-client' | 'kv-rest' | 'kv-redis';
 
 async function readFromKvClient<T>(key: string): Promise<T | null> {
   if (!kvClient) return null;
@@ -143,21 +171,40 @@ export async function readManychatMessage(): Promise<{
   }
 
   const raw = await kvRead.getRaw(MANYCHAT_MESSAGE_KEY);
-  if (!raw) return { message: null, source: null };
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ManychatStoredMessage;
+      if (parsed && typeof parsed === 'object') {
+        const receivedAt = typeof parsed.receivedAt === 'number' ? parsed.receivedAt : Date.now();
+        return { message: { ...parsed, receivedAt }, source: 'kv-rest' };
+      }
+    } catch (error) {
+      return {
+        message: null,
+        source: 'kv-rest',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   try {
-    const parsed = JSON.parse(raw) as ManychatStoredMessage;
-    if (parsed && typeof parsed === 'object') {
-      const receivedAt = typeof parsed.receivedAt === 'number' ? parsed.receivedAt : Date.now();
-      return { message: { ...parsed, receivedAt }, source: 'kv-rest' };
+    const redisRaw = await redis.get(MANYCHAT_MESSAGE_KEY);
+    if (redisRaw) {
+      const parsed = JSON.parse(redisRaw) as ManychatStoredMessage;
+      if (parsed && typeof parsed === 'object') {
+        const receivedAt = typeof parsed.receivedAt === 'number' ? parsed.receivedAt : Date.now();
+        return { message: { ...parsed, receivedAt }, source: 'kv-redis' };
+      }
     }
   } catch (error) {
     return {
       message: null,
-      source: 'kv-rest',
+      source: 'kv-redis',
       error: error instanceof Error ? error.message : String(error),
     };
   }
-  return { message: null, source: 'kv-rest' };
+
+  return { message: null, source: null };
 }
 
 export async function readManychatTrace(): Promise<{
@@ -171,20 +218,38 @@ export async function readManychatTrace(): Promise<{
   }
 
   const raw = await kvRead.getRaw(MANYCHAT_TRACE_KEY);
-  if (!raw) return { trace: null, source: null };
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ManychatWebhookTrace;
+      if (parsed && typeof parsed === 'object') {
+        return { trace: parsed, source: 'kv-rest' };
+      }
+    } catch (error) {
+      return {
+        trace: null,
+        source: 'kv-rest',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   try {
-    const parsed = JSON.parse(raw) as ManychatWebhookTrace;
-    if (parsed && typeof parsed === 'object') {
-      return { trace: parsed, source: 'kv-rest' };
+    const redisRaw = await redis.get(MANYCHAT_TRACE_KEY);
+    if (redisRaw) {
+      const parsed = JSON.parse(redisRaw) as ManychatWebhookTrace;
+      if (parsed && typeof parsed === 'object') {
+        return { trace: parsed, source: 'kv-redis' };
+      }
     }
   } catch (error) {
     return {
       trace: null,
-      source: 'kv-rest',
+      source: 'kv-redis',
       error: error instanceof Error ? error.message : String(error),
     };
   }
-  return { trace: null, source: 'kv-rest' };
+
+  return { trace: null, source: null };
 }
 
 export async function readManychatFeed(limit = 10): Promise<{
@@ -246,6 +311,30 @@ export async function readManychatFeed(limit = 10): Promise<{
     if (messages.length > 0) {
       return { messages: messages.slice(0, boundedLimit), source: 'kv-rest' };
     }
+  }
+
+  try {
+    const redisList = await redis.lrange(MANYCHAT_FEED_KEY, 0, boundedLimit - 1);
+    if (Array.isArray(redisList) && redisList.length > 0) {
+      const parsed = redisList
+        .map((entry) => {
+          try {
+            return JSON.parse(entry) as ManychatStoredMessage;
+          } catch {
+            return null;
+          }
+        })
+        .filter((item): item is ManychatStoredMessage => Boolean(item));
+      if (parsed.length > 0) {
+        return { messages: parsed.slice(0, boundedLimit), source: 'kv-redis' };
+      }
+    }
+  } catch (error) {
+    return {
+      messages: [],
+      source: 'kv-redis',
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
   const raw = await kvRead.getRaw(MANYCHAT_FEED_KEY);

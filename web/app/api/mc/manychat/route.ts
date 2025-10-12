@@ -280,10 +280,18 @@ export async function GET() {
     if (stored) {
       latest = stored;
       source = 'kv';
+      const diagSource = storedSource === 'kv-client' ? 'memory' : 'kv';
+      const diagMessage =
+        storedSource === 'kv-redis'
+          ? 'Повідомлення отримано через REST-команди Redis'
+          : storedSource === 'kv-rest'
+            ? 'Повідомлення отримано через REST API Vercel KV'
+            : undefined;
       diagnostics.kv = {
         ok: true,
         key: MANYCHAT_MESSAGE_KEY,
-        source: storedSource === 'kv-rest' ? 'kv' : 'kv',
+        source: diagSource,
+        message: diagMessage,
       };
     } else if (storeError) {
       diagnostics.kv = {
@@ -306,10 +314,18 @@ export async function GET() {
     const { trace: storedTrace, error: traceError, source: traceSource } = await readManychatTrace();
     if (storedTrace) {
       trace = storedTrace;
+      const diagSource = 'kv';
+      const diagMessage =
+        traceSource === 'kv-redis'
+          ? 'Трасування отримано через REST-команди Redis'
+          : traceSource === 'kv-rest'
+            ? 'Трасування отримано через REST API Vercel KV'
+            : undefined;
       diagnostics.kvTrace = {
         ok: true,
         key: MANYCHAT_TRACE_KEY,
-        source: traceSource === 'kv-rest' ? 'kv' : 'kv',
+        source: diagSource,
+        message: diagMessage,
       };
     } else if (traceError) {
       diagnostics.kvTrace = {
@@ -335,17 +351,20 @@ export async function GET() {
     feed = storedFeed;
     latest = latest ?? storedFeed[0];
     source = source ?? 'kv';
+    const feedMessage =
+      feedSource === 'kv-client'
+        ? 'Журнал отримано через @vercel/kv'
+        : feedSource === 'kv-rest'
+          ? 'Журнал отримано через REST API Vercel KV'
+          : feedSource === 'kv-redis'
+            ? 'Журнал отримано через REST-команди Redis'
+            : undefined;
     diagnostics.kvFeed = {
       ok: true,
       key: MANYCHAT_FEED_KEY,
       source: 'kv',
       count: storedFeed.length,
-      message:
-        feedSource === 'kv-client'
-          ? 'Журнал отримано через @vercel/kv'
-          : feedSource === 'kv-rest'
-            ? 'Журнал отримано через REST API Vercel KV'
-            : undefined,
+      message: feedMessage,
     };
   } else if (feedError) {
     diagnostics.kvFeed = {
