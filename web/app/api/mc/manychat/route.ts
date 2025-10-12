@@ -201,7 +201,7 @@ export async function GET() {
     'MC_API_KEY',
   );
 
-  let source: 'memory' | 'kv' | 'api' | null = lastMessage ? 'memory' : null;
+  let source: 'memory' | 'kv' | 'api' | 'trace' | null = lastMessage ? 'memory' : null;
   let latest = lastMessage;
   let trace = lastTrace;
 
