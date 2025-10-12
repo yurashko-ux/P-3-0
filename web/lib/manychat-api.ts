@@ -307,6 +307,7 @@ export async function fetchManychatLatest(limit = 5): Promise<{ messages: Manych
   const boundedLimit = Math.max(1, Math.min(limit, 20));
 
   let lastError: any = null;
+  let lastUrl: string | null = null;
   for (const attempt of CONVERSATION_ENDPOINTS) {
     try {
       const query: Record<string, string | number> = {};
@@ -332,6 +333,8 @@ export async function fetchManychatLatest(limit = 5): Promise<{ messages: Manych
         query: attempt.method === 'POST' ? undefined : query,
         body: attempt.method === 'POST' ? bodyValue : undefined,
       });
+
+      lastUrl = url;
 
       const collection: any[] =
         (Array.isArray(json?.data?.conversations) ? json?.data?.conversations : undefined) ??
@@ -366,6 +369,7 @@ export async function fetchManychatLatest(limit = 5): Promise<{ messages: Manych
     } catch (error) {
       const status = typeof (error as any)?.status === 'number' ? (error as any).status : null;
       lastError = error;
+      lastUrl = typeof (error as any)?.url === 'string' ? (error as any).url : lastUrl;
       if (status === 404) {
         continue;
       }
@@ -374,6 +378,13 @@ export async function fetchManychatLatest(limit = 5): Promise<{ messages: Manych
   }
 
   if (lastError) {
+    const status = typeof lastError?.status === 'number' ? lastError.status : null;
+    if (status === 404) {
+      return {
+        messages: [],
+        meta: { source: 'api' as const, url: lastUrl ?? `${API_BASE}/` },
+      };
+    }
     throw lastError;
   }
 
