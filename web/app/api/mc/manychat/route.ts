@@ -4,29 +4,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
-import { kvRead, kvWrite } from '@/lib/kv';
+import { kvRead } from '@/lib/kv';
+import {
+  MANYCHAT_MESSAGE_KEY,
+  MANYCHAT_TRACE_KEY,
+  persistManychatSnapshot,
+  type ManychatStoredMessage,
+  type ManychatWebhookTrace,
+} from '@/lib/manychat-store';
 import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
-type LatestMessage = {
-  id: number | string;
-  receivedAt: number;
-  source: string;
-  title: string;
-  handle: string | null;
-  fullName: string | null;
-  text: string;
-  raw: unknown;
-};
-
-type WebhookTrace = {
-  receivedAt: number;
-  status: 'accepted' | 'rejected';
-  reason?: string | null;
-  statusCode?: number | null;
-  handle?: string | null;
-  fullName?: string | null;
-  messagePreview?: string | null;
-};
+type LatestMessage = ManychatStoredMessage;
+type WebhookTrace = ManychatWebhookTrace;
 
 type Diagnostics = {
   api?: {
@@ -46,9 +35,6 @@ type Diagnostics = {
 let lastMessage: LatestMessage | null = null;
 let lastTrace: WebhookTrace | null = null;
 let sequence = 0;
-
-const KV_MESSAGE_KEY = 'manychat:last-message';
-const KV_TRACE_KEY = 'manychat:last-trace';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -188,8 +174,7 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    await kvWrite.setRaw(KV_MESSAGE_KEY, JSON.stringify(message));
-    await kvWrite.setRaw(KV_TRACE_KEY, JSON.stringify(lastTrace));
+    await persistManychatSnapshot(message, lastTrace);
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : typeof error === 'string' ? error : null;
@@ -217,10 +202,10 @@ export async function GET() {
   let trace = lastTrace;
 
   if (latest) {
-    diagnostics.kv = { ok: true, key: KV_MESSAGE_KEY, source: 'memory' };
+    diagnostics.kv = { ok: true, key: MANYCHAT_MESSAGE_KEY, source: 'memory' };
   } else {
     try {
-      const raw = await kvRead.getRaw(KV_MESSAGE_KEY);
+      const raw = await kvRead.getRaw(MANYCHAT_MESSAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as LatestMessage;
         latest = {
@@ -229,11 +214,11 @@ export async function GET() {
             typeof parsed?.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
         };
         source = 'kv';
-        diagnostics.kv = { ok: true, key: KV_MESSAGE_KEY, source: 'kv' };
+        diagnostics.kv = { ok: true, key: MANYCHAT_MESSAGE_KEY, source: 'kv' };
       } else {
         diagnostics.kv = {
           ok: false,
-          key: KV_MESSAGE_KEY,
+          key: MANYCHAT_MESSAGE_KEY,
           source: 'miss',
           message: 'KV не містить збереженого повідомлення',
         };
@@ -241,7 +226,7 @@ export async function GET() {
     } catch (error) {
       diagnostics.kv = {
         ok: false,
-        key: KV_MESSAGE_KEY,
+        key: MANYCHAT_MESSAGE_KEY,
         source: 'error',
         message: error instanceof Error ? error.message : String(error),
       };
@@ -250,7 +235,7 @@ export async function GET() {
 
   if (!trace) {
     try {
-      const rawTrace = await kvRead.getRaw(KV_TRACE_KEY);
+      const rawTrace = await kvRead.getRaw(MANYCHAT_TRACE_KEY);
       if (rawTrace) {
         trace = JSON.parse(rawTrace) as WebhookTrace;
       }

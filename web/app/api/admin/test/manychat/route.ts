@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizeManyChat } from "@/lib/ingest";
 import { kvRead } from "@/lib/kv";
 import {
+  persistManychatSnapshot,
+  type ManychatStoredMessage,
+  type ManychatWebhookTrace,
+} from "@/lib/manychat-store";
+import {
   searchKeycrmCardByIdentity,
   type KeycrmCardSearchResult,
   type KeycrmCardSearchError,
@@ -243,6 +248,29 @@ export async function POST(req: NextRequest) {
       json?.last_name ??
       null,
   });
+
+  const snapshotTimestamp = Date.now();
+  const snapshotMessage: ManychatStoredMessage = {
+    id: `admin-test-${snapshotTimestamp}`,
+    receivedAt: snapshotTimestamp,
+    source: "admin:test/manychat",
+    title: "ManyChat Admin Test",
+    handle: normalized.handle ?? normalized.handleRaw ?? null,
+    fullName: normalized.fullName || null,
+    text: normalized.text || "",
+    raw: { payload: json, normalized },
+  };
+
+  const snapshotTrace: ManychatWebhookTrace = {
+    receivedAt: snapshotTimestamp,
+    status: "accepted",
+    handle: snapshotMessage.handle ?? undefined,
+    fullName: snapshotMessage.fullName ?? undefined,
+    messagePreview: snapshotMessage.text ? snapshotMessage.text.slice(0, 180) : null,
+    reason: "Записано через /api/admin/test/manychat",
+  };
+
+  await persistManychatSnapshot(snapshotMessage, snapshotTrace).catch(() => {});
 
   const text = normalized.text?.trim() ?? "";
 
