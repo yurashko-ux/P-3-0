@@ -63,12 +63,19 @@ function buildBaseCandidates(rawBase: string): string[] {
   };
 
   // Завжди віддаємо перевагу нормалізованій origin-адресі без службових сегментів.
-  push(normalizeBase(rawBase));
+  const normalisedOrigin = normalizeBase(rawBase);
+  push(normalisedOrigin);
+  if (normalisedOrigin) {
+    push(`${normalisedOrigin}/v0/kv`);
+  }
 
   const trimmed = rawBase.trim();
   if (trimmed) {
     const noTrailing = trimmed.replace(/\s+$/, '').replace(/\/+$/, '');
     push(noTrailing);
+    if (!/\/v0\/kv$/i.test(noTrailing)) {
+      push(`${noTrailing}/v0/kv`);
+    }
 
     const lowered = noTrailing.toLowerCase();
     if (lowered.endsWith('/v0/kv')) {
