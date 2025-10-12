@@ -76,6 +76,13 @@ export async function persistManychatSnapshot(
     if (payloadTrace) {
       await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
     }
+    try {
+      await kvWrite.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
+      await kvWrite.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
+      stored = true;
+    } catch {
+      // якщо REST-операції списків недоступні, використаємо резерв через setRaw нижче
+    }
   }
 
   try {
@@ -216,28 +223,56 @@ export async function readManychatFeed(limit = 10): Promise<{
   }
 
   const rawList = await kvRead.lrange(MANYCHAT_FEED_KEY, 0, boundedLimit - 1);
-  if (!rawList || rawList.length === 0) {
-    return { messages: [], source: null };
-  }
-
-  const messages: ManychatStoredMessage[] = [];
-  for (const entry of rawList) {
-    try {
-      const parsed = JSON.parse(entry) as ManychatStoredMessage;
-      if (parsed && typeof parsed === 'object') {
-        messages.push({
-          ...parsed,
-          receivedAt: typeof parsed.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
-        });
+  if (rawList && rawList.length > 0) {
+    const messages: ManychatStoredMessage[] = [];
+    for (const entry of rawList) {
+      try {
+        const parsed = JSON.parse(entry) as ManychatStoredMessage;
+        if (parsed && typeof parsed === 'object') {
+          messages.push({
+            ...parsed,
+            receivedAt: typeof parsed.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
+          });
+        }
+      } catch (error) {
+        return {
+          messages,
+          source: 'kv-rest',
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
-    } catch (error) {
-      return {
-        messages,
-        source: 'kv-rest',
-        error: error instanceof Error ? error.message : String(error),
-      };
+    }
+
+    if (messages.length > 0) {
+      return { messages: messages.slice(0, boundedLimit), source: 'kv-rest' };
     }
   }
 
-  return { messages: messages.slice(0, boundedLimit), source: 'kv-rest' };
+  const raw = await kvRead.getRaw(MANYCHAT_FEED_KEY);
+  if (!raw) {
+    return { messages: [], source: null };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as ManychatStoredMessage[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return {
+        messages: parsed
+          .slice(0, boundedLimit)
+          .map((item) => ({
+            ...item,
+            receivedAt: typeof item.receivedAt === 'number' ? item.receivedAt : Date.now(),
+          })),
+        source: 'kv-rest',
+      };
+    }
+  } catch (error) {
+    return {
+      messages: [],
+      source: 'kv-rest',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  return { messages: [], source: 'kv-rest' };
 }

@@ -266,6 +266,18 @@ export const kvWrite = {
       body: JSON.stringify({ value }),
     });
   },
+  async ltrim(key: string, start: number, stop: number) {
+    if (!BASE_CANDIDATES.length) {
+      throw new Error('KV_REST_API_URL missing');
+    }
+    if (!WR_TOKEN) {
+      throw new Error('KV_REST_API_TOKEN missing');
+    }
+
+    await rest(`v0/kv/ltrim/${encodeURIComponent(key)}/${start}/${stop}`, {
+      method: 'POST',
+    });
+  },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
     const created_at =
