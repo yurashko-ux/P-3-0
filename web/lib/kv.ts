@@ -1,41 +1,289 @@
 // web/lib/kv.ts
 // ❗️НОВЕ: у listCampaigns() додаємо __index_id і гарантуємо obj.id = __index_id, якщо збережений id зламаний.
 
+import { getEnvValue } from '@/lib/env';
+
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
   ITEM_KEY: (id: string) => `campaign:${id}`,
 };
 
-const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
-const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
-const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
+type KvRuntimeConfig = {
+  rawBase: string;
+  baseCandidates: string[];
+  writeToken: string | null;
+  readToken: string | null;
+};
 
-async function rest(path: string, opts: RequestInit = {}, ro = false) {
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${ro ? RD_TOKEN : WR_TOKEN}`,
+function normalizeBase(url: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    // fall back to manual sanitising for non-URL strings
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return null;
+  }
+
+  let sanitized = trimmed.replace(/\s+$/, '');
+  sanitized = sanitized.replace(/\/+$/, '');
+
+  const patterns = [/\/v0\/kv$/i, /\/kv$/i, /\/v0$/i];
+  let updated = true;
+  while (updated) {
+    updated = false;
+    for (const pattern of patterns) {
+      if (pattern.test(sanitized)) {
+        sanitized = sanitized.replace(pattern, '');
+        updated = true;
+      }
+    }
+  }
+
+  return sanitized || null;
+}
+
+function buildBaseCandidates(rawBase: string): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (value: string | null | undefined) => {
+    if (!value) return;
+    const trimmed = value.replace(/\s+$/, '').replace(/\/+$/, '');
+    if (!trimmed) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    ordered.push(trimmed);
   };
-  const res = await fetch(`${BASE}/${path}`, { ...opts, headers, cache: 'no-store' });
-  if (!res.ok) throw new Error(`${path} ${res.status}`);
-  return res;
+
+  // Завжди віддаємо перевагу нормалізованій origin-адресі без службових сегментів.
+  const normalisedOrigin = normalizeBase(rawBase);
+  push(normalisedOrigin);
+  if (normalisedOrigin) {
+    push(`${normalisedOrigin}/v0/kv`);
+  }
+
+  const trimmed = rawBase.trim();
+  if (trimmed) {
+    const noTrailing = trimmed.replace(/\s+$/, '').replace(/\/+$/, '');
+    push(noTrailing);
+    if (!/\/v0\/kv$/i.test(noTrailing)) {
+      push(`${noTrailing}/v0/kv`);
+    }
+
+    const lowered = noTrailing.toLowerCase();
+    if (lowered.endsWith('/v0/kv')) {
+      push(noTrailing.slice(0, -'/v0/kv'.length));
+    }
+    if (lowered.endsWith('/kv')) {
+      push(noTrailing.slice(0, -'/kv'.length));
+    }
+    if (lowered.endsWith('/v0')) {
+      push(noTrailing.slice(0, -'/v0'.length));
+    }
+  }
+
+  return ordered;
+}
+
+function resolveKvRuntime(): KvRuntimeConfig {
+  const rawBase =
+    getEnvValue(
+      'KV_REST_API_URL',
+      'VERCEL_KV_REST_API_URL',
+      'VERCEL_KV_URL',
+      'KV_URL',
+    )?.trim() ?? '';
+
+  const writeToken =
+    getEnvValue(
+      'KV_REST_API_TOKEN',
+      'VERCEL_KV_REST_API_TOKEN',
+      'KV_REST_API_WRITE_ONLY_TOKEN',
+      'KV_WRITE_ONLY_TOKEN',
+      'KV_TOKEN',
+    )?.trim() ?? null;
+
+  const readToken =
+    getEnvValue(
+      'KV_REST_API_READ_ONLY_TOKEN',
+      'VERCEL_KV_REST_API_READ_ONLY_TOKEN',
+      'KV_READ_ONLY_TOKEN',
+      'KV_REST_API_TOKEN',
+      'VERCEL_KV_REST_API_TOKEN',
+      'KV_TOKEN',
+    )?.trim() ?? writeToken;
+
+  const baseCandidates = buildBaseCandidates(rawBase);
+
+  return {
+    rawBase,
+    baseCandidates,
+    writeToken,
+    readToken: readToken ?? null,
+  };
+}
+
+export function getKvConfigStatus() {
+  const { baseCandidates, writeToken, readToken } = resolveKvRuntime();
+  return {
+    hasBaseUrl: baseCandidates.length > 0,
+    baseCandidates: baseCandidates.slice(),
+    hasWriteToken: Boolean(writeToken),
+    hasReadToken: Boolean(readToken),
+  } as const;
+}
+
+async function rest(
+  path: string,
+  opts: RequestInit = {},
+  ro = false,
+  allow404 = false,
+): Promise<Response> {
+  const { baseCandidates, writeToken, readToken } = resolveKvRuntime();
+
+  if (!baseCandidates.length) {
+    throw new Error('KV_REST_API_URL missing');
+  }
+  const token = ro ? readToken : writeToken;
+  if (!token) {
+    throw new Error(ro ? 'KV_REST_API_READ_ONLY_TOKEN missing' : 'KV_REST_API_TOKEN missing');
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+
+  let lastError: Error | null = null;
+
+  let fallback404: Response | null = null;
+
+  for (let index = 0; index < baseCandidates.length; index += 1) {
+    const base = baseCandidates[index];
+    const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+    const targetPath = path.replace(/^\/+/, '');
+    const url = new URL(targetPath, normalizedBase).toString();
+
+    let res: Response;
+    try {
+      res = await fetch(url, { ...opts, headers, cache: 'no-store' });
+    } catch (error) {
+      lastError = new Error(
+        `KV request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      continue;
+    }
+
+    if (res.ok) {
+      return res;
+    }
+
+    if (res.status === 404) {
+      if (allow404 && !fallback404) {
+        fallback404 = res.clone();
+      }
+      // ключ може бути відсутній або ми звернулись не за тією адресою —
+      // пробуємо наступного кандидата
+      lastError = new Error(`KV responded with 404 at ${url}`);
+      continue;
+    }
+
+    const error = new Error(`KV responded with ${res.status} at ${url}`);
+    (error as any).status = res.status;
+    throw error;
+  }
+
+  if (allow404) {
+    return fallback404 ?? new Response(null, { status: 404 });
+  }
+
+  throw lastError ?? new Error('KV request failed');
 }
 
 async function kvGetRaw(key: string) {
-  if (!BASE || !RD_TOKEN) return null as string | null;
-  const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
-  if (!res) return null;
-  return res.text();
+  const { baseCandidates, readToken } = resolveKvRuntime();
+  if (!baseCandidates.length || !readToken) return null as string | null;
+  const res = await rest(`get/${encodeURIComponent(key)}`, {}, true, true).catch(() => null);
+  if (!res || res.status === 404) return null;
+
+  let text = '';
+  try {
+    text = await res.text();
+  } catch {
+    return null;
+  }
+
+  if (!text) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const candidate =
+        (parsed as any).result ??
+        (parsed as any).value ??
+        (parsed as any).data ??
+        null;
+      if (typeof candidate === 'string') return candidate;
+      if (candidate && typeof candidate === 'object') {
+        const nested = (candidate as any).value ?? (candidate as any).result ?? null;
+        if (typeof nested === 'string') return nested;
+      }
+    }
+  } catch {
+    // ignore, fall back to raw text
+  }
+
+  return text;
 }
 
 async function kvSetRaw(key: string, value: string) {
-  if (!BASE || !WR_TOKEN) return;
-  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
+  const { baseCandidates, writeToken } = resolveKvRuntime();
+  if (!baseCandidates.length) {
+    throw new Error('KV_REST_API_URL missing');
+  }
+  if (!writeToken) {
+    throw new Error('KV_REST_API_TOKEN missing');
+  }
+
+  const body = JSON.stringify({ value });
+
+  try {
+    await rest(`set/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      body,
+    });
+    return;
+  } catch (error) {
+    const status = typeof (error as any)?.status === 'number' ? (error as any).status : null;
+    if (status !== 405 && status !== 400 && status !== 501) {
+      throw error;
+    }
+  }
+
+  await rest(`set/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body,
+  });
 }
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
-  if (!BASE || !RD_TOKEN) return [] as string[];
-  const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
+  const { baseCandidates, readToken } = resolveKvRuntime();
+  if (!baseCandidates.length || !readToken) return [] as string[];
+  const res = await rest(
+    `lrange/${encodeURIComponent(key)}/${start}/${stop}`,
+    {},
+    true,
+    true,
+  ).catch(() => null);
   if (!res) return [] as string[];
 
   let txt = '';
@@ -139,13 +387,62 @@ export const kvRead = {
 };
 
 export const kvWrite = {
-  async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
+  async setRaw(key: string, value: string) {
+    return kvSetRaw(key, value);
+  },
   async lpush(key: string, value: string) {
-    if (!BASE || !WR_TOKEN) return;
+    const { baseCandidates, writeToken } = resolveKvRuntime();
+    if (!baseCandidates.length) {
+      throw new Error('KV_REST_API_URL missing');
+    }
+    if (!writeToken) {
+      throw new Error('KV_REST_API_TOKEN missing');
+    }
+
+    const body = JSON.stringify({ value });
+
+    try {
+      await rest(`lpush/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        body,
+      });
+      return;
+    } catch (error) {
+      const status = typeof (error as any)?.status === 'number' ? (error as any).status : null;
+      if (status !== 405 && status !== 400 && status !== 501) {
+        throw error;
+      }
+    }
+
     await rest(`lpush/${encodeURIComponent(key)}`, {
-      method: 'POST',
-      body: JSON.stringify({ value }),
-    }).catch(() => {});
+      method: 'PUT',
+      body,
+    });
+  },
+  async ltrim(key: string, start: number, stop: number) {
+    const { baseCandidates, writeToken } = resolveKvRuntime();
+    if (!baseCandidates.length) {
+      throw new Error('KV_REST_API_URL missing');
+    }
+    if (!writeToken) {
+      throw new Error('KV_REST_API_TOKEN missing');
+    }
+
+    try {
+      await rest(`ltrim/${encodeURIComponent(key)}/${start}/${stop}`, {
+        method: 'POST',
+      });
+      return;
+    } catch (error) {
+      const status = typeof (error as any)?.status === 'number' ? (error as any).status : null;
+      if (status !== 405 && status !== 400 && status !== 501) {
+        throw error;
+      }
+    }
+
+    await rest(`ltrim/${encodeURIComponent(key)}/${start}/${stop}`, {
+      method: 'PUT',
+    });
   },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
