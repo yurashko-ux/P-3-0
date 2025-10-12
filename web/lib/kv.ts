@@ -156,6 +156,8 @@ async function rest(
 
   let lastError: Error | null = null;
 
+  let fallback404: Response | null = null;
+
   for (let index = 0; index < baseCandidates.length; index += 1) {
     const base = baseCandidates[index];
     const normalizedBase = base.endsWith('/') ? base : `${base}/`;
@@ -177,8 +179,8 @@ async function rest(
     }
 
     if (res.status === 404) {
-      if (allow404) {
-        return res;
+      if (allow404 && !fallback404) {
+        fallback404 = res.clone();
       }
       // ключ може бути відсутній або ми звернулись не за тією адресою —
       // пробуємо наступного кандидата
@@ -192,7 +194,7 @@ async function rest(
   }
 
   if (allow404) {
-    return new Response(null, { status: 404 });
+    return fallback404 ?? new Response(null, { status: 404 });
   }
 
   throw lastError ?? new Error('KV request failed');
