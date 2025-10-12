@@ -41,6 +41,13 @@ type Diagnostics = {
     source: 'kv' | 'miss' | 'error';
     message?: string;
   } | null;
+  kvFeed?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
+    count?: number;
+    message?: string;
+  } | null;
   traceFallback?: {
     used: boolean;
     reason: string;
@@ -178,6 +185,7 @@ export function ManychatMessageInbox() {
   const apiDiag = diagnostics?.api ?? null;
   const kvDiag = diagnostics?.kv ?? null;
   const kvTraceDiag = diagnostics?.kvTrace ?? null;
+  const kvFeedDiag = diagnostics?.kvFeed ?? null;
   const traceFallback = diagnostics?.traceFallback ?? null;
 
   return (
@@ -259,6 +267,20 @@ export function ManychatMessageInbox() {
             <p className="mt-2 text-sm text-sky-700/80">Очікуємо перший запис у KV…</p>
           )}
         </div>
+        {kvFeedDiag ? (
+          <div className="rounded-xl border border-dashed border-emerald-200/70 bg-emerald-50/70 p-4">
+            <h3 className="text-sm font-semibold text-emerald-700">Журнал повідомлень (KV)</h3>
+            <p className="mt-2 text-sm text-emerald-700">
+              {kvFeedDiag.ok
+                ? `✅ Завантажено ${kvFeedDiag.count ?? 0} запис(ів)`
+                : `⚠️ ${kvFeedDiag.message ?? 'Журнал недоступний'}`}
+              <span className="block text-xs text-emerald-600/80">
+                Ключ: {kvFeedDiag.key}
+                {kvFeedDiag.source ? ` • джерело: ${kvFeedDiag.source}` : ''}
+              </span>
+            </p>
+          </div>
+        ) : null}
         {kvTraceDiag ? (
           <div className="rounded-xl border border-dashed border-purple-200 bg-purple-50/70 p-4">
             <h3 className="text-sm font-semibold text-purple-700">Сховище трасування (KV)</h3>

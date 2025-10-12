@@ -41,6 +41,7 @@ export type ManychatWebhookTrace = {
 
 export const MANYCHAT_MESSAGE_KEY = 'manychat:last-message';
 export const MANYCHAT_TRACE_KEY = 'manychat:last-trace';
+export const MANYCHAT_FEED_KEY = 'manychat:last-feed';
 
 export async function persistManychatSnapshot(
   message: ManychatStoredMessage,
@@ -48,6 +49,7 @@ export async function persistManychatSnapshot(
 ): Promise<void> {
   const payloadMessage = { ...message };
   const payloadTrace = trace ? { ...trace } : null;
+  const feedLimit = 25;
 
   let stored = false;
 
@@ -57,6 +59,12 @@ export async function persistManychatSnapshot(
       stored = true;
       if (payloadTrace) {
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
+      }
+      try {
+        await kvClient.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
+        await kvClient.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
+      } catch {
+        // Якщо lpush/ltrim недоступні в середовищі, продовжимо через REST нижче.
       }
     } catch {
       stored = false;
@@ -68,6 +76,32 @@ export async function persistManychatSnapshot(
     if (payloadTrace) {
       await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
     }
+  }
+
+  try {
+    const existingRaw = await kvRead.getRaw(MANYCHAT_FEED_KEY);
+    let existing: ManychatStoredMessage[] = [];
+    if (existingRaw) {
+      try {
+        const parsed = JSON.parse(existingRaw) as ManychatStoredMessage[];
+        if (Array.isArray(parsed)) {
+          existing = parsed.filter((item): item is ManychatStoredMessage => Boolean(item));
+        }
+      } catch {
+        existing = [];
+      }
+    }
+
+    const next = [payloadMessage, ...existing]
+      .slice(0, feedLimit)
+      .map((item) => ({
+        ...item,
+        receivedAt: typeof item.receivedAt === 'number' ? item.receivedAt : Date.now(),
+      }));
+
+    await kvWrite.setRaw(MANYCHAT_FEED_KEY, JSON.stringify(next));
+  } catch {
+    // Ігноруємо помилки журналу: вони не мають блокувати вебхук.
   }
 }
 
@@ -144,4 +178,66 @@ export async function readManychatTrace(): Promise<{
     };
   }
   return { trace: null, source: 'kv-rest' };
+}
+
+export async function readManychatFeed(limit = 10): Promise<{
+  messages: ManychatStoredMessage[];
+  source: StoreSource | null;
+  error?: string;
+}> {
+  const boundedLimit = Math.max(1, Math.min(limit, 50));
+
+  if (kvClient) {
+    try {
+      const raw = await kvClient.lrange(MANYCHAT_FEED_KEY, 0, boundedLimit - 1);
+      if (Array.isArray(raw) && raw.length) {
+        const parsed = raw
+          .map((entry) => {
+            if (typeof entry === 'string') {
+              try {
+                return JSON.parse(entry) as ManychatStoredMessage;
+              } catch {
+                return null;
+              }
+            }
+            return (entry ?? null) as ManychatStoredMessage | null;
+          })
+          .filter((item): item is ManychatStoredMessage => Boolean(item));
+        if (parsed.length) {
+          return {
+            messages: parsed.slice(0, boundedLimit),
+            source: 'kv-client',
+          };
+        }
+      }
+    } catch {
+      // ігноруємо, переходимо до REST
+    }
+  }
+
+  const rawList = await kvRead.lrange(MANYCHAT_FEED_KEY, 0, boundedLimit - 1);
+  if (!rawList || rawList.length === 0) {
+    return { messages: [], source: null };
+  }
+
+  const messages: ManychatStoredMessage[] = [];
+  for (const entry of rawList) {
+    try {
+      const parsed = JSON.parse(entry) as ManychatStoredMessage;
+      if (parsed && typeof parsed === 'object') {
+        messages.push({
+          ...parsed,
+          receivedAt: typeof parsed.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
+        });
+      }
+    } catch (error) {
+      return {
+        messages,
+        source: 'kv-rest',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  return { messages: messages.slice(0, boundedLimit), source: 'kv-rest' };
 }

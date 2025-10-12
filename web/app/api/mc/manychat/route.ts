@@ -7,9 +7,11 @@ import { getEnvValue, hasEnvValue } from '@/lib/env';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
+  MANYCHAT_FEED_KEY,
   persistManychatSnapshot,
   readManychatMessage,
   readManychatTrace,
+  readManychatFeed,
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
 } from '@/lib/manychat-store';
@@ -35,6 +37,13 @@ type Diagnostics = {
     ok: boolean;
     key: string;
     source: 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
+  kvFeed?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
+    count?: number;
     message?: string;
   } | null;
   traceFallback?: {
@@ -269,6 +278,39 @@ export async function GET() {
 
   let feed: LatestMessage[] = latest ? [latest] : [];
 
+  const { messages: storedFeed, source: feedSource, error: feedError } = await readManychatFeed(10);
+  if (storedFeed.length) {
+    feed = storedFeed;
+    latest = latest ?? storedFeed[0];
+    source = source ?? 'kv';
+    diagnostics.kvFeed = {
+      ok: true,
+      key: MANYCHAT_FEED_KEY,
+      source: 'kv',
+      count: storedFeed.length,
+      message:
+        feedSource === 'kv-client'
+          ? 'Журнал отримано через @vercel/kv'
+          : feedSource === 'kv-rest'
+            ? 'Журнал отримано через REST API Vercel KV'
+            : undefined,
+    };
+  } else if (feedError) {
+    diagnostics.kvFeed = {
+      ok: false,
+      key: MANYCHAT_FEED_KEY,
+      source: 'error',
+      message: feedError,
+    };
+  } else {
+    diagnostics.kvFeed = {
+      ok: false,
+      key: MANYCHAT_FEED_KEY,
+      source: 'miss',
+      message: 'Журнал повідомлень у KV порожній',
+    };
+  }
+
   if (apiKeyAvailable) {
     try {
       const { messages, meta } = await fetchManychatLatest(5);
@@ -279,11 +321,11 @@ export async function GET() {
         feed = apiFeed;
         latest = apiFeed[0];
         source = 'api';
-      diagnostics.api = { ok: true, url: meta.url, note: 'fetched' };
-    } else {
-      diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
-    }
-  } catch (error) {
+        diagnostics.api = { ok: true, url: meta.url, note: 'fetched' };
+      } else {
+        diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
+      }
+    } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       diagnostics.api = { ok: false, message };
     }
