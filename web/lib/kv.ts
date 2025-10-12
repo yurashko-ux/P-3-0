@@ -235,10 +235,34 @@ async function kvGetRaw(key: string) {
       if (candidate && typeof candidate === 'object') {
         const nested = (candidate as any).value ?? (candidate as any).result ?? null;
         if (typeof nested === 'string') return nested;
+        if (nested && typeof nested === 'object') {
+          try {
+            return JSON.stringify(nested);
+          } catch {
+            /* ignore */
+          }
+        }
+        try {
+          return JSON.stringify(candidate);
+        } catch {
+          /* ignore */
+        }
       }
     }
   } catch {
     // ignore, fall back to raw text
+  }
+
+  // деякі namespace повертають base64-рядок без JSON-обгортки
+  if (/^[A-Za-z0-9+/=]+$/.test(text) && text.length % 4 === 0) {
+    try {
+      const decoded = Buffer.from(text, 'base64').toString('utf8');
+      if (decoded) {
+        return decoded;
+      }
+    } catch {
+      // не вдалося розкодувати — повертаємо сирий текст
+    }
   }
 
   return text;
@@ -306,12 +330,18 @@ async function kvLRange(key: string, start = 0, stop = -1) {
   }
 
   return arr
-    .map((x: any) =>
-      typeof x === 'string'
-        ? x
-        : (x?.value ?? x?.member ?? x?.id ?? '')
-    )
-    .filter(Boolean)
+    .map((x: any) => {
+      if (typeof x === 'string') return x;
+      const candidate = x?.value ?? x?.member ?? x?.id ?? '';
+      if (!candidate) return '';
+      if (typeof candidate === 'string') return candidate;
+      try {
+        return JSON.stringify(candidate);
+      } catch {
+        return '';
+      }
+    })
+    .filter((value: string) => Boolean(value) && value !== '[object Object]')
     .map(String);
 }
 
