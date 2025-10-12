@@ -50,41 +50,39 @@ function normalizeBase(url: string): string | null {
 }
 
 function buildBaseCandidates(rawBase: string): string[] {
-  const candidates = new Set<string>();
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (value: string | null | undefined) => {
+    if (!value) return;
+    const trimmed = value.replace(/\s+$/, '').replace(/\/+$/, '');
+    if (!trimmed) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    ordered.push(trimmed);
+  };
+
+  // Завжди віддаємо перевагу нормалізованій origin-адресі без службових сегментів.
+  push(normalizeBase(rawBase));
 
   const trimmed = rawBase.trim();
   if (trimmed) {
     const noTrailing = trimmed.replace(/\s+$/, '').replace(/\/+$/, '');
-    if (noTrailing) {
-      candidates.add(noTrailing);
+    push(noTrailing);
 
-      const lowered = noTrailing.toLowerCase();
-      const variants: string[] = [noTrailing];
-
-      if (lowered.endsWith('/v0/kv')) {
-        variants.push(noTrailing.slice(0, -'/v0/kv'.length));
-      }
-      if (lowered.endsWith('/kv')) {
-        variants.push(noTrailing.slice(0, -'/kv'.length));
-      }
-      if (lowered.endsWith('/v0')) {
-        variants.push(noTrailing.slice(0, -'/v0'.length));
-      }
-
-      for (const variant of variants) {
-        if (variant) {
-          candidates.add(variant.replace(/\/+$/, ''));
-        }
-      }
+    const lowered = noTrailing.toLowerCase();
+    if (lowered.endsWith('/v0/kv')) {
+      push(noTrailing.slice(0, -'/v0/kv'.length));
+    }
+    if (lowered.endsWith('/kv')) {
+      push(noTrailing.slice(0, -'/kv'.length));
+    }
+    if (lowered.endsWith('/v0')) {
+      push(noTrailing.slice(0, -'/v0'.length));
     }
   }
 
-  const normalized = normalizeBase(rawBase);
-  if (normalized) {
-    candidates.add(normalized.replace(/\/+$/, ''));
-  }
-
-  return Array.from(candidates).filter(Boolean);
+  return ordered;
 }
 
 function resolveKvRuntime(): KvRuntimeConfig {
