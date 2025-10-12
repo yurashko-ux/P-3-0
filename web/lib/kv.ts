@@ -1,70 +1,67 @@
 // web/lib/kv.ts
-// ❗️НОВЕ: у listCampaigns() додаємо __index_id і гарантуємо obj.id = __index_id, якщо збережений id зламаний.
+// Уніфікований доступ до Vercel KV із підтримкою нової схеми збереження кампаній (ZSET)
+// та сумісністю зі старими LIST-ключами.
+
+import { kv } from '@vercel/kv';
 
 export const campaignKeys = {
-  INDEX_KEY: 'campaign:index',
-  ITEM_KEY: (id: string) => `campaign:${id}`,
+  INDEX_KEY: 'campaigns:index',
+  ITEM_KEY: (id: string) => `campaigns:${id}`,
+  LEGACY_INDEX_KEY: 'cmp:ids',
+  LEGACY_ITEM_KEY: (id: string) => `cmp:item:${id}`,
 };
 
-const BASE = (process.env.KV_REST_API_URL || '').replace(/\/$/, '');
-const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
-const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
-
-async function rest(path: string, opts: RequestInit = {}, ro = false) {
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${ro ? RD_TOKEN : WR_TOKEN}`,
-  };
-  const res = await fetch(`${BASE}/${path}`, { ...opts, headers, cache: 'no-store' });
-  if (!res.ok) throw new Error(`${path} ${res.status}`);
-  return res;
-}
-
-async function kvGetRaw(key: string) {
-  if (!BASE || !RD_TOKEN) return null as string | null;
-  const res = await rest(`get/${encodeURIComponent(key)}`, {}, true).catch(() => null);
-  if (!res) return null;
-  return res.text();
-}
-
-async function kvSetRaw(key: string, value: string) {
-  if (!BASE || !WR_TOKEN) return;
-  await rest(`set/${encodeURIComponent(key)}`, { method: 'POST', body: value }).catch(() => {});
-}
-
-// — robust LRANGE парсер (масив / {result} / {data} / рядок)
-async function kvLRange(key: string, start = 0, stop = -1) {
-  if (!BASE || !RD_TOKEN) return [] as string[];
-  const res = await rest(`lrange/${encodeURIComponent(key)}/${start}/${stop}`, {}, true).catch(() => null);
-  if (!res) return [] as string[];
-
-  let txt = '';
-  try { txt = await res.text(); } catch { return []; }
-
-  let payload: any = null;
-  try { payload = JSON.parse(txt); } catch { payload = txt; }
-
-  let arr: any[] = [];
-  if (Array.isArray(payload)) arr = payload;
-  else if (payload && Array.isArray(payload.result)) arr = payload.result;
-  else if (payload && Array.isArray(payload.data)) arr = payload.data;
-  else if (typeof payload === 'string') {
-    try {
-      const again = JSON.parse(payload);
-      if (Array.isArray(again)) arr = again;
-      else if (again && Array.isArray(again.result)) arr = again.result;
-      else if (again && Array.isArray(again.data)) arr = again.data;
-    } catch {}
+function toJsonString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return String(value ?? '');
   }
+}
 
-  return arr
-    .map((x: any) =>
-      typeof x === 'string'
-        ? x
-        : (x?.value ?? x?.member ?? x?.id ?? '')
-    )
-    .filter(Boolean)
-    .map(String);
+// --- базові утиліти ---
+export async function kvGet<T = unknown>(key: string): Promise<T | null> {
+  const value = await kv.get<T>(key);
+  return (value ?? null) as T | null;
+}
+
+export async function kvSet<T = unknown>(key: string, value: T): Promise<void> {
+  await kv.set(key, value as any);
+}
+
+export async function kvDel(key: string): Promise<void> {
+  await kv.del(key);
+}
+
+// NOTE: Capital A — kvZAdd
+export async function kvZAdd(key: string, score: number, member: string): Promise<void> {
+  await kv.zadd(key, { score, member });
+}
+
+export async function kvZRange(key: string, start = 0, stop = -1, opts?: { rev?: boolean }): Promise<string[]> {
+  const result = await kv.zrange<string[]>(key, start, stop, opts);
+  if (Array.isArray(result)) return result.map(String);
+  return [];
+}
+
+async function kvGetRaw(key: string): Promise<string | null> {
+  const value = await kv.get(key);
+  if (value == null) return null;
+  if (typeof value === 'string') return value;
+  return toJsonString(value);
+}
+
+async function kvSetRaw(key: string, value: string): Promise<void> {
+  await kv.set(key, value);
+}
+
+async function kvLRange(key: string, start = 0, stop = -1): Promise<string[]> {
+  try {
+    const list = await kv.lrange<string[]>(key, start, stop);
+    if (Array.isArray(list)) return list.map(String);
+  } catch {}
+  return [];
 }
 
 // === універсальна нормалізація будь-якої форми id ===
@@ -84,7 +81,9 @@ function normalizeIdRaw(raw: any, depth = 6): string {
           if (cand) return normalizeIdRaw(cand, depth - 1);
         }
         break;
-      } catch { break; }
+      } catch {
+        break;
+      }
     }
     s = s.replace(/\\+/g, '').replace(/^"+|"+$/g, '');
     const m = s.match(/\d{10,}/);
@@ -98,23 +97,33 @@ function normalizeIdRaw(raw: any, depth = 6): string {
   return '';
 }
 
+async function readIndexIds(start = 0, stop = -1): Promise<string[]> {
+  const primary = await kvZRange(campaignKeys.INDEX_KEY, start, stop, { rev: true });
+  if (primary.length) return primary;
+  // fallback до legacy LIST-ключа
+  return kvLRange(campaignKeys.LEGACY_INDEX_KEY, start, stop);
+}
+
 export const kvRead = {
   async getRaw(key: string) {
     return kvGetRaw(key);
   },
   async lrange(key: string, start = 0, stop = -1) {
+    if (key === campaignKeys.INDEX_KEY) return readIndexIds(start, stop);
     return kvLRange(key, start, stop);
   },
 
   // 🔧 ГАРАНТУЄМО коректний id:
-  // - додаємо __index_id (id з індексу LIST)
+  // - додаємо __index_id (id з індексу LIST/ZSET)
   // - якщо obj.id зіпсований/порожній — підставляємо __index_id
   async listCampaigns<T extends Record<string, any> = any>(): Promise<T[]> {
-    const ids = (await kvLRange(campaignKeys.INDEX_KEY, 0, -1)) as string[];
+    const ids = await readIndexIds(0, -1);
     const out: T[] = [];
 
     for (const indexId of ids) {
-      const raw = await kvGetRaw(campaignKeys.ITEM_KEY(indexId));
+      const raw =
+        (await kvGetRaw(campaignKeys.ITEM_KEY(indexId))) ??
+        (await kvGetRaw(campaignKeys.LEGACY_ITEM_KEY(indexId)));
       if (!raw) continue;
       try {
         const obj = JSON.parse(raw);
@@ -123,7 +132,7 @@ export const kvRead = {
         const safeId = safeFromObj || String(indexId);
 
         obj.__index_id = String(indexId); // ← для надійності
-        obj.id = safeId;                  // ← тепер завжди є коректний id (рядок-число)
+        obj.id = safeId; // ← тепер завжди є коректний id (рядок-число)
 
         if (!obj.created_at) {
           const ts = Number(safeId);
@@ -139,20 +148,22 @@ export const kvRead = {
 };
 
 export const kvWrite = {
-  async setRaw(key: string, value: string) { return kvSetRaw(key, value); },
+  async setRaw(key: string, value: string) {
+    await kvSetRaw(key, value);
+  },
   async lpush(key: string, value: string) {
-    if (!BASE || !WR_TOKEN) return;
-    await rest(`lpush/${encodeURIComponent(key)}`, {
-      method: 'POST',
-      body: JSON.stringify({ value }),
-    }).catch(() => {});
+    try {
+      await kv.lpush(key, value);
+    } catch {}
   },
   async createCampaign(input: any) {
     const id = String(input?.id || Date.now());
     const created_at =
       typeof input?.created_at === 'number'
         ? input.created_at
-        : (Number(id) && Number.isFinite(Number(id)) ? Number(id) : Date.now());
+        : Number.isFinite(Number(id))
+          ? Number(id)
+          : Date.now();
 
     const item = {
       id,
@@ -171,11 +182,15 @@ export const kvWrite = {
       deleted: false,
     };
 
-    await kvSetRaw(campaignKeys.ITEM_KEY(id), JSON.stringify(item));
-    await rest(`lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
-      method: 'POST',
-      body: JSON.stringify({ value: id }),
-    }).catch(() => {});
+    await kvSet(campaignKeys.ITEM_KEY(id), item);
+    await kvZAdd(campaignKeys.INDEX_KEY, created_at, id);
+
+    // Legacy сумісність
+    try {
+      await kvSetRaw(campaignKeys.LEGACY_ITEM_KEY(id), JSON.stringify(item));
+      await kv.lpush(campaignKeys.LEGACY_INDEX_KEY, id);
+    } catch {}
+
     return item;
   },
 };

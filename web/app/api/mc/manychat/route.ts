@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { readJsonSafe } from '@/lib/mc';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,17 +30,23 @@ function normalize(body: any) {
   const title =
     body?.message?.title ??
     body?.data?.title ??
+    body?.event?.data?.message?.title ??
     body?.title ??
     'IG Message';
   const handle =
     body?.subscriber?.username ??
     body?.user?.username ??
     body?.sender?.username ??
+    body?.data?.user?.username ??
+    body?.event?.data?.user?.username ??
     body?.handle ??
     '';
   const text =
     body?.message?.text ??
     body?.data?.text ??
+    body?.data?.message?.text ??
+    body?.event?.data?.text ??
+    body?.event?.data?.message?.text ??
     body?.text ??
     body?.message ??
     '';
@@ -63,12 +70,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
   }
 
-  let payload: any;
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
-  }
+  const payload = await readJsonSafe(req);
 
   const norm = normalize(payload);
 
