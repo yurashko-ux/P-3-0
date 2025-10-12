@@ -10,14 +10,17 @@ const RAW_BASE = (process.env.KV_REST_API_URL || '').replace(/\s+$/, '');
 const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
 const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
 
+function normalizeBase(url: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim().replace(/\s+$/, '');
+  if (!trimmed) return null;
+  return trimmed.replace(/\/v0\/kv\/?$/i, '');
+}
+
 function buildBaseCandidates(): string[] {
-  if (!RAW_BASE) return [];
-  const trimmed = RAW_BASE.replace(/\/+$/, '');
-  const hasV0 = /\/v0\/kv$/i.test(trimmed);
-  const plain = hasV0 ? trimmed.replace(/\/v0\/kv$/i, '') : trimmed;
-  const withV0 = `${plain}/v0/kv`;
-  const candidates = hasV0 ? [trimmed, plain] : [trimmed, withV0];
-  return Array.from(new Set(candidates.filter(Boolean)));
+  const normalized = normalizeBase(RAW_BASE);
+  if (!normalized) return [];
+  return [normalized];
 }
 
 const BASE_CANDIDATES = buildBaseCandidates();
@@ -87,7 +90,7 @@ async function rest(
 
 async function kvGetRaw(key: string) {
   if (!BASE_CANDIDATES.length || !RD_TOKEN) return null as string | null;
-  const res = await rest(`get/${encodeURIComponent(key)}`, {}, true, true).catch(() => null);
+  const res = await rest(`v0/kv/${encodeURIComponent(key)}`, {}, true, true).catch(() => null);
   if (!res || res.status === 404) return null;
 
   let text = '';
@@ -129,7 +132,7 @@ async function kvSetRaw(key: string, value: string) {
     throw new Error('KV_REST_API_TOKEN missing');
   }
 
-  await rest(`set/${encodeURIComponent(key)}`, {
+  await rest(`v0/kv/${encodeURIComponent(key)}`, {
     method: 'POST',
     body: JSON.stringify({ value }),
   });
@@ -139,7 +142,7 @@ async function kvSetRaw(key: string, value: string) {
 async function kvLRange(key: string, start = 0, stop = -1) {
   if (!BASE_CANDIDATES.length || !RD_TOKEN) return [] as string[];
   const res = await rest(
-    `lrange/${encodeURIComponent(key)}/${start}/${stop}`,
+    `v0/kv/lrange/${encodeURIComponent(key)}/${start}/${stop}`,
     {},
     true,
     true,
@@ -258,7 +261,7 @@ export const kvWrite = {
       throw new Error('KV_REST_API_TOKEN missing');
     }
 
-    await rest(`lpush/${encodeURIComponent(key)}`, {
+    await rest(`v0/kv/lpush/${encodeURIComponent(key)}`, {
       method: 'POST',
       body: JSON.stringify({ value }),
     });
@@ -288,7 +291,7 @@ export const kvWrite = {
     };
 
     await kvSetRaw(campaignKeys.ITEM_KEY(id), JSON.stringify(item));
-    await rest(`lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
+    await rest(`v0/kv/lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
       method: 'POST',
       body: JSON.stringify({ value: id }),
     }).catch(() => {});
