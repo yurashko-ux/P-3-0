@@ -4,11 +4,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
-import { kvRead } from '@/lib/kv';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
   persistManychatSnapshot,
+  readManychatMessage,
+  readManychatTrace,
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
 } from '@/lib/manychat-store';
@@ -28,6 +29,12 @@ type Diagnostics = {
     ok: boolean;
     key: string;
     source: 'memory' | 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
+  kvTrace?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
     message?: string;
   } | null;
   traceFallback?: {
@@ -208,43 +215,55 @@ export async function GET() {
   if (latest) {
     diagnostics.kv = { ok: true, key: MANYCHAT_MESSAGE_KEY, source: 'memory' };
   } else {
-    try {
-      const raw = await kvRead.getRaw(MANYCHAT_MESSAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as LatestMessage;
-        latest = {
-          ...parsed,
-          receivedAt:
-            typeof parsed?.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
-        };
-        source = 'kv';
-        diagnostics.kv = { ok: true, key: MANYCHAT_MESSAGE_KEY, source: 'kv' };
-      } else {
-        diagnostics.kv = {
-          ok: false,
-          key: MANYCHAT_MESSAGE_KEY,
-          source: 'miss',
-          message: 'KV не містить збереженого повідомлення',
-        };
-      }
-    } catch (error) {
+    const { message: stored, source: storedSource, error: storeError } = await readManychatMessage();
+    if (stored) {
+      latest = stored;
+      source = 'kv';
+      diagnostics.kv = {
+        ok: true,
+        key: MANYCHAT_MESSAGE_KEY,
+        source: storedSource === 'kv-rest' ? 'kv' : 'kv',
+      };
+    } else if (storeError) {
       diagnostics.kv = {
         ok: false,
         key: MANYCHAT_MESSAGE_KEY,
         source: 'error',
-        message: error instanceof Error ? error.message : String(error),
+        message: storeError,
+      };
+    } else {
+      diagnostics.kv = {
+        ok: false,
+        key: MANYCHAT_MESSAGE_KEY,
+        source: 'miss',
+        message: 'KV не містить збереженого повідомлення',
       };
     }
   }
 
   if (!trace) {
-    try {
-      const rawTrace = await kvRead.getRaw(MANYCHAT_TRACE_KEY);
-      if (rawTrace) {
-        trace = JSON.parse(rawTrace) as WebhookTrace;
-      }
-    } catch {
-      // ignore trace hydration failures
+    const { trace: storedTrace, error: traceError, source: traceSource } = await readManychatTrace();
+    if (storedTrace) {
+      trace = storedTrace;
+      diagnostics.kvTrace = {
+        ok: true,
+        key: MANYCHAT_TRACE_KEY,
+        source: traceSource === 'kv-rest' ? 'kv' : 'kv',
+      };
+    } else if (traceError) {
+      diagnostics.kvTrace = {
+        ok: false,
+        key: MANYCHAT_TRACE_KEY,
+        source: 'error',
+        message: traceError,
+      };
+    } else {
+      diagnostics.kvTrace = {
+        ok: false,
+        key: MANYCHAT_TRACE_KEY,
+        source: 'miss',
+        message: 'KV не містить трасування вебхука',
+      };
     }
   }
 
