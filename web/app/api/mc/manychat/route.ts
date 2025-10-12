@@ -1,113 +1,298 @@
 // web/app/api/mc/manychat/route.ts
-// ManyChat webhook handler (IG). Migrated to kvRead/kvWrite + LIST index.
-// Keeps behavior minimal: normalize payload, read active campaigns, compute rule matches,
-// and return a diagnostic response (routing to KeyCRM is done by /api/keycrm/sync/pair).
+// Спрощений ManyChat webhook: лише фіксує останнє повідомлення в пам'яті
+// й повертає його для тестової адмін-сторінки.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { getEnvValue, hasEnvValue } from '@/lib/env';
+import { kvRead, kvWrite } from '@/lib/kv';
+import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
+
+type LatestMessage = {
+  id: number | string;
+  receivedAt: number;
+  source: string;
+  title: string;
+  handle: string | null;
+  fullName: string | null;
+  text: string;
+  raw: unknown;
+};
+
+type WebhookTrace = {
+  receivedAt: number;
+  status: 'accepted' | 'rejected';
+  reason?: string | null;
+  statusCode?: number | null;
+  handle?: string | null;
+  fullName?: string | null;
+  messagePreview?: string | null;
+};
+
+type Diagnostics = {
+  api?: {
+    ok: boolean;
+    message?: string;
+    url?: string;
+    note?: string;
+  } | null;
+  kv?: {
+    ok: boolean;
+    key: string;
+    source: 'memory' | 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
+};
+
+let lastMessage: LatestMessage | null = null;
+let lastTrace: WebhookTrace | null = null;
+let sequence = 0;
+
+const KV_MESSAGE_KEY = 'manychat:last-message';
+const KV_TRACE_KEY = 'manychat:last-trace';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Rule = { op: 'contains' | 'equals'; value: string };
-type Campaign = {
-  id: string;
-  name: string;
-  created_at: number;
-  active?: boolean;
-  base_pipeline_id?: number;
-  base_status_id?: number;
-  rules?: { v1?: Rule; v2?: Rule };
-  exp?: Record<string, unknown>;
-  v1_count?: number;
-  v2_count?: number;
-  exp_count?: number;
-};
-
-function normalize(body: any) {
-  // Fallback-safe extraction for ManyChat IG → { title, handle, text }
-  const title =
-    body?.message?.title ??
-    body?.data?.title ??
-    body?.title ??
-    'IG Message';
-  const handle =
-    body?.subscriber?.username ??
-    body?.user?.username ??
-    body?.sender?.username ??
-    body?.handle ??
-    '';
-  const text =
-    body?.message?.text ??
-    body?.data?.text ??
-    body?.text ??
-    body?.message ??
-    '';
-  return { title, handle, text };
+function toTrimmedString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
 }
 
-function matchRule(text: string, rule?: Rule): boolean {
-  if (!rule || !rule.value) return false;
-  const t = (text || '').toLowerCase();
-  const v = rule.value.toLowerCase();
-  if (rule.op === 'equals') return t === v;
-  if (rule.op === 'contains') return t.includes(v);
-  return false;
+function pickFirstString(...values: Array<unknown>): string | null {
+  for (const value of values) {
+    const str = toTrimmedString(value);
+    if (str) return str;
+  }
+  return null;
+}
+
+function normalisePayload(payload: unknown): LatestMessage {
+  const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
+
+  const handle = pickFirstString(
+    body.handle,
+    body.username,
+    (body.subscriber as Record<string, unknown> | undefined)?.username,
+    (body.user as Record<string, unknown> | undefined)?.username,
+    (body.sender as Record<string, unknown> | undefined)?.username,
+  );
+
+  const fullName = pickFirstString(
+    body.full_name,
+    body.fullName,
+    body.fullname,
+    body.name,
+    [body.first_name, body.last_name].filter(Boolean).join(' ').trim() || null,
+    (body.subscriber as Record<string, unknown> | undefined)?.name,
+    (body.user as Record<string, unknown> | undefined)?.full_name,
+    (body.sender as Record<string, unknown> | undefined)?.name,
+  );
+
+  const nestedMessage = body.message as Record<string, unknown> | undefined;
+  const nestedData = body.data as Record<string, unknown> | undefined;
+
+  const text =
+    pickFirstString(
+      body.text,
+      nestedMessage?.text,
+      nestedData?.text,
+      nestedMessage,
+      nestedData,
+    ) ?? '';
+
+  const title = pickFirstString(
+    body.title,
+    nestedMessage?.title,
+    nestedData?.title,
+  ) ?? 'IG Message';
+
+  return {
+    id: ++sequence,
+    receivedAt: Date.now(),
+    source: 'webhook:/api/mc/manychat',
+    title,
+    handle,
+    fullName,
+    text,
+    raw: payload,
+  };
+}
+
+function fromManychatApi(message: ManychatLatestMessage, fallback: number): LatestMessage {
+  const id = message.id && message.id !== '' ? message.id : `manychat-${fallback}`;
+  const rawConversation = (message.raw as Record<string, unknown> | undefined)?.conversation as
+    | Record<string, unknown>
+    | undefined;
+  const titleCandidate = rawConversation?.title;
+  const title =
+    typeof titleCandidate === 'string' && titleCandidate.trim().length
+      ? titleCandidate
+      : 'ManyChat';
+
+  return {
+    id,
+    receivedAt: message.receivedAt ?? Date.now(),
+    source: message.source ?? 'manychat:api',
+    title,
+    handle: message.handle ?? null,
+    fullName: message.fullName ?? null,
+    text: message.text ?? '',
+    raw: message.raw,
+  };
 }
 
 export async function POST(req: NextRequest) {
-  // Optional verification of ManyChat secret if you use it:
-  const mcToken = process.env.MC_TOKEN;
-  const headerToken = req.headers.get('x-mc-token') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
+  const mcToken = getEnvValue('MC_TOKEN');
+  const headerToken =
+    req.headers.get('x-mc-token') ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+    '';
+
   if (mcToken && headerToken && headerToken !== mcToken) {
+    lastTrace = {
+      receivedAt: Date.now(),
+      status: 'rejected',
+      reason: 'Невірний токен авторизації',
+      statusCode: 401,
+    };
     return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
   }
 
-  let payload: any;
+  let payload: unknown;
   try {
     payload = await req.json();
   } catch {
+    lastTrace = {
+      receivedAt: Date.now(),
+      status: 'rejected',
+      reason: 'Некоректний JSON у тілі запиту',
+      statusCode: 400,
+    };
     return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
   }
 
-  const norm = normalize(payload);
+  const message = normalisePayload(payload);
+  lastMessage = message;
+  lastTrace = {
+    receivedAt: message.receivedAt,
+    status: 'accepted',
+    handle: message.handle,
+    fullName: message.fullName,
+    messagePreview: message.text ? message.text.slice(0, 180) : null,
+  };
 
-  // Read campaigns via LIST index
-  const campaigns = (await kvRead.listCampaigns()) as Campaign[];
-  const active = campaigns.filter(c => c.active !== false);
-
-  // Compute matches
-  const text = norm.text || '';
-  const matches = active.map((c) => {
-    const v1 = matchRule(text, c.rules?.v1);
-    const v2 = matchRule(text, c.rules?.v2);
-    return { id: c.id, name: c.name, v1, v2 };
-  }).filter(m => m.v1 || m.v2);
-
-  // (Optional) very light logging to help with diagnostics:
   try {
-    const logKey = `logs:mc:${new Date().toISOString().slice(0, 10)}`; // per-day key
-    const record = JSON.stringify({ ts: Date.now(), norm, matchesCount: matches.length });
-    // Use LPUSH for logs (best-effort; ignore errors)
-    await kvWrite.lpush(logKey, record);
-  } catch {
-    // ignore log errors
+    await kvWrite.setRaw(KV_MESSAGE_KEY, JSON.stringify(message));
+    await kvWrite.setRaw(KV_TRACE_KEY, JSON.stringify(lastTrace));
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : null;
+    lastTrace = {
+      ...lastTrace,
+      reason: reason
+        ? `Помилка збереження у KV: ${reason}`
+        : 'Помилка збереження у KV',
+    };
+  }
+
+  return NextResponse.json({ ok: true, message });
+}
+
+export async function GET() {
+  const diagnostics: Diagnostics = {};
+  const apiKeyAvailable = hasEnvValue(
+    'MANYCHAT_API_KEY',
+    'MANYCHAT_API_TOKEN',
+    'MC_API_KEY',
+  );
+
+  let source: 'memory' | 'kv' | 'api' | null = lastMessage ? 'memory' : null;
+  let latest = lastMessage;
+  let trace = lastTrace;
+
+  if (latest) {
+    diagnostics.kv = { ok: true, key: KV_MESSAGE_KEY, source: 'memory' };
+  } else {
+    try {
+      const raw = await kvRead.getRaw(KV_MESSAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as LatestMessage;
+        latest = {
+          ...parsed,
+          receivedAt:
+            typeof parsed?.receivedAt === 'number' ? parsed.receivedAt : Date.now(),
+        };
+        source = 'kv';
+        diagnostics.kv = { ok: true, key: KV_MESSAGE_KEY, source: 'kv' };
+      } else {
+        diagnostics.kv = {
+          ok: false,
+          key: KV_MESSAGE_KEY,
+          source: 'miss',
+          message: 'KV не містить збереженого повідомлення',
+        };
+      }
+    } catch (error) {
+      diagnostics.kv = {
+        ok: false,
+        key: KV_MESSAGE_KEY,
+        source: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  if (!trace) {
+    try {
+      const rawTrace = await kvRead.getRaw(KV_TRACE_KEY);
+      if (rawTrace) {
+        trace = JSON.parse(rawTrace) as WebhookTrace;
+      }
+    } catch {
+      // ignore trace hydration failures
+    }
+  }
+
+  let feed: LatestMessage[] = latest ? [latest] : [];
+
+  if (apiKeyAvailable) {
+    try {
+      const { messages, meta } = await fetchManychatLatest(5);
+      if (messages.length > 0) {
+        const start = sequence;
+        const apiFeed = messages.map((msg, index) => fromManychatApi(msg, start + index + 1));
+        sequence = start + messages.length;
+        feed = apiFeed;
+        latest = apiFeed[0];
+        source = 'api';
+        diagnostics.api = { ok: true, url: meta.url, note: 'fetched' };
+      } else {
+        diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.api = { ok: false, message };
+    }
+  } else {
+    diagnostics.api = {
+      ok: false,
+      message:
+        'MANYCHAT_API_KEY (або еквівалентний ManyChat API ключ) не налаштовано',
+    };
   }
 
   return NextResponse.json({
     ok: true,
-    normalized: norm,
-    matches,
-    totals: { campaigns: campaigns.length, active: active.length },
-  });
-}
-
-// Optionally allow GET for quick ping/health
-export async function GET() {
-  const ids = await kvRead.lrange(campaignKeys.INDEX_KEY, 0, 9);
-  return NextResponse.json({
-    ok: true,
-    info: 'ManyChat webhook endpoint',
-    previewIndexHead: ids,
+    latest: latest ?? null,
+    feed,
+    source,
+    trace,
+    diagnostics,
   });
 }
