@@ -203,9 +203,11 @@ async function readRequestPayload(req: NextRequest): Promise<unknown> {
 
 export async function POST(req: NextRequest) {
   const mcToken = getEnvValue('MC_TOKEN');
+  const headerTokenRaw = req.headers.get('x-mc-token');
+  const authHeader = req.headers.get('authorization');
   const headerToken =
-    req.headers.get('x-mc-token') ||
-    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+    (headerTokenRaw && headerTokenRaw.trim()) ||
+    (authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '') ||
     '';
 
   if (mcToken && headerToken && headerToken !== mcToken) {

@@ -40,7 +40,8 @@ for (const [key, value] of Object.entries(process.env)) {
 
 function coerceValue(value: string | undefined | null): string | undefined {
   if (typeof value !== "string") return undefined;
-  return value.length > 0 ? value : undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function getEnvValue(...names: Array<string>): string | undefined {
