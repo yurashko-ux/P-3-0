@@ -1,14 +1,19 @@
 // web/lib/kv.ts
 // ❗️НОВЕ: у listCampaigns() додаємо __index_id і гарантуємо obj.id = __index_id, якщо збережений id зламаний.
 
+import { getEnvValue } from '@/lib/env';
+
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
   ITEM_KEY: (id: string) => `campaign:${id}`,
 };
 
-const RAW_BASE = (process.env.KV_REST_API_URL || '').replace(/\s+$/, '');
-const WR_TOKEN = process.env.KV_REST_API_TOKEN || '';
-const RD_TOKEN = process.env.KV_REST_API_READ_ONLY_TOKEN || WR_TOKEN;
+type KvRuntimeConfig = {
+  rawBase: string;
+  baseCandidates: string[];
+  writeToken: string | null;
+  readToken: string | null;
+};
 
 function normalizeBase(url: string): string | null {
   if (!url) return null;
@@ -44,10 +49,10 @@ function normalizeBase(url: string): string | null {
   return sanitized || null;
 }
 
-function buildBaseCandidates(): string[] {
+function buildBaseCandidates(rawBase: string): string[] {
   const candidates = new Set<string>();
 
-  const trimmed = RAW_BASE.trim();
+  const trimmed = rawBase.trim();
   if (trimmed) {
     const noTrailing = trimmed.replace(/\s+$/, '').replace(/\/+$/, '');
     if (noTrailing) {
@@ -74,7 +79,7 @@ function buildBaseCandidates(): string[] {
     }
   }
 
-  const normalized = normalizeBase(RAW_BASE);
+  const normalized = normalizeBase(rawBase);
   if (normalized) {
     candidates.add(normalized.replace(/\/+$/, ''));
   }
@@ -82,14 +87,51 @@ function buildBaseCandidates(): string[] {
   return Array.from(candidates).filter(Boolean);
 }
 
-const BASE_CANDIDATES = buildBaseCandidates();
+function resolveKvRuntime(): KvRuntimeConfig {
+  const rawBase =
+    getEnvValue(
+      'KV_REST_API_URL',
+      'VERCEL_KV_REST_API_URL',
+      'VERCEL_KV_URL',
+      'KV_URL',
+    )?.trim() ?? '';
+
+  const writeToken =
+    getEnvValue(
+      'KV_REST_API_TOKEN',
+      'VERCEL_KV_REST_API_TOKEN',
+      'KV_REST_API_WRITE_ONLY_TOKEN',
+      'KV_WRITE_ONLY_TOKEN',
+      'KV_TOKEN',
+    )?.trim() ?? null;
+
+  const readToken =
+    getEnvValue(
+      'KV_REST_API_READ_ONLY_TOKEN',
+      'VERCEL_KV_REST_API_READ_ONLY_TOKEN',
+      'KV_READ_ONLY_TOKEN',
+      'KV_REST_API_TOKEN',
+      'VERCEL_KV_REST_API_TOKEN',
+      'KV_TOKEN',
+    )?.trim() ?? writeToken;
+
+  const baseCandidates = buildBaseCandidates(rawBase);
+
+  return {
+    rawBase,
+    baseCandidates,
+    writeToken,
+    readToken: readToken ?? null,
+  };
+}
 
 export function getKvConfigStatus() {
+  const { baseCandidates, writeToken, readToken } = resolveKvRuntime();
   return {
-    hasBaseUrl: BASE_CANDIDATES.length > 0,
-    baseCandidates: BASE_CANDIDATES.slice(),
-    hasWriteToken: Boolean(WR_TOKEN),
-    hasReadToken: Boolean(RD_TOKEN),
+    hasBaseUrl: baseCandidates.length > 0,
+    baseCandidates: baseCandidates.slice(),
+    hasWriteToken: Boolean(writeToken),
+    hasReadToken: Boolean(readToken),
   } as const;
 }
 
@@ -99,10 +141,12 @@ async function rest(
   ro = false,
   allow404 = false,
 ): Promise<Response> {
-  if (!BASE_CANDIDATES.length) {
+  const { baseCandidates, writeToken, readToken } = resolveKvRuntime();
+
+  if (!baseCandidates.length) {
     throw new Error('KV_REST_API_URL missing');
   }
-  const token = ro ? RD_TOKEN : WR_TOKEN;
+  const token = ro ? readToken : writeToken;
   if (!token) {
     throw new Error(ro ? 'KV_REST_API_READ_ONLY_TOKEN missing' : 'KV_REST_API_TOKEN missing');
   }
@@ -114,8 +158,8 @@ async function rest(
 
   let lastError: Error | null = null;
 
-  for (let index = 0; index < BASE_CANDIDATES.length; index += 1) {
-    const base = BASE_CANDIDATES[index];
+  for (let index = 0; index < baseCandidates.length; index += 1) {
+    const base = baseCandidates[index];
     const normalizedBase = base.endsWith('/') ? base : `${base}/`;
     const targetPath = path.replace(/^\/+/, '');
     const url = new URL(targetPath, normalizedBase).toString();
@@ -157,7 +201,8 @@ async function rest(
 }
 
 async function kvGetRaw(key: string) {
-  if (!BASE_CANDIDATES.length || !RD_TOKEN) return null as string | null;
+  const { baseCandidates, readToken } = resolveKvRuntime();
+  if (!baseCandidates.length || !readToken) return null as string | null;
   const res = await rest(`v0/kv/${encodeURIComponent(key)}`, {}, true, true).catch(() => null);
   if (!res || res.status === 404) return null;
 
@@ -193,10 +238,11 @@ async function kvGetRaw(key: string) {
 }
 
 async function kvSetRaw(key: string, value: string) {
-  if (!BASE_CANDIDATES.length) {
+  const { baseCandidates, writeToken } = resolveKvRuntime();
+  if (!baseCandidates.length) {
     throw new Error('KV_REST_API_URL missing');
   }
-  if (!WR_TOKEN) {
+  if (!writeToken) {
     throw new Error('KV_REST_API_TOKEN missing');
   }
 
@@ -208,7 +254,8 @@ async function kvSetRaw(key: string, value: string) {
 
 // — robust LRANGE парсер (масив / {result} / {data} / рядок)
 async function kvLRange(key: string, start = 0, stop = -1) {
-  if (!BASE_CANDIDATES.length || !RD_TOKEN) return [] as string[];
+  const { baseCandidates, readToken } = resolveKvRuntime();
+  if (!baseCandidates.length || !readToken) return [] as string[];
   const res = await rest(
     `v0/kv/lrange/${encodeURIComponent(key)}/${start}/${stop}`,
     {},
@@ -322,10 +369,11 @@ export const kvWrite = {
     return kvSetRaw(key, value);
   },
   async lpush(key: string, value: string) {
-    if (!BASE_CANDIDATES.length) {
+    const { baseCandidates, writeToken } = resolveKvRuntime();
+    if (!baseCandidates.length) {
       throw new Error('KV_REST_API_URL missing');
     }
-    if (!WR_TOKEN) {
+    if (!writeToken) {
       throw new Error('KV_REST_API_TOKEN missing');
     }
 
@@ -335,10 +383,11 @@ export const kvWrite = {
     });
   },
   async ltrim(key: string, start: number, stop: number) {
-    if (!BASE_CANDIDATES.length) {
+    const { baseCandidates, writeToken } = resolveKvRuntime();
+    if (!baseCandidates.length) {
       throw new Error('KV_REST_API_URL missing');
     }
-    if (!WR_TOKEN) {
+    if (!writeToken) {
       throw new Error('KV_REST_API_TOKEN missing');
     }
 
