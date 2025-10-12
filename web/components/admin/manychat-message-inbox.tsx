@@ -58,6 +58,13 @@ type Diagnostics = {
     used: boolean;
     reason: string;
   } | null;
+  persist?: {
+    messageStored: boolean;
+    traceStored: boolean;
+    feedStored: boolean;
+    via: 'kv-client' | 'kv-rest' | null;
+    errors: string[];
+  } | null;
 };
 
 type InboxState =
@@ -194,6 +201,7 @@ export function ManychatMessageInbox() {
   const kvTraceDiag = diagnostics?.kvTrace ?? null;
   const kvFeedDiag = diagnostics?.kvFeed ?? null;
   const traceFallback = diagnostics?.traceFallback ?? null;
+  const persistDiag = diagnostics?.persist ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -293,6 +301,24 @@ export function ManychatMessageInbox() {
                 Ключ: {kvFeedDiag.key}
                 {kvFeedDiag.source ? ` • джерело: ${kvFeedDiag.source}` : ''}
               </span>
+            </p>
+          </div>
+        ) : null}
+        {persistDiag ? (
+          <div className="rounded-xl border border-dashed border-rose-200/70 bg-rose-50/70 p-4">
+            <h3 className="text-sm font-semibold text-rose-700">Стан збереження у KV</h3>
+            <p className="mt-2 text-sm text-rose-700">
+              {persistDiag.messageStored && persistDiag.feedStored
+                ? `✅ Дані збережено (${persistDiag.via ?? 'невідомо'})`
+                : '⚠️ Не вдалося повністю зберегти повідомлення'}
+              {persistDiag.via ? (
+                <span className="block text-xs text-rose-600/80">Метод: {persistDiag.via}</span>
+              ) : null}
+              {persistDiag.errors.length ? (
+                <span className="mt-1 block text-xs text-rose-600/70">
+                  {persistDiag.errors.join('; ')}
+                </span>
+              ) : null}
             </p>
           </div>
         ) : null}

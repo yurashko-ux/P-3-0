@@ -15,6 +15,7 @@ import {
   readManychatFeed,
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
+  type ManychatPersistResult,
 } from '@/lib/manychat-store';
 import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
@@ -57,11 +58,19 @@ type Diagnostics = {
     used: boolean;
     reason: string;
   } | null;
+  persist?: {
+    messageStored: boolean;
+    traceStored: boolean;
+    feedStored: boolean;
+    via: ManychatPersistResult['via'];
+    errors: string[];
+  } | null;
 };
 
 let lastMessage: LatestMessage | null = null;
 let lastTrace: WebhookTrace | null = null;
 let sequence = 0;
+let lastPersist: ManychatPersistResult | null = null;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -238,7 +247,16 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    await persistManychatSnapshot(message, lastTrace);
+    lastPersist = await persistManychatSnapshot(message, lastTrace);
+    if (!lastPersist.messageStored || !lastPersist.feedStored) {
+      const reasons = lastPersist.errors.join('; ');
+      lastTrace = {
+        ...lastTrace,
+        reason: reasons
+          ? `Збережено частково: ${reasons}`
+          : 'Збереження у KV завершилося частково',
+      };
+    }
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : typeof error === 'string' ? error : null;
@@ -248,9 +266,24 @@ export async function POST(req: NextRequest) {
         ? `Помилка збереження у KV: ${reason}`
         : 'Помилка збереження у KV',
     };
+    lastPersist = {
+      messageStored: false,
+      traceStored: false,
+      feedStored: false,
+      via: null,
+      errors: [
+        reason
+          ? `persistManychatSnapshot exception: ${reason}`
+          : 'persistManychatSnapshot exception',
+      ],
+    };
   }
 
-  return NextResponse.json({ ok: true, message });
+  return NextResponse.json({
+    ok: true,
+    message,
+    persist: lastPersist,
+  });
 }
 
 export async function GET() {
@@ -422,6 +455,17 @@ export async function GET() {
     feed,
     source,
     trace,
-    diagnostics,
+    diagnostics: {
+      ...diagnostics,
+      persist: lastPersist
+        ? {
+            messageStored: lastPersist.messageStored,
+            traceStored: lastPersist.traceStored,
+            feedStored: lastPersist.feedStored,
+            via: lastPersist.via,
+            errors: lastPersist.errors,
+          }
+        : null,
+    },
   });
 }

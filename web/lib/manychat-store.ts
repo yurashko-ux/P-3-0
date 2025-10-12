@@ -43,45 +43,94 @@ export const MANYCHAT_MESSAGE_KEY = 'manychat:last-message';
 export const MANYCHAT_TRACE_KEY = 'manychat:last-trace';
 export const MANYCHAT_FEED_KEY = 'manychat:last-feed';
 
+export type ManychatPersistResult = {
+  messageStored: boolean;
+  traceStored: boolean;
+  feedStored: boolean;
+  via: 'kv-client' | 'kv-rest' | null;
+  errors: string[];
+};
+
 export async function persistManychatSnapshot(
   message: ManychatStoredMessage,
   trace: ManychatWebhookTrace | null = null,
-): Promise<void> {
+): Promise<ManychatPersistResult> {
   const payloadMessage = { ...message };
   const payloadTrace = trace ? { ...trace } : null;
   const feedLimit = 25;
 
-  let stored = false;
+  let messageStored = false;
+  let traceStored = false;
+  let feedStored = false;
+  let via: ManychatPersistResult['via'] = null;
+  const errors: string[] = [];
 
   if (kvClient) {
     try {
       await kvClient.set(MANYCHAT_MESSAGE_KEY, payloadMessage);
-      stored = true;
+      messageStored = true;
+      via = 'kv-client';
       if (payloadTrace) {
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
+        traceStored = true;
       }
       try {
         await kvClient.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
         await kvClient.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
-      } catch {
-        // Якщо lpush/ltrim недоступні в середовищі, продовжимо через REST нижче.
+        feedStored = true;
+      } catch (error) {
+        errors.push(
+          error instanceof Error
+            ? `kvClient.lpush/ltrim: ${error.message}`
+            : 'kvClient.lpush/ltrim: unknown error',
+        );
       }
-    } catch {
-      stored = false;
+    } catch (error) {
+      errors.push(
+        error instanceof Error ? `kvClient.set: ${error.message}` : 'kvClient.set: unknown error',
+      );
+      messageStored = false;
+      traceStored = false;
+      feedStored = false;
     }
   }
 
-  if (!stored) {
-    await kvWrite.setRaw(MANYCHAT_MESSAGE_KEY, JSON.stringify(payloadMessage));
-    if (payloadTrace) {
-      await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
+  if (!messageStored) {
+    try {
+      await kvWrite.setRaw(MANYCHAT_MESSAGE_KEY, JSON.stringify(payloadMessage));
+      messageStored = true;
+      via = 'kv-rest';
+    } catch (error) {
+      errors.push(
+        error instanceof Error ? `kvWrite.setRaw(message): ${error.message}` : 'kvWrite.setRaw(message)',
+      );
     }
+  }
+
+  if (payloadTrace && !traceStored) {
+    try {
+      await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
+      traceStored = true;
+      if (!via) via = 'kv-rest';
+    } catch (error) {
+      errors.push(
+        error instanceof Error ? `kvWrite.setRaw(trace): ${error.message}` : 'kvWrite.setRaw(trace)',
+      );
+    }
+  }
+
+  if (!feedStored) {
     try {
       await kvWrite.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
       await kvWrite.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
-      stored = true;
-    } catch {
-      // якщо REST-операції списків недоступні, використаємо резерв через setRaw нижче
+      feedStored = true;
+      if (!via) via = 'kv-rest';
+    } catch (error) {
+      errors.push(
+        error instanceof Error
+          ? `kvWrite.lpush/ltrim: ${error.message}`
+          : 'kvWrite.lpush/ltrim: unknown error',
+      );
     }
   }
 
@@ -94,7 +143,12 @@ export async function persistManychatSnapshot(
         if (Array.isArray(parsed)) {
           existing = parsed.filter((item): item is ManychatStoredMessage => Boolean(item));
         }
-      } catch {
+      } catch (error) {
+        errors.push(
+          error instanceof Error
+            ? `kvRead.getRaw(feed) parse: ${error.message}`
+            : 'kvRead.getRaw(feed) parse',
+        );
         existing = [];
       }
     }
@@ -107,9 +161,17 @@ export async function persistManychatSnapshot(
       }));
 
     await kvWrite.setRaw(MANYCHAT_FEED_KEY, JSON.stringify(next));
-  } catch {
-    // Ігноруємо помилки журналу: вони не мають блокувати вебхук.
+    feedStored = true;
+    if (!via) via = 'kv-rest';
+  } catch (error) {
+    errors.push(
+      error instanceof Error
+        ? `kvWrite.setRaw(feed): ${error.message}`
+        : 'kvWrite.setRaw(feed): unknown error',
+    );
   }
+
+  return { messageStored, traceStored, feedStored, via, errors };
 }
 
 type StoreSource = 'kv-client' | 'kv-rest';
