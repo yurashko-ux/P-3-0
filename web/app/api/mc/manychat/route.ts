@@ -160,6 +160,47 @@ function fromManychatApi(message: ManychatLatestMessage, fallback: number): Late
   };
 }
 
+async function readRequestPayload(req: NextRequest): Promise<unknown> {
+  let bodyText: string | null = null;
+
+  try {
+    bodyText = await req.text();
+  } catch {
+    bodyText = null;
+  }
+
+  if (!bodyText) {
+    return {};
+  }
+
+  const trimmed = bodyText.trim();
+  const contentType = req.headers.get('content-type')?.toLowerCase() ?? '';
+
+  // Спробуємо спочатку розпарсити як JSON — ManyChat зазвичай шле саме такий формат.
+  if (trimmed) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      // ігноруємо, переходимо до альтернативних варіантів
+    }
+  }
+
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    try {
+      const params = new URLSearchParams(bodyText);
+      const record: Record<string, string> = {};
+      for (const [key, value] of params.entries()) {
+        record[key] = value;
+      }
+      return record;
+    } catch {
+      // якщо не вдалося — впадемо до текстового варіанта нижче
+    }
+  }
+
+  return { text: bodyText, raw: bodyText };
+}
+
 export async function POST(req: NextRequest) {
   const mcToken = getEnvValue('MC_TOKEN');
   const headerToken =
@@ -177,18 +218,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
   }
 
-  let payload: unknown;
-  try {
-    payload = await req.json();
-  } catch {
-    lastTrace = {
-      receivedAt: Date.now(),
-      status: 'rejected',
-      reason: 'Некоректний JSON у тілі запиту',
-      statusCode: 400,
-    };
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
-  }
+  const payload = await readRequestPayload(req);
 
   const message = normalisePayload(payload);
   lastMessage = message;
