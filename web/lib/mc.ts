@@ -36,12 +36,60 @@ export async function readJsonSafe(req: Request): Promise<any> {
   try {
     return await req.clone().json();
   } catch {
-    const t = await req.text();
+    const rawText = await req.text();
+    const trimmed = rawText.trim();
+    if (!trimmed) return {};
+
     try {
-      return JSON.parse(t);
+      return JSON.parse(trimmed);
     } catch {
-      return {};
+      // ignore JSON parse error and attempt to treat the payload as form data below
     }
+
+    try {
+      if (!trimmed.includes('=')) {
+        return {};
+      }
+
+      const params = new URLSearchParams(trimmed);
+      const obj: Record<string, unknown> = {};
+
+      // URLSearchParams will happily accept arbitrary strings, so guard against
+      // cases where `trimmed` wasn't actually form-encoded. We require at least
+      // one key/value pair to treat the payload as a map.
+      let hasEntries = false;
+      for (const [key, value] of params.entries()) {
+        hasEntries = true;
+        let parsed: unknown = value;
+        const vTrim = value.trim();
+        if ((vTrim.startsWith('{') && vTrim.endsWith('}')) || (vTrim.startsWith('[') && vTrim.endsWith(']'))) {
+          try {
+            parsed = JSON.parse(vTrim);
+          } catch {
+            parsed = vTrim;
+          }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const existing = obj[key];
+          if (Array.isArray(existing)) {
+            existing.push(parsed);
+          } else {
+            obj[key] = [existing, parsed];
+          }
+        } else {
+          obj[key] = parsed;
+        }
+      }
+
+      if (hasEntries) {
+        return obj;
+      }
+    } catch {
+      // ignore form parsing errors and fall back to returning an empty object
+    }
+
+    return {};
   }
 }
 
