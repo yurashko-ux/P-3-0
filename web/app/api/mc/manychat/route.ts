@@ -30,6 +30,10 @@ type Diagnostics = {
     source: 'memory' | 'kv' | 'miss' | 'error';
     message?: string;
   } | null;
+  traceFallback?: {
+    used: boolean;
+    reason: string;
+  } | null;
 };
 
 let lastMessage: LatestMessage | null = null;
@@ -256,11 +260,11 @@ export async function GET() {
         feed = apiFeed;
         latest = apiFeed[0];
         source = 'api';
-        diagnostics.api = { ok: true, url: meta.url, note: 'fetched' };
-      } else {
-        diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
-      }
-    } catch (error) {
+      diagnostics.api = { ok: true, url: meta.url, note: 'fetched' };
+    } else {
+      diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
+    }
+  } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       diagnostics.api = { ok: false, message };
     }
@@ -270,6 +274,33 @@ export async function GET() {
       message:
         'MANYCHAT_API_KEY (або еквівалентний ManyChat API ключ) не налаштовано',
     };
+  }
+
+  if (feed.length === 0 && trace) {
+    const fallbackText = trace.messagePreview ?? '';
+    const fallbackHandle = trace.handle ?? null;
+    const fallbackFullName = trace.fullName ?? null;
+
+    if (fallbackText || fallbackHandle || fallbackFullName) {
+      const fallbackMessage: LatestMessage = {
+        id: trace.receivedAt,
+        receivedAt: trace.receivedAt,
+        source: 'trace:webhook',
+        title: 'ManyChat Webhook (trace)',
+        handle: fallbackHandle,
+        fullName: fallbackFullName,
+        text: fallbackText,
+        raw: null,
+      };
+
+      feed = [fallbackMessage];
+      latest = fallbackMessage;
+      source = source ?? 'trace';
+      diagnostics.traceFallback = {
+        used: true,
+        reason: 'Відображаємо останній вебхук із трасування, оскільки повідомлення не знайдено у KV або ManyChat API.',
+      };
+    }
   }
 
   return NextResponse.json({

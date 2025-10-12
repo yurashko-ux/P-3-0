@@ -35,6 +35,10 @@ type Diagnostics = {
     source: 'memory' | 'kv' | 'miss' | 'error';
     message?: string;
   } | null;
+  traceFallback?: {
+    used: boolean;
+    reason: string;
+  } | null;
 };
 
 type InboxState =
@@ -167,6 +171,7 @@ export function ManychatMessageInbox() {
   const diagnostics = inbox.diagnostics ?? null;
   const apiDiag = diagnostics?.api ?? null;
   const kvDiag = diagnostics?.kv ?? null;
+  const traceFallback = diagnostics?.traceFallback ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -247,6 +252,12 @@ export function ManychatMessageInbox() {
             <p className="mt-2 text-sm text-sky-700/80">Очікуємо перший запис у KV…</p>
           )}
         </div>
+        {traceFallback ? (
+          <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/70 p-4">
+            <h3 className="text-sm font-semibold text-indigo-700">Fallback із трасування</h3>
+            <p className="mt-2 text-sm text-indigo-700/90">{traceFallback.reason}</p>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-6">
