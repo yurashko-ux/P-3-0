@@ -201,7 +201,7 @@ async function rest(
 async function kvGetRaw(key: string) {
   const { baseCandidates, readToken } = resolveKvRuntime();
   if (!baseCandidates.length || !readToken) return null as string | null;
-  const res = await rest(`v0/kv/${encodeURIComponent(key)}`, {}, true, true).catch(() => null);
+  const res = await rest(`get/${encodeURIComponent(key)}`, {}, true, true).catch(() => null);
   if (!res || res.status === 404) return null;
 
   let text = '';
@@ -244,8 +244,8 @@ async function kvSetRaw(key: string, value: string) {
     throw new Error('KV_REST_API_TOKEN missing');
   }
 
-  await rest(`v0/kv/${encodeURIComponent(key)}`, {
-    method: 'PUT',
+  await rest(`set/${encodeURIComponent(key)}`, {
+    method: 'POST',
     body: JSON.stringify({ value }),
   });
 }
@@ -255,7 +255,7 @@ async function kvLRange(key: string, start = 0, stop = -1) {
   const { baseCandidates, readToken } = resolveKvRuntime();
   if (!baseCandidates.length || !readToken) return [] as string[];
   const res = await rest(
-    `v0/kv/lrange/${encodeURIComponent(key)}/${start}/${stop}`,
+    `lrange/${encodeURIComponent(key)}/${start}/${stop}`,
     {},
     true,
     true,
@@ -375,7 +375,7 @@ export const kvWrite = {
       throw new Error('KV_REST_API_TOKEN missing');
     }
 
-    await rest(`v0/kv/lpush/${encodeURIComponent(key)}`, {
+    await rest(`lpush/${encodeURIComponent(key)}`, {
       method: 'POST',
       body: JSON.stringify({ value }),
     });
@@ -389,7 +389,7 @@ export const kvWrite = {
       throw new Error('KV_REST_API_TOKEN missing');
     }
 
-    await rest(`v0/kv/ltrim/${encodeURIComponent(key)}/${start}/${stop}`, {
+    await rest(`ltrim/${encodeURIComponent(key)}/${start}/${stop}`, {
       method: 'POST',
     });
   },
@@ -418,7 +418,7 @@ export const kvWrite = {
     };
 
     await kvSetRaw(campaignKeys.ITEM_KEY(id), JSON.stringify(item));
-    await rest(`v0/kv/lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
+    await rest(`lpush/${encodeURIComponent(campaignKeys.INDEX_KEY)}`, {
       method: 'POST',
       body: JSON.stringify({ value: id }),
     }).catch(() => {});
