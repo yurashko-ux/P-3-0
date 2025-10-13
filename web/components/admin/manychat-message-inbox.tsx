@@ -10,6 +10,7 @@ type LatestMessage = {
   handle: string | null;
   fullName: string | null;
   text: string;
+  raw: unknown | null;
 };
 
 type WebhookTrace = {
@@ -120,18 +121,19 @@ export function ManychatMessageInbox() {
             : [];
         const fallbackFromTrace =
           (!messagesBase || messagesBase.length === 0) && json.trace
-            ? [
-                {
-                  id: json.trace.receivedAt ?? Date.now(),
-                  receivedAt: json.trace.receivedAt ?? Date.now(),
-                  source: "trace:webhook",
-                  title: "ManyChat Webhook",
-                  handle: json.trace.handle ?? null,
-                  fullName: json.trace.fullName ?? null,
-                  text: json.trace.messagePreview ?? "",
-                } satisfies LatestMessage,
-              ]
-            : [];
+                ? [
+                    {
+                      id: json.trace.receivedAt ?? Date.now(),
+                      receivedAt: json.trace.receivedAt ?? Date.now(),
+                      source: "trace:webhook",
+                      title: "ManyChat Webhook",
+                      handle: json.trace.handle ?? null,
+                      fullName: json.trace.fullName ?? null,
+                      text: json.trace.messagePreview ?? "",
+                      raw: null,
+                    } satisfies LatestMessage,
+                  ]
+                : [];
         const messages = messagesBase && messagesBase.length > 0 ? messagesBase : fallbackFromTrace;
         const lastMessage =
           messages && messages.length > 0
@@ -224,6 +226,7 @@ export function ManychatMessageInbox() {
                 handle: json.trace.handle ?? null,
                 fullName: json.trace.fullName ?? null,
                 text: json.trace.messagePreview ?? "",
+                raw: null,
               } satisfies LatestMessage,
             ]
           : [];
@@ -409,6 +412,20 @@ export function ManychatMessageInbox() {
               </div>
               <div className="mt-1 whitespace-pre-wrap text-slate-600">
                 {lastMessage.text?.length ? lastMessage.text : "(порожній текст повідомлення)"}
+              </div>
+              <div className="mt-3">
+                <h4 className="text-sm font-semibold text-emerald-800">Сирий JSON вебхука</h4>
+                <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-emerald-900/5 p-3 text-xs text-emerald-900">
+                  {(() => {
+                    try {
+                      return JSON.stringify(lastMessage.raw ?? null, null, 2);
+                    } catch (error) {
+                      return `<< неможливо серіалізувати: ${
+                        error instanceof Error ? error.message : String(error)
+                      } >>`;
+                    }
+                  })()}
+                </pre>
               </div>
             </div>
           </div>
