@@ -1,7 +1,11 @@
 // web/app/layout.tsx
 import "./globals.css";
-import Script from "next/script";
 import { Inter } from "next/font/google";
+import Script from "next/script";
+
+import { LOCKDOWN_GUARD_SNIPPET, applyLockdownGuard } from "@/lib/ses-lockdown-guard";
+
+applyLockdownGuard();
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -20,16 +24,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Тимчасовий захист від third-party SES/lockdown у браузері.
            Виконується ПЕРЕД усіма іншими скриптами. */}
-        <Script id="disable-ses-lockdown" strategy="beforeInteractive">
-          {`
-            try {
-              var g = (typeof globalThis !== 'undefined' ? globalThis : window);
-              if (g && typeof g.lockdown === 'function') {
-                try { delete g.lockdown; } catch (_) { try { g.lockdown = undefined; } catch (_) {} }
-              }
-            } catch (_) {}
-          `}
-        </Script>
+        <Script
+          id="p30-lockdown-guard"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: LOCKDOWN_GUARD_SNIPPET,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>
