@@ -91,6 +91,7 @@ export function ManychatMessageInbox() {
               ok?: boolean;
               latest?: LatestMessage | null;
               feed?: LatestMessage[];
+              messages?: LatestMessage[];
               source?: string;
               trace?: WebhookTrace | null;
               diagnostics?: Diagnostics | null;
@@ -106,7 +107,11 @@ export function ManychatMessageInbox() {
           });
           return;
         }
-        const feed = Array.isArray(json.feed) ? json.feed : null;
+        const feed = Array.isArray(json.feed)
+          ? json.feed
+          : Array.isArray(json.messages)
+            ? json.messages
+            : null;
         const messages = feed && feed.length > 0
           ? feed
           : json.latest
@@ -158,6 +163,7 @@ export function ManychatMessageInbox() {
             ok?: boolean;
             latest?: LatestMessage | null;
             feed?: LatestMessage[];
+            messages?: LatestMessage[];
             source?: string;
             trace?: WebhookTrace | null;
             diagnostics?: Diagnostics | null;
@@ -172,7 +178,11 @@ export function ManychatMessageInbox() {
         });
         return;
       }
-      const feed = Array.isArray(json.feed) ? json.feed : null;
+      const feed = Array.isArray(json.feed)
+        ? json.feed
+        : Array.isArray(json.messages)
+          ? json.messages
+          : null;
       const messages = feed && feed.length > 0
         ? feed
         : json.latest

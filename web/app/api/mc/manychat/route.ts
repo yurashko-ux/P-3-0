@@ -493,6 +493,7 @@ export async function GET() {
     ok: true,
     latest: latest ?? null,
     feed,
+    messages: feed,
     source,
     trace,
     diagnostics,
