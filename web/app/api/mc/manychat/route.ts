@@ -232,6 +232,7 @@ export async function POST(req: NextRequest) {
   lastTrace = {
     receivedAt: message.receivedAt,
     status: 'accepted',
+    statusCode: 200,
     handle: message.handle,
     fullName: message.fullName,
     messagePreview: message.text ? message.text.slice(0, 180) : null,
@@ -422,6 +423,49 @@ export async function GET() {
 
   if (!source && feed.length > 0) {
     source = 'kv';
+  }
+
+  if (trace || latest) {
+    const candidateMessage = latest ?? feed[0] ?? null;
+    if (trace) {
+      const numericReceived =
+        typeof trace.receivedAt === 'number' && Number.isFinite(trace.receivedAt)
+          ? trace.receivedAt
+          : typeof trace.receivedAt === 'string'
+            ? Number(trace.receivedAt)
+            : NaN;
+      trace = {
+        ...trace,
+        receivedAt: Number.isFinite(numericReceived)
+          ? numericReceived
+          : candidateMessage && typeof candidateMessage.receivedAt === 'number'
+            ? candidateMessage.receivedAt
+            : Date.now(),
+        status: trace.status === 'rejected' || trace.status === 'accepted' ? trace.status : 'accepted',
+        statusCode:
+          typeof trace.statusCode === 'number' && Number.isFinite(trace.statusCode)
+            ? trace.statusCode
+            : trace.status === 'rejected'
+              ? 401
+              : 200,
+        handle: trace.handle ?? candidateMessage?.handle ?? null,
+        fullName: trace.fullName ?? candidateMessage?.fullName ?? null,
+        messagePreview:
+          trace.messagePreview ?? candidateMessage?.text?.slice(0, 180) ?? null,
+      };
+    } else if (candidateMessage) {
+      trace = {
+        receivedAt:
+          typeof candidateMessage.receivedAt === 'number' && Number.isFinite(candidateMessage.receivedAt)
+            ? candidateMessage.receivedAt
+            : Date.now(),
+        status: 'accepted',
+        statusCode: 200,
+        handle: candidateMessage.handle ?? null,
+        fullName: candidateMessage.fullName ?? null,
+        messagePreview: candidateMessage.text ? candidateMessage.text.slice(0, 180) : null,
+      };
+    }
   }
 
   return NextResponse.json({
