@@ -17,7 +17,6 @@ import {
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
 } from '@/lib/manychat-store';
-import { fetchManychatLatest, type ManychatLatestMessage } from '@/lib/manychat-api';
 
 type LatestMessage = ManychatStoredMessage;
 type WebhookTrace = ManychatWebhookTrace;
@@ -26,7 +25,6 @@ type Diagnostics = {
   api?: {
     ok: boolean;
     message?: string;
-    url?: string;
     note?: string;
   } | null;
   kvConfig?: {
@@ -135,29 +133,6 @@ function normalisePayload(payload: unknown): LatestMessage {
     fullName,
     text,
     raw: payload,
-  };
-}
-
-function fromManychatApi(message: ManychatLatestMessage, fallback: number): LatestMessage {
-  const id = message.id && message.id !== '' ? message.id : `manychat-${fallback}`;
-  const rawConversation = (message.raw as Record<string, unknown> | undefined)?.conversation as
-    | Record<string, unknown>
-    | undefined;
-  const titleCandidate = rawConversation?.title;
-  const title =
-    typeof titleCandidate === 'string' && titleCandidate.trim().length
-      ? titleCandidate
-      : 'ManyChat';
-
-  return {
-    id,
-    receivedAt: message.receivedAt ?? Date.now(),
-    source: message.source ?? 'manychat:api',
-    title,
-    handle: message.handle ?? null,
-    fullName: message.fullName ?? null,
-    text: message.text ?? '',
-    raw: message.raw,
   };
 }
 
@@ -385,31 +360,13 @@ export async function GET() {
     };
   }
 
-  if (apiKeyAvailable) {
-    try {
-      const { messages, meta } = await fetchManychatLatest(5);
-      if (messages.length > 0) {
-        const start = sequence;
-        const apiFeed = messages.map((msg, index) => fromManychatApi(msg, start + index + 1));
-        sequence = start + messages.length;
-        feed = apiFeed;
-        latest = apiFeed[0];
-        source = 'api';
-        diagnostics.api = { ok: true, url: meta.url, note: 'fetched' };
-      } else {
-        diagnostics.api = { ok: true, url: meta.url, note: 'empty' };
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      diagnostics.api = { ok: false, message };
-    }
-  } else {
-    diagnostics.api = {
-      ok: false,
-      message:
-        'MANYCHAT_API_KEY (або еквівалентний ManyChat API ключ) не налаштовано',
-    };
-  }
+  diagnostics.api = {
+    ok: false,
+    message: apiKeyAvailable
+      ? 'ManyChat API вимкнено: використовуються лише дані з вебхука.'
+      : 'ManyChat API вимкнено і ключ не використовується.',
+    note: 'API-запити до ManyChat не виконуються за вимогою.',
+  };
 
   if (feed.length === 0 && trace) {
     const fallbackText = trace.messagePreview ?? '';

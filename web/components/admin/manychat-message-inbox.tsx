@@ -27,7 +27,6 @@ type Diagnostics = {
   api?: {
     ok: boolean;
     message?: string;
-    url?: string;
     note?: string;
   } | null;
   kvConfig?: {
@@ -328,12 +327,10 @@ export function ManychatMessageInbox() {
           {apiDiag ? (
             <p className="mt-2 text-sm text-amber-700">
               {apiDiag.ok
-                ? `✅ Дані отримано (${apiDiag.note === "empty" ? "повідомлення відсутні" : "є нові повідомлення"})`
-                : `⚠️ ${apiDiag.message ?? "Не вдалося отримати дані"}`}
-              {apiDiag.url ? (
-                <span className="block text-xs text-amber-600/80">
-                  Джерело: {apiDiag.url}
-                </span>
+                ? `✅ Дані отримано (${apiDiag.note ?? "API активне"})`
+                : `⚠️ ${apiDiag.message ?? "ManyChat API вимкнено"}`}
+              {apiDiag.note ? (
+                <span className="block text-xs text-amber-600/80">{apiDiag.note}</span>
               ) : null}
             </p>
           ) : (
