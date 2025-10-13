@@ -47,6 +47,12 @@ type Diagnostics = {
     source: 'kv' | 'miss' | 'error';
     message?: string;
   } | null;
+  kvRaw?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
   kvFeed?: {
     ok: boolean;
     key: string;
@@ -265,6 +271,7 @@ export function ManychatMessageInbox() {
   const kvConfigDiag = diagnostics?.kvConfig ?? null;
   const kvDiag = diagnostics?.kv ?? null;
   const kvTraceDiag = diagnostics?.kvTrace ?? null;
+  const kvRawDiag = diagnostics?.kvRaw ?? null;
   const kvFeedDiag = diagnostics?.kvFeed ?? null;
   const traceFallback = diagnostics?.traceFallback ?? null;
   const lastMessage = inbox.status === "ready" ? inbox.lastMessage : null;
@@ -379,6 +386,21 @@ export function ManychatMessageInbox() {
                   : '⚠️ Трасування не знайдено у KV'}
               <span className="block text-xs text-purple-600/80">
                 Ключ: {kvTraceDiag.key}{kvTraceDiag.source ? ` • джерело: ${kvTraceDiag.source}` : ''}
+              </span>
+            </p>
+          </div>
+        ) : null}
+        {kvRawDiag ? (
+          <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/70 p-4">
+            <h3 className="text-sm font-semibold text-amber-700">Сирий payload (KV)</h3>
+            <p className="mt-2 text-sm text-amber-700">
+              {kvRawDiag.ok
+                ? '✅ Сирий JSON збережено у KV'
+                : kvRawDiag.source === 'error'
+                  ? `⚠️ ${kvRawDiag.message ?? 'Помилка читання KV'}`
+                  : '⚠️ Сирий payload відсутній у KV'}
+              <span className="block text-xs text-amber-600/80">
+                Ключ: {kvRawDiag.key}{kvRawDiag.source ? ` • джерело: ${kvRawDiag.source}` : ''}
               </span>
             </p>
           </div>

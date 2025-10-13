@@ -42,6 +42,7 @@ export type ManychatWebhookTrace = {
 export const MANYCHAT_MESSAGE_KEY = 'manychat:last-message';
 export const MANYCHAT_TRACE_KEY = 'manychat:last-trace';
 export const MANYCHAT_FEED_KEY = 'manychat:last-feed';
+export const MANYCHAT_RAW_KEY = 'manychat:last-raw';
 
 const FEED_LIMIT = 25;
 
@@ -254,6 +255,17 @@ export async function persistManychatSnapshot(
 ): Promise<void> {
   const payloadMessage = normaliseStoredMessage(message);
   const payloadTrace = trace ? normaliseTrace(trace, payloadMessage) : null;
+  const rawSnapshot = (() => {
+    try {
+      return JSON.stringify(payloadMessage.raw ?? message.raw ?? null);
+    } catch {
+      try {
+        return JSON.stringify(message.raw ?? null);
+      } catch {
+        return 'null';
+      }
+    }
+  })();
 
   let stored = false;
 
@@ -264,6 +276,7 @@ export async function persistManychatSnapshot(
       if (payloadTrace) {
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
       }
+      await kvClient.set(MANYCHAT_RAW_KEY, rawSnapshot);
     } catch {
       stored = false;
     }
@@ -274,6 +287,7 @@ export async function persistManychatSnapshot(
     if (payloadTrace) {
       await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
     }
+    await kvWrite.setRaw(MANYCHAT_RAW_KEY, rawSnapshot);
     stored = true;
   }
 
@@ -331,6 +345,35 @@ export async function readManychatMessage(): Promise<{
     };
   }
   return { message: null, source: 'kv-rest' };
+}
+
+export async function readManychatRaw(): Promise<{
+  raw: unknown;
+  source: StoreSource | null;
+  error?: string;
+}> {
+  const direct = await readFromKvClient<unknown | string>(MANYCHAT_RAW_KEY);
+  if (direct !== undefined && direct !== null) {
+    try {
+      if (typeof direct === 'string') {
+        return { raw: JSON.parse(direct), source: 'kv-client' };
+      }
+    } catch {
+      return { raw: direct, source: 'kv-client' };
+    }
+    return { raw: direct, source: 'kv-client' };
+  }
+
+  const rawString = await kvRead.getRaw(MANYCHAT_RAW_KEY);
+  if (!rawString) {
+    return { raw: null, source: null };
+  }
+
+  try {
+    return { raw: JSON.parse(rawString), source: 'kv-rest' };
+  } catch {
+    return { raw: rawString, source: 'kv-rest' };
+  }
 }
 
 export async function readManychatTrace(): Promise<{

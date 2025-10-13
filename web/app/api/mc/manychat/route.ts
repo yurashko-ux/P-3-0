@@ -9,11 +9,13 @@ import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
   MANYCHAT_FEED_KEY,
+  MANYCHAT_RAW_KEY,
   persistManychatSnapshot,
   readManychatMessage,
   readManychatTrace,
   readManychatFeed,
   ensureManychatFeedSnapshot,
+  readManychatRaw,
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
 } from '@/lib/manychat-store';
@@ -40,6 +42,12 @@ type Diagnostics = {
     message?: string;
   } | null;
   kvTrace?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
+  kvRaw?: {
     ok: boolean;
     key: string;
     source: 'kv' | 'miss' | 'error';
@@ -305,6 +313,29 @@ export async function GET() {
     }
   }
 
+  const rawResult = await readManychatRaw();
+  if (rawResult.raw !== undefined && rawResult.raw !== null) {
+    diagnostics.kvRaw = {
+      ok: true,
+      key: MANYCHAT_RAW_KEY,
+      source: 'kv',
+    };
+  } else if (rawResult.error) {
+    diagnostics.kvRaw = {
+      ok: false,
+      key: MANYCHAT_RAW_KEY,
+      source: 'error',
+      message: rawResult.error,
+    };
+  } else {
+    diagnostics.kvRaw = {
+      ok: false,
+      key: MANYCHAT_RAW_KEY,
+      source: 'miss',
+      message: 'KV не містить сирого payload останнього вебхука',
+    };
+  }
+
   let feed: LatestMessage[] = latest ? [latest] : [];
 
   const feedResultInitial = await readManychatFeed(10);
@@ -397,6 +428,21 @@ export async function GET() {
 
   if (latest && feed.length === 0) {
     feed = [latest];
+  }
+
+  const rehydrateRaw = (message: LatestMessage): LatestMessage => {
+    if (!message) return message;
+    if (message.raw != null) return message;
+    if (rawResult.raw === undefined || rawResult.raw === null) return message;
+    return { ...message, raw: rawResult.raw };
+  };
+
+  if (latest) {
+    latest = rehydrateRaw(latest);
+  }
+
+  if (feed.length) {
+    feed = feed.map(rehydrateRaw);
   }
 
   if (!source && feed.length > 0) {
