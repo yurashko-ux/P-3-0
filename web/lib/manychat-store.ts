@@ -45,6 +45,91 @@ export const MANYCHAT_FEED_KEY = 'manychat:last-feed';
 
 const FEED_LIMIT = 25;
 
+function pickFirstString(...values: Array<unknown>): string | null {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length) return trimmed;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return null;
+}
+
+function extractTextFromRaw(
+  raw: unknown,
+  visited: WeakSet<Record<string, unknown>> = new WeakSet(),
+): string | null {
+  if (raw == null) return null;
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return String(raw);
+  }
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const result = extractTextFromRaw(item, visited);
+      if (result) return result;
+    }
+    return null;
+  }
+
+  if (typeof raw !== 'object') {
+    return null;
+  }
+
+  const record = raw as Record<string, unknown>;
+  if (visited.has(record)) return null;
+  visited.add(record);
+
+  const direct = pickFirstString(
+    record.text,
+    record.message,
+    record.content,
+    record.body,
+    record.payload,
+    record.preview,
+    record.description,
+  );
+  if (direct) return direct;
+
+  const nestedKeys = [
+    'text',
+    'message',
+    'content',
+    'body',
+    'payload',
+    'data',
+    'event',
+    'last_message',
+    'lastMessage',
+    'last_message_text',
+    'lastMessageText',
+    'last_message_preview',
+    'lastMessagePreview',
+  ];
+
+  for (const key of nestedKeys) {
+    if (record[key] == null) continue;
+    const nested = extractTextFromRaw(record[key], visited);
+    if (nested) return nested;
+  }
+
+  for (const value of Object.values(record)) {
+    const nested = extractTextFromRaw(value, visited);
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
 function normaliseStoredMessage(input: ManychatStoredMessage): ManychatStoredMessage {
   const receivedAt =
     typeof input.receivedAt === 'number' && Number.isFinite(input.receivedAt)
@@ -58,12 +143,19 @@ function normaliseStoredMessage(input: ManychatStoredMessage): ManychatStoredMes
         ? input.id.trim()
         : receivedAt;
 
-  const textValue =
+  let textValue =
     typeof input.text === 'string'
       ? input.text
       : input.text == null
         ? ''
         : String(input.text);
+
+  if (!textValue || !textValue.trim().length) {
+    const fallback = extractTextFromRaw(input.raw);
+    if (fallback) {
+      textValue = fallback;
+    }
+  }
 
   return {
     ...input,
