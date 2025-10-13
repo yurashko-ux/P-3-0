@@ -42,6 +42,7 @@ export type ManychatWebhookTrace = {
 export const MANYCHAT_MESSAGE_KEY = 'manychat:last-message';
 export const MANYCHAT_TRACE_KEY = 'manychat:last-trace';
 export const MANYCHAT_FEED_KEY = 'manychat:last-feed';
+export const MANYCHAT_FEED_FALLBACK_KEY = 'manychat:last-feed:fallback';
 
 export async function persistManychatSnapshot(
   message: ManychatStoredMessage,
@@ -51,27 +52,29 @@ export async function persistManychatSnapshot(
   const payloadTrace = trace ? { ...trace } : null;
   const feedLimit = 25;
 
-  let stored = false;
+  let feedStoredViaList = false;
+  let messageStoredViaClient = false;
 
   if (kvClient) {
     try {
       await kvClient.set(MANYCHAT_MESSAGE_KEY, payloadMessage);
-      stored = true;
+      messageStoredViaClient = true;
       if (payloadTrace) {
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
       }
       try {
         await kvClient.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
         await kvClient.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
+        feedStoredViaList = true;
       } catch {
         // Якщо lpush/ltrim недоступні в середовищі, продовжимо через REST нижче.
       }
     } catch {
-      stored = false;
+      // ігноруємо: перейдемо до REST-варіанту нижче
     }
   }
 
-  if (!stored) {
+  if (!messageStoredViaClient) {
     await kvWrite.setRaw(MANYCHAT_MESSAGE_KEY, JSON.stringify(payloadMessage));
     if (payloadTrace) {
       await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
@@ -79,18 +82,18 @@ export async function persistManychatSnapshot(
     try {
       await kvWrite.lpush(MANYCHAT_FEED_KEY, JSON.stringify(payloadMessage));
       await kvWrite.ltrim(MANYCHAT_FEED_KEY, 0, feedLimit - 1);
-      stored = true;
+      feedStoredViaList = true;
     } catch {
-      // якщо REST-операції списків недоступні, використаємо резерв через setRaw нижче
+      // якщо REST-операції списків недоступні, використаємо резерв через fallback нижче
     }
   }
 
   try {
-    const existingRaw = await kvRead.getRaw(MANYCHAT_FEED_KEY);
+    const fallbackRaw = await kvRead.getRaw(MANYCHAT_FEED_FALLBACK_KEY);
     let existing: ManychatStoredMessage[] = [];
-    if (existingRaw) {
+    if (fallbackRaw) {
       try {
-        const parsed = JSON.parse(existingRaw) as ManychatStoredMessage[];
+        const parsed = JSON.parse(fallbackRaw) as ManychatStoredMessage[];
         if (Array.isArray(parsed)) {
           existing = parsed.filter((item): item is ManychatStoredMessage => Boolean(item));
         }
@@ -106,9 +109,39 @@ export async function persistManychatSnapshot(
         receivedAt: typeof item.receivedAt === 'number' ? item.receivedAt : Date.now(),
       }));
 
-    await kvWrite.setRaw(MANYCHAT_FEED_KEY, JSON.stringify(next));
+    await kvWrite.setRaw(MANYCHAT_FEED_FALLBACK_KEY, JSON.stringify(next));
   } catch {
     // Ігноруємо помилки журналу: вони не мають блокувати вебхук.
+  }
+
+  if (!feedStoredViaList) {
+    // Для зворотної сумісності: якщо списки не спрацювали, оновимо і legacy-ключ,
+    // щоб читання старої логіки (якщо десь залишилось) не повертало порожній результат.
+    try {
+      const legacyRaw = await kvRead.getRaw(MANYCHAT_FEED_KEY);
+      let legacyExisting: ManychatStoredMessage[] = [];
+      if (legacyRaw) {
+        try {
+          const parsed = JSON.parse(legacyRaw) as ManychatStoredMessage[];
+          if (Array.isArray(parsed)) {
+            legacyExisting = parsed.filter((item): item is ManychatStoredMessage => Boolean(item));
+          }
+        } catch {
+          legacyExisting = [];
+        }
+      }
+
+      const legacyNext = [payloadMessage, ...legacyExisting]
+        .slice(0, feedLimit)
+        .map((item) => ({
+          ...item,
+          receivedAt: typeof item.receivedAt === 'number' ? item.receivedAt : Date.now(),
+        }));
+
+      await kvWrite.setRaw(MANYCHAT_FEED_KEY, JSON.stringify(legacyNext));
+    } catch {
+      // ігноруємо: це лише підтримка застарілої поведінки
+    }
   }
 }
 
@@ -190,6 +223,8 @@ export async function readManychatTrace(): Promise<{
 export async function readManychatFeed(limit = 10): Promise<{
   messages: ManychatStoredMessage[];
   source: StoreSource | null;
+  key?: string | null;
+  mode?: 'list' | 'fallback-json' | 'legacy-json';
   error?: string;
 }> {
   const boundedLimit = Math.max(1, Math.min(limit, 50));
@@ -214,6 +249,8 @@ export async function readManychatFeed(limit = 10): Promise<{
           return {
             messages: parsed.slice(0, boundedLimit),
             source: 'kv-client',
+            key: MANYCHAT_FEED_KEY,
+            mode: 'list',
           };
         }
       }
@@ -244,7 +281,41 @@ export async function readManychatFeed(limit = 10): Promise<{
     }
 
     if (messages.length > 0) {
-      return { messages: messages.slice(0, boundedLimit), source: 'kv-rest' };
+      return {
+        messages: messages.slice(0, boundedLimit),
+        source: 'kv-rest',
+        key: MANYCHAT_FEED_KEY,
+        mode: 'list',
+      };
+    }
+  }
+
+  const fallbackRaw = await kvRead.getRaw(MANYCHAT_FEED_FALLBACK_KEY);
+  if (fallbackRaw) {
+    try {
+      const parsed = JSON.parse(fallbackRaw) as ManychatStoredMessage[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const messages = parsed
+          .slice(0, boundedLimit)
+          .map((item) => ({
+            ...item,
+            receivedAt: typeof item.receivedAt === 'number' ? item.receivedAt : Date.now(),
+          }));
+        return {
+          messages,
+          source: 'kv-rest',
+          key: MANYCHAT_FEED_FALLBACK_KEY,
+          mode: 'fallback-json',
+        };
+      }
+    } catch (error) {
+      return {
+        messages: [],
+        source: 'kv-rest',
+        key: MANYCHAT_FEED_FALLBACK_KEY,
+        mode: 'fallback-json',
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
@@ -264,12 +335,16 @@ export async function readManychatFeed(limit = 10): Promise<{
             receivedAt: typeof item.receivedAt === 'number' ? item.receivedAt : Date.now(),
           })),
         source: 'kv-rest',
+        key: MANYCHAT_FEED_KEY,
+        mode: 'legacy-json',
       };
     }
   } catch (error) {
     return {
       messages: [],
       source: 'kv-rest',
+      key: MANYCHAT_FEED_KEY,
+      mode: 'legacy-json',
       error: error instanceof Error ? error.message : String(error),
     };
   }

@@ -9,6 +9,7 @@ import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
   MANYCHAT_FEED_KEY,
+  MANYCHAT_FEED_FALLBACK_KEY,
   persistManychatSnapshot,
   readManychatMessage,
   readManychatTrace,
@@ -331,34 +332,51 @@ export async function GET() {
 
   let feed: LatestMessage[] = latest ? [latest] : [];
 
-  const { messages: storedFeed, source: feedSource, error: feedError } = await readManychatFeed(10);
+  const {
+    messages: storedFeed,
+    source: feedSource,
+    key: feedKey,
+    mode: feedMode,
+    error: feedError,
+  } = await readManychatFeed(10);
   if (storedFeed.length) {
     feed = storedFeed;
     latest = latest ?? storedFeed[0];
     source = source ?? 'kv';
     diagnostics.kvFeed = {
       ok: true,
-      key: MANYCHAT_FEED_KEY,
+      key: feedKey ?? MANYCHAT_FEED_KEY,
       source: 'kv',
       count: storedFeed.length,
-      message:
-        feedSource === 'kv-client'
-          ? 'Журнал отримано через @vercel/kv'
-          : feedSource === 'kv-rest'
-            ? 'Журнал отримано через REST API Vercel KV'
-            : undefined,
+      message: (() => {
+        if (feedSource === 'kv-client') {
+          return 'Журнал отримано через @vercel/kv';
+        }
+        if (feedSource === 'kv-rest') {
+          if (feedMode === 'fallback-json') {
+            return feedKey === MANYCHAT_FEED_FALLBACK_KEY
+              ? 'Журнал отримано з fallback-ключа (JSON) через REST API Vercel KV'
+              : 'Журнал отримано як JSON через REST API Vercel KV';
+          }
+          if (feedMode === 'legacy-json') {
+            return 'Журнал отримано з застарілого JSON-ключа через REST API Vercel KV';
+          }
+          return 'Журнал отримано через REST API Vercel KV';
+        }
+        return undefined;
+      })(),
     };
   } else if (feedError) {
     diagnostics.kvFeed = {
       ok: false,
-      key: MANYCHAT_FEED_KEY,
+      key: feedKey ?? MANYCHAT_FEED_KEY,
       source: 'error',
       message: feedError,
     };
   } else {
     diagnostics.kvFeed = {
       ok: false,
-      key: MANYCHAT_FEED_KEY,
+      key: feedKey ?? MANYCHAT_FEED_KEY,
       source: 'miss',
       message: 'Журнал повідомлень у KV порожній',
     };
