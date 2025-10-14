@@ -259,6 +259,13 @@ export async function POST(req: NextRequest) {
     fullName: normalized.fullName || null,
     text: normalized.text || "",
     raw: { payload: json, normalized },
+    rawText: (() => {
+      try {
+        return JSON.stringify({ payload: json, normalized });
+      } catch {
+        return null;
+      }
+    })(),
   };
 
   const snapshotTrace: ManychatWebhookTrace = {

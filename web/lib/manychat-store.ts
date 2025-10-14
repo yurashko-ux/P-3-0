@@ -27,6 +27,7 @@ export type ManychatStoredMessage = {
   fullName: string | null;
   text: string;
   raw: unknown;
+  rawText?: string | null;
 };
 
 export type ManychatWebhookTrace = {
@@ -158,6 +159,23 @@ function normaliseStoredMessage(input: ManychatStoredMessage): ManychatStoredMes
     }
   }
 
+  const rawTextValue = (() => {
+    if (typeof input.rawText === 'string' && input.rawText.trim().length) {
+      return input.rawText;
+    }
+    if (typeof input.raw === 'string' && input.raw.trim().length) {
+      return input.raw;
+    }
+    try {
+      if (input.raw != null) {
+        return JSON.stringify(input.raw);
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  })();
+
   return {
     ...input,
     id: idValue,
@@ -167,6 +185,7 @@ function normaliseStoredMessage(input: ManychatStoredMessage): ManychatStoredMes
     handle: input.handle ?? null,
     fullName: input.fullName ?? null,
     text: textValue,
+    rawText: rawTextValue,
   };
 }
 
@@ -255,7 +274,16 @@ export async function persistManychatSnapshot(
 ): Promise<void> {
   const payloadMessage = normaliseStoredMessage(message);
   const payloadTrace = trace ? normaliseTrace(trace, payloadMessage) : null;
-  const rawSnapshot = (() => {
+  const rawTextSnapshot = (() => {
+    if (typeof payloadMessage.rawText === 'string' && payloadMessage.rawText.length) {
+      return payloadMessage.rawText;
+    }
+    if (typeof message.rawText === 'string' && message.rawText.length) {
+      return message.rawText;
+    }
+    if (typeof payloadMessage.raw === 'string' && payloadMessage.raw.length) {
+      return payloadMessage.raw;
+    }
     try {
       return JSON.stringify(payloadMessage.raw ?? message.raw ?? null);
     } catch {
@@ -267,6 +295,8 @@ export async function persistManychatSnapshot(
     }
   })();
 
+  payloadMessage.rawText = rawTextSnapshot;
+
   let stored = false;
 
   if (kvClient) {
@@ -276,7 +306,7 @@ export async function persistManychatSnapshot(
       if (payloadTrace) {
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
       }
-      await kvClient.set(MANYCHAT_RAW_KEY, rawSnapshot);
+      await kvClient.set(MANYCHAT_RAW_KEY, rawTextSnapshot);
     } catch {
       stored = false;
     }
@@ -287,7 +317,7 @@ export async function persistManychatSnapshot(
     if (payloadTrace) {
       await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
     }
-    await kvWrite.setRaw(MANYCHAT_RAW_KEY, rawSnapshot);
+    await kvWrite.setRaw(MANYCHAT_RAW_KEY, rawTextSnapshot);
     stored = true;
   }
 
@@ -349,30 +379,36 @@ export async function readManychatMessage(): Promise<{
 
 export async function readManychatRaw(): Promise<{
   raw: unknown;
+  text: string | null;
   source: StoreSource | null;
   error?: string;
 }> {
   const direct = await readFromKvClient<unknown | string>(MANYCHAT_RAW_KEY);
   if (direct !== undefined && direct !== null) {
-    try {
-      if (typeof direct === 'string') {
-        return { raw: JSON.parse(direct), source: 'kv-client' };
+    if (typeof direct === 'string') {
+      try {
+        return { raw: JSON.parse(direct), text: direct, source: 'kv-client' };
+      } catch {
+        return { raw: direct, text: direct, source: 'kv-client' };
       }
-    } catch {
-      return { raw: direct, source: 'kv-client' };
     }
-    return { raw: direct, source: 'kv-client' };
+    try {
+      const serialised = JSON.stringify(direct);
+      return { raw: direct, text: serialised, source: 'kv-client' };
+    } catch {
+      return { raw: direct, text: null, source: 'kv-client' };
+    }
   }
 
   const rawString = await kvRead.getRaw(MANYCHAT_RAW_KEY);
   if (!rawString) {
-    return { raw: null, source: null };
+    return { raw: null, text: null, source: null };
   }
 
   try {
-    return { raw: JSON.parse(rawString), source: 'kv-rest' };
+    return { raw: JSON.parse(rawString), text: rawString, source: 'kv-rest' };
   } catch {
-    return { raw: rawString, source: 'kv-rest' };
+    return { raw: rawString, text: rawString, source: 'kv-rest' };
   }
 }
 

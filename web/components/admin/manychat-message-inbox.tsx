@@ -11,6 +11,7 @@ type LatestMessage = {
   fullName: string | null;
   text: string;
   raw: unknown | null;
+  rawText?: string | null;
 };
 
 type WebhookTrace = {
@@ -136,6 +137,7 @@ export function ManychatMessageInbox() {
                       fullName: json.trace.fullName ?? null,
                       text: json.trace.messagePreview ?? "",
                       raw: null,
+                      rawText: null,
                     } satisfies LatestMessage,
                   ]
                 : [];
@@ -436,6 +438,14 @@ export function ManychatMessageInbox() {
                 <h4 className="text-sm font-semibold text-emerald-800">Сирий JSON вебхука</h4>
                 <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-emerald-900/5 p-3 text-xs text-emerald-900">
                   {(() => {
+                    const rawText = lastMessage.rawText?.trim();
+                    if (rawText && rawText.length) {
+                      try {
+                        return JSON.stringify(JSON.parse(rawText), null, 2);
+                      } catch {
+                        return rawText;
+                      }
+                    }
                     try {
                       return JSON.stringify(lastMessage.raw ?? null, null, 2);
                     } catch (error) {

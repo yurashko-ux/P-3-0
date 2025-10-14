@@ -92,7 +92,20 @@ function pickFirstString(...values: Array<unknown>): string | null {
   return null;
 }
 
-function normalisePayload(payload: unknown): LatestMessage {
+function safeSerialise(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
   const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
 
   const handle = pickFirstString(
@@ -141,10 +154,11 @@ function normalisePayload(payload: unknown): LatestMessage {
     fullName,
     text,
     raw: payload,
+    rawText: rawText ?? safeSerialise(payload),
   };
 }
 
-async function readRequestPayload(req: NextRequest): Promise<unknown> {
+async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; rawText: string | null }> {
   let bodyText: string | null = null;
 
   try {
@@ -154,7 +168,7 @@ async function readRequestPayload(req: NextRequest): Promise<unknown> {
   }
 
   if (!bodyText) {
-    return {};
+    return { parsed: {}, rawText: null };
   }
 
   const trimmed = bodyText.trim();
@@ -163,7 +177,7 @@ async function readRequestPayload(req: NextRequest): Promise<unknown> {
   // Спробуємо спочатку розпарсити як JSON — ManyChat зазвичай шле саме такий формат.
   if (trimmed) {
     try {
-      return JSON.parse(trimmed) as unknown;
+      return { parsed: JSON.parse(trimmed) as unknown, rawText: bodyText };
     } catch {
       // ігноруємо, переходимо до альтернативних варіантів
     }
@@ -176,13 +190,13 @@ async function readRequestPayload(req: NextRequest): Promise<unknown> {
       for (const [key, value] of params.entries()) {
         record[key] = value;
       }
-      return record;
+      return { parsed: record, rawText: bodyText };
     } catch {
       // якщо не вдалося — впадемо до текстового варіанта нижче
     }
   }
 
-  return { text: bodyText, raw: bodyText };
+  return { parsed: { text: bodyText, raw: bodyText }, rawText: bodyText };
 }
 
 export async function POST(req: NextRequest) {
@@ -209,9 +223,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const payload = await readRequestPayload(req);
+  const { parsed: payload, rawText } = await readRequestPayload(req);
 
-  const message = normalisePayload(payload);
+  const message = normalisePayload(payload, rawText);
   lastMessage = message;
   lastTrace = {
     receivedAt: message.receivedAt,
@@ -414,6 +428,7 @@ export async function GET() {
         fullName: fallbackFullName,
         text: fallbackText,
         raw: null,
+        rawText: null,
       };
 
       feed = [fallbackMessage];
@@ -432,9 +447,14 @@ export async function GET() {
 
   const rehydrateRaw = (message: LatestMessage): LatestMessage => {
     if (!message) return message;
-    if (message.raw != null) return message;
-    if (rawResult.raw === undefined || rawResult.raw === null) return message;
-    return { ...message, raw: rawResult.raw };
+    const enriched: LatestMessage = { ...message };
+    if (enriched.raw == null && rawResult.raw !== undefined && rawResult.raw !== null) {
+      enriched.raw = rawResult.raw;
+    }
+    if ((enriched as any).rawText == null && rawResult.text != null) {
+      (enriched as any).rawText = rawResult.text;
+    }
+    return enriched;
   };
 
   if (latest) {
