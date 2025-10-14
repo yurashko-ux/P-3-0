@@ -16,6 +16,7 @@ import {
   readManychatFeed,
   ensureManychatFeedSnapshot,
   readManychatRaw,
+  normaliseStoredMessage,
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
 } from '@/lib/manychat-store';
@@ -453,6 +454,9 @@ export async function GET() {
     }
     if ((enriched as any).rawText == null && rawResult.text != null) {
       (enriched as any).rawText = rawResult.text;
+    }
+    if (!enriched.text || !enriched.text.toString().trim().length) {
+      return normaliseStoredMessage(enriched);
     }
     return enriched;
   };

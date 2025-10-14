@@ -132,7 +132,7 @@ function extractTextFromRaw(
   return null;
 }
 
-function normaliseStoredMessage(input: ManychatStoredMessage): ManychatStoredMessage {
+export function normaliseStoredMessage(input: ManychatStoredMessage): ManychatStoredMessage {
   const receivedAt =
     typeof input.receivedAt === 'number' && Number.isFinite(input.receivedAt)
       ? input.receivedAt
