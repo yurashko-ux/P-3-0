@@ -17,6 +17,7 @@ type LatestMessage = {
 type RawSnapshot = {
   raw: unknown | null;
   text: string | null;
+  rawText?: string | null;
   source: string | null;
 };
 
@@ -289,6 +290,7 @@ export function ManychatMessageInbox() {
   const traceFallback = diagnostics?.traceFallback ?? null;
   const lastMessage = inbox.status === "ready" ? inbox.lastMessage : null;
   const rawSnapshot = inbox.status === "ready" ? inbox.rawSnapshot ?? null : null;
+  const snapshotText = rawSnapshot?.rawText ?? rawSnapshot?.text ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -446,8 +448,8 @@ export function ManychatMessageInbox() {
               <div className="mt-1 whitespace-pre-wrap text-slate-600">
                 {lastMessage.text?.trim()?.length
                   ? lastMessage.text
-                  : rawSnapshot?.text?.trim()?.length
-                    ? rawSnapshot.text
+                  : snapshotText?.trim()?.length
+                    ? snapshotText
                     : "(порожній текст повідомлення)"}
               </div>
               <div className="mt-3">
@@ -457,8 +459,8 @@ export function ManychatMessageInbox() {
                     const candidateText =
                       lastMessage.rawText?.trim()?.length
                         ? lastMessage.rawText.trim()
-                        : rawSnapshot?.text?.trim()?.length
-                          ? rawSnapshot.text.trim()
+                        : snapshotText?.trim()?.length
+                          ? snapshotText.trim()
                           : null;
                     if (candidateText) {
                       try {
@@ -550,8 +552,8 @@ export function ManychatMessageInbox() {
                       <div className="mt-1 whitespace-pre-wrap text-slate-500">
                         {message.text?.trim()?.length
                           ? message.text
-                          : rawSnapshot?.text?.trim()?.length && idx === 0
-                            ? rawSnapshot.text
+                          : snapshotText?.trim()?.length && idx === 0
+                            ? snapshotText
                             : "(порожній текст повідомлення)"}
                       </div>
                     </div>

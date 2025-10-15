@@ -586,6 +586,47 @@ export async function GET() {
     source = 'kv';
   }
 
+  const combinedRaw = (() => {
+    if (rawResult.raw !== undefined && rawResult.raw !== null) {
+      return rawResult.raw;
+    }
+    if (latest?.raw !== undefined && latest?.raw !== null) {
+      return latest.raw;
+    }
+    return null;
+  })();
+
+  const combinedRawText = (() => {
+    const textCandidate = typeof rawResult.text === 'string' && rawResult.text.trim().length
+      ? rawResult.text
+      : null;
+    if (textCandidate) return textCandidate;
+    if (typeof latest?.rawText === 'string' && latest.rawText.trim().length) {
+      return latest.rawText;
+    }
+    if (combinedRaw != null) {
+      try {
+        return JSON.stringify(combinedRaw);
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  })();
+
+  if (latest && typeof combinedRawText === 'string' && combinedRawText.trim().length && (!latest.rawText || !latest.rawText.trim().length)) {
+    latest = { ...latest, rawText: combinedRawText };
+  }
+
+  if (feed.length) {
+    feed = feed.map((item, index) => {
+      if (index === 0 && typeof combinedRawText === 'string' && combinedRawText.trim().length && (!item.rawText || !item.rawText.trim().length)) {
+        return { ...item, rawText: combinedRawText };
+      }
+      return item;
+    });
+  }
+
   if (trace || latest) {
     const candidateMessage = latest ?? feed[0] ?? null;
     if (trace) {
@@ -638,9 +679,10 @@ export async function GET() {
     trace,
     diagnostics,
     rawSnapshot: {
-      raw: rawResult.raw ?? null,
-      text: rawResult.text ?? null,
-      source: rawResult.source ?? null,
+      raw: combinedRaw,
+      text: combinedRawText ?? null,
+      rawText: combinedRawText ?? null,
+      source: rawResult.source ?? (combinedRawText ? 'message' : null),
     },
   });
 }
