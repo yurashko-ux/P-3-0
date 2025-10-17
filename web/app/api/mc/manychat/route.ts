@@ -236,6 +236,55 @@ function normalisePayload(payload: unknown, rawText?: string | null): LatestMess
   };
 }
 
+function ensureMessageText(
+  message: LatestMessage | null,
+  fallbackRaw: unknown,
+  fallbackRawText: string | null,
+): LatestMessage | null {
+  if (!message) return null;
+
+  const currentText = typeof message.text === 'string' ? message.text.trim() : '';
+  if (currentText.length) {
+    return currentText === message.text ? message : { ...message, text: currentText };
+  }
+
+  const candidates: Array<unknown> = [
+    message.rawText,
+    message.raw,
+    fallbackRawText,
+    fallbackRaw,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed.length) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown;
+          const extracted = extractTextFromRaw(parsed);
+          if (extracted && extracted.trim().length) {
+            return { ...message, text: extracted.trim(), rawText: trimmed };
+          }
+        } catch {
+          if (trimmed.length) {
+            return { ...message, text: trimmed, rawText: trimmed };
+          }
+        }
+      }
+      continue;
+    }
+
+    const extracted = extractTextFromRaw(candidate);
+    if (extracted && extracted.trim().length) {
+      return { ...message, text: extracted.trim() };
+    }
+  }
+
+  return message;
+}
+
 async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; rawText: string | null }> {
   let bodyText: string | null = null;
 
@@ -620,11 +669,22 @@ export async function GET() {
 
   if (feed.length) {
     feed = feed.map((item, index) => {
-      if (index === 0 && typeof combinedRawText === 'string' && combinedRawText.trim().length && (!item.rawText || !item.rawText.trim().length)) {
-        return { ...item, rawText: combinedRawText };
+      let next = item;
+      if (
+        index === 0 &&
+        typeof combinedRawText === 'string' &&
+        combinedRawText.trim().length &&
+        (!item.rawText || !item.rawText.trim().length)
+      ) {
+        next = { ...item, rawText: combinedRawText };
       }
-      return item;
+      const ensured = ensureMessageText(next, rawResult.raw, combinedRawText ?? rawResult.text ?? null);
+      return ensured ?? next;
     });
+  }
+
+  if (latest) {
+    latest = ensureMessageText(latest, rawResult.raw, combinedRawText ?? rawResult.text ?? null);
   }
 
   if (trace || latest) {
