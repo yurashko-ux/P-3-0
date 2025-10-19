@@ -638,7 +638,9 @@ export function ManychatMessageInbox() {
         }
         default: {
           cardNotes.push(
-            <span key="skipped">Пошук картки не виконувався через помилку на наступних кроках.</span>,
+            <span key="skipped">
+              Пошук картки не виконувався через помилку автоматизації ({automationError.error}).
+            </span>,
           );
           break;
         }
@@ -691,7 +693,13 @@ export function ManychatMessageInbox() {
           title: "3. Пошук картки у KeyCRM",
           status: "warning",
           details: [
-            <span key="skipped">Пошук не виконувався через помилку під час визначення кампанії.</span>,
+            <span key="skipped">
+              {automationError.error === "campaign_not_found" ||
+              automationError.error === "campaign_base_missing" ||
+              automationError.error === "campaign_target_missing"
+                ? "Пошук не виконувався через помилку під час визначення кампанії."
+                : `Пошук не виконувався через помилку автоматизації (${automationError.error}).`}
+            </span>,
           ],
         },
         {
