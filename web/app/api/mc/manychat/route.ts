@@ -82,6 +82,10 @@ type Diagnostics = {
     used: boolean;
     reason: string;
   } | null;
+  automationReplay?: {
+    used: boolean;
+    reason: string;
+  } | null;
   automation?: {
     ok: boolean;
     error?: string;
@@ -530,7 +534,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, message, automation });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const diagnostics: Diagnostics = {};
   const apiKeyAvailable = hasEnvValue(
     'MANYCHAT_API_KEY',
@@ -740,47 +744,6 @@ export async function GET() {
     note: 'API-запити до ManyChat не виконуються за вимогою.',
   };
 
-  diagnostics.automation = (() => {
-    if (automation) {
-      if (automation.ok) {
-        return {
-          ok: true,
-          source: automationSource ?? 'memory',
-          receivedAt: automationReceivedAt,
-          message: automationErrorMessage ?? undefined,
-        } satisfies Diagnostics['automation'];
-      }
-
-      const automationError = automation as ManychatRoutingError;
-      return {
-        ok: false,
-        error: automationError.error,
-        source: automationSource ?? 'memory',
-        receivedAt: automationReceivedAt,
-        message: automationErrorMessage ?? undefined,
-      } satisfies Diagnostics['automation'];
-    }
-
-    if (automationSource === 'error') {
-      return {
-        ok: false,
-        error: automationErrorMessage ?? 'Не вдалося прочитати автоматизацію',
-        source: 'error',
-        message: automationErrorMessage ?? undefined,
-      } satisfies Diagnostics['automation'];
-    }
-
-    if (automationSource === 'miss') {
-      return {
-        ok: false,
-        source: 'miss',
-        message: 'Автоматизацію ще не запускали в цьому середовищі.',
-      } satisfies Diagnostics['automation'];
-    }
-
-    return null;
-  })();
-
   if (feed.length === 0 && trace) {
     const fallbackText = trace.messagePreview ?? '';
     const fallbackHandle = trace.handle ?? null;
@@ -876,6 +839,8 @@ export async function GET() {
     source = 'kv';
   }
 
+  let automationReplay: Diagnostics['automationReplay'] = null;
+
   const combinedRaw = (() => {
     if (rawResult.raw !== undefined && rawResult.raw !== null) {
       return rawResult.raw;
@@ -940,6 +905,158 @@ export async function GET() {
     latest = ensureMessageText(latest, combinedRaw ?? rawResult.raw, fallbackText);
   }
 
+  if (!automation) {
+    const candidateMessage = latest ?? (feed.length ? feed[0] : null);
+
+    const parseRecord = (input: unknown): Record<string, unknown> | null => {
+      if (!input) return null;
+      if (typeof input === 'string') {
+        try {
+          const parsed = JSON.parse(input) as unknown;
+          return parseRecord(parsed);
+        } catch {
+          return null;
+        }
+      }
+      if (typeof input === 'object' && !Array.isArray(input)) {
+        return input as Record<string, unknown>;
+      }
+      return null;
+    };
+
+    const payloadRecord =
+      parseRecord(combinedRaw) ??
+      parseRecord(combinedRawText) ??
+      parseRecord(requestSnapshot?.rawText ?? null);
+
+    const nestedMessage = payloadRecord?.message as Record<string, unknown> | undefined;
+    const nestedData = payloadRecord?.data as Record<string, unknown> | undefined;
+    const nestedSubscriber = payloadRecord?.subscriber as Record<string, unknown> | undefined;
+    const nestedUser = payloadRecord?.user as Record<string, unknown> | undefined;
+
+    const normalizedReplay = normalizeManyChat({
+      username: pickFirstString(
+        candidateMessage?.handle,
+        candidateMessage?.handle ? `@${candidateMessage.handle}` : null,
+        payloadRecord?.username,
+        payloadRecord?.handle,
+        nestedMessage?.username,
+        nestedMessage?.handle,
+        nestedSubscriber?.username,
+        nestedUser?.username,
+      ),
+      text: pickFirstString(
+        candidateMessage?.text,
+        payloadRecord?.text,
+        nestedMessage?.text,
+        nestedData?.text,
+        typeof combinedRawText === 'string' ? combinedRawText : null,
+        requestSnapshot?.rawText ?? null,
+        trace?.messagePreview ?? null,
+      ),
+      full_name: pickFirstString(
+        candidateMessage?.fullName,
+        payloadRecord?.full_name,
+        payloadRecord?.name,
+        nestedSubscriber?.name,
+        nestedUser?.full_name,
+        trace?.fullName ?? null,
+      ),
+      first_name: pickFirstString(
+        payloadRecord?.first_name,
+        nestedSubscriber?.first_name,
+        nestedUser?.first_name,
+      ),
+      last_name: pickFirstString(
+        payloadRecord?.last_name,
+        nestedSubscriber?.last_name,
+        nestedUser?.last_name,
+      ),
+    });
+
+    const identityCandidates = [
+      { kind: 'message_handle', value: candidateMessage?.handle ?? null },
+      {
+        kind: 'message_handle_raw',
+        value: candidateMessage?.handle ? `@${candidateMessage.handle}` : null,
+      },
+      { kind: 'message_fullName', value: candidateMessage?.fullName ?? null },
+      { kind: 'normalized_handle', value: normalizedReplay.handle ?? null },
+      { kind: 'normalized_handle_raw', value: normalizedReplay.handleRaw ?? null },
+      { kind: 'normalized_fullName', value: normalizedReplay.fullName ?? null },
+      { kind: 'payload_username', value: pickFirstString(payloadRecord?.username, payloadRecord?.handle) },
+      { kind: 'payload_message_username', value: pickFirstString(nestedMessage?.username, nestedMessage?.handle) },
+      { kind: 'payload_subscriber_username', value: pickFirstString(nestedSubscriber?.username) },
+      { kind: 'payload_user_username', value: pickFirstString(nestedUser?.username) },
+    ];
+
+    const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+    const moveEndpoint = host ? `${proto}://${host}/api/keycrm/card/move` : null;
+
+    try {
+      const replayResult = await routeManychatMessage({
+        normalized: normalizedReplay,
+        identityCandidates,
+        performMove: moveEndpoint
+          ? async ({ cardId, pipelineId, statusId }) => {
+              const res = await fetch(moveEndpoint, {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json',
+                  accept: 'application/json',
+                },
+                body: JSON.stringify({
+                  card_id: cardId,
+                  to_pipeline_id: pipelineId,
+                  to_status_id: statusId,
+                }),
+                cache: 'no-store',
+              });
+
+              const jsonBody = await res.json().catch(() => null);
+              const okResult = res.ok && jsonBody && typeof jsonBody === 'object' && jsonBody.ok !== false;
+              if (!okResult) {
+                return {
+                  ok: false as const,
+                  status: res.status,
+                  response: jsonBody,
+                };
+              }
+              return {
+                ok: true as const,
+                status: res.status,
+                response: jsonBody,
+              };
+            }
+          : undefined,
+      });
+
+      automation = replayResult;
+      automationSource = moveEndpoint ? 'memory' : automationSource ?? 'memory';
+      automationReceivedAt = Date.now();
+      lastAutomation = automation;
+
+      automationReplay = {
+        used: true,
+        reason: moveEndpoint
+          ? 'Автоматизацію виконано повторно під час GET, оскільки результат не знайдено у KV.'
+          : 'Автоматизацію проаналізовано повторно без переміщення (відсутня адреса moveEndpoint).',
+      };
+
+      try {
+        await persistManychatAutomation(replayResult);
+      } catch (error) {
+        automationErrorMessage =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : automationErrorMessage;
+      }
+    } catch (error) {
+      automationSource = 'error';
+      automationErrorMessage =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : automationErrorMessage;
+    }
+  }
+
   if (trace || latest) {
     const candidateMessage = latest ?? feed[0] ?? null;
     if (trace) {
@@ -982,6 +1099,49 @@ export async function GET() {
       };
     }
   }
+
+  diagnostics.automationReplay = automationReplay;
+
+  diagnostics.automation = (() => {
+    if (automation) {
+      if (automation.ok) {
+        return {
+          ok: true,
+          source: automationSource ?? 'memory',
+          receivedAt: automationReceivedAt,
+          message: automationErrorMessage ?? undefined,
+        } satisfies Diagnostics['automation'];
+      }
+
+      const automationError = automation as ManychatRoutingError;
+      return {
+        ok: false,
+        error: automationError.error,
+        source: automationSource ?? 'memory',
+        receivedAt: automationReceivedAt,
+        message: automationErrorMessage ?? undefined,
+      } satisfies Diagnostics['automation'];
+    }
+
+    if (automationSource === 'error') {
+      return {
+        ok: false,
+        error: automationErrorMessage ?? 'Не вдалося прочитати автоматизацію',
+        source: 'error',
+        message: automationErrorMessage ?? undefined,
+      } satisfies Diagnostics['automation'];
+    }
+
+    if (automationSource === 'miss') {
+      return {
+        ok: false,
+        source: 'miss',
+        message: 'Автоматизацію ще не запускали в цьому середовищі.',
+      } satisfies Diagnostics['automation'];
+    }
+
+    return null;
+  })();
 
   return NextResponse.json({
     ok: true,
