@@ -469,6 +469,8 @@ export async function POST(req: NextRequest) {
       };
     } else {
       const moveEndpoint = `${proto}://${host}/api/keycrm/card/move`;
+      const bypassHeader = req.headers.get("x-vercel-protection-bypass");
+      const bypassSecret = req.headers.get("x-vercel-protection-bypass-secret");
       const identityCandidates = [
         { kind: 'webhook_handle', value: message.handle ?? null },
         { kind: 'webhook_fullName', value: message.fullName ?? null },
@@ -482,12 +484,22 @@ export async function POST(req: NextRequest) {
         normalized,
         identityCandidates,
         performMove: async ({ cardId, pipelineId, statusId }) => {
+          const headers: Record<string, string> = {
+            "content-type": "application/json",
+            accept: "application/json",
+          };
+
+          if (bypassHeader) {
+            headers["x-vercel-protection-bypass"] = bypassHeader;
+          }
+
+          if (bypassSecret) {
+            headers["x-vercel-protection-bypass-secret"] = bypassSecret;
+          }
+
           const res = await fetch(moveEndpoint, {
             method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              accept: 'application/json',
-            },
+            headers,
             body: JSON.stringify({
               card_id: cardId,
               to_pipeline_id: pipelineId,
