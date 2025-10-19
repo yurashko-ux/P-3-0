@@ -11,6 +11,7 @@ import {
   type ManychatRoutingError,
   type ManychatRoutingSuccess,
 } from '@/lib/manychat-routing';
+import { moveKeycrmCard } from '@/lib/keycrm-move';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
@@ -456,21 +457,6 @@ export async function POST(req: NextRequest) {
       ),
     });
 
-    const proto = req.headers.get('x-forwarded-proto') ?? 'https';
-    const host =
-      req.headers.get('x-forwarded-host') ??
-      req.headers.get('host');
-
-    if (!host) {
-      automation = {
-        ok: false,
-        error: 'host_header_missing',
-        details: { message: 'Відсутній host-header під час виконання автоматизації' },
-      };
-    } else {
-      const moveEndpoint = `${proto}://${host}/api/keycrm/card/move`;
-      const bypassHeader = req.headers.get("x-vercel-protection-bypass");
-      const bypassSecret = req.headers.get("x-vercel-protection-bypass-secret");
       const identityCandidates = [
         { kind: 'webhook_handle', value: message.handle ?? null },
         { kind: 'webhook_fullName', value: message.fullName ?? null },
@@ -484,47 +470,43 @@ export async function POST(req: NextRequest) {
         normalized,
         identityCandidates,
         performMove: async ({ cardId, pipelineId, statusId }) => {
-          const headers: Record<string, string> = {
-            "content-type": "application/json",
-            accept: "application/json",
-          };
+          try {
+            const move = await moveKeycrmCard({
+              cardId: String(cardId),
+              pipelineId: pipelineId ?? null,
+              statusId: statusId ?? null,
+            });
 
-          if (bypassHeader) {
-            headers["x-vercel-protection-bypass"] = bypassHeader;
-          }
+            if (!move.ok) {
+              return {
+                ok: false,
+                status: move.status,
+                response: move,
+              };
+            }
 
-          if (bypassSecret) {
-            headers["x-vercel-protection-bypass-secret"] = bypassSecret;
-          }
-
-          const res = await fetch(moveEndpoint, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              card_id: cardId,
-              to_pipeline_id: pipelineId,
-              to_status_id: statusId,
-            }),
-            cache: 'no-store',
-          });
-
-          const jsonBody = await res.json().catch(() => null);
-          const okResult = res.ok && jsonBody && typeof jsonBody === 'object' && jsonBody.ok !== false;
-          if (!okResult) {
+            return {
+              ok: true,
+              status: move.status,
+              response: {
+                moved: true,
+                status: move.status,
+                response: move.response,
+                attempts: move.attempts,
+                sent: move.sent,
+              },
+            };
+          } catch (error) {
             return {
               ok: false,
-              status: res.status,
-              response: jsonBody,
+              status: (error as any)?.code === 'keycrm_not_configured' ? 500 : 502,
+              response: {
+                error: error instanceof Error ? error.message : String(error),
+              },
             };
           }
-          return {
-            ok: true,
-            status: res.status,
-            response: jsonBody,
-          };
         },
       });
-    }
   } catch (err) {
     automation = {
       ok: false,
@@ -1002,58 +984,57 @@ export async function GET(req: NextRequest) {
       { kind: 'payload_user_username', value: pickFirstString(nestedUser?.username) },
     ];
 
-    const proto = req.headers.get('x-forwarded-proto') ?? 'https';
-    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
-    const moveEndpoint = host ? `${proto}://${host}/api/keycrm/card/move` : null;
-
     try {
       const replayResult = await routeManychatMessage({
         normalized: normalizedReplay,
         identityCandidates,
-        performMove: moveEndpoint
-          ? async ({ cardId, pipelineId, statusId }) => {
-              const res = await fetch(moveEndpoint, {
-                method: 'POST',
-                headers: {
-                  'content-type': 'application/json',
-                  accept: 'application/json',
-                },
-                body: JSON.stringify({
-                  card_id: cardId,
-                  to_pipeline_id: pipelineId,
-                  to_status_id: statusId,
-                }),
-                cache: 'no-store',
-              });
+        performMove: async ({ cardId, pipelineId, statusId }) => {
+          try {
+            const move = await moveKeycrmCard({
+              cardId: String(cardId),
+              pipelineId: pipelineId ?? null,
+              statusId: statusId ?? null,
+            });
 
-              const jsonBody = await res.json().catch(() => null);
-              const okResult = res.ok && jsonBody && typeof jsonBody === 'object' && jsonBody.ok !== false;
-              if (!okResult) {
-                return {
-                  ok: false as const,
-                  status: res.status,
-                  response: jsonBody,
-                };
-              }
+            if (!move.ok) {
               return {
-                ok: true as const,
-                status: res.status,
-                response: jsonBody,
+                ok: false as const,
+                status: move.status,
+                response: move,
               };
             }
-          : undefined,
+
+            return {
+              ok: true as const,
+              status: move.status,
+              response: {
+                moved: true,
+                status: move.status,
+                response: move.response,
+                attempts: move.attempts,
+                sent: move.sent,
+              },
+            };
+          } catch (error) {
+            return {
+              ok: false as const,
+              status: (error as any)?.code === 'keycrm_not_configured' ? 500 : 502,
+              response: {
+                error: error instanceof Error ? error.message : String(error),
+              },
+            };
+          }
+        },
       });
 
       automation = replayResult;
-      automationSource = moveEndpoint ? 'memory' : automationSource ?? 'memory';
+      automationSource = automationSource ?? 'memory';
       automationReceivedAt = Date.now();
       lastAutomation = automation;
 
       automationReplay = {
         used: true,
-        reason: moveEndpoint
-          ? 'Автоматизацію виконано повторно під час GET, оскільки результат не знайдено у KV.'
-          : 'Автоматизацію проаналізовано повторно без переміщення (відсутня адреса moveEndpoint).',
+        reason: 'Автоматизацію виконано повторно під час GET, оскільки результат не знайдено у KV.',
       };
 
       try {

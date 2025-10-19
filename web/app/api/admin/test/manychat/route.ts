@@ -12,6 +12,7 @@ import {
   type ManychatRoutingError,
   type ManychatRoutingSuccess,
 } from "@/lib/manychat-routing";
+import { moveKeycrmCard } from "@/lib/keycrm-move";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -114,19 +115,6 @@ export async function POST(req: NextRequest) {
 
   await persistManychatSnapshot(snapshotMessage, snapshotTrace).catch(() => {});
 
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const host =
-    req.headers.get("x-forwarded-host") ??
-    req.headers.get("host");
-
-  if (!host) {
-    return bad(500, "host_header_missing");
-  }
-
-  const moveEndpoint = `${proto}://${host}/api/keycrm/card/move`;
-  const bypassHeader = req.headers.get("x-vercel-protection-bypass");
-  const bypassSecret = req.headers.get("x-vercel-protection-bypass-secret");
-
   const identityCandidates = [
     { kind: "override", value: json?.needle ?? null },
     { kind: "username", value: message?.username ?? null },
@@ -139,44 +127,41 @@ export async function POST(req: NextRequest) {
     normalized,
     identityCandidates,
     performMove: async ({ cardId, pipelineId, statusId }) => {
-      const headers: Record<string, string> = {
-        "content-type": "application/json",
-        accept: "application/json",
-      };
+      try {
+        const move = await moveKeycrmCard({
+          cardId: String(cardId),
+          pipelineId: pipelineId ?? null,
+          statusId: statusId ?? null,
+        });
 
-      if (bypassHeader) {
-        headers["x-vercel-protection-bypass"] = bypassHeader;
-      }
+        if (!move.ok) {
+          return {
+            ok: false,
+            status: move.status,
+            response: move,
+          };
+        }
 
-      if (bypassSecret) {
-        headers["x-vercel-protection-bypass-secret"] = bypassSecret;
-      }
-
-      const res = await fetch(moveEndpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          card_id: cardId,
-          to_pipeline_id: pipelineId,
-          to_status_id: statusId,
-        }),
-        cache: "no-store",
-      });
-
-      const jsonBody = await res.json().catch(() => null);
-      const okResult = res.ok && jsonBody && typeof jsonBody === "object" && jsonBody.ok !== false;
-      if (!okResult) {
+        return {
+          ok: true,
+          status: move.status,
+          response: {
+            moved: true,
+            status: move.status,
+            response: move.response,
+            attempts: move.attempts,
+            sent: move.sent,
+          },
+        };
+      } catch (error) {
         return {
           ok: false,
-          status: res.status,
-          response: jsonBody,
+          status: (error as any)?.code === "keycrm_not_configured" ? 500 : 502,
+          response: {
+            error: error instanceof Error ? error.message : String(error),
+          },
         };
       }
-      return {
-        ok: true,
-        status: res.status,
-        response: jsonBody,
-      };
     },
   });
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { moveKeycrmCard, normalizeId } from "@/lib/keycrm-move";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -9,122 +11,13 @@ type MoveBody = {
   to_status_id?: string | number | null;
 };
 
-type CardSnapshot = {
-  pipelineId: string | null;
-  statusId: string | null;
-  raw: unknown;
-};
+const bad = (status: number, error: string, extra?: Record<string, unknown>) =>
+  NextResponse.json({ ok: false, error, ...(extra ?? {}) }, { status });
 
-function join(base: string, path: string) {
-  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-}
-
-function normalizeId(value: unknown): string | null {
-  if (value == null) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length ? trimmed : null;
-  }
-  return null;
-}
-
-function toKeycrmValue(id: string) {
-  const asNumber = Number(id);
-  return Number.isFinite(asNumber) ? asNumber : id;
-}
-
-function extractSnapshot(json: any): CardSnapshot {
-  const data = Array.isArray(json?.data)
-    ? json?.data[0]
-    : json?.data ?? (Array.isArray(json) ? json[0] : json);
-
-  const attributes =
-    data && typeof data === "object" && "attributes" in (data as any)
-      ? (data as any).attributes
-      : data;
-
-  const relationships =
-    data && typeof data === "object" && "relationships" in (data as any)
-      ? (data as any).relationships
-      : undefined;
-
-  const pipelineId =
-    normalizeId((attributes as any)?.pipeline_id) ??
-    normalizeId((attributes as any)?.pipelineId) ??
-    normalizeId((attributes as any)?.pipeline?.id) ??
-    normalizeId((data as any)?.pipeline_id) ??
-    normalizeId((data as any)?.pipelineId) ??
-    normalizeId((data as any)?.pipeline?.id) ??
-    normalizeId((relationships as any)?.pipeline?.data?.id) ??
-    normalizeId((relationships as any)?.pipelines?.data?.id);
-
-  const statusId =
-    normalizeId((attributes as any)?.status_id) ??
-    normalizeId((attributes as any)?.statusId) ??
-    normalizeId((attributes as any)?.status?.id) ??
-    normalizeId((data as any)?.status_id) ??
-    normalizeId((data as any)?.statusId) ??
-    normalizeId((data as any)?.status?.id) ??
-    normalizeId((relationships as any)?.status?.data?.id) ??
-    normalizeId((relationships as any)?.pipeline_status?.data?.id) ??
-    normalizeId((relationships as any)?.pipeline_statuses?.data?.id);
-
-  return { pipelineId, statusId, raw: json };
-}
-
-async function fetchSnapshot(
-  base: string,
-  token: string,
-  cardId: string
-): Promise<CardSnapshot | null> {
-  try {
-    const res = await fetch(join(base, `/pipelines/cards/${encodeURIComponent(cardId)}`), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
-
-    if (!res.ok) return null;
-
-    const text = await res.text();
-    if (!text) return { pipelineId: null, statusId: null, raw: null };
-
-    try {
-      const json = JSON.parse(text);
-      return extractSnapshot(json);
-    } catch {
-      return { pipelineId: null, statusId: null, raw: text };
-    }
-  } catch {
-    return null;
-  }
-}
-
-function bad(status: number, error: string, extra?: Record<string, unknown>) {
-  return NextResponse.json({ ok: false, error, ...(extra ?? {}) }, { status });
-}
-
-function ok(extra?: Record<string, unknown>) {
-  return NextResponse.json({ ok: true, ...(extra ?? {}) });
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const ok = (extra?: Record<string, unknown>) =>
+  NextResponse.json({ ok: true, ...(extra ?? {}) });
 
 export async function POST(req: NextRequest) {
-  const token = process.env.KEYCRM_API_TOKEN || "";
-  const base = process.env.KEYCRM_BASE_URL || "";
-
-  if (!token || !base) {
-    return bad(500, "keycrm not configured", {
-      need: { KEYCRM_API_TOKEN: !!token, KEYCRM_BASE_URL: !!base },
-    });
-  }
-
   const body = ((await req.json().catch(() => ({}))) ?? {}) as MoveBody;
 
   const cardId = normalizeId(body.card_id);
@@ -136,104 +29,43 @@ export async function POST(req: NextRequest) {
     return bad(400, "to_pipeline_id or to_status_id required");
   }
 
-  const payload: Record<string, unknown> = {};
-  if (toPipelineId) {
-    payload.pipeline_id = toKeycrmValue(toPipelineId);
-  }
-  if (toStatusId) {
-    const statusValue = toKeycrmValue(toStatusId);
-    payload.pipeline_status_id = statusValue;
-    payload.status_id = statusValue;
-  }
-
   try {
-    const res = await fetch(join(base, `/pipelines/cards/${encodeURIComponent(cardId)}`), {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      cache: "no-store",
+    const result = await moveKeycrmCard({
+      cardId,
+      pipelineId: toPipelineId,
+      statusId: toStatusId,
     });
 
-    const text = await res.text();
-    let json: unknown = null;
-    if (text) {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        json = text;
-      }
-    }
-
-    if (!res.ok) {
-      return bad(res.status || 502, "keycrm move failed", {
-        attempt: "pipelines/cards/{id} PUT",
-        response: json,
-        sent: payload,
-      });
-    }
-
-    let verification: CardSnapshot | null = null;
-    const attempts: Array<{
-      snapshot: CardSnapshot | null;
-      pipelineMatches: boolean;
-      statusMatches: boolean;
-    }> = [];
-
-    if (toPipelineId || toStatusId) {
-      const maxTries = 10;
-      for (let i = 0; i < maxTries; i += 1) {
-        verification = await fetchSnapshot(base, token, cardId);
-
-        const pipelineMatches =
-          !toPipelineId || verification?.pipelineId === toPipelineId;
-        const statusMatches =
-          !toStatusId || verification?.statusId === toStatusId;
-
-        attempts.push({
-          snapshot: verification,
-          pipelineMatches,
-          statusMatches,
-        });
-
-        if (pipelineMatches && statusMatches) {
-          break;
-        }
-
-        if (i < maxTries - 1) {
-          await wait(600);
-        }
-      }
-
-      const lastAttempt = attempts[attempts.length - 1];
-      if (
-        lastAttempt &&
-        !(lastAttempt.pipelineMatches && lastAttempt.statusMatches)
-      ) {
-        return bad(502, "keycrm move unverified", {
-          attempt: "pipelines/cards/{id} PUT",
-          sent: payload,
-          response: json,
-          verify: attempts,
-        });
-      }
+    if (!result.ok) {
+      return bad(502, "keycrm move unverified", result);
     }
 
     return ok({
       moved: true,
       via: "pipelines/cards/{id} PUT",
-      status: res.status,
-      payloadSent: payload,
-      response: json,
-      verified: verification,
+      status: result.status,
+      response: result.response,
+      attempts: result.attempts,
+      sent: result.sent,
     });
-  } catch (error) {
+  } catch (err) {
+    const error = err as { code?: string; message?: string } | Error;
+
+    if ((error as any)?.code === "keycrm_not_configured") {
+      return bad(500, "keycrm not configured", {
+        need: {
+          KEYCRM_API_TOKEN: !!process.env.KEYCRM_API_TOKEN,
+          KEYCRM_BASE_URL: !!process.env.KEYCRM_BASE_URL,
+        },
+      });
+    }
+
+    if ((error as any)?.code === "target_missing") {
+      return bad(400, "to_pipeline_id or to_status_id required");
+    }
+
     return bad(502, "keycrm move failed", {
-      attempt: "pipelines/cards/{id} PUT",
-      error: error instanceof Error ? error.message : String(error),
+      error: error?.message ?? String(error),
     });
   }
 }
