@@ -18,6 +18,15 @@ type Target = {
 
 type Counters = { v1: number; v2: number; exp: number };
 
+type Rule = {
+  op: "equals" | "contains";
+  value: string;
+  pipeline_id?: number | string;
+  status_id?: number | string;
+  pipelineName?: string;
+  statusName?: string;
+};
+
 type Campaign = {
   id: string;
   name: string;
@@ -27,6 +36,7 @@ type Campaign = {
   texp?: Target;
   v1?: string;
   v2?: string;
+  rules?: Record<string, Rule>;
   expDays?: number;
   expireDays?: number;
   expire?: number;
@@ -120,6 +130,78 @@ const pickNum = (x: any) => {
   const n = Number(x);
   return Number.isFinite(n) ? n : undefined;
 };
+
+const pickBool = (x: any) => {
+  if (typeof x === "boolean") return x;
+  if (x == null) return undefined;
+  const str = String(x).trim().toLowerCase();
+  if (!str) return undefined;
+  if (["true", "1", "yes", "y"].includes(str)) return true;
+  if (["false", "0", "no", "n"].includes(str)) return false;
+  return undefined;
+};
+
+function parseRule(input: any): Rule | null {
+  if (!input || typeof input !== "object") return null;
+
+  const value = pickStr(
+    input.value ?? input.val ?? input.text ?? input.rule ?? input.name ?? input.pattern,
+  );
+  if (!value) return null;
+
+  const opRaw = pickStr(input.op ?? input.operator ?? input.compare);
+  const op: "equals" | "contains" = opRaw === "equals" ? "equals" : "contains";
+
+  const pipelineCandidate =
+    pickNum(input.pipeline_id ?? input.pipelineId ?? input.pipeline ?? input.to_pipeline_id) ??
+    pickStr(input.pipeline_id ?? input.pipelineId ?? input.pipeline ?? input.to_pipeline_id);
+
+  const statusCandidate =
+    pickNum(
+      input.status_id ??
+        input.statusId ??
+        input.status ??
+        input.pipeline_status_id ??
+        input.pipelineStatusId ??
+        input.pipeline_status,
+    ) ??
+    pickStr(
+      input.status_id ??
+        input.statusId ??
+        input.status ??
+        input.pipeline_status_id ??
+        input.pipelineStatusId ??
+        input.pipeline_status,
+    );
+
+  const pipelineName = pickStr(input.pipelineName ?? input.pipeline_name);
+  const statusName = pickStr(input.statusName ?? input.status_name);
+
+  const rule: Rule = { op, value };
+  if (pipelineCandidate != null) rule.pipeline_id = pipelineCandidate;
+  if (statusCandidate != null) rule.status_id = statusCandidate;
+  if (pipelineName) rule.pipelineName = pipelineName;
+  if (statusName) rule.statusName = statusName;
+  return rule;
+}
+
+function targetFromRule(rule?: Rule | null): Target | undefined {
+  if (!rule) return undefined;
+
+  const pipeline = pickStr(rule.pipeline_id ?? (rule as any).pipeline);
+  const status = pickStr(rule.status_id ?? (rule as any).status);
+  const pipelineName = pickStr(rule.pipelineName ?? (rule as any).pipeline_name);
+  const statusName = pickStr(rule.statusName ?? (rule as any).status_name);
+
+  const out: Target = {
+    pipeline: pipeline,
+    status: status,
+    pipelineName: pipelineName,
+    statusName: statusName,
+  };
+
+  return out.pipeline || out.status || out.pipelineName || out.statusName ? out : undefined;
+}
 
 function targetFromFlat(src: Record<string, any>, prefix: string): Target | undefined {
   const get = (...ks: string[]) => ks.map((k) => src[k]).find((v) => v != null);
@@ -221,31 +303,54 @@ export async function POST(req: NextRequest) {
   // ⬇️ збираємо значення днів EXP з усіх можливих ключів форми
   const expDays =
     pickNum(body.expDays) ??
+    pickNum(body.exp?.days) ??
     pickNum(body.exp) ??
     pickNum(body.exp_value) ??
     pickNum(body.expireDays) ??
     pickNum(body.expire) ??
     pickNum(body.vexp);
 
+  const rawRules = (body?.rules && typeof body.rules === "object") ? body.rules : null;
+  const ruleV1 = parseRule(rawRules?.v1 ?? rawRules?.V1 ?? rawRules?.variant1);
+  const ruleV2 = parseRule(rawRules?.v2 ?? rawRules?.V2 ?? rawRules?.variant2);
+
+  const normalizedRules: Record<string, Rule> = {};
+  if (ruleV1) normalizedRules.v1 = ruleV1;
+  if (ruleV2) normalizedRules.v2 = ruleV2;
+
+  const activeFlag =
+    pickBool(body.active) ??
+    pickBool(body.isActive) ??
+    pickBool(body.enabled);
+
+  const t1FromRule = targetFromRule(ruleV1);
+  const t2FromRule = targetFromRule(ruleV2);
+  const expFromRule = targetFromRule(parseRule(body.exp));
+
   const [eBase, e1, e2, eExp] = await Promise.all([
     enrichNames(base),
-    enrichNames(t1),
-    enrichNames(t2),
-    enrichNames(texp),
+    enrichNames(t1 ?? t1FromRule),
+    enrichNames(t2 ?? t2FromRule),
+    enrichNames(texp ?? expFromRule),
   ]);
+
+  const ruleValueV1 = ruleV1?.value ?? v1;
+  const ruleValueV2 = ruleV2?.value ?? v2;
 
   const campaign: Campaign = {
     id,
     name: pickStr(body.name) ?? "Без назви",
     base: eBase,
-    t1: e1,
-    t2: e2,
-    texp: eExp,
-    v1,
-    v2,
+    t1: e1 ?? t1FromRule ?? undefined,
+    t2: e2 ?? t2FromRule ?? undefined,
+    texp: eExp ?? expFromRule ?? undefined,
+    v1: ruleValueV1,
+    v2: ruleValueV2,
+    ...(Object.keys(normalizedRules).length ? { rules: normalizedRules } : {}),
     ...(expDays != null ? { expDays, exp: expDays } : {}), // збережемо ще й як `exp` для зручності рендеру
     counters: { v1: 0, v2: 0, exp: 0 },
     createdAt: now,
+    ...(activeFlag !== undefined ? { active: activeFlag } : {}),
   };
 
   memorySetItem(id, campaign);
