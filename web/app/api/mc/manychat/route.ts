@@ -10,14 +10,17 @@ import {
   MANYCHAT_TRACE_KEY,
   MANYCHAT_FEED_KEY,
   MANYCHAT_RAW_KEY,
+  MANYCHAT_REQUEST_KEY,
   persistManychatSnapshot,
   readManychatMessage,
   readManychatTrace,
   readManychatFeed,
   ensureManychatFeedSnapshot,
   readManychatRaw,
+  readManychatRequest,
   type ManychatStoredMessage,
   type ManychatWebhookTrace,
+  type ManychatRequestSnapshot,
 } from '@/lib/manychat-store';
 
 type LatestMessage = ManychatStoredMessage;
@@ -48,6 +51,12 @@ type Diagnostics = {
     message?: string;
   } | null;
   kvRaw?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
+  kvRequest?: {
     ok: boolean;
     key: string;
     source: 'kv' | 'miss' | 'error';
@@ -477,6 +486,31 @@ export async function GET() {
     };
   }
 
+  const requestResult = await readManychatRequest();
+  let requestSnapshot: ManychatRequestSnapshot | null = null;
+  if (requestResult.snapshot) {
+    requestSnapshot = requestResult.snapshot;
+    diagnostics.kvRequest = {
+      ok: true,
+      key: MANYCHAT_REQUEST_KEY,
+      source: 'kv',
+    };
+  } else if (requestResult.error) {
+    diagnostics.kvRequest = {
+      ok: false,
+      key: MANYCHAT_REQUEST_KEY,
+      source: 'error',
+      message: requestResult.error,
+    };
+  } else {
+    diagnostics.kvRequest = {
+      ok: false,
+      key: MANYCHAT_REQUEST_KEY,
+      source: 'miss',
+      message: 'KV не містить останній сирий запит ManyChat',
+    };
+  }
+
   let feed: LatestMessage[] = latest ? [latest] : [];
 
   const feedResultInitial = await readManychatFeed(10);
@@ -642,6 +676,13 @@ export async function GET() {
     if (latest?.raw !== undefined && latest?.raw !== null) {
       return latest.raw;
     }
+    if (requestSnapshot?.rawText) {
+      try {
+        return JSON.parse(requestSnapshot.rawText) as unknown;
+      } catch {
+        return requestSnapshot.rawText;
+      }
+    }
     return null;
   })();
 
@@ -650,6 +691,9 @@ export async function GET() {
       ? rawResult.text
       : null;
     if (textCandidate) return textCandidate;
+    if (typeof requestSnapshot?.rawText === 'string' && requestSnapshot.rawText.trim().length) {
+      return requestSnapshot.rawText;
+    }
     if (typeof latest?.rawText === 'string' && latest.rawText.trim().length) {
       return latest.rawText;
     }
@@ -678,13 +722,15 @@ export async function GET() {
       ) {
         next = { ...item, rawText: combinedRawText };
       }
-      const ensured = ensureMessageText(next, rawResult.raw, combinedRawText ?? rawResult.text ?? null);
+      const fallbackText = combinedRawText ?? requestSnapshot?.rawText ?? rawResult.text ?? null;
+      const ensured = ensureMessageText(next, combinedRaw ?? rawResult.raw, fallbackText);
       return ensured ?? next;
     });
   }
 
   if (latest) {
-    latest = ensureMessageText(latest, rawResult.raw, combinedRawText ?? rawResult.text ?? null);
+    const fallbackText = combinedRawText ?? requestSnapshot?.rawText ?? rawResult.text ?? null;
+    latest = ensureMessageText(latest, combinedRaw ?? rawResult.raw, fallbackText);
   }
 
   if (trace || latest) {
@@ -742,7 +788,17 @@ export async function GET() {
       raw: combinedRaw,
       text: combinedRawText ?? null,
       rawText: combinedRawText ?? null,
-      source: rawResult.source ?? (combinedRawText ? 'message' : null),
+      source:
+        rawResult.source ??
+        requestResult.source ??
+        (combinedRawText ? 'message' : null),
     },
+    requestSnapshot: requestSnapshot
+      ? {
+          rawText: requestSnapshot.rawText,
+          receivedAt: requestSnapshot.receivedAt,
+          source: requestSnapshot.source ?? requestResult.source ?? 'kv',
+        }
+      : null,
   });
 }

@@ -21,6 +21,12 @@ type RawSnapshot = {
   source: string | null;
 };
 
+type RequestSnapshot = {
+  rawText: string | null;
+  receivedAt: number | null;
+  source: string | null;
+};
+
 type WebhookTrace = {
   receivedAt: number;
   status: "accepted" | "rejected";
@@ -61,6 +67,12 @@ type Diagnostics = {
     source: 'kv' | 'miss' | 'error';
     message?: string;
   } | null;
+  kvRequest?: {
+    ok: boolean;
+    key: string;
+    source: 'kv' | 'miss' | 'error';
+    message?: string;
+  } | null;
   kvFeed?: {
     ok: boolean;
     key: string;
@@ -85,6 +97,7 @@ type InboxState =
       trace: WebhookTrace | null;
       diagnostics: Diagnostics | null;
       rawSnapshot: RawSnapshot | null;
+      requestSnapshot: RequestSnapshot | null;
     }
   | { status: "error"; message: string; trace: WebhookTrace | null; diagnostics: Diagnostics | null };
 
@@ -112,6 +125,11 @@ export function ManychatMessageInbox() {
               trace?: WebhookTrace | null;
               diagnostics?: Diagnostics | null;
               rawSnapshot?: RawSnapshot | null;
+              requestSnapshot?: {
+                rawText: string | null;
+                receivedAt?: number | null;
+                source?: string | null;
+              } | null;
             }
           | null;
         if (cancelled) return;
@@ -159,6 +177,18 @@ export function ManychatMessageInbox() {
               : fallbackFromTrace.length > 0
                 ? fallbackFromTrace[0]
                 : null;
+        const requestSnapshot: RequestSnapshot | null = json.requestSnapshot
+          ? {
+              rawText: json.requestSnapshot.rawText ?? null,
+              receivedAt:
+                typeof json.requestSnapshot.receivedAt === "number"
+                  ? json.requestSnapshot.receivedAt
+                  : json.requestSnapshot.receivedAt
+                    ? Number(json.requestSnapshot.receivedAt)
+                    : null,
+              source: json.requestSnapshot.source ?? null,
+            }
+          : null;
         setInbox({
           status: "ready",
           messages,
@@ -168,6 +198,7 @@ export function ManychatMessageInbox() {
           trace: json.trace ?? null,
           diagnostics: json.diagnostics ?? null,
           rawSnapshot: json.rawSnapshot ?? null,
+          requestSnapshot,
         });
       } catch (err) {
         if (cancelled) return;
@@ -212,6 +243,11 @@ export function ManychatMessageInbox() {
             trace?: WebhookTrace | null;
             diagnostics?: Diagnostics | null;
             rawSnapshot?: RawSnapshot | null;
+            requestSnapshot?: {
+              rawText: string | null;
+              receivedAt?: number | null;
+              source?: string | null;
+            } | null;
           }
         | null;
       if (!json || !res.ok) {
@@ -257,6 +293,18 @@ export function ManychatMessageInbox() {
             : fallbackFromTrace.length > 0
               ? fallbackFromTrace[0]
               : null;
+      const requestSnapshot: RequestSnapshot | null = json.requestSnapshot
+        ? {
+            rawText: json.requestSnapshot.rawText ?? null,
+            receivedAt:
+              typeof json.requestSnapshot.receivedAt === "number"
+                ? json.requestSnapshot.receivedAt
+                : json.requestSnapshot.receivedAt
+                  ? Number(json.requestSnapshot.receivedAt)
+                  : null,
+            source: json.requestSnapshot.source ?? null,
+          }
+        : null;
       setInbox({
         status: "ready",
         messages,
@@ -266,6 +314,7 @@ export function ManychatMessageInbox() {
         trace: json.trace ?? null,
         diagnostics: json.diagnostics ?? null,
         rawSnapshot: json.rawSnapshot ?? null,
+        requestSnapshot,
       });
     } catch (err) {
       setInbox({
@@ -286,11 +335,14 @@ export function ManychatMessageInbox() {
   const kvDiag = diagnostics?.kv ?? null;
   const kvTraceDiag = diagnostics?.kvTrace ?? null;
   const kvRawDiag = diagnostics?.kvRaw ?? null;
+  const kvRequestDiag = diagnostics?.kvRequest ?? null;
   const kvFeedDiag = diagnostics?.kvFeed ?? null;
   const traceFallback = diagnostics?.traceFallback ?? null;
   const lastMessage = inbox.status === "ready" ? inbox.lastMessage : null;
   const rawSnapshot = inbox.status === "ready" ? inbox.rawSnapshot ?? null : null;
-  const snapshotText = rawSnapshot?.rawText ?? rawSnapshot?.text ?? null;
+  const requestSnapshot = inbox.status === "ready" ? inbox.requestSnapshot ?? null : null;
+  const snapshotText =
+    requestSnapshot?.rawText ?? rawSnapshot?.rawText ?? rawSnapshot?.text ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -421,6 +473,21 @@ export function ManychatMessageInbox() {
             </p>
           </div>
         ) : null}
+        {kvRequestDiag ? (
+          <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/70 p-4">
+            <h3 className="text-sm font-semibold text-blue-700">Останній сирий запит (KV)</h3>
+            <p className="mt-2 text-sm text-blue-700">
+              {kvRequestDiag.ok
+                ? '✅ Запит збережено у KV'
+                : kvRequestDiag.source === 'error'
+                  ? `⚠️ ${kvRequestDiag.message ?? 'Помилка читання KV'}`
+                  : '⚠️ Запит відсутній у KV'}
+              <span className="block text-xs text-blue-600/80">
+                Ключ: {kvRequestDiag.key}{kvRequestDiag.source ? ` • джерело: ${kvRequestDiag.source}` : ''}
+              </span>
+            </p>
+          </div>
+        ) : null}
         {traceFallback ? (
           <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/70 p-4">
             <h3 className="text-sm font-semibold text-indigo-700">Fallback із трасування</h3>
@@ -459,9 +526,11 @@ export function ManychatMessageInbox() {
                     const candidateText =
                       lastMessage.rawText?.trim()?.length
                         ? lastMessage.rawText.trim()
-                        : snapshotText?.trim()?.length
-                          ? snapshotText.trim()
-                          : null;
+                        : requestSnapshot?.rawText?.trim()?.length
+                          ? requestSnapshot.rawText.trim()
+                          : snapshotText?.trim()?.length
+                            ? snapshotText.trim()
+                            : null;
                     if (candidateText) {
                       try {
                         return JSON.stringify(JSON.parse(candidateText), null, 2);
@@ -484,6 +553,12 @@ export function ManychatMessageInbox() {
                     }
                   })()}
                 </pre>
+                {requestSnapshot ? (
+                  <p className="mt-2 text-xs text-emerald-700/70">
+                    Збережено: {requestSnapshot.receivedAt ? new Date(requestSnapshot.receivedAt).toLocaleString() : '—'}
+                    {requestSnapshot.source ? ` • джерело запиту: ${requestSnapshot.source}` : ''}
+                  </p>
+                ) : null}
                 {rawSnapshot?.source ? (
                   <p className="mt-2 text-xs text-emerald-700/70">
                     Джерело: {rawSnapshot.source}

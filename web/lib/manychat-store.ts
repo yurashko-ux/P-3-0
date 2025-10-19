@@ -40,10 +40,17 @@ export type ManychatWebhookTrace = {
   messagePreview?: string | null;
 };
 
+export type ManychatRequestSnapshot = {
+  rawText: string | null;
+  receivedAt: number;
+  source: string | null;
+};
+
 export const MANYCHAT_MESSAGE_KEY = 'manychat:last-message';
 export const MANYCHAT_TRACE_KEY = 'manychat:last-trace';
 export const MANYCHAT_FEED_KEY = 'manychat:last-feed';
 export const MANYCHAT_RAW_KEY = 'manychat:last-raw';
+export const MANYCHAT_REQUEST_KEY = 'manychat:last-request';
 
 const FEED_LIMIT = 25;
 
@@ -297,6 +304,12 @@ export async function persistManychatSnapshot(
 
   payloadMessage.rawText = rawTextSnapshot;
 
+  const requestSnapshot: ManychatRequestSnapshot = {
+    rawText: rawTextSnapshot,
+    receivedAt: payloadMessage.receivedAt,
+    source: payloadMessage.source ?? message.source ?? 'webhook:/api/mc/manychat',
+  };
+
   let stored = false;
 
   if (kvClient) {
@@ -307,6 +320,7 @@ export async function persistManychatSnapshot(
         await kvClient.set(MANYCHAT_TRACE_KEY, payloadTrace);
       }
       await kvClient.set(MANYCHAT_RAW_KEY, rawTextSnapshot);
+      await kvClient.set(MANYCHAT_REQUEST_KEY, requestSnapshot);
     } catch {
       stored = false;
     }
@@ -318,6 +332,7 @@ export async function persistManychatSnapshot(
       await kvWrite.setRaw(MANYCHAT_TRACE_KEY, JSON.stringify(payloadTrace));
     }
     await kvWrite.setRaw(MANYCHAT_RAW_KEY, rawTextSnapshot);
+    await kvWrite.setRaw(MANYCHAT_REQUEST_KEY, JSON.stringify(requestSnapshot));
     stored = true;
   }
 
@@ -437,6 +452,48 @@ export async function readManychatTrace(): Promise<{
     };
   }
   return { trace: null, source: 'kv-rest' };
+}
+
+export async function readManychatRequest(): Promise<{
+  snapshot: ManychatRequestSnapshot | null;
+  source: StoreSource | null;
+  error?: string;
+}> {
+  const direct = await readFromKvClient<ManychatRequestSnapshot | string>(MANYCHAT_REQUEST_KEY);
+  if (direct) {
+    if (typeof direct === 'string') {
+      try {
+        const parsed = JSON.parse(direct) as ManychatRequestSnapshot;
+        return { snapshot: parsed, source: 'kv-client' };
+      } catch {
+        return {
+          snapshot: { rawText: direct, receivedAt: Date.now(), source: 'kv-client' },
+          source: 'kv-client',
+        };
+      }
+    }
+    return { snapshot: direct, source: 'kv-client' };
+  }
+
+  const raw = await kvRead.getRaw(MANYCHAT_REQUEST_KEY);
+  if (!raw) {
+    return { snapshot: null, source: null };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as ManychatRequestSnapshot;
+    if (parsed && typeof parsed === 'object') {
+      return { snapshot: parsed, source: 'kv-rest' };
+    }
+  } catch (error) {
+    return {
+      snapshot: { rawText: raw, receivedAt: Date.now(), source: 'kv-rest' },
+      source: 'kv-rest',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  return { snapshot: null, source: 'kv-rest' };
 }
 
 export async function readManychatFeed(limit = 10): Promise<{
