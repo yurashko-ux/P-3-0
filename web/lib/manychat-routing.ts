@@ -356,25 +356,33 @@ export async function routeManychatMessage({
     }
   }
 
+  const campaignSummary = {
+    id: toName(chosen.campaign?.id) ?? null,
+    name: toName(chosen.campaign?.name) ?? null,
+    base: formatTarget(base),
+    target: formatTarget(target),
+  };
+
   if (!selected) {
     if (searchError) {
-      return error('keycrm_search_failed', { attempts, error: searchError });
+      return error('keycrm_search_failed', {
+        attempts,
+        error: searchError,
+        campaign: campaignSummary,
+      });
     }
 
     return error('card_not_found', {
       attempts,
       normalized,
-      campaign: {
-        id: toName(chosen.campaign?.id) ?? null,
-        name: toName(chosen.campaign?.name) ?? null,
-      },
+      campaign: campaignSummary,
     });
   }
 
   const cardId = selected.match?.cardId ?? null;
 
   if (!cardId) {
-    return error('card_match_missing', { selected });
+    return error('card_match_missing', { selected, campaign: campaignSummary });
   }
 
   const alreadyInTarget =
@@ -387,12 +395,7 @@ export async function routeManychatMessage({
       match: {
         route: chosen.route,
         rule: chosen.rule,
-        campaign: {
-          id: toName(chosen.campaign?.id) ?? null,
-          name: toName(chosen.campaign?.name) ?? null,
-          base: formatTarget(base),
-          target: formatTarget(target),
-        },
+        campaign: campaignSummary,
       },
       search: {
         usedNeedle,
@@ -413,12 +416,7 @@ export async function routeManychatMessage({
       match: {
         route: chosen.route,
         rule: chosen.rule,
-        campaign: {
-          id: toName(chosen.campaign?.id) ?? null,
-          name: toName(chosen.campaign?.name) ?? null,
-          base: formatTarget(base),
-          target: formatTarget(target),
-        },
+        campaign: campaignSummary,
       },
       search: {
         usedNeedle,
@@ -444,12 +442,7 @@ export async function routeManychatMessage({
     match: {
       route: chosen.route,
       rule: chosen.rule,
-      campaign: {
-        id: toName(chosen.campaign?.id) ?? null,
-        name: toName(chosen.campaign?.name) ?? null,
-        base: formatTarget(base),
-        target: formatTarget(target),
-      },
+      campaign: campaignSummary,
     },
     search: {
       usedNeedle,
