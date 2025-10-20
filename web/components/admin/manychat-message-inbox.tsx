@@ -599,45 +599,93 @@ export function ManychatMessageInbox() {
       const errorSource = automationError ?? analysisError;
       if (errorSource) {
         const details = (errorSource.details ?? {}) as Record<string, unknown>;
-        timelineSteps.push(
-          {
-            key: "campaign",
-            title: "2. Визначення кампанії",
-            status: "error",
-            details: [
-              <span key="error">Помилка: {errorSource.error}</span>,
-              details
-                ? (
-                    <span key="details" className="text-xs text-rose-600/80">
-                      Деталі: {JSON.stringify(details)}
-                    </span>
-                  )
-                : null,
-            ].filter(Boolean) as ReactNode[],
-          },
-          {
-            key: "card",
-            title: "3. Пошук картки у KeyCRM",
-            status: "warning",
-            details: [
-              <span key="skipped">
-                {errorSource.error === "campaign_not_found" ||
-                errorSource.error === "campaign_base_missing" ||
-                errorSource.error === "campaign_target_missing"
-                  ? "Пошук не виконувався через помилку під час визначення кампанії."
-                  : `Пошук не виконувався через помилку автоматизації (${errorSource.error}).`}
-              </span>,
-            ],
-          },
-          {
-            key: "move",
-            title: "4. Переміщення картки",
-            status: "warning",
-            details: [
-              <span key="skipped">Переміщення пропущено.</span>,
-            ],
-          },
-        );
+
+        if (errorSource.error === "keycrm_move_failed") {
+          timelineSteps.push(
+            {
+              key: "campaign",
+              title: "2. Визначення кампанії",
+              status: "success",
+              details: [
+                <span key="detected">
+                  Кампанію підібрано за повідомленням ManyChat, однак наступний етап завершився з помилкою.
+                </span>,
+                details
+                  ? (
+                      <span key="details" className="text-xs text-amber-700/80">
+                        Деталі: {JSON.stringify(details)}
+                      </span>
+                    )
+                  : null,
+              ].filter(Boolean) as ReactNode[],
+            },
+            {
+              key: "card",
+              title: "3. Пошук картки у KeyCRM",
+              status: "warning",
+              details: [
+                <span key="move-failed">
+                  Картку знайдено, але переміщення не підтверджено (keycrm_move_failed).
+                </span>,
+              ],
+            },
+            {
+              key: "move",
+              title: "4. Переміщення картки",
+              status: "error",
+              details: [
+                <span key="error">Переміщення не вдалося: keycrm_move_failed.</span>,
+                details
+                  ? (
+                      <span key="move-details" className="text-xs text-rose-600/80">
+                        Деталі: {JSON.stringify(details)}
+                      </span>
+                    )
+                  : null,
+              ].filter(Boolean) as ReactNode[],
+            },
+          );
+        } else {
+          timelineSteps.push(
+            {
+              key: "campaign",
+              title: "2. Визначення кампанії",
+              status: "error",
+              details: [
+                <span key="error">Помилка: {errorSource.error}</span>,
+                details
+                  ? (
+                      <span key="details" className="text-xs text-rose-600/80">
+                        Деталі: {JSON.stringify(details)}
+                      </span>
+                    )
+                  : null,
+              ].filter(Boolean) as ReactNode[],
+            },
+            {
+              key: "card",
+              title: "3. Пошук картки у KeyCRM",
+              status: "warning",
+              details: [
+                <span key="skipped">
+                  {errorSource.error === "campaign_not_found" ||
+                  errorSource.error === "campaign_base_missing" ||
+                  errorSource.error === "campaign_target_missing"
+                    ? "Пошук не виконувався через помилку під час визначення кампанії."
+                    : `Пошук не виконувався через помилку автоматизації (${errorSource.error}).`}
+                </span>,
+              ],
+            },
+            {
+              key: "move",
+              title: "4. Переміщення картки",
+              status: "warning",
+              details: [
+                <span key="skipped">Переміщення пропущено.</span>,
+              ],
+            },
+          );
+        }
       }
     } else {
       const sourceResult = campaignSource.result;
