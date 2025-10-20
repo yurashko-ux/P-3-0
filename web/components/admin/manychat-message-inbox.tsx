@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { KeycrmMoveAttempt } from "@/lib/keycrm-move";
+import type { SearchAttempt } from "@/lib/manychat-routing";
 
 type LatestMessage = {
   id: number | string | null;
@@ -582,19 +583,47 @@ export function ManychatMessageInbox() {
     const campaignDetails = details && typeof details === "object" ? (details.campaign as Record<string, unknown> | undefined) : undefined;
 
     if (campaignDetails) {
+      const readTargetDisplay = (target: unknown) => {
+        if (!target || typeof target !== "object") {
+          return { pipeline: "—", status: "—" };
+        }
+        const record = target as Record<string, unknown>;
+        const pipelineName = typeof record.pipelineName === "string" && record.pipelineName.trim().length
+          ? record.pipelineName.trim()
+          : typeof record.pipeline_name === "string" && record.pipeline_name.trim().length
+            ? record.pipeline_name.trim()
+            : typeof record.pipelineId === "string" && record.pipelineId.trim().length
+              ? record.pipelineId.trim()
+              : typeof record.pipeline_id === "string" && record.pipeline_id.trim().length
+                ? record.pipeline_id.trim()
+                : "—";
+        const statusName = typeof record.statusName === "string" && record.statusName.trim().length
+          ? record.statusName.trim()
+          : typeof record.status_name === "string" && record.status_name.trim().length
+            ? record.status_name.trim()
+            : typeof record.statusId === "string" && record.statusId.trim().length
+              ? record.statusId.trim()
+              : typeof record.status_id === "string" && record.status_id.trim().length
+                ? record.status_id.trim()
+                : "—";
+        return { pipeline: pipelineName, status: statusName };
+      };
+
       const campaignName = (campaignDetails.name as string | undefined)?.trim() || (campaignDetails.id as string | undefined)?.trim() || "(без назви)";
+      const baseInfo = readTargetDisplay(campaignDetails.base);
+      const targetInfo = readTargetDisplay(campaignDetails.target);
 
       const campaignNotes: ReactNode[] = [
-        <span key="name">Кампанія: {campaignName}</span>,
-        <span key="error" className="text-xs text-amber-600/90">
-          Наступні кроки зупинено через помилку: {automationError.error}
+        <span key="name">Кампанія знайдена: {campaignName}</span>,
+        <span key="route" className="text-xs text-emerald-700/80">
+          База: {baseInfo.pipeline} → статус {baseInfo.status} · Ціль: {targetInfo.pipeline} → {targetInfo.status}
         </span>,
       ];
 
-      if (automationError.details && Object.keys(details).length) {
+      if (automationError.error) {
         campaignNotes.push(
-          <span key="raw" className="text-xs text-slate-500/80">
-            Деталі: {JSON.stringify(automationError.details)}
+          <span key="warning" className="text-xs text-amber-600/90">
+            Подальші кроки зупинено через помилку: {automationError.error}
           </span>,
         );
       }
@@ -606,44 +635,117 @@ export function ManychatMessageInbox() {
         details: campaignNotes,
       });
 
-      let cardStatus: TimelineStatus = "warning";
+      const detailsRecord = details && typeof details === "object" ? (details as Record<string, unknown>) : null;
+      const searchDetails = detailsRecord && typeof detailsRecord.search === "object" ? (detailsRecord.search as Record<string, unknown>) : null;
+      const selectedCandidate =
+        (searchDetails?.selected as Record<string, unknown> | undefined) ??
+        (detailsRecord?.selected as Record<string, unknown> | undefined) ??
+        null;
+      const matchCandidate = selectedCandidate && typeof selectedCandidate === "object"
+        ? (selectedCandidate.match as Record<string, unknown> | undefined)
+        : undefined;
+      const summaryCandidate = selectedCandidate && typeof selectedCandidate === "object"
+        ? (selectedCandidate.summary as Record<string, unknown> | undefined)
+        : undefined;
+      const attemptsCandidate = Array.isArray(searchDetails?.attempts)
+        ? (searchDetails?.attempts as SearchAttempt[])
+        : Array.isArray(detailsRecord?.attempts)
+          ? (detailsRecord?.attempts as SearchAttempt[])
+          : [];
+      const usedNeedle =
+        typeof searchDetails?.usedNeedle === "string"
+          ? searchDetails.usedNeedle
+          : typeof detailsRecord?.usedNeedle === "string"
+            ? detailsRecord.usedNeedle
+            : null;
+
+      let cardStatus: TimelineStatus = matchCandidate ? "success" : attemptsCandidate.length ? "warning" : "warning";
       const cardNotes: ReactNode[] = [];
 
-      switch (automationError.error) {
-        case "card_not_found": {
+      if (matchCandidate) {
+        const cardId = typeof matchCandidate.cardId === "number" ? matchCandidate.cardId : Number.parseInt(String(matchCandidate.cardId ?? "").trim(), 10);
+        const cardTitle = typeof matchCandidate.title === "string" ? matchCandidate.title : null;
+        cardNotes.push(
+          <span key="card">
+            Знайдено картку #{Number.isFinite(cardId) ? cardId : (matchCandidate.cardId as string | number | undefined)}{cardTitle ? ` • ${cardTitle}` : ""}
+          </span>,
+        );
+        if (typeof matchCandidate.matchedField === "string") {
           cardNotes.push(
-            <span key="missing">Картку в базовій парі не знайдено. Перевірте ключові слова або налаштування кампанії.</span>,
-          );
-          break;
-        }
-        case "keycrm_search_failed": {
-          cardStatus = "error";
-          cardNotes.push(
-            <span key="fail">Пошук картки завершився помилкою KeyCRM.</span>,
-          );
-          if (details.error) {
-            cardNotes.push(
-              <span key="error" className="text-xs text-rose-600/80">
-                Деталі: {JSON.stringify(details.error)}
-              </span>,
-            );
-          }
-          break;
-        }
-        case "card_match_missing": {
-          cardNotes.push(
-            <span key="match">KeyCRM повернув список без збігу. Спробуйте інший ідентифікатор.</span>,
-          );
-          break;
-        }
-        default: {
-          cardNotes.push(
-            <span key="skipped">
-              Пошук картки не виконувався через помилку автоматизації ({automationError.error}).
+            <span key="field" className="text-xs text-slate-600">
+              Збіг за: {matchCandidate.matchedField}
+              {matchCandidate.matchedValue ? ` → ${matchCandidate.matchedValue}` : ""}
             </span>,
           );
-          break;
         }
+      } else if (automationError.error === "keycrm_move_failed" && attemptsCandidate.length) {
+        cardStatus = "success";
+        cardNotes.push(
+          <span key="executed">Пошук виконано успішно, але переміщення картки не підтверджено.</span>,
+        );
+      } else {
+        switch (automationError.error) {
+          case "card_not_found": {
+            cardNotes.push(
+              <span key="missing">Картку в базовій парі не знайдено. Перевірте ключові слова або налаштування кампанії.</span>,
+            );
+            break;
+          }
+          case "keycrm_search_failed": {
+            cardStatus = "error";
+            cardNotes.push(
+              <span key="fail">Пошук картки завершився помилкою KeyCRM.</span>,
+            );
+            if (detailsRecord?.error) {
+              cardNotes.push(
+                <span key="error" className="text-xs text-rose-600/80">
+                  Деталі: {JSON.stringify(detailsRecord.error)}
+                </span>,
+              );
+            }
+            break;
+          }
+          case "card_match_missing": {
+            cardNotes.push(
+              <span key="match">KeyCRM повернув список без збігу. Спробуйте інший ідентифікатор.</span>,
+            );
+            break;
+          }
+          default: {
+            cardNotes.push(
+              <span key="skipped">Пошук картки завершився з попередженням ({automationError.error}).</span>,
+            );
+            break;
+          }
+        }
+      }
+
+      if (summaryCandidate) {
+        const summaryPipeline =
+          typeof summaryCandidate.pipelineName === "string" && summaryCandidate.pipelineName.trim().length
+            ? summaryCandidate.pipelineName.trim()
+            : typeof summaryCandidate.pipelineId === "string" && summaryCandidate.pipelineId.trim().length
+              ? summaryCandidate.pipelineId.trim()
+              : "—";
+        const summaryStatus =
+          typeof summaryCandidate.statusName === "string" && summaryCandidate.statusName.trim().length
+            ? summaryCandidate.statusName.trim()
+            : typeof summaryCandidate.statusId === "string" && summaryCandidate.statusId.trim().length
+              ? summaryCandidate.statusId.trim()
+              : "—";
+        cardNotes.push(
+          <span key="summary" className="text-xs text-slate-600/80">
+            Поточна позиція: {summaryPipeline} → {summaryStatus}
+          </span>,
+        );
+      }
+
+      if (usedNeedle) {
+        cardNotes.push(
+          <span key="needle" className="text-xs text-slate-600/80">
+            Використаний ідентифікатор: {usedNeedle}
+          </span>,
+        );
       }
 
       if (!cardNotes.length) {
