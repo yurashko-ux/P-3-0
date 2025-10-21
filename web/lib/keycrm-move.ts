@@ -19,7 +19,7 @@ export type KeycrmMoveResult = {
   ok: boolean;
   status: number;
   response: unknown;
-  sent: Record<string, unknown>;
+  sent: Record<string, unknown> | null;
   attempts: KeycrmMoveAttempt[];
 };
 
@@ -178,71 +178,192 @@ export async function moveKeycrmCard({
     });
   }
 
-  const payload: Record<string, unknown> = {};
+  const attributes: Record<string, unknown> = {};
   if (normalisedPipelineId) {
-    payload.pipeline_id = toKeycrmValue(normalisedPipelineId);
+    attributes.pipeline_id = toKeycrmValue(normalisedPipelineId);
   }
   if (normalisedStatusId) {
     const statusValue = toKeycrmValue(normalisedStatusId);
-    payload.pipeline_status_id = statusValue;
-    payload.status_id = statusValue;
+    attributes.pipeline_status_id = statusValue;
+    attributes.status_id = statusValue;
   }
 
-  const res = await fetch(join(base, `/pipelines/cards/${encodeURIComponent(normalisedCardId)}`), {
-    method: "PUT",
-    headers: {
-      Authorization: authorization,
-      Accept: "application/json",
-      "Content-Type": "application/json",
+  const attemptHistory: Array<{
+    attempt: string;
+    status: number;
+    ok: boolean;
+    body: unknown;
+    sent: Record<string, unknown>;
+    verification: KeycrmMoveAttempt[];
+    error?: string;
+  }> = [];
+
+  const performAttempt = async (
+    attempt: string,
+    body: Record<string, unknown>,
+    contentType: string,
+  ): Promise<{
+    ok: boolean;
+    status: number;
+    body: unknown;
+    sent: Record<string, unknown>;
+    verification: KeycrmMoveAttempt[];
+  }> => {
+    const res = await fetch(
+      join(base, `/pipelines/cards/${encodeURIComponent(normalisedCardId)}`),
+      {
+        method: "PUT",
+        headers: {
+          Authorization: authorization,
+          Accept: "application/json",
+          "Content-Type": contentType,
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      },
+    );
+
+    const text = await res.text();
+    let parsed: unknown = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+    }
+
+    const verificationAttempts: KeycrmMoveAttempt[] = [];
+
+    if (res.ok) {
+      const maxTries = 10;
+      for (let i = 0; i < maxTries; i += 1) {
+        const verification = await fetchSnapshot(base, authorization, normalisedCardId);
+        const pipelineMatches =
+          !normalisedPipelineId || verification?.pipelineId === normalisedPipelineId;
+        const statusMatches =
+          !normalisedStatusId || verification?.statusId === normalisedStatusId;
+
+        verificationAttempts.push({
+          snapshot: verification,
+          pipelineMatches,
+          statusMatches,
+        });
+
+        if (pipelineMatches && statusMatches) {
+          break;
+        }
+
+        if (i < maxTries - 1) {
+          await wait(250);
+        }
+      }
+    }
+
+    const ok =
+      res.ok &&
+      verificationAttempts.some((attemptItem) => attemptItem.pipelineMatches && attemptItem.statusMatches);
+
+    const sent = body;
+
+    attemptHistory.push({
+      attempt,
+      status: res.status,
+      ok,
+      body: parsed,
+      sent,
+      verification: verificationAttempts,
+    });
+
+    return { ok, status: res.status, body: parsed, sent, verification: verificationAttempts };
+  };
+
+  const attemptsToTry: Array<{
+    attempt: string;
+    body: Record<string, unknown>;
+    contentType: string;
+  }> = [];
+
+  attemptsToTry.push({
+    attempt: "jsonapi",
+    contentType: "application/vnd.api+json",
+    body: {
+      data: {
+        type: "pipelines-card",
+        id: normalisedCardId,
+        attributes,
+      },
     },
-    body: JSON.stringify(payload),
-    cache: "no-store",
   });
 
-  const text = await res.text();
-  let json: unknown = null;
-  if (text) {
+  attemptsToTry.push({
+    attempt: "legacy",
+    contentType: "application/json",
+    body: attributes,
+  });
+
+  let lastResult: {
+    ok: boolean;
+    status: number;
+    body: unknown;
+    sent: Record<string, unknown>;
+    verification: KeycrmMoveAttempt[];
+  } | null = null;
+
+  for (const attemptSpec of attemptsToTry) {
     try {
-      json = JSON.parse(text);
-    } catch {
-      json = text;
-    }
-  }
+      const result = await performAttempt(
+        attemptSpec.attempt,
+        attemptSpec.body,
+        attemptSpec.contentType,
+      );
 
-  const attempts: KeycrmMoveAttempt[] = [];
+      lastResult = result;
 
-  if (res.ok) {
-    const maxTries = 10;
-    for (let i = 0; i < maxTries; i += 1) {
-      const verification = await fetchSnapshot(base, authorization, normalisedCardId);
-      const pipelineMatches =
-        !normalisedPipelineId || verification?.pipelineId === normalisedPipelineId;
-      const statusMatches = !normalisedStatusId || verification?.statusId === normalisedStatusId;
-
-      attempts.push({
-        snapshot: verification,
-        pipelineMatches,
-        statusMatches,
+      if (result.ok) {
+        return {
+          ok: true,
+          status: result.status,
+          response: {
+            attempt: attemptSpec.attempt,
+            body: result.body,
+            history: attemptHistory,
+          },
+          sent: attemptSpec.body,
+          attempts: result.verification,
+        };
+      }
+    } catch (error) {
+      attemptHistory.push({
+        attempt: attemptSpec.attempt,
+        status: 0,
+        ok: false,
+        body: null,
+        sent: attemptSpec.body,
+        verification: [],
+        error: error instanceof Error ? error.message : String(error),
       });
-
-      if (pipelineMatches && statusMatches) {
-        break;
-      }
-
-      if (i < maxTries - 1) {
-        await wait(250);
-      }
     }
   }
 
-  const success = res.ok;
+  const fallbackResult = lastResult ?? {
+    ok: false,
+    status: 0,
+    body: null,
+    sent: attributes,
+    verification: [],
+  };
 
   return {
-    ok: success && attempts.some((attempt) => attempt.pipelineMatches && attempt.statusMatches),
-    status: res.status,
-    response: json,
-    sent: payload,
-    attempts,
+    ok: false,
+    status: fallbackResult.status,
+    response: {
+      attempt: attemptHistory.at(-1)?.attempt ?? "jsonapi",
+      body: fallbackResult.body,
+      history: attemptHistory,
+    },
+    sent: attemptHistory.at(-1)?.sent ?? attributes,
+    attempts: fallbackResult.verification,
   };
 }
 
