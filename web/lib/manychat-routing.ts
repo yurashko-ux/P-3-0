@@ -3,7 +3,11 @@
 
 import type { NormalizedMC } from '@/lib/ingest';
 import { kvRead } from '@/lib/kv';
-import { fetchKeycrmPipelines, type KeycrmPipeline } from '@/lib/keycrm-pipelines';
+import {
+  fetchKeycrmPipelineDetail,
+  fetchKeycrmPipelines,
+  type KeycrmPipeline,
+} from '@/lib/keycrm-pipelines';
 import type { KeycrmMoveAttempt } from '@/lib/keycrm-move';
 import {
   searchKeycrmCardByIdentity,
@@ -271,6 +275,16 @@ const normaliseString = (value: string | null | undefined) => {
   return trimmed ? trimmed : null;
 };
 
+const sortPipelines = (list: KeycrmPipeline[]) =>
+  [...list].sort((a, b) => {
+    const posA = a.position ?? Number.MAX_SAFE_INTEGER;
+    const posB = b.position ?? Number.MAX_SAFE_INTEGER;
+    if (posA === posB) {
+      return a.id - b.id;
+    }
+    return posA - posB;
+  });
+
 const equalsCI = (a: string | null, b: string | null) => {
   if (!a || !b) return false;
   return a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -512,6 +526,55 @@ export async function routeManychatMessage({
     console.warn('Failed to resolve KeyCRM pipelines for ManyChat automation', err);
   }
 
+  const pipelineIdsToHydrate = new Set<number>();
+
+  const enqueuePipeline = (value: string | null) => {
+    const id = toNumber(value ?? null);
+    if (id == null) return;
+    pipelineIdsToHydrate.add(id);
+  };
+
+  enqueuePipeline(base.pipelineId);
+  enqueuePipeline(target.pipelineId);
+
+  let pipelinesHydrated = false;
+
+  for (const pipelineId of pipelineIdsToHydrate) {
+    const existing = pipelines.find((item) => item.id === pipelineId) ?? null;
+    const needsHydration =
+      !existing ||
+      existing.statuses.length === 0 ||
+      existing.statuses.every((status) => status.pipelineStatusId == null);
+
+    if (!needsHydration) {
+      continue;
+    }
+
+    try {
+      const detail = await fetchKeycrmPipelineDetail(pipelineId);
+      if (!detail.ok || !detail.pipeline) {
+        continue;
+      }
+
+      pipelines = sortPipelines([
+        ...pipelines.filter((item) => item.id !== detail.pipeline.id),
+        detail.pipeline,
+      ]);
+
+      pipelinesHydrated = true;
+    } catch (detailErr) {
+      console.warn('Failed to hydrate KeyCRM pipeline detail for ManyChat automation', {
+        pipelineId,
+        error: detailErr instanceof Error ? detailErr.message : String(detailErr),
+      });
+    }
+  }
+
+  if (pipelinesHydrated) {
+    base = resolveTargetWithPipelines(base, pipelines);
+    target = resolveTargetWithPipelines(target, pipelines);
+  }
+
   if (!base.pipelineId) {
     return error('campaign_base_missing', {
       normalized,
@@ -601,6 +664,23 @@ export async function routeManychatMessage({
     base: formatTarget(base),
     target: formatTarget(target),
   };
+
+  if (!campaignSummary.target.pipelineStatusId && !campaignSummary.target.statusId) {
+    return error('campaign_target_status_missing', {
+      normalized,
+      campaign: campaignSummary,
+      pipelines: pipelines.map((pipeline) => ({
+        id: pipeline.id,
+        title: pipeline.title,
+        statuses: pipeline.statuses.map((status) => ({
+          id: status.id,
+          pipelineStatusId: status.pipelineStatusId,
+          statusId: status.statusId,
+          title: status.title,
+        })),
+      })),
+    });
+  }
 
   if (!selected) {
     if (searchError) {
