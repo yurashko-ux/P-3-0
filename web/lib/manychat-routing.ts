@@ -18,6 +18,7 @@ type TargetConfig = {
   statusId: string | null;
   pipelineName: string | null;
   statusName: string | null;
+  statusAliases: string[];
 };
 
 type CampaignRecord = Record<string, any> & {
@@ -85,6 +86,7 @@ export type ManychatRoutingOptions = {
     cardId: number | string;
     pipelineId: string | null;
     statusId: string | null;
+    statusAliases?: string[];
   }) => Promise<MoveResult>;
 };
 
@@ -155,6 +157,26 @@ const readTarget = (
     toId(obj?.id) ??
     toId(campaign?.[fallbackStatus]);
 
+  const statusAliases: string[] = [];
+  const pushAlias = (value: unknown) => {
+    const id = toId(value);
+    if (!id) return;
+    if (statusAliases.includes(id)) return;
+    statusAliases.push(id);
+  };
+
+  pushAlias(obj?.status);
+  pushAlias(obj?.status_id);
+  pushAlias(obj?.pipeline_status_id);
+  pushAlias(obj?.pipelineStatusId);
+  pushAlias((obj as any)?.pipeline_status);
+  pushAlias((obj as any)?.pipelineStatus);
+  pushAlias(campaign?.[`${fallbackStatus}_pipeline_status_id`]);
+  pushAlias(campaign?.[`${fallbackStatus}PipelineStatusId`]);
+  pushAlias(campaign?.[`${fallbackStatus}PipelineStatus`]);
+  pushAlias(campaign?.[`${fallbackStatus}_pipeline_status`]);
+  pushAlias(campaign?.[`${fallbackStatus}_status_id`]);
+
   const pipelineName =
     toName(obj?.pipelineName) ??
     toName(obj?.pipeline_name) ??
@@ -165,7 +187,11 @@ const readTarget = (
     toName(obj?.status_name) ??
     toName(campaign?.[fallbackStatusName ?? `${fallbackStatus}_name`]);
 
-  return { pipelineId, statusId, pipelineName, statusName };
+  if (statusId && !statusAliases.includes(statusId)) {
+    statusAliases.push(statusId);
+  }
+
+  return { pipelineId, statusId, pipelineName, statusName, statusAliases };
 };
 
 const isActiveCampaign = (campaign: CampaignRecord): boolean => {
@@ -208,7 +234,13 @@ const uniqueStrings = (values: Array<{ kind: string; value: string | null | unde
 };
 
 const formatTarget = (target: TargetConfig | null | undefined) =>
-  target ?? { pipelineId: null, statusId: null, pipelineName: null, statusName: null };
+  target ?? {
+    pipelineId: null,
+    statusId: null,
+    pipelineName: null,
+    statusName: null,
+    statusAliases: [],
+  };
 
 const normaliseString = (value: string | null | undefined) => {
   if (typeof value !== 'string') return null;
@@ -226,7 +258,19 @@ const resolveTargetWithPipelines = (
   pipelines: KeycrmPipeline[],
 ): TargetConfig => {
   const target = formatTarget(input);
-  const resolved: TargetConfig = { ...target };
+  const resolved: TargetConfig = {
+    ...target,
+    statusAliases: Array.isArray(target.statusAliases)
+      ? [...target.statusAliases]
+      : [],
+  };
+
+  const pushAlias = (value: unknown) => {
+    const id = toId(value);
+    if (!id) return;
+    if (resolved.statusAliases.includes(id)) return;
+    resolved.statusAliases.push(id);
+  };
 
   const pipelinesList = Array.isArray(pipelines) ? pipelines : [];
 
@@ -255,7 +299,11 @@ const resolveTargetWithPipelines = (
 
   if (pipeline) {
     if (statusIdRaw) {
-      status = pipeline.statuses.find((item) => String(item.id) === statusIdRaw) ?? null;
+      status = pipeline.statuses.find((item) => {
+        if (String(item.id) === statusIdRaw) return true;
+        if (item.statusId != null && String(item.statusId) === statusIdRaw) return true;
+        return item.aliases.some((alias) => String(alias) === statusIdRaw);
+      }) ?? null;
     }
 
     if (!status && statusNameRaw) {
@@ -268,7 +316,11 @@ const resolveTargetWithPipelines = (
       .map((candidate) => ({
         pipeline: candidate,
         status:
-          candidate.statuses.find((item) => String(item.id) === statusIdRaw) ??
+          candidate.statuses.find((item) => {
+            if (String(item.id) === statusIdRaw) return true;
+            if (item.statusId != null && String(item.statusId) === statusIdRaw) return true;
+            return item.aliases.some((alias) => String(alias) === statusIdRaw);
+          }) ??
           candidate.statuses.find((item) => equalsCI(item.title, statusIdRaw)) ??
           candidate.statuses.find((item) => equalsCI(item.title, statusNameRaw)),
       }))
@@ -285,7 +337,11 @@ const resolveTargetWithPipelines = (
     resolved.pipelineName = pipeline.title ?? pipelineNameRaw ?? target.pipelineName;
 
     if (!status && statusIdRaw) {
-      status = pipeline.statuses.find((item) => String(item.id) === statusIdRaw) ?? null;
+      status = pipeline.statuses.find((item) => {
+        if (String(item.id) === statusIdRaw) return true;
+        if (item.statusId != null && String(item.statusId) === statusIdRaw) return true;
+        return item.aliases.some((alias) => String(alias) === statusIdRaw);
+      }) ?? null;
     }
 
     if (!status && statusNameRaw) {
@@ -296,6 +352,13 @@ const resolveTargetWithPipelines = (
   if (status) {
     resolved.statusId = String(status.id);
     resolved.statusName = status.title ?? statusNameRaw ?? target.statusName;
+    if (status.statusId != null) {
+      pushAlias(status.statusId);
+    }
+    if (status.pipelineStatusId != null) {
+      pushAlias(status.pipelineStatusId);
+    }
+    status.aliases.forEach((alias) => pushAlias(alias));
     if (!pipeline) {
       const owningPipeline = pipelinesList.find((candidate) =>
         candidate.statuses.some((item) => String(item.id) === String(status?.id)),
@@ -305,6 +368,10 @@ const resolveTargetWithPipelines = (
         resolved.pipelineName = owningPipeline.title ?? resolved.pipelineName;
       }
     }
+  }
+
+  if (resolved.statusId && !resolved.statusAliases.includes(resolved.statusId)) {
+    resolved.statusAliases.push(resolved.statusId);
   }
 
   return resolved;
@@ -463,6 +530,8 @@ export async function routeManychatMessage({
               statusId: summary.statusId != null ? String(summary.statusId) : null,
               pipelineName: summary.pipelineTitle ?? null,
               statusName: summary.statusTitle ?? null,
+              statusAliases:
+                summary.statusId != null ? [String(summary.statusId)] : [],
             }
           : null,
       };
@@ -549,6 +618,7 @@ export async function routeManychatMessage({
     cardId,
     pipelineId: target.pipelineId,
     statusId: target.statusId,
+    statusAliases: target.statusAliases,
   });
 
   const baseResult = {

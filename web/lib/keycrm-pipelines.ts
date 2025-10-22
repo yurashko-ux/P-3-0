@@ -8,6 +8,9 @@ export type KeycrmPipelineStatus = {
   color: string | null;
   isFinal: boolean | null;
   position: number | null;
+  statusId: number | null;
+  pipelineStatusId: number | null;
+  aliases: number[];
 };
 
 export type KeycrmPipeline = {
@@ -208,30 +211,53 @@ function normalizePipeline(raw: any): KeycrmPipeline | null {
 
   const statusesUnfiltered: KeycrmPipelineStatus[] = statusesRaw
     .map((status) => {
-      const statusId =
-        toNumber(status?.id) ??
-        toNumber(status?.status_id) ??
-        toNumber(status?.pipeline_status_id) ??
+      const pipelineStatusId =
+        toNumber(status?.pivot?.pipeline_status_id) ??
         toNumber(status?.pivot?.status_id) ??
-        toNumber(status?.pivot?.pipeline_status_id);
-      if (statusId === null) {
+        toNumber(status?.pipeline_status_id);
+
+      const rawId = toNumber(status?.id);
+      const statusId = toNumber(status?.status_id ?? status?.status?.id);
+
+      const candidateIds = [pipelineStatusId, statusId, rawId]
+        .filter((value): value is number => value != null);
+
+      if (!candidateIds.length) {
         return null;
       }
+
+      const primaryId = pipelineStatusId ?? rawId ?? statusId ?? candidateIds[0];
+
+      const statusValue =
+        statusId ?? (pipelineStatusId == null && rawId != null ? rawId : null);
+      const pipelineStatusValue =
+        pipelineStatusId ?? (statusId == null && rawId != null ? rawId : null);
+
       const statusPipelineId =
         toNumber(status?.pipeline_id ?? status?.pivot?.pipeline_id ?? raw?.id) ??
         null;
-      const seenKey = `${statusId}:${statusPipelineId ?? ""}`;
+      const seenKey = `${primaryId}:${statusPipelineId ?? ""}`;
       if (seenStatusKeys.has(seenKey)) {
         return null;
       }
       seenStatusKeys.add(seenKey);
+
+      const aliases = Array.from(
+        new Set(
+          candidateIds.filter((value) => value !== primaryId),
+        ),
+      );
+
       return {
-        id: statusId,
-        title: String(status?.title ?? status?.name ?? `Статус #${statusId}`),
+        id: primaryId,
+        title: String(status?.title ?? status?.name ?? `Статус #${primaryId}`),
         pipelineId: statusPipelineId,
         color: status?.color ? String(status.color) : null,
         isFinal: typeof status?.is_final === "boolean" ? status.is_final : null,
         position: toNumber(status?.position),
+        statusId: statusValue,
+        pipelineStatusId: pipelineStatusValue,
+        aliases,
       };
     })
     .filter((status): status is KeycrmPipelineStatus => status !== null)

@@ -7,6 +7,7 @@ type MoveInput = {
   cardId: string;
   pipelineId: string | null;
   statusId: string | null;
+  statusAliases?: Array<string | number | null>;
 };
 
 export type KeycrmMoveAttempt = {
@@ -154,6 +155,7 @@ export async function moveKeycrmCard({
   cardId,
   pipelineId,
   statusId,
+  statusAliases = [],
 }: MoveInput): Promise<KeycrmMoveResult> {
   const baseCandidate = getEnvValue(
     "KEYCRM_BASE_URL",
@@ -192,6 +194,15 @@ export async function moveKeycrmCard({
 
   const normalisedPipelineId = normalizeId(pipelineId);
   const normalisedStatusId = normalizeId(statusId);
+  const normalisedStatusAliases = Array.isArray(statusAliases)
+    ? Array.from(
+        new Set(
+          statusAliases
+            .map((value) => normalizeId(value))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      )
+    : [];
 
   if (!normalisedPipelineId && !normalisedStatusId) {
     throw Object.assign(new Error('to_pipeline_id or to_status_id required'), {
@@ -203,6 +214,9 @@ export async function moveKeycrmCard({
     ? toKeycrmValue(normalisedPipelineId)
     : undefined;
   const statusValue = normalisedStatusId ? toKeycrmValue(normalisedStatusId) : undefined;
+  const statusAliasValue = normalisedStatusAliases.find((alias) => alias !== normalisedStatusId);
+  const statusValueAlias =
+    statusAliasValue != null ? toKeycrmValue(statusAliasValue) : undefined;
   const cardValue = toKeycrmValue(normalisedCardId);
 
   const attemptHistory: Array<{
@@ -259,8 +273,10 @@ export async function moveKeycrmCard({
         const verification = await fetchSnapshot(base, authorization, normalisedCardId);
         const pipelineMatches =
           !normalisedPipelineId || verification?.pipelineId === normalisedPipelineId;
+        const statusTargets = [normalisedStatusId, ...normalisedStatusAliases];
         const statusMatches =
-          !normalisedStatusId || verification?.statusId === normalisedStatusId;
+          statusTargets.length === 0 ||
+          statusTargets.some((targetId) => verification?.statusId === targetId);
 
         verificationAttempts.push({
           snapshot: verification,
@@ -300,9 +316,14 @@ export async function moveKeycrmCard({
     baseLegacyBody.to_pipeline_id = pipelineValue;
   }
   if (statusValue !== undefined) {
+    baseLegacyBody.pipeline_status_id = statusValue;
+  }
+  if (statusValueAlias !== undefined) {
+    baseLegacyBody.status_id = statusValueAlias;
+    baseLegacyBody.to_status_id = statusValueAlias;
+  } else if (statusValue !== undefined) {
     baseLegacyBody.status_id = statusValue;
     baseLegacyBody.to_status_id = statusValue;
-    baseLegacyBody.pipeline_status_id = statusValue;
   }
 
   attemptsToTry.push({
@@ -313,13 +334,18 @@ export async function moveKeycrmCard({
     body: {
       card_id: cardValue,
       ...(pipelineValue !== undefined ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue } : {}),
-      ...(statusValue !== undefined
+      ...(statusValue !== undefined ? { pipeline_status_id: statusValue } : {}),
+      ...(statusValueAlias !== undefined
         ? {
-            to_status_id: statusValue,
-            status_id: statusValue,
-            pipeline_status_id: statusValue,
+            to_status_id: statusValueAlias,
+            status_id: statusValueAlias,
           }
-        : {}),
+        : statusValue !== undefined
+          ? {
+              to_status_id: statusValue,
+              status_id: statusValue,
+            }
+          : {}),
     },
   });
 
@@ -332,13 +358,18 @@ export async function moveKeycrmCard({
       ...(pipelineValue !== undefined
         ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue }
         : {}),
-      ...(statusValue !== undefined
+      ...(statusValue !== undefined ? { pipeline_status_id: statusValue } : {}),
+      ...(statusValueAlias !== undefined
         ? {
-            to_status_id: statusValue,
-            status_id: statusValue,
-            pipeline_status_id: statusValue,
+            to_status_id: statusValueAlias,
+            status_id: statusValueAlias,
           }
-        : {}),
+        : statusValue !== undefined
+          ? {
+              to_status_id: statusValue,
+              status_id: statusValue,
+            }
+          : {}),
     },
   });
 
