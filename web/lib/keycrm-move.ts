@@ -317,11 +317,6 @@ export async function moveKeycrmCard({
   }
   if (statusValue !== undefined) {
     baseLegacyBody.pipeline_status_id = statusValue;
-  }
-  if (statusValueAlias !== undefined) {
-    baseLegacyBody.status_id = statusValueAlias;
-    baseLegacyBody.to_status_id = statusValueAlias;
-  } else if (statusValue !== undefined) {
     baseLegacyBody.status_id = statusValue;
     baseLegacyBody.to_status_id = statusValue;
   }
@@ -334,18 +329,13 @@ export async function moveKeycrmCard({
     body: {
       card_id: cardValue,
       ...(pipelineValue !== undefined ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue } : {}),
-      ...(statusValue !== undefined ? { pipeline_status_id: statusValue } : {}),
-      ...(statusValueAlias !== undefined
+      ...(statusValue !== undefined
         ? {
-            to_status_id: statusValueAlias,
-            status_id: statusValueAlias,
+            pipeline_status_id: statusValue,
+            to_status_id: statusValue,
+            status_id: statusValue,
           }
-        : statusValue !== undefined
-          ? {
-              to_status_id: statusValue,
-              status_id: statusValue,
-            }
-          : {}),
+        : {}),
     },
   });
 
@@ -358,18 +348,13 @@ export async function moveKeycrmCard({
       ...(pipelineValue !== undefined
         ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue }
         : {}),
-      ...(statusValue !== undefined ? { pipeline_status_id: statusValue } : {}),
-      ...(statusValueAlias !== undefined
+      ...(statusValue !== undefined
         ? {
-            to_status_id: statusValueAlias,
-            status_id: statusValueAlias,
+            pipeline_status_id: statusValue,
+            to_status_id: statusValue,
+            status_id: statusValue,
           }
-        : statusValue !== undefined
-          ? {
-              to_status_id: statusValue,
-              status_id: statusValue,
-            }
-          : {}),
+        : {}),
     },
   });
 
@@ -407,9 +392,7 @@ export async function moveKeycrmCard({
   if (pipelineValue !== undefined) {
     crmDealBody.pipeline_id = pipelineValue;
   }
-  if (statusValueAlias !== undefined) {
-    crmDealBody.status_id = statusValueAlias;
-  } else if (statusValue !== undefined) {
+  if (statusValue !== undefined) {
     crmDealBody.status_id = statusValue;
   }
 
@@ -428,6 +411,44 @@ export async function moveKeycrmCard({
       path: `/crm/deals/${encodeURIComponent(normalisedCardId)}`,
       contentType: "application/json",
       body: crmDealBody,
+    });
+  }
+
+  if (statusValueAlias !== undefined) {
+    const aliasBody: Record<string, unknown> = {
+      ...(pipelineValue !== undefined
+        ? { pipeline_id: pipelineValue, to_pipeline_id: pipelineValue }
+        : {}),
+      ...(statusValue !== undefined ? { pipeline_status_id: statusValue } : {}),
+      status_id: statusValueAlias,
+      to_status_id: statusValueAlias,
+    };
+
+    attemptsToTry.push({
+      attempt: "pipelines/cards/move alias",
+      method: "POST",
+      path: "/pipelines/cards/move",
+      contentType: "application/json",
+      body: {
+        card_id: cardValue,
+        ...aliasBody,
+      },
+    });
+
+    attemptsToTry.push({
+      attempt: "cards/{id}/move alias",
+      method: "POST",
+      path: `/cards/${encodeURIComponent(normalisedCardId)}/move`,
+      contentType: "application/json",
+      body: aliasBody,
+    });
+
+    attemptsToTry.push({
+      attempt: "crm/deals/{id} PATCH alias",
+      method: "PATCH",
+      path: `/crm/deals/${encodeURIComponent(normalisedCardId)}`,
+      contentType: "application/json",
+      body: aliasBody,
     });
   }
 
