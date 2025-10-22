@@ -704,9 +704,22 @@ export async function routeManychatMessage({
     return error('card_match_missing', { selected, campaign: campaignSummary });
   }
 
+  const statusMatchCandidates = [
+    target.statusId,
+    target.pipelineStatusId,
+    ...(target.statusAliases ?? []),
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
   const alreadyInTarget =
     (!!target.pipelineId && selected.summary?.pipelineId === target.pipelineId) &&
-    (!target.statusId || selected.summary?.statusId === target.statusId);
+    (statusMatchCandidates.length === 0 ||
+      statusMatchCandidates.some((candidate) => {
+        const trimmed = candidate.trim();
+        return (
+          (selected.summary?.statusId && selected.summary.statusId === trimmed) ||
+          (selected.summary?.pipelineStatusId && selected.summary.pipelineStatusId === trimmed)
+        );
+      }));
 
   if (alreadyInTarget) {
     return success({
@@ -764,10 +777,10 @@ export async function routeManychatMessage({
 
   const primaryStatusId = (() => {
     const candidates = [
-      target.pipelineStatusId,
-      selected.summary?.pipelineStatusId ?? null,
       target.statusId,
+      target.pipelineStatusId,
       selected.summary?.statusId ?? null,
+      selected.summary?.pipelineStatusId ?? null,
       ...target.statusAliases,
       ...(selected.summary?.statusAliases ?? []),
     ];
@@ -783,10 +796,10 @@ export async function routeManychatMessage({
 
   const statusAliasSet = new Set<string>();
   for (const alias of [
-    target.pipelineStatusId,
-    target.statusId,
-    selected.summary?.pipelineStatusId ?? null,
     selected.summary?.statusId ?? null,
+    selected.summary?.pipelineStatusId ?? null,
+    target.statusId,
+    target.pipelineStatusId,
     ...target.statusAliases,
     ...(selected.summary?.statusAliases ?? []),
   ]) {
