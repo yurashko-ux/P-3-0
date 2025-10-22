@@ -775,39 +775,32 @@ export async function routeManychatMessage({
     return null;
   })();
 
-  const primaryStatusId = (() => {
-    const candidates = [
-      target.pipelineStatusId,
-      target.statusId,
-      selected.summary?.pipelineStatusId ?? null,
-      selected.summary?.statusId ?? null,
-      ...target.statusAliases,
-      ...(selected.summary?.statusAliases ?? []),
-    ];
-    for (const candidate of candidates) {
-      if (candidate == null) continue;
-      const value = String(candidate).trim();
-      if (value) {
-        return value;
-      }
-    }
-    return null;
-  })();
+  const targetStatusCandidates = [
+    target.pipelineStatusId,
+    target.statusId,
+    ...(target.statusAliases ?? []),
+  ]
+    .map((candidate) => (candidate == null ? null : String(candidate).trim()))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  const summaryStatusCandidates = [
+    selected.summary?.pipelineStatusId ?? null,
+    selected.summary?.statusId ?? null,
+    ...(selected.summary?.statusAliases ?? []),
+  ]
+    .map((candidate) => (candidate == null ? null : String(candidate).trim()))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  const primaryStatusId =
+    targetStatusCandidates.find((candidate) => candidate.length > 0) ??
+    summaryStatusCandidates.find((candidate) => candidate.length > 0) ??
+    null;
 
   const statusAliasSet = new Set<string>();
-  for (const alias of [
-    selected.summary?.statusId ?? null,
-    selected.summary?.pipelineStatusId ?? null,
-    target.statusId,
-    target.pipelineStatusId,
-    ...target.statusAliases,
-    ...(selected.summary?.statusAliases ?? []),
-  ]) {
-    if (alias == null) continue;
-    const value = String(alias).trim();
-    if (!value) continue;
-    if (primaryStatusId && primaryStatusId === value) continue;
-    statusAliasSet.add(value);
+  for (const alias of [...targetStatusCandidates, ...summaryStatusCandidates]) {
+    if (!alias) continue;
+    if (primaryStatusId && alias === primaryStatusId) continue;
+    statusAliasSet.add(alias);
   }
 
   const moveResult = await performMove({
