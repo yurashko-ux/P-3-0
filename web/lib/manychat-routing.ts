@@ -796,18 +796,18 @@ export async function routeManychatMessage({
     summaryStatusCandidates.find((candidate) => candidate.length > 0) ??
     null;
 
-  const statusAliasSet = new Set<string>();
-  for (const alias of [...targetStatusCandidates, ...summaryStatusCandidates]) {
+  const targetAliasSet = new Set<string>();
+  for (const alias of targetStatusCandidates) {
     if (!alias) continue;
     if (primaryStatusId && alias === primaryStatusId) continue;
-    statusAliasSet.add(alias);
+    targetAliasSet.add(alias);
   }
 
   const moveResult = await performMove({
     cardId,
     pipelineId: resolvedPipelineId,
     statusId: primaryStatusId,
-    statusAliases: Array.from(statusAliasSet),
+    statusAliases: Array.from(targetAliasSet),
   });
 
   const baseResult = {
