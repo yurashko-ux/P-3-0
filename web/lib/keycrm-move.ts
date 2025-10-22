@@ -403,6 +403,34 @@ export async function moveKeycrmCard({
     body: baseLegacyBody,
   });
 
+  const crmDealBody: Record<string, unknown> = {};
+  if (pipelineValue !== undefined) {
+    crmDealBody.pipeline_id = pipelineValue;
+  }
+  if (statusValueAlias !== undefined) {
+    crmDealBody.status_id = statusValueAlias;
+  } else if (statusValue !== undefined) {
+    crmDealBody.status_id = statusValue;
+  }
+
+  if (Object.keys(crmDealBody).length) {
+    attemptsToTry.push({
+      attempt: "crm/deals/{id} PATCH",
+      method: "PATCH",
+      path: `/crm/deals/${encodeURIComponent(normalisedCardId)}`,
+      contentType: "application/json",
+      body: crmDealBody,
+    });
+
+    attemptsToTry.push({
+      attempt: "crm/deals/{id} PUT",
+      method: "PUT",
+      path: `/crm/deals/${encodeURIComponent(normalisedCardId)}`,
+      contentType: "application/json",
+      body: crmDealBody,
+    });
+  }
+
   let lastResult: {
     ok: boolean;
     status: number;
