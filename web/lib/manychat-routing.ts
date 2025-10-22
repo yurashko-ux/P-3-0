@@ -792,14 +792,13 @@ export async function routeManychatMessage({
     .map((candidate) => (candidate == null ? null : String(candidate).trim()))
     .filter((candidate): candidate is string => Boolean(candidate));
 
-  const primaryStatusId =
-    targetStatusCandidates.find((candidate) => candidate.length > 0) ??
-    targetPipelineStatusCandidates.find((candidate) => candidate.length > 0) ??
-    null;
-
   const primaryPipelineStatusId =
-    targetPipelineStatusCandidates.find((candidate) => candidate.length > 0) ??
-    primaryStatusId;
+    targetPipelineStatusCandidates.find((candidate) => candidate.length > 0) ?? null;
+
+  const primaryStatusId =
+    primaryPipelineStatusId ??
+    targetStatusCandidates.find((candidate) => candidate.length > 0) ??
+    null;
 
   const targetAliasSet = new Set<string>();
   for (const alias of [...targetPipelineStatusCandidates, ...targetStatusCandidates]) {
