@@ -155,6 +155,78 @@ type TargetSummary = {
   statusAliases?: string[] | null;
 };
 
+type MoveHistoryEntry = {
+  attempt?: string;
+  status?: number;
+  ok?: boolean;
+  sent?: Record<string, unknown> | null;
+  verification?: KeycrmMoveAttempt[];
+  body?: unknown;
+  error?: string;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const formatJsonPreview = (value: unknown, limit = 240): string => {
+  if (value == null) return "—";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "—";
+    return trimmed.length > limit ? `${trimmed.slice(0, limit)}…` : trimmed;
+  }
+
+  try {
+    const json = JSON.stringify(value);
+    if (!json) return "—";
+    return json.length > limit ? `${json.slice(0, limit)}…` : json;
+  } catch {
+    const fallback = String(value);
+    return fallback.length > limit ? `${fallback.slice(0, limit)}…` : fallback;
+  }
+};
+
+const extractMoveHistory = (response: unknown): MoveHistoryEntry[] => {
+  if (!isRecord(response)) return [];
+  const history = (response as { history?: unknown }).history;
+  if (!Array.isArray(history)) return [];
+
+  const result: MoveHistoryEntry[] = [];
+
+  for (const entry of history) {
+    if (!isRecord(entry)) continue;
+
+    const verificationRaw = Array.isArray(entry.verification)
+      ? (entry.verification as KeycrmMoveAttempt[])
+      : undefined;
+
+    result.push({
+      attempt: typeof entry.attempt === "string" ? entry.attempt : undefined,
+      status: typeof entry.status === "number" ? entry.status : undefined,
+      ok: typeof entry.ok === "boolean" ? entry.ok : undefined,
+      sent: isRecord(entry.sent) ? (entry.sent as Record<string, unknown>) : null,
+      verification: verificationRaw,
+      body: entry.body,
+      error: typeof entry.error === "string" ? entry.error : undefined,
+    });
+  }
+
+  return result;
+};
+
+const formatVerificationLines = (verification: KeycrmMoveAttempt[] | undefined) => {
+  if (!verification || verification.length === 0) return [] as string[];
+
+  return verification.slice(0, 4).map((attempt, index) => {
+    const pipeline = attempt.snapshot?.pipelineId ?? "—";
+    const status = attempt.snapshot?.statusId ?? "—";
+    const pipelineFlag = attempt.pipelineMatches ? "✅" : "⚠️";
+    const statusFlag = attempt.statusMatches ? "✅" : "⚠️";
+
+    return `#${index + 1}: воронка ${pipeline} ${pipelineFlag} · статус ${status} ${statusFlag}`;
+  });
+};
+
 type InboxState =
   | {
       status: "loading";
@@ -1037,6 +1109,65 @@ export function ManychatMessageInbox() {
           if (!automationResult.move.ok && automationResult.move.error) {
             moveDetails.push(
               <span key="error" className="text-xs text-rose-600/80">Помилка: {automationResult.move.error}</span>,
+            );
+          }
+
+          const historyEntries = extractMoveHistory(automationResult.move.response);
+          if (historyEntries.length) {
+            moveDetails.push(
+              <div
+                key="history"
+                className="mt-2 space-y-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-2 text-left text-[0.72rem] text-slate-700"
+              >
+                <div className="font-semibold text-emerald-800">Деталі спроб:</div>
+                {historyEntries.map((entry, index) => {
+                  const verificationLines = formatVerificationLines(entry.verification);
+                  const sentPreview = entry.sent ? formatJsonPreview(entry.sent) : null;
+                  const bodyPreview = entry.body != null ? formatJsonPreview(entry.body) : null;
+
+                  return (
+                    <div
+                      key={`${entry.attempt ?? 'attempt'}-${index}`}
+                      className="rounded border border-emerald-200/80 bg-white/80 p-2"
+                    >
+                      <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-emerald-700">
+                        Спроба #{index + 1}: {entry.attempt ?? "(невідомий ендпоінт)"}
+                      </div>
+                      <div className="mt-1">
+                        HTTP {entry.status ?? "—"} · {entry.ok ? "✅ підтверджено" : "⚠️ не підтверджено"}
+                      </div>
+                      {entry.error ? (
+                        <div className="mt-1 text-rose-600/80">Помилка запиту: {entry.error}</div>
+                      ) : null}
+                      {sentPreview ? (
+                        <div className="mt-1 text-slate-600">
+                          Надіслано: <code className="break-all text-[0.7rem]">{sentPreview}</code>
+                        </div>
+                      ) : null}
+                      {bodyPreview ? (
+                        <div className="mt-1 text-slate-600">
+                          Відповідь: <code className="break-all text-[0.7rem]">{bodyPreview}</code>
+                        </div>
+                      ) : null}
+                      {verificationLines.length ? (
+                        <div className="mt-1 space-y-1 text-slate-600">
+                          <div className="font-medium text-emerald-800">Перевірки:</div>
+                          {verificationLines.map((line, verifyIndex) => (
+                            <div key={`verify-${index}-${verifyIndex}`} className="text-[0.7rem]">
+                              {line}
+                            </div>
+                          ))}
+                          {entry.verification && entry.verification.length > verificationLines.length ? (
+                            <div className="text-[0.7rem] text-slate-500">
+                              …іще {entry.verification.length - verificationLines.length} перевірок
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>,
             );
           }
         } else if (automationResult.move.skippedReason === "already_in_target") {
