@@ -74,9 +74,11 @@ const extractSnapshot = (json: any): CardSnapshot => {
 
   const statusId =
     normalizeId((attributes as any)?.status_id) ??
+    normalizeId((attributes as any)?.pipeline_status_id) ??
     normalizeId((attributes as any)?.statusId) ??
     normalizeId((attributes as any)?.status?.id) ??
     normalizeId((data as any)?.status_id) ??
+    normalizeId((data as any)?.pipeline_status_id) ??
     normalizeId((data as any)?.statusId) ??
     normalizeId((data as any)?.status?.id) ??
     normalizeId((relationships as any)?.status?.data?.id) ??

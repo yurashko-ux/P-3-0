@@ -201,17 +201,25 @@ function normalizePipeline(raw: any): KeycrmPipeline | null {
     ...toArray(raw?.statuses?.data),
     ...toArray(raw?.statuses?.items),
     ...toArray(raw?.statuses?.list),
+    ...toArray(raw?.pivot?.statuses),
   ];
 
   const seenStatusKeys = new Set<string>();
 
   const statusesUnfiltered: KeycrmPipelineStatus[] = statusesRaw
     .map((status) => {
-      const statusId = toNumber(status?.id);
+      const statusId =
+        toNumber(status?.id) ??
+        toNumber(status?.status_id) ??
+        toNumber(status?.pipeline_status_id) ??
+        toNumber(status?.pivot?.status_id) ??
+        toNumber(status?.pivot?.pipeline_status_id);
       if (statusId === null) {
         return null;
       }
-      const statusPipelineId = toNumber(status?.pipeline_id ?? raw?.id);
+      const statusPipelineId =
+        toNumber(status?.pipeline_id ?? status?.pivot?.pipeline_id ?? raw?.id) ??
+        null;
       const seenKey = `${statusId}:${statusPipelineId ?? ""}`;
       if (seenStatusKeys.has(seenKey)) {
         return null;
