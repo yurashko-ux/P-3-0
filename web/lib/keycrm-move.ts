@@ -30,7 +30,7 @@ type CardSnapshot = {
 };
 
 const join = (base: string, path: string) =>
-  `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 
 const normalizeId = (value: unknown): string | null => {
   if (value == null) return null;
@@ -129,6 +129,14 @@ const fetchSnapshot = async (
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type AttemptSpec = {
+  attempt: string;
+  method: "POST" | "PUT" | "PATCH";
+  path: string;
+  body: Record<string, unknown>;
+  contentType: string;
+};
+
 export async function moveKeycrmCard({
   cardId,
   pipelineId,
@@ -178,27 +186,11 @@ export async function moveKeycrmCard({
     });
   }
 
-  const legacyBody: Record<string, unknown> = {};
   const pipelineValue = normalisedPipelineId
     ? toKeycrmValue(normalisedPipelineId)
     : undefined;
   const statusValue = normalisedStatusId ? toKeycrmValue(normalisedStatusId) : undefined;
-
-  if (pipelineValue !== undefined) {
-    legacyBody.pipeline_id = pipelineValue;
-  }
-  if (statusValue !== undefined) {
-    legacyBody.status_id = statusValue;
-  }
-
-  const aliasBody: Record<string, unknown> = { ...legacyBody };
-  if (pipelineValue !== undefined) {
-    aliasBody.to_pipeline_id = pipelineValue;
-  }
-  if (statusValue !== undefined) {
-    aliasBody.to_status_id = statusValue;
-    aliasBody.pipeline_status_id = statusValue;
-  }
+  const cardValue = toKeycrmValue(normalisedCardId);
 
   const attemptHistory: Array<{
     attempt: string;
@@ -211,9 +203,7 @@ export async function moveKeycrmCard({
   }> = [];
 
   const performAttempt = async (
-    attempt: string,
-    body: Record<string, unknown>,
-    contentType: string,
+    spec: AttemptSpec,
   ): Promise<{
     ok: boolean;
     status: number;
@@ -221,19 +211,16 @@ export async function moveKeycrmCard({
     sent: Record<string, unknown>;
     verification: KeycrmMoveAttempt[];
   }> => {
-    const res = await fetch(
-      join(base, `/pipelines/cards/${encodeURIComponent(normalisedCardId)}`),
-      {
-        method: "PUT",
-        headers: {
-          Authorization: authorization,
-          Accept: "application/json",
-          "Content-Type": contentType,
-        },
-        body: JSON.stringify(body),
-        cache: "no-store",
+    const res = await fetch(join(base, spec.path), {
+      method: spec.method,
+      headers: {
+        Authorization: authorization,
+        Accept: "application/json",
+        "Content-Type": spec.contentType,
       },
-    );
+      body: JSON.stringify(spec.body),
+      cache: "no-store",
+    });
 
     const text = await res.text();
     let parsed: unknown = null;
@@ -276,10 +263,10 @@ export async function moveKeycrmCard({
       res.ok &&
       verificationAttempts.some((attemptItem) => attemptItem.pipelineMatches && attemptItem.statusMatches);
 
-    const sent = body;
+    const sent = spec.body;
 
     attemptHistory.push({
-      attempt,
+      attempt: spec.attempt,
       status: res.status,
       ok,
       body: parsed,
@@ -290,34 +277,84 @@ export async function moveKeycrmCard({
     return { ok, status: res.status, body: parsed, sent, verification: verificationAttempts };
   };
 
-  const attemptsToTry: Array<{
-    attempt: string;
-    body: Record<string, unknown>;
-    contentType: string;
-  }> = [];
+  const attemptsToTry: AttemptSpec[] = [];
+
+  const baseLegacyBody: Record<string, unknown> = {};
+  if (pipelineValue !== undefined) {
+    baseLegacyBody.pipeline_id = pipelineValue;
+    baseLegacyBody.to_pipeline_id = pipelineValue;
+  }
+  if (statusValue !== undefined) {
+    baseLegacyBody.status_id = statusValue;
+    baseLegacyBody.to_status_id = statusValue;
+    baseLegacyBody.pipeline_status_id = statusValue;
+  }
 
   attemptsToTry.push({
-    attempt: "legacy",
+    attempt: "pipelines/cards/move",
+    method: "POST",
+    path: "/pipelines/cards/move",
     contentType: "application/json",
-    body: legacyBody,
+    body: {
+      card_id: cardValue,
+      ...(pipelineValue !== undefined ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue } : {}),
+      ...(statusValue !== undefined
+        ? {
+            to_status_id: statusValue,
+            status_id: statusValue,
+            pipeline_status_id: statusValue,
+          }
+        : {}),
+    },
   });
 
   attemptsToTry.push({
-    attempt: "legacy+aliases",
+    attempt: "cards/{id}/move",
+    method: "POST",
+    path: `/cards/${encodeURIComponent(normalisedCardId)}/move`,
     contentType: "application/json",
-    body: aliasBody,
+    body: {
+      ...(pipelineValue !== undefined
+        ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue }
+        : {}),
+      ...(statusValue !== undefined
+        ? {
+            to_status_id: statusValue,
+            status_id: statusValue,
+            pipeline_status_id: statusValue,
+          }
+        : {}),
+    },
   });
 
   attemptsToTry.push({
-    attempt: "jsonapi",
+    attempt: "pipelines/cards/{id} PUT",
+    method: "PUT",
+    path: `/pipelines/cards/${encodeURIComponent(normalisedCardId)}`,
+    contentType: "application/json",
+    body: baseLegacyBody,
+  });
+
+  attemptsToTry.push({
+    attempt: "pipelines/cards/{id} PUT jsonapi",
+    method: "PUT",
+    path: `/pipelines/cards/${encodeURIComponent(normalisedCardId)}`,
     contentType: "application/vnd.api+json",
     body: {
       data: {
         type: "pipelines-card",
         id: normalisedCardId,
-        attributes: legacyBody,
+        attributes: baseLegacyBody,
       },
     },
+  });
+
+  attemptsToTry.push({
+    attempt: "pipelines/cards/{id} PATCH",
+    method: "PATCH",
+    path: `/pipelines/cards/${encodeURIComponent(normalisedCardId)}`,
+    contentType: "application/json",
+    body: baseLegacyBody,
   });
 
   let lastResult: {
@@ -330,11 +367,7 @@ export async function moveKeycrmCard({
 
   for (const attemptSpec of attemptsToTry) {
     try {
-      const result = await performAttempt(
-        attemptSpec.attempt,
-        attemptSpec.body,
-        attemptSpec.contentType,
-      );
+      const result = await performAttempt(attemptSpec);
 
       lastResult = result;
 
@@ -368,7 +401,7 @@ export async function moveKeycrmCard({
     ok: false,
     status: 0,
     body: null,
-    sent: legacyBody,
+    sent: baseLegacyBody,
     verification: [],
   };
 
@@ -380,7 +413,7 @@ export async function moveKeycrmCard({
       body: fallbackResult.body,
       history: attemptHistory,
     },
-    sent: attemptHistory.at(-1)?.sent ?? legacyBody,
+    sent: attemptHistory.at(-1)?.sent ?? baseLegacyBody,
     attempts: fallbackResult.verification,
   };
 }
