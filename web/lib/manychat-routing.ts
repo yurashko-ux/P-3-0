@@ -614,11 +614,52 @@ export async function routeManychatMessage({
     });
   }
 
+  const resolvedPipelineId = (() => {
+    const candidates = [target.pipelineId, selected.summary?.pipelineId, base.pipelineId];
+    for (const candidate of candidates) {
+      if (candidate == null) continue;
+      const value = String(candidate).trim();
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  })();
+
+  const primaryStatusId = (() => {
+    const candidates = [
+      target.statusId,
+      selected.summary?.statusId ?? null,
+      ...target.statusAliases,
+    ];
+    for (const candidate of candidates) {
+      if (candidate == null) continue;
+      const value = String(candidate).trim();
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  })();
+
+  const statusAliasSet = new Set<string>();
+  for (const alias of [
+    target.statusId,
+    selected.summary?.statusId ?? null,
+    ...target.statusAliases,
+  ]) {
+    if (alias == null) continue;
+    const value = String(alias).trim();
+    if (!value) continue;
+    if (primaryStatusId && primaryStatusId === value) continue;
+    statusAliasSet.add(value);
+  }
+
   const moveResult = await performMove({
     cardId,
-    pipelineId: target.pipelineId,
-    statusId: target.statusId,
-    statusAliases: target.statusAliases,
+    pipelineId: resolvedPipelineId,
+    statusId: primaryStatusId,
+    statusAliases: Array.from(statusAliasSet),
   });
 
   const baseResult = {
