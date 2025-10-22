@@ -787,32 +787,33 @@ export async function routeManychatMessage({
   const primaryPipelineStatusId =
     targetPipelineStatusCandidates.find((candidate) => candidate.length > 0) ?? null;
 
-  const primaryStatusId =
+  const primaryStatusCandidate =
+    targetStatusCandidates.find((candidate) => candidate.length > 0) ?? null;
+
+  const directTargetStatusId =
+    typeof target.statusId === 'string' ? target.statusId.trim() || null : null;
+
+  const statusIdForMove =
+    primaryStatusCandidate ??
+    directTargetStatusId ??
     primaryPipelineStatusId ??
-    targetStatusCandidates.find((candidate) => candidate.length > 0) ??
     null;
 
-  const aliasCandidates = [
-    ...targetPipelineStatusCandidates,
-    ...targetStatusCandidates,
-    selected.summary?.pipelineStatusId ?? null,
-    selected.summary?.statusId ?? null,
-    ...(selected.summary?.statusAliases ?? []),
-  ]
+  const aliasCandidates = [...targetPipelineStatusCandidates, ...targetStatusCandidates]
     .map((candidate) => (candidate == null ? null : String(candidate).trim()))
     .filter((candidate): candidate is string => Boolean(candidate));
 
   const targetAliasSet = new Set<string>();
   for (const alias of aliasCandidates) {
     if (!alias) continue;
-    if (primaryStatusId && alias === primaryStatusId) continue;
+    if (statusIdForMove && alias === statusIdForMove) continue;
     targetAliasSet.add(alias);
   }
 
   const moveResult = await performMove({
     cardId,
     pipelineId: resolvedPipelineId,
-    statusId: primaryStatusId,
+    statusId: statusIdForMove,
     pipelineStatusId: primaryPipelineStatusId,
     statusAliases: Array.from(targetAliasSet),
   });
