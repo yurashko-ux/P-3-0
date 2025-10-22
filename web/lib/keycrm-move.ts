@@ -235,7 +235,7 @@ export async function moveKeycrmCard({
     const verificationAttempts: KeycrmMoveAttempt[] = [];
 
     if (res.ok) {
-      const maxTries = 10;
+      const maxTries = 20;
       for (let i = 0; i < maxTries; i += 1) {
         const verification = await fetchSnapshot(base, authorization, normalisedCardId);
         const pipelineMatches =
@@ -254,7 +254,7 @@ export async function moveKeycrmCard({
         }
 
         if (i < maxTries - 1) {
-          await wait(250);
+          await wait(500);
         }
       }
     }
