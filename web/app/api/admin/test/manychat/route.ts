@@ -126,12 +126,19 @@ export async function POST(req: NextRequest) {
   const automation = await routeManychatMessage({
     normalized,
     identityCandidates,
-    performMove: async ({ cardId, pipelineId, statusId, statusAliases }) => {
+    performMove: async ({
+      cardId,
+      pipelineId,
+      statusId,
+      pipelineStatusId,
+      statusAliases,
+    }) => {
       try {
         const move = await moveKeycrmCard({
           cardId: String(cardId),
           pipelineId: pipelineId ?? null,
           statusId: statusId ?? null,
+          pipelineStatusId: pipelineStatusId ?? null,
           statusAliases,
         });
 

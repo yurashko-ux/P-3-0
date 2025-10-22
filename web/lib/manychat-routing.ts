@@ -91,6 +91,7 @@ export type ManychatRoutingOptions = {
     cardId: number | string;
     pipelineId: string | null;
     statusId: string | null;
+    pipelineStatusId?: string | null;
     statusAliases?: string[];
   }) => Promise<MoveResult>;
 };
@@ -775,16 +776,16 @@ export async function routeManychatMessage({
     return null;
   })();
 
-  const targetStatusCandidates = [
+  const targetPipelineStatusCandidates = [
     target.pipelineStatusId,
-    target.statusId,
-    ...(target.statusAliases ?? []),
+    selected.summary?.pipelineStatusId ?? null,
   ]
     .map((candidate) => (candidate == null ? null : String(candidate).trim()))
     .filter((candidate): candidate is string => Boolean(candidate));
 
-  const summaryStatusCandidates = [
-    selected.summary?.pipelineStatusId ?? null,
+  const targetStatusCandidates = [
+    target.statusId,
+    ...(target.statusAliases ?? []),
     selected.summary?.statusId ?? null,
     ...(selected.summary?.statusAliases ?? []),
   ]
@@ -793,11 +794,15 @@ export async function routeManychatMessage({
 
   const primaryStatusId =
     targetStatusCandidates.find((candidate) => candidate.length > 0) ??
-    summaryStatusCandidates.find((candidate) => candidate.length > 0) ??
+    targetPipelineStatusCandidates.find((candidate) => candidate.length > 0) ??
     null;
 
+  const primaryPipelineStatusId =
+    targetPipelineStatusCandidates.find((candidate) => candidate.length > 0) ??
+    primaryStatusId;
+
   const targetAliasSet = new Set<string>();
-  for (const alias of targetStatusCandidates) {
+  for (const alias of [...targetPipelineStatusCandidates, ...targetStatusCandidates]) {
     if (!alias) continue;
     if (primaryStatusId && alias === primaryStatusId) continue;
     targetAliasSet.add(alias);
@@ -807,6 +812,7 @@ export async function routeManychatMessage({
     cardId,
     pipelineId: resolvedPipelineId,
     statusId: primaryStatusId,
+    pipelineStatusId: primaryPipelineStatusId,
     statusAliases: Array.from(targetAliasSet),
   });
 

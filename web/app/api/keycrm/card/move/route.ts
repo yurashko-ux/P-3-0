@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       cardId,
       pipelineId: toPipelineId,
       statusId: primaryStatusId,
+      pipelineStatusId,
       statusAliases,
     });
 

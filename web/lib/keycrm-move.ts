@@ -7,6 +7,7 @@ type MoveInput = {
   cardId: string;
   pipelineId: string | null;
   statusId: string | null;
+  pipelineStatusId?: string | null;
   statusAliases?: Array<string | number | null>;
 };
 
@@ -155,6 +156,7 @@ export async function moveKeycrmCard({
   cardId,
   pipelineId,
   statusId,
+  pipelineStatusId = null,
   statusAliases = [],
 }: MoveInput): Promise<KeycrmMoveResult> {
   const baseCandidate = getEnvValue(
@@ -194,11 +196,15 @@ export async function moveKeycrmCard({
 
   const normalisedPipelineId = normalizeId(pipelineId);
   const normalisedStatusId = normalizeId(statusId);
+  const normalisedPipelineStatusId = normalizeId(pipelineStatusId);
+
   const normalisedStatusAliases = Array.isArray(statusAliases)
     ? Array.from(
         new Set(
-          statusAliases
-            .map((value) => normalizeId(value))
+          [
+            normalisedPipelineStatusId,
+            ...statusAliases.map((value) => normalizeId(value)),
+          ]
             .filter((value): value is string => Boolean(value)),
         ),
       )
@@ -212,6 +218,9 @@ export async function moveKeycrmCard({
 
   const pipelineValue = normalisedPipelineId
     ? toKeycrmValue(normalisedPipelineId)
+    : undefined;
+  const pipelineStatusValue = normalisedPipelineStatusId
+    ? toKeycrmValue(normalisedPipelineStatusId)
     : undefined;
   const statusValue = normalisedStatusId ? toKeycrmValue(normalisedStatusId) : undefined;
   const statusAliasValue = normalisedStatusAliases.find((alias) => alias !== normalisedStatusId);
@@ -273,7 +282,11 @@ export async function moveKeycrmCard({
         const verification = await fetchSnapshot(base, authorization, normalisedCardId);
         const pipelineMatches =
           !normalisedPipelineId || verification?.pipelineId === normalisedPipelineId;
-        const statusTargets = [normalisedStatusId, ...normalisedStatusAliases];
+        const statusTargets = [
+          normalisedPipelineStatusId,
+          normalisedStatusId,
+          ...normalisedStatusAliases,
+        ];
         const statusMatches =
           statusTargets.length === 0 ||
           statusTargets.some((targetId) => verification?.statusId === targetId);
@@ -315,8 +328,10 @@ export async function moveKeycrmCard({
     baseLegacyBody.pipeline_id = pipelineValue;
     baseLegacyBody.to_pipeline_id = pipelineValue;
   }
+  if (pipelineStatusValue !== undefined) {
+    baseLegacyBody.pipeline_status_id = pipelineStatusValue;
+  }
   if (statusValue !== undefined) {
-    baseLegacyBody.pipeline_status_id = statusValue;
     baseLegacyBody.status_id = statusValue;
     baseLegacyBody.to_status_id = statusValue;
   }
@@ -329,9 +344,11 @@ export async function moveKeycrmCard({
     body: {
       card_id: cardValue,
       ...(pipelineValue !== undefined ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue } : {}),
+      ...(pipelineStatusValue !== undefined
+        ? { pipeline_status_id: pipelineStatusValue }
+        : {}),
       ...(statusValue !== undefined
         ? {
-            pipeline_status_id: statusValue,
             to_status_id: statusValue,
             status_id: statusValue,
           }
@@ -348,9 +365,11 @@ export async function moveKeycrmCard({
       ...(pipelineValue !== undefined
         ? { to_pipeline_id: pipelineValue, pipeline_id: pipelineValue }
         : {}),
+      ...(pipelineStatusValue !== undefined
+        ? { pipeline_status_id: pipelineStatusValue }
+        : {}),
       ...(statusValue !== undefined
         ? {
-            pipeline_status_id: statusValue,
             to_status_id: statusValue,
             status_id: statusValue,
           }
@@ -419,7 +438,7 @@ export async function moveKeycrmCard({
       ...(pipelineValue !== undefined
         ? { pipeline_id: pipelineValue, to_pipeline_id: pipelineValue }
         : {}),
-      ...(statusValue !== undefined ? { pipeline_status_id: statusValue } : {}),
+      ...(pipelineStatusValue !== undefined ? { pipeline_status_id: pipelineStatusValue } : {}),
       status_id: statusValueAlias,
       to_status_id: statusValueAlias,
     };

@@ -469,12 +469,19 @@ export async function POST(req: NextRequest) {
       automation = await routeManychatMessage({
         normalized,
         identityCandidates,
-        performMove: async ({ cardId, pipelineId, statusId, statusAliases }) => {
+        performMove: async ({
+          cardId,
+          pipelineId,
+          statusId,
+          pipelineStatusId,
+          statusAliases,
+        }) => {
           try {
             const move = await moveKeycrmCard({
               cardId: String(cardId),
               pipelineId: pipelineId ?? null,
               statusId: statusId ?? null,
+              pipelineStatusId: pipelineStatusId ?? null,
               statusAliases,
             });
 
@@ -1008,12 +1015,19 @@ export async function GET(req: NextRequest) {
       const replayResult = await routeManychatMessage({
         normalized: normalizedReplay,
         identityCandidates,
-        performMove: async ({ cardId, pipelineId, statusId, statusAliases }) => {
+        performMove: async ({
+          cardId,
+          pipelineId,
+          statusId,
+          pipelineStatusId,
+          statusAliases,
+        }) => {
           try {
             const move = await moveKeycrmCard({
               cardId: String(cardId),
               pipelineId: pipelineId ?? null,
               statusId: statusId ?? null,
+              pipelineStatusId: pipelineStatusId ?? null,
               statusAliases,
             });
 
