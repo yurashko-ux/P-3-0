@@ -776,19 +776,11 @@ export async function routeManychatMessage({
     return null;
   })();
 
-  const targetPipelineStatusCandidates = [
-    target.pipelineStatusId,
-    selected.summary?.pipelineStatusId ?? null,
-  ]
+  const targetPipelineStatusCandidates = [target.pipelineStatusId]
     .map((candidate) => (candidate == null ? null : String(candidate).trim()))
     .filter((candidate): candidate is string => Boolean(candidate));
 
-  const targetStatusCandidates = [
-    target.statusId,
-    ...(target.statusAliases ?? []),
-    selected.summary?.statusId ?? null,
-    ...(selected.summary?.statusAliases ?? []),
-  ]
+  const targetStatusCandidates = [target.statusId, ...(target.statusAliases ?? [])]
     .map((candidate) => (candidate == null ? null : String(candidate).trim()))
     .filter((candidate): candidate is string => Boolean(candidate));
 
@@ -800,8 +792,18 @@ export async function routeManychatMessage({
     targetStatusCandidates.find((candidate) => candidate.length > 0) ??
     null;
 
+  const aliasCandidates = [
+    ...targetPipelineStatusCandidates,
+    ...targetStatusCandidates,
+    selected.summary?.pipelineStatusId ?? null,
+    selected.summary?.statusId ?? null,
+    ...(selected.summary?.statusAliases ?? []),
+  ]
+    .map((candidate) => (candidate == null ? null : String(candidate).trim()))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
   const targetAliasSet = new Set<string>();
-  for (const alias of [...targetPipelineStatusCandidates, ...targetStatusCandidates]) {
+  for (const alias of aliasCandidates) {
     if (!alias) continue;
     if (primaryStatusId && alias === primaryStatusId) continue;
     targetAliasSet.add(alias);
