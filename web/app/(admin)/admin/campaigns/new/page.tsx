@@ -23,6 +23,7 @@ type IdName = { id: string; name: string };
 type TargetState = {
   pipeline?: string;
   status?: string;
+  pipelineStatusId?: string;
   pipelineName?: string;
   statusName?: string;
 };
@@ -129,12 +130,14 @@ export default function NewCampaignPage() {
       if (patch.pipeline !== undefined) {
         if (patch.pipeline) loadStatuses(patch.pipeline);
         next.status = '';
+        next.pipelineStatusId = undefined;
         next.pipelineName = pipelines.find((p) => p.id === patch.pipeline)?.name || '';
       }
       if (patch.status !== undefined && patch.status) {
         const list =
           (next.pipeline && statusesByPipe[next.pipeline]) ? statusesByPipe[next.pipeline] : [];
         next.statusName = list.find((s) => s.id === patch.status)?.name || '';
+        next.pipelineStatusId = patch.status;
       }
       return { ...f, [key]: next };
     });
@@ -427,6 +430,7 @@ function normalizeTarget(t: TargetState): TargetState | undefined {
   const out: TargetState = {};
   if (t.pipeline) out.pipeline = t.pipeline;
   if (t.status) out.status = t.status;
+  if (t.pipelineStatusId) out.pipelineStatusId = t.pipelineStatusId;
   if (t.pipelineName) out.pipelineName = t.pipelineName;
   if (t.statusName) out.statusName = t.statusName;
   return out;
