@@ -1,11 +1,11 @@
 // web/app/(admin)/admin/campaigns/new/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 
 // Компактні утиліти UI
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border bg-white px-4 py-4 sm:px-5 sm:py-5">
       <h2 className="mb-3 text-lg font-semibold tracking-tight">{title}</h2>
@@ -14,7 +14,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function Label({ children }: { children: ReactNode }) {
   return <div className="text-sm text-slate-600 mb-1">{children}</div>;
 }
 
@@ -23,6 +23,7 @@ type IdName = { id: string; name: string };
 type TargetState = {
   pipeline?: string;
   status?: string;
+  pipelineStatusId?: string;
   pipelineName?: string;
   statusName?: string;
 };
@@ -70,12 +71,79 @@ export default function NewCampaignPage() {
         setLoadingDicts(true);
         setError(null);
         const r = await fetch('/api/keycrm/pipelines', { cache: 'no-store' });
-        const js = await r.json();
+        const js = await r.json().catch(() => null);
         if (!alive) return;
-        if (!js?.ok) throw new Error('Не вдалося завантажити воронки');
-        setPipelines(js.data as IdName[]);
+        if (!js || js.ok === false) {
+          throw new Error(js?.details || js?.error || 'Не вдалося завантажити воронки');
+        }
+
+        const rawList = Array.isArray(js.pipelines)
+          ? js.pipelines
+          : Array.isArray(js.data)
+            ? js.data
+            : [];
+
+        const nextPipelines: IdName[] = [];
+        const nextStatuses: Record<string, IdName[]> = {};
+
+        for (const item of rawList as any[]) {
+          const idValue = item?.id ?? item?.pipeline_id ?? item?.uuid ?? item?.ID;
+          const id = idValue != null ? String(idValue) : '';
+          if (!id) continue;
+          const name = String(
+            item?.title ?? item?.name ?? item?.label ?? `Воронка #${id}`
+          );
+          nextPipelines.push({ id, name });
+
+          const statusBuckets: any[] = [];
+          const candidates = [
+            item?.statuses,
+            item?.pipeline_statuses,
+            item?.statuses?.data,
+            item?.statuses?.items,
+            item?.statuses?.list,
+          ];
+          for (const bucket of candidates) {
+            if (Array.isArray(bucket)) {
+              statusBuckets.push(...bucket);
+            }
+          }
+
+          if (statusBuckets.length) {
+            const mapped = statusBuckets
+              .map((status) => {
+                const statusIdValue =
+                  status?.pipeline_status_id ??
+                  status?.status_id ??
+                  status?.id ??
+                  status?.uuid ??
+                  status?.ID;
+                const statusId = statusIdValue != null ? String(statusIdValue) : '';
+                if (!statusId) return null;
+                const statusName = String(
+                  status?.title ?? status?.name ?? status?.label ?? `Статус #${statusId}`
+                );
+                return { id: statusId, name: statusName };
+              })
+              .filter((value): value is IdName => Boolean(value));
+
+            if (mapped.length) {
+              const deduped = Array.from(
+                new Map(mapped.map((entry) => [entry.id, entry])).values()
+              );
+              nextStatuses[id] = deduped;
+            }
+          }
+        }
+
+        setPipelines(nextPipelines);
+        if (Object.keys(nextStatuses).length) {
+          setStatusesByPipe((prev) => ({ ...prev, ...nextStatuses }));
+        }
       } catch (e: any) {
-        setError(e?.message || 'Помилка завантаження воронок');
+        if (alive) {
+          setError(e?.message || 'Помилка завантаження воронок');
+        }
       } finally {
         if (alive) setLoadingDicts(false);
       }
@@ -129,12 +197,14 @@ export default function NewCampaignPage() {
       if (patch.pipeline !== undefined) {
         if (patch.pipeline) loadStatuses(patch.pipeline);
         next.status = '';
+        next.pipelineStatusId = undefined;
         next.pipelineName = pipelines.find((p) => p.id === patch.pipeline)?.name || '';
       }
       if (patch.status !== undefined && patch.status) {
         const list =
           (next.pipeline && statusesByPipe[next.pipeline]) ? statusesByPipe[next.pipeline] : [];
         next.statusName = list.find((s) => s.id === patch.status)?.name || '';
+        next.pipelineStatusId = patch.status;
       }
       return { ...f, [key]: next };
     });
@@ -427,6 +497,7 @@ function normalizeTarget(t: TargetState): TargetState | undefined {
   const out: TargetState = {};
   if (t.pipeline) out.pipeline = t.pipeline;
   if (t.status) out.status = t.status;
+  if (t.pipelineStatusId) out.pipelineStatusId = t.pipelineStatusId;
   if (t.pipelineName) out.pipelineName = t.pipelineName;
   if (t.statusName) out.statusName = t.statusName;
   return out;
