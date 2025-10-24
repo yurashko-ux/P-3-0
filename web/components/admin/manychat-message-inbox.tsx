@@ -804,33 +804,83 @@ export function ManychatMessageInbox() {
                 null),
           );
 
-          const campaignDetails: ReactNode[] = [
-            <span key="move-campaign">Кампанія: {campaignName}</span>,
-            <span key="move-route" className="text-xs text-emerald-700/80">
-              База: {(baseSummary.pipelineName ?? baseSummary.pipelineId ?? "—")} → статус
-              {baseSummary.statusName
-                ? ` ${baseSummary.statusName}`
-                : baseSummary.statusId
-                  ? ` ${baseSummary.statusId}`
-                  : " —"}
-            </span>,
-            <span key="move-target" className="text-xs text-emerald-700/80">
-              Ціль: {(targetSummary.pipelineName ?? targetSummary.pipelineId ?? "—")} →
-              {targetSummary.statusName
-                ? ` ${targetSummary.statusName}`
-                : targetSummary.statusId
-                  ? ` ${targetSummary.statusId}`
-                  : " —"}
-            </span>,
-          ];
+        const campaignDetails: ReactNode[] = [
+          <span key="move-campaign">Кампанія: {campaignName}</span>,
+          <span key="move-route" className="text-xs text-emerald-700/80">
+            База: {(baseSummary.pipelineName ?? baseSummary.pipelineId ?? "—")} → статус
+            {baseSummary.statusName
+              ? ` ${baseSummary.statusName}`
+              : baseSummary.statusId
+                ? ` ${baseSummary.statusId}`
+                : " —"}
+          </span>,
+          <span key="move-target" className="text-xs text-emerald-700/80">
+            Ціль: {(targetSummary.pipelineName ?? targetSummary.pipelineId ?? "—")} →
+            {targetSummary.statusName
+              ? ` ${targetSummary.statusName}`
+              : targetSummary.statusId
+                ? ` ${targetSummary.statusId}`
+                : " —"}
+          </span>,
+        ];
 
-          const moveDetails: ReactNode[] = [
-            <span key="move-failed">Картку знайдено, але переміщення не підтверджено (keycrm_move_failed).</span>,
-          ];
+        const selectedRaw =
+          details && typeof details === "object" && (details.selected as Record<string, unknown> | undefined)
+            ? (details.selected as Record<string, unknown>)
+            : null;
+        const summary = toTargetSummaryFromDetails(
+          details.summary ?? (selectedRaw && "summary" in selectedRaw ? selectedRaw.summary : null),
+        );
+        const matchInfo =
+          selectedRaw && "match" in selectedRaw && selectedRaw.match && typeof selectedRaw.match === "object"
+            ? (selectedRaw.match as Record<string, unknown>)
+            : null;
+        const matchCardIdRaw = matchInfo?.cardId;
+        const matchCardIdLabel =
+          typeof matchCardIdRaw === "number"
+            ? String(matchCardIdRaw)
+            : coerceString(matchCardIdRaw);
+        const matchCardTitle = coerceString(matchInfo?.title);
+        const matchedField = coerceString(matchInfo?.matchedField);
+        const matchedValue = coerceString(matchInfo?.matchedValue);
 
-          const attempts = Array.isArray((details.attempts ?? []) as unknown[])
-            ? ((details.attempts as unknown[]) ?? []).length
-            : undefined;
+        const moveDetails: ReactNode[] = [
+          <span key="move-failed">Картку знайдено, але переміщення не підтверджено (keycrm_move_failed).</span>,
+        ];
+
+        if (matchCardIdLabel) {
+          moveDetails.push(
+            <span key="move-card">
+              Картка #{matchCardIdLabel}
+              {matchCardTitle ? ` • ${matchCardTitle}` : ""}
+            </span>,
+          );
+        }
+
+        if (matchedField) {
+          moveDetails.push(
+            <span key="move-match" className="text-xs text-slate-600/80">
+              Збіг за: {matchedField}
+              {matchedValue ? ` → ${matchedValue}` : ""}
+            </span>,
+          );
+        }
+
+        if (summary) {
+          const currentPipelineLabel = summary.pipelineName ?? summary.pipelineId ?? "—";
+          const currentStatusLabel =
+            summary.statusName ?? summary.statusId ?? summary.pipelineStatusId ?? "—";
+
+          moveDetails.push(
+            <span key="move-summary" className="text-xs text-slate-600/80">
+              Поточна позиція: {currentPipelineLabel} → {currentStatusLabel}
+            </span>,
+          );
+        }
+
+        const attempts = Array.isArray((details.attempts ?? []) as unknown[])
+          ? ((details.attempts as unknown[]) ?? []).length
+          : undefined;
           if (attempts) {
             moveDetails.push(
               <span key="move-attempts" className="text-xs text-slate-600/80">
