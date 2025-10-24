@@ -827,9 +827,9 @@ export async function routeManychatMessage({
     typeof target.statusId === 'string' ? target.statusId.trim() || null : null;
 
   const statusIdForMove =
-    primaryPipelineStatusId ??
     directTargetStatusId ??
     primaryStatusCandidate ??
+    primaryPipelineStatusId ??
     null;
 
   const aliasCandidates = [...targetPipelineStatusCandidates, ...targetStatusCandidates]
