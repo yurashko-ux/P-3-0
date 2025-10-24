@@ -825,6 +825,124 @@ export function ManychatMessageInbox() {
               ].filter(Boolean) as ReactNode[],
             },
           );
+        } else if (errorCode === "card_not_in_base") {
+          const campaignName =
+            coerceString(combinedCampaignDetails?.name) ??
+            coerceString(combinedCampaignDetails?.title) ??
+            coerceString(combinedCampaignDetails?.id) ??
+            "(без назви)";
+
+          const baseSummary = toTargetSummaryFromDetails(
+            combinedCampaignDetails?.base ?? details.base ?? null,
+          );
+          const targetSummary = toTargetSummaryFromDetails(
+            combinedCampaignDetails?.target ??
+              (combinedCampaignDetails?.t1 as unknown) ??
+              (combinedCampaignDetails?.t2 as unknown) ??
+              details.target ??
+              null,
+          );
+
+          const selectedSummary = toTargetSummaryFromDetails(
+            details.summary ??
+              ((details.selected && typeof details.selected === "object"
+                ? (details.selected as Record<string, unknown>).summary
+                : null) ?? null),
+          );
+
+          const mismatch = (details.mismatch ?? {}) as {
+            pipelineMatches?: boolean;
+            statusMatches?: boolean;
+          };
+
+          const campaignDetails: ReactNode[] = [
+            <span key="campaign">Кампанія: {campaignName}</span>,
+            <span key="base" className="text-xs text-emerald-700/80">
+              База: {(baseSummary.pipelineName ?? baseSummary.pipelineId ?? "—")} →
+              {baseSummary.statusName
+                ? ` ${baseSummary.statusName}`
+                : baseSummary.statusId
+                  ? ` ${baseSummary.statusId}`
+                  : baseSummary.pipelineStatusId
+                    ? ` ${baseSummary.pipelineStatusId}`
+                    : " —"}
+            </span>,
+            <span key="target" className="text-xs text-emerald-700/80">
+              Ціль: {(targetSummary.pipelineName ?? targetSummary.pipelineId ?? "—")} →
+              {targetSummary.statusName
+                ? ` ${targetSummary.statusName}`
+                : targetSummary.statusId
+                  ? ` ${targetSummary.statusId}`
+                  : targetSummary.pipelineStatusId
+                    ? ` ${targetSummary.pipelineStatusId}`
+                    : " —"}
+            </span>,
+          ];
+
+          const cardPipelineLabel =
+            selectedSummary.pipelineName ?? selectedSummary.pipelineId ?? "—";
+          const cardStatusLabel =
+            selectedSummary.statusName ??
+            selectedSummary.statusId ??
+            selectedSummary.pipelineStatusId ??
+            "—";
+
+          const cardDetails: ReactNode[] = [
+            <span key="mismatch">
+              Картку знайдено, але вона зараз у {cardPipelineLabel} → {cardStatusLabel}.
+            </span>,
+            <span key="expected" className="text-xs text-rose-600/80">
+              Очікувана базова пара: {(baseSummary.pipelineName ?? baseSummary.pipelineId ?? "—")} →
+              {baseSummary.statusName
+                ? ` ${baseSummary.statusName}`
+                : baseSummary.statusId
+                  ? ` ${baseSummary.statusId}`
+                  : baseSummary.pipelineStatusId
+                    ? ` ${baseSummary.pipelineStatusId}`
+                    : " —"}
+            </span>,
+          ];
+
+          if (mismatch.pipelineMatches === false) {
+            cardDetails.push(
+              <span key="pipeline-mismatch" className="text-xs text-rose-600/80">
+                Поточна воронка не збігається з базовою.
+              </span>,
+            );
+          }
+
+          if (mismatch.statusMatches === false) {
+            cardDetails.push(
+              <span key="status-mismatch" className="text-xs text-rose-600/80">
+                Поточний статус не збігається з базовим.
+              </span>,
+            );
+          }
+
+          timelineSteps.push(
+            {
+              key: "campaign",
+              title: "2. Знайдена кампанія",
+              status: "success",
+              details: campaignDetails,
+            },
+            {
+              key: "card",
+              title: "3. Пошук картки у KeyCRM",
+              status: "error",
+              details: cardDetails,
+            },
+            {
+              key: "move",
+              title: "4. Переміщення картки",
+              status: "info",
+              details: [
+                <span key="skipped">
+                  Переміщення пропущено, оскільки картка не у базовій воронці/статусі.
+                </span>,
+              ],
+            },
+          );
         } else if (combinedCampaignDetails) {
           const campaignName =
             coerceString(combinedCampaignDetails.name) ??

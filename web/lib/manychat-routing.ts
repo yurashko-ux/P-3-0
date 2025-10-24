@@ -705,6 +705,39 @@ export async function routeManychatMessage({
     return error('card_match_missing', { selected, campaign: campaignSummary });
   }
 
+  const baseStatusCandidates = [
+    base.statusId,
+    base.pipelineStatusId,
+    ...(base.statusAliases ?? []),
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  const basePipelineMatches =
+    !base.pipelineId || selected.summary?.pipelineId === base.pipelineId;
+
+  const baseStatusMatches =
+    baseStatusCandidates.length === 0 ||
+    baseStatusCandidates.some((candidate) => {
+      const trimmed = candidate.trim();
+      return (
+        (selected.summary?.statusId && selected.summary.statusId === trimmed) ||
+        (selected.summary?.pipelineStatusId && selected.summary.pipelineStatusId === trimmed)
+      );
+    });
+
+  if (!basePipelineMatches || !baseStatusMatches) {
+    return error('card_not_in_base', {
+      normalized,
+      campaign: campaignSummary,
+      selected,
+      summary: selected.summary,
+      mismatch: {
+        pipelineMatches: basePipelineMatches,
+        statusMatches: baseStatusMatches,
+      },
+      base: formatTarget(base),
+    });
+  }
+
   const statusMatchCandidates = [
     target.statusId,
     target.pipelineStatusId,
