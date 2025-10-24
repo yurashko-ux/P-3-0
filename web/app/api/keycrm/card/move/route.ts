@@ -1,137 +1,97 @@
-// web/app/api/keycrm/card/move/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
-export const dynamic = 'force-dynamic';
+import { moveKeycrmCard, normalizeId } from "@/lib/keycrm-move";
+
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type MoveBody = {
-  card_id: string;
-  to_pipeline_id: string | null;
-  to_status_id: string | null;
+  card_id?: string | number | null;
+  to_pipeline_id?: string | number | null;
+  to_status_id?: string | number | null;
+  pipeline_status_id?: string | number | null;
+  status_aliases?: Array<string | number | null>;
 };
 
-function bad(status: number, error: string, extra?: any) {
-  return NextResponse.json({ ok: false, error, ...extra }, { status });
-}
-function ok(data: any = {}) {
-  return NextResponse.json({ ok: true, ...data });
-}
+const bad = (status: number, error: string, extra?: Record<string, unknown>) =>
+  NextResponse.json({ ok: false, error, ...(extra ?? {}) }, { status });
 
-function join(base: string, path: string) {
-  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-}
+const ok = (extra?: Record<string, unknown>) =>
+  NextResponse.json({ ok: true, ...(extra ?? {}) });
 
-/**
- * Деякі інсталяції KeyCRM мають різні шляхи для move:
- * - POST /cards/{card_id}/move            body: { pipeline_id, status_id }
- * - POST /pipelines/cards/move            body: { card_id, pipeline_id, status_id }
- * Ми спробуємо обидва варіанти (у такому порядку), і повернемо перший успішний.
- */
-async function tryMove(
-  baseUrl: string,
-  token: string,
-  body: MoveBody
-): Promise<{ ok: boolean; attempt: string; status: number; text: string; json?: any }> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+export async function POST(req: NextRequest) {
+  const body = ((await req.json().catch(() => ({}))) ?? {}) as MoveBody;
 
-  // Кандидати (по черзі)
-  const attempts = [
-    {
-      url: join(baseUrl, `/cards/${encodeURIComponent(body.card_id)}/move`),
-      payload: {
-        pipeline_id: body.to_pipeline_id,
-        status_id: body.to_status_id,
-      },
-      name: 'cards/{id}/move',
-    },
-    {
-      url: join(baseUrl, `/pipelines/cards/move`),
-      payload: {
-        card_id: body.card_id,
-        pipeline_id: body.to_pipeline_id,
-        status_id: body.to_status_id,
-      },
-      name: 'pipelines/cards/move',
-    },
-  ];
+  const cardId = normalizeId(body.card_id);
+  const toPipelineId = normalizeId(body.to_pipeline_id);
+  const toStatusId = normalizeId(body.to_status_id);
+  const pipelineStatusId = normalizeId(body.pipeline_status_id);
+  const rawAliases = Array.isArray(body.status_aliases) ? body.status_aliases : [];
+  const aliasesNormalised = rawAliases
+    .map((value) => normalizeId(value))
+    .filter((value): value is string => Boolean(value));
 
-  let last: { ok: boolean; attempt: string; status: number; text: string; json?: any } = {
-    ok: false,
-    attempt: '',
-    status: 0,
-    text: '',
-  };
+  const primaryStatusId = pipelineStatusId ?? toStatusId;
 
-  for (const a of attempts) {
-    try {
-      const r = await fetch(a.url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(a.payload),
-        cache: 'no-store',
-      });
-
-      const text = await r.text();
-      let j: any = null;
-      try { j = JSON.parse(text); } catch {}
-
-      // вважаємо успіхом 2xx і (якщо є) ознаку ok/true в json
-      const success = r.ok && (j == null || j.ok === undefined || j.ok === true);
-      if (success) {
-        return { ok: true, attempt: a.name, status: r.status, text, json: j ?? undefined };
-      }
-
-      last = { ok: false, attempt: a.name, status: r.status, text, json: j ?? undefined };
-    } catch (e: any) {
-      last = { ok: false, attempt: a.name, status: 0, text: String(e) };
+  const aliasSet = new Set<string>();
+  if (pipelineStatusId && pipelineStatusId !== primaryStatusId) {
+    aliasSet.add(pipelineStatusId);
+  }
+  if (toStatusId && toStatusId !== primaryStatusId) {
+    aliasSet.add(toStatusId);
+  }
+  for (const alias of aliasesNormalised) {
+    if (alias && alias !== primaryStatusId) {
+      aliasSet.add(alias);
     }
   }
 
-  return last;
-}
+  const statusAliases = Array.from(aliasSet);
 
-export async function POST(req: NextRequest) {
-  const token = process.env.KEYCRM_API_TOKEN || '';
-  const base = process.env.KEYCRM_BASE_URL || ''; // напр., https://api.keycrm.app/v1
-  if (!token || !base) {
-    return bad(500, 'keycrm not configured', {
-      need: { KEYCRM_API_TOKEN: !!token, KEYCRM_BASE_URL: !!base },
+  if (!cardId) return bad(400, "card_id required");
+  if (!toPipelineId && !primaryStatusId) {
+    return bad(400, "to_pipeline_id or to_status_id required");
+  }
+
+  try {
+    const result = await moveKeycrmCard({
+      cardId,
+      pipelineId: toPipelineId,
+      statusId: primaryStatusId,
+      pipelineStatusId,
+      statusAliases,
+    });
+
+    if (!result.ok) {
+      return bad(502, "keycrm move unverified", result);
+    }
+
+    return ok({
+      moved: true,
+      via: "pipelines/cards/{id} PUT",
+      status: result.status,
+      response: result.response,
+      attempts: result.attempts,
+      sent: result.sent,
+    });
+  } catch (err) {
+    const error = err as { code?: string; message?: string } | Error;
+
+    if ((error as any)?.code === "keycrm_not_configured") {
+      return bad(500, "keycrm not configured", {
+        need: {
+          KEYCRM_API_TOKEN: !!process.env.KEYCRM_API_TOKEN,
+          KEYCRM_BASE_URL: !!process.env.KEYCRM_BASE_URL,
+        },
+      });
+    }
+
+    if ((error as any)?.code === "target_missing") {
+      return bad(400, "to_pipeline_id or to_status_id required");
+    }
+
+    return bad(502, "keycrm move failed", {
+      error: error?.message ?? String(error),
     });
   }
-
-  const b = (await req.json().catch(() => ({}))) as Partial<MoveBody>;
-  const card_id = String(b.card_id || '').trim();
-  const to_pipeline_id = b.to_pipeline_id != null ? String(b.to_pipeline_id) : null;
-  const to_status_id = b.to_status_id != null ? String(b.to_status_id) : null;
-
-  if (!card_id) return bad(400, 'card_id required');
-
-  // dry-run для швидкої діагностики (не викликає KeyCRM)
-  const dry = new URL(req.url).searchParams.get('dry');
-  if (dry === '1') {
-    return ok({ dry: true, card_id, to_pipeline_id, to_status_id });
-  }
-
-  const res = await tryMove(base, token, { card_id, to_pipeline_id, to_status_id });
-
-  if (!res.ok) {
-    return bad(502, 'keycrm move failed', {
-      attempt: res.attempt,
-      status: res.status,
-      responseText: res.text,
-      responseJson: res.json ?? null,
-      sent: { card_id, to_pipeline_id, to_status_id },
-      base: base.replace(/.{20}$/, '********'), // трохи маскуємо
-    });
-  }
-
-  return ok({
-    moved: true,
-    via: res.attempt,
-    status: res.status,
-    response: res.json ?? res.text,
-  });
 }
