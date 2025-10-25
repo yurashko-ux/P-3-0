@@ -6,13 +6,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const IDS_KEY = "cmp:ids";
+const IDS_LIST_KEY = "cmp:ids:list";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 const unique = (a:string[]) => Array.from(new Set(a.filter(Boolean)));
 
 async function readIdsMerged(): Promise<string[]> {
   const arr = (await kv.get<string[] | null>(IDS_KEY)) ?? [];
   let list: string[] = [];
-  try { list = await kv.lrange<string>(IDS_KEY, 0, -1); } catch {}
+  try { list = await kv.lrange<string>(IDS_LIST_KEY, 0, -1); } catch {}
   return unique([...(Array.isArray(arr)?arr:[]), ...(Array.isArray(list)?list:[])]);
 }
 
