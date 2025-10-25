@@ -52,6 +52,26 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
+
+        {/* Тестова сторінка */}
+        <Card>
+          <CardHeader
+            emoji="🧪"
+            title="Тестова сторінка"
+            subtitle="KV-стан, fallback та інструменти"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Перевірка KV-конфігурації та fallback-запасних значень</li>
+              <li>Останні ManyChat webhook-и та історія переміщень</li>
+              <li>Швидкий перехід до ручних віджетів для діагностики</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/debug">Відкрити debug</PrimaryLink>
+            <SecondaryLink href="/admin/tools">Інструменти</SecondaryLink>
+          </CardFooter>
+        </Card>
       </section>
     </main>
   );
@@ -133,6 +153,26 @@ function PrimaryLink({ href, children }: { href: string; children: React.ReactNo
         borderRadius: 14,
         fontWeight: 700,
         boxShadow: '0 8px 20px rgba(42,109,245,0.35)',
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SecondaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'inline-block',
+        textDecoration: 'none',
+        background: '#f3f5f9',
+        color: '#1c2340',
+        padding: '12px 16px',
+        borderRadius: 14,
+        fontWeight: 600,
+        boxShadow: 'inset 0 0 0 1px rgba(28,35,64,0.1)',
       }}
     >
       {children}

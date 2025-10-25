@@ -1,5 +1,8 @@
 // web/app/admin/debug/page.tsx
-export const dynamic = 'error'; // do not run at build/edge
-export default function DisabledAdminDebug() {
-  return null; // disabled legacy page
+import AdminDebugClient from './client';
+
+export const dynamic = 'force-dynamic';
+
+export default function AdminDebugPage() {
+  return <AdminDebugClient />;
 }

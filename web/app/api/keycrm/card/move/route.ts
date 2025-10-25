@@ -33,7 +33,7 @@ async function tryMove(
   body: MoveBody
 ): Promise<{ ok: boolean; attempt: string; status: number; text: string; json?: any }> {
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
+    Authorization: token,
     'Content-Type': 'application/json',
   };
 
@@ -93,19 +93,52 @@ async function tryMove(
   return last;
 }
 
+function pickEnv(...candidates: (string | undefined)[]) {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
+
+function ensureBearer(token: string): string {
+  const t = token.trim();
+  if (!t) return '';
+  return /^bearer\s/i.test(t) ? t : `Bearer ${t}`;
+}
+
+function normalizeTarget(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s ? s : null;
+}
+
 export async function POST(req: NextRequest) {
-  const token = process.env.KEYCRM_API_TOKEN || '';
-  const base = process.env.KEYCRM_BASE_URL || ''; // напр., https://api.keycrm.app/v1
+  const token = ensureBearer(
+    pickEnv(
+      process.env.KEYCRM_API_TOKEN,
+      process.env.KEYCRM_TOKEN,
+      process.env.KEYCRM_BEARER
+    )
+  );
+  const base = pickEnv(
+    process.env.KEYCRM_BASE_URL,
+    process.env.KEYCRM_API_URL,
+    process.env.KEYCRM_API_BASE
+  ); // напр., https://api.keycrm.app/v1
+
   if (!token || !base) {
     return bad(500, 'keycrm not configured', {
-      need: { KEYCRM_API_TOKEN: !!token, KEYCRM_BASE_URL: !!base },
+      need: {
+        KEYCRM_API_TOKEN: !!(process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_TOKEN || process.env.KEYCRM_BEARER),
+        KEYCRM_BASE_URL: !!(process.env.KEYCRM_BASE_URL || process.env.KEYCRM_API_URL || process.env.KEYCRM_API_BASE),
+      },
     });
   }
 
   const b = (await req.json().catch(() => ({}))) as Partial<MoveBody>;
   const card_id = String(b.card_id || '').trim();
-  const to_pipeline_id = b.to_pipeline_id != null ? String(b.to_pipeline_id) : null;
-  const to_status_id = b.to_status_id != null ? String(b.to_status_id) : null;
+  const to_pipeline_id = normalizeTarget(b.to_pipeline_id);
+  const to_status_id = normalizeTarget(b.to_status_id);
 
   if (!card_id) return bad(400, 'card_id required');
 
