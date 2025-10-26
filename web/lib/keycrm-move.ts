@@ -161,16 +161,20 @@ export async function moveKeycrmCard({
   pipelineStatusId = null,
   statusAliases = [],
 }: MoveInput): Promise<KeycrmMoveResult> {
-  const baseCandidate = getEnvValue(
-    "KEYCRM_BASE_URL",
-    "KEYCRM_API_URL",
-    "KEYCRM_API_BASE",
-  );
+  const baseCandidate =
+    getEnvValue("KEYCRM_API_URL", "KEYCRM_API_BASE") ??
+    getEnvValue("KEYCRM_BASE_URL");
 
   const tokenCandidate = getEnvValue("KEYCRM_API_TOKEN", "KEYCRM_TOKEN");
   const bearerCandidate = getEnvValue("KEYCRM_BEARER", "KEYCRM_API_BEARER");
 
-  const base = baseCandidate ? baseCandidate.replace(/\/+$/, "") : "";
+  let base = baseCandidate ? baseCandidate.trim() : "";
+  if (base) {
+    base = base.replace(/\/+$/, "");
+    if (!/\/api(\/|$)/i.test(base)) {
+      base = `${base}/api/v1`;
+    }
+  }
 
   let authorization = "";
   if (bearerCandidate) {
