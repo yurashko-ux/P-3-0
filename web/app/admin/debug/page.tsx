@@ -1,6 +1,6 @@
 // web/app/admin/debug/page.tsx
 import { kv } from "@vercel/kv";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { kvRead } from "@/lib/kv";
 
@@ -129,9 +129,26 @@ async function readApiSnapshot(): Promise<ApiSnapshot> {
     const h = headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
     const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-    const res = await fetch(`${proto}://${host}/api/campaigns`, {
+    const url = `${proto}://${host || process.env.VERCEL_URL || ""}/api/campaigns`;
+    const bypass =
+      h.get("x-vercel-protection-bypass") ??
+      process.env.X_VERCEL_PROTECTION_BYPASS ??
+      process.env.VERCEL_PROTECTION_BYPASS ??
+      null;
+    const auth = h.get("authorization");
+    const cookieHeader = cookies()
+      .getAll()
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
+
+    const res = await fetch(url, {
       cache: "no-store",
       next: { revalidate: 0 },
+      headers: {
+        ...(bypass ? { "x-vercel-protection-bypass": bypass } : {}),
+        ...(auth ? { authorization: auth } : {}),
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+      },
     });
     if (!res.ok) {
       base.error = `HTTP ${res.status}`;
