@@ -1,6 +1,7 @@
 // web/app/api/campaigns/repair/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
+import { kvRead } from "@/lib/kv";
 import { Campaign, Target } from "@/lib/types";
 import { getPipelineName, getStatusName } from "@/lib/keycrm";
 
@@ -8,6 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const IDS_KEY = "cmp:ids";
+const IDS_LIST_KEY = "cmp:ids:list";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
 function unauthorized() {
@@ -24,7 +26,7 @@ async function getIdsArray(): Promise<string[]> {
 // читаємо можливий list лише ОДИН раз (міграція); далі в коді він не використовується
 async function getIdsListOnce(): Promise<string[]> {
   try {
-    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
+    const list = await kvRead.lrange(IDS_LIST_KEY, 0, -1);
     return Array.isArray(list) ? list.filter(Boolean) : [];
   } catch {
     return [];
