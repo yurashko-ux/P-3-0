@@ -38,10 +38,49 @@ export async function GET(
 
     if (res.ok) {
       const rawArr = pickAnyArray(payload);
-      const out = rawArr.map((s: any) => ({
-        id: String(s?.id ?? s?.uuid ?? s?.status_id ?? ""),
-        name: String(s?.name ?? s?.title ?? s?.label ?? s?.slug ?? s?.id ?? s?.uuid ?? ""),
-      })).filter(x => x.id);
+      const out = rawArr
+        .map((s: any) => {
+          const pipelineStatusSource =
+            s?.pivot?.pipeline_status_id ??
+            s?.pipeline_status_id ??
+            s?.pipelineStatusId ??
+            null;
+
+          const statusSource =
+            s?.status_id ??
+            s?.status?.id ??
+            s?.statusId ??
+            s?.pivot?.status_id ??
+            null;
+
+          const fallback = s?.id ?? s?.uuid ?? null;
+
+          const pipelineStatusId =
+            pipelineStatusSource != null && pipelineStatusSource !== ''
+              ? String(pipelineStatusSource)
+              : null;
+
+          const statusId =
+            statusSource != null && statusSource !== '' ? String(statusSource) : null;
+
+          const primary = pipelineStatusId ?? statusId ?? (fallback != null ? String(fallback) : null);
+          const id = primary != null ? String(primary) : '';
+          if (!id) return null;
+
+          const name = String(
+            s?.name ?? s?.title ?? s?.label ?? s?.slug ?? s?.id ?? s?.uuid ?? `Статус #${id}`,
+          );
+
+          return {
+            id,
+            name,
+            pipelineStatusId,
+            statusId,
+          };
+        })
+        .filter((value): value is { id: string; name: string; pipelineStatusId: string | null; statusId: string | null } =>
+          Boolean(value?.id),
+        );
 
       if (out.length > 0) {
         return NextResponse.json({ ok: true, data: out }, { status: 200 });
