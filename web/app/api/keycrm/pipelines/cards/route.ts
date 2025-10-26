@@ -31,14 +31,71 @@ export async function GET(req: Request) {
     const u = new URL(req.url);
     const q = u.searchParams;
 
-    const upstream = new URL(`${BASE}/pipelines/cards`);
-    // прокидуємо підтримувані фільтри
-    ["pipeline_id", "status_id", "per_page", "page"].forEach((k) => {
-      const v = q.get(k);
-      if (v) upstream.searchParams.set(k, v);
-    });
-    if (!upstream.searchParams.has("per_page")) upstream.searchParams.set("per_page", "50");
-    if (!upstream.searchParams.has("page")) upstream.searchParams.set("page", "1");
+    const pipelineId =
+      q.get("pipeline_id") ?? q.get("pipelineId") ?? q.get("id") ?? undefined;
+
+    const upstream = new URL(
+      pipelineId ? `${BASE}/pipelines/${encodeURIComponent(pipelineId)}/cards` : `${BASE}/pipelines/cards`
+    );
+
+    const pageNumber =
+      q.get("page[number]") ??
+      q.get("page") ??
+      q.get("pageNumber") ??
+      undefined;
+    const pageSize =
+      q.get("page[size]") ??
+      q.get("per_page") ??
+      q.get("pageSize") ??
+      undefined;
+
+    upstream.searchParams.set("page[number]", pageNumber ?? "1");
+    upstream.searchParams.set("page[size]", pageSize ?? "50");
+
+    const statusFilter =
+      q.get("filter[status_id]") ??
+      q.get("status_id") ??
+      q.get("statusId") ??
+      undefined;
+    if (statusFilter) {
+      upstream.searchParams.set("filter[status_id]", statusFilter);
+    }
+
+    const pipelineFilter =
+      q.get("filter[pipeline_id]") ??
+      (!pipelineId ? q.get("pipeline_id") : null);
+    if (pipelineFilter) {
+      upstream.searchParams.set("filter[pipeline_id]", pipelineFilter);
+    }
+
+    const allowedRelations = new Set([
+      "contact",
+      "contact.client",
+      "status",
+      "contactCount",
+      "statusCount",
+      "manager",
+      "managerCount",
+      "payments",
+      "paymentsCount",
+      "products",
+      "productsCount",
+      "products.offer",
+      "customFields",
+      "customFieldsCount",
+    ]);
+
+    const includeValues = q.getAll("include[]").filter((value) => allowedRelations.has(value));
+    const withValues = q.getAll("with[]").filter((value) => allowedRelations.has(value));
+
+    const relations = includeValues.length > 0 ? includeValues : ["contact", "contact.client", "status"];
+    for (const relation of relations) {
+      upstream.searchParams.append("include[]", relation);
+    }
+    const withList = withValues.length > 0 ? withValues : relations;
+    for (const relation of withList) {
+      upstream.searchParams.append("with[]", relation);
+    }
 
     const res = await fetch(upstream, {
       method: "GET",
