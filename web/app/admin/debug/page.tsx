@@ -125,11 +125,38 @@ async function readKvSnapshot(): Promise<KvSnapshot> {
 
 async function readApiSnapshot(): Promise<ApiSnapshot> {
   const base: ApiSnapshot = { ok: false, items: [], meta: null, error: null };
+
+  const directFallback = async (reason: string): Promise<ApiSnapshot> => {
+    try {
+      const items = await kvRead.listCampaigns();
+      return {
+        ok: true,
+        items,
+        meta: {
+          source: "direct",
+          reason,
+        },
+        error: null,
+      };
+    } catch (directError) {
+      return {
+        ...base,
+        error: `${reason}; direct fallback failed: ${formatError(directError)}`,
+        meta: { source: "direct", reason, fallbackError: formatError(directError) },
+      };
+    }
+  };
+
   try {
     const h = headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
     const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-    const url = `${proto}://${host || process.env.VERCEL_URL || ""}/api/campaigns`;
+    const fallbackHost = process.env.VERCEL_URL ?? "";
+    const urlHost = host || fallbackHost;
+    if (!urlHost) {
+      return directFallback("host_unavailable");
+    }
+    const url = `${proto}://${urlHost}/api/campaigns`;
     const bypass =
       h.get("x-vercel-protection-bypass") ??
       process.env.X_VERCEL_PROTECTION_BYPASS ??
@@ -152,7 +179,7 @@ async function readApiSnapshot(): Promise<ApiSnapshot> {
     });
     if (!res.ok) {
       base.error = `HTTP ${res.status}`;
-      return base;
+      return directFallback(base.error);
     }
     const json: unknown = await res.json().catch(() => null);
     if (Array.isArray(json)) {
@@ -172,10 +199,11 @@ async function readApiSnapshot(): Promise<ApiSnapshot> {
       return base;
     }
     base.error = "Невідомий формат відповіді";
+    return directFallback(base.error);
   } catch (err) {
-    base.error = formatError(err);
+    const reason = formatError(err);
+    return directFallback(reason);
   }
-  return base;
 }
 
 function formatError(err: unknown): string {
