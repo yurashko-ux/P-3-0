@@ -78,6 +78,11 @@ export const redis = {
     return callSingle<string[]>(['LRANGE', key, String(start), String(stop)]);
   },
 
+  async ltrim(key: string, start: number, stop: number) {
+    // LTRIM key start stop
+    return callSingle<string>(['LTRIM', key, String(start), String(stop)]);
+  },
+
   // (опційно, якщо десь ще кличеться)
   async rpush(key: string, ...values: string[]) {
     return callSingle<number>(['RPUSH', key, ...values]);
