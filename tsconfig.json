@@ -1,9 +1,25 @@
 {
   "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "lib": ["ES2020"],
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["web/*"]
+      "@/*": ["web/*"],
+      "@/lib/*": ["lib/*"]
     }
-  }
+  },
+  "include": [
+    "lib/db/**/*.ts",
+    "lib/integrations/**/*.ts",
+    "lib/logger.ts",
+    "lib/etl/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
 }
-
