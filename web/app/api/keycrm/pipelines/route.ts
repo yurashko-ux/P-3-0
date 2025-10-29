@@ -1,73 +1,82 @@
 // web/app/api/keycrm/pipelines/route.ts
 import { NextResponse } from "next/server";
-import { authHeaders, baseUrl, maskAuth } from "../_common";
+
+import {
+  fetchKeycrmPipelineDetail,
+  fetchKeycrmPipelines,
+  type KeycrmPipelineDetailError,
+  type KeycrmPipelineDetailResult,
+  type KeycrmPipelineListError,
+  type KeycrmPipelineListResult,
+} from "@/lib/keycrm-pipelines";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function pickAnyArray(payload: any): any[] {
-  if (!payload) return [];
-  const tryPaths: (string | string[])[] = [
-    "data", "items", "pipelines", "result", "list",
-    ["data","data"], ["data","items"], ["payload","data"], ["payload","items"]
-  ];
-  for (const p of tryPaths) {
-    if (Array.isArray(p)) {
-      let node: any = payload;
-      for (const key of p) node = node?.[key];
-      if (Array.isArray(node)) return node;
-    } else {
-      const arr = payload?.[p];
-      if (Array.isArray(arr)) return arr;
-    }
-  }
-  if (Array.isArray(payload)) return payload;
-  return [];
+function isPipelineError(result: KeycrmPipelineListResult): result is KeycrmPipelineListError {
+  return result.ok === false;
 }
 
-export async function GET() {
-  const url = `${baseUrl()}/pipelines?per_page=200`;
-  try {
-    const res = await fetch(url, { headers: authHeaders(), cache: "no-store" });
-    const ct = res.headers.get("content-type") || "";
-    const payload = ct.includes("application/json") ? await res.json().catch(() => null) : null;
+function isPipelineDetailError(result: KeycrmPipelineDetailResult): result is KeycrmPipelineDetailError {
+  return result.ok === false;
+}
 
-    if (res.ok) {
-      const rawArr = pickAnyArray(payload);
-      const out = rawArr.map((p: any) => ({
-        id: String(p?.id ?? p?.uuid ?? p?.pipeline_id ?? ""),
-        name: String(p?.name ?? p?.title ?? p?.label ?? p?.slug ?? p?.id ?? p?.uuid ?? ""),
-      })).filter(x => x.id);
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const pipelineParam = searchParams.get("pipeline_id") ?? searchParams.get("id");
 
-      if (out.length > 0) {
-        return NextResponse.json({ ok: true, data: out }, { status: 200 });
-      }
-      // OK, але не знайшли масив — повертаємо діагностику форми
-      return NextResponse.json({
-        ok: true,
-        data: [],
-        diag: {
-          note: "Не знайшов масив pipelines у відомих полях. Ось форма відповіді.",
-          jsonKeys: payload ? Object.keys(payload) : [],
-          rawPreview: payload ? JSON.stringify(payload).slice(0, 800) : null,
-        }
-      }, { status: 200 });
+  if (pipelineParam) {
+    const pipelineId = Number(pipelineParam);
+    if (!Number.isFinite(pipelineId) || pipelineId <= 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "invalid_pipeline_id",
+          details: `Некоректний pipeline_id: ${pipelineParam}`,
+          pipeline: null,
+          fetchedAt: null,
+        },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(
-      {
-        ok: false,
-        status: res.status,
-        reason: (payload && (payload.message || payload.error)) || "KeyCRM error",
-        url,
-        authPreview: maskAuth(authHeaders().Authorization),
-      },
-      { status: res.status }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message || e), url },
-      { status: 502 }
-    );
+    const result = await fetchKeycrmPipelineDetail(pipelineId);
+
+    if (isPipelineDetailError(result)) {
+      const status =
+        result.error === "keycrm_env_missing"
+          ? 500
+          : result.error === "keycrm_pipeline_not_found"
+            ? 404
+            : 502;
+      return NextResponse.json(result, { status });
+    }
+
+    return NextResponse.json(result);
   }
+
+  const result = await fetchKeycrmPipelines();
+
+  if (isPipelineError(result)) {
+    const status = result.error === "keycrm_env_missing" ? 500 : 502;
+    return NextResponse.json(result, { status });
+  }
+
+  return NextResponse.json(result);
+}
+
+export async function POST() {
+  const result = await fetchKeycrmPipelines({ forceRefresh: true, persist: true });
+
+  if (isPipelineError(result)) {
+    const status =
+      result.error === "keycrm_env_missing"
+        ? 500
+        : result.error === "keycrm_fetch_failed"
+          ? 502
+          : 500;
+    return NextResponse.json(result, { status });
+  }
+
+  return NextResponse.json({ ...result, refreshed: true });
 }
