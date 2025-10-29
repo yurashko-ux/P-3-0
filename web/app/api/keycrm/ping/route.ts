@@ -7,9 +7,16 @@ export const dynamic = "force-dynamic";
 // будуємо Authorization так само, як у lib/keycrm.ts
 function buildAuth(): string {
   const bearer = process.env.KEYCRM_BEARER?.trim();
-  const token  = process.env.KEYCRM_API_TOKEN?.trim();
+  const apiToken = process.env.KEYCRM_API_TOKEN?.trim();
+  const legacyToken = process.env.KEYCRM_TOKEN?.trim();
+
   if (bearer) return bearer;
-  if (token) return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+
+  const token = apiToken || legacyToken;
+  if (token) {
+    return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+  }
+
   return "";
 }
 function maskAuth(a?: string) {
@@ -22,7 +29,11 @@ function maskAuth(a?: string) {
 }
 
 export async function GET() {
-  const base = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+  const base = (
+    process.env.KEYCRM_API_URL ||
+    process.env.KEYCRM_BASE_URL ||
+    "https://openapi.keycrm.app/v1"
+  ).replace(/\/+$/, "");
   const auth = buildAuth();
   const url  = `${base}/pipelines?per_page=1`;
 
