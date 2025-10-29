@@ -52,6 +52,90 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
+
+        {/* Тестова сторінка */}
+        <Card>
+          <CardHeader
+            emoji="🧪"
+            title="Тестова сторінка"
+            subtitle="KV-стенд, fallback та тестові інструменти"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Перевірка KV-конфігурації</li>
+              <li>Огляд останніх кампаній (KV / fallback)</li>
+              <li>Доступ до внутрішніх інструментів</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/tools/test">Відкрити сторінку</PrimaryLink>
+            <SecondaryLink href="/admin/tools">Інструменти</SecondaryLink>
+          </CardFooter>
+        </Card>
+      </section>
+
+      <section style={{ marginTop: 56 }}>
+        <div style={{ marginBottom: 18 }}>
+          <h2
+            style={{
+              fontSize: 32,
+              fontWeight: 800,
+              margin: 0,
+              letterSpacing: -0.3,
+            }}
+          >
+            Альтеджіо
+          </h2>
+          <p style={{ marginTop: 8, color: 'rgba(0,0,0,0.6)', maxWidth: 720 }}>
+            Панель для роботи з інтеграцією Alteg.io: аналітика мережі салонів, склад волосся,
+            планування та майбутні фінансові звіти.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 20,
+            alignItems: 'stretch',
+          }}
+        >
+          <Card accent>
+            <CardHeader
+              emoji="📊"
+              title="Аналітика та склад"
+              subtitle="Дашборди, склад волосся за вагою, план/факт"
+            />
+            <CardBody>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+                <li>Синхронізація записів, клієнтів, послуг</li>
+                <li>Контроль прийомок і залишків волосся</li>
+                <li>Планування завантаженості майстрів</li>
+              </ul>
+            </CardBody>
+            <CardFooter>
+              <PrimaryLink href="/admin/altegrio/analytics">Відкрити модуль</PrimaryLink>
+            </CardFooter>
+          </Card>
+
+          <Card>
+            <CardHeader
+              emoji="💰"
+              title="Фінансові звіти"
+              subtitle="P&L, контроль витрат, експортні документи"
+            />
+            <CardBody>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+                <li>Консолідація виручки та витрат по салонах</li>
+                <li>Порівняння план/факт за категоріями</li>
+                <li>Експорт CSV/PDF для бухгалтерії</li>
+              </ul>
+            </CardBody>
+            <CardFooter>
+              <SecondaryLink href="/docs/analytics-dashboard-spec">Документація</SecondaryLink>
+            </CardFooter>
+          </Card>
+        </div>
       </section>
     </main>
   );
@@ -133,6 +217,26 @@ function PrimaryLink({ href, children }: { href: string; children: React.ReactNo
         borderRadius: 14,
         fontWeight: 700,
         boxShadow: '0 8px 20px rgba(42,109,245,0.35)',
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SecondaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'inline-block',
+        textDecoration: 'none',
+        background: '#f4f6fb',
+        color: '#1a2b4c',
+        padding: '12px 16px',
+        borderRadius: 14,
+        fontWeight: 700,
+        border: '1px solid #d3d9e6',
       }}
     >
       {children}
