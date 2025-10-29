@@ -3,7 +3,7 @@
 // Тепер головний параметр — ?social_id=..., а ?username / ?handle — лише синоніми.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { baseUrl, ensureBearer } from '../../_common';
+import { baseUrl, ensureBearer } from '../_common';
 
 export const dynamic = 'force-dynamic';
 

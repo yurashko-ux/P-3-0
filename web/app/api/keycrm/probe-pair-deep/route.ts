@@ -5,7 +5,7 @@
 // Має допомогти отримати card_id для social_id=kolachnyk.v у парі (1, 38).
 
 import { NextRequest, NextResponse } from 'next/server';
-import { baseUrl, ensureBearer } from '../../_common';
+import { baseUrl, ensureBearer } from '../_common';
 
 export const dynamic = 'force-dynamic';
 
