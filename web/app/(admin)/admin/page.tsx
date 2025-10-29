@@ -68,7 +68,7 @@ export default function AdminHome() {
             </ul>
           </CardBody>
           <CardFooter>
-            <PrimaryLink href="/admin/tools/test">Відкрити сторінку</PrimaryLink>
+            <PrimaryLink href="/admin/debug">Відкрити сторінку</PrimaryLink>
             <SecondaryLink href="/admin/tools">Інструменти</SecondaryLink>
           </CardFooter>
         </Card>
