@@ -7,6 +7,7 @@ import Link from 'next/link';
 import {
   KeycrmSearchPanel,
   KeycrmInspectPanel,
+  KeycrmManualMovePanel,
   ManychatNormalizePanel,
 } from './client-panels';
 import { kvRead, campaignKeys } from '@/lib/kv';
@@ -494,6 +495,10 @@ export default async function AdminDebugPage() {
         description="Нижче — форми для ручної перевірки ManyChat payload та пошуку карток у KeyCRM."
       >
         <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-4 lg:col-span-2">
+            <h3 className="text-base font-semibold text-slate-700">KeyCRM • Ручний пошук і переміщення картки</h3>
+            <KeycrmManualMovePanel />
+          </div>
           <div className="space-y-4">
             <h3 className="text-base font-semibold text-slate-700">KeyCRM • Пошук картки за Instagram</h3>
             <KeycrmSearchPanel />
