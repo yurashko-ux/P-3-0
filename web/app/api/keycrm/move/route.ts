@@ -1,13 +1,22 @@
 // web/app/api/keycrm/move/route.ts
 import { NextResponse } from 'next/server';
+import { baseUrl, ensureBearer } from '../_common';
 
-const BASE = process.env.KEYCRM_API_BASE || '';
-const TOKEN = process.env.KEYCRM_TOKEN || '';
+const BASE = baseUrl();
+const TOKEN = ensureBearer(
+  process.env.KEYCRM_BEARER ||
+    process.env.KEYCRM_API_TOKEN ||
+    process.env.KEYCRM_TOKEN ||
+    ''
+);
 
 export async function POST(req: Request) {
   try {
     if (!BASE || !TOKEN) {
-      return NextResponse.json({ ok: false, error: 'KEYCRM env missing' }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: 'KEYCRM env missing' },
+        { status: 500 }
+      );
     }
     const body = await req.json().catch(() => ({}));
     const card_id = String(body.card_id || '').trim();
@@ -25,7 +34,7 @@ export async function POST(req: Request) {
     const r = await fetch(url, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Bearer ${TOKEN}`,
+        Authorization: TOKEN,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

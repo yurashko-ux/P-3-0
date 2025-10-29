@@ -1,5 +1,6 @@
 // web/app/api/keycrm/card/move/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { baseUrl, ensureBearer } from '../../_common';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,9 +33,10 @@ async function tryMove(
   token: string,
   body: MoveBody
 ): Promise<{ ok: boolean; attempt: string; status: number; text: string; json?: any }> {
+  const auth = ensureBearer(token);
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
+    ...(auth ? { Authorization: auth } : {}),
   };
 
   // Кандидати (по черзі)
@@ -94,11 +96,19 @@ async function tryMove(
 }
 
 export async function POST(req: NextRequest) {
-  const token = process.env.KEYCRM_API_TOKEN || '';
-  const base = process.env.KEYCRM_BASE_URL || ''; // напр., https://api.keycrm.app/v1
-  if (!token || !base) {
+  const token =
+    process.env.KEYCRM_BEARER ||
+    process.env.KEYCRM_API_TOKEN ||
+    process.env.KEYCRM_TOKEN ||
+    '';
+  const auth = ensureBearer(token);
+  const base = baseUrl();
+  if (!auth || !base) {
     return bad(500, 'keycrm not configured', {
-      need: { KEYCRM_API_TOKEN: !!token, KEYCRM_BASE_URL: !!base },
+      need: {
+        KEYCRM_TOKEN: !!(process.env.KEYCRM_TOKEN || process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER),
+        KEYCRM_BASE_URL: !!(process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL),
+      },
     });
   }
 
@@ -115,7 +125,7 @@ export async function POST(req: NextRequest) {
     return ok({ dry: true, card_id, to_pipeline_id, to_status_id });
   }
 
-  const res = await tryMove(base, token, { card_id, to_pipeline_id, to_status_id });
+  const res = await tryMove(base, auth, { card_id, to_pipeline_id, to_status_id });
 
   if (!res.ok) {
     return bad(502, 'keycrm move failed', {

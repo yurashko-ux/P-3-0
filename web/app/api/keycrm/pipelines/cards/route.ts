@@ -1,10 +1,16 @@
 // web/app/api/keycrm/pipelines/cards/route.ts
 import { NextResponse } from "next/server";
+import { baseUrl, ensureBearer } from "../../_common";
 
 export const dynamic = "force-dynamic";
 
-const BASE = process.env.KEYCRM_BASE_URL ?? "https://openapi.keycrm.app/v1";
-const TOKEN = process.env.KEYCRM_API_TOKEN;
+const BASE = baseUrl();
+const TOKEN = ensureBearer(
+  process.env.KEYCRM_BEARER ||
+    process.env.KEYCRM_API_TOKEN ||
+    process.env.KEYCRM_TOKEN ||
+    ""
+);
 const ADMIN_PASS = process.env.ADMIN_PASS;
 
 function isAuthed(req: Request) {
@@ -20,7 +26,7 @@ export async function GET(req: Request) {
   try {
     if (!TOKEN) {
       return NextResponse.json(
-        { ok: false, error: "Missing KEYCRM_API_TOKEN env" },
+        { ok: false, error: "Missing KEYCRM token (KEYCRM_BEARER / KEYCRM_API_TOKEN / KEYCRM_TOKEN)" },
         { status: 500 }
       );
     }
@@ -43,7 +49,7 @@ export async function GET(req: Request) {
     const res = await fetch(upstream, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: TOKEN,
         Accept: "application/json",
       },
       cache: "no-store",

@@ -1,39 +1,12 @@
 // web/app/api/keycrm/ping/route.ts
 import { NextResponse } from "next/server";
+import { baseUrl, buildAuth, maskAuth } from "../_common";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// будуємо Authorization так само, як у lib/keycrm.ts
-function buildAuth(): string {
-  const bearer = process.env.KEYCRM_BEARER?.trim();
-  const apiToken = process.env.KEYCRM_API_TOKEN?.trim();
-  const legacyToken = process.env.KEYCRM_TOKEN?.trim();
-
-  if (bearer) return bearer;
-
-  const token = apiToken || legacyToken;
-  if (token) {
-    return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
-  }
-
-  return "";
-}
-function maskAuth(a?: string) {
-  if (!a) return "(no auth)";
-  if (a.toLowerCase().startsWith("bearer ")) {
-    const t = a.slice(7);
-    return "Authorization: Bearer " + (t.length <= 8 ? "***" : t.slice(0, 6) + "…***");
-  }
-  return "Authorization: " + (a.length <= 8 ? "***" : a.slice(0, 6) + "…***");
-}
-
 export async function GET() {
-  const base = (
-    process.env.KEYCRM_API_URL ||
-    process.env.KEYCRM_BASE_URL ||
-    "https://openapi.keycrm.app/v1"
-  ).replace(/\/+$/, "");
+  const base = baseUrl();
   const auth = buildAuth();
   const url  = `${base}/pipelines?per_page=1`;
 

@@ -1,5 +1,9 @@
 // web/lib/keycrm.ts
-const BASE = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+const BASE = (
+  process.env.KEYCRM_API_URL ||
+  process.env.KEYCRM_BASE_URL ||
+  "https://openapi.keycrm.app/v1"
+).replace(/\/+$/, "");
 
 function ensureBearer(v?: string) {
   if (!v) return "";
@@ -11,7 +15,8 @@ function buildAuth(): string {
   // Нормалізуємо ОБИДВА джерела
   const bearer = ensureBearer(process.env.KEYCRM_BEARER);
   const token  = ensureBearer(process.env.KEYCRM_API_TOKEN);
-  return bearer || token || "";
+  const legacy = ensureBearer(process.env.KEYCRM_TOKEN);
+  return bearer || token || legacy || "";
 }
 const AUTH = buildAuth();
 

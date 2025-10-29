@@ -1,13 +1,19 @@
 // web/app/api/keycrm/ops/move-by-title/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { baseUrl, ensureBearer } from '../../_common';
 
 export const dynamic = 'force-dynamic';
 
-const BASE = process.env.KEYCRM_API_URL?.replace(/\/+$/, '') || 'https://openapi.keycrm.app/v1';
-const TOKEN = process.env.KEYCRM_BEARER || process.env.KEYCRM_API_TOKEN;
+const BASE = baseUrl();
+const TOKEN = ensureBearer(
+  process.env.KEYCRM_BEARER ||
+    process.env.KEYCRM_API_TOKEN ||
+    process.env.KEYCRM_TOKEN ||
+    ''
+);
 
 function mustToken() {
-  if (!TOKEN) throw new Error('KEYCRM token missing (KEYCRM_BEARER або KEYCRM_API_TOKEN)');
+  if (!TOKEN) throw new Error('KEYCRM token missing (KEYCRM_BEARER / KEYCRM_API_TOKEN / KEYCRM_TOKEN)');
   return TOKEN!;
 }
 
@@ -21,7 +27,7 @@ async function kcFetch(path: string, opts?: RequestInit & { query?: Record<strin
   const res = await fetch(url.toString(), {
     ...opts,
     headers: {
-      Authorization: `Bearer ${mustToken()}`,
+      Authorization: mustToken(),
       'Content-Type': 'application/json',
       ...(opts?.headers || {}),
     },

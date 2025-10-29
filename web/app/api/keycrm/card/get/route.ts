@@ -5,20 +5,18 @@
 // Виклик: /api/keycrm/card/get?id=435&pass=11111
 
 import { NextRequest, NextResponse } from 'next/server';
+import { baseUrl, ensureBearer } from '../../_common';
 
 export const dynamic = 'force-dynamic';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-function baseUrl() {
-  return process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
-}
 function token() {
-  return (
-    process.env.KEYCRM_API_TOKEN ||
+  return ensureBearer(
     process.env.KEYCRM_BEARER ||
-    process.env.KEYCRM_TOKEN ||
-    ''
+      process.env.KEYCRM_API_TOKEN ||
+      process.env.KEYCRM_TOKEN ||
+      ''
   );
 }
 
@@ -40,8 +38,11 @@ async function fetchJsonWithRetry(path: string, opts: { delayMs?: number; retry4
 
   for (;;) {
     if (delayMs > 0) await sleep(delayMs);
+    const auth = token();
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+      headers: auth
+        ? { Authorization: auth, 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json' },
       cache: 'no-store',
     });
     if (res.ok) {
