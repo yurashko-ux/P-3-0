@@ -52,6 +52,45 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
+        {/* Тестова / debug */}
+        <Card>
+          <CardHeader
+            emoji="🧪"
+            title="Тестова сторінка"
+            subtitle="KV-стан, fallback та інструменти"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Перевірка KV-конфігурації</li>
+              <li>Останні кампанії (KV / fallback)</li>
+              <li>Швидкий перехід до тестових інструментів</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/debug">Відкрити debug</PrimaryLink>
+            <SecondaryLink href="/admin/tools">Інструменти</SecondaryLink>
+          </CardFooter>
+        </Card>
+
+        {/* Аналітика Alteg.io */}
+        <Card>
+          <CardHeader
+            emoji="📊"
+            title="Альтеджіо"
+            subtitle="Аналітика, план/факт, нагадування"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Синхронізація даних Alteg.io</li>
+              <li>План/факт та склад волосся</li>
+              <li>Нагадування через ManiChat</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/altegio">Відкрити модуль</PrimaryLink>
+            <SecondaryLink href="/admin/analytics">Переглянути дашборд</SecondaryLink>
+          </CardFooter>
+        </Card>
       </section>
     </main>
   );
@@ -133,6 +172,26 @@ function PrimaryLink({ href, children }: { href: string; children: React.ReactNo
         borderRadius: 14,
         fontWeight: 700,
         boxShadow: '0 8px 20px rgba(42,109,245,0.35)',
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SecondaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'inline-block',
+        textDecoration: 'none',
+        background: '#f3f5f9',
+        color: '#1c2534',
+        padding: '12px 16px',
+        borderRadius: 14,
+        fontWeight: 600,
+        border: '1px solid rgba(0,0,0,0.08)',
       }}
     >
       {children}
