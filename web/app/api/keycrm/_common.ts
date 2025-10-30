@@ -2,26 +2,20 @@
 export const runtime = "nodejs";
 
 export function baseUrl() {
-  return (
-    process.env.KEYCRM_API_URL ||
-    process.env.KEYCRM_BASE_URL ||
-    "https://openapi.keycrm.app/v1"
-  ).replace(/\/+$/, "");
+  return (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
 }
 
-export function ensureBearer(v?: string) {
+function ensureBearer(v?: string) {
   if (!v) return "";
   const s = v.trim();
-  if (!s) return "";
   return s.toLowerCase().startsWith("bearer ") ? s : `Bearer ${s}`;
 }
 
 export function buildAuth(): string {
-  // Нормалізуємо всі відомі джерела токена
-  const direct = ensureBearer(process.env.KEYCRM_BEARER);
-  const apiToken = ensureBearer(process.env.KEYCRM_API_TOKEN);
-  const legacy = ensureBearer(process.env.KEYCRM_TOKEN);
-  return direct || apiToken || legacy || "";
+  // Нормалізуємо ОБИДВА джерела
+  const bearer = ensureBearer(process.env.KEYCRM_BEARER);
+  const token  = ensureBearer(process.env.KEYCRM_API_TOKEN);
+  return bearer || token || "";
 }
 
 export function authHeaders() {

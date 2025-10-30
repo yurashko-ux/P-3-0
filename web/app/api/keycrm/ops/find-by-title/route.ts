@@ -1,20 +1,14 @@
 // web/app/api/keycrm/ops/find-by-title/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { baseUrl, ensureBearer } from '../../_common';
 
 export const dynamic = 'force-dynamic';
 
 // ====== Minimal KeyCRM HTTP helpers (без залежності від lib/keycrm) ======
-const BASE = baseUrl();
-const TOKEN = ensureBearer(
-  process.env.KEYCRM_BEARER ||
-    process.env.KEYCRM_API_TOKEN ||
-    process.env.KEYCRM_TOKEN ||
-    ''
-);
+const BASE = process.env.KEYCRM_API_URL?.replace(/\/+$/, '') || 'https://openapi.keycrm.app/v1';
+const TOKEN = process.env.KEYCRM_BEARER || process.env.KEYCRM_API_TOKEN;
 
 function mustToken() {
-  if (!TOKEN) throw new Error('KEYCRM token is not set (KEYCRM_BEARER / KEYCRM_API_TOKEN / KEYCRM_TOKEN)');
+  if (!TOKEN) throw new Error('KEYCRM token is not set (KEYCRM_BEARER або KEYCRM_API_TOKEN)');
   return TOKEN;
 }
 
@@ -26,7 +20,7 @@ async function kcGetJson(path: string, params?: Record<string, any>) {
     });
   }
   const res = await fetch(url.toString(), {
-    headers: { Authorization: mustToken(), 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${mustToken()}`, 'Content-Type': 'application/json' },
     cache: 'no-store',
   });
   const text = await res.text();

@@ -1,26 +1,20 @@
 // web/app/api/keycrm/cards/route.ts
 import { NextResponse } from "next/server";
-import { baseUrl, ensureBearer } from "../_common";
 
 export const dynamic = "force-dynamic";
 
-const BASE = baseUrl();
-const TOKEN = ensureBearer(
-  process.env.KEYCRM_BEARER ||
-    process.env.KEYCRM_API_TOKEN ||
-    process.env.KEYCRM_TOKEN ||
-    ""
-);
+const BASE = process.env.KEYCRM_BASE_URL ?? "https://openapi.keycrm.app/v1";
+const TOKEN = process.env.KEYCRM_API_TOKEN ?? "";
 
 // внутрішній хелпер для запитів до KeyCRM
 async function kcFetch(path: string, init?: RequestInit) {
   if (!TOKEN) {
-    throw new Error("Missing KEYCRM token (KEYCRM_BEARER / KEYCRM_API_TOKEN / KEYCRM_TOKEN)");
+    throw new Error("Missing KEYCRM_API_TOKEN");
   }
   const res = await fetch(`${BASE}${path}`, {
     // KeyCRM очікує Bearer токен
     headers: {
-      Authorization: TOKEN,
+      Authorization: `Bearer ${TOKEN}`,
       Accept: "application/json",
       "Content-Type": "application/json",
     },

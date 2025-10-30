@@ -167,7 +167,7 @@ export function ManychatMessageInbox() {
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Журнал ManyChat-повідомлень</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Повідомлення з вебхука ManyChat автоматично з&rsquo;являються у списку нижче.
+            Повідомлення з вебхука ManyChat автоматично з'являються у списку нижче.
           </p>
         </div>
         <button

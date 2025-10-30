@@ -3,7 +3,6 @@
 // Тепер головний параметр — ?social_id=..., а ?username / ?handle — лише синоніми.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { baseUrl, ensureBearer } from '../_common';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,12 +12,15 @@ const norm = (s?: string | null) => String(s ?? '').trim().toLowerCase();
 const normHandle = (s?: string | null) =>
   (s ? s.trim().replace(/^@+/, '').toLowerCase() : '');
 
+function baseUrl() {
+  return process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
+}
 function token() {
-  return ensureBearer(
+  return (
+    process.env.KEYCRM_API_TOKEN ||
     process.env.KEYCRM_BEARER ||
-      process.env.KEYCRM_API_TOKEN ||
-      process.env.KEYCRM_TOKEN ||
-      ''
+    process.env.KEYCRM_TOKEN ||
+    ''
   );
 }
 
@@ -44,11 +46,8 @@ async function fetchJsonWithRetry(
   for (;;) {
     if (opts.throttleMs > 0) await sleep(opts.throttleMs);
 
-    const auth = token();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (auth) headers.Authorization = auth;
     const res = await fetch(url, {
-      headers,
+      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
       cache: 'no-store',
     });
 

@@ -65,7 +65,7 @@ type State =
   | { status: "success"; payload: ApiSuccess; statusCode: number };
 
 const INITIAL_MESSAGE =
-  "Вставте ManyChat-повідомлення: username, повне ім&rsquo;я та текст, щоб знайти кампанію та перемістити картку.";
+  "Вставте ManyChat-повідомлення: username, повне ім'я та текст, щоб знайти кампанію та перемістити картку.";
 
 function TargetBadge({ target, label }: { target: TargetConfig; label: string }) {
   const name = target.pipelineName || target.pipelineId || "—";
@@ -202,7 +202,7 @@ export function ManychatCampaignRouter() {
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-600">Повне ім&rsquo;я</span>
+            <span className="text-slate-600">Повне ім'я</span>
             <input
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -258,7 +258,7 @@ export function ManychatCampaignRouter() {
               </div>
               <div className="text-slate-500">Маршрут: {state.payload.match.route.toUpperCase()}</div>
               <div className="text-xs text-slate-500">
-                Правило: {state.payload.match.rule.op} → &quot;{state.payload.match.rule.value}&quot;
+                Правило: {state.payload.match.rule.op} → "{state.payload.match.rule.value}"
               </div>
             </div>
 

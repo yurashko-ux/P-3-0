@@ -880,7 +880,7 @@ export function KeycrmCardSearchWidget() {
                   </p>
                   {match.title && <p className="text-sm">Назва: {match.title}</p>}
                   <p className="text-sm">
-                    Збіг у полі <code>{match.matchedField}</code> зі значенням &quot;{match.matchedValue ?? ""}&quot;.
+                    Збіг у полі <code>{match.matchedField}</code> зі значенням "{match.matchedValue ?? ""}".
                   </p>
                 </div>
               ) : (

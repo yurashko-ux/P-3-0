@@ -1,18 +1,12 @@
 // web/app/api/keycrm/inspect-card/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { baseUrl, ensureBearer } from "../_common";
 
 export const dynamic = "force-dynamic";
 
 const ADMIN = process.env.ADMIN_PASS ?? "";
-const BASE = baseUrl();
-const TOKEN = ensureBearer(
-  process.env.KEYCRM_BEARER ||
-    process.env.KEYCRM_API_TOKEN ||
-    process.env.KEYCRM_TOKEN ||
-    ""
-);
+const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+const TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || "";
 
 function okAuth(req: Request) {
   if (!ADMIN) return true;
@@ -28,7 +22,7 @@ async function kcGet(path: string) {
     return { ok: false, status: 401, json: { error: "KEYCRM token missing" } };
   }
   const r = await fetch(`${BASE}${path}`, {
-    headers: { Authorization: TOKEN },
+    headers: { Authorization: `Bearer ${TOKEN}` },
     cache: "no-store",
   }).catch(() => null);
   if (!r) return { ok: false, status: 502, json: { error: "fetch failed" } };

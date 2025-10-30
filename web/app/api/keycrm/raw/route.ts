@@ -1,7 +1,6 @@
 // web/app/api/keycrm/raw/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { baseUrl, ensureBearer } from '../_common';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -27,13 +26,15 @@ function json(data: any, init?: number | ResponseInit) {
 export async function GET(req: NextRequest) {
   if (!okAuth(req)) return json({ ok: false, error: 'unauthorized' }, { status: 401 });
 
-  const base = baseUrl();
-  const token = ensureBearer(
+  const base =
+    process.env.KEYCRM_BASE_URL ||
+    process.env.KEYCRM_API_URL ||
+    process.env.KEYCRM_URL ||
+    '';
+  const token =
+    process.env.KEYCRM_API_TOKEN ||
     process.env.KEYCRM_BEARER ||
-      process.env.KEYCRM_API_TOKEN ||
-      process.env.KEYCRM_TOKEN ||
-      ''
-  );
+    '';
 
   const url = new URL(req.url);
   const path = url.searchParams.get('path') || '';
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const auth = token;
+  const auth = token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`;
   const target = join(base, path);
 
   const r = await fetch(target, {
@@ -75,13 +76,15 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (!okAuth(req)) return json({ ok: false, error: 'unauthorized' }, { status: 401 });
 
-  const base = baseUrl();
-  const token = ensureBearer(
+  const base =
+    process.env.KEYCRM_BASE_URL ||
+    process.env.KEYCRM_API_URL ||
+    process.env.KEYCRM_URL ||
+    '';
+  const token =
+    process.env.KEYCRM_API_TOKEN ||
     process.env.KEYCRM_BEARER ||
-      process.env.KEYCRM_API_TOKEN ||
-      process.env.KEYCRM_TOKEN ||
-      ''
-  );
+    '';
 
   if (!base || !token) {
     return json(
@@ -99,7 +102,7 @@ export async function POST(req: NextRequest) {
   const method: string = (b.method || 'POST').toUpperCase();
   const payload = b.body ?? null;
 
-  const auth = token;
+  const auth = token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`;
   const target = join(base, path);
 
   const headers: Record<string, string> = { Authorization: auth };

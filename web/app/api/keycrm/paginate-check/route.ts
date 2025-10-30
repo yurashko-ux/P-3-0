@@ -1,21 +1,13 @@
 // web/app/api/keycrm/paginate-check/route.ts
 import { NextResponse } from "next/server";
-import { baseUrl, ensureBearer } from "../_common";
 
 export const dynamic = "force-dynamic";
 
-const BASE = baseUrl();
-const TOKEN = ensureBearer(
-  process.env.KEYCRM_BEARER ||
-    process.env.KEYCRM_API_TOKEN ||
-    process.env.KEYCRM_TOKEN ||
-    ""
-);
+const BASE = (process.env.KEYCRM_BASE_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
+const TOKEN = process.env.KEYCRM_API_TOKEN || process.env.KEYCRM_BEARER || "";
 
 function headers() {
-  return TOKEN
-    ? { Authorization: TOKEN, Accept: "application/json" }
-    : { Accept: "application/json" };
+  return { Authorization: `Bearer ${TOKEN}`, Accept: "application/json" };
 }
 
 async function kcGet(path: string) {

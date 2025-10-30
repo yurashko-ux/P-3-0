@@ -6,21 +6,21 @@
 // Якщо pipeline_id/status_id не передані — шукаємо по всіх картках.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { baseUrl, ensureBearer } from '../../_common';
 
 export const dynamic = 'force-dynamic';
 
 type AnyObj = Record<string, any>;
 
 function BASE() {
-  return baseUrl();
+  // Ти вже використовуєш KEYCRM_API_URL; залишаю фолйбеки
+  return process.env.KEYCRM_API_URL || process.env.KEYCRM_BASE_URL || 'https://openapi.keycrm.app/v1';
 }
 function TOKEN() {
-  return ensureBearer(
+  return (
+    process.env.KEYCRM_API_TOKEN ||
     process.env.KEYCRM_BEARER ||
-      process.env.KEYCRM_API_TOKEN ||
-      process.env.KEYCRM_TOKEN ||
-      ''
+    process.env.KEYCRM_TOKEN ||
+    ''
   );
 }
 
@@ -62,11 +62,8 @@ async function kcListCardsPage(params: {
   if (params.pipeline_id) url.searchParams.set('pipeline_id', String(params.pipeline_id));
   if (params.status_id)   url.searchParams.set('status_id', String(params.status_id));
 
-  const token = TOKEN();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = token;
   const res = await fetch(url.toString(), {
-    headers,
+    headers: { Authorization: `Bearer ${TOKEN()}`, 'Content-Type': 'application/json' },
     cache: 'no-store',
   });
   const text = await res.text();
