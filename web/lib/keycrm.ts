@@ -1,18 +1,20 @@
 // web/lib/keycrm.ts
-const BASE = (process.env.KEYCRM_API_URL || "https://openapi.keycrm.app/v1").replace(/\/+$/, "");
 
-function ensureBearer(v?: string) {
-  if (!v) return "";
-  const s = v.trim();
-  return s.toLowerCase().startsWith("bearer ") ? s : `Bearer ${s}`;
-}
+import {
+  resolveKeycrmBaseUrl,
+  resolveKeycrmBearer,
+  resolveKeycrmToken,
+} from "@/lib/env";
+
+const BASE = resolveKeycrmBaseUrl().replace(/\/+$/, "");
 
 function buildAuth(): string {
-  // Нормалізуємо ОБИДВА джерела
-  const bearer = ensureBearer(process.env.KEYCRM_BEARER);
-  const token  = ensureBearer(process.env.KEYCRM_API_TOKEN);
-  return bearer || token || "";
+  const explicit = resolveKeycrmBearer();
+  if (explicit) return explicit;
+  const token = resolveKeycrmToken();
+  return token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
 }
+
 const AUTH = buildAuth();
 
 export type PipelineDTO = { id: string; name: string };
