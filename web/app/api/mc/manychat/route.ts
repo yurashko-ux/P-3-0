@@ -11,7 +11,7 @@ import {
   type ManychatRoutingError,
   type ManychatRoutingSuccess,
 } from '@/lib/manychat-routing';
-// Використовуємо /api/keycrm/card/move замість прямого виклику moveKeycrmCard
+import { moveKeycrmCard } from '@/lib/keycrm-move';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
@@ -494,60 +494,24 @@ export async function POST(req: NextRequest) {
             : [];
 
           try {
-            // Використовуємо той самий API endpoint, що працює в ручному режимі
-            const url = new URL(req.url);
-            const moveUrl = new URL('/api/keycrm/card/move', url.origin);
-            
-            const moveResponse = await fetch(moveUrl.toString(), {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                card_id: normalisedCardId,
-                to_pipeline_id: normaliseIdInput(pipelineId),
-                to_status_id: normaliseIdInput(statusId),
-                pipeline_status_id: normaliseIdInput(pipelineStatusId),
-                status_aliases: aliasList,
-              }),
+            // Викликаємо moveKeycrmCard напряму - той самий код, що працює в /api/keycrm/card/move
+            const move = await moveKeycrmCard({
+              cardId: normalisedCardId,
+              pipelineId: normaliseIdInput(pipelineId),
+              statusId: normaliseIdInput(statusId),
+              pipelineStatusId: normaliseIdInput(pipelineStatusId),
+              statusAliases: aliasList,
             });
 
-            const moveData = await moveResponse.json().catch(() => ({}));
-
-            if (moveResponse.ok && moveData?.ok) {
-              return {
-                ok: true,
-                status: moveResponse.status,
-                response: moveData,
-                sent: {
-                  card_id: normalisedCardId,
-                  to_pipeline_id: normaliseIdInput(pipelineId),
-                  to_status_id: normaliseIdInput(statusId),
-                  pipeline_status_id: normaliseIdInput(pipelineStatusId),
-                  status_aliases: aliasList,
-                },
-                attempts: moveData.attempts || [],
-                requestUrl: moveUrl.toString(),
-                requestMethod: 'POST',
-                baseUrl: url.origin,
-              };
-            }
-
             return {
-              ok: false,
-              status: moveResponse.status,
-              response: moveData,
-              sent: {
-                card_id: normalisedCardId,
-                to_pipeline_id: normaliseIdInput(pipelineId),
-                to_status_id: normaliseIdInput(statusId),
-                pipeline_status_id: normaliseIdInput(pipelineStatusId),
-                status_aliases: aliasList,
-              },
-              attempts: [],
-              requestUrl: moveUrl.toString(),
-              requestMethod: 'POST',
-              baseUrl: url.origin,
+              ok: move.ok,
+              status: move.status,
+              response: move.response,
+              sent: move.sent,
+              attempts: move.attempts,
+              requestUrl: move.requestUrl,
+              requestMethod: move.requestMethod,
+              baseUrl: move.baseUrl ?? null,
             };
           } catch (error) {
             const err = error as { code?: string; message?: string } | Error;
@@ -1118,60 +1082,24 @@ export async function GET(req: NextRequest) {
             : [];
 
           try {
-            // Використовуємо той самий API endpoint, що працює в ручному режимі
-            const url = new URL(req.url);
-            const moveUrl = new URL('/api/keycrm/card/move', url.origin);
-            
-            const moveResponse = await fetch(moveUrl.toString(), {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                card_id: normalisedCardId,
-                to_pipeline_id: normaliseIdInput(pipelineId),
-                to_status_id: normaliseIdInput(statusId),
-                pipeline_status_id: normaliseIdInput(pipelineStatusId),
-                status_aliases: aliasList,
-              }),
+            // Викликаємо moveKeycrmCard напряму - той самий код, що працює в /api/keycrm/card/move
+            const move = await moveKeycrmCard({
+              cardId: normalisedCardId,
+              pipelineId: normaliseIdInput(pipelineId),
+              statusId: normaliseIdInput(statusId),
+              pipelineStatusId: normaliseIdInput(pipelineStatusId),
+              statusAliases: aliasList,
             });
 
-            const moveData = await moveResponse.json().catch(() => ({}));
-
-            if (moveResponse.ok && moveData?.ok) {
-              return {
-                ok: true,
-                status: moveResponse.status,
-                response: moveData,
-                sent: {
-                  card_id: normalisedCardId,
-                  to_pipeline_id: normaliseIdInput(pipelineId),
-                  to_status_id: normaliseIdInput(statusId),
-                  pipeline_status_id: normaliseIdInput(pipelineStatusId),
-                  status_aliases: aliasList,
-                },
-                attempts: moveData.attempts || [],
-                requestUrl: moveUrl.toString(),
-                requestMethod: 'POST',
-                baseUrl: url.origin,
-              };
-            }
-
             return {
-              ok: false,
-              status: moveResponse.status,
-              response: moveData,
-              sent: {
-                card_id: normalisedCardId,
-                to_pipeline_id: normaliseIdInput(pipelineId),
-                to_status_id: normaliseIdInput(statusId),
-                pipeline_status_id: normaliseIdInput(pipelineStatusId),
-                status_aliases: aliasList,
-              },
-              attempts: [],
-              requestUrl: moveUrl.toString(),
-              requestMethod: 'POST',
-              baseUrl: url.origin,
+              ok: move.ok,
+              status: move.status,
+              response: move.response,
+              sent: move.sent,
+              attempts: move.attempts,
+              requestUrl: move.requestUrl,
+              requestMethod: move.requestMethod,
+              baseUrl: move.baseUrl ?? null,
             };
           } catch (error) {
             const err = error as { code?: string; message?: string } | Error;
