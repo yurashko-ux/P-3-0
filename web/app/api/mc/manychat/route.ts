@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
-import { getKvConfigStatus } from '@/lib/kv';
+import { getKvConfigStatus, kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import { normalizeManyChat } from '@/lib/ingest';
 import {
   routeManychatMessage,
@@ -532,6 +532,36 @@ export async function POST(req: NextRequest) {
       error: 'automation_exception',
       details: err instanceof Error ? { message: err.message } : { message: String(err) },
     };
+  }
+
+  // Інкрементуємо лічильники після успішного переміщення
+  if (automation?.ok && automation.move?.attempted && automation.move.ok) {
+    try {
+      const campaignId = automation.match?.campaign?.id;
+      const route = automation.match?.route;
+      
+      if (campaignId && (route === 'v1' || route === 'v2')) {
+        const field = route === 'v1' ? 'v1_count' : 'v2_count';
+        const itemKey = campaignKeys.ITEM_KEY(campaignId);
+        const raw = await kvRead.getRaw(itemKey);
+        
+        if (raw) {
+          try {
+            const obj = JSON.parse(raw);
+            obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
+            await kvWrite.setRaw(itemKey, JSON.stringify(obj));
+            // Оновлюємо індекс, щоб кампанія піднімалась у списку
+            try {
+              await kvWrite.lpush(campaignKeys.INDEX_KEY, campaignId);
+            } catch {}
+          } catch (err) {
+            console.error('[manychat] Помилка інкременту лічильника:', err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[manychat] Помилка при інкременті лічильників:', err);
+    }
   }
 
   if (automation) {

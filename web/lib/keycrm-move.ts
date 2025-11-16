@@ -6,6 +6,7 @@ import {
   resolveKeycrmBaseUrl,
   resolveKeycrmBearer,
   resolveKeycrmToken,
+  KEYCRM_DEFAULTS,
 } from "@/lib/env";
 
 type MoveInput = {
@@ -295,6 +296,8 @@ export async function moveKeycrmCard({
     hasBase: Boolean(baseCandidate),
     baseCandidates,
     hasToken: Boolean(tokenCandidate || bearerCandidate),
+    authorizationLength: authorization.length,
+    authorizationPrefix: authorization.substring(0, 20) + "...",
   });
 
   if (!authorization || baseCandidates.length === 0) {
@@ -303,7 +306,19 @@ export async function moveKeycrmCard({
       details: {
         base: Boolean(baseCandidate),
         token: Boolean(tokenCandidate || bearerCandidate),
+        baseCandidate,
+        tokenCandidate: tokenCandidate ? "***" : null,
+        bearerCandidate: bearerCandidate ? "***" : null,
       },
+    });
+  }
+
+  // Додаткова перевірка: якщо використовується дефолтний токен, це може бути проблемою
+  const isUsingDefaultToken = authorization.includes(KEYCRM_DEFAULTS.API_TOKEN);
+  if (isUsingDefaultToken) {
+    console.warn("[keycrm-move] ⚠️ Використовується дефолтний токен KeyCRM! Перевірте змінні середовища KEYCRM_API_TOKEN або KEYCRM_BEARER в Vercel");
+    pushTraceEntry(trace, "moveKeycrmCard:warning", "default_token_used", {
+      message: "Використовується дефолтний токен, який може бути недійсним",
     });
   }
 
