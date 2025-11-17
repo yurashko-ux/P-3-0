@@ -4,6 +4,8 @@ import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 import { unstable_noStore as noStore } from "next/cache";
 import DeleteButton from "@/components/DeleteButton";
+import PipelinesRefreshButton from "@/components/admin/pipelines-refresh-button";
+import { kvRead } from "@/lib/kv";
 
 // повністю вимикаємо кешування цієї сторінки
 export const dynamic = "force-dynamic";
@@ -40,16 +42,29 @@ type Campaign = {
 };
 
 const IDS_KEY = "cmp:ids";
+const IDS_LIST_KEY = "cmp:ids:list";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
+
+function logKvError(message: string, err: unknown) {
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(`[campaigns] ${message}`, err);
+  }
+}
 
 async function readIds(): Promise<string[]> {
   noStore();
-  const arr = await kv.get<string[] | null>(IDS_KEY);
-  if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
   try {
-    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
+    const arr = await kv.get<string[] | null>(IDS_KEY);
+    if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  } catch (err) {
+    logKvError("kv.get failed", err);
+  }
+  try {
+    const list = await kvRead.lrange(IDS_LIST_KEY, 0, -1);
     if (Array.isArray(list) && list.length) return list.filter(Boolean);
-  } catch {}
+  } catch (err) {
+    logKvError("kv.lrange failed", err);
+  }
   return [];
 }
 
@@ -57,10 +72,15 @@ async function readFromKV(): Promise<Campaign[]> {
   noStore();
   const ids = await readIds();
   if (!ids.length) return [];
-  const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
-  const out: Campaign[] = [];
-  items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
-  return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  try {
+    const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
+    const out: Campaign[] = [];
+    items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
+    return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  } catch (err) {
+    logKvError("kv.mget failed", err);
+    return [];
+  }
 }
 
 function buildBaseUrl() {
@@ -84,8 +104,13 @@ async function readWithFallback(): Promise<Campaign[]> {
       next: { revalidate: 0 },
     });
     if (r.ok) {
-      const arr = (await r.json()) as Campaign[];
-      if (Array.isArray(arr) && arr.length) return arr;
+      const payload = await r.json().catch(() => null);
+      const arr = Array.isArray(payload)
+        ? (payload as Campaign[])
+        : Array.isArray(payload?.items)
+          ? (payload.items as Campaign[])
+          : [];
+      if (arr.length) return arr;
     }
   } catch {}
   return [];
@@ -115,19 +140,22 @@ export default async function Page() {
     <div className="p-4 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-3xl font-extrabold tracking-tight">Кампанії</h1>
-        <div className="flex gap-3">
-          <Link
-            href="/admin/campaigns/new"
-            className="rounded-lg bg-blue-600 text-white px-4 py-2 font-medium shadow hover:bg-blue-700"
-          >
-            + Нова кампанія
-          </Link>
-          <Link
-            href={`/admin/campaigns?t=${Date.now()}`}
-            className="rounded-lg border px-4 py-2 shadow-sm"
-          >
-            Оновити
-          </Link>
+        <div className="flex items-start gap-3">
+          <div className="flex gap-3">
+            <Link
+              href="/admin/campaigns/new"
+              className="rounded-lg bg-blue-600 text-white px-4 py-2 font-medium shadow hover:bg-blue-700"
+            >
+              + Нова кампанія
+            </Link>
+            <Link
+              href={`/admin/campaigns?t=${Date.now()}`}
+              className="rounded-lg border px-4 py-2 shadow-sm"
+            >
+              Оновити
+            </Link>
+          </div>
+          <PipelinesRefreshButton />
         </div>
       </div>
 
