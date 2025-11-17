@@ -379,35 +379,17 @@ export async function GET(req: NextRequest) {
 }
 ```
 
-**`web/app/api/cron/expire/route.ts`** — добовий крон для EXP (Vercel Cron)
+**`web/app/api/cron/expire/route.ts`** — добовий крон для EXP (Vercel Cron + ручний запуск)
 
-```ts
-import { NextResponse } from "next/server";
-import { kvZRange, kvGet, kvSet } from "@/lib/kv";
-
-export const dynamic = "force-dynamic"; export const revalidate = 0;
-
-export async function GET() {
-  const ids = await kvZRange("campaigns:index", 0, -1);
-  const now = Date.now();
-  let moved = 0;
-
-  for (const id of ids) {
-    const c = await kvGet<any>(`campaigns:${id}`);
-    if (!c?.enabled || !c.exp_days || !c.exp_to_pipeline_id || !c.exp_to_status_id) continue;
-    // TODO: знайти всі картки в базовій воронці/статусі, що перебувають довше за exp_days
-    // Псевдо: const cards = await keycrmFindStale(c.base_pipeline_id, c.base_status_id, c.exp_days)
-    // for (const card of cards) { await moveCard(card.id, c.exp_to_pipeline_id, c.exp_to_status_id); c.exp_count++; moved++; }
-    await kvSet(`campaigns:${id}`, c);
-  }
-
-  return NextResponse.json({ ok:true, moved });
-}
-```
+* читає кампанії через `kvRead.listCampaigns()` (з fallback на `cmp:ids`), відкидає вимкнені або без `exp_days/exp_to_*`; підтримує середовищні ліміти `EXP_CRON_PER_PAGE`, `EXP_CRON_MAX_PAGES`, `EXP_CRON_MAX_MOVES`.
+* для кожної валідної кампанії витягує сторінки `pipelines/cards` з KeyCRM (без кешу), бере останню мітку `status_updated_at` / `pivot.updated_at` і рахує вік у днях.
+* картки, які «протухли» (`age >= exp_days`), рухає через внутрішній `/api/keycrm/card/move`, інкрементує `exp_count` (нове та legacy-сховище) і логгує результат у `logs:index`/`logs:{id}`.
+* повертає детальний JSON-звіт: скільки кампаній оброблено/пропущено, скільки карток перевірено/переміщено, список попереджень (у разі часткових помилок `ok` = `false`).
 
 **Vercel → Settings → Cron Jobs**
 
 * `GET /api/cron/expire` раз/добу (наприклад `0 3 * * *`).
+* На `/admin/tools` додано плитку «EXP Cron» з кнопкою ручного запуску (`POST /api/cron/expire?trigger=manual`, `credentials: 'include'`).
 
 ### 🔧 Quick patches — Step 2 (Ingest + List API)
 
