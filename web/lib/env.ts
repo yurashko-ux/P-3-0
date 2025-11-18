@@ -1,7 +1,30 @@
 // web/lib/env.ts
+
+const KEYCRM_DEFAULT_API_URL = "https://openapi.keycrm.app/v1";
+const KEYCRM_DEFAULT_API_TOKEN =
+  "M2EwMjAwMGE1ZWY4ODhkMzlkYzRiNTU2MDY4ZjZmZDc3ZGJkZjQ3MA";
+
+const KEYCRM_FALLBACKS: Record<string, string> = {
+  KEYCRM_API_URL: KEYCRM_DEFAULT_API_URL,
+  KEYCRM_API_BASE: KEYCRM_DEFAULT_API_URL,
+  KEYCRM_BASE_URL: KEYCRM_DEFAULT_API_URL,
+  KEYCRM_API_TOKEN: KEYCRM_DEFAULT_API_TOKEN,
+  KEYCRM_TOKEN: KEYCRM_DEFAULT_API_TOKEN,
+  KEYCRM_BEARER: KEYCRM_DEFAULT_API_TOKEN,
+  KEYCRM_API_BEARER: KEYCRM_DEFAULT_API_TOKEN,
+};
+
 export const ENV = {
-  KEYCRM_API_URL: process.env.KEYCRM_API_URL?.trim() || "",
-  KEYCRM_API_TOKEN: process.env.KEYCRM_API_TOKEN?.trim() || "",
+  KEYCRM_API_URL:
+    process.env.KEYCRM_API_URL?.trim() || KEYCRM_DEFAULT_API_URL,
+  KEYCRM_API_TOKEN:
+    process.env.KEYCRM_API_TOKEN?.trim() ||
+    process.env.KEYCRM_BEARER?.trim() ||
+    KEYCRM_DEFAULT_API_TOKEN,
+  KEYCRM_BEARER:
+    process.env.KEYCRM_BEARER?.trim() ||
+    process.env.KEYCRM_API_TOKEN?.trim() ||
+    KEYCRM_DEFAULT_API_TOKEN,
 };
 
 // невелика перевірка, щоб ловити відсутні змінні ще на сервері
@@ -14,13 +37,17 @@ export function assertKeycrmEnv() {
   }
 }
 
+function ensureBearer(value: string): string {
+  return value.toLowerCase().startsWith("bearer ") ? value : `Bearer ${value}`;
+}
+
 /** Заголовки авторизації для KeyCRM */
 export function keycrmHeaders() {
   // KeyCRM очікує Bearer токен
   return {
     Accept: "application/json",
     "Content-Type": "application/json",
-    Authorization: `Bearer ${ENV.KEYCRM_API_TOKEN}`,
+    Authorization: ensureBearer(ENV.KEYCRM_BEARER),
   };
 }
 
@@ -29,4 +56,59 @@ export function keycrmUrl(path: string) {
   const base = ENV.KEYCRM_API_URL.replace(/\/+$/, "");
   const rel = path.replace(/^\/+/, "");
   return `${base}/${rel}`;
+}
+
+export function resolveKeycrmBaseUrl(): string {
+  return ENV.KEYCRM_API_URL;
+}
+
+export function resolveKeycrmBearer(): string {
+  return ensureBearer(ENV.KEYCRM_BEARER);
+}
+
+export function resolveKeycrmToken(): string {
+  return ENV.KEYCRM_API_TOKEN;
+}
+
+export const KEYCRM_DEFAULTS = {
+  API_URL: KEYCRM_DEFAULT_API_URL,
+  API_TOKEN: KEYCRM_DEFAULT_API_TOKEN,
+};
+
+// --- ManyChat / загальні хелпери змінних середовища ---
+
+const lowerCaseMap: Map<string, string | undefined> = new Map();
+for (const [key, value] of Object.entries(process.env)) {
+  lowerCaseMap.set(key.toLowerCase(), value);
+}
+
+function coerceValue(value: string | undefined | null): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function getEnvValue(...names: Array<string>): string | undefined {
+  for (const name of names) {
+    const direct = process.env[name];
+    const coerced = coerceValue(direct);
+    if (coerced !== undefined) return coerced;
+  }
+
+  for (const name of names) {
+    const lower = lowerCaseMap.get(name.toLowerCase());
+    const coerced = coerceValue(lower);
+    if (coerced !== undefined) return coerced;
+  }
+
+  for (const name of names) {
+    const fallback = KEYCRM_FALLBACKS[name.toUpperCase()];
+    if (fallback) return fallback;
+  }
+
+  return undefined;
+}
+
+export function hasEnvValue(...names: Array<string>): boolean {
+  return getEnvValue(...names) !== undefined;
 }
