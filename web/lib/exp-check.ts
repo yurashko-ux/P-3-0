@@ -85,7 +85,11 @@ async function getCardDetails(cardId: number): Promise<any> {
 }
 
 /**
- * Перевіряє одну кампанію та переміщує картки, які перебувають у базовій воронці більше expDays днів
+ * Перевіряє одну кампанію та переміщує картки з базової воронки в цільову EXP воронку
+ * 
+ * Логіка:
+ * - EXP=0: негайне переміщення (той самий день) - всі картки в базовій воронці переміщуються одразу
+ * - EXP>0: переміщення через expDays днів після переміщення в базову воронку
  * 
  * Працює для карток:
  * - Переміщених автоматично через v1/v2 (timestamp з KV)
@@ -103,8 +107,8 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
   try {
     // Перевіряємо, чи кампанія має EXP
     const expDays = campaign.expDays || campaign.expireDays || campaign.exp || campaign.vexp || campaign.expire;
-    if (!expDays || typeof expDays !== 'number' || expDays <= 0) {
-      return result; // Кампанія не має EXP
+    if (expDays == null || typeof expDays !== 'number' || expDays < 0) {
+      return result; // Кампанія не має EXP (або негативне значення)
     }
     
     // Перевіряємо, чи є цільова воронка EXP
@@ -133,6 +137,7 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     result.cardsChecked = cards.length;
     
     const now = Date.now();
+    const isImmediate = expDays === 0; // EXP=0 означає негайне переміщення (той самий день)
     const expDaysMs = expDays * 24 * 60 * 60 * 1000;
     
     const targetPipelineId = String(texp.pipelineId);
@@ -166,15 +171,29 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
           }
         }
         
-        if (!timestamp) {
-          // Немає інформації про час - пропускаємо
-          continue;
+        // Якщо EXP=0, переміщуємо всі картки одразу (незалежно від timestamp)
+        // Якщо EXP>0, перевіряємо чи пройшло достатньо днів
+        let shouldMove = false;
+        
+        if (isImmediate) {
+          // EXP=0: негайне переміщення - переміщуємо всі картки, які знаходяться в базовій воронці
+          shouldMove = true;
+        } else {
+          // EXP>0: перевіряємо час перебування в базовій воронці
+          if (!timestamp) {
+            // Немає інформації про час - пропускаємо
+            continue;
+          }
+          
+          const timeInBase = now - timestamp;
+          
+          // Якщо пройшло достатньо днів - переміщуємо
+          if (timeInBase >= expDaysMs) {
+            shouldMove = true;
+          }
         }
         
-        const timeInBase = now - timestamp;
-        
-        // Якщо пройшло достатньо днів - переміщуємо
-        if (timeInBase >= expDaysMs) {
+        if (shouldMove) {
           try {
             const moveResult = await moveKeycrmCard({
               cardId,
