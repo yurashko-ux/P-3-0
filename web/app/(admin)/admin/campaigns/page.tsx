@@ -39,6 +39,14 @@ type Campaign = {
   expireDays?: number;
   expire?: number;
   vexp?: number;
+  
+  // статистика
+  baseCardsCount?: number;
+  baseCardsCountUpdatedAt?: number;
+  movedTotal?: number;
+  movedV1?: number;
+  movedV2?: number;
+  movedExp?: number;
 };
 
 const IDS_KEY = "cmp:ids";
@@ -205,7 +213,20 @@ export default async function Page() {
 
                   {/* База */}
                   <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
-                  <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
+                  <td className="px-2 py-3 text-sm">
+                    {(() => {
+                      const statusName = nn(c.base?.statusName);
+                      const count = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : null;
+                      if (count !== null) {
+                        return (
+                          <>
+                            {statusName} <span className="text-slate-400">({count})</span>
+                          </>
+                        );
+                      }
+                      return statusName;
+                    })()}
+                  </td>
 
                   {/* Варіант — V1/V2/EXP значення */}
                   <td className="px-2 py-3 text-sm">
@@ -274,16 +295,22 @@ export default async function Page() {
                     <div className="flex flex-col gap-1">
                       <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
                         <span className="text-slate-500 mr-1">V1:</span>
-                        <span>{c.counters?.v1 ?? 0}</span>
+                        <span>{c.movedV1 ?? c.counters?.v1 ?? 0}</span>
                       </div>
                       <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
                         <span className="text-slate-500 mr-1">V2:</span>
-                        <span>{c.counters?.v2 ?? 0}</span>
+                        <span>{c.movedV2 ?? c.counters?.v2 ?? 0}</span>
                       </div>
                       <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
                         <span className="text-slate-500 mr-1">EXP:</span>
-                        <span>{c.counters?.exp ?? 0}</span>
+                        <span>{c.movedExp ?? c.counters?.exp ?? 0}</span>
                       </div>
+                      {typeof c.movedTotal === 'number' && c.movedTotal > 0 && (
+                        <div className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 mt-1">
+                          <span className="text-blue-600 mr-1">Всього:</span>
+                          <span>{c.movedTotal}</span>
+                        </div>
+                      )}
                     </div>
                   </td>
 
