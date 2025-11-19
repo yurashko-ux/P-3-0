@@ -209,13 +209,24 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
             // Видаляємо tracking запис
             await deleteExpTracking(campaign.id, cardId);
             
-            // Інкрементуємо лічильник exp_count
+            // Інкрементуємо лічильник exp_count та оновлюємо статистику
             try {
               const itemKey = campaignKeys.ITEM_KEY(campaign.id);
               const raw = await kvRead.getRaw(itemKey);
               if (raw) {
                 const obj = JSON.parse(raw);
                 obj.exp_count = (typeof obj.exp_count === 'number' ? obj.exp_count : 0) + 1;
+                
+                // Оновлюємо лічильники переміщених карток
+                const v1Count = obj.counters?.v1 || obj.v1_count || 0;
+                const v2Count = obj.counters?.v2 || obj.v2_count || 0;
+                const expCount = obj.exp_count;
+                
+                obj.movedTotal = v1Count + v2Count + expCount;
+                obj.movedV1 = v1Count;
+                obj.movedV2 = v2Count;
+                obj.movedExp = expCount;
+                
                 await kvWrite.setRaw(itemKey, JSON.stringify(obj));
               }
             } catch {

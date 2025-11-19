@@ -492,6 +492,24 @@ export async function POST(req: NextRequest) {
     flattenTarget('texp', campaign.texp),
   );
 
+  // Ініціалізуємо статистику: підраховуємо картки в базовій воронці
+  try {
+    const { initializeCampaignStats } = await import('@/lib/campaign-stats');
+    const campaignWithStats = await initializeCampaignStats(campaign);
+    Object.assign(campaign, campaignWithStats);
+  } catch (err) {
+    // Якщо не вдалося підрахувати - встановлюємо 0
+    campaign.baseCardsCount = 0;
+    campaign.baseCardsCountUpdatedAt = Date.now();
+    campaign.movedTotal = 0;
+    campaign.movedV1 = 0;
+    campaign.movedV2 = 0;
+    campaign.movedExp = 0;
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[campaigns] Failed to initialize stats:', err);
+    }
+  }
+
   memorySetItem(id, campaign);
   await tryKv(() => kv.set(ITEM_KEY(id), campaign));
   await writeIdsMerged(id);
