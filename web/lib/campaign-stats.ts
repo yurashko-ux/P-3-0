@@ -168,12 +168,16 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     ];
     
     let raw: string | null = null;
+    let itemKey: string | null = null;
     for (const key of keysToTry) {
       raw = await kvRead.getRaw(key);
-      if (raw) break;
+      if (raw) {
+        itemKey = key;
+        break;
+      }
     }
 
-    if (!raw) {
+    if (!raw || !itemKey) {
       return null;
     }
 
