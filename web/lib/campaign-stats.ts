@@ -87,6 +87,28 @@ export async function countCardsInBasePipeline(
         const pipelineMatch = Number.isFinite(cardPipelineIdNum) && cardPipelineIdNum === pipelineIdNum;
         const statusMatch = Number.isFinite(cardStatusIdNum) && cardStatusIdNum === statusIdNum;
         
+        // Додаткове логування для діагностики (тільки для першої картки першої сторінки)
+        if (process.env.NODE_ENV !== 'production' && page === 1 && data.indexOf(card) === 0) {
+          console.log('[campaign-stats] Filter check (first card):', {
+            cardId: card?.id,
+            cardPipelineId,
+            cardPipelineIdNum,
+            cardStatusId,
+            cardStatusIdNum,
+            expectedPipeline: pipelineIdNum,
+            expectedStatus: statusIdNum,
+            pipelineMatch,
+            statusMatch,
+            cardKeys: Object.keys(card).slice(0, 20), // перші 20 ключів для діагностики
+            cardSample: {
+              pipeline_id: card?.pipeline_id,
+              status_id: card?.status_id,
+              pipeline: card?.pipeline,
+              status: card?.status,
+            },
+          });
+        }
+        
         return pipelineMatch && statusMatch;
       });
 
@@ -105,7 +127,15 @@ export async function countCardsInBasePipeline(
             status_id: filteredData[0].status_id ?? filteredData[0].status?.id
           } : null,
           expectedPipeline: pipelineIdNum,
-          expectedStatus: statusIdNum
+          expectedStatus: statusIdNum,
+          // Додаткова інформація про перші 3 картки (якщо є)
+          firstThreeCards: data.slice(0, 3).map((card: any) => ({
+            id: card?.id,
+            pipeline_id: card?.pipeline_id,
+            status_id: card?.status_id,
+            pipeline: card?.pipeline,
+            status: card?.status,
+          })),
         });
       }
 
