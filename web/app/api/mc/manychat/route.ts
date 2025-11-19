@@ -550,11 +550,34 @@ export async function POST(req: NextRequest) {
           try {
             const obj = JSON.parse(raw);
             obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
+            
+            // Оновлюємо лічильники переміщених карток
+            const v1Count = obj.counters?.v1 || obj.v1_count || 0;
+            const v2Count = obj.counters?.v2 || obj.v2_count || 0;
+            const expCount = obj.counters?.exp || obj.exp_count || 0;
+            
+            // Оновлюємо movedTotal на основі актуальних лічильників
+            obj.movedTotal = v1Count + v2Count + expCount;
+            obj.movedV1 = v1Count;
+            obj.movedV2 = v2Count;
+            obj.movedExp = expCount;
+            
             await kvWrite.setRaw(itemKey, JSON.stringify(obj));
             // Оновлюємо індекс, щоб кампанія піднімалась у списку
             try {
               await kvWrite.lpush(campaignKeys.INDEX_KEY, campaignId);
             } catch {}
+            
+            // Оновлюємо кількість карток в базовій воронці (після переміщення має зменшитись)
+            try {
+              const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
+              await updateCampaignBaseCardsCount(campaignId);
+            } catch (err) {
+              // Ігноруємо помилки оновлення статистики - не критично
+              if (process.env.NODE_ENV !== 'production') {
+                console.warn('[manychat] Failed to update base cards count:', err);
+              }
+            }
             
             // Зберігаємо timestamp для EXP tracking (тільки якщо кампанія має EXP)
             const hasExp = Boolean(
