@@ -86,6 +86,10 @@ async function getCardDetails(cardId: number): Promise<any> {
 
 /**
  * Перевіряє одну кампанію та переміщує картки, які перебувають у базовій воронці більше expDays днів
+ * 
+ * Працює для карток:
+ * - Переміщених автоматично через v1/v2 (timestamp з KV)
+ * - Переміщених вручну безпосередньо в KeyCRM (updated_at з KeyCRM)
  */
 export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
   const result: ExpCheckResult = {
@@ -139,14 +143,19 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
       try {
         const cardId = String(card.id);
         
-        // Спробувати отримати timestamp з KV
+        // Спробувати отримати timestamp переміщення в базову воронку
+        // 1. Спочатку перевіряємо KV (для карток, переміщених через v1/v2 автоматично)
+        // 2. Якщо немає в KV - використовуємо updated_at з KeyCRM
+        //    (це працює для карток, переміщених вручну безпосередньо в KeyCRM)
         let timestamp: number | null = null;
         const tracking = await getExpTracking(campaign.id, cardId);
         
         if (tracking) {
+          // Картка була переміщена через v1/v2 - використовуємо точний timestamp з KV
           timestamp = tracking.timestamp;
         } else {
-          // Fallback на updated_at з KeyCRM
+          // Картка не знайдена в KV - використовуємо updated_at з KeyCRM
+          // Це працює для карток, які були переміщені вручну в KeyCRM
           try {
             const cardDetails = await getCardDetails(card.id);
             timestamp = extractTimestampFromKeycrmCard(cardDetails);
