@@ -181,7 +181,30 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
       return null;
     }
 
-    const campaign = JSON.parse(raw);
+    // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
+    let campaign: any = null;
+    try {
+      const parsed = JSON.parse(raw);
+      // Перевіряємо, чи це обгортка з value (як у kvGetRaw)
+      if (parsed && typeof parsed === 'object') {
+        const candidate = parsed.value ?? parsed.result ?? parsed.data ?? parsed;
+        if (typeof candidate === 'string') {
+          campaign = JSON.parse(candidate);
+        } else if (candidate && typeof candidate === 'object') {
+          campaign = candidate;
+        } else {
+          campaign = parsed;
+        }
+      } else {
+        campaign = parsed;
+      }
+    } catch {
+      return null;
+    }
+
+    if (!campaign || typeof campaign !== 'object') {
+      return null;
+    }
     
     // Отримуємо базову воронку (перевіряємо всі можливі місця)
     // Увага: base.pipeline/base.status - це рядки, а не base.pipelineId/base.statusId
