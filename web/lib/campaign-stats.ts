@@ -252,7 +252,12 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
       return null;
     }
 
-    if (!campaign || typeof campaign !== 'object' || Array.isArray(campaign)) {
+      if (!campaign || typeof campaign !== 'object' || Array.isArray(campaign)) {
+        return null;
+      }
+    }
+
+    if (!campaign) {
       return null;
     }
     
