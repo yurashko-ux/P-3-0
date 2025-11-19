@@ -4,8 +4,8 @@ import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 import { unstable_noStore as noStore } from "next/cache";
 import DeleteButton from "@/components/DeleteButton";
-import PipelinesRefreshButton from "@/components/admin/pipelines-refresh-button";
 import { kvRead } from "@/lib/kv";
+import { fetchKeycrmPipelines } from "@/lib/keycrm-pipelines";
 
 // повністю вимикаємо кешування цієї сторінки
 export const dynamic = "force-dynamic";
@@ -134,6 +134,17 @@ function nn(x?: string) {
 
 export default async function Page() {
   noStore();
+  
+  // Автоматичне оновлення воронок з KeyCRM при завантаженні сторінки
+  try {
+    await fetchKeycrmPipelines({ forceRefresh: true, persist: true });
+  } catch (err) {
+    // Ігноруємо помилки оновлення - використаємо кешовані дані
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[campaigns] Failed to refresh pipelines:", err);
+    }
+  }
+  
   const campaigns = await readWithFallback();
 
   return (
@@ -155,7 +166,6 @@ export default async function Page() {
               Оновити
             </Link>
           </div>
-          <PipelinesRefreshButton />
         </div>
       </div>
 
