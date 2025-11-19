@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, campaignKeys } from '@/lib/kv';
 import { countCardsInBasePipeline } from '@/lib/campaign-stats';
+import { kv } from '@vercel/kv';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,16 +26,69 @@ export async function GET(req: NextRequest) {
     
     let raw: string | null = null;
     let foundKey: string | null = null;
+    let campaignFromVercelKv: any = null;
+    
+    // Спочатку спробуємо через @vercel/kv (як в адмін-панелі)
     for (const key of keysToTry) {
-      raw = await kvRead.getRaw(key);
-      if (raw) {
-        foundKey = key;
-        break;
+      try {
+        campaignFromVercelKv = await kv.get(key);
+        if (campaignFromVercelKv) {
+          foundKey = key;
+          break;
+        }
+      } catch {
+        // Ігноруємо помилки
       }
     }
     
-    if (!raw) {
+    // Якщо не знайшли через @vercel/kv, спробуємо через kvRead.getRaw
+    if (!campaignFromVercelKv) {
+      for (const key of keysToTry) {
+        raw = await kvRead.getRaw(key);
+        if (raw) {
+          foundKey = key;
+          break;
+        }
+      }
+    }
+    
+    if (!campaignFromVercelKv && !raw) {
       return NextResponse.json({ error: 'Campaign not found', triedKeys: keysToTry }, { status: 404 });
+    }
+    
+    // Якщо знайшли через @vercel/kv, використовуємо його
+    if (campaignFromVercelKv) {
+      const campaign = campaignFromVercelKv;
+      const basePipelineId = campaign.base?.pipelineId || 
+                             campaign.base?.pipeline_id ||
+                             campaign.base?.pipeline ||
+                             campaign.base_pipeline_id ||
+                             campaign.base_pipelineId;
+      const baseStatusId = campaign.base?.statusId || 
+                           campaign.base?.status_id ||
+                           campaign.base?.status ||
+                           campaign.base_status_id ||
+                           campaign.baseStatusId;
+      const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
+      
+      return NextResponse.json({
+        ok: true,
+        campaignId,
+        campaignName: campaign.name,
+        foundKey,
+        source: 'vercel-kv',
+        basePipelineId,
+        baseStatusId,
+        basePipelineIdType: typeof basePipelineId,
+        baseStatusIdType: typeof baseStatusId,
+        currentBaseCardsCount: campaign.baseCardsCount,
+        countResult: count,
+        campaignBase: campaign.base,
+        campaignBaseKeys: campaign.base ? Object.keys(campaign.base) : null,
+        fullCampaignKeys: Object.keys(campaign).slice(0, 30),
+        basePipelineValue: campaign.base?.pipeline,
+        baseStatusValue: campaign.base?.status,
+      });
     }
 
     // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
