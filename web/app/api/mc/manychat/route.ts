@@ -555,6 +555,30 @@ export async function POST(req: NextRequest) {
             try {
               await kvWrite.lpush(campaignKeys.INDEX_KEY, campaignId);
             } catch {}
+            
+            // Зберігаємо timestamp для EXP tracking (тільки якщо кампанія має EXP)
+            const hasExp = Boolean(
+              obj.expDays || 
+              obj.expireDays || 
+              obj.exp || 
+              obj.vexp || 
+              obj.expire ||
+              obj.texp
+            );
+            
+            if (hasExp && automation.search?.selected?.cardId) {
+              const cardId = String(automation.search.selected.cardId);
+              const basePipelineId = automation.match?.campaign?.base?.pipelineId 
+                ? Number(automation.match.campaign.base.pipelineId) 
+                : null;
+              const baseStatusId = automation.match?.campaign?.base?.statusId
+                ? Number(automation.match.campaign.base.statusId)
+                : null;
+              
+              // Імпортуємо функцію для збереження tracking
+              const { saveExpTracking } = await import('@/lib/exp-tracking');
+              await saveExpTracking(campaignId, cardId, basePipelineId, baseStatusId);
+            }
           } catch (err) {
             console.error('[manychat] Помилка інкременту лічильника:', err);
           }
