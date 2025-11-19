@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
     let parsed: any = null;
     let debugInfo: any = {
       rawLength: raw.length,
-      rawPreview: raw.substring(0, 200),
+      rawPreview: raw.substring(0, 500),
+      foundKey,
     };
 
     try {
@@ -73,20 +74,28 @@ export async function GET(req: NextRequest) {
         if ('value' in parsed) {
           const unwrapped = parsed.value;
           debugInfo.unwrapping = 'from value key';
+          debugInfo.unwrappedValueType = typeof unwrapped;
+          debugInfo.unwrappedIsObject = unwrapped && typeof unwrapped === 'object';
+          debugInfo.unwrappedKeys = unwrapped && typeof unwrapped === 'object' ? Object.keys(unwrapped).slice(0, 10) : null;
+          
           if (typeof unwrapped === 'string') {
             try {
               campaign = JSON.parse(unwrapped);
               debugInfo.unwrappedType = 'string->object';
+              debugInfo.campaignAfterUnwrap = 'parsed from string';
             } catch {
               campaign = unwrapped;
               debugInfo.unwrappedType = 'string (parse failed)';
+              debugInfo.campaignAfterUnwrap = 'string (failed)';
             }
           } else if (unwrapped && typeof unwrapped === 'object') {
             campaign = unwrapped;
             debugInfo.unwrappedType = 'object';
+            debugInfo.campaignAfterUnwrap = 'direct object';
           } else {
             campaign = parsed;
             debugInfo.unwrappedType = 'fallback to parsed';
+            debugInfo.campaignAfterUnwrap = 'fallback';
           }
         } else if ('result' in parsed) {
           campaign = parsed.result;
