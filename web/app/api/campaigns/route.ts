@@ -63,6 +63,14 @@ type Campaign = {
   exp?: number; // ⬅️ додав exp
   counters: Counters;
   createdAt: number;
+  // статистика
+  baseCardsCount?: number;
+  baseCardsCountInitial?: number;
+  baseCardsCountUpdatedAt?: number;
+  movedTotal?: number;
+  movedV1?: number;
+  movedV2?: number;
+  movedExp?: number;
 };
 
 type CampaignMemoryStore = {
