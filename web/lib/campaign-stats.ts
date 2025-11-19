@@ -3,6 +3,7 @@
 
 import { keycrmHeaders, keycrmUrl } from '@/lib/env';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { kv } from '@vercel/kv';
 
 /**
  * Підраховує кількість карток у базовій воронці/статусі кампанії
@@ -167,23 +168,39 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
       campaignKeys.LEGACY_ITEM_KEY(campaignId), // campaigns:${id}
     ];
     
-    let raw: string | null = null;
+    // Спочатку спробуємо через @vercel/kv (як в адмін-панелі)
+    let campaign: any = null;
     let itemKey: string | null = null;
+    
     for (const key of keysToTry) {
-      raw = await kvRead.getRaw(key);
-      if (raw) {
-        itemKey = key;
-        break;
+      try {
+        campaign = await kv.get(key);
+        if (campaign) {
+          itemKey = key;
+          break;
+        }
+      } catch {
+        // Ігноруємо помилки
       }
     }
+    
+    // Якщо не знайшли через @vercel/kv, спробуємо через kvRead.getRaw
+    if (!campaign) {
+      let raw: string | null = null;
+      for (const key of keysToTry) {
+        raw = await kvRead.getRaw(key);
+        if (raw) {
+          itemKey = key;
+          break;
+        }
+      }
 
-    if (!raw || !itemKey) {
-      return null;
-    }
+      if (!raw || !itemKey) {
+        return null;
+      }
 
-    // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
-    // kvGetRaw вже намагається розгорнути, але іноді повертає обгортку
-    let campaign: any = null;
+      // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
+      // kvGetRaw вже намагається розгорнути, але іноді повертає обгортку
     try {
       let parsed: any = null;
       try {
