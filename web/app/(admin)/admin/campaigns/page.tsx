@@ -155,6 +155,28 @@ export default async function Page() {
   }
   
   const campaigns = await readWithFallback();
+  
+  // Оновлюємо статистику базових карток для всіх кампаній при завантаженні сторінки
+  if (campaigns.length > 0) {
+    try {
+      const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
+      // Оновлюємо в паралель для всіх кампаній (не чекаємо завершення, щоб не блокувати рендеринг)
+      Promise.all(
+        campaigns.map(c => 
+          updateCampaignBaseCardsCount(c.id).catch(() => {
+            // Ігноруємо помилки оновлення окремих кампаній
+          })
+        )
+      ).catch(() => {
+        // Ігноруємо помилки
+      });
+    } catch (err) {
+      // Ігноруємо помилки оновлення статистики - не критично
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn("[campaigns] Failed to refresh stats:", err);
+      }
+    }
+  }
 
   return (
     <div className="p-4 sm:p-6">
