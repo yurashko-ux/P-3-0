@@ -4,7 +4,7 @@ import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 import { unstable_noStore as noStore } from "next/cache";
 import DeleteButton from "@/components/DeleteButton";
-import { kvRead } from "@/lib/kv";
+import { kvRead, campaignKeys } from "@/lib/kv";
 import { fetchKeycrmPipelines } from "@/lib/keycrm-pipelines";
 
 // повністю вимикаємо кешування цієї сторінки
@@ -154,24 +154,44 @@ export default async function Page() {
     }
   }
   
-  const campaigns = await readWithFallback();
+  let campaigns = await readWithFallback();
   
   // Оновлюємо статистику базових карток для всіх кампаній при завантаженні сторінки
+  // Робимо це синхронно, щоб оновлені дані відобразились на сторінці
   if (campaigns.length > 0) {
     try {
       const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
-      // Оновлюємо в паралель для всіх кампаній (не чекаємо завершення, щоб не блокувати рендеринг)
-      Promise.all(
-        campaigns.map(c => 
-          updateCampaignBaseCardsCount(c.id).catch(() => {
-            // Ігноруємо помилки оновлення окремих кампаній
-          })
-        )
-      ).catch(() => {
-        // Ігноруємо помилки
-      });
+      
+      // Оновлюємо статистику для всіх кампаній перед рендерингом
+      const updatedCampaigns = await Promise.all(
+        campaigns.map(async (c) => {
+          try {
+            const newCount = await updateCampaignBaseCardsCount(c.id);
+            // Якщо статистика оновилась, читаємо актуальну кампанію з KV
+            if (newCount !== null) {
+              const itemKey = campaignKeys.ITEM_KEY(c.id);
+              const raw = await kvRead.getRaw(itemKey);
+              if (raw) {
+                try {
+                  const updated = JSON.parse(raw);
+                  return updated as Campaign;
+                } catch {
+                  // Якщо не вдалося парсити - повертаємо оригінальну кампанію
+                  return c;
+                }
+              }
+            }
+            return c;
+          } catch {
+            // Якщо помилка - повертаємо оригінальну кампанію
+            return c;
+          }
+        })
+      );
+      
+      campaigns = updatedCampaigns;
     } catch (err) {
-      // Ігноруємо помилки оновлення статистики - не критично
+      // Якщо помилка оновлення - використовуємо оригінальні кампанії
       if (process.env.NODE_ENV !== 'production') {
         console.warn("[campaigns] Failed to refresh stats:", err);
       }
