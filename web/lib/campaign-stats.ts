@@ -100,6 +100,11 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     // Оновлюємо кампанію
     campaign.baseCardsCount = count;
     campaign.baseCardsCountUpdatedAt = Date.now();
+    
+    // Зберігаємо початкову кількість, якщо її ще немає (для старих кампаній)
+    if (typeof campaign.baseCardsCountInitial !== 'number') {
+      campaign.baseCardsCountInitial = count;
+    }
 
     // Обчислюємо переміщені картки
     const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : campaign.v1_count || 0;
@@ -133,6 +138,7 @@ export async function initializeCampaignStats(campaign: any): Promise<any> {
     return {
       ...campaign,
       baseCardsCount: 0,
+      baseCardsCountInitial: 0, // Початкова кількість при створенні
       baseCardsCountUpdatedAt: Date.now(),
       movedTotal: 0,
       movedV1: 0,
@@ -150,6 +156,7 @@ export async function initializeCampaignStats(campaign: any): Promise<any> {
   return {
     ...campaign,
     baseCardsCount: count,
+    baseCardsCountInitial: count, // Зберігаємо початкову кількість для обчислення загальної
     baseCardsCountUpdatedAt: Date.now(),
     movedTotal: v1Count + v2Count + expCount,
     movedV1: v1Count,
