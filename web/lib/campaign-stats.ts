@@ -28,12 +28,16 @@ export async function countCardsInBasePipeline(
 
   try {
     for (let page = 1; page <= maxPages; page++) {
-      const qs = new URLSearchParams({
-        page: String(page),
-        per_page: String(perPage),
-        pipeline_id: String(pipelineIdNum),
-        status_id: String(statusIdNum),
-      });
+      // Використовуємо JSON:API формат для фільтрації (як в keycrm-card-search.ts)
+      const qs = new URLSearchParams();
+      qs.set('page[number]', String(page));
+      qs.set('page[size]', String(perPage));
+      qs.set('filter[pipeline_id]', String(pipelineIdNum));
+      qs.set('filter[status_id]', String(statusIdNum));
+      
+      // Також додаємо звичайний формат для сумісності
+      qs.set('pipeline_id', String(pipelineIdNum));
+      qs.set('status_id', String(statusIdNum));
 
       const url = keycrmUrl(`/pipelines/cards?${qs.toString()}`);
       
@@ -62,15 +66,33 @@ export async function countCardsInBasePipeline(
 
       if (data.length === 0) break;
 
-      total += data.length;
+      // Додаткова перевірка: фільтруємо картки вручну, якщо API не відфільтрував правильно
+      const filteredData = data.filter((card: any) => {
+        const cardPipelineId = card?.pipeline_id ?? card?.pipeline?.id ?? card?.attributes?.pipeline_id;
+        const cardStatusId = card?.status_id ?? card?.status?.id ?? card?.attributes?.status_id;
+        
+        const pipelineMatch = Number(cardPipelineId) === pipelineIdNum || cardPipelineId == pipelineIdNum;
+        const statusMatch = Number(cardStatusId) === statusIdNum || cardStatusId == statusIdNum;
+        
+        return pipelineMatch && statusMatch;
+      });
+
+      total += filteredData.length;
 
       // Логування для діагностики (тільки в dev режимі)
       if (process.env.NODE_ENV !== 'production' && page === 1) {
         console.log('[campaign-stats] First page result:', { 
-          totalCards: data.length, 
+          rawCards: data.length,
+          filteredCards: filteredData.length,
           totalSoFar: total,
-          hasData: data.length > 0,
-          sampleCard: data[0] ? { id: data[0].id, pipeline_id: data[0].pipeline_id, status_id: data[0].status_id } : null
+          hasData: filteredData.length > 0,
+          sampleCard: filteredData[0] ? { 
+            id: filteredData[0].id, 
+            pipeline_id: filteredData[0].pipeline_id ?? filteredData[0].pipeline?.id,
+            status_id: filteredData[0].status_id ?? filteredData[0].status?.id
+          } : null,
+          expectedPipeline: pipelineIdNum,
+          expectedStatus: statusIdNum
         });
       }
 
