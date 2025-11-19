@@ -551,10 +551,24 @@ export async function POST(req: NextRequest) {
             const obj = JSON.parse(raw);
             obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
             
-            // Оновлюємо лічильники переміщених карток
-            const v1Count = obj.counters?.v1 || obj.v1_count || 0;
-            const v2Count = obj.counters?.v2 || obj.v2_count || 0;
+            // Оновлюємо лічильники переміщених карток (після інкременту)
+            const v1Count = field === 'v1_count' 
+              ? obj.v1_count 
+              : (obj.counters?.v1 || obj.v1_count || 0);
+            const v2Count = field === 'v2_count' 
+              ? obj.v2_count 
+              : (obj.counters?.v2 || obj.v2_count || 0);
             const expCount = obj.counters?.exp || obj.exp_count || 0;
+            
+            // Оновлюємо структуру counters для сумісності
+            if (!obj.counters) {
+              obj.counters = { v1: 0, v2: 0, exp: 0 };
+            }
+            if (field === 'v1_count') {
+              obj.counters.v1 = obj.v1_count;
+            } else if (field === 'v2_count') {
+              obj.counters.v2 = obj.v2_count;
+            }
             
             // Оновлюємо movedTotal на основі актуальних лічильників
             obj.movedTotal = v1Count + v2Count + expCount;
