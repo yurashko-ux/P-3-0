@@ -38,36 +38,71 @@ export async function GET(req: NextRequest) {
     }
 
     // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
+    // kvGetRaw вже намагається розгорнути, але іноді повертає обгортку
     let campaign: any = null;
     try {
-      const parsed = JSON.parse(raw);
-      // Перевіряємо, чи це обгортка з value (як у kvGetRaw)
-      if (parsed && typeof parsed === 'object') {
-        // Спробуємо знайти кампанію в різних місцях
-        const candidate = parsed.value ?? parsed.result ?? parsed.data ?? parsed;
-        
-        if (typeof candidate === 'string') {
-          campaign = JSON.parse(candidate);
-        } else if (candidate && typeof candidate === 'object') {
-          campaign = candidate;
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // Якщо не JSON, спробуємо як рядок
+        parsed = raw;
+      }
+
+      // Якщо це об'єкт з ключем value, розгортаємо
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if ('value' in parsed) {
+          const unwrapped = parsed.value;
+          if (typeof unwrapped === 'string') {
+            try {
+              campaign = JSON.parse(unwrapped);
+            } catch {
+              campaign = unwrapped;
+            }
+          } else if (unwrapped && typeof unwrapped === 'object') {
+            campaign = unwrapped;
+          } else {
+            campaign = parsed;
+          }
+        } else if ('result' in parsed) {
+          campaign = parsed.result;
+        } else if ('data' in parsed) {
+          campaign = parsed.data;
         } else {
-          campaign = parsed;
+          // Перевіряємо, чи це вже кампанія (має поля id, name, base тощо)
+          if ('id' in parsed || 'name' in parsed || 'base' in parsed) {
+            campaign = parsed;
+          } else {
+            campaign = parsed;
+          }
         }
       } else {
         campaign = parsed;
       }
-    } catch {
+
+      // Якщо все ще рядок, спробуємо розпарсити ще раз
+      if (typeof campaign === 'string') {
+        try {
+          campaign = JSON.parse(campaign);
+        } catch {
+          // Залишаємо як рядок
+        }
+      }
+    } catch (err: any) {
       return NextResponse.json({ 
         error: 'Failed to parse campaign JSON', 
-        rawPreview: raw.substring(0, 200),
+        errorMessage: err.message,
+        rawPreview: raw.substring(0, 500),
         triedKeys: keysToTry 
       }, { status: 500 });
     }
 
-    if (!campaign || typeof campaign !== 'object') {
+    if (!campaign || typeof campaign !== 'object' || Array.isArray(campaign)) {
       return NextResponse.json({ 
         error: 'Campaign is not an object', 
-        rawPreview: raw.substring(0, 200),
+        campaignType: typeof campaign,
+        isArray: Array.isArray(campaign),
+        rawPreview: raw.substring(0, 500),
         triedKeys: keysToTry 
       }, { status: 500 });
     }
