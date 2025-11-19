@@ -42,6 +42,7 @@ type Campaign = {
   
   // статистика
   baseCardsCount?: number;
+  baseCardsCountInitial?: number; // Початкова кількість при створенні кампанії
   baseCardsCountUpdatedAt?: number;
   movedTotal?: number;
   movedV1?: number;
@@ -216,11 +217,25 @@ export default async function Page() {
                   <td className="px-2 py-3 text-sm">
                     {(() => {
                       const statusName = nn(c.base?.statusName);
-                      const count = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : null;
-                      if (count !== null) {
+                      // Обчислюємо загальну кількість оброблених карток:
+                      // початкова кількість + переміщені - поточна кількість
+                      // Або простіше: початкова + переміщені (загальна кількість, що пройшла через базову воронку)
+                      const initialCount = typeof c.baseCardsCountInitial === 'number' ? c.baseCardsCountInitial : null;
+                      const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : null;
+                      const movedTotal = typeof c.movedTotal === 'number' ? c.movedTotal : 0;
+                      
+                      // Загальна кількість оброблених карток = початкова + переміщені
+                      // (враховуємо, що переміщені картки були спочатку в базовій воронці)
+                      const totalProcessed = initialCount !== null 
+                        ? initialCount + movedTotal 
+                        : (currentCount !== null && movedTotal > 0)
+                          ? currentCount + movedTotal
+                          : null;
+                      
+                      if (totalProcessed !== null && totalProcessed > 0) {
                         return (
                           <>
-                            {statusName} <span className="text-slate-400">({count})</span>
+                            {statusName} <span className="text-slate-400">({totalProcessed})</span>
                           </>
                         );
                       }
