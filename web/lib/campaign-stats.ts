@@ -68,11 +68,24 @@ export async function countCardsInBasePipeline(
 
       // Додаткова перевірка: фільтруємо картки вручну, якщо API не відфільтрував правильно
       const filteredData = data.filter((card: any) => {
-        const cardPipelineId = card?.pipeline_id ?? card?.pipeline?.id ?? card?.attributes?.pipeline_id;
-        const cardStatusId = card?.status_id ?? card?.status?.id ?? card?.attributes?.status_id;
+        // Перевіряємо всі можливі місця, де може бути pipeline_id та status_id
+        const cardPipelineId = card?.pipeline_id ?? 
+                               card?.pipeline?.id ?? 
+                               card?.pipeline_id ??
+                               card?.attributes?.pipeline_id ??
+                               card?.data?.pipeline_id;
+        const cardStatusId = card?.status_id ?? 
+                             card?.status?.id ?? 
+                             card?.status_id ??
+                             card?.attributes?.status_id ??
+                             card?.data?.status_id;
         
-        const pipelineMatch = Number(cardPipelineId) === pipelineIdNum || cardPipelineId == pipelineIdNum;
-        const statusMatch = Number(cardStatusId) === statusIdNum || cardStatusId == statusIdNum;
+        // Нормалізуємо до чисел для порівняння
+        const cardPipelineIdNum = typeof cardPipelineId === 'number' ? cardPipelineId : Number(cardPipelineId);
+        const cardStatusIdNum = typeof cardStatusId === 'number' ? cardStatusId : Number(cardStatusId);
+        
+        const pipelineMatch = Number.isFinite(cardPipelineIdNum) && cardPipelineIdNum === pipelineIdNum;
+        const statusMatch = Number.isFinite(cardStatusIdNum) && cardStatusIdNum === statusIdNum;
         
         return pipelineMatch && statusMatch;
       });
