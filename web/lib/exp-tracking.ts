@@ -80,7 +80,9 @@ export async function deleteExpTracking(
 }
 
 /**
- * Отримує timestamp з KeyCRM картки (fallback для старих карток)
+ * Отримує timestamp з KeyCRM картки (fallback для карток, переміщених вручну)
+ * Використовується, коли картка була переміщена в базову воронку безпосередньо в KeyCRM,
+ * а не через автоматичний механізм v1/v2
  * Шукає updated_at, updatedAt, created_at, createdAt
  */
 export function extractTimestampFromKeycrmCard(card: any): number | null {
