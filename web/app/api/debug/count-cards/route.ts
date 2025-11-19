@@ -45,7 +45,6 @@ export async function GET(req: NextRequest) {
       ok: true,
       campaignId,
       campaignName: campaign.name,
-      foundKey, // ключ, під яким знайдено кампанію
       basePipelineId,
       baseStatusId,
       basePipelineIdType: typeof basePipelineId,
