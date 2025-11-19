@@ -160,8 +160,18 @@ export async function countCardsInBasePipeline(
  */
 export async function updateCampaignBaseCardsCount(campaignId: string): Promise<number | null> {
   try {
-    const itemKey = campaignKeys.ITEM_KEY(campaignId);
-    const raw = await kvRead.getRaw(itemKey);
+    // Спробуємо різні ключі, бо кампанії можуть зберігатись під різними ключами
+    const keysToTry = [
+      campaignKeys.ITEM_KEY(campaignId),      // campaign:${id}
+      campaignKeys.CMP_ITEM_KEY(campaignId),  // cmp:item:${id}
+      campaignKeys.LEGACY_ITEM_KEY(campaignId), // campaigns:${id}
+    ];
+    
+    let raw: string | null = null;
+    for (const key of keysToTry) {
+      raw = await kvRead.getRaw(key);
+      if (raw) break;
+    }
 
     if (!raw) {
       return null;

@@ -16,11 +16,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const itemKey = campaignKeys.ITEM_KEY(campaignId);
-    const raw = await kvRead.getRaw(itemKey);
+    // Спробуємо різні ключі, бо кампанії можуть зберігатись під різними ключами
+    const keysToTry = [
+      campaignKeys.ITEM_KEY(campaignId),      // campaign:${id}
+      campaignKeys.CMP_ITEM_KEY(campaignId),  // cmp:item:${id}
+      campaignKeys.LEGACY_ITEM_KEY(campaignId), // campaigns:${id}
+    ];
+    
+    let raw: string | null = null;
+    let foundKey: string | null = null;
+    for (const key of keysToTry) {
+      raw = await kvRead.getRaw(key);
+      if (raw) {
+        foundKey = key;
+        break;
+      }
+    }
     
     if (!raw) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Campaign not found', triedKeys: keysToTry }, { status: 404 });
     }
 
     const campaign = JSON.parse(raw);
@@ -44,6 +58,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       campaignId,
       campaignName: campaign.name,
+      foundKey, // ключ, під яким знайдено кампанію
       basePipelineId,
       baseStatusId,
       basePipelineIdType: typeof basePipelineId,
@@ -53,6 +68,11 @@ export async function GET(req: NextRequest) {
       campaignBase: campaign.base,
       campaignBaseKeys: campaign.base ? Object.keys(campaign.base) : null,
       fullCampaignKeys: Object.keys(campaign).slice(0, 30), // перші 30 ключів
+      // Додаткова діагностика
+      basePipelineValue: campaign.base?.pipeline,
+      baseStatusValue: campaign.base?.status,
+      basePipelineIdValue: campaign.base_pipeline_id,
+      baseStatusIdValue: campaign.base_status_id,
     });
   } catch (err: any) {
     return NextResponse.json({ 
