@@ -217,25 +217,13 @@ export default async function Page() {
                   <td className="px-2 py-3 text-sm">
                     {(() => {
                       const statusName = nn(c.base?.statusName);
-                      // Обчислюємо загальну кількість оброблених карток:
-                      // початкова кількість + переміщені - поточна кількість
-                      // Або простіше: початкова + переміщені (загальна кількість, що пройшла через базову воронку)
-                      const initialCount = typeof c.baseCardsCountInitial === 'number' ? c.baseCardsCountInitial : null;
+                      // Показуємо поточну актуальну кількість карток в базовій воронці
                       const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : null;
-                      const movedTotal = typeof c.movedTotal === 'number' ? c.movedTotal : 0;
                       
-                      // Загальна кількість оброблених карток = початкова + переміщені
-                      // (враховуємо, що переміщені картки були спочатку в базовій воронці)
-                      const totalProcessed = initialCount !== null 
-                        ? initialCount + movedTotal 
-                        : (currentCount !== null && movedTotal > 0)
-                          ? currentCount + movedTotal
-                          : null;
-                      
-                      if (totalProcessed !== null && totalProcessed > 0) {
+                      if (currentCount !== null) {
                         return (
                           <>
-                            {statusName} <span className="text-slate-400">({totalProcessed})</span>
+                            {statusName} <span className="text-slate-400">({currentCount})</span>
                           </>
                         );
                       }
