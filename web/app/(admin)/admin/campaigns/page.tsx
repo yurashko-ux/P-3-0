@@ -163,22 +163,17 @@ export default async function Page() {
       const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
       
       // Оновлюємо статистику для всіх кампаній перед рендерингом
+      // Використовуємо listCampaigns для читання оновлених кампаній
       const updatedCampaigns = await Promise.all(
         campaigns.map(async (c) => {
           try {
             const newCount = await updateCampaignBaseCardsCount(c.id);
-            // Якщо статистика оновилась, читаємо актуальну кампанію з KV
+            // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
             if (newCount !== null) {
-              const itemKey = campaignKeys.ITEM_KEY(c.id);
-              const raw = await kvRead.getRaw(itemKey);
-              if (raw) {
-                try {
-                  const updated = JSON.parse(raw);
-                  return updated as Campaign;
-                } catch {
-                  // Якщо не вдалося парсити - повертаємо оригінальну кампанію
-                  return c;
-                }
+              const allCampaigns = await kvRead.listCampaigns();
+              const updated = allCampaigns.find((camp: any) => camp.id === c.id || camp.__index_id === c.id);
+              if (updated) {
+                return updated as Campaign;
               }
             }
             return c;
