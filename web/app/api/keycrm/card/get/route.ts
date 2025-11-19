@@ -122,6 +122,16 @@ export async function GET(req: NextRequest) {
       contact?.social_name ??
       null;
 
+    // Шукаємо всі можливі timestamp поля
+    const timestampFields: Record<string, unknown> = {};
+    const timestampKeys = ['updated_at', 'updatedAt', 'updated', 'created_at', 'createdAt', 'created', 'moved_at', 'movedAt'];
+    
+    for (const key of timestampKeys) {
+      if (card && key in card) {
+        timestampFields[key] = card[key as keyof typeof card];
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       id: Number(card?.id ?? id),
@@ -134,6 +144,17 @@ export async function GET(req: NextRequest) {
       contact_source, // звідки взяли контакт
       raw_has_contact_in_card: !!card?.contact,
       raw_sample_keys: Object.keys(card || {}).slice(0, 16),
+      // Додаємо всі знайдені timestamp поля
+      timestamp_fields: timestampFields,
+      // Повний об'єкт картки для діагностики (обмежуємо розмір)
+      raw_card_sample: card ? {
+        ...Object.fromEntries(
+          Object.entries(card).slice(0, 30).map(([k, v]) => [
+            k,
+            typeof v === 'object' && v !== null ? '[object]' : v
+          ])
+        )
+      } : null,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 400 });
