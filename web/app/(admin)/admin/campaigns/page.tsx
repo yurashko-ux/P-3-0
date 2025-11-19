@@ -79,16 +79,24 @@ async function readIds(): Promise<string[]> {
 
 async function readFromKV(): Promise<Campaign[]> {
   noStore();
-  const ids = await readIds();
-  if (!ids.length) return [];
+  // Використовуємо listCampaigns, який вже правильно обробляє кампанії
   try {
-    const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
-    const out: Campaign[] = [];
-    items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
-    return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    const campaigns = await kvRead.listCampaigns<Campaign>();
+    return campaigns.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   } catch (err) {
-    logKvError("kv.mget failed", err);
-    return [];
+    logKvError("kvRead.listCampaigns failed", err);
+    // Fallback до старого методу
+    try {
+      const ids = await readIds();
+      if (!ids.length) return [];
+      const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
+      const out: Campaign[] = [];
+      items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
+      return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    } catch (fallbackErr) {
+      logKvError("kv.mget fallback failed", fallbackErr);
+      return [];
+    }
   }
 }
 
