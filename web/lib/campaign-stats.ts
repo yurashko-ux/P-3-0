@@ -35,14 +35,22 @@ export async function countCardsInBasePipeline(
         status_id: String(statusIdNum),
       });
 
-      const res = await fetch(keycrmUrl(`/pipelines/cards?${qs.toString()}`), {
+      const url = keycrmUrl(`/pipelines/cards?${qs.toString()}`);
+      
+      // Логування для діагностики (тільки в dev режимі)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[campaign-stats] Counting cards:', { pipelineId: pipelineIdNum, statusId: statusIdNum, page, url });
+      }
+
+      const res = await fetch(url, {
         headers: keycrmHeaders(),
         cache: 'no-store',
       });
 
       if (!res.ok) {
         if (res.status === 404 || page > 1) break; // Немає більше сторінок
-        throw new Error(`KeyCRM API error: ${res.status} ${res.statusText}`);
+        const errorText = await res.text().catch(() => '');
+        throw new Error(`KeyCRM API error: ${res.status} ${res.statusText} - ${errorText.slice(0, 200)}`);
       }
 
       const json = await res.json();
@@ -55,6 +63,16 @@ export async function countCardsInBasePipeline(
       if (data.length === 0) break;
 
       total += data.length;
+
+      // Логування для діагностики (тільки в dev режимі)
+      if (process.env.NODE_ENV !== 'production' && page === 1) {
+        console.log('[campaign-stats] First page result:', { 
+          totalCards: data.length, 
+          totalSoFar: total,
+          hasData: data.length > 0,
+          sampleCard: data[0] ? { id: data[0].id, pipeline_id: data[0].pipeline_id, status_id: data[0].status_id } : null
+        });
+      }
 
       // Перевіряємо, чи є наступна сторінка
       const hasNext = json?.links?.next || json?.next_page_url || 
@@ -131,8 +149,25 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
  * Ініціалізує статистику для нової кампанії
  */
 export async function initializeCampaignStats(campaign: any): Promise<any> {
-  const basePipelineId = campaign.base?.pipelineId || campaign.base_pipeline_id;
-  const baseStatusId = campaign.base?.statusId || campaign.base_status_id;
+  // Перевіряємо всі можливі місця, де може бути збережений pipeline_id/status_id
+  const basePipelineId = campaign.base?.pipelineId || 
+                         campaign.base?.pipeline_id ||
+                         campaign.base_pipeline_id ||
+                         campaign.base_pipelineId;
+  const baseStatusId = campaign.base?.statusId || 
+                       campaign.base?.status_id ||
+                       campaign.base_status_id ||
+                       campaign.baseStatusId;
+
+  // Логування для діагностики (тільки в dev режимі)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[campaign-stats] Initializing stats:', {
+      campaignId: campaign.id,
+      basePipelineId,
+      baseStatusId,
+      base: campaign.base,
+    });
+  }
 
   if (!basePipelineId || !baseStatusId) {
     return {
@@ -148,6 +183,11 @@ export async function initializeCampaignStats(campaign: any): Promise<any> {
   }
 
   const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
+  
+  // Логування для діагностики (тільки в dev режимі)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[campaign-stats] Count result:', { campaignId: campaign.id, count, basePipelineId, baseStatusId });
+  }
 
   const v1Count = campaign.counters?.v1 || campaign.v1_count || 0;
   const v2Count = campaign.counters?.v2 || campaign.v2_count || 0;
