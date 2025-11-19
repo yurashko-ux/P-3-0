@@ -169,9 +169,18 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
 
     const campaign = JSON.parse(raw);
     
-    // Отримуємо базову воронку
-    const basePipelineId = campaign.base?.pipelineId || campaign.base_pipeline_id;
-    const baseStatusId = campaign.base?.statusId || campaign.base_status_id;
+    // Отримуємо базову воронку (перевіряємо всі можливі місця)
+    // Увага: base.pipeline/base.status - це рядки, а не base.pipelineId/base.statusId
+    const basePipelineId = campaign.base?.pipelineId || 
+                           campaign.base?.pipeline_id ||
+                           campaign.base?.pipeline ||  // ← додав base.pipeline (рядок)
+                           campaign.base_pipeline_id ||
+                           campaign.base_pipelineId;
+    const baseStatusId = campaign.base?.statusId || 
+                         campaign.base?.status_id ||
+                         campaign.base?.status ||  // ← додав base.status (рядок)
+                         campaign.base_status_id ||
+                         campaign.baseStatusId;
 
     if (!basePipelineId || !baseStatusId) {
       return null;
@@ -215,12 +224,15 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
  */
 export async function initializeCampaignStats(campaign: any): Promise<any> {
   // Перевіряємо всі можливі місця, де може бути збережений pipeline_id/status_id
+  // Увага: base.pipeline/base.status - це рядки, а не base.pipelineId/base.statusId
   const basePipelineId = campaign.base?.pipelineId || 
                          campaign.base?.pipeline_id ||
+                         campaign.base?.pipeline ||  // ← додав base.pipeline (рядок)
                          campaign.base_pipeline_id ||
                          campaign.base_pipelineId;
   const baseStatusId = campaign.base?.statusId || 
                        campaign.base?.status_id ||
+                       campaign.base?.status ||  // ← додав base.status (рядок)
                        campaign.base_status_id ||
                        campaign.baseStatusId;
 
