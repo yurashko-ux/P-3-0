@@ -5,6 +5,7 @@ import { keycrmHeaders, keycrmUrl } from '@/lib/env';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import { moveKeycrmCard } from '@/lib/keycrm-move';
 import { getExpTracking, deleteExpTracking, extractTimestampFromKeycrmCard } from './exp-tracking';
+import { updateCampaignBaseCardsCount } from './campaign-stats';
 
 export type ExpCheckResult = {
   campaignId: string;
@@ -241,6 +242,16 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
         }
       } catch (err) {
         result.errors.push(`Card ${card.id}: check error - ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    
+    // Оновлюємо кількість карток в базовій воронці для кампаній з EXP (раз на день)
+    try {
+      await updateCampaignBaseCardsCount(campaign.id);
+    } catch (err) {
+      // Ігноруємо помилки оновлення статистики - не критично
+      if (process.env.NODE_ENV !== 'production') {
+        result.errors.push(`Failed to update base cards count: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   } catch (err) {
