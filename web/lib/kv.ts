@@ -17,6 +17,10 @@ export const keycrmKeys = {
   PIPELINES_SNAPSHOT_KEY: 'keycrm:pipelines:snapshot',
 } as const;
 
+export const expTrackingKeys = {
+  TRACK_KEY: (campaignId: string, cardId: string) => `exp:track:${campaignId}:${cardId}`,
+} as const;
+
 type KvRuntimeConfig = {
   rawBase: string;
   baseCandidates: string[];
@@ -733,5 +737,50 @@ export const kvWrite = {
   async keycrmPipelinesSnapshot(snapshot: KeycrmPipelineSnapshot) {
     const payload = JSON.stringify({ ...snapshot, storedAt: snapshot.storedAt ?? Date.now() });
     await kvSetRaw(keycrmKeys.PIPELINES_SNAPSHOT_KEY, payload);
+  },
+  // EXP tracking: зберегти timestamp переміщення картки в базову воронку
+  async setExpTracking(campaignId: string, cardId: string, data: {
+    timestamp: number;
+    basePipelineId: number | string | null;
+    baseStatusId: number | string | null;
+  }) {
+    const key = expTrackingKeys.TRACK_KEY(campaignId, cardId);
+    const value = JSON.stringify({
+      campaignId,
+      cardId,
+      timestamp: data.timestamp,
+      basePipelineId: data.basePipelineId,
+      baseStatusId: data.baseStatusId,
+    });
+    await kvSetRaw(key, value);
+  },
+  // EXP tracking: отримати timestamp переміщення
+  async getExpTracking(campaignId: string, cardId: string): Promise<{
+    campaignId: string;
+    cardId: string;
+    timestamp: number;
+    basePipelineId: number | string | null;
+    baseStatusId: number | string | null;
+  } | null> {
+    const key = expTrackingKeys.TRACK_KEY(campaignId, cardId);
+    const raw = await kvRead.getRaw(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+  // EXP tracking: видалити tracking (після переміщення в EXP або якщо картка більше не в базовій воронці)
+  async deleteExpTracking(campaignId: string, cardId: string) {
+    const key = expTrackingKeys.TRACK_KEY(campaignId, cardId);
+    const { baseCandidates, writeToken } = resolveKvRuntime();
+    if (!baseCandidates.length || !writeToken) return;
+    
+    try {
+      await rest(`del/${encodeURIComponent(key)}`, { method: 'POST' });
+    } catch {
+      // Ігноруємо помилки видалення
+    }
   },
 };
