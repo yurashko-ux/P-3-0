@@ -150,6 +150,26 @@ export async function GET(req: NextRequest) {
 
     debugInfo.campaignKeys = Object.keys(campaign).slice(0, 20);
     debugInfo.campaignHasBase = 'base' in campaign;
+    debugInfo.campaignType = typeof campaign;
+    debugInfo.campaignIsArray = Array.isArray(campaign);
+    
+    // Якщо campaign все ще має тільки ключ "value", спробуємо розгорнути ще раз
+    if (campaign && typeof campaign === 'object' && !Array.isArray(campaign) && Object.keys(campaign).length === 1 && 'value' in campaign) {
+      debugInfo.retryUnwrap = true;
+      const retryUnwrapped = campaign.value;
+      if (typeof retryUnwrapped === 'string') {
+        try {
+          campaign = JSON.parse(retryUnwrapped);
+          debugInfo.retryResult = 'string->object';
+        } catch {
+          debugInfo.retryResult = 'string (parse failed)';
+        }
+      } else if (retryUnwrapped && typeof retryUnwrapped === 'object') {
+        campaign = retryUnwrapped;
+        debugInfo.retryResult = 'object';
+      }
+      debugInfo.campaignKeysAfterRetry = Object.keys(campaign).slice(0, 20);
+    }
     
     // Перевіряємо всі можливі місця, де може бути pipeline_id/status_id
     // Увага: base.pipeline/base.status - це рядки, а не base.pipelineId/base.statusId
