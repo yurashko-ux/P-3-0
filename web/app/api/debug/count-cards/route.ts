@@ -40,12 +40,31 @@ export async function GET(req: NextRequest) {
     // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
     // kvGetRaw вже намагається розгорнути, але іноді повертає обгортку
     let campaign: any = null;
+    let parsed: any = null;
+    let debugInfo: any = {
+      rawLength: raw.length,
+      rawPreview: raw.substring(0, 200),
+    };
+
     try {
-      let parsed: any = null;
       try {
         parsed = JSON.parse(raw);
-      } catch {
-        // Якщо не JSON, спробуємо як рядок
+        debugInfo.parsedType = typeof parsed;
+        debugInfo.isArray = Array.isArray(parsed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          debugInfo.parsedKeys = Object.keys(parsed).slice(0, 10);
+          debugInfo.hasValue = 'value' in parsed;
+          debugInfo.hasResult = 'result' in parsed;
+          debugInfo.hasData = 'data' in parsed;
+          if ('value' in parsed) {
+            debugInfo.valueType = typeof parsed.value;
+            if (typeof parsed.value === 'string') {
+              debugInfo.valuePreview = parsed.value.substring(0, 200);
+            }
+          }
+        }
+      } catch (parseErr: any) {
+        debugInfo.parseError = parseErr.message;
         parsed = raw;
       }
 
@@ -53,46 +72,59 @@ export async function GET(req: NextRequest) {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         if ('value' in parsed) {
           const unwrapped = parsed.value;
+          debugInfo.unwrapping = 'from value key';
           if (typeof unwrapped === 'string') {
             try {
               campaign = JSON.parse(unwrapped);
+              debugInfo.unwrappedType = 'string->object';
             } catch {
               campaign = unwrapped;
+              debugInfo.unwrappedType = 'string (parse failed)';
             }
           } else if (unwrapped && typeof unwrapped === 'object') {
             campaign = unwrapped;
+            debugInfo.unwrappedType = 'object';
           } else {
             campaign = parsed;
+            debugInfo.unwrappedType = 'fallback to parsed';
           }
         } else if ('result' in parsed) {
           campaign = parsed.result;
+          debugInfo.unwrapping = 'from result key';
         } else if ('data' in parsed) {
           campaign = parsed.data;
+          debugInfo.unwrapping = 'from data key';
         } else {
           // Перевіряємо, чи це вже кампанія (має поля id, name, base тощо)
           if ('id' in parsed || 'name' in parsed || 'base' in parsed) {
             campaign = parsed;
+            debugInfo.unwrapping = 'direct (has id/name/base)';
           } else {
             campaign = parsed;
+            debugInfo.unwrapping = 'direct (fallback)';
           }
         }
       } else {
         campaign = parsed;
+        debugInfo.unwrapping = 'not an object';
       }
 
       // Якщо все ще рядок, спробуємо розпарсити ще раз
       if (typeof campaign === 'string') {
         try {
           campaign = JSON.parse(campaign);
+          debugInfo.finalParse = 'string->object';
         } catch {
-          // Залишаємо як рядок
+          debugInfo.finalParse = 'string (parse failed)';
         }
+      } else {
+        debugInfo.finalParse = 'already object';
       }
     } catch (err: any) {
       return NextResponse.json({ 
         error: 'Failed to parse campaign JSON', 
         errorMessage: err.message,
-        rawPreview: raw.substring(0, 500),
+        debugInfo,
         triedKeys: keysToTry 
       }, { status: 500 });
     }
@@ -102,10 +134,13 @@ export async function GET(req: NextRequest) {
         error: 'Campaign is not an object', 
         campaignType: typeof campaign,
         isArray: Array.isArray(campaign),
-        rawPreview: raw.substring(0, 500),
+        debugInfo,
         triedKeys: keysToTry 
       }, { status: 500 });
     }
+
+    debugInfo.campaignKeys = Object.keys(campaign).slice(0, 20);
+    debugInfo.campaignHasBase = 'base' in campaign;
     
     // Перевіряємо всі можливі місця, де може бути pipeline_id/status_id
     // Увага: base.pipeline/base.status - це рядки, а не base.pipelineId/base.statusId
@@ -142,11 +177,7 @@ export async function GET(req: NextRequest) {
       basePipelineIdValue: campaign.base_pipeline_id,
       baseStatusIdValue: campaign.base_status_id,
       // Діагностика структури
-      rawPreview: raw.substring(0, 300), // перші 300 символів сирого рядка
-      parsedType: typeof campaign,
-      hasValue: 'value' in campaign,
-      hasBase: 'base' in campaign,
-      hasName: 'name' in campaign,
+      debugInfo,
     });
   } catch (err: any) {
     return NextResponse.json({ 
