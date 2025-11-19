@@ -566,8 +566,8 @@ export async function POST(req: NextRequest) {
               obj.texp
             );
             
-            if (hasExp && automation.search?.selected?.cardId) {
-              const cardId = String(automation.search.selected.cardId);
+            if (hasExp && automation.search?.selected?.match?.cardId) {
+              const cardId = String(automation.search.selected.match.cardId);
               const basePipelineId = automation.match?.campaign?.base?.pipelineId 
                 ? Number(automation.match.campaign.base.pipelineId) 
                 : null;
