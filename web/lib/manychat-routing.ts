@@ -677,36 +677,6 @@ export async function routeManychatMessage({
       continue;
     }
 
-    const firstItem = result.items[0] ?? null;
-
-    if (firstItem) {
-      usedNeedle = needle.value;
-
-      const enforcedMatch =
-        result.match && result.match.cardId === firstItem.cardId
-          ? result.match
-          : {
-              cardId: firstItem.cardId,
-              title: firstItem.title ?? result.match?.title ?? null,
-              matchedField: result.match?.matchedField ?? 'auto.first_item',
-              matchedValue: result.match?.matchedValue ?? null,
-            };
-
-      selected = {
-        ...result,
-        match: enforcedMatch,
-        summary: {
-          pipelineId: firstItem.pipelineId != null ? String(firstItem.pipelineId) : null,
-          statusId: firstItem.statusId != null ? String(firstItem.statusId) : null,
-          pipelineStatusId: null,
-          pipelineName: firstItem.pipelineTitle ?? null,
-          statusName: firstItem.statusTitle ?? null,
-          statusAliases: firstItem.statusId != null ? [String(firstItem.statusId)] : [],
-        },
-      };
-      break;
-    }
-
     if (result.match) {
       usedNeedle = needle.value;
       const summary = result.items.find((item) => item.cardId === result.match?.cardId);
