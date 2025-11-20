@@ -255,24 +255,58 @@ export default async function Page() {
                   
                   // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
                   // Але використовуємо актуальні лічильники з KV
-                  const kvV1Count = kvUpdated.movedV1 ?? kvUpdated.counters?.v1 ?? (kvUpdated as any).v1_count ?? v1Count;
-                  const kvV2Count = kvUpdated.movedV2 ?? kvUpdated.counters?.v2 ?? (kvUpdated as any).v2_count ?? v2Count;
-                  const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? (kvUpdated as any).exp_count ?? expCount;
+                  // Читаємо лічильники з усіх можливих місць в правильному порядку пріоритету
+                  const kvV1CountRaw = (kvUpdated as any).v1_count;
+                  const kvV2CountRaw = (kvUpdated as any).v2_count;
+                  const kvExpCountRaw = (kvUpdated as any).exp_count;
+                  
+                  const kvV1Count = typeof kvUpdated.movedV1 === 'number' ? kvUpdated.movedV1 
+                    : typeof kvUpdated.counters?.v1 === 'number' ? kvUpdated.counters.v1
+                    : typeof kvV1CountRaw === 'number' ? kvV1CountRaw
+                    : v1Count;
+                  const kvV2Count = typeof kvUpdated.movedV2 === 'number' ? kvUpdated.movedV2
+                    : typeof kvUpdated.counters?.v2 === 'number' ? kvUpdated.counters.v2
+                    : typeof kvV2CountRaw === 'number' ? kvV2CountRaw
+                    : v2Count;
+                  const kvExpCount = typeof kvUpdated.movedExp === 'number' ? kvUpdated.movedExp
+                    : typeof kvUpdated.counters?.exp === 'number' ? kvUpdated.counters.exp
+                    : typeof kvExpCountRaw === 'number' ? kvExpCountRaw
+                    : expCount;
                   const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
                   
                   const mergedBaseTotal =
                     typeof kvUpdated.baseCardsTotalPassed === 'number'
                       ? kvUpdated.baseCardsTotalPassed
                       : updated.baseCardsTotalPassed ?? newCount + kvMovedTotal;
+                  
+                  // Діагностика перед поверненням
+                  if (baseCampaign.id === '1763651370149') {
+                    console.log('[campaigns] Final merged campaign 1763651370149:', {
+                      kvV1Count,
+                      kvV2Count,
+                      kvExpCount,
+                      kvMovedTotal,
+                      movedV1: kvV1Count,
+                      movedV2: kvV2Count,
+                      movedExp: kvExpCount,
+                    });
+                  }
+                  
                   return { 
                     ...updated, 
                     ...kvUpdated,
                     baseCardsCount: newCount, // Зберігаємо оновлений baseCardsCount
                     baseCardsTotalPassed: Math.max(mergedBaseTotal, newCount + kvMovedTotal),
                     movedTotal: kvMovedTotal, // Використовуємо актуальні лічильники з KV
-                    movedV1: kvV1Count,
-                    movedV2: kvV2Count,
-                    movedExp: kvExpCount,
+                    movedV1: kvV1Count, // ЯВНО встановлюємо movedV1
+                    movedV2: kvV2Count, // ЯВНО встановлюємо movedV2
+                    movedExp: kvExpCount, // ЯВНО встановлюємо movedExp
+                    // Також встановлюємо counters для сумісності
+                    counters: {
+                      v1: kvV1Count,
+                      v2: kvV2Count,
+                      exp: kvExpCount,
+                    },
                   } as Campaign;
                 }
               } catch {
