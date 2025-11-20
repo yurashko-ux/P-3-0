@@ -564,9 +564,17 @@ export async function POST(req: NextRequest) {
   }
 
   // Інкрементуємо лічильники після успішного переміщення
+  console.log('[manychat] NEW CODE: Checking if should update counters:', {
+    automationOk: automation?.ok,
+    moveAttempted: automation?.ok ? (automation as ManychatRoutingSuccess).move?.attempted : undefined,
+    moveOk: automation?.ok ? (automation as ManychatRoutingSuccess).move?.ok : undefined,
+  });
+  
   if (automation?.ok && (automation as ManychatRoutingSuccess).move?.attempted && (automation as ManychatRoutingSuccess).move.ok) {
     const campaignId = automation.match?.campaign?.id;
     const route = automation.match?.route;
+    
+    console.log('[manychat] NEW CODE: Inside counter update block:', { campaignId, route });
     
     if (campaignId && (route === 'v1' || route === 'v2')) {
       try {
