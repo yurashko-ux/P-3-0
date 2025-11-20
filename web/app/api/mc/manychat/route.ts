@@ -587,12 +587,25 @@ export async function POST(req: NextRequest) {
         moveOk: successAutomation.move?.ok,
       });
       
+      console.log('[manychat] Checking conditions for counter update:', {
+        campaignId,
+        route,
+        hasCampaignId: !!campaignId,
+        isV1OrV2: route === 'v1' || route === 'v2',
+        routeType: typeof route,
+        routeValue: route,
+      });
+      
       if (campaignId && (route === 'v1' || route === 'v2')) {
         const field = route === 'v1' ? 'v1_count' : 'v2_count';
         const itemKey = campaignKeys.ITEM_KEY(campaignId);
         
+        console.log('[manychat] Conditions met, updating counter:', { campaignId, route, field, itemKey });
+        
         try {
           const raw = await kvRead.getRaw(itemKey);
+          
+          console.log('[manychat] Read from KV:', { itemKey, hasRaw: !!raw, rawLength: raw?.length });
           
           if (!raw) {
             console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
@@ -760,6 +773,14 @@ export async function POST(req: NextRequest) {
           });
           // Не перериваємо виконання - просто логуємо помилку
         }
+      } else {
+        console.log('[manychat] Skipping counter update - conditions not met:', {
+          campaignId,
+          route,
+          hasCampaignId: !!campaignId,
+          isV1OrV2: route === 'v1' || route === 'v2',
+          routeType: typeof route,
+        });
       }
     } catch (err) {
       console.error('[manychat] Помилка при інкременті лічильників:', err);
