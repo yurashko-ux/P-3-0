@@ -434,9 +434,9 @@ export default async function Page() {
                           const movedTotal = (c.movedTotal ?? 0) || 
                             ((c.movedV1 ?? 0) + (c.movedV2 ?? 0) + (c.movedExp ?? 0));
                           const baseTotal = c.baseCardsTotalPassed ?? 
-                            ((c.baseCardsCount ?? 0) + movedTotal) ||
-                            (c.baseCardsCountInitial ?? 0) + movedTotal ||
-                            0;
+                            (((c.baseCardsCount ?? 0) + movedTotal) ||
+                            ((c.baseCardsCountInitial ?? 0) + movedTotal) ||
+                            0);
                           const percentage = baseTotal > 0 ? Math.round((movedV1 / baseTotal) * 100) : 0;
                           if (statusName && typeof movedV1 === 'number') {
                             return (
@@ -458,9 +458,9 @@ export default async function Page() {
                           const movedTotal = (c.movedTotal ?? 0) || 
                             ((c.movedV1 ?? 0) + (c.movedV2 ?? 0) + (c.movedExp ?? 0));
                           const baseTotal = c.baseCardsTotalPassed ?? 
-                            ((c.baseCardsCount ?? 0) + movedTotal) ||
-                            (c.baseCardsCountInitial ?? 0) + movedTotal ||
-                            0;
+                            (((c.baseCardsCount ?? 0) + movedTotal) ||
+                            ((c.baseCardsCountInitial ?? 0) + movedTotal) ||
+                            0);
                           const percentage = baseTotal > 0 ? Math.round((movedV2 / baseTotal) * 100) : 0;
                           if (statusName && typeof movedV2 === 'number') {
                             return (
@@ -482,9 +482,9 @@ export default async function Page() {
                           const movedTotal = (c.movedTotal ?? 0) || 
                             ((c.movedV1 ?? 0) + (c.movedV2 ?? 0) + (c.movedExp ?? 0));
                           const baseTotal = c.baseCardsTotalPassed ?? 
-                            ((c.baseCardsCount ?? 0) + movedTotal) ||
-                            (c.baseCardsCountInitial ?? 0) + movedTotal ||
-                            0;
+                            (((c.baseCardsCount ?? 0) + movedTotal) ||
+                            ((c.baseCardsCountInitial ?? 0) + movedTotal) ||
+                            0);
                           const percentage = baseTotal > 0 ? Math.round((movedExp / baseTotal) * 100) : 0;
                           if (statusName && typeof movedExp === 'number') {
                             return (
