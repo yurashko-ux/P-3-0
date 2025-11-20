@@ -44,6 +44,25 @@ export function normalizeCampaignShape<T = CampaignShape>(raw: any): T | null {
 
       for (const key of SHAPE_KEYS) {
         if (Object.prototype.hasOwnProperty.call(record, key)) {
+          // Діагностика для кампанії 1763651370149
+          if (record.id === '1763651370149' || record.id === 1763651370149) {
+            console.log('[campaign-shape] Normalized campaign 1763651370149:', {
+              hasV1Count: 'v1_count' in record,
+              hasV2Count: 'v2_count' in record,
+              hasExpCount: 'exp_count' in record,
+              hasMovedV1: 'movedV1' in record,
+              hasMovedV2: 'movedV2' in record,
+              hasMovedExp: 'movedExp' in record,
+              hasCounters: 'counters' in record,
+              v1_count: record.v1_count,
+              v2_count: record.v2_count,
+              exp_count: record.exp_count,
+              movedV1: record.movedV1,
+              movedV2: record.movedV2,
+              movedExp: record.movedExp,
+              counters: record.counters,
+            });
+          }
           return record as T;
         }
       }
