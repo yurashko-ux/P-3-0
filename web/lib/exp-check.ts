@@ -228,6 +228,17 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
                 obj.movedV2 = v2Count;
                 obj.movedExp = expCount;
                 
+                // Збільшуємо загальну кількість карток, яка пройшла через базовий статус
+                // Це відбувається при переміщенні картки через EXP
+                if (typeof obj.baseCardsTotalPassed !== 'number') {
+                  // Якщо поле ще не ініціалізовано, встановлюємо його = початкова кількість + переміщені
+                  const initial = typeof obj.baseCardsCountInitial === 'number' ? obj.baseCardsCountInitial : 0;
+                  obj.baseCardsTotalPassed = initial + (v1Count + v2Count + expCount);
+                } else {
+                  // Якщо поле вже існує, просто збільшуємо на 1 (одна картка переміщена)
+                  obj.baseCardsTotalPassed = (obj.baseCardsTotalPassed || 0) + 1;
+                }
+                
                 await kvWrite.setRaw(itemKey, JSON.stringify(obj));
               }
             } catch {
