@@ -317,11 +317,13 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     campaign.baseCardsCountUpdatedAt = Date.now();
     
     // Обчислюємо загальну кількість карток, яка була додана до статусу
-    // baseCardsTotalPassed = поточна кількість + переміщені картки
-    // Це відображає загальну кількість карток, яка була в статусі
-    // (поточна кількість карток, які зараз в статусі + переміщені картки)
-    const additions = Math.max(0, count - oldCount);
-    campaign.baseCardsTotalPassed += additions;
+    // Беремо максимум з попереднього значення та (поточна кількість + переміщені)
+    const currentTotal = count + movedTotal;
+    const previousTotal =
+      typeof campaign.baseCardsTotalPassed === 'number'
+        ? campaign.baseCardsTotalPassed
+        : (campaign.baseCardsCountInitial || 0) + movedTotal;
+    campaign.baseCardsTotalPassed = Math.max(previousTotal, currentTotal);
 
 
     campaign.movedTotal = v1Count + v2Count + expCount;
