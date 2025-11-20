@@ -2,6 +2,7 @@
 // ❗️НОВЕ: у listCampaigns() додаємо __index_id і гарантуємо obj.id = __index_id, якщо збережений id зламаний.
 
 import { getEnvValue } from '@/lib/env';
+import { normalizeCampaignShape } from '@/lib/campaign-shape';
 
 export const campaignKeys = {
   INDEX_KEY: 'campaign:index',
@@ -619,7 +620,7 @@ export const kvRead = {
       for (const key of seenKeys) {
         const raw = await kvGetRaw(key);
         if (!raw) continue;
-        const candidate = parseCampaignObject(raw);
+        const candidate = normalizeCampaignShape(raw);
         if (candidate) {
           parsed = candidate;
           break;

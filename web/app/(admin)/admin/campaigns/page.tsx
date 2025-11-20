@@ -6,6 +6,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import DeleteButton from "@/components/DeleteButton";
 import { kvRead, campaignKeys } from "@/lib/kv";
 import { fetchKeycrmPipelines } from "@/lib/keycrm-pipelines";
+import { normalizeCampaignShape } from "@/lib/campaign-shape";
 
 // повністю вимикаємо кешування цієї сторінки
 export const dynamic = "force-dynamic";
@@ -55,40 +56,6 @@ const IDS_KEY = "cmp:ids";
 const IDS_LIST_KEY = "cmp:ids:list";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
-
-function normalizeCampaignShape<T = Campaign>(raw: any): T {
-  let current = raw;
-  const visited = new Set<any>();
-
-  while (current && typeof current === "object" && !visited.has(current)) {
-    if ("id" in current || "base" in current || "rules" in current || "v1" in current || "v2" in current) {
-      return current as T;
-    }
-
-    visited.add(current);
-
-    if (typeof (current as any).value !== 'undefined') {
-      current = (current as any).value;
-      continue;
-    }
-    if (typeof (current as any).result !== 'undefined') {
-      current = (current as any).result;
-      continue;
-    }
-    if (typeof (current as any).data !== 'undefined') {
-      current = (current as any).data;
-      continue;
-    }
-    if (typeof (current as any).payload !== 'undefined') {
-      current = (current as any).payload;
-      continue;
-    }
-
-    break;
-  }
-
-  return current as T;
-}
 
 function logKvError(message: string, err: unknown) {
   if (process.env.NODE_ENV !== "production") {

@@ -5,52 +5,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, campaignKeys } from '@/lib/kv';
 import { countCardsInBasePipeline } from '@/lib/campaign-stats';
 import { kv } from '@vercel/kv';
+import { normalizeCampaignShape } from '@/lib/campaign-shape';
 
 export const dynamic = 'force-dynamic';
-
-function parseCampaignPayload(raw: string | null): any | null {
-  if (!raw) return null;
-  const stack: unknown[] = [raw];
-  const visited = new Set<unknown>();
-
-  while (stack.length) {
-    const value = stack.pop();
-    if (value == null) continue;
-    if (visited.has(value)) continue;
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) continue;
-      try {
-        stack.push(JSON.parse(trimmed));
-      } catch {
-        /* ignore */
-      }
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      visited.add(value);
-      for (const item of value) stack.push(item);
-      continue;
-    }
-
-    if (typeof value !== 'object') continue;
-
-    visited.add(value);
-    const record = value as Record<string, unknown>;
-
-    if ('id' in record || 'name' in record || 'base' in record || 'rules' in record || 'v1' in record || 'v2' in record) {
-      return { ...(record as Record<string, any>) };
-    }
-
-    for (const key of ['value', 'result', 'data', 'payload', 'item', 'campaign']) {
-      if (key in record) stack.push(record[key]);
-    }
-  }
-
-  return null;
-}
 
 export async function GET(req: NextRequest) {
   const u = new URL(req.url);
@@ -62,8 +19,10 @@ export async function GET(req: NextRequest) {
 
   try {
     // Використовуємо listCampaigns, який вже правильно обробляє кампанії
-    const allCampaigns = await kvRead.listCampaigns();
-    let campaign = allCampaigns.find((c: any) => c.id === campaignId || c.__index_id === campaignId);
+    const allCampaigns = await kvRead.listCampaigns<any>();
+    let campaign = allCampaigns
+      .map((c) => normalizeCampaignShape(c))
+      .find((c) => c && (c.id === campaignId || (c as any).__index_id === campaignId));
     
     if (!campaign) {
       const keysToTry = [
@@ -73,7 +32,7 @@ export async function GET(req: NextRequest) {
       ];
       for (const key of keysToTry) {
         const raw = await kvRead.getRaw(key);
-        const parsed = parseCampaignPayload(raw);
+        const parsed = normalizeCampaignShape(raw);
         if (parsed) {
           campaign = parsed;
           break;
