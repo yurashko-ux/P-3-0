@@ -580,31 +580,35 @@ export async function POST(req: NextRequest) {
       try {
         const field = route === 'v1' ? 'v1_count' : 'v2_count';
         
-        // Перевіряємо всі можливі ключі, щоб знайти кампанію
+        // Перевіряємо всі можливі ключі в правильному порядку пріоритету
+        // (спочатку ITEM_KEY, потім CMP_ITEM_KEY, потім LEGACY_ITEM_KEY)
+        // Але завжди зберігаємо під основним ключем ITEM_KEY
         const possibleKeys = [
-          campaignKeys.CMP_ITEM_KEY(campaignId),
-          campaignKeys.ITEM_KEY(campaignId),
-          campaignKeys.LEGACY_ITEM_KEY(campaignId),
+          campaignKeys.ITEM_KEY(campaignId),      // Основний ключ - перевіряємо першим
+          campaignKeys.CMP_ITEM_KEY(campaignId),  // Старий формат
+          campaignKeys.LEGACY_ITEM_KEY(campaignId), // Дуже старий формат
         ];
         
-        let itemKey: string | null = null;
         let raw: string | null = null;
         
+        // Шукаємо кампанію під будь-яким ключем
         for (const key of possibleKeys) {
           const candidateRaw = await kvRead.getRaw(key);
           if (candidateRaw) {
             const candidate = normalizeCampaignShape(candidateRaw);
             if (candidate && (candidate.id === campaignId || String(candidate.id) === campaignId)) {
-              itemKey = key;
               raw = candidateRaw;
               break;
             }
           }
         }
         
-        console.log('[manychat] Updating counter:', { campaignId, route, field, itemKey, foundKeys: possibleKeys.filter(k => itemKey === k) });
+        // Завжди зберігаємо під основним ключем ITEM_KEY
+        const itemKey = campaignKeys.ITEM_KEY(campaignId);
         
-        if (!raw || !itemKey) {
+        console.log('[manychat] Updating counter:', { campaignId, route, field, itemKey, foundRaw: !!raw });
+        
+        if (!raw) {
           console.warn('[manychat] Campaign not found in KV:', { campaignId, possibleKeys });
         } else {
           // Розпаршуємо JSON якщо це рядок
