@@ -633,16 +633,38 @@ export async function POST(req: NextRequest) {
             
             // Додаткова перевірка - якщо obj все ще не об'єкт, спробуємо розпарсити ще раз
             if (!obj || typeof obj !== 'object') {
-              console.error('[manychat] Failed to parse campaign:', { 
-                campaignId, 
-                itemKey, 
-                rawLength: raw.length,
-                rawType: typeof raw,
-                rawPreview: typeof raw === 'string' ? raw.slice(0, 200) : String(raw).slice(0, 200),
-                normalizedObj: obj,
-              });
-              // Продовжуємо виконання, не перериваємо
-            } else {
+              // Спробуємо ще раз з normalizeCampaignShape на оригінальному raw
+              if (typeof raw === 'string') {
+                try {
+                  const parsedAgain = JSON.parse(raw);
+                  if (parsedAgain && typeof parsedAgain === 'object') {
+                    // Спробуємо використати розпарсений об'єкт безпосередньо
+                    obj = parsedAgain;
+                    console.log('[manychat] Using parsed object directly as fallback');
+                  }
+                } catch (err) {
+                  // Ігноруємо помилку
+                }
+              }
+              
+              if (!obj || typeof obj !== 'object') {
+                console.error('[manychat] Failed to parse campaign:', { 
+                  campaignId, 
+                  itemKey, 
+                  rawLength: typeof raw === 'string' ? raw.length : String(raw).length,
+                  rawType: typeof raw,
+                  rawPreview: typeof raw === 'string' ? raw.slice(0, 300) : String(raw).slice(0, 300),
+                  normalizedObj: obj,
+                  normalizedObjType: typeof obj,
+                });
+                // Продовжуємо виконання, не перериваємо
+              } else {
+                console.log('[manychat] Successfully parsed campaign after fallback');
+              }
+            }
+            
+            // Якщо obj тепер є об'єктом, продовжуємо
+            if (obj && typeof obj === 'object') {
               // Інкрементуємо лічильник
             const oldValue = typeof obj[field] === 'number' ? obj[field] : 0;
             obj[field] = oldValue + 1;
@@ -785,6 +807,8 @@ export async function POST(req: NextRequest) {
                 // Не критично - продовжуємо виконання
               }
             }
+            } else {
+              console.warn('[manychat] Skipping counter update - obj is not an object:', { obj, objType: typeof obj });
             }
           }
         } catch (err) {
