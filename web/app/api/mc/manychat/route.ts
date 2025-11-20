@@ -580,7 +580,16 @@ export async function POST(req: NextRequest) {
             // Він оновлюється тільки при перерахуванні статистики (updateCampaignBaseCardsCount)
             // коли виявляються нові картки, додані вручну в KeyCRM
             
+            // Зберігаємо через обидва методи для сумісності
             await kvWrite.setRaw(itemKey, JSON.stringify(obj));
+            // Також спробуємо зберегти через @vercel/kv для сумісності
+            try {
+              const { kv } = await import('@vercel/kv');
+              await kv.set(itemKey, obj);
+            } catch {
+              // Ігноруємо помилки @vercel/kv
+            }
+            
             // Оновлюємо індекс, щоб кампанія піднімалась у списку
             try {
               await kvWrite.lpush(campaignKeys.INDEX_KEY, campaignId);

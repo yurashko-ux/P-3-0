@@ -254,14 +254,13 @@ export default async function Page() {
               <th className="px-2 py-3 w-[120px]">Варіант</th>
               <th className="px-2 py-3 w-[260px]">Цільова воронка</th>
               <th className="px-2 py-3 w-[280px]">Цільовий статус</th>
-              <th className="px-2 py-3 w-[140px]">Лічильник</th>
               <th className="px-4 py-3 w-[120px] text-right">Дії</th>
             </tr>
           </thead>
           <tbody>
             {campaigns.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                   Порожньо. Створіть першу кампанію.
                 </td>
               </tr>
@@ -348,45 +347,54 @@ export default async function Page() {
                     </div>
                   </td>
 
-                  {/* Цільовий статус — вертикально */}
+                  {/* Цільовий статус — вертикально з лічильниками */}
                   <td className="px-2 py-3 text-sm">
                     <div className="flex flex-col gap-1">
                       <div>
                         <span className="text-slate-500 mr-2">V1</span>
-                        {nn(c.t1?.statusName)}
+                        {(() => {
+                          const statusName = nn(c.t1?.statusName);
+                          const movedV1 = c.movedV1 ?? c.counters?.v1 ?? 0;
+                          if (statusName && typeof movedV1 === 'number') {
+                            return (
+                              <>
+                                {statusName} <span className="text-slate-400">({movedV1})</span>
+                              </>
+                            );
+                          }
+                          return statusName;
+                        })()}
                       </div>
                       <div>
                         <span className="text-slate-500 mr-2">V2</span>
-                        {nn(c.t2?.statusName)}
+                        {(() => {
+                          const statusName = nn(c.t2?.statusName);
+                          const movedV2 = c.movedV2 ?? c.counters?.v2 ?? 0;
+                          if (statusName && typeof movedV2 === 'number') {
+                            return (
+                              <>
+                                {statusName} <span className="text-slate-400">({movedV2})</span>
+                              </>
+                            );
+                          }
+                          return statusName;
+                        })()}
                       </div>
                       <div>
                         <span className="text-slate-500 mr-2">EXP</span>
-                        {nn(c.texp?.statusName)}
+                        {(() => {
+                          const statusName = nn(c.texp?.statusName);
+                          const movedExp = c.movedExp ?? c.counters?.exp ?? 0;
+                          if (statusName && typeof movedExp === 'number') {
+                            return (
+                              <>
+                                {statusName} <span className="text-slate-400">({movedExp})</span>
+                              </>
+                            );
+                          }
+                          return statusName;
+                        })()}
                       </div>
-                    </div>
-                  </td>
-
-                  {/* Лічильники — вертикально */}
-                  <td className="px-2 py-3 text-sm">
-                    <div className="flex flex-col gap-1">
-                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                        <span className="text-slate-500 mr-1">V1:</span>
-                        <span>{c.movedV1 ?? c.counters?.v1 ?? 0}</span>
-                      </div>
-                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                        <span className="text-slate-500 mr-1">V2:</span>
-                        <span>{c.movedV2 ?? c.counters?.v2 ?? 0}</span>
-                      </div>
-                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                        <span className="text-slate-500 mr-1">EXP:</span>
-                        <span>{c.movedExp ?? c.counters?.exp ?? 0}</span>
-                      </div>
-                      {typeof c.movedTotal === 'number' && c.movedTotal > 0 && (
-                        <div className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 mt-1">
-                          <span className="text-blue-600 mr-1">Всього:</span>
-                          <span>{c.movedTotal}</span>
-                        </div>
-                      )}
                     </div>
                   </td>
 
