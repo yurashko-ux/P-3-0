@@ -175,10 +175,14 @@ export default async function Page() {
             const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
             const newCount = await updateCampaignBaseCardsCount(c.id);
             
-            // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
-            // Використовуємо невелику затримку, щоб KV встиг оновити дані
+            // Якщо статистика оновилась, оновлюємо кампанію з новим baseCardsCount
             if (newCount !== null) {
-              // Читаємо оновлену кампанію безпосередньо через @vercel/kv
+              // Оновлюємо baseCardsCount напряму, щоб не залежати від читання з KV
+              const updated = { ...c };
+              updated.baseCardsCount = newCount;
+              updated.baseCardsCountUpdatedAt = Date.now();
+              
+              // Також намагаємося прочитати оновлену кампанію з KV
               const keysToTry = [
                 campaignKeys.ITEM_KEY(c.id),
                 campaignKeys.CMP_ITEM_KEY(c.id),
@@ -187,21 +191,17 @@ export default async function Page() {
               
               for (const key of keysToTry) {
                 try {
-                  const updated = await kv.get(key);
-                  if (updated && typeof updated === 'object') {
-                    return updated as Campaign;
+                  const kvUpdated = await kv.get(key);
+                  if (kvUpdated && typeof kvUpdated === 'object') {
+                    // Мержимо оновлені дані з KV
+                    return { ...updated, ...kvUpdated } as Campaign;
                   }
                 } catch {
                   // Продовжуємо наступний ключ
                 }
               }
               
-              // Якщо не знайшли через @vercel/kv, спробуємо через listCampaigns
-              const allCampaigns = await kvRead.listCampaigns();
-              const updated = allCampaigns.find((camp: any) => camp.id === c.id || camp.__index_id === c.id);
-              if (updated) {
-                return updated as Campaign;
-              }
+              return updated as Campaign;
             }
             return c;
           } catch {
