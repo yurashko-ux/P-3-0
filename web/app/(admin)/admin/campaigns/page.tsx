@@ -290,7 +290,7 @@ export default async function Page() {
                       if (currentCount !== null && totalPassed !== null) {
                         return (
                           <>
-                            {statusName} <span className="text-slate-400">({currentCount}/{totalPassed})</span>
+                            {statusName} <span className="text-slate-400">({totalPassed}/{currentCount})</span>
                           </>
                         );
                       } else if (currentCount !== null) {
