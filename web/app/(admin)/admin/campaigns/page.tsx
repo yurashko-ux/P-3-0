@@ -168,16 +168,35 @@ export default async function Page() {
   // Робимо це синхронно, щоб оновлені дані відобразились на сторінці
   if (campaigns.length > 0) {
     try {
-      const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
-      
       // Оновлюємо статистику для всіх кампаній перед рендерингом
-      // Використовуємо listCampaigns для читання оновлених кампаній
       const updatedCampaigns = await Promise.all(
         campaigns.map(async (c) => {
           try {
+            const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
             const newCount = await updateCampaignBaseCardsCount(c.id);
+            
             // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
+            // Використовуємо невелику затримку, щоб KV встиг оновити дані
             if (newCount !== null) {
+              // Читаємо оновлену кампанію безпосередньо через @vercel/kv
+              const keysToTry = [
+                campaignKeys.ITEM_KEY(c.id),
+                campaignKeys.CMP_ITEM_KEY(c.id),
+                campaignKeys.LEGACY_ITEM_KEY(c.id),
+              ];
+              
+              for (const key of keysToTry) {
+                try {
+                  const updated = await kv.get(key);
+                  if (updated && typeof updated === 'object') {
+                    return updated as Campaign;
+                  }
+                } catch {
+                  // Продовжуємо наступний ключ
+                }
+              }
+              
+              // Якщо не знайшли через @vercel/kv, спробуємо через listCampaigns
               const allCampaigns = await kvRead.listCampaigns();
               const updated = allCampaigns.find((camp: any) => camp.id === c.id || camp.__index_id === c.id);
               if (updated) {
