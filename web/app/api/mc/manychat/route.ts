@@ -554,18 +554,22 @@ export async function POST(req: NextRequest) {
       if (campaignId && (route === 'v1' || route === 'v2')) {
         const field = route === 'v1' ? 'v1_count' : 'v2_count';
         const itemKey = campaignKeys.ITEM_KEY(campaignId);
-        const raw = await kvRead.getRaw(itemKey);
         
-        if (raw) {
-          try {
+        try {
+          const raw = await kvRead.getRaw(itemKey);
+          
+          if (!raw) {
+            console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
+            // Продовжуємо виконання, не перериваємо
+          } else {
             // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
             const obj = normalizeCampaignShape(raw);
             
             if (!obj || typeof obj !== 'object') {
-              return NextResponse.json({ ok: false, error: 'Failed to parse campaign' }, { status: 500 });
-            }
-            
-            // Інкрементуємо лічильник
+              console.error('[manychat] Failed to parse campaign:', { campaignId, itemKey, rawLength: raw.length });
+              // Продовжуємо виконання, не перериваємо
+            } else {
+              // Інкрементуємо лічильник
             const oldValue = typeof obj[field] === 'number' ? obj[field] : 0;
             obj[field] = oldValue + 1;
             
@@ -669,9 +673,11 @@ export async function POST(req: NextRequest) {
               const { saveExpTracking } = await import('@/lib/exp-tracking');
               await saveExpTracking(campaignId, cardId, basePipelineId, baseStatusId);
             }
-          } catch (err) {
-            console.error('[manychat] Помилка інкременту лічильника:', err);
+            }
           }
+        } catch (err) {
+          console.error('[manychat] Помилка інкременту лічильника:', err);
+          // Не перериваємо виконання - просто логуємо помилку
         }
       }
     } catch (err) {
