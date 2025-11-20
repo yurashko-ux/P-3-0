@@ -429,10 +429,12 @@ export default async function Page() {
                         {(() => {
                           const statusName = nn(c.t1?.statusName);
                           const movedV1 = c.movedV1 ?? c.counters?.v1 ?? 0;
+                          const baseTotal = c.baseCardsTotalPassed ?? 0;
+                          const percentage = baseTotal > 0 ? Math.round((movedV1 / baseTotal) * 100) : 0;
                           if (statusName && typeof movedV1 === 'number') {
                             return (
                               <>
-                                {statusName} <span className="text-slate-400">({movedV1})</span>
+                                {statusName} <span className="text-slate-400">({movedV1} / {percentage}%)</span>
                               </>
                             );
                           }
@@ -444,10 +446,12 @@ export default async function Page() {
                         {(() => {
                           const statusName = nn(c.t2?.statusName);
                           const movedV2 = c.movedV2 ?? c.counters?.v2 ?? 0;
+                          const baseTotal = c.baseCardsTotalPassed ?? 0;
+                          const percentage = baseTotal > 0 ? Math.round((movedV2 / baseTotal) * 100) : 0;
                           if (statusName && typeof movedV2 === 'number') {
                             return (
                               <>
-                                {statusName} <span className="text-slate-400">({movedV2})</span>
+                                {statusName} <span className="text-slate-400">({movedV2} / {percentage}%)</span>
                               </>
                             );
                           }
@@ -459,10 +463,12 @@ export default async function Page() {
                         {(() => {
                           const statusName = nn(c.texp?.statusName);
                           const movedExp = c.movedExp ?? c.counters?.exp ?? 0;
+                          const baseTotal = c.baseCardsTotalPassed ?? 0;
+                          const percentage = baseTotal > 0 ? Math.round((movedExp / baseTotal) * 100) : 0;
                           if (statusName && typeof movedExp === 'number') {
                             return (
                               <>
-                                {statusName} <span className="text-slate-400">({movedExp})</span>
+                                {statusName} <span className="text-slate-400">({movedExp} / {percentage}%)</span>
                               </>
                             );
                           }
