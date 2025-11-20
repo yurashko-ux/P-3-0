@@ -282,6 +282,18 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
         ? campaign.baseCardsTotalPassed
         : (campaign.baseCardsCountInitial || 0) + movedTotal;
     campaign.baseCardsTotalPassed = Math.max(previousTotal, currentTotal);
+    
+    // Логування для діагностики
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[campaign-stats] Updated baseCardsTotalPassed:', {
+        campaignId,
+        previousTotal,
+        currentTotal,
+        baseCardsTotalPassed: campaign.baseCardsTotalPassed,
+        count,
+        movedTotal,
+      });
+    }
 
 
     campaign.movedTotal = v1Count + v2Count + expCount;

@@ -542,6 +542,15 @@ export async function POST(req: NextRequest) {
       const campaignId = automation.match?.campaign?.id;
       const route = automation.match?.route;
       
+      // Логування для діагностики
+      console.log('[manychat] Card moved successfully:', {
+        campaignId,
+        route,
+        automationOk: automation?.ok,
+        moveAttempted: automation.move?.attempted,
+        moveOk: automation.move?.ok,
+      });
+      
       if (campaignId && (route === 'v1' || route === 'v2')) {
         const field = route === 'v1' ? 'v1_count' : 'v2_count';
         const itemKey = campaignKeys.ITEM_KEY(campaignId);
@@ -588,28 +597,38 @@ export async function POST(req: NextRequest) {
             // коли виявляються нові картки, додані вручну в KeyCRM
             
             // Зберігаємо через обидва методи для сумісності
-            await kvWrite.setRaw(itemKey, JSON.stringify(obj));
+            const serialized = JSON.stringify(obj);
+            await kvWrite.setRaw(itemKey, serialized);
+            console.log('[manychat] Saved to KV:', { itemKey, serializedLength: serialized.length });
+            
             // Також спробуємо зберегти через @vercel/kv для сумісності
             try {
               const { kv } = await import('@vercel/kv');
               await kv.set(itemKey, obj);
-            } catch {
-              // Ігноруємо помилки @vercel/kv
+              console.log('[manychat] Also saved via @vercel/kv');
+            } catch (err) {
+              console.warn('[manychat] Failed to save via @vercel/kv:', err);
             }
             
-            // Логування для діагностики
-            if (process.env.NODE_ENV !== 'production') {
-              console.log('[manychat] Updated counters:', {
-                campaignId,
-                route,
-                field,
-                v1Count,
-                v2Count,
-                expCount,
-                movedTotal: obj.movedTotal,
-                itemKey,
-              });
-            }
+            // Логування для діагностики (завжди, щоб бачити в production)
+            console.log('[manychat] Updated counters:', {
+              campaignId,
+              route,
+              field,
+              v1Count,
+              v2Count,
+              expCount,
+              movedTotal: obj.movedTotal,
+              itemKey,
+              beforeSave: {
+                v1_count: obj.v1_count,
+                v2_count: obj.v2_count,
+                counters: obj.counters,
+                movedV1: obj.movedV1,
+                movedV2: obj.movedV2,
+                movedExp: obj.movedExp,
+              },
+            });
             
             // Оновлюємо індекс, щоб кампанія піднімалась у списку
             try {
