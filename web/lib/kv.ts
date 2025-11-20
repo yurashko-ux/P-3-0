@@ -594,10 +594,12 @@ export const kvRead = {
       await loadIndex(key);
     }
 
+    // Змінюємо порядок: спочатку перевіряємо ITEM_KEY (основний), потім CMP_ITEM_KEY, потім LEGACY_ITEM_KEY
+    // Це гарантує, що оновлені дані (збережені під ITEM_KEY) будуть читатись першими
     const itemKeyFactories = [
-      campaignKeys.CMP_ITEM_KEY,
-      campaignKeys.ITEM_KEY,
-      campaignKeys.LEGACY_ITEM_KEY,
+      campaignKeys.ITEM_KEY,      // Основний ключ для збереження
+      campaignKeys.CMP_ITEM_KEY,  // Старий формат
+      campaignKeys.LEGACY_ITEM_KEY, // Дуже старий формат
     ];
 
     const out: T[] = [];
