@@ -320,8 +320,8 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     // baseCardsTotalPassed = поточна кількість + переміщені картки
     // Це відображає загальну кількість карток, яка була в статусі
     // (поточна кількість карток, які зараз в статусі + переміщені картки)
-    const currentTotal = count + movedTotal;
-    campaign.baseCardsTotalPassed = currentTotal;
+    const additions = Math.max(0, count - oldCount);
+    campaign.baseCardsTotalPassed += additions;
 
 
     campaign.movedTotal = v1Count + v2Count + expCount;
