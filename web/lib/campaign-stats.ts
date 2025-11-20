@@ -289,6 +289,8 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
         baseStatusId,
         oldCount: campaign.baseCardsCount,
         newCount: count,
+        movedTotal,
+        baseCardsTotalPassed: count + movedTotal,
         itemKey,
       });
     }
