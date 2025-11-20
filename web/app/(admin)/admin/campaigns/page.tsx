@@ -186,6 +186,20 @@ export default async function Page() {
   
   let campaigns = await readWithFallback();
   
+  // Діагностика: перевіряємо читання лічильників
+  const testCampaign = campaigns.find(c => c.id === '1763651370149');
+  if (testCampaign) {
+    console.log('[campaigns] Campaign 1763651370149 after reading:', {
+      movedV1: testCampaign.movedV1,
+      movedV2: testCampaign.movedV2,
+      movedExp: testCampaign.movedExp,
+      movedTotal: testCampaign.movedTotal,
+      counters: testCampaign.counters,
+      v1_count: (testCampaign as any).v1_count,
+      v2_count: (testCampaign as any).v2_count,
+    });
+  }
+  
   // Оновлюємо статистику базових карток для всіх кампаній при завантаженні сторінки
   // Робимо це синхронно, щоб оновлені дані відобразились на сторінці
   if (campaigns.length > 0) {
@@ -226,11 +240,24 @@ export default async function Page() {
                 const allCampaigns = await kvRead.listCampaigns<Campaign>();
                 const kvUpdated = allCampaigns.find((camp) => camp.id === baseCampaign.id || (camp as any).__index_id === baseCampaign.id);
                 if (kvUpdated) {
+                  // Діагностика для кампанії 1763651370149
+                  if (baseCampaign.id === '1763651370149') {
+                    console.log('[campaigns] KV campaign 1763651370149:', {
+                      movedV1: kvUpdated.movedV1,
+                      movedV2: kvUpdated.movedV2,
+                      movedExp: kvUpdated.movedExp,
+                      movedTotal: kvUpdated.movedTotal,
+                      counters: kvUpdated.counters,
+                      v1_count: (kvUpdated as any).v1_count,
+                      v2_count: (kvUpdated as any).v2_count,
+                    });
+                  }
+                  
                   // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
                   // Але використовуємо актуальні лічильники з KV
-                  const kvV1Count = kvUpdated.movedV1 ?? kvUpdated.counters?.v1 ?? v1Count;
-                  const kvV2Count = kvUpdated.movedV2 ?? kvUpdated.counters?.v2 ?? v2Count;
-                  const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? expCount;
+                  const kvV1Count = kvUpdated.movedV1 ?? kvUpdated.counters?.v1 ?? (kvUpdated as any).v1_count ?? v1Count;
+                  const kvV2Count = kvUpdated.movedV2 ?? kvUpdated.counters?.v2 ?? (kvUpdated as any).v2_count ?? v2Count;
+                  const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? (kvUpdated as any).exp_count ?? expCount;
                   const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
                   
                   const mergedBaseTotal =
