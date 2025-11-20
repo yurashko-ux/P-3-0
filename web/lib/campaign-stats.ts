@@ -293,29 +293,45 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
       });
     }
 
-    // Оновлюємо кампанію
-    campaign.baseCardsCount = count;
-    campaign.baseCardsCountUpdatedAt = Date.now();
-    
     // Зберігаємо початкову кількість, якщо її ще немає (для старих кампаній)
     if (typeof campaign.baseCardsCountInitial !== 'number') {
       campaign.baseCardsCountInitial = count;
     }
     
     // Ініціалізуємо baseCardsTotalPassed, якщо його ще немає (для старих кампаній)
-    // Загальна кількість карток, яка пройшла через базовий статус = початкова кількість + переміщені
     if (typeof campaign.baseCardsTotalPassed !== 'number') {
-      const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : campaign.v1_count || 0;
-      const v2Count = typeof campaign.counters?.v2 === 'number' ? campaign.counters.v2 : campaign.v2_count || 0;
-      const expCount = typeof campaign.counters?.exp === 'number' ? campaign.counters.exp : campaign.exp_count || 0;
-      const movedTotal = v1Count + v2Count + expCount;
-      campaign.baseCardsTotalPassed = (campaign.baseCardsCountInitial || 0) + movedTotal;
+      campaign.baseCardsTotalPassed = campaign.baseCardsCountInitial || 0;
     }
-
-    // Обчислюємо переміщені картки
+    
+    // Обчислюємо переміщені картки ДО оновлення baseCardsCount
     const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : campaign.v1_count || 0;
     const v2Count = typeof campaign.counters?.v2 === 'number' ? campaign.counters.v2 : campaign.v2_count || 0;
     const expCount = typeof campaign.counters?.exp === 'number' ? campaign.counters.exp : campaign.exp_count || 0;
+    const movedTotal = v1Count + v2Count + expCount;
+    
+    // Оновлюємо кампанію
+    const oldCount = typeof campaign.baseCardsCount === 'number' ? campaign.baseCardsCount : campaign.baseCardsCountInitial || 0;
+    campaign.baseCardsCount = count;
+    campaign.baseCardsCountUpdatedAt = Date.now();
+    
+    // Обчислюємо загальну кількість карток, яка була додана до статусу
+    // Формула: початкова кількість + (поточна кількість - початкова + переміщені)
+    // Це означає: скільки було спочатку + скільки додали + скільки перемістили
+    // Але оскільки переміщені вже не в статусі, то правильніше:
+    // baseCardsTotalPassed = початкова + (поточна - початкова) + переміщені
+    // = початкова + поточна - початкова + переміщені
+    // = поточна + переміщені
+    // Або простіше: baseCardsTotalPassed = max(baseCardsTotalPassed, поточна + переміщені)
+    const initialCount = campaign.baseCardsCountInitial || 0;
+    const currentTotal = count + movedTotal;
+    
+    // baseCardsTotalPassed має відображати максимальну кількість карток, яка була в статусі
+    // Тобто: початкова + всі додані після створення кампанії
+    // Якщо поточна кількість + переміщені більше за поточний baseCardsTotalPassed, оновлюємо
+    if (currentTotal > campaign.baseCardsTotalPassed) {
+      campaign.baseCardsTotalPassed = currentTotal;
+    }
+
 
     campaign.movedTotal = v1Count + v2Count + expCount;
     campaign.movedV1 = v1Count;
