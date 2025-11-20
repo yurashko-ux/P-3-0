@@ -280,6 +280,18 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
 
     // Підраховуємо картки
     const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
+    
+    // Логування для діагностики (тільки в dev режимі)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[campaign-stats] Updating campaign stats:', {
+        campaignId,
+        basePipelineId,
+        baseStatusId,
+        oldCount: campaign.baseCardsCount,
+        newCount: count,
+        itemKey,
+      });
+    }
 
     // Оновлюємо кампанію
     campaign.baseCardsCount = count;
@@ -300,7 +312,32 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     campaign.movedV2 = v2Count;
     campaign.movedExp = expCount;
 
-    await kvWrite.setRaw(itemKey, JSON.stringify(campaign));
+    // Зберігаємо оновлену кампанію через @vercel/kv (якщо використовували @vercel/kv для читання)
+    // або через kvWrite.setRaw (якщо використовували kvRead.getRaw для читання)
+    if (itemKey) {
+      try {
+        // Спробуємо зберегти через @vercel/kv
+        await kv.set(itemKey, campaign);
+      } catch {
+        // Якщо не вдалося через @vercel/kv, використовуємо kvWrite.setRaw
+        await kvWrite.setRaw(itemKey, JSON.stringify(campaign));
+      }
+    } else {
+      // Якщо не знайшли itemKey, спробуємо зберегти під всіма можливими ключами
+      for (const key of keysToTry) {
+        try {
+          await kv.set(key, campaign);
+          break;
+        } catch {
+          try {
+            await kvWrite.setRaw(key, JSON.stringify(campaign));
+            break;
+          } catch {
+            // Продовжуємо наступний ключ
+          }
+        }
+      }
+    }
 
     return count;
   } catch (err) {
