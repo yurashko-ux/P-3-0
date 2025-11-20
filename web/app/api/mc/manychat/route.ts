@@ -605,16 +605,19 @@ export async function POST(req: NextRequest) {
         try {
           const raw = await kvRead.getRaw(itemKey);
           
-          console.log('[manychat] Read from KV:', { itemKey, hasRaw: !!raw, rawLength: raw?.length });
+          const rawLength = typeof raw === 'string' ? raw.length : raw ? String(raw).length : 0;
+          console.log('[manychat] Read from KV:', { itemKey, hasRaw: !!raw, rawLength });
           
           if (!raw) {
             console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
             // Продовжуємо виконання, не перериваємо
           } else {
+            const rawType = typeof raw;
+            const rawPreview = typeof raw === 'string' ? raw.slice(0, 150) : String(raw).slice(0, 150);
             console.log('[manychat] Raw data from KV:', { 
-              rawType: typeof raw,
-              rawLength: typeof raw === 'string' ? raw.length : String(raw).length,
-              rawPreview: typeof raw === 'string' ? raw.slice(0, 150) : String(raw).slice(0, 150),
+              rawType,
+              rawLength,
+              rawPreview,
             });
             
             // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
