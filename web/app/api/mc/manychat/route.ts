@@ -660,7 +660,28 @@ export async function POST(req: NextRequest) {
             const serialized = JSON.stringify(campaign);
             
             // Зберігаємо під основним ключем (ITEM_KEY)
+            console.log(`[manychat] Saving to ITEM_KEY: ${itemKey}`, {
+              campaignId,
+              v1_count: campaign.v1_count,
+              movedV1: campaign.movedV1,
+              movedTotal: campaign.movedTotal,
+            });
             await kvWrite.setRaw(itemKey, serialized);
+            
+            // Перевіряємо, чи дані збереглися правильно
+            const verifyRaw = await kvRead.getRaw(itemKey);
+            if (verifyRaw) {
+              const verify = normalizeCampaignShape(verifyRaw);
+              console.log(`[manychat] Verified ITEM_KEY after save: ${itemKey}`, {
+                campaignId,
+                found: !!verify,
+                v1_count: verify?.v1_count,
+                movedV1: verify?.movedV1,
+                movedTotal: verify?.movedTotal,
+              });
+            } else {
+              console.error(`[manychat] Failed to verify ITEM_KEY after save: ${itemKey}`);
+            }
             
             // Також зберігаємо під CMP_ITEM_KEY для сумісності з listCampaigns
             const cmpItemKey = campaignKeys.CMP_ITEM_KEY(campaignId);
