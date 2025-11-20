@@ -614,13 +614,25 @@ export async function POST(req: NextRequest) {
             // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
             let obj: any = null;
             
+            console.log('[manychat] Parsing raw data:', { 
+              rawType: typeof raw,
+              rawLength: typeof raw === 'string' ? raw.length : String(raw).length,
+              rawPreview: typeof raw === 'string' ? raw.slice(0, 100) : String(raw).slice(0, 100),
+            });
+            
             // Спробуємо спочатку розпарсити як JSON, якщо це рядок
             if (typeof raw === 'string') {
               try {
                 const parsed = JSON.parse(raw);
+                console.log('[manychat] Parsed JSON successfully:', { parsedType: typeof parsed, isObject: parsed && typeof parsed === 'object' });
+                
+                // Спочатку спробуємо normalizeCampaignShape
                 obj = normalizeCampaignShape(parsed);
+                console.log('[manychat] After normalizeCampaignShape:', { objType: typeof obj, isObject: obj && typeof obj === 'object' });
+                
+                // Якщо normalizeCampaignShape не спрацював, використовуємо розпарсений об'єкт безпосередньо
                 if (!obj || typeof obj !== 'object') {
-                  // Якщо normalizeCampaignShape не спрацював, спробуємо використати розпарсений об'єкт безпосередньо
+                  console.log('[manychat] normalizeCampaignShape failed, using parsed object directly');
                   obj = parsed;
                 }
               } catch (err) {
