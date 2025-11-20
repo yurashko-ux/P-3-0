@@ -12,6 +12,7 @@ import {
   type ManychatRoutingSuccess,
 } from '@/lib/manychat-routing';
 import { moveKeycrmCard } from '@/lib/keycrm-move';
+import { normalizeCampaignShape } from '@/lib/campaign-shape';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
@@ -548,26 +549,8 @@ export async function POST(req: NextRequest) {
         
         if (raw) {
           try {
-            // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
-            let obj: any = null;
-            try {
-              const parsed = JSON.parse(raw);
-              // Перевіряємо, чи це обгортка з value
-              if (parsed && typeof parsed === 'object' && 'value' in parsed) {
-                const unwrapped = parsed.value;
-                if (typeof unwrapped === 'string') {
-                  obj = JSON.parse(unwrapped);
-                } else if (unwrapped && typeof unwrapped === 'object') {
-                  obj = unwrapped;
-                } else {
-                  obj = parsed;
-                }
-              } else {
-                obj = parsed;
-              }
-            } catch {
-              obj = JSON.parse(raw);
-            }
+            // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
+            const obj = normalizeCampaignShape(raw);
             
             if (!obj || typeof obj !== 'object') {
               return NextResponse.json({ ok: false, error: 'Failed to parse campaign' }, { status: 500 });

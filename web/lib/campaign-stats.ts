@@ -4,6 +4,7 @@
 import { keycrmHeaders, keycrmUrl } from '@/lib/env';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import { kv } from '@vercel/kv';
+import { normalizeCampaignShape } from '@/lib/campaign-shape';
 
 /**
  * Підраховує кількість карток у базовій воронці/статусі кампанії
@@ -176,6 +177,10 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
       try {
         campaign = await kv.get(key);
         if (campaign) {
+          campaign = normalizeCampaignShape(campaign);
+          if (!campaign) {
+            continue;
+          }
           itemKey = key;
           break;
         }
@@ -199,59 +204,12 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
         return null;
       }
 
-      // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
-      // kvGetRaw вже намагається розгорнути, але іноді повертає обгортку
-    try {
-      let parsed: any = null;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
+      const parsedCampaign = normalizeCampaignShape(raw);
+      if (!parsedCampaign) {
         return null;
       }
 
-      // Якщо це об'єкт з ключем value, розгортаємо
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        if ('value' in parsed) {
-          const unwrapped = parsed.value;
-          if (typeof unwrapped === 'string') {
-            try {
-              campaign = JSON.parse(unwrapped);
-            } catch {
-              campaign = unwrapped;
-            }
-          } else if (unwrapped && typeof unwrapped === 'object') {
-            campaign = unwrapped;
-          } else {
-            campaign = parsed;
-          }
-        } else if ('result' in parsed) {
-          campaign = parsed.result;
-        } else if ('data' in parsed) {
-          campaign = parsed.data;
-        } else {
-          // Перевіряємо, чи це вже кампанія (має поля id, name, base тощо)
-          if ('id' in parsed || 'name' in parsed || 'base' in parsed) {
-            campaign = parsed;
-          } else {
-            campaign = parsed;
-          }
-        }
-      } else {
-        campaign = parsed;
-      }
-
-      // Якщо все ще рядок, спробуємо розпарсити ще раз
-      if (typeof campaign === 'string') {
-        try {
-          campaign = JSON.parse(campaign);
-        } catch {
-          return null;
-        }
-      }
-    } catch {
-      return null;
-    }
-
+      campaign = parsedCampaign;
       if (!campaign || typeof campaign !== 'object' || Array.isArray(campaign)) {
         return null;
       }
@@ -285,7 +243,7 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     const movedTotal = v1Count + v2Count + expCount;
 
     // Підраховуємо картки
-    const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
+        const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
     
     // Логування для діагностики (тільки в dev режимі)
     if (process.env.NODE_ENV !== 'production') {
@@ -408,7 +366,7 @@ export async function initializeCampaignStats(campaign: any): Promise<any> {
     };
   }
 
-  const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
+      const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
   
   // Логування для діагностики (тільки в dev режимі)
   if (process.env.NODE_ENV !== 'production') {
