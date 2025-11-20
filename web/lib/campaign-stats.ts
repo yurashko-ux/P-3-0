@@ -278,6 +278,12 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
       return null;
     }
 
+    // Обчислюємо переміщені картки ДО підрахунку нових карток
+    const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : (campaign as any).v1_count || 0;
+    const v2Count = typeof campaign.counters?.v2 === 'number' ? campaign.counters.v2 : (campaign as any).v2_count || 0;
+    const expCount = typeof campaign.counters?.exp === 'number' ? campaign.counters.exp : (campaign as any).exp_count || 0;
+    const movedTotal = v1Count + v2Count + expCount;
+
     // Підраховуємо картки
     const count = await countCardsInBasePipeline(basePipelineId, baseStatusId);
     
@@ -304,12 +310,6 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     if (typeof campaign.baseCardsTotalPassed !== 'number') {
       campaign.baseCardsTotalPassed = campaign.baseCardsCountInitial || 0;
     }
-    
-    // Обчислюємо переміщені картки ДО оновлення baseCardsCount
-    const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : campaign.v1_count || 0;
-    const v2Count = typeof campaign.counters?.v2 === 'number' ? campaign.counters.v2 : campaign.v2_count || 0;
-    const expCount = typeof campaign.counters?.exp === 'number' ? campaign.counters.exp : campaign.exp_count || 0;
-    const movedTotal = v1Count + v2Count + expCount;
     
     // Оновлюємо кампанію
     const oldCount = typeof campaign.baseCardsCount === 'number' ? campaign.baseCardsCount : campaign.baseCardsCountInitial || 0;
