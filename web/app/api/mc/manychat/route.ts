@@ -362,6 +362,7 @@ export async function POST(req: NextRequest) {
   console.log('[manychat] POST request received');
   
   try {
+    console.log('[manychat] Step 1: Checking authentication');
     const mcToken = getEnvValue('MC_TOKEN');
     const apiToken = getEnvValue('MANYCHAT_API_KEY', 'MANYCHAT_API_TOKEN', 'MC_API_KEY');
     const headerToken =
@@ -385,9 +386,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
-  const { parsed: payload, rawText } = await readRequestPayload(req);
+    console.log('[manychat] Step 2: Reading request payload');
+    let payload: unknown;
+    let rawText: string;
+    try {
+      const result = await readRequestPayload(req);
+      payload = result.parsed;
+      rawText = result.rawText;
+      console.log('[manychat] Step 2: Request payload read successfully');
+    } catch (err) {
+      console.error('[manychat] Step 2: Failed to read request payload:', err);
+      throw err;
+    }
 
-  const message = normalisePayload(payload, rawText);
+    console.log('[manychat] Step 3: Normalizing payload');
+    let message: ReturnType<typeof normalisePayload>;
+    try {
+      message = normalisePayload(payload, rawText);
+      console.log('[manychat] Step 3: Payload normalized successfully');
+    } catch (err) {
+      console.error('[manychat] Step 3: Failed to normalize payload:', err);
+      throw err;
+    }
   lastMessage = message;
   lastTrace = {
     receivedAt: message.receivedAt,
@@ -413,6 +433,7 @@ export async function POST(req: NextRequest) {
 
   let automation: ManychatRoutingSuccess | ManychatRoutingError;
 
+  console.log('[manychat] Step 4: Starting automation routing');
   try {
     const payloadRecord =
       payload && typeof payload === 'object' && !Array.isArray(payload)
@@ -470,6 +491,7 @@ export async function POST(req: NextRequest) {
         { kind: 'user_username', value: pickFirstString(nestedUser?.username) },
       ];
 
+      console.log('[manychat] Step 4: Calling routeManychatMessage');
       automation = await routeManychatMessage({
         normalized,
         identityCandidates,
@@ -531,7 +553,9 @@ export async function POST(req: NextRequest) {
           }
         },
       });
+      console.log('[manychat] Step 4: Automation routing completed:', { ok: automation?.ok });
   } catch (err) {
+    console.error('[manychat] Step 4: Automation routing failed:', err);
     automation = {
       ok: false,
       error: 'automation_exception',
