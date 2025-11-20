@@ -735,13 +735,25 @@ export async function routeManychatMessage({
         attempts,
         error: searchError,
         campaign: campaignSummary,
+        message: 'Помилка пошуку картки в KeyCRM',
       });
     }
 
+    // Картка з таким social_id не знайдена в базовому статусі
+    const searchedSocialIds = attempts
+      .map((a) => a.kind === 'webhook_handle' || a.kind.includes('username') ? a.value : null)
+      .filter((v): v is string => Boolean(v));
+    
     return error('card_not_found', {
       attempts,
       normalized,
       campaign: campaignSummary,
+      message: searchedSocialIds.length > 0
+        ? `Картка з social_id "${searchedSocialIds[0]}" не знайдена в базовому статусі "${campaignSummary.base.statusName || campaignSummary.base.statusId}" воронки "${campaignSummary.base.pipelineName || campaignSummary.base.pipelineId}"`
+        : 'Картка не знайдена в базовому статусі',
+      searchedSocialIds,
+      baseStatus: campaignSummary.base.statusName || campaignSummary.base.statusId,
+      basePipeline: campaignSummary.base.pipelineName || campaignSummary.base.pipelineId,
     });
   }
 
