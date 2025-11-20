@@ -85,9 +85,26 @@ async function readFromKV(): Promise<Campaign[]> {
   // Використовуємо listCampaigns, який вже правильно обробляє кампанії
   try {
     const campaigns = await kvRead.listCampaigns<Campaign>();
-    return campaigns
-      .map((c) => normalizeCampaignShape<Campaign>(c))
+    const normalized = campaigns
+      .map((c) => {
+        const normalized = normalizeCampaignShape<Campaign>(c);
+        // Діагностика для перевірки лічильників
+        if (normalized && normalized.id === '1763651370149' && process.env.NODE_ENV !== 'production') {
+          console.log('[campaigns] Campaign 1763651370149:', {
+            movedV1: normalized.movedV1,
+            movedV2: normalized.movedV2,
+            movedExp: normalized.movedExp,
+            movedTotal: normalized.movedTotal,
+            counters: normalized.counters,
+            v1_count: (normalized as any).v1_count,
+            v2_count: (normalized as any).v2_count,
+          });
+        }
+        return normalized;
+      })
+      .filter((c): c is Campaign => c !== null)
       .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    return normalized;
   } catch (err) {
     logKvError("kvRead.listCampaigns failed", err);
     // Fallback до старого методу
