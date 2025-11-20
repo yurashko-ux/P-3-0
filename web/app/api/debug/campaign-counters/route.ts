@@ -6,7 +6,7 @@ import { kvRead, campaignKeys } from '@/lib/kv';
 import { normalizeCampaignShape } from '@/lib/campaign-shape';
 import { kv } from '@vercel/kv';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
