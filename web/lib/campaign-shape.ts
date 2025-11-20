@@ -44,9 +44,10 @@ export function normalizeCampaignShape<T = CampaignShape>(raw: any): T | null {
 
       for (const key of SHAPE_KEYS) {
         if (Object.prototype.hasOwnProperty.call(record, key)) {
-          // Діагностика для кампанії 1763651370149
-          if (record.id === '1763651370149' || record.id === 1763651370149) {
-            console.log('[campaign-shape] Normalized campaign 1763651370149:', {
+          // Діагностика для кампаній з лічильниками
+          const campaignId = String(record.id || '');
+          if (campaignId && (record.v1_count !== undefined || record.movedV1 !== undefined || record.counters)) {
+            console.log(`[campaign-shape] Normalized campaign ${campaignId}:`, {
               hasV1Count: 'v1_count' in record,
               hasV2Count: 'v2_count' in record,
               hasExpCount: 'exp_count' in record,

@@ -187,19 +187,6 @@ export default async function Page() {
   let campaigns = await readWithFallback();
   
   // Діагностика: перевіряємо читання лічильників
-  const testCampaign = campaigns.find(c => c.id === '1763651370149');
-  if (testCampaign) {
-    console.log('[campaigns] Campaign 1763651370149 after reading:', {
-      movedV1: testCampaign.movedV1,
-      movedV2: testCampaign.movedV2,
-      movedExp: testCampaign.movedExp,
-      movedTotal: testCampaign.movedTotal,
-      counters: testCampaign.counters,
-      v1_count: (testCampaign as any).v1_count,
-      v2_count: (testCampaign as any).v2_count,
-    });
-  }
-  
   // Оновлюємо статистику базових карток для всіх кампаній при завантаженні сторінки
   // Робимо це синхронно, щоб оновлені дані відобразились на сторінці
   if (campaigns.length > 0) {
@@ -240,9 +227,9 @@ export default async function Page() {
                 const allCampaigns = await kvRead.listCampaigns<Campaign>();
                 const kvUpdated = allCampaigns.find((camp) => camp.id === baseCampaign.id || (camp as any).__index_id === baseCampaign.id);
                 if (kvUpdated) {
-                  // Діагностика для кампанії 1763651370149
-                  if (baseCampaign.id === '1763651370149') {
-                    console.log('[campaigns] KV campaign 1763651370149:', {
+                  // Діагностика для кампаній з лічильниками
+                  if (kvUpdated.movedV1 !== undefined || kvUpdated.movedV2 !== undefined || kvUpdated.counters) {
+                    console.log(`[campaigns] KV campaign ${baseCampaign.id}:`, {
                       movedV1: kvUpdated.movedV1,
                       movedV2: kvUpdated.movedV2,
                       movedExp: kvUpdated.movedExp,
@@ -250,6 +237,7 @@ export default async function Page() {
                       counters: kvUpdated.counters,
                       v1_count: (kvUpdated as any).v1_count,
                       v2_count: (kvUpdated as any).v2_count,
+                      exp_count: (kvUpdated as any).exp_count,
                     });
                   }
                   
@@ -280,8 +268,8 @@ export default async function Page() {
                       : updated.baseCardsTotalPassed ?? newCount + kvMovedTotal;
                   
                   // Діагностика перед поверненням
-                  if (baseCampaign.id === '1763651370149') {
-                    console.log('[campaigns] Final merged campaign 1763651370149:', {
+                  if (kvV1Count > 0 || kvV2Count > 0 || kvExpCount > 0) {
+                    console.log(`[campaigns] Final merged campaign ${baseCampaign.id}:`, {
                       kvV1Count,
                       kvV2Count,
                       kvExpCount,
