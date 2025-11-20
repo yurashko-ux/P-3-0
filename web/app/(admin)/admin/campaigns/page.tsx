@@ -179,22 +179,47 @@ export default async function Page() {
             // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
             // щоб отримати всі оновлені дані, включно з лічильниками
             if (newCount !== null) {
-              // Оновлюємо baseCardsCount напряму, щоб не залежати від читання з KV
+              // Обчислюємо переміщені картки для обчислення baseCardsTotalPassed
+              const v1Count = typeof c.counters?.v1 === 'number' ? c.counters.v1 : c.v1_count || (c as any).movedV1 || 0;
+              const v2Count = typeof c.counters?.v2 === 'number' ? c.counters.v2 : c.v2_count || (c as any).movedV2 || 0;
+              const expCount = typeof c.counters?.exp === 'number' ? c.counters.exp : c.exp_count || (c as any).movedExp || 0;
+              const movedTotal = v1Count + v2Count + expCount;
+              
+              // Оновлюємо baseCardsCount та baseCardsTotalPassed напряму, щоб не залежати від читання з KV
               const updated = { ...c };
               updated.baseCardsCount = newCount;
               updated.baseCardsCountUpdatedAt = Date.now();
+              // baseCardsTotalPassed = поточна кількість + переміщені картки
+              updated.baseCardsTotalPassed = newCount + movedTotal;
+              
+              // Також оновлюємо лічильники переміщених карток
+              updated.movedTotal = movedTotal;
+              updated.movedV1 = v1Count;
+              updated.movedV2 = v2Count;
+              updated.movedExp = expCount;
               
               // Читаємо оновлену кампанію через listCampaigns для правильної обробки обгортки
+              // і для отримання актуальних лічильників (на випадок, якщо вони змінилися)
               try {
                 const allCampaigns = await kvRead.listCampaigns<Campaign>();
                 const kvUpdated = allCampaigns.find((camp) => camp.id === c.id || (camp as any).__index_id === c.id);
                 if (kvUpdated) {
                   // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
+                  // Але використовуємо актуальні лічильники з KV
+                  const kvV1Count = kvUpdated.movedV1 ?? kvUpdated.counters?.v1 ?? v1Count;
+                  const kvV2Count = kvUpdated.movedV2 ?? kvUpdated.counters?.v2 ?? v2Count;
+                  const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? expCount;
+                  const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
+                  
                   return { 
                     ...updated, 
                     ...kvUpdated,
-                    baseCardsCount: updated.baseCardsCount, // Зберігаємо оновлений baseCardsCount
-                    baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed ?? updated.baseCardsTotalPassed, // Беремо оновлений baseCardsTotalPassed
+                    baseCardsCount: newCount, // Зберігаємо оновлений baseCardsCount
+                    baseCardsTotalPassed: newCount + kvMovedTotal, // Обчислюємо baseCardsTotalPassed на основі оновленого newCount
+                    movedTotal: kvMovedTotal, // Використовуємо актуальні лічильники з KV
+                    movedV1: kvV1Count,
+                    movedV2: kvV2Count,
+                    movedExp: kvExpCount,
                   } as Campaign;
                 }
               } catch {
@@ -210,11 +235,20 @@ export default async function Page() {
                     const kvUpdated = await kv.get<Campaign>(key);
                     if (kvUpdated) {
                       // Мержимо оновлені дані з KV
+                      const kvV1Count = kvUpdated.movedV1 ?? kvUpdated.counters?.v1 ?? v1Count;
+                      const kvV2Count = kvUpdated.movedV2 ?? kvUpdated.counters?.v2 ?? v2Count;
+                      const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? expCount;
+                      const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
+                      
                       return { 
                         ...updated, 
                         ...kvUpdated,
-                        baseCardsCount: updated.baseCardsCount,
-                        baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed ?? updated.baseCardsTotalPassed,
+                        baseCardsCount: newCount,
+                        baseCardsTotalPassed: newCount + kvMovedTotal,
+                        movedTotal: kvMovedTotal,
+                        movedV1: kvV1Count,
+                        movedV2: kvV2Count,
+                        movedExp: kvExpCount,
                       } as Campaign;
                     }
                   } catch {
