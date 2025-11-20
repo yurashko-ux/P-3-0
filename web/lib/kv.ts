@@ -622,6 +622,26 @@ export const kvRead = {
         if (!raw) continue;
         const candidate = normalizeCampaignShape(raw);
         if (candidate) {
+          // Діагностика для кампанії 1763651370149
+          if (candidate.id === '1763651370149' || candidate.id === 1763651370149) {
+            console.log('[kv] listCampaigns found campaign 1763651370149:', {
+              key,
+              hasV1Count: 'v1_count' in candidate,
+              hasV2Count: 'v2_count' in candidate,
+              hasExpCount: 'exp_count' in candidate,
+              hasMovedV1: 'movedV1' in candidate,
+              hasMovedV2: 'movedV2' in candidate,
+              hasMovedExp: 'movedExp' in candidate,
+              hasCounters: 'counters' in candidate,
+              v1_count: candidate.v1_count,
+              v2_count: candidate.v2_count,
+              exp_count: candidate.exp_count,
+              movedV1: candidate.movedV1,
+              movedV2: candidate.movedV2,
+              movedExp: candidate.movedExp,
+              counters: candidate.counters,
+            });
+          }
           parsed = candidate;
           break;
         }
