@@ -612,10 +612,35 @@ export async function POST(req: NextRequest) {
             // Продовжуємо виконання, не перериваємо
           } else {
             // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
-            const obj = normalizeCampaignShape(raw);
+            let obj: any = null;
             
+            // Спробуємо спочатку розпарсити як JSON, якщо це рядок
+            if (typeof raw === 'string') {
+              try {
+                const parsed = JSON.parse(raw);
+                obj = normalizeCampaignShape(parsed);
+                if (!obj || typeof obj !== 'object') {
+                  // Якщо normalizeCampaignShape не спрацював, спробуємо використати розпарсений об'єкт безпосередньо
+                  obj = parsed;
+                }
+              } catch (err) {
+                console.warn('[manychat] Failed to parse raw as JSON:', { error: err instanceof Error ? err.message : String(err) });
+                obj = normalizeCampaignShape(raw);
+              }
+            } else {
+              obj = normalizeCampaignShape(raw);
+            }
+            
+            // Додаткова перевірка - якщо obj все ще не об'єкт, спробуємо розпарсити ще раз
             if (!obj || typeof obj !== 'object') {
-              console.error('[manychat] Failed to parse campaign:', { campaignId, itemKey, rawLength: raw.length });
+              console.error('[manychat] Failed to parse campaign:', { 
+                campaignId, 
+                itemKey, 
+                rawLength: raw.length,
+                rawType: typeof raw,
+                rawPreview: typeof raw === 'string' ? raw.slice(0, 200) : String(raw).slice(0, 200),
+                normalizedObj: obj,
+              });
               // Продовжуємо виконання, не перериваємо
             } else {
               // Інкрементуємо лічильник
