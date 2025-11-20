@@ -576,16 +576,9 @@ export async function POST(req: NextRequest) {
             obj.movedV2 = v2Count;
             obj.movedExp = expCount;
             
-            // Збільшуємо загальну кількість карток, яка пройшла через базовий статус
-            // Це відбувається при переміщенні картки через V1/V2/EXP
-            if (typeof obj.baseCardsTotalPassed !== 'number') {
-              // Якщо поле ще не ініціалізовано, встановлюємо його = початкова кількість + переміщені
-              const initial = typeof obj.baseCardsCountInitial === 'number' ? obj.baseCardsCountInitial : 0;
-              obj.baseCardsTotalPassed = initial + (v1Count + v2Count + expCount);
-            } else {
-              // Якщо поле вже існує, просто збільшуємо на 1 (одна картка переміщена)
-              obj.baseCardsTotalPassed = (obj.baseCardsTotalPassed || 0) + 1;
-            }
+            // baseCardsTotalPassed не змінюється при переміщенні карток
+            // Він оновлюється тільки при перерахуванні статистики (updateCampaignBaseCardsCount)
+            // коли виявляються нові картки, додані вручну в KeyCRM
             
             await kvWrite.setRaw(itemKey, JSON.stringify(obj));
             // Оновлюємо індекс, щоб кампанія піднімалась у списку
