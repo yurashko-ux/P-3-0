@@ -605,13 +605,14 @@ export async function POST(req: NextRequest) {
         try {
           const raw = await kvRead.getRaw(itemKey);
           
-          const rawLength = typeof raw === 'string' ? raw.length : raw ? String(raw).length : 0;
-          console.log('[manychat] Read from KV:', { itemKey, hasRaw: !!raw, rawLength });
+          console.log('[manychat] Read from KV - step 1:', { itemKey, hasRaw: !!raw });
           
           if (!raw) {
             console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
             // Продовжуємо виконання, не перериваємо
           } else {
+            console.log('[manychat] Read from KV - step 2: raw exists');
+            const rawLength = typeof raw === 'string' ? raw.length : raw ? String(raw).length : 0;
             const rawType = typeof raw;
             const rawPreview = typeof raw === 'string' ? raw.slice(0, 150) : String(raw).slice(0, 150);
             console.log('[manychat] Raw data from KV:', { 
