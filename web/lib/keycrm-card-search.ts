@@ -367,25 +367,17 @@ export async function searchKeycrmCardByIdentity(
         const hit = matchCandidates(needle, candidates);
 
         if (hit) {
-          return {
-            ok: true,
-            needle,
-            pagesScanned,
-            cardsChecked,
-            match: {
-              cardId: Number(card.id),
-              title: card?.title ?? null,
-              matchedField: hit.field,
-              matchedValue: hit.value,
-            },
-            items,
-            filters: {
-              pipelineId,
-              statusId,
-              perPage,
-              maxPages,
-            },
-          };
+          // Знайдено збіг - продовжуємо пошук, щоб знайти всі картки, які відповідають критеріям
+          // і вибрати найточнішу (найновішу або з найбільшою кількістю збігів)
+          // Але якщо це перший збіг, зберігаємо його як потенційний результат
+          if (!items.some((item) => item.cardId === Number(card.id))) {
+            // Додаємо картку до items, якщо її там ще немає
+            items.push(summary);
+          }
+          
+          // Продовжуємо пошук, щоб знайти всі картки, які відповідають критеріям
+          // і вибрати найточнішу (найновішу)
+          continue;
         }
 
         const hasClientCandidates = candidates.some((candidate) => candidate.path.startsWith("client"));
@@ -399,25 +391,34 @@ export async function searchKeycrmCardByIdentity(
           const detailedHit = matchCandidates(needle, detailedCandidates);
 
           if (detailedHit) {
-            return {
-              ok: true,
-              needle,
-              pagesScanned,
-              cardsChecked,
-              match: {
+            // Знайдено збіг в деталях - продовжуємо пошук, щоб знайти всі картки
+            if (!items.some((item) => item.cardId === Number(details?.id ?? card?.id))) {
+              const detailedSummary: KeycrmCardSearchItem = {
                 cardId: Number(details?.id ?? card?.id),
                 title: details?.title ?? card?.title ?? null,
-                matchedField: detailedHit.field,
-                matchedValue: detailedHit.value,
-              },
-              items,
-              filters: {
-                pipelineId,
-                statusId,
-                perPage,
-                maxPages,
-              },
-            };
+                pipelineId: cardPipelineId,
+                pipelineTitle: (details?.pipeline?.title ?? card?.pipeline?.title ?? card?.pipeline_title ?? null) ?? null,
+                statusId: cardStatusId,
+                statusTitle: (details?.status?.title ?? card?.status?.title ?? card?.status_title ?? null) ?? null,
+                contactName: details?.contact?.full_name ?? card?.contact?.full_name ?? null,
+                contactSocialId: details?.contact?.social_id ?? card?.contact?.social_id ?? null,
+                clientName:
+                  details?.client?.full_name ??
+                  card?.client?.full_name ??
+                  details?.contact?.client?.full_name ??
+                  card?.contact?.client?.full_name ??
+                  null,
+                clientSocialId:
+                  details?.client?.social_id ??
+                  card?.client?.social_id ??
+                  details?.contact?.client?.social_id ??
+                  card?.contact?.client?.social_id ??
+                  null,
+              };
+              items.push(detailedSummary);
+            }
+            // Продовжуємо пошук, щоб знайти всі картки
+            continue;
           }
         }
       }
@@ -465,6 +466,38 @@ export async function searchKeycrmCardByIdentity(
     }
 
     return { ok: false, error: "keycrm_request_failed", details: err instanceof Error ? err.message : err };
+  }
+
+  // Якщо знайдено картки, які відповідають критеріям, вибираємо найновішу (найбільший cardId)
+  // або першу, якщо немає інформації про дату створення
+  if (items.length > 0 && !listingOnly) {
+    // Сортуємо за cardId (найбільший = найновіший, якщо ID інкрементні)
+    const sortedItems = [...items].sort((a, b) => b.cardId - a.cardId);
+    const bestMatch = sortedItems[0];
+    
+    // Знаходимо оригінальну картку для отримання matchedField та matchedValue
+    // Для цього потрібно перевірити, яка картка має найточніший збіг
+    // Але оскільки ми вже знаємо, що всі картки в sortedItems відповідають критеріям,
+    // використовуємо першу (найновішу)
+    return {
+      ok: true,
+      needle,
+      pagesScanned,
+      cardsChecked,
+      match: {
+        cardId: bestMatch.cardId,
+        title: bestMatch.title,
+        matchedField: "auto.best_match",
+        matchedValue: bestMatch.contactSocialId ?? bestMatch.clientSocialId ?? bestMatch.contactName ?? bestMatch.clientName ?? null,
+      },
+      items,
+      filters: {
+        pipelineId,
+        statusId,
+        perPage,
+        maxPages,
+      },
+    };
   }
 
   return {
