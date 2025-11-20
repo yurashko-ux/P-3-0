@@ -41,8 +41,9 @@ type Campaign = {
   vexp?: number;
   
   // статистика
-  baseCardsCount?: number;
+  baseCardsCount?: number; // Поточна актуальна кількість карток в базовому статусі
   baseCardsCountInitial?: number; // Початкова кількість при створенні кампанії
+  baseCardsTotalPassed?: number; // Загальна кількість карток, яка пройшла через базовий статус від моменту створення кампанії
   baseCardsCountUpdatedAt?: number;
   movedTotal?: number;
   movedV1?: number;
@@ -283,8 +284,16 @@ export default async function Page() {
                       const statusName = nn(c.base?.statusName);
                       // Показуємо поточну актуальну кількість карток в базовій воронці
                       const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : null;
+                      // Показуємо загальну кількість карток, яка пройшла через базовий статус
+                      const totalPassed = typeof c.baseCardsTotalPassed === 'number' ? c.baseCardsTotalPassed : null;
                       
-                      if (currentCount !== null) {
+                      if (currentCount !== null && totalPassed !== null) {
+                        return (
+                          <>
+                            {statusName} <span className="text-slate-400">({currentCount}/{totalPassed})</span>
+                          </>
+                        );
+                      } else if (currentCount !== null) {
                         return (
                           <>
                             {statusName} <span className="text-slate-400">({currentCount})</span>

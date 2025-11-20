@@ -301,6 +301,16 @@ export async function updateCampaignBaseCardsCount(campaignId: string): Promise<
     if (typeof campaign.baseCardsCountInitial !== 'number') {
       campaign.baseCardsCountInitial = count;
     }
+    
+    // Ініціалізуємо baseCardsTotalPassed, якщо його ще немає (для старих кампаній)
+    // Загальна кількість карток, яка пройшла через базовий статус = початкова кількість + переміщені
+    if (typeof campaign.baseCardsTotalPassed !== 'number') {
+      const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : campaign.v1_count || 0;
+      const v2Count = typeof campaign.counters?.v2 === 'number' ? campaign.counters.v2 : campaign.v2_count || 0;
+      const expCount = typeof campaign.counters?.exp === 'number' ? campaign.counters.exp : campaign.exp_count || 0;
+      const movedTotal = v1Count + v2Count + expCount;
+      campaign.baseCardsTotalPassed = (campaign.baseCardsCountInitial || 0) + movedTotal;
+    }
 
     // Обчислюємо переміщені картки
     const v1Count = typeof campaign.counters?.v1 === 'number' ? campaign.counters.v1 : campaign.v1_count || 0;
@@ -380,6 +390,7 @@ export async function initializeCampaignStats(campaign: any): Promise<any> {
       ...campaign,
       baseCardsCount: 0,
       baseCardsCountInitial: 0, // Початкова кількість при створенні
+      baseCardsTotalPassed: 0, // При створенні кампанії загальна кількість = початкова кількість
       baseCardsCountUpdatedAt: Date.now(),
       movedTotal: 0,
       movedV1: 0,
@@ -403,6 +414,7 @@ export async function initializeCampaignStats(campaign: any): Promise<any> {
     ...campaign,
     baseCardsCount: count,
     baseCardsCountInitial: count, // Зберігаємо початкову кількість для обчислення загальної
+    baseCardsTotalPassed: count, // При створенні кампанії загальна кількість = початкова кількість
     baseCardsCountUpdatedAt: Date.now(),
     movedTotal: v1Count + v2Count + expCount,
     movedV1: v1Count,
