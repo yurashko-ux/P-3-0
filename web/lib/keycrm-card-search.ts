@@ -175,15 +175,36 @@ function matchCandidates(needle: string, candidates: Candidate[]) {
     return null;
   }
 
+  // Спочатку перевіряємо точний збіг за social_id (найточніший критерій)
+  // Якщо знайдено збіг за social_id - одразу повертаємо результат
+  for (const candidate of candidates) {
+    if (!candidate.path.includes('social_id')) {
+      continue; // Пропускаємо поля, які не є social_id
+    }
+    
+    const raw = candidate.value ?? "";
+    const candidateSocial = normSocial(raw);
+    
+    // Перевіряємо точний збіг за social_id
+    if (needleSocial && candidateSocial && candidateSocial === needleSocial) {
+      return { field: candidate.path, value: raw };
+    }
+  }
+
+  // Якщо не знайдено збігу за social_id, перевіряємо інші поля (full_name тощо)
+  // Але тільки якщо needle не виглядає як social_id
+  // (якщо needle виглядає як social_id, але не знайдено збігу - повертаємо null)
+  if (needleSocial) {
+    // Якщо needle виглядає як social_id, але не знайдено збігу за social_id - повертаємо null
+    return null;
+  }
+
+  // Перевіряємо збіг за іншими полями (full_name тощо)
   for (const candidate of candidates) {
     const raw = candidate.value ?? "";
     const candidateNorm = norm(raw);
-    const candidateSocial = normSocial(raw);
 
     if (needleNorm && candidateNorm && candidateNorm === needleNorm) {
-      return { field: candidate.path, value: raw };
-    }
-    if (needleSocial && candidateSocial && candidateSocial === needleSocial) {
       return { field: candidate.path, value: raw };
     }
   }
@@ -367,17 +388,31 @@ export async function searchKeycrmCardByIdentity(
         const hit = matchCandidates(needle, candidates);
 
         if (hit) {
-          // Знайдено збіг - продовжуємо пошук, щоб знайти всі картки, які відповідають критеріям
-          // і вибрати найточнішу (найновішу або з найбільшою кількістю збігів)
-          // Але якщо це перший збіг, зберігаємо його як потенційний результат
-          if (!items.some((item) => item.cardId === Number(card.id))) {
-            // Додаємо картку до items, якщо її там ще немає
-            items.push(summary);
-          }
+          // Знайдено точний збіг - одразу повертаємо цю картку
+          // Перевіряємо, що збіг саме за social_id (найточніший критерій)
+          const isSocialIdMatch = hit.field.includes('social_id');
           
-          // Продовжуємо пошук, щоб знайти всі картки, які відповідають критеріям
-          // і вибрати найточнішу (найновішу)
-          continue;
+          // Якщо це збіг за social_id - одразу повертаємо результат
+          // Якщо це збіг за іншим полем - також повертаємо, але перевіряємо точність
+          return {
+            ok: true,
+            needle,
+            pagesScanned,
+            cardsChecked,
+            match: {
+              cardId: Number(card.id),
+              title: card?.title ?? null,
+              matchedField: hit.field,
+              matchedValue: hit.value,
+            },
+            items,
+            filters: {
+              pipelineId,
+              statusId,
+              perPage,
+              maxPages,
+            },
+          };
         }
 
         const hasClientCandidates = candidates.some((candidate) => candidate.path.startsWith("client"));
@@ -391,34 +426,26 @@ export async function searchKeycrmCardByIdentity(
           const detailedHit = matchCandidates(needle, detailedCandidates);
 
           if (detailedHit) {
-            // Знайдено збіг в деталях - продовжуємо пошук, щоб знайти всі картки
-            if (!items.some((item) => item.cardId === Number(details?.id ?? card?.id))) {
-              const detailedSummary: KeycrmCardSearchItem = {
+            // Знайдено точний збіг в деталях - одразу повертаємо цю картку
+            return {
+              ok: true,
+              needle,
+              pagesScanned,
+              cardsChecked,
+              match: {
                 cardId: Number(details?.id ?? card?.id),
                 title: details?.title ?? card?.title ?? null,
-                pipelineId: cardPipelineId,
-                pipelineTitle: (details?.pipeline?.title ?? card?.pipeline?.title ?? card?.pipeline_title ?? null) ?? null,
-                statusId: cardStatusId,
-                statusTitle: (details?.status?.title ?? card?.status?.title ?? card?.status_title ?? null) ?? null,
-                contactName: details?.contact?.full_name ?? card?.contact?.full_name ?? null,
-                contactSocialId: details?.contact?.social_id ?? card?.contact?.social_id ?? null,
-                clientName:
-                  details?.client?.full_name ??
-                  card?.client?.full_name ??
-                  details?.contact?.client?.full_name ??
-                  card?.contact?.client?.full_name ??
-                  null,
-                clientSocialId:
-                  details?.client?.social_id ??
-                  card?.client?.social_id ??
-                  details?.contact?.client?.social_id ??
-                  card?.contact?.client?.social_id ??
-                  null,
-              };
-              items.push(detailedSummary);
-            }
-            // Продовжуємо пошук, щоб знайти всі картки
-            continue;
+                matchedField: detailedHit.field,
+                matchedValue: detailedHit.value,
+              },
+              items,
+              filters: {
+                pipelineId,
+                statusId,
+                perPage,
+                maxPages,
+              },
+            };
           }
         }
       }
@@ -468,37 +495,8 @@ export async function searchKeycrmCardByIdentity(
     return { ok: false, error: "keycrm_request_failed", details: err instanceof Error ? err.message : err };
   }
 
-  // Якщо знайдено картки, які відповідають критеріям, вибираємо найновішу (найбільший cardId)
-  // або першу, якщо немає інформації про дату створення
-  if (items.length > 0 && !listingOnly) {
-    // Сортуємо за cardId (найбільший = найновіший, якщо ID інкрементні)
-    const sortedItems = [...items].sort((a, b) => b.cardId - a.cardId);
-    const bestMatch = sortedItems[0];
-    
-    // Знаходимо оригінальну картку для отримання matchedField та matchedValue
-    // Для цього потрібно перевірити, яка картка має найточніший збіг
-    // Але оскільки ми вже знаємо, що всі картки в sortedItems відповідають критеріям,
-    // використовуємо першу (найновішу)
-    return {
-      ok: true,
-      needle,
-      pagesScanned,
-      cardsChecked,
-      match: {
-        cardId: bestMatch.cardId,
-        title: bestMatch.title,
-        matchedField: "auto.best_match",
-        matchedValue: bestMatch.contactSocialId ?? bestMatch.clientSocialId ?? bestMatch.contactName ?? bestMatch.clientName ?? null,
-      },
-      items,
-      filters: {
-        pipelineId,
-        statusId,
-        perPage,
-        maxPages,
-      },
-    };
-  }
+  // Якщо не знайдено точного збігу - повертаємо null match
+  // Не вибираємо першу картку зі списку - тільки точний збіг
 
   return {
     ok: true,
