@@ -3,6 +3,9 @@
 // й повертає його для тестової адмін-сторінки.
 
 import { NextRequest, NextResponse } from 'next/server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
 import { getKvConfigStatus, kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import { normalizeManyChat } from '@/lib/ingest';
@@ -785,12 +788,25 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, message, automation });
   } catch (err) {
-    console.error('[manychat] Fatal error in POST handler:', err);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorStack = err instanceof Error ? err.stack : undefined;
+    const errorName = err instanceof Error ? err.name : 'UnknownError';
+    
+    // Логуємо помилку
+    console.error('[manychat] Fatal error in POST handler:', {
+      error: errorMsg,
+      name: errorName,
+      stack: errorStack,
+    });
+    
+    // Повертаємо детальну помилку в response, щоб бачити в логах
     return NextResponse.json(
       { 
         ok: false, 
         error: 'internal_error',
-        details: err instanceof Error ? err.message : String(err)
+        errorName,
+        message: errorMsg,
+        stack: errorStack ? errorStack.split('\n').slice(0, 10).join('\n') : undefined,
       },
       { status: 500 }
     );
