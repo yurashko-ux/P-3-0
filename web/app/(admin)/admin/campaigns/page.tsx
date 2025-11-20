@@ -215,7 +215,9 @@ export default async function Page() {
                     ...updated, 
                     ...kvUpdated,
                     baseCardsCount: newCount, // Зберігаємо оновлений baseCardsCount
-                    baseCardsTotalPassed: newCount + kvMovedTotal, // Обчислюємо baseCardsTotalPassed на основі оновленого newCount
+                    baseCardsTotalPassed: typeof kvUpdated.baseCardsTotalPassed === 'number'
+                      ? kvUpdated.baseCardsTotalPassed
+                      : (updated.baseCardsTotalPassed ?? newCount + kvMovedTotal),
                     movedTotal: kvMovedTotal, // Використовуємо актуальні лічильники з KV
                     movedV1: kvV1Count,
                     movedV2: kvV2Count,
@@ -244,7 +246,9 @@ export default async function Page() {
                         ...updated, 
                         ...kvUpdated,
                         baseCardsCount: newCount,
-                        baseCardsTotalPassed: newCount + kvMovedTotal,
+                        baseCardsTotalPassed: typeof kvUpdated.baseCardsTotalPassed === 'number'
+                          ? kvUpdated.baseCardsTotalPassed
+                          : (updated.baseCardsTotalPassed ?? newCount + kvMovedTotal),
                         movedTotal: kvMovedTotal,
                         movedV1: kvV1Count,
                         movedV2: kvV2Count,
@@ -257,6 +261,12 @@ export default async function Page() {
                 }
               }
               
+              // Якщо не вдалося отримати оновлені дані з KV, оцінюємо приріст самостійно
+              const previousCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : c.baseCardsCountInitial || newCount;
+              const additions = Math.max(0, newCount - previousCount);
+              updated.baseCardsTotalPassed = (typeof c.baseCardsTotalPassed === 'number'
+                ? c.baseCardsTotalPassed
+                : c.baseCardsCountInitial || newCount) + additions;
               return updated as Campaign;
             }
             return c;
