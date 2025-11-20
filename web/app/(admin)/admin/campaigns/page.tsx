@@ -180,9 +180,9 @@ export default async function Page() {
             // щоб отримати всі оновлені дані, включно з лічильниками
             if (newCount !== null) {
               // Обчислюємо переміщені картки для обчислення baseCardsTotalPassed
-              const v1Count = typeof c.counters?.v1 === 'number' ? c.counters.v1 : c.v1_count || (c as any).movedV1 || 0;
-              const v2Count = typeof c.counters?.v2 === 'number' ? c.counters.v2 : c.v2_count || (c as any).movedV2 || 0;
-              const expCount = typeof c.counters?.exp === 'number' ? c.counters.exp : c.exp_count || (c as any).movedExp || 0;
+              const v1Count = typeof c.counters?.v1 === 'number' ? c.counters.v1 : (c as any).v1_count || c.movedV1 || 0;
+              const v2Count = typeof c.counters?.v2 === 'number' ? c.counters.v2 : (c as any).v2_count || c.movedV2 || 0;
+              const expCount = typeof c.counters?.exp === 'number' ? c.counters.exp : (c as any).exp_count || c.movedExp || 0;
               const movedTotal = v1Count + v2Count + expCount;
               
               // Оновлюємо baseCardsCount та baseCardsTotalPassed напряму, щоб не залежати від читання з KV
