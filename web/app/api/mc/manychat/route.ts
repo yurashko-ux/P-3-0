@@ -634,9 +634,27 @@ export async function POST(req: NextRequest) {
             campaign.movedV2 = v2Count;
             campaign.movedExp = expCount;
             
-            // Зберігаємо назад в KV
+            // Зберігаємо назад в KV під усіма можливими ключами для сумісності
             const serialized = JSON.stringify(campaign);
+            
+            // Зберігаємо під основним ключем (ITEM_KEY)
             await kvWrite.setRaw(itemKey, serialized);
+            
+            // Також зберігаємо під CMP_ITEM_KEY для сумісності з listCampaigns
+            const cmpItemKey = campaignKeys.CMP_ITEM_KEY(campaignId);
+            try {
+              await kvWrite.setRaw(cmpItemKey, serialized);
+            } catch (err) {
+              console.warn('[manychat] Failed to save to CMP_ITEM_KEY:', err);
+            }
+            
+            // Також зберігаємо під LEGACY_ITEM_KEY для повної сумісності
+            const legacyItemKey = campaignKeys.LEGACY_ITEM_KEY(campaignId);
+            try {
+              await kvWrite.setRaw(legacyItemKey, serialized);
+            } catch (err) {
+              console.warn('[manychat] Failed to save to LEGACY_ITEM_KEY:', err);
+            }
             
             console.log('[manychat] Counter updated successfully:', {
               campaignId,
@@ -647,6 +665,7 @@ export async function POST(req: NextRequest) {
               movedTotal: campaign.movedTotal,
               movedV1: campaign.movedV1,
               movedV2: campaign.movedV2,
+              savedToKeys: [itemKey, cmpItemKey, legacyItemKey],
             });
             
             // Оновлюємо індекс
