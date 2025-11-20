@@ -611,37 +611,47 @@ export async function POST(req: NextRequest) {
             console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
             // Продовжуємо виконання, не перериваємо
           } else {
-            // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
-            let obj: any = null;
-            
-            console.log('[manychat] Parsing raw data:', { 
+            console.log('[manychat] Raw data from KV:', { 
               rawType: typeof raw,
               rawLength: typeof raw === 'string' ? raw.length : String(raw).length,
-              rawPreview: typeof raw === 'string' ? raw.slice(0, 100) : String(raw).slice(0, 100),
+              rawPreview: typeof raw === 'string' ? raw.slice(0, 150) : String(raw).slice(0, 150),
             });
+            
+            // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
+            let obj: any = null;
             
             // Спробуємо спочатку розпарсити як JSON, якщо це рядок
             if (typeof raw === 'string') {
               try {
                 const parsed = JSON.parse(raw);
-                console.log('[manychat] Parsed JSON successfully:', { parsedType: typeof parsed, isObject: parsed && typeof parsed === 'object' });
-                
-                // Спочатку спробуємо normalizeCampaignShape
+                // Спочатку спробуємо normalizeCampaignShape, але якщо не спрацює - використовуємо parsed безпосередньо
                 obj = normalizeCampaignShape(parsed);
-                console.log('[manychat] After normalizeCampaignShape:', { objType: typeof obj, isObject: obj && typeof obj === 'object' });
-                
-                // Якщо normalizeCampaignShape не спрацював, використовуємо розпарсений об'єкт безпосередньо
+                // Якщо normalizeCampaignShape повернув null або не об'єкт, використовуємо parsed безпосередньо
                 if (!obj || typeof obj !== 'object') {
-                  console.log('[manychat] normalizeCampaignShape failed, using parsed object directly');
                   obj = parsed;
                 }
               } catch (err) {
-                console.warn('[manychat] Failed to parse raw as JSON:', { error: err instanceof Error ? err.message : String(err) });
+                // Якщо не вдалося розпарсити як JSON, спробуємо normalizeCampaignShape на raw
                 obj = normalizeCampaignShape(raw);
               }
             } else {
+              // Якщо raw вже не рядок, спробуємо normalizeCampaignShape
               obj = normalizeCampaignShape(raw);
+              // Якщо normalizeCampaignShape не спрацював, спробуємо використати raw безпосередньо (якщо це об'єкт)
+              if ((!obj || typeof obj !== 'object') && raw && typeof raw === 'object') {
+                obj = raw;
+              }
             }
+            
+            console.log('[manychat] Parsed campaign object:', {
+              campaignId,
+              objType: typeof obj,
+              isObject: obj && typeof obj === 'object',
+              hasId: obj && typeof obj === 'object' && 'id' in obj,
+              hasV1Count: obj && typeof obj === 'object' && 'v1_count' in obj,
+              hasV2Count: obj && typeof obj === 'object' && 'v2_count' in obj,
+              hasCounters: obj && typeof obj === 'object' && 'counters' in obj,
+            });
             
             // Додаткова перевірка - якщо obj все ще не об'єкт, спробуємо розпарсити ще раз
             if (!obj || typeof obj !== 'object') {
