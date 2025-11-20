@@ -55,6 +55,41 @@ const IDS_KEY = "cmp:ids";
 const IDS_LIST_KEY = "cmp:ids:list";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
 
+
+function normalizeCampaignShape<T = Campaign>(raw: any): T {
+  let current = raw;
+  const visited = new Set<any>();
+
+  while (current && typeof current === "object" && !visited.has(current)) {
+    if ("id" in current || "base" in current || "rules" in current || "v1" in current || "v2" in current) {
+      return current as T;
+    }
+
+    visited.add(current);
+
+    if (typeof (current as any).value !== 'undefined') {
+      current = (current as any).value;
+      continue;
+    }
+    if (typeof (current as any).result !== 'undefined') {
+      current = (current as any).result;
+      continue;
+    }
+    if (typeof (current as any).data !== 'undefined') {
+      current = (current as any).data;
+      continue;
+    }
+    if (typeof (current as any).payload !== 'undefined') {
+      current = (current as any).payload;
+      continue;
+    }
+
+    break;
+  }
+
+  return current as T;
+}
+
 function logKvError(message: string, err: unknown) {
   if (process.env.NODE_ENV !== "production") {
     console.warn(`[campaigns] ${message}`, err);
@@ -83,7 +118,9 @@ async function readFromKV(): Promise<Campaign[]> {
   // Використовуємо listCampaigns, який вже правильно обробляє кампанії
   try {
     const campaigns = await kvRead.listCampaigns<Campaign>();
-    return campaigns.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    return campaigns
+      .map((c) => normalizeCampaignShape<Campaign>(c))
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   } catch (err) {
     logKvError("kvRead.listCampaigns failed", err);
     // Fallback до старого методу
@@ -128,7 +165,7 @@ async function readWithFallback(): Promise<Campaign[]> {
         : Array.isArray(payload?.items)
           ? (payload.items as Campaign[])
           : [];
-      if (arr.length) return arr;
+      if (arr.length) return arr.map((c) => normalizeCampaignShape<Campaign>(c));
     }
   } catch {}
   return [];
@@ -173,20 +210,21 @@ export default async function Page() {
       const updatedCampaigns = await Promise.all(
         campaigns.map(async (c) => {
           try {
+            const baseCampaign = normalizeCampaignShape<Campaign>(c);
             const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
-            const newCount = await updateCampaignBaseCardsCount(c.id);
+            const newCount = await updateCampaignBaseCardsCount(baseCampaign.id);
             
             // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
             // щоб отримати всі оновлені дані, включно з лічильниками
             if (newCount !== null) {
               // Обчислюємо переміщені картки для обчислення baseCardsTotalPassed
-              const v1Count = typeof c.counters?.v1 === 'number' ? c.counters.v1 : (c as any).v1_count || c.movedV1 || 0;
-              const v2Count = typeof c.counters?.v2 === 'number' ? c.counters.v2 : (c as any).v2_count || c.movedV2 || 0;
-              const expCount = typeof c.counters?.exp === 'number' ? c.counters.exp : (c as any).exp_count || c.movedExp || 0;
+              const v1Count = typeof baseCampaign.counters?.v1 === 'number' ? baseCampaign.counters.v1 : (baseCampaign as any).v1_count || baseCampaign.movedV1 || 0;
+              const v2Count = typeof baseCampaign.counters?.v2 === 'number' ? baseCampaign.counters.v2 : (baseCampaign as any).v2_count || baseCampaign.movedV2 || 0;
+              const expCount = typeof baseCampaign.counters?.exp === 'number' ? baseCampaign.counters.exp : (baseCampaign as any).exp_count || baseCampaign.movedExp || 0;
               const movedTotal = v1Count + v2Count + expCount;
               
               // Оновлюємо baseCardsCount та baseCardsTotalPassed напряму, щоб не залежати від читання з KV
-              const updated = { ...c };
+              const updated = { ...baseCampaign };
               updated.baseCardsCount = newCount;
               updated.baseCardsCountUpdatedAt = Date.now();
               // baseCardsTotalPassed = поточна кількість + переміщені картки
@@ -202,7 +240,7 @@ export default async function Page() {
               // і для отримання актуальних лічильників (на випадок, якщо вони змінилися)
               try {
                 const allCampaigns = await kvRead.listCampaigns<Campaign>();
-                const kvUpdated = allCampaigns.find((camp) => camp.id === c.id || (camp as any).__index_id === c.id);
+                const kvUpdated = allCampaigns.find((camp) => camp.id === baseCampaign.id || (camp as any).__index_id === baseCampaign.id);
                 if (kvUpdated) {
                   // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
                   // Але використовуємо актуальні лічильники з KV
@@ -229,9 +267,9 @@ export default async function Page() {
               } catch {
                 // Якщо не вдалося через listCampaigns, спробуємо через @vercel/kv
                 const keysToTry = [
-                  campaignKeys.ITEM_KEY(c.id),
-                  campaignKeys.CMP_ITEM_KEY(c.id),
-                  campaignKeys.LEGACY_ITEM_KEY(c.id),
+                  campaignKeys.ITEM_KEY(baseCampaign.id),
+                  campaignKeys.CMP_ITEM_KEY(baseCampaign.id),
+                  campaignKeys.LEGACY_ITEM_KEY(baseCampaign.id),
                 ];
                 
                 for (const key of keysToTry) {
@@ -265,16 +303,11 @@ export default async function Page() {
                 }
               }
               
-              // Якщо не вдалося отримати оновлені дані з KV, оцінюємо приріст самостійно
-              const previousCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : c.baseCardsCountInitial || newCount;
-              const additions = Math.max(0, newCount - previousCount);
-              updated.baseCardsTotalPassed = (typeof c.baseCardsTotalPassed === 'number'
-                ? c.baseCardsTotalPassed
-                : c.baseCardsCountInitial || newCount) + additions;
+              // Якщо не вдалося отримати оновлені дані з KV, зберігаємо монотонний максимум
               const previousTotal =
-                typeof c.baseCardsTotalPassed === 'number'
-                  ? c.baseCardsTotalPassed
-                  : c.baseCardsCountInitial || newCount;
+                typeof baseCampaign.baseCardsTotalPassed === 'number'
+                  ? baseCampaign.baseCardsTotalPassed
+                  : baseCampaign.baseCardsCountInitial || newCount;
               updated.baseCardsTotalPassed = Math.max(previousTotal, newCount + movedTotal);
               return updated as Campaign;
             }
