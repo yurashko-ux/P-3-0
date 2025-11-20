@@ -430,13 +430,20 @@ export default async function Page() {
                           const statusName = nn(c.t1?.statusName);
                           const movedV1 = c.movedV1 ?? c.counters?.v1 ?? (c as any).v1_count ?? 0;
                           // baseCardsTotalPassed - це загальна кількість карток, які пройшли через базовий статус
-                          // Якщо не визначено, використовуємо baseCardsCount + movedTotal як fallback
-                          const movedTotal = (c.movedTotal ?? 0) || 
-                            ((c.movedV1 ?? 0) + (c.movedV2 ?? 0) + (c.movedExp ?? 0));
-                          const baseTotal = c.baseCardsTotalPassed ?? 
-                            (((c.baseCardsCount ?? 0) + movedTotal) ||
-                            ((c.baseCardsCountInitial ?? 0) + movedTotal) ||
-                            0);
+                          const movedV2 = c.movedV2 ?? c.counters?.v2 ?? (c as any).v2_count ?? 0;
+                          const movedExp = c.movedExp ?? c.counters?.exp ?? (c as any).exp_count ?? 0;
+                          const movedTotal = c.movedTotal ?? (movedV1 + movedV2 + movedExp);
+                          // Обчислюємо baseTotal: якщо є baseCardsTotalPassed - використовуємо його, інакше обчислюємо
+                          let baseTotal = c.baseCardsTotalPassed;
+                          if (baseTotal == null || baseTotal === 0) {
+                            const currentCount = c.baseCardsCount ?? 0;
+                            const initialCount = c.baseCardsCountInitial ?? 0;
+                            baseTotal = currentCount + movedTotal;
+                            // Якщо поточна кількість менша за початкову, використовуємо початкову + переміщені
+                            if (initialCount > 0 && baseTotal < initialCount + movedTotal) {
+                              baseTotal = initialCount + movedTotal;
+                            }
+                          }
                           const percentage = baseTotal > 0 ? Math.round((movedV1 / baseTotal) * 100) : 0;
                           if (statusName && typeof movedV1 === 'number') {
                             return (
@@ -452,15 +459,21 @@ export default async function Page() {
                         <span className="text-slate-500 mr-2">V2</span>
                         {(() => {
                           const statusName = nn(c.t2?.statusName);
+                          const movedV1 = c.movedV1 ?? c.counters?.v1 ?? (c as any).v1_count ?? 0;
                           const movedV2 = c.movedV2 ?? c.counters?.v2 ?? (c as any).v2_count ?? 0;
-                          // baseCardsTotalPassed - це загальна кількість карток, які пройшли через базовий статус
-                          // Якщо не визначено, використовуємо baseCardsCount + movedTotal як fallback
-                          const movedTotal = (c.movedTotal ?? 0) || 
-                            ((c.movedV1 ?? 0) + (c.movedV2 ?? 0) + (c.movedExp ?? 0));
-                          const baseTotal = c.baseCardsTotalPassed ?? 
-                            (((c.baseCardsCount ?? 0) + movedTotal) ||
-                            ((c.baseCardsCountInitial ?? 0) + movedTotal) ||
-                            0);
+                          const movedExp = c.movedExp ?? c.counters?.exp ?? (c as any).exp_count ?? 0;
+                          const movedTotal = c.movedTotal ?? (movedV1 + movedV2 + movedExp);
+                          // Обчислюємо baseTotal: якщо є baseCardsTotalPassed - використовуємо його, інакше обчислюємо
+                          let baseTotal = c.baseCardsTotalPassed;
+                          if (baseTotal == null || baseTotal === 0) {
+                            const currentCount = c.baseCardsCount ?? 0;
+                            const initialCount = c.baseCardsCountInitial ?? 0;
+                            baseTotal = currentCount + movedTotal;
+                            // Якщо поточна кількість менша за початкову, використовуємо початкову + переміщені
+                            if (initialCount > 0 && baseTotal < initialCount + movedTotal) {
+                              baseTotal = initialCount + movedTotal;
+                            }
+                          }
                           const percentage = baseTotal > 0 ? Math.round((movedV2 / baseTotal) * 100) : 0;
                           if (statusName && typeof movedV2 === 'number') {
                             return (
@@ -476,15 +489,21 @@ export default async function Page() {
                         <span className="text-slate-500 mr-2">EXP</span>
                         {(() => {
                           const statusName = nn(c.texp?.statusName);
+                          const movedV1 = c.movedV1 ?? c.counters?.v1 ?? (c as any).v1_count ?? 0;
+                          const movedV2 = c.movedV2 ?? c.counters?.v2 ?? (c as any).v2_count ?? 0;
                           const movedExp = c.movedExp ?? c.counters?.exp ?? (c as any).exp_count ?? 0;
-                          // baseCardsTotalPassed - це загальна кількість карток, які пройшли через базовий статус
-                          // Якщо не визначено, використовуємо baseCardsCount + movedTotal як fallback
-                          const movedTotal = (c.movedTotal ?? 0) || 
-                            ((c.movedV1 ?? 0) + (c.movedV2 ?? 0) + (c.movedExp ?? 0));
-                          const baseTotal = c.baseCardsTotalPassed ?? 
-                            (((c.baseCardsCount ?? 0) + movedTotal) ||
-                            ((c.baseCardsCountInitial ?? 0) + movedTotal) ||
-                            0);
+                          const movedTotal = c.movedTotal ?? (movedV1 + movedV2 + movedExp);
+                          // Обчислюємо baseTotal: якщо є baseCardsTotalPassed - використовуємо його, інакше обчислюємо
+                          let baseTotal = c.baseCardsTotalPassed;
+                          if (baseTotal == null || baseTotal === 0) {
+                            const currentCount = c.baseCardsCount ?? 0;
+                            const initialCount = c.baseCardsCountInitial ?? 0;
+                            baseTotal = currentCount + movedTotal;
+                            // Якщо поточна кількість менша за початкову, використовуємо початкову + переміщені
+                            if (initialCount > 0 && baseTotal < initialCount + movedTotal) {
+                              baseTotal = initialCount + movedTotal;
+                            }
+                          }
                           const percentage = baseTotal > 0 ? Math.round((movedExp / baseTotal) * 100) : 0;
                           if (statusName && typeof movedExp === 'number') {
                             return (
