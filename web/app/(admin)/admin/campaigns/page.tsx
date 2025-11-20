@@ -186,15 +186,15 @@ export default async function Page() {
               
               // Читаємо оновлену кампанію через listCampaigns для правильної обробки обгортки
               try {
-                const allCampaigns = await kvRead.listCampaigns();
-                const kvUpdated = allCampaigns.find((camp: any) => camp.id === c.id || camp.__index_id === c.id);
-                if (kvUpdated && typeof kvUpdated === 'object') {
+                const allCampaigns = await kvRead.listCampaigns<Campaign>();
+                const kvUpdated = allCampaigns.find((camp) => camp.id === c.id || (camp as any).__index_id === c.id);
+                if (kvUpdated) {
                   // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
                   return { 
                     ...updated, 
                     ...kvUpdated,
                     baseCardsCount: updated.baseCardsCount, // Зберігаємо оновлений baseCardsCount
-                    baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed, // Беремо оновлений baseCardsTotalPassed
+                    baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed ?? updated.baseCardsTotalPassed, // Беремо оновлений baseCardsTotalPassed
                   } as Campaign;
                 }
               } catch {
@@ -207,14 +207,14 @@ export default async function Page() {
                 
                 for (const key of keysToTry) {
                   try {
-                    const kvUpdated = await kv.get(key);
-                    if (kvUpdated && typeof kvUpdated === 'object') {
+                    const kvUpdated = await kv.get<Campaign>(key);
+                    if (kvUpdated) {
                       // Мержимо оновлені дані з KV
                       return { 
                         ...updated, 
                         ...kvUpdated,
                         baseCardsCount: updated.baseCardsCount,
-                        baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed,
+                        baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed ?? updated.baseCardsTotalPassed,
                       } as Campaign;
                     }
                   } catch {
