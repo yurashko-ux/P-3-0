@@ -564,301 +564,136 @@ export async function POST(req: NextRequest) {
   }
 
   // Інкрементуємо лічильники після успішного переміщення
-  console.log('[manychat] Checking if counters should be updated:', {
-    automationOk: automation?.ok,
-    moveAttempted: automation?.ok ? (automation as ManychatRoutingSuccess).move?.attempted : undefined,
-    moveOk: automation?.ok ? (automation as ManychatRoutingSuccess).move?.ok : undefined,
-  });
-  
   if (automation?.ok && (automation as ManychatRoutingSuccess).move?.attempted && (automation as ManychatRoutingSuccess).move.ok) {
-    try {
-      const campaignId = automation.match?.campaign?.id;
-      const route = automation.match?.route;
-      
-      console.log('[manychat] Starting counter update:', { campaignId, route });
-      
-      // Логування для діагностики
-      const successAutomation = automation as ManychatRoutingSuccess;
-      console.log('[manychat] Card moved successfully:', {
-        campaignId,
-        route,
-        automationOk: automation?.ok,
-        moveAttempted: successAutomation.move?.attempted,
-        moveOk: successAutomation.move?.ok,
-      });
-      
-      console.log('[manychat] Checking conditions for counter update:', {
-        campaignId,
-        route,
-        hasCampaignId: !!campaignId,
-        isV1OrV2: route === 'v1' || route === 'v2',
-        routeType: typeof route,
-        routeValue: route,
-      });
-      
-      if (campaignId && (route === 'v1' || route === 'v2')) {
-        const field = route === 'v1' ? 'v1_count' : 'v2_count';
+    const campaignId = automation.match?.campaign?.id;
+    const route = automation.match?.route;
+    
+    if (campaignId && (route === 'v1' || route === 'v2')) {
+      try {
         const itemKey = campaignKeys.ITEM_KEY(campaignId);
+        const field = route === 'v1' ? 'v1_count' : 'v2_count';
         
-        console.log('[manychat] Conditions met, updating counter:', { campaignId, route, field, itemKey });
+        console.log('[manychat] Updating counter:', { campaignId, route, field, itemKey });
         
-        try {
-          const raw = await kvRead.getRaw(itemKey);
-          
-          console.log('[manychat] Read from KV - step 1:', { itemKey, hasRaw: !!raw });
-          
-          if (!raw) {
-            console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
-            // Продовжуємо виконання, не перериваємо
+        // Читаємо кампанію з KV
+        const raw = await kvRead.getRaw(itemKey);
+        
+        if (!raw) {
+          console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
+        } else {
+          // Розпаршуємо JSON якщо це рядок
+          let campaign: any;
+          if (typeof raw === 'string') {
+            try {
+              campaign = JSON.parse(raw);
+            } catch (err) {
+              console.error('[manychat] Failed to parse campaign JSON:', err);
+              campaign = null;
+            }
           } else {
-            console.log('[manychat] Read from KV - step 2: raw exists');
-            const rawLength = typeof raw === 'string' ? raw.length : raw ? String(raw).length : 0;
-            const rawType = typeof raw;
-            const rawPreview = typeof raw === 'string' ? raw.slice(0, 150) : String(raw).slice(0, 150);
-            console.log('[manychat] Raw data from KV:', { 
-              rawType,
-              rawLength,
-              rawPreview,
-            });
-            
-            // Використовуємо normalizeCampaignShape для коректного розгортання кампанії з KV
-            let obj: any = null;
-            
-            // Спробуємо спочатку розпарсити як JSON, якщо це рядок
-            if (typeof raw === 'string') {
-              try {
-                const parsed = JSON.parse(raw);
-                // Спочатку спробуємо normalizeCampaignShape, але якщо не спрацює - використовуємо parsed безпосередньо
-                obj = normalizeCampaignShape(parsed);
-                // Якщо normalizeCampaignShape повернув null або не об'єкт, використовуємо parsed безпосередньо
-                if (!obj || typeof obj !== 'object') {
-                  obj = parsed;
-                }
-              } catch (err) {
-                // Якщо не вдалося розпарсити як JSON, спробуємо normalizeCampaignShape на raw
-                obj = normalizeCampaignShape(raw);
-              }
-            } else {
-              // Якщо raw вже не рядок, спробуємо normalizeCampaignShape
-              obj = normalizeCampaignShape(raw);
-              // Якщо normalizeCampaignShape не спрацював, спробуємо використати raw безпосередньо (якщо це об'єкт)
-              if ((!obj || typeof obj !== 'object') && raw && typeof raw === 'object') {
-                obj = raw;
-              }
+            campaign = raw;
+          }
+          
+          // Перевіряємо чи це об'єкт
+          if (campaign && typeof campaign === 'object') {
+            // Нормалізуємо структуру counters якщо немає
+            if (!campaign.counters) {
+              campaign.counters = {
+                v1: campaign.v1_count || 0,
+                v2: campaign.v2_count || 0,
+                exp: campaign.exp_count || 0,
+              };
             }
             
-            console.log('[manychat] Parsed campaign object:', {
-              campaignId,
-              objType: typeof obj,
-              isObject: obj && typeof obj === 'object',
-              hasId: obj && typeof obj === 'object' && 'id' in obj,
-              hasV1Count: obj && typeof obj === 'object' && 'v1_count' in obj,
-              hasV2Count: obj && typeof obj === 'object' && 'v2_count' in obj,
-              hasCounters: obj && typeof obj === 'object' && 'counters' in obj,
-            });
+            // Інкрементуємо відповідний лічильник
+            const oldValue = typeof campaign[field] === 'number' ? campaign[field] : 0;
+            campaign[field] = oldValue + 1;
             
-            // Додаткова перевірка - якщо obj все ще не об'єкт, спробуємо розпарсити ще раз
-            if (!obj || typeof obj !== 'object') {
-              // Спробуємо ще раз з normalizeCampaignShape на оригінальному raw
-              if (typeof raw === 'string') {
-                try {
-                  const parsedAgain = JSON.parse(raw);
-                  if (parsedAgain && typeof parsedAgain === 'object') {
-                    // Спробуємо використати розпарсений об'єкт безпосередньо
-                    obj = parsedAgain;
-                    console.log('[manychat] Using parsed object directly as fallback');
-                  }
-                } catch (err) {
-                  // Ігноруємо помилку
-                }
-              }
-              
-              if (!obj || typeof obj !== 'object') {
-                console.error('[manychat] Failed to parse campaign:', { 
-                  campaignId, 
-                  itemKey, 
-                  rawLength: typeof raw === 'string' ? raw.length : String(raw).length,
-                  rawType: typeof raw,
-                  rawPreview: typeof raw === 'string' ? raw.slice(0, 300) : String(raw).slice(0, 300),
-                  normalizedObj: obj,
-                  normalizedObjType: typeof obj,
-                });
-                // Продовжуємо виконання, не перериваємо
-              } else {
-                console.log('[manychat] Successfully parsed campaign after fallback');
-              }
+            // Оновлюємо counters
+            if (route === 'v1') {
+              campaign.counters.v1 = campaign.v1_count;
+            } else if (route === 'v2') {
+              campaign.counters.v2 = campaign.v2_count;
             }
             
-            // Якщо obj тепер є об'єктом, продовжуємо
-            if (obj && typeof obj === 'object') {
-              // Інкрементуємо лічильник
-            const oldValue = typeof obj[field] === 'number' ? obj[field] : 0;
-            obj[field] = oldValue + 1;
+            // Оновлюємо movedTotal, movedV1, movedV2, movedExp
+            const v1Count = campaign.counters.v1 || campaign.v1_count || 0;
+            const v2Count = campaign.counters.v2 || campaign.v2_count || 0;
+            const expCount = campaign.counters.exp || campaign.exp_count || 0;
             
-            // Оновлюємо структуру counters для сумісності
-            if (!obj.counters) {
-              obj.counters = { v1: 0, v2: 0, exp: 0 };
-            }
+            campaign.movedTotal = v1Count + v2Count + expCount;
+            campaign.movedV1 = v1Count;
+            campaign.movedV2 = v2Count;
+            campaign.movedExp = expCount;
             
-            // Оновлюємо counters після інкременту
-            if (field === 'v1_count') {
-              obj.counters.v1 = obj.v1_count;
-            } else if (field === 'v2_count') {
-              obj.counters.v2 = obj.v2_count;
-            }
+            // Зберігаємо назад в KV
+            const serialized = JSON.stringify(campaign);
+            await kvWrite.setRaw(itemKey, serialized);
             
-            // Читаємо актуальні значення після оновлення
-            const v1Count = obj.counters.v1 ?? obj.v1_count ?? 0;
-            const v2Count = obj.counters.v2 ?? obj.v2_count ?? 0;
-            const expCount = obj.counters.exp ?? obj.exp_count ?? 0;
-            
-            // Оновлюємо movedTotal на основі актуальних лічильників
-            obj.movedTotal = v1Count + v2Count + expCount;
-            obj.movedV1 = v1Count;
-            obj.movedV2 = v2Count;
-            obj.movedExp = expCount;
-            
-            // baseCardsTotalPassed не змінюється при переміщенні карток
-            // Він оновлюється тільки при перерахуванні статистики (updateCampaignBaseCardsCount)
-            // коли виявляються нові картки, додані вручну в KeyCRM
-            
-            // Зберігаємо через обидва методи для сумісності
-            let serialized: string;
-            try {
-              serialized = JSON.stringify(obj);
-            } catch (err) {
-              console.error('[manychat] Failed to serialize campaign object:', err);
-              throw new Error('Failed to serialize campaign object');
-            }
-            
-            // Зберігаємо через kvWrite.setRaw
-            try {
-              await kvWrite.setRaw(itemKey, serialized);
-              console.log('[manychat] Saved to KV via kvWrite.setRaw:', { itemKey, serializedLength: serialized.length });
-            } catch (err) {
-              const errorMsg = err instanceof Error ? err.message : String(err);
-              console.error('[manychat] Failed to save via kvWrite.setRaw:', {
-                itemKey,
-                error: errorMsg,
-                serializedLength: serialized.length,
-              });
-              // Продовжуємо спробу через @vercel/kv
-            }
-            
-            // Також спробуємо зберегти через @vercel/kv для сумісності
-            try {
-              const { kv } = await import('@vercel/kv');
-              await kv.set(itemKey, obj);
-              console.log('[manychat] Also saved via @vercel/kv');
-            } catch (err) {
-              const errorMsg = err instanceof Error ? err.message : String(err);
-              console.warn('[manychat] Failed to save via @vercel/kv:', {
-                itemKey,
-                error: errorMsg,
-              });
-              // Не кидаємо помилку - продовжуємо виконання
-            }
-            
-            // Логування для діагностики (завжди, щоб бачити в production)
-            console.log('[manychat] Updated counters:', {
+            console.log('[manychat] Counter updated successfully:', {
               campaignId,
               route,
               field,
-              v1Count,
-              v2Count,
-              expCount,
-              movedTotal: obj.movedTotal,
-              itemKey,
-              beforeSave: {
-                v1_count: obj.v1_count,
-                v2_count: obj.v2_count,
-                counters: obj.counters,
-                movedV1: obj.movedV1,
-                movedV2: obj.movedV2,
-                movedExp: obj.movedExp,
-              },
+              oldValue,
+              newValue: campaign[field],
+              movedTotal: campaign.movedTotal,
+              movedV1: campaign.movedV1,
+              movedV2: campaign.movedV2,
             });
             
-            // Оновлюємо індекс, щоб кампанія піднімалась у списку
+            // Оновлюємо індекс
             try {
               await kvWrite.lpush(campaignKeys.INDEX_KEY, campaignId);
-            } catch {}
+            } catch (err) {
+              // Ігноруємо помилки індексу
+            }
             
-            // Оновлюємо кількість карток в базовій воронці (після переміщення має зменшитись)
+            // Оновлюємо кількість карток в базовій воронці
             try {
               const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
               await updateCampaignBaseCardsCount(campaignId);
-              console.log('[manychat] Updated base cards count successfully');
             } catch (err) {
-              // Ігноруємо помилки оновлення статистики - не критично
-              const errorMsg = err instanceof Error ? err.message : String(err);
-              console.warn('[manychat] Failed to update base cards count:', {
-                campaignId,
-                error: errorMsg,
-              });
+              console.warn('[manychat] Failed to update base cards count:', err);
             }
             
             // Зберігаємо timestamp для EXP tracking (тільки якщо кампанія має EXP)
             const hasExp = Boolean(
-              obj.expDays || 
-              obj.expireDays || 
-              obj.exp || 
-              obj.vexp || 
-              obj.expire ||
-              obj.texp
+              campaign.expDays || 
+              campaign.expireDays || 
+              campaign.exp || 
+              campaign.vexp || 
+              campaign.expire ||
+              campaign.texp
             );
             
-            const successAutomation = automation as ManychatRoutingSuccess;
-            if (hasExp && successAutomation.search?.selected?.match?.cardId) {
-              const cardId = String(successAutomation.search.selected.match.cardId);
-              const basePipelineId = successAutomation.match?.campaign?.base?.pipelineId 
-                ? Number(successAutomation.match.campaign.base.pipelineId) 
-                : null;
-              const baseStatusId = successAutomation.match?.campaign?.base?.statusId
-                ? Number(successAutomation.match.campaign.base.statusId)
-                : null;
-              
-              // Імпортуємо функцію для збереження tracking
+            if (hasExp && (automation as ManychatRoutingSuccess).search?.selected?.match?.cardId) {
               try {
+                const cardId = String((automation as ManychatRoutingSuccess).search.selected.match.cardId);
+                const basePipelineId = (automation as ManychatRoutingSuccess).match?.campaign?.base?.pipelineId 
+                  ? Number((automation as ManychatRoutingSuccess).match.campaign.base.pipelineId) 
+                  : null;
+                const baseStatusId = (automation as ManychatRoutingSuccess).match?.campaign?.base?.statusId
+                  ? Number((automation as ManychatRoutingSuccess).match.campaign.base.statusId)
+                  : null;
+                
                 const { saveExpTracking } = await import('@/lib/exp-tracking');
                 await saveExpTracking(campaignId, cardId, basePipelineId, baseStatusId);
-                console.log('[manychat] Saved EXP tracking successfully');
               } catch (err) {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                console.warn('[manychat] Failed to save EXP tracking:', {
-                  campaignId,
-                  cardId,
-                  error: errorMsg,
-                });
-                // Не критично - продовжуємо виконання
+                console.warn('[manychat] Failed to save EXP tracking:', err);
               }
             }
-            } else {
-              console.warn('[manychat] Skipping counter update - obj is not an object:', { obj, objType: typeof obj });
-            }
+          } else {
+            console.error('[manychat] Campaign is not an object:', { campaignId, itemKey, campaignType: typeof campaign });
           }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          const errorStack = err instanceof Error ? err.stack : undefined;
-          console.error('[manychat] Помилка інкременту лічильника:', {
-            campaignId,
-            route,
-            error: errorMsg,
-            stack: errorStack,
-          });
-          // Не перериваємо виконання - просто логуємо помилку
         }
-      } else {
-        console.log('[manychat] Skipping counter update - conditions not met:', {
+      } catch (err) {
+        console.error('[manychat] Error updating counter:', {
           campaignId,
           route,
-          hasCampaignId: !!campaignId,
-          isV1OrV2: route === 'v1' || route === 'v2',
-          routeType: typeof route,
+          error: err instanceof Error ? err.message : String(err),
         });
+        // Не перериваємо виконання - просто логуємо помилку
       }
-    } catch (err) {
-      console.error('[manychat] Помилка при інкременті лічильників:', err);
     }
   }
 
