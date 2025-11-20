@@ -634,9 +634,26 @@ export const kvRead = {
       // Перевіряємо ключі в правильному порядку пріоритету
       for (const key of orderedKeys) {
         const raw = await kvGetRaw(key);
-        if (!raw) continue;
+        if (!raw) {
+          // Діагностика для кампаній з лічильниками
+          if (canonical === '1763679050915') {
+            console.log(`[kv] listCampaigns: key ${key} not found for campaign ${canonical}`);
+          }
+          continue;
+        }
         const candidate = normalizeCampaignShape(raw);
         if (candidate) {
+          // Діагностика для кампаній з лічильниками
+          const campaignId = String(candidate.id || '');
+          if (campaignId === '1763679050915') {
+            console.log(`[kv] listCampaigns: checking key ${key} (order ${orderedKeys.indexOf(key)})`, {
+              foundRaw: !!raw,
+              foundCandidate: !!candidate,
+              v1_count: candidate.v1_count,
+              movedV1: candidate.movedV1,
+              movedTotal: candidate.movedTotal,
+            });
+          }
           // Діагностика для кампаній з лічильниками
           const campaignId = String(candidate.id || '');
           if (campaignId && (candidate.v1_count !== undefined || candidate.movedV1 !== undefined || candidate.counters)) {
