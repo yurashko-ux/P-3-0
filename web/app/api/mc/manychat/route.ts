@@ -540,10 +540,18 @@ export async function POST(req: NextRequest) {
   }
 
   // Інкрементуємо лічильники після успішного переміщення
+  console.log('[manychat] Checking if counters should be updated:', {
+    automationOk: automation?.ok,
+    moveAttempted: automation?.ok ? (automation as ManychatRoutingSuccess).move?.attempted : undefined,
+    moveOk: automation?.ok ? (automation as ManychatRoutingSuccess).move?.ok : undefined,
+  });
+  
   if (automation?.ok && (automation as ManychatRoutingSuccess).move?.attempted && (automation as ManychatRoutingSuccess).move.ok) {
     try {
       const campaignId = automation.match?.campaign?.id;
       const route = automation.match?.route;
+      
+      console.log('[manychat] Starting counter update:', { campaignId, route });
       
       // Логування для діагностики
       const successAutomation = automation as ManychatRoutingSuccess;
@@ -605,9 +613,27 @@ export async function POST(req: NextRequest) {
             // коли виявляються нові картки, додані вручну в KeyCRM
             
             // Зберігаємо через обидва методи для сумісності
-            const serialized = JSON.stringify(obj);
-            await kvWrite.setRaw(itemKey, serialized);
-            console.log('[manychat] Saved to KV:', { itemKey, serializedLength: serialized.length });
+            let serialized: string;
+            try {
+              serialized = JSON.stringify(obj);
+            } catch (err) {
+              console.error('[manychat] Failed to serialize campaign object:', err);
+              throw new Error('Failed to serialize campaign object');
+            }
+            
+            // Зберігаємо через kvWrite.setRaw
+            try {
+              await kvWrite.setRaw(itemKey, serialized);
+              console.log('[manychat] Saved to KV via kvWrite.setRaw:', { itemKey, serializedLength: serialized.length });
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              console.error('[manychat] Failed to save via kvWrite.setRaw:', {
+                itemKey,
+                error: errorMsg,
+                serializedLength: serialized.length,
+              });
+              // Продовжуємо спробу через @vercel/kv
+            }
             
             // Також спробуємо зберегти через @vercel/kv для сумісності
             try {
@@ -615,7 +641,12 @@ export async function POST(req: NextRequest) {
               await kv.set(itemKey, obj);
               console.log('[manychat] Also saved via @vercel/kv');
             } catch (err) {
-              console.warn('[manychat] Failed to save via @vercel/kv:', err);
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              console.warn('[manychat] Failed to save via @vercel/kv:', {
+                itemKey,
+                error: errorMsg,
+              });
+              // Не кидаємо помилку - продовжуємо виконання
             }
             
             // Логування для діагностики (завжди, щоб бачити в production)
@@ -647,11 +678,14 @@ export async function POST(req: NextRequest) {
             try {
               const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
               await updateCampaignBaseCardsCount(campaignId);
+              console.log('[manychat] Updated base cards count successfully');
             } catch (err) {
               // Ігноруємо помилки оновлення статистики - не критично
-              if (process.env.NODE_ENV !== 'production') {
-                console.warn('[manychat] Failed to update base cards count:', err);
-              }
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              console.warn('[manychat] Failed to update base cards count:', {
+                campaignId,
+                error: errorMsg,
+              });
             }
             
             // Зберігаємо timestamp для EXP tracking (тільки якщо кампанія має EXP)
@@ -675,13 +709,31 @@ export async function POST(req: NextRequest) {
                 : null;
               
               // Імпортуємо функцію для збереження tracking
-              const { saveExpTracking } = await import('@/lib/exp-tracking');
-              await saveExpTracking(campaignId, cardId, basePipelineId, baseStatusId);
+              try {
+                const { saveExpTracking } = await import('@/lib/exp-tracking');
+                await saveExpTracking(campaignId, cardId, basePipelineId, baseStatusId);
+                console.log('[manychat] Saved EXP tracking successfully');
+              } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                console.warn('[manychat] Failed to save EXP tracking:', {
+                  campaignId,
+                  cardId,
+                  error: errorMsg,
+                });
+                // Не критично - продовжуємо виконання
+              }
             }
             }
           }
         } catch (err) {
-          console.error('[manychat] Помилка інкременту лічильника:', err);
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          const errorStack = err instanceof Error ? err.stack : undefined;
+          console.error('[manychat] Помилка інкременту лічильника:', {
+            campaignId,
+            route,
+            error: errorMsg,
+            stack: errorStack,
+          });
           // Не перериваємо виконання - просто логуємо помилку
         }
       }
