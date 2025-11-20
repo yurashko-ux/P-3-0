@@ -211,13 +211,15 @@ export default async function Page() {
                   const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? expCount;
                   const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
                   
+                  const mergedBaseTotal =
+                    typeof kvUpdated.baseCardsTotalPassed === 'number'
+                      ? kvUpdated.baseCardsTotalPassed
+                      : updated.baseCardsTotalPassed ?? newCount + kvMovedTotal;
                   return { 
                     ...updated, 
                     ...kvUpdated,
                     baseCardsCount: newCount, // Зберігаємо оновлений baseCardsCount
-                    baseCardsTotalPassed: typeof kvUpdated.baseCardsTotalPassed === 'number'
-                      ? kvUpdated.baseCardsTotalPassed
-                      : (updated.baseCardsTotalPassed ?? newCount + kvMovedTotal),
+                    baseCardsTotalPassed: Math.max(mergedBaseTotal, newCount + kvMovedTotal),
                     movedTotal: kvMovedTotal, // Використовуємо актуальні лічильники з KV
                     movedV1: kvV1Count,
                     movedV2: kvV2Count,
@@ -242,13 +244,15 @@ export default async function Page() {
                       const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? expCount;
                       const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
                       
+                      const mergedBaseTotal =
+                        typeof kvUpdated.baseCardsTotalPassed === 'number'
+                          ? kvUpdated.baseCardsTotalPassed
+                          : updated.baseCardsTotalPassed ?? newCount + kvMovedTotal;
                       return { 
                         ...updated, 
                         ...kvUpdated,
                         baseCardsCount: newCount,
-                        baseCardsTotalPassed: typeof kvUpdated.baseCardsTotalPassed === 'number'
-                          ? kvUpdated.baseCardsTotalPassed
-                          : (updated.baseCardsTotalPassed ?? newCount + kvMovedTotal),
+                        baseCardsTotalPassed: Math.max(mergedBaseTotal, newCount + kvMovedTotal),
                         movedTotal: kvMovedTotal,
                         movedV1: kvV1Count,
                         movedV2: kvV2Count,
@@ -267,6 +271,11 @@ export default async function Page() {
               updated.baseCardsTotalPassed = (typeof c.baseCardsTotalPassed === 'number'
                 ? c.baseCardsTotalPassed
                 : c.baseCardsCountInitial || newCount) + additions;
+              const previousTotal =
+                typeof c.baseCardsTotalPassed === 'number'
+                  ? c.baseCardsTotalPassed
+                  : c.baseCardsCountInitial || newCount;
+              updated.baseCardsTotalPassed = Math.max(previousTotal, newCount + movedTotal);
               return updated as Campaign;
             }
             return c;
