@@ -556,26 +556,26 @@ export async function POST(req: NextRequest) {
               return NextResponse.json({ ok: false, error: 'Failed to parse campaign' }, { status: 500 });
             }
             
-            obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
-            
-            // Оновлюємо лічильники переміщених карток (після інкременту)
-            const v1Count = field === 'v1_count' 
-              ? obj.v1_count 
-              : (obj.counters?.v1 || obj.v1_count || 0);
-            const v2Count = field === 'v2_count' 
-              ? obj.v2_count 
-              : (obj.counters?.v2 || obj.v2_count || 0);
-            const expCount = obj.counters?.exp || obj.exp_count || 0;
+            // Інкрементуємо лічильник
+            const oldValue = typeof obj[field] === 'number' ? obj[field] : 0;
+            obj[field] = oldValue + 1;
             
             // Оновлюємо структуру counters для сумісності
             if (!obj.counters) {
               obj.counters = { v1: 0, v2: 0, exp: 0 };
             }
+            
+            // Оновлюємо counters після інкременту
             if (field === 'v1_count') {
               obj.counters.v1 = obj.v1_count;
             } else if (field === 'v2_count') {
               obj.counters.v2 = obj.v2_count;
             }
+            
+            // Читаємо актуальні значення після оновлення
+            const v1Count = obj.counters.v1 ?? obj.v1_count ?? 0;
+            const v2Count = obj.counters.v2 ?? obj.v2_count ?? 0;
+            const expCount = obj.counters.exp ?? obj.exp_count ?? 0;
             
             // Оновлюємо movedTotal на основі актуальних лічильників
             obj.movedTotal = v1Count + v2Count + expCount;
@@ -595,6 +595,20 @@ export async function POST(req: NextRequest) {
               await kv.set(itemKey, obj);
             } catch {
               // Ігноруємо помилки @vercel/kv
+            }
+            
+            // Логування для діагностики
+            if (process.env.NODE_ENV !== 'production') {
+              console.log('[manychat] Updated counters:', {
+                campaignId,
+                route,
+                field,
+                v1Count,
+                v2Count,
+                expCount,
+                movedTotal: obj.movedTotal,
+                itemKey,
+              });
             }
             
             // Оновлюємо індекс, щоб кампанія піднімалась у списку
