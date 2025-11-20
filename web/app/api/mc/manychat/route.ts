@@ -578,16 +578,34 @@ export async function POST(req: NextRequest) {
     
     if (campaignId && (route === 'v1' || route === 'v2')) {
       try {
-        const itemKey = campaignKeys.ITEM_KEY(campaignId);
         const field = route === 'v1' ? 'v1_count' : 'v2_count';
         
-        console.log('[manychat] Updating counter:', { campaignId, route, field, itemKey });
+        // Перевіряємо всі можливі ключі, щоб знайти кампанію
+        const possibleKeys = [
+          campaignKeys.CMP_ITEM_KEY(campaignId),
+          campaignKeys.ITEM_KEY(campaignId),
+          campaignKeys.LEGACY_ITEM_KEY(campaignId),
+        ];
         
-        // Читаємо кампанію з KV
-        const raw = await kvRead.getRaw(itemKey);
+        let itemKey: string | null = null;
+        let raw: string | null = null;
         
-        if (!raw) {
-          console.warn('[manychat] Campaign not found in KV:', { campaignId, itemKey });
+        for (const key of possibleKeys) {
+          const candidateRaw = await kvRead.getRaw(key);
+          if (candidateRaw) {
+            const candidate = normalizeCampaignShape(candidateRaw);
+            if (candidate && (candidate.id === campaignId || String(candidate.id) === campaignId)) {
+              itemKey = key;
+              raw = candidateRaw;
+              break;
+            }
+          }
+        }
+        
+        console.log('[manychat] Updating counter:', { campaignId, route, field, itemKey, foundKeys: possibleKeys.filter(k => itemKey === k) });
+        
+        if (!raw || !itemKey) {
+          console.warn('[manychat] Campaign not found in KV:', { campaignId, possibleKeys });
         } else {
           // Розпаршуємо JSON якщо це рядок
           let campaign: any;
