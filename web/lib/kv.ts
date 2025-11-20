@@ -608,18 +608,31 @@ export const kvRead = {
       const seenKeys = new Set<string>();
       const candidateIds = Array.from(variants.get(canonical) ?? new Set([canonical]));
 
+      // Формуємо масив ключів у правильному порядку пріоритету
+      // (спочатку перевіряємо ITEM_KEY, потім CMP_ITEM_KEY, потім LEGACY_ITEM_KEY)
+      const orderedKeys: string[] = [];
+      const seenKeySet = new Set<string>();
+      
+      const addKey = (key: string) => {
+        if (!seenKeySet.has(key)) {
+          seenKeySet.add(key);
+          orderedKeys.push(key);
+        }
+      };
+      
       for (const idVariant of candidateIds) {
         for (const buildKey of itemKeyFactories) {
-          seenKeys.add(buildKey(idVariant));
+          addKey(buildKey(idVariant));
         }
       }
 
       for (const buildKey of itemKeyFactories) {
-        seenKeys.add(buildKey(canonical));
+        addKey(buildKey(canonical));
       }
 
       let parsed: Record<string, any> | null = null;
-      for (const key of seenKeys) {
+      // Перевіряємо ключі в правильному порядку пріоритету
+      for (const key of orderedKeys) {
         const raw = await kvGetRaw(key);
         if (!raw) continue;
         const candidate = normalizeCampaignShape(raw);
@@ -629,6 +642,8 @@ export const kvRead = {
           if (campaignId && (candidate.v1_count !== undefined || candidate.movedV1 !== undefined || candidate.counters)) {
             console.log(`[kv] listCampaigns found campaign ${campaignId}:`, {
               key,
+              keyOrder: orderedKeys.indexOf(key),
+              allKeys: orderedKeys,
               hasV1Count: 'v1_count' in candidate,
               hasV2Count: 'v2_count' in candidate,
               hasExpCount: 'exp_count' in candidate,
@@ -646,7 +661,7 @@ export const kvRead = {
             });
           }
           parsed = candidate;
-          break;
+          break; // Зупиняємось на першому знайденому об'єкті
         }
       }
 
