@@ -548,7 +548,31 @@ export async function POST(req: NextRequest) {
         
         if (raw) {
           try {
-            const obj = JSON.parse(raw);
+            // Парсимо кампанію, можливо вона обгорнута в {value: {...}}
+            let obj: any = null;
+            try {
+              const parsed = JSON.parse(raw);
+              // Перевіряємо, чи це обгортка з value
+              if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+                const unwrapped = parsed.value;
+                if (typeof unwrapped === 'string') {
+                  obj = JSON.parse(unwrapped);
+                } else if (unwrapped && typeof unwrapped === 'object') {
+                  obj = unwrapped;
+                } else {
+                  obj = parsed;
+                }
+              } else {
+                obj = parsed;
+              }
+            } catch {
+              obj = JSON.parse(raw);
+            }
+            
+            if (!obj || typeof obj !== 'object') {
+              return NextResponse.json({ ok: false, error: 'Failed to parse campaign' }, { status: 500 });
+            }
+            
             obj[field] = (typeof obj[field] === 'number' ? obj[field] : 0) + 1;
             
             // Оновлюємо лічильники переміщених карток (після інкременту)

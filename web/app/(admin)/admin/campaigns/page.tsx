@@ -176,29 +176,50 @@ export default async function Page() {
             const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
             const newCount = await updateCampaignBaseCardsCount(c.id);
             
-            // Якщо статистика оновилась, оновлюємо кампанію з новим baseCardsCount
+            // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
+            // щоб отримати всі оновлені дані, включно з лічильниками
             if (newCount !== null) {
               // Оновлюємо baseCardsCount напряму, щоб не залежати від читання з KV
               const updated = { ...c };
               updated.baseCardsCount = newCount;
               updated.baseCardsCountUpdatedAt = Date.now();
               
-              // Також намагаємося прочитати оновлену кампанію з KV
-              const keysToTry = [
-                campaignKeys.ITEM_KEY(c.id),
-                campaignKeys.CMP_ITEM_KEY(c.id),
-                campaignKeys.LEGACY_ITEM_KEY(c.id),
-              ];
-              
-              for (const key of keysToTry) {
-                try {
-                  const kvUpdated = await kv.get(key);
-                  if (kvUpdated && typeof kvUpdated === 'object') {
-                    // Мержимо оновлені дані з KV
-                    return { ...updated, ...kvUpdated } as Campaign;
+              // Читаємо оновлену кампанію через listCampaigns для правильної обробки обгортки
+              try {
+                const allCampaigns = await kvRead.listCampaigns();
+                const kvUpdated = allCampaigns.find((camp: any) => camp.id === c.id || camp.__index_id === c.id);
+                if (kvUpdated && typeof kvUpdated === 'object') {
+                  // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
+                  return { 
+                    ...updated, 
+                    ...kvUpdated,
+                    baseCardsCount: updated.baseCardsCount, // Зберігаємо оновлений baseCardsCount
+                    baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed, // Беремо оновлений baseCardsTotalPassed
+                  } as Campaign;
+                }
+              } catch {
+                // Якщо не вдалося через listCampaigns, спробуємо через @vercel/kv
+                const keysToTry = [
+                  campaignKeys.ITEM_KEY(c.id),
+                  campaignKeys.CMP_ITEM_KEY(c.id),
+                  campaignKeys.LEGACY_ITEM_KEY(c.id),
+                ];
+                
+                for (const key of keysToTry) {
+                  try {
+                    const kvUpdated = await kv.get(key);
+                    if (kvUpdated && typeof kvUpdated === 'object') {
+                      // Мержимо оновлені дані з KV
+                      return { 
+                        ...updated, 
+                        ...kvUpdated,
+                        baseCardsCount: updated.baseCardsCount,
+                        baseCardsTotalPassed: kvUpdated.baseCardsTotalPassed,
+                      } as Campaign;
+                    }
+                  } catch {
+                    // Продовжуємо наступний ключ
                   }
-                } catch {
-                  // Продовжуємо наступний ключ
                 }
               }
               
