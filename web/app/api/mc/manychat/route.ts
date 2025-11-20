@@ -105,9 +105,6 @@ let lastTrace: WebhookTrace | null = null;
 let sequence = 0;
 let lastAutomation: ManychatRoutingSuccess | ManychatRoutingError | null = null;
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 function toTrimmedString(value: unknown): string | null {
   if (typeof value === 'string') {
     const trimmed = value.trim();
