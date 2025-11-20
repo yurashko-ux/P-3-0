@@ -359,28 +359,31 @@ async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; 
 }
 
 export async function POST(req: NextRequest) {
-  const mcToken = getEnvValue('MC_TOKEN');
-  const apiToken = getEnvValue('MANYCHAT_API_KEY', 'MANYCHAT_API_TOKEN', 'MC_API_KEY');
-  const headerToken =
-    req.headers.get('x-mc-token') ||
-    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-    '';
+  console.log('[manychat] POST request received');
+  
+  try {
+    const mcToken = getEnvValue('MC_TOKEN');
+    const apiToken = getEnvValue('MANYCHAT_API_KEY', 'MANYCHAT_API_TOKEN', 'MC_API_KEY');
+    const headerToken =
+      req.headers.get('x-mc-token') ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+      '';
 
-  const allowedTokens = new Set<string>();
-  if (mcToken) allowedTokens.add(mcToken);
-  if (apiToken) allowedTokens.add(apiToken);
+    const allowedTokens = new Set<string>();
+    if (mcToken) allowedTokens.add(mcToken);
+    if (apiToken) allowedTokens.add(apiToken);
 
-  if (allowedTokens.size > 0 && headerToken) {
-    if (!allowedTokens.has(headerToken)) {
-      lastTrace = {
-        receivedAt: Date.now(),
-        status: 'rejected',
-        reason: 'Невірний токен авторизації',
-        statusCode: 401,
-      };
-      return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
+    if (allowedTokens.size > 0 && headerToken) {
+      if (!allowedTokens.has(headerToken)) {
+        lastTrace = {
+          receivedAt: Date.now(),
+          status: 'rejected',
+          reason: 'Невірний токен авторизації',
+          statusCode: 401,
+        };
+        return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
+      }
     }
-  }
 
   const { parsed: payload, rawText } = await readRequestPayload(req);
 
@@ -537,18 +540,19 @@ export async function POST(req: NextRequest) {
   }
 
   // Інкрементуємо лічильники після успішного переміщення
-  if (automation?.ok && automation.move?.attempted && automation.move.ok) {
+  if (automation?.ok && (automation as ManychatRoutingSuccess).move?.attempted && (automation as ManychatRoutingSuccess).move.ok) {
     try {
       const campaignId = automation.match?.campaign?.id;
       const route = automation.match?.route;
       
       // Логування для діагностики
+      const successAutomation = automation as ManychatRoutingSuccess;
       console.log('[manychat] Card moved successfully:', {
         campaignId,
         route,
         automationOk: automation?.ok,
-        moveAttempted: automation.move?.attempted,
-        moveOk: automation.move?.ok,
+        moveAttempted: successAutomation.move?.attempted,
+        moveOk: successAutomation.move?.ok,
       });
       
       if (campaignId && (route === 'v1' || route === 'v2')) {
@@ -660,13 +664,14 @@ export async function POST(req: NextRequest) {
               obj.texp
             );
             
-            if (hasExp && automation.search?.selected?.match?.cardId) {
-              const cardId = String(automation.search.selected.match.cardId);
-              const basePipelineId = automation.match?.campaign?.base?.pipelineId 
-                ? Number(automation.match.campaign.base.pipelineId) 
+            const successAutomation = automation as ManychatRoutingSuccess;
+            if (hasExp && successAutomation.search?.selected?.match?.cardId) {
+              const cardId = String(successAutomation.search.selected.match.cardId);
+              const basePipelineId = successAutomation.match?.campaign?.base?.pipelineId 
+                ? Number(successAutomation.match.campaign.base.pipelineId) 
                 : null;
-              const baseStatusId = automation.match?.campaign?.base?.statusId
-                ? Number(automation.match.campaign.base.statusId)
+              const baseStatusId = successAutomation.match?.campaign?.base?.statusId
+                ? Number(successAutomation.match.campaign.base.statusId)
                 : null;
               
               // Імпортуємо функцію для збереження tracking
@@ -695,7 +700,25 @@ export async function POST(req: NextRequest) {
 
   lastAutomation = automation;
 
+  console.log('[manychat] Returning response:', {
+    ok: true,
+    automationOk: automation?.ok,
+    moveAttempted: automation?.ok ? (automation as ManychatRoutingSuccess).move?.attempted : undefined,
+    moveOk: automation?.ok ? (automation as ManychatRoutingSuccess).move?.ok : undefined,
+  });
+
   return NextResponse.json({ ok: true, message, automation });
+  } catch (err) {
+    console.error('[manychat] Fatal error in POST handler:', err);
+    return NextResponse.json(
+      { 
+        ok: false, 
+        error: 'internal_error',
+        details: err instanceof Error ? err.message : String(err)
+      },
+      { status: 500 }
+    );
+  }
 }
 
 export async function GET(req: NextRequest) {
