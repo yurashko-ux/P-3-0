@@ -622,9 +622,10 @@ export const kvRead = {
         if (!raw) continue;
         const candidate = normalizeCampaignShape(raw);
         if (candidate) {
-          // Діагностика для кампанії 1763651370149
-          if (candidate.id === '1763651370149' || candidate.id === 1763651370149) {
-            console.log('[kv] listCampaigns found campaign 1763651370149:', {
+          // Діагностика для кампаній з лічильниками
+          const campaignId = String(candidate.id || '');
+          if (campaignId && (candidate.v1_count !== undefined || candidate.movedV1 !== undefined || candidate.counters)) {
+            console.log(`[kv] listCampaigns found campaign ${campaignId}:`, {
               key,
               hasV1Count: 'v1_count' in candidate,
               hasV2Count: 'v2_count' in candidate,
