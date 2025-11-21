@@ -119,10 +119,25 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     }
     
     // Перевіряємо базову воронку
-    const basePipelineId = campaign.base?.pipelineId || campaign.base_pipeline_id;
-    const baseStatusId = campaign.base?.statusId || campaign.base_status_id;
+    const basePipelineId = campaign.base?.pipelineId || campaign.base?.pipeline || campaign.base_pipeline_id;
+    const baseStatusId = campaign.base?.statusId || campaign.base?.status || campaign.base_status_id;
+    
+    console.log(`[exp-check] Campaign ${campaign.id} (${campaign.name}):`, {
+      expDays,
+      hasTexp: !!texp,
+      texpPipelineId: texp?.pipelineId,
+      texpStatusId: texp?.statusId,
+      basePipelineId,
+      baseStatusId,
+      base: campaign.base,
+    });
     
     if (!basePipelineId || !baseStatusId) {
+      console.log(`[exp-check] Campaign ${campaign.id}: Missing base pipeline/status`, {
+        basePipelineId,
+        baseStatusId,
+        base: campaign.base,
+      });
       return result; // Немає базової воронки
     }
     
@@ -130,12 +145,25 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     const baseStatusIdNum = Number(baseStatusId);
     
     if (!Number.isFinite(basePipelineIdNum) || !Number.isFinite(baseStatusIdNum)) {
+      console.log(`[exp-check] Campaign ${campaign.id}: Invalid base pipeline/status IDs`, {
+        basePipelineId,
+        baseStatusId,
+        basePipelineIdNum,
+        baseStatusIdNum,
+      });
       return result; // Невалідні ID
     }
+    
+    console.log(`[exp-check] Campaign ${campaign.id}: Fetching cards from base pipeline`, {
+      basePipelineIdNum,
+      baseStatusIdNum,
+    });
     
     // Отримуємо всі картки з базової воронки
     const cards = await getCardsFromBasePipeline(basePipelineIdNum, baseStatusIdNum);
     result.cardsChecked = cards.length;
+    
+    console.log(`[exp-check] Campaign ${campaign.id}: Found ${cards.length} cards in base pipeline`);
     
     const now = Date.now();
     const isImmediate = expDays === 0; // EXP=0 означає негайне переміщення (той самий день)
