@@ -34,6 +34,11 @@ async function getCardsFromBasePipeline(
   });
   
   for (let page = 1; page <= maxPages; page++) {
+    // Додаємо затримку між запитами, щоб уникнути rate limiting
+    if (page > 1) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms затримка між сторінками
+    }
+    
     const qs = new URLSearchParams({
       page: String(page),
       per_page: String(perPage),
@@ -44,10 +49,42 @@ async function getCardsFromBasePipeline(
     const url = keycrmUrl(`/pipelines/cards?${qs.toString()}`);
     console.log(`[exp-check] getCardsFromBasePipeline: Fetching page ${page}`, { url });
     
-    const res = await fetch(url, {
-      headers: keycrmHeaders(),
-      cache: 'no-store',
-    });
+    let res: Response;
+    let retries = 3;
+    let lastError: Error | null = null;
+    
+    // Retry логіка для обробки rate limiting
+    while (retries > 0) {
+      try {
+        res = await fetch(url, {
+          headers: keycrmHeaders(),
+          cache: 'no-store',
+        });
+        
+        if (res.status === 429) {
+          // Rate limiting - чекаємо і повторюємо
+          const retryAfter = res.headers.get('Retry-After');
+          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000; // За замовчуванням 2 секунди
+          console.log(`[exp-check] getCardsFromBasePipeline: Rate limited, waiting ${waitTime}ms before retry`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          retries--;
+          continue;
+        }
+        
+        break; // Успішний запит або інша помилка
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        retries--;
+        if (retries > 0) {
+          console.log(`[exp-check] getCardsFromBasePipeline: Request failed, retrying...`, { error: lastError.message });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    
+    if (!res!) {
+      throw lastError || new Error('Failed to fetch after retries');
+    }
     
     if (!res.ok) {
       console.log(`[exp-check] getCardsFromBasePipeline: API error`, {
@@ -56,6 +93,9 @@ async function getCardsFromBasePipeline(
         statusText: res.statusText,
       });
       if (res.status === 404 || page > 1) break; // Немає більше сторінок
+      if (res.status === 429) {
+        throw new Error(`KeyCRM API rate limit exceeded. Please try again later.`);
+      }
       throw new Error(`KeyCRM API error: ${res.status} ${res.statusText}`);
     }
     
@@ -94,12 +134,46 @@ async function getCardsFromBasePipeline(
  * Отримує деталі картки з KeyCRM (для отримання updated_at)
  */
 async function getCardDetails(cardId: number): Promise<any> {
-  const res = await fetch(keycrmUrl(`/pipelines/cards/${cardId}`), {
-    headers: keycrmHeaders(),
-    cache: 'no-store',
-  });
+  let res: Response;
+  let retries = 3;
+  let lastError: Error | null = null;
+  
+  // Retry логіка для обробки rate limiting
+  while (retries > 0) {
+    try {
+      res = await fetch(keycrmUrl(`/pipelines/cards/${cardId}`), {
+        headers: keycrmHeaders(),
+        cache: 'no-store',
+      });
+      
+      if (res.status === 429) {
+        // Rate limiting - чекаємо і повторюємо
+        const retryAfter = res.headers.get('Retry-After');
+        const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000;
+        console.log(`[exp-check] getCardDetails: Rate limited for card ${cardId}, waiting ${waitTime}ms before retry`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        retries--;
+        continue;
+      }
+      
+      break; // Успішний запит або інша помилка
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      retries--;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  
+  if (!res!) {
+    throw lastError || new Error('Failed to fetch card details after retries');
+  }
   
   if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error(`KeyCRM API rate limit exceeded. Please try again later.`);
+    }
     throw new Error(`Failed to get card details: ${res.status}`);
   }
   
