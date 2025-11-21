@@ -36,6 +36,11 @@ export async function POST(req: NextRequest) {
   console.log('[exp-check] Request authorized, starting exp check');
 
   try {
+    // Очищаємо кеш перед початком перевірки
+    // (кеш буде автоматично заповнюватися під час обробки кампаній)
+    const { clearCardsCache } = await import('@/lib/exp-check');
+    clearCardsCache();
+    
     // Отримуємо всі активні кампанії
     const campaigns = await kvRead.listCampaigns();
     console.log(`[exp-check] Found ${campaigns.length} total campaigns`);
