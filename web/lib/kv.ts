@@ -634,11 +634,15 @@ export const kvRead = {
       // Перевіряємо ключі в правильному порядку пріоритету
       for (const key of orderedKeys) {
         const raw = await kvGetRaw(key);
+        // Діагностика для кампаній з лічильниками
+        if (canonical === '1763679050915') {
+          console.log(`[kv] listCampaigns: checking key ${key} (order ${orderedKeys.indexOf(key)})`, {
+            hasRaw: !!raw,
+            rawLength: raw ? raw.length : 0,
+            rawPreview: raw ? raw.slice(0, 100) : null,
+          });
+        }
         if (!raw) {
-          // Діагностика для кампаній з лічильниками
-          if (canonical === '1763679050915') {
-            console.log(`[kv] listCampaigns: key ${key} not found for campaign ${canonical}`);
-          }
           continue;
         }
         const candidate = normalizeCampaignShape(raw);
