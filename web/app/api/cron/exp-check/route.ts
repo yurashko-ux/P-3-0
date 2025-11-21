@@ -26,13 +26,19 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  console.log('[exp-check] POST request received');
+  
   if (!okCron(req)) {
+    console.log('[exp-check] Request forbidden - not a valid cron request');
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 });
   }
+
+  console.log('[exp-check] Request authorized, starting exp check');
 
   try {
     // Отримуємо всі активні кампанії
     const campaigns = await kvRead.listCampaigns();
+    console.log(`[exp-check] Found ${campaigns.length} total campaigns`);
     
     const results = [];
     let totalCardsChecked = 0;
@@ -43,8 +49,11 @@ export async function POST(req: NextRequest) {
     for (const campaign of campaigns) {
       // Пропускаємо видалені або неактивні кампанії
       if (campaign.deleted || campaign.active === false) {
+        console.log(`[exp-check] Skipping campaign ${campaign.id}: deleted=${campaign.deleted}, active=${campaign.active}`);
         continue;
       }
+      
+      console.log(`[exp-check] Processing campaign ${campaign.id} (${campaign.name})`);
       
       try {
         const result = await checkCampaignExp(campaign);
@@ -52,12 +61,18 @@ export async function POST(req: NextRequest) {
         totalCardsChecked += result.cardsChecked;
         totalCardsMoved += result.cardsMoved;
         allErrors.push(...result.errors);
+        console.log(`[exp-check] Campaign ${campaign.id} result:`, {
+          cardsChecked: result.cardsChecked,
+          cardsMoved: result.cardsMoved,
+          errors: result.errors.length,
+        });
       } catch (err) {
+        console.error(`[exp-check] Error processing campaign ${campaign.id}:`, err);
         allErrors.push(`Campaign ${campaign.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     
-    return NextResponse.json({
+    const response = {
       ok: true,
       timestamp: new Date().toISOString(),
       summary: {
@@ -68,8 +83,13 @@ export async function POST(req: NextRequest) {
       },
       results,
       errors: allErrors.length > 0 ? allErrors : undefined,
-    });
+    };
+    
+    console.log('[exp-check] Exp check completed:', response.summary);
+    
+    return NextResponse.json(response);
   } catch (e: any) {
+    console.error('[exp-check] Fatal error:', e);
     return NextResponse.json(
       { 
         ok: false, 
