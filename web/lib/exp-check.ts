@@ -26,6 +26,13 @@ async function getCardsFromBasePipeline(
 ): Promise<Array<{ id: number; [key: string]: any }>> {
   const cards: Array<{ id: number; [key: string]: any }> = [];
   
+  console.log(`[exp-check] getCardsFromBasePipeline: Starting fetch`, {
+    pipelineId,
+    statusId,
+    perPage,
+    maxPages,
+  });
+  
   for (let page = 1; page <= maxPages; page++) {
     const qs = new URLSearchParams({
       page: String(page),
@@ -34,12 +41,20 @@ async function getCardsFromBasePipeline(
       status_id: String(statusId),
     });
     
-    const res = await fetch(keycrmUrl(`/pipelines/cards?${qs.toString()}`), {
+    const url = keycrmUrl(`/pipelines/cards?${qs.toString()}`);
+    console.log(`[exp-check] getCardsFromBasePipeline: Fetching page ${page}`, { url });
+    
+    const res = await fetch(url, {
       headers: keycrmHeaders(),
       cache: 'no-store',
     });
     
     if (!res.ok) {
+      console.log(`[exp-check] getCardsFromBasePipeline: API error`, {
+        page,
+        status: res.status,
+        statusText: res.statusText,
+      });
       if (res.status === 404 || page > 1) break; // Немає більше сторінок
       throw new Error(`KeyCRM API error: ${res.status} ${res.statusText}`);
     }
@@ -51,6 +66,8 @@ async function getCardsFromBasePipeline(
         ? json.data 
         : [];
     
+    console.log(`[exp-check] getCardsFromBasePipeline: Page ${page} returned ${data.length} items`);
+    
     if (data.length === 0) break;
     
     for (const card of data) {
@@ -60,11 +77,15 @@ async function getCardsFromBasePipeline(
       }
     }
     
+    console.log(`[exp-check] getCardsFromBasePipeline: Page ${page} added ${data.length} cards, total: ${cards.length}`);
+    
     // Перевіряємо, чи є наступна сторінка
     const hasNext = json?.links?.next || json?.next_page_url || 
       (json?.meta?.current_page ?? json?.current_page ?? page) < (json?.meta?.last_page ?? json?.last_page ?? page);
     if (!hasNext) break;
   }
+  
+  console.log(`[exp-check] getCardsFromBasePipeline: Total cards found: ${cards.length}`);
   
   return cards;
 }
