@@ -627,6 +627,8 @@ export async function POST(req: NextRequest) {
           
           // Перевіряємо чи це об'єкт
           if (campaign && typeof campaign === 'object') {
+            console.log('[manychat] Campaign is an object, proceeding with counter update');
+            
             // Нормалізуємо структуру counters якщо немає
             if (!campaign.counters) {
               campaign.counters = {
@@ -639,6 +641,8 @@ export async function POST(req: NextRequest) {
             // Інкрементуємо відповідний лічильник
             const oldValue = typeof campaign[field] === 'number' ? campaign[field] : 0;
             campaign[field] = oldValue + 1;
+            
+            console.log('[manychat] Counter incremented:', { field, oldValue, newValue: campaign[field] });
             
             // Оновлюємо counters
             if (route === 'v1') {
@@ -656,6 +660,8 @@ export async function POST(req: NextRequest) {
             campaign.movedV1 = v1Count;
             campaign.movedV2 = v2Count;
             campaign.movedExp = expCount;
+            
+            console.log('[manychat] Counters calculated:', { v1Count, v2Count, expCount, movedTotal: campaign.movedTotal });
             
             console.log(`[manychat] Before saving: campaign object prepared`, {
               campaignId,
