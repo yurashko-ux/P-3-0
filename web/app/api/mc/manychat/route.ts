@@ -667,74 +667,81 @@ export async function POST(req: NextRequest) {
               isObject: campaign && typeof campaign === 'object',
             });
             
-            // Зберігаємо назад в KV під усіма можливими ключами для сумісності
-            const serialized = JSON.stringify(campaign);
-            
-            console.log(`[manychat] Serialized campaign:`, {
-              campaignId,
-              itemKey,
-              serializedLength: serialized.length,
-              serializedPreview: serialized.slice(0, 200),
-            });
-            
-            // Зберігаємо під основним ключем (ITEM_KEY)
-            console.log(`[manychat] Saving to ITEM_KEY: ${itemKey}`, {
-              campaignId,
-              v1_count: campaign.v1_count,
-              movedV1: campaign.movedV1,
-              movedTotal: campaign.movedTotal,
-            });
-            
             try {
+              // Зберігаємо назад в KV під усіма можливими ключами для сумісності
+              const serialized = JSON.stringify(campaign);
+              
+              console.log(`[manychat] Serialized campaign:`, {
+                campaignId,
+                itemKey,
+                serializedLength: serialized.length,
+                serializedPreview: serialized.slice(0, 200),
+              });
+              
+              // Зберігаємо під основним ключем (ITEM_KEY)
+              console.log(`[manychat] Saving to ITEM_KEY: ${itemKey}`, {
+                campaignId,
+                v1_count: campaign.v1_count,
+                movedV1: campaign.movedV1,
+                movedTotal: campaign.movedTotal,
+              });
+              
               await kvWrite.setRaw(itemKey, serialized);
               console.log(`[manychat] Successfully saved to ITEM_KEY: ${itemKey}`);
-            } catch (err) {
-              console.error(`[manychat] Failed to save to ITEM_KEY: ${itemKey}`, err);
-              throw err;
-            }
-            
-            // Перевіряємо, чи дані збереглися правильно
-            const verifyRaw = await kvRead.getRaw(itemKey);
-            if (verifyRaw) {
-              const verify = normalizeCampaignShape(verifyRaw);
-              console.log(`[manychat] Verified ITEM_KEY after save: ${itemKey}`, {
+              
+              // Перевіряємо, чи дані збереглися правильно
+              const verifyRaw = await kvRead.getRaw(itemKey);
+              if (verifyRaw) {
+                const verify = normalizeCampaignShape(verifyRaw);
+                console.log(`[manychat] Verified ITEM_KEY after save: ${itemKey}`, {
+                  campaignId,
+                  found: !!verify,
+                  v1_count: verify?.v1_count,
+                  movedV1: verify?.movedV1,
+                  movedTotal: verify?.movedTotal,
+                });
+              } else {
+                console.error(`[manychat] Failed to verify ITEM_KEY after save: ${itemKey}`);
+              }
+              
+              // Також зберігаємо під CMP_ITEM_KEY для сумісності з listCampaigns
+              const cmpItemKey = campaignKeys.CMP_ITEM_KEY(campaignId);
+              try {
+                await kvWrite.setRaw(cmpItemKey, serialized);
+                console.log(`[manychat] Successfully saved to CMP_ITEM_KEY: ${cmpItemKey}`);
+              } catch (err) {
+                console.warn('[manychat] Failed to save to CMP_ITEM_KEY:', err);
+              }
+              
+              // Також зберігаємо під LEGACY_ITEM_KEY для повної сумісності
+              const legacyItemKey = campaignKeys.LEGACY_ITEM_KEY(campaignId);
+              try {
+                await kvWrite.setRaw(legacyItemKey, serialized);
+                console.log(`[manychat] Successfully saved to LEGACY_ITEM_KEY: ${legacyItemKey}`);
+              } catch (err) {
+                console.warn('[manychat] Failed to save to LEGACY_ITEM_KEY:', err);
+              }
+              
+              console.log('[manychat] Counter updated successfully:', {
                 campaignId,
-                found: !!verify,
-                v1_count: verify?.v1_count,
-                movedV1: verify?.movedV1,
-                movedTotal: verify?.movedTotal,
+                route,
+                field,
+                oldValue,
+                newValue: campaign[field],
+                movedTotal: campaign.movedTotal,
+                movedV1: campaign.movedV1,
+                movedV2: campaign.movedV2,
+                savedToKeys: [itemKey, cmpItemKey, legacyItemKey],
               });
-            } else {
-              console.error(`[manychat] Failed to verify ITEM_KEY after save: ${itemKey}`);
+            } catch (saveError) {
+              console.error('[manychat] Error during save operation:', {
+                campaignId,
+                itemKey,
+                error: saveError instanceof Error ? saveError.message : String(saveError),
+                stack: saveError instanceof Error ? saveError.stack : undefined,
+              });
+              // Не перериваємо виконання, але логуємо помилку
             }
-            
-            // Також зберігаємо під CMP_ITEM_KEY для сумісності з listCampaigns
-            const cmpItemKey = campaignKeys.CMP_ITEM_KEY(campaignId);
-            try {
-              await kvWrite.setRaw(cmpItemKey, serialized);
-            } catch (err) {
-              console.warn('[manychat] Failed to save to CMP_ITEM_KEY:', err);
-            }
-            
-            // Також зберігаємо під LEGACY_ITEM_KEY для повної сумісності
-            const legacyItemKey = campaignKeys.LEGACY_ITEM_KEY(campaignId);
-            try {
-              await kvWrite.setRaw(legacyItemKey, serialized);
-            } catch (err) {
-              console.warn('[manychat] Failed to save to LEGACY_ITEM_KEY:', err);
-            }
-            
-            console.log('[manychat] Counter updated successfully:', {
-              campaignId,
-              route,
-              field,
-              oldValue,
-              newValue: campaign[field],
-              movedTotal: campaign.movedTotal,
-              movedV1: campaign.movedV1,
-              movedV2: campaign.movedV2,
-              savedToKeys: [itemKey, cmpItemKey, legacyItemKey],
-            });
             
             // Оновлюємо індекс
             try {
