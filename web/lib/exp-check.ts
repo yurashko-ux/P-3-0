@@ -129,13 +129,39 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
   try {
     // Перевіряємо, чи кампанія має EXP
     const expDays = campaign.expDays || campaign.expireDays || campaign.exp || campaign.vexp || campaign.expire;
+    console.log(`[exp-check] Campaign ${campaign.id} (${campaign.name}): Checking EXP configuration`, {
+      expDays,
+      expDaysType: typeof expDays,
+      hasExpDays: 'expDays' in campaign,
+      hasExpireDays: 'expireDays' in campaign,
+      hasExp: 'exp' in campaign,
+      hasVexp: 'vexp' in campaign,
+      hasExpire: 'expire' in campaign,
+    });
+    
     if (expDays == null || typeof expDays !== 'number' || expDays < 0) {
+      console.log(`[exp-check] Campaign ${campaign.id}: No valid EXP configuration, skipping`, {
+        expDays,
+        expDaysType: typeof expDays,
+      });
       return result; // Кампанія не має EXP (або негативне значення)
     }
     
     // Перевіряємо, чи є цільова воронка EXP
     const texp = campaign.texp;
+    console.log(`[exp-check] Campaign ${campaign.id}: Checking texp configuration`, {
+      hasTexp: !!texp,
+      texpPipelineId: texp?.pipelineId,
+      texpStatusId: texp?.statusId,
+      texp: texp,
+    });
+    
     if (!texp || !texp.pipelineId || !texp.statusId) {
+      console.log(`[exp-check] Campaign ${campaign.id}: No valid texp configuration, skipping`, {
+        texp,
+        texpPipelineId: texp?.pipelineId,
+        texpStatusId: texp?.statusId,
+      });
       return result; // Немає цільової воронки EXP
     }
     
