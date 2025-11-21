@@ -149,18 +149,21 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     
     // Перевіряємо, чи є цільова воронка EXP
     const texp = campaign.texp;
+    const texpPipelineId = texp?.pipelineId || texp?.pipeline;
+    const texpStatusId = texp?.statusId || texp?.status;
+    
     console.log(`[exp-check] Campaign ${campaign.id}: Checking texp configuration`, {
       hasTexp: !!texp,
-      texpPipelineId: texp?.pipelineId,
-      texpStatusId: texp?.statusId,
+      texpPipelineId,
+      texpStatusId,
       texp: texp,
     });
     
-    if (!texp || !texp.pipelineId || !texp.statusId) {
+    if (!texp || !texpPipelineId || !texpStatusId) {
       console.log(`[exp-check] Campaign ${campaign.id}: No valid texp configuration, skipping`, {
         texp,
-        texpPipelineId: texp?.pipelineId,
-        texpStatusId: texp?.statusId,
+        texpPipelineId,
+        texpStatusId,
       });
       return result; // Немає цільової воронки EXP
     }
@@ -216,8 +219,8 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     const isImmediate = expDays === 0; // EXP=0 означає негайне переміщення (той самий день)
     const expDaysMs = expDays * 24 * 60 * 60 * 1000;
     
-    const targetPipelineId = String(texp.pipelineId);
-    const targetStatusId = String(texp.statusId);
+    const targetPipelineId = String(texpPipelineId);
+    const targetStatusId = String(texpStatusId);
     
     // Перевіряємо кожну картку
     for (const card of cards) {
