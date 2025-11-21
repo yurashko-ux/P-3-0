@@ -656,8 +656,25 @@ export async function POST(req: NextRequest) {
             campaign.movedV2 = v2Count;
             campaign.movedExp = expCount;
             
+            console.log(`[manychat] Before saving: campaign object prepared`, {
+              campaignId,
+              itemKey,
+              v1_count: campaign.v1_count,
+              movedV1: campaign.movedV1,
+              movedTotal: campaign.movedTotal,
+              campaignType: typeof campaign,
+              isObject: campaign && typeof campaign === 'object',
+            });
+            
             // Зберігаємо назад в KV під усіма можливими ключами для сумісності
             const serialized = JSON.stringify(campaign);
+            
+            console.log(`[manychat] Serialized campaign:`, {
+              campaignId,
+              itemKey,
+              serializedLength: serialized.length,
+              serializedPreview: serialized.slice(0, 200),
+            });
             
             // Зберігаємо під основним ключем (ITEM_KEY)
             console.log(`[manychat] Saving to ITEM_KEY: ${itemKey}`, {
@@ -666,7 +683,14 @@ export async function POST(req: NextRequest) {
               movedV1: campaign.movedV1,
               movedTotal: campaign.movedTotal,
             });
-            await kvWrite.setRaw(itemKey, serialized);
+            
+            try {
+              await kvWrite.setRaw(itemKey, serialized);
+              console.log(`[manychat] Successfully saved to ITEM_KEY: ${itemKey}`);
+            } catch (err) {
+              console.error(`[manychat] Failed to save to ITEM_KEY: ${itemKey}`, err);
+              throw err;
+            }
             
             // Перевіряємо, чи дані збереглися правильно
             const verifyRaw = await kvRead.getRaw(itemKey);
