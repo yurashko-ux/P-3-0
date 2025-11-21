@@ -610,8 +610,10 @@ export async function POST(req: NextRequest) {
         
         if (!raw) {
           console.warn('[manychat] Campaign not found in KV:', { campaignId, possibleKeys });
+          console.log('[manychat] EXITING: No raw data found, cannot update counters');
         } else {
           console.log('[manychat] Campaign found in KV, proceeding with counter update');
+          console.log('[manychat] Raw data type:', typeof raw, 'length:', typeof raw === 'string' ? raw.length : 'N/A');
           // Розпаршуємо JSON якщо це рядок
           let campaign: any;
           if (typeof raw === 'string') {
@@ -623,7 +625,10 @@ export async function POST(req: NextRequest) {
             }
           } else {
             campaign = raw;
+            console.log('[manychat] Raw data is not a string, using as-is:', typeof campaign);
           }
+          
+          console.log('[manychat] After parsing, campaign type:', typeof campaign, 'isObject:', campaign && typeof campaign === 'object');
           
           // Перевіряємо чи це об'єкт
           if (campaign && typeof campaign === 'object') {
