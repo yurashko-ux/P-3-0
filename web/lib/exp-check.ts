@@ -500,54 +500,98 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     // Це запобігає race condition, коли кілька карток переміщується одночасно
     if (result.cardsMoved > 0) {
       try {
-        const itemKey = campaignKeys.ITEM_KEY(campaign.id);
-        const raw = await kvRead.getRaw(itemKey);
-        if (raw) {
-          const obj = JSON.parse(raw);
-          const oldExpCount = typeof obj.exp_count === 'number' ? obj.exp_count : 0;
-          const newExpCount = oldExpCount + result.cardsMoved;
-          obj.exp_count = newExpCount;
-          
-          // Оновлюємо лічильники переміщених карток
-          const v1Count = obj.counters?.v1 || obj.v1_count || 0;
-          const v2Count = obj.counters?.v2 || obj.v2_count || 0;
-          const expCount = obj.exp_count;
-          
-          // Оновлюємо counters.exp для сумісності з адмінкою
-          if (!obj.counters) {
-            obj.counters = { v1: 0, v2: 0, exp: 0 };
+        // Перевіряємо всі можливі ключі, щоб знайти актуальні дані кампанії
+        const possibleKeys = [
+          campaignKeys.ITEM_KEY(campaign.id),        // campaign:ID (основний)
+          campaignKeys.CMP_ITEM_KEY(campaign.id),    // cmp:item:ID (альтернативний)
+          campaignKeys.LEGACY_ITEM_KEY(campaign.id), // campaigns:ID (старий)
+        ];
+        
+        let obj: Record<string, any> | null = null;
+        let foundKey: string | null = null;
+        
+        // Знаходимо перший доступний ключ з даними кампанії
+        for (const key of possibleKeys) {
+          const raw = await kvRead.getRaw(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              // Перевіряємо, що це дійсно кампанія
+              if (parsed && (parsed.id === campaign.id || parsed.name)) {
+                obj = parsed;
+                foundKey = key;
+                console.log(`[exp-check] Campaign ${campaign.id}: Found campaign data in key ${key}`);
+                break;
+              }
+            } catch {
+              // Продовжуємо пошук
+            }
           }
-          obj.counters.exp = expCount;
-          obj.counters.v1 = v1Count;
-          obj.counters.v2 = v2Count;
-          
-          obj.movedTotal = v1Count + v2Count + expCount;
-          obj.movedV1 = v1Count;
-          obj.movedV2 = v2Count;
-          obj.movedExp = expCount;
-          
-          console.log(`[exp-check] Campaign ${campaign.id}: Updated counters after moving ${result.cardsMoved} cards`, {
-            oldExpCount,
-            newExpCount,
-            expCount,
-            movedTotal: obj.movedTotal,
-            cardsMoved: result.cardsMoved,
-          });
-          
-          // Зберігаємо через обидва методи для сумісності
-          await kvWrite.setRaw(itemKey, JSON.stringify(obj));
-          // Також спробуємо зберегти через @vercel/kv для сумісності
-          try {
-            const { kv } = await import('@vercel/kv');
-            await kv.set(itemKey, obj);
-          } catch {
-            // Ігноруємо помилки @vercel/kv
-          }
-          
-          console.log(`[exp-check] Campaign ${campaign.id}: Saved updated campaign to KV`);
-        } else {
-          console.warn(`[exp-check] Campaign ${campaign.id}: Campaign not found in KV for counter update`);
         }
+        
+        if (!obj) {
+          console.warn(`[exp-check] Campaign ${campaign.id}: Campaign not found in any KV key for counter update`);
+          return result;
+        }
+        
+        const oldExpCount = typeof obj.exp_count === 'number' ? obj.exp_count : 0;
+        const newExpCount = oldExpCount + result.cardsMoved;
+        obj.exp_count = newExpCount;
+        
+        // Оновлюємо лічильники переміщених карток
+        const v1Count = obj.counters?.v1 || obj.v1_count || 0;
+        const v2Count = obj.counters?.v2 || obj.v2_count || 0;
+        const expCount = obj.exp_count;
+        
+        // Оновлюємо counters.exp для сумісності з адмінкою
+        if (!obj.counters) {
+          obj.counters = { v1: 0, v2: 0, exp: 0 };
+        }
+        obj.counters.exp = expCount;
+        obj.counters.v1 = v1Count;
+        obj.counters.v2 = v2Count;
+        
+        obj.movedTotal = v1Count + v2Count + expCount;
+        obj.movedV1 = v1Count;
+        obj.movedV2 = v2Count;
+        obj.movedExp = expCount;
+        
+        console.log(`[exp-check] Campaign ${campaign.id}: Updated counters after moving ${result.cardsMoved} cards`, {
+          oldExpCount,
+          newExpCount,
+          expCount,
+          movedTotal: obj.movedTotal,
+          cardsMoved: result.cardsMoved,
+          foundKey,
+        });
+        
+        // Зберігаємо в УСІ можливі ключі для гарантії доступності
+        const savePromises = possibleKeys.map(async (key) => {
+          try {
+            await kvWrite.setRaw(key, JSON.stringify(obj));
+            console.log(`[exp-check] Campaign ${campaign.id}: Saved to key ${key}`);
+          } catch (err) {
+            console.warn(`[exp-check] Campaign ${campaign.id}: Failed to save to key ${key}`, err);
+          }
+        });
+        
+        await Promise.all(savePromises);
+        
+        // Також спробуємо зберегти через @vercel/kv для сумісності
+        try {
+          const { kv } = await import('@vercel/kv');
+          for (const key of possibleKeys) {
+            try {
+              await kv.set(key, obj);
+            } catch {
+              // Ігноруємо помилки окремих ключів
+            }
+          }
+        } catch {
+          // Ігноруємо помилки @vercel/kv
+        }
+        
+        console.log(`[exp-check] Campaign ${campaign.id}: Saved updated campaign to all KV keys`);
       } catch (err) {
         console.error(`[exp-check] Campaign ${campaign.id}: Error updating exp_count`, err);
         result.errors.push(`Failed to update counters: ${err instanceof Error ? err.message : String(err)}`);
