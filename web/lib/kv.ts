@@ -655,7 +655,6 @@ export const kvRead = {
             });
           }
           // Діагностика для кампаній з лічильниками
-          const campaignId = String(candidate.id || '');
           if (campaignId && (candidate.v1_count !== undefined || candidate.movedV1 !== undefined || candidate.counters)) {
             console.log(`[kv] listCampaigns found campaign ${campaignId}:`, {
               key,
