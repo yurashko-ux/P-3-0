@@ -307,7 +307,14 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     const targetStatusId = String(texpStatusId);
     
     // Перевіряємо кожну картку
-    for (const card of cards) {
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      
+      // Додаємо затримку між обробкою карток, щоб уникнути rate limiting
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 300)); // 300ms затримка між картками
+      }
+      
       try {
         const cardId = String(card.id);
         
@@ -329,7 +336,8 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
             timestamp = extractTimestampFromKeycrmCard(cardDetails);
           } catch (err) {
             // Якщо не вдалося отримати - пропускаємо картку
-            result.errors.push(`Card ${cardId}: failed to get timestamp`);
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            result.errors.push(`Card ${cardId}: failed to get timestamp (${errorMsg})`);
             continue;
           }
         }
