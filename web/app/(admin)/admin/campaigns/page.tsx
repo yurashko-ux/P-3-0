@@ -4,6 +4,9 @@ import { kv } from "@vercel/kv";
 import { headers } from "next/headers";
 import { unstable_noStore as noStore } from "next/cache";
 import DeleteButton from "@/components/DeleteButton";
+import { kvRead, campaignKeys } from "@/lib/kv";
+import { fetchKeycrmPipelines } from "@/lib/keycrm-pipelines";
+import { normalizeCampaignShape } from "@/lib/campaign-shape";
 
 // повністю вимикаємо кешування цієї сторінки
 export const dynamic = "force-dynamic";
@@ -37,30 +40,86 @@ type Campaign = {
   expireDays?: number;
   expire?: number;
   vexp?: number;
+  
+  // статистика
+  baseCardsCount?: number; // Поточна актуальна кількість карток в базовому статусі
+  baseCardsCountInitial?: number; // Початкова кількість при створенні кампанії
+  baseCardsTotalPassed?: number; // Загальна кількість карток, яка пройшла через базовий статус від моменту створення кампанії
+  baseCardsCountUpdatedAt?: number;
+  movedTotal?: number;
+  movedV1?: number;
+  movedV2?: number;
+  movedExp?: number;
 };
 
 const IDS_KEY = "cmp:ids";
+const IDS_LIST_KEY = "cmp:ids:list";
 const ITEM_KEY = (id: string) => `cmp:item:${id}`;
+
+
+function logKvError(message: string, err: unknown) {
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(`[campaigns] ${message}`, err);
+  }
+}
 
 async function readIds(): Promise<string[]> {
   noStore();
-  const arr = await kv.get<string[] | null>(IDS_KEY);
-  if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
   try {
-    const list = await kv.lrange<string>(IDS_KEY, 0, -1);
+    const arr = await kv.get<string[] | null>(IDS_KEY);
+    if (Array.isArray(arr) && arr.length) return arr.filter(Boolean);
+  } catch (err) {
+    logKvError("kv.get failed", err);
+  }
+  try {
+    const list = await kvRead.lrange(IDS_LIST_KEY, 0, -1);
     if (Array.isArray(list) && list.length) return list.filter(Boolean);
-  } catch {}
+  } catch (err) {
+    logKvError("kv.lrange failed", err);
+  }
   return [];
 }
 
 async function readFromKV(): Promise<Campaign[]> {
   noStore();
-  const ids = await readIds();
-  if (!ids.length) return [];
-  const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
-  const out: Campaign[] = [];
-  items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
-  return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  // Використовуємо listCampaigns, який вже правильно обробляє кампанії
+  try {
+    const campaigns = await kvRead.listCampaigns<Campaign>();
+    const normalized = campaigns
+      .map((c) => {
+        const normalized = normalizeCampaignShape<Campaign>(c);
+        // Діагностика для перевірки лічильників
+        if (normalized && normalized.id === '1763651370149' && process.env.NODE_ENV !== 'production') {
+          console.log('[campaigns] Campaign 1763651370149:', {
+            movedV1: normalized.movedV1,
+            movedV2: normalized.movedV2,
+            movedExp: normalized.movedExp,
+            movedTotal: normalized.movedTotal,
+            counters: normalized.counters,
+            v1_count: (normalized as any).v1_count,
+            v2_count: (normalized as any).v2_count,
+          });
+        }
+        return normalized;
+      })
+      .filter((c): c is Campaign => c !== null)
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    return normalized;
+  } catch (err) {
+    logKvError("kvRead.listCampaigns failed", err);
+    // Fallback до старого методу
+    try {
+      const ids = await readIds();
+      if (!ids.length) return [];
+      const items = await kv.mget<(Campaign | null)[]>(...ids.map(ITEM_KEY));
+      const out: Campaign[] = [];
+      items.forEach((it) => it && typeof it === "object" && out.push(it as Campaign));
+      return out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    } catch (fallbackErr) {
+      logKvError("kv.mget fallback failed", fallbackErr);
+      return [];
+    }
+  }
 }
 
 function buildBaseUrl() {
@@ -84,8 +143,13 @@ async function readWithFallback(): Promise<Campaign[]> {
       next: { revalidate: 0 },
     });
     if (r.ok) {
-      const arr = (await r.json()) as Campaign[];
-      if (Array.isArray(arr) && arr.length) return arr;
+      const payload = await r.json().catch(() => null);
+      const arr = Array.isArray(payload)
+        ? (payload as Campaign[])
+        : Array.isArray(payload?.items)
+          ? (payload.items as Campaign[])
+          : [];
+      if (arr.length) return arr.map((c) => normalizeCampaignShape<Campaign>(c));
     }
   } catch {}
   return [];
@@ -109,25 +173,213 @@ function nn(x?: string) {
 
 export default async function Page() {
   noStore();
-  const campaigns = await readWithFallback();
+  
+  // Автоматичне оновлення воронок з KeyCRM при завантаженні сторінки
+  try {
+    await fetchKeycrmPipelines({ forceRefresh: true, persist: true });
+  } catch (err) {
+    // Ігноруємо помилки оновлення - використаємо кешовані дані
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[campaigns] Failed to refresh pipelines:", err);
+    }
+  }
+  
+  let campaigns = await readWithFallback();
+  
+  // Діагностика: перевіряємо читання лічильників
+  // Оновлюємо статистику базових карток для всіх кампаній при завантаженні сторінки
+  // Робимо це синхронно, щоб оновлені дані відобразились на сторінці
+  if (campaigns.length > 0) {
+    try {
+      // Оновлюємо статистику для всіх кампаній перед рендерингом
+      const updatedCampaigns = await Promise.all(
+        campaigns.map(async (c) => {
+          try {
+            const baseCampaign = normalizeCampaignShape<Campaign>(c);
+            const { updateCampaignBaseCardsCount } = await import('@/lib/campaign-stats');
+            const newCount = await updateCampaignBaseCardsCount(baseCampaign.id);
+            
+            // Якщо статистика оновилась, читаємо актуальну кампанію через listCampaigns
+            // щоб отримати всі оновлені дані, включно з лічильниками
+            if (newCount !== null) {
+              // Обчислюємо переміщені картки для обчислення baseCardsTotalPassed
+              const v1Count = typeof baseCampaign.counters?.v1 === 'number' ? baseCampaign.counters.v1 : (baseCampaign as any).v1_count || baseCampaign.movedV1 || 0;
+              const v2Count = typeof baseCampaign.counters?.v2 === 'number' ? baseCampaign.counters.v2 : (baseCampaign as any).v2_count || baseCampaign.movedV2 || 0;
+              const expCount = typeof baseCampaign.counters?.exp === 'number' ? baseCampaign.counters.exp : (baseCampaign as any).exp_count || baseCampaign.movedExp || 0;
+              const movedTotal = v1Count + v2Count + expCount;
+              
+              // Оновлюємо baseCardsCount та baseCardsTotalPassed напряму, щоб не залежати від читання з KV
+              const updated = { ...baseCampaign };
+              updated.baseCardsCount = newCount;
+              updated.baseCardsCountUpdatedAt = Date.now();
+              // baseCardsTotalPassed = поточна кількість + переміщені картки
+              updated.baseCardsTotalPassed = newCount + movedTotal;
+              
+              // Також оновлюємо лічильники переміщених карток
+              updated.movedTotal = movedTotal;
+              updated.movedV1 = v1Count;
+              updated.movedV2 = v2Count;
+              updated.movedExp = expCount;
+              
+              // Читаємо оновлену кампанію через listCampaigns для правильної обробки обгортки
+              // і для отримання актуальних лічильників (на випадок, якщо вони змінилися)
+              try {
+                const allCampaigns = await kvRead.listCampaigns<Campaign>();
+                const kvUpdated = allCampaigns.find((camp) => camp.id === baseCampaign.id || (camp as any).__index_id === baseCampaign.id);
+                if (kvUpdated) {
+                  // Діагностика для кампаній з лічильниками
+                  if (kvUpdated.movedV1 !== undefined || kvUpdated.movedV2 !== undefined || kvUpdated.counters) {
+                    console.log(`[campaigns] KV campaign ${baseCampaign.id}:`, {
+                      movedV1: kvUpdated.movedV1,
+                      movedV2: kvUpdated.movedV2,
+                      movedExp: kvUpdated.movedExp,
+                      movedTotal: kvUpdated.movedTotal,
+                      counters: kvUpdated.counters,
+                      v1_count: (kvUpdated as any).v1_count,
+                      v2_count: (kvUpdated as any).v2_count,
+                      exp_count: (kvUpdated as any).exp_count,
+                    });
+                  }
+                  
+                  // Мержимо оновлені дані з KV, зберігаючи оновлені baseCardsCount та baseCardsTotalPassed
+                  // Але використовуємо актуальні лічильники з KV
+                  // Читаємо лічильники з усіх можливих місць в правильному порядку пріоритету
+                  const kvV1CountRaw = (kvUpdated as any).v1_count;
+                  const kvV2CountRaw = (kvUpdated as any).v2_count;
+                  const kvExpCountRaw = (kvUpdated as any).exp_count;
+                  
+                  const kvV1Count = typeof kvUpdated.movedV1 === 'number' ? kvUpdated.movedV1 
+                    : typeof kvUpdated.counters?.v1 === 'number' ? kvUpdated.counters.v1
+                    : typeof kvV1CountRaw === 'number' ? kvV1CountRaw
+                    : v1Count;
+                  const kvV2Count = typeof kvUpdated.movedV2 === 'number' ? kvUpdated.movedV2
+                    : typeof kvUpdated.counters?.v2 === 'number' ? kvUpdated.counters.v2
+                    : typeof kvV2CountRaw === 'number' ? kvV2CountRaw
+                    : v2Count;
+                  const kvExpCount = typeof kvUpdated.movedExp === 'number' ? kvUpdated.movedExp
+                    : typeof kvUpdated.counters?.exp === 'number' ? kvUpdated.counters.exp
+                    : typeof kvExpCountRaw === 'number' ? kvExpCountRaw
+                    : expCount;
+                  const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
+                  
+                  const mergedBaseTotal =
+                    typeof kvUpdated.baseCardsTotalPassed === 'number'
+                      ? kvUpdated.baseCardsTotalPassed
+                      : updated.baseCardsTotalPassed ?? newCount + kvMovedTotal;
+                  
+                  // Діагностика перед поверненням
+                  if (kvV1Count > 0 || kvV2Count > 0 || kvExpCount > 0) {
+                    console.log(`[campaigns] Final merged campaign ${baseCampaign.id}:`, {
+                      kvV1Count,
+                      kvV2Count,
+                      kvExpCount,
+                      kvMovedTotal,
+                      movedV1: kvV1Count,
+                      movedV2: kvV2Count,
+                      movedExp: kvExpCount,
+                    });
+                  }
+                  
+                  return { 
+                    ...updated, 
+                    ...kvUpdated,
+                    baseCardsCount: newCount, // Зберігаємо оновлений baseCardsCount
+                    baseCardsTotalPassed: Math.max(mergedBaseTotal, newCount + kvMovedTotal),
+                    movedTotal: kvMovedTotal, // Використовуємо актуальні лічильники з KV
+                    movedV1: kvV1Count, // ЯВНО встановлюємо movedV1
+                    movedV2: kvV2Count, // ЯВНО встановлюємо movedV2
+                    movedExp: kvExpCount, // ЯВНО встановлюємо movedExp
+                    // Також встановлюємо counters для сумісності
+                    counters: {
+                      v1: kvV1Count,
+                      v2: kvV2Count,
+                      exp: kvExpCount,
+                    },
+                  } as Campaign;
+                }
+              } catch {
+                // Якщо не вдалося через listCampaigns, спробуємо через @vercel/kv
+                const keysToTry = [
+                  campaignKeys.ITEM_KEY(baseCampaign.id),
+                  campaignKeys.CMP_ITEM_KEY(baseCampaign.id),
+                  campaignKeys.LEGACY_ITEM_KEY(baseCampaign.id),
+                ];
+                
+                for (const key of keysToTry) {
+                  try {
+                    const kvUpdated = await kv.get<Campaign>(key);
+                    if (kvUpdated) {
+                      // Мержимо оновлені дані з KV
+                      const kvV1Count = kvUpdated.movedV1 ?? kvUpdated.counters?.v1 ?? v1Count;
+                      const kvV2Count = kvUpdated.movedV2 ?? kvUpdated.counters?.v2 ?? v2Count;
+                      const kvExpCount = kvUpdated.movedExp ?? kvUpdated.counters?.exp ?? expCount;
+                      const kvMovedTotal = kvV1Count + kvV2Count + kvExpCount;
+                      
+                      const mergedBaseTotal =
+                        typeof kvUpdated.baseCardsTotalPassed === 'number'
+                          ? kvUpdated.baseCardsTotalPassed
+                          : updated.baseCardsTotalPassed ?? newCount + kvMovedTotal;
+                      return { 
+                        ...updated, 
+                        ...kvUpdated,
+                        baseCardsCount: newCount,
+                        baseCardsTotalPassed: Math.max(mergedBaseTotal, newCount + kvMovedTotal),
+                        movedTotal: kvMovedTotal,
+                        movedV1: kvV1Count,
+                        movedV2: kvV2Count,
+                        movedExp: kvExpCount,
+                      } as Campaign;
+                    }
+                  } catch {
+                    // Продовжуємо наступний ключ
+                  }
+                }
+              }
+              
+              // Якщо не вдалося отримати оновлені дані з KV, зберігаємо монотонний максимум
+              const previousTotal =
+                typeof baseCampaign.baseCardsTotalPassed === 'number'
+                  ? baseCampaign.baseCardsTotalPassed
+                  : baseCampaign.baseCardsCountInitial || newCount;
+              updated.baseCardsTotalPassed = Math.max(previousTotal, newCount + movedTotal);
+              return updated as Campaign;
+            }
+            return c;
+          } catch {
+            // Якщо помилка - повертаємо оригінальну кампанію
+            return c;
+          }
+        })
+      );
+      
+      campaigns = updatedCampaigns;
+    } catch (err) {
+      // Якщо помилка оновлення - використовуємо оригінальні кампанії
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn("[campaigns] Failed to refresh stats:", err);
+      }
+    }
+  }
 
   return (
     <div className="p-4 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-3xl font-extrabold tracking-tight">Кампанії</h1>
-        <div className="flex gap-3">
-          <Link
-            href="/admin/campaigns/new"
-            className="rounded-lg bg-blue-600 text-white px-4 py-2 font-medium shadow hover:bg-blue-700"
-          >
-            + Нова кампанія
-          </Link>
-          <Link
-            href={`/admin/campaigns?t=${Date.now()}`}
-            className="rounded-lg border px-4 py-2 shadow-sm"
-          >
-            Оновити
-          </Link>
+        <div className="flex items-start gap-3">
+          <div className="flex gap-3">
+            <Link
+              href="/admin/campaigns/new"
+              className="rounded-lg bg-blue-600 text-white px-4 py-2 font-medium shadow hover:bg-blue-700"
+            >
+              + Нова кампанія
+            </Link>
+            <Link
+              href={`/admin/campaigns?t=${Date.now()}`}
+              className="rounded-lg border px-4 py-2 shadow-sm"
+            >
+              Оновити
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -142,14 +394,13 @@ export default async function Page() {
               <th className="px-2 py-3 w-[120px]">Варіант</th>
               <th className="px-2 py-3 w-[260px]">Цільова воронка</th>
               <th className="px-2 py-3 w-[280px]">Цільовий статус</th>
-              <th className="px-2 py-3 w-[140px]">Лічильник</th>
               <th className="px-4 py-3 w-[120px] text-right">Дії</th>
             </tr>
           </thead>
           <tbody>
             {campaigns.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                   Порожньо. Створіть першу кампанію.
                 </td>
               </tr>
@@ -167,7 +418,30 @@ export default async function Page() {
 
                   {/* База */}
                   <td className="px-2 py-3 text-sm">{nn(c.base?.pipelineName)}</td>
-                  <td className="px-2 py-3 text-sm">{nn(c.base?.statusName)}</td>
+                  <td className="px-2 py-3 text-sm">
+                    {(() => {
+                      const statusName = nn(c.base?.statusName);
+                      // Показуємо поточну актуальну кількість карток в базовій воронці
+                      const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : null;
+                      // Показуємо загальну кількість карток, яка пройшла через базовий статус
+                      const totalPassed = typeof c.baseCardsTotalPassed === 'number' ? c.baseCardsTotalPassed : null;
+                      
+                      if (currentCount !== null && totalPassed !== null) {
+                        return (
+                          <>
+                            {statusName} <span className="text-slate-400">({totalPassed}/{currentCount})</span>
+                          </>
+                        );
+                      } else if (currentCount !== null) {
+                        return (
+                          <>
+                            {statusName} <span className="text-slate-400">({currentCount})</span>
+                          </>
+                        );
+                      }
+                      return statusName;
+                    })()}
+                  </td>
 
                   {/* Варіант — V1/V2/EXP значення */}
                   <td className="px-2 py-3 text-sm">
@@ -213,38 +487,125 @@ export default async function Page() {
                     </div>
                   </td>
 
-                  {/* Цільовий статус — вертикально */}
+                  {/* Цільовий статус — вертикально з лічильниками */}
                   <td className="px-2 py-3 text-sm">
                     <div className="flex flex-col gap-1">
                       <div>
                         <span className="text-slate-500 mr-2">V1</span>
-                        {nn(c.t1?.statusName)}
+                        {(() => {
+                          const statusName = nn(c.t1?.statusName);
+                          const movedV1 = c.movedV1 ?? c.counters?.v1 ?? (c as any).v1_count ?? 0;
+                          const movedV2 = c.movedV2 ?? c.counters?.v2 ?? (c as any).v2_count ?? 0;
+                          const movedExp = c.movedExp ?? c.counters?.exp ?? (c as any).exp_count ?? 0;
+                          const movedTotal = c.movedTotal ?? (movedV1 + movedV2 + movedExp);
+                          
+                          // Обчислюємо baseTotal: використовуємо baseCardsTotalPassed або обчислюємо
+                          let baseTotal: number;
+                          if (typeof c.baseCardsTotalPassed === 'number' && c.baseCardsTotalPassed > 0) {
+                            baseTotal = c.baseCardsTotalPassed;
+                          } else {
+                            const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : 0;
+                            const initialCount = typeof c.baseCardsCountInitial === 'number' ? c.baseCardsCountInitial : 0;
+                            // baseTotal = поточна кількість + переміщені картки
+                            baseTotal = currentCount + movedTotal;
+                            // Якщо є початкова кількість і вона більша, використовуємо її
+                            if (initialCount > 0) {
+                              const totalFromInitial = initialCount + movedTotal;
+                              if (totalFromInitial > baseTotal) {
+                                baseTotal = totalFromInitial;
+                              }
+                            }
+                          }
+                          
+                          const percentage = baseTotal > 0 ? Math.round((movedV1 / baseTotal) * 100) : 0;
+                          
+                          if (statusName) {
+                            return (
+                              <>
+                                {statusName} <span className="text-slate-400">({movedV1} / {percentage}%)</span>
+                              </>
+                            );
+                          }
+                          return statusName;
+                        })()}
                       </div>
                       <div>
                         <span className="text-slate-500 mr-2">V2</span>
-                        {nn(c.t2?.statusName)}
+                        {(() => {
+                          const statusName = nn(c.t2?.statusName);
+                          const movedV1 = c.movedV1 ?? c.counters?.v1 ?? (c as any).v1_count ?? 0;
+                          const movedV2 = c.movedV2 ?? c.counters?.v2 ?? (c as any).v2_count ?? 0;
+                          const movedExp = c.movedExp ?? c.counters?.exp ?? (c as any).exp_count ?? 0;
+                          const movedTotal = c.movedTotal ?? (movedV1 + movedV2 + movedExp);
+                          
+                          // Обчислюємо baseTotal: використовуємо baseCardsTotalPassed або обчислюємо
+                          let baseTotal: number;
+                          if (typeof c.baseCardsTotalPassed === 'number' && c.baseCardsTotalPassed > 0) {
+                            baseTotal = c.baseCardsTotalPassed;
+                          } else {
+                            const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : 0;
+                            const initialCount = typeof c.baseCardsCountInitial === 'number' ? c.baseCardsCountInitial : 0;
+                            // baseTotal = поточна кількість + переміщені картки
+                            baseTotal = currentCount + movedTotal;
+                            // Якщо є початкова кількість і вона більша, використовуємо її
+                            if (initialCount > 0) {
+                              const totalFromInitial = initialCount + movedTotal;
+                              if (totalFromInitial > baseTotal) {
+                                baseTotal = totalFromInitial;
+                              }
+                            }
+                          }
+                          
+                          const percentage = baseTotal > 0 ? Math.round((movedV2 / baseTotal) * 100) : 0;
+                          
+                          if (statusName) {
+                            return (
+                              <>
+                                {statusName} <span className="text-slate-400">({movedV2} / {percentage}%)</span>
+                              </>
+                            );
+                          }
+                          return statusName;
+                        })()}
                       </div>
                       <div>
                         <span className="text-slate-500 mr-2">EXP</span>
-                        {nn(c.texp?.statusName)}
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Лічильники — вертикально */}
-                  <td className="px-2 py-3 text-sm">
-                    <div className="flex flex-col gap-1">
-                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                        <span className="text-slate-500 mr-1">V1:</span>
-                        <span>{c.counters?.v1 ?? 0}</span>
-                      </div>
-                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                        <span className="text-slate-500 mr-1">V2:</span>
-                        <span>{c.counters?.v2 ?? 0}</span>
-                      </div>
-                      <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs">
-                        <span className="text-slate-500 mr-1">EXP:</span>
-                        <span>{c.counters?.exp ?? 0}</span>
+                        {(() => {
+                          const statusName = nn(c.texp?.statusName);
+                          const movedV1 = c.movedV1 ?? c.counters?.v1 ?? (c as any).v1_count ?? 0;
+                          const movedV2 = c.movedV2 ?? c.counters?.v2 ?? (c as any).v2_count ?? 0;
+                          const movedExp = c.movedExp ?? c.counters?.exp ?? (c as any).exp_count ?? 0;
+                          const movedTotal = c.movedTotal ?? (movedV1 + movedV2 + movedExp);
+                          
+                          // Обчислюємо baseTotal: використовуємо baseCardsTotalPassed або обчислюємо
+                          let baseTotal: number;
+                          if (typeof c.baseCardsTotalPassed === 'number' && c.baseCardsTotalPassed > 0) {
+                            baseTotal = c.baseCardsTotalPassed;
+                          } else {
+                            const currentCount = typeof c.baseCardsCount === 'number' ? c.baseCardsCount : 0;
+                            const initialCount = typeof c.baseCardsCountInitial === 'number' ? c.baseCardsCountInitial : 0;
+                            // baseTotal = поточна кількість + переміщені картки
+                            baseTotal = currentCount + movedTotal;
+                            // Якщо є початкова кількість і вона більша, використовуємо її
+                            if (initialCount > 0) {
+                              const totalFromInitial = initialCount + movedTotal;
+                              if (totalFromInitial > baseTotal) {
+                                baseTotal = totalFromInitial;
+                              }
+                            }
+                          }
+                          
+                          const percentage = baseTotal > 0 ? Math.round((movedExp / baseTotal) * 100) : 0;
+                          
+                          if (statusName) {
+                            return (
+                              <>
+                                {statusName} <span className="text-slate-400">({movedExp} / {percentage}%)</span>
+                              </>
+                            );
+                          }
+                          return statusName;
+                        })()}
                       </div>
                     </div>
                   </td>
