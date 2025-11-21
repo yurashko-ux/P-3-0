@@ -484,62 +484,6 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
             
             // Видаляємо tracking запис
             await deleteExpTracking(campaign.id, cardId);
-            
-            // Інкрементуємо лічильник exp_count та оновлюємо статистику
-            try {
-              const itemKey = campaignKeys.ITEM_KEY(campaign.id);
-              const raw = await kvRead.getRaw(itemKey);
-              if (raw) {
-                const obj = JSON.parse(raw);
-                const oldExpCount = typeof obj.exp_count === 'number' ? obj.exp_count : 0;
-                obj.exp_count = oldExpCount + 1;
-                
-                // Оновлюємо лічильники переміщених карток
-                const v1Count = obj.counters?.v1 || obj.v1_count || 0;
-                const v2Count = obj.counters?.v2 || obj.v2_count || 0;
-                const expCount = obj.exp_count;
-                
-                // Оновлюємо counters.exp для сумісності з адмінкою
-                if (!obj.counters) {
-                  obj.counters = { v1: 0, v2: 0, exp: 0 };
-                }
-                obj.counters.exp = expCount;
-                obj.counters.v1 = v1Count;
-                obj.counters.v2 = v2Count;
-                
-                obj.movedTotal = v1Count + v2Count + expCount;
-                obj.movedV1 = v1Count;
-                obj.movedV2 = v2Count;
-                obj.movedExp = expCount;
-                
-                console.log(`[exp-check] Campaign ${campaign.id}: Updated counters`, {
-                  expCount,
-                  oldExpCount,
-                  movedTotal: obj.movedTotal,
-                });
-                
-                // baseCardsTotalPassed не змінюється при переміщенні карток
-                // Він оновлюється тільки при перерахуванні статистики (updateCampaignBaseCardsCount)
-                // коли виявляються нові картки, додані вручну в KeyCRM
-                
-                // Зберігаємо через обидва методи для сумісності
-                await kvWrite.setRaw(itemKey, JSON.stringify(obj));
-                // Також спробуємо зберегти через @vercel/kv для сумісності
-                try {
-                  const { kv } = await import('@vercel/kv');
-                  await kv.set(itemKey, obj);
-                } catch {
-                  // Ігноруємо помилки @vercel/kv
-                }
-                
-                console.log(`[exp-check] Campaign ${campaign.id}: Saved updated campaign to KV`);
-              } else {
-                console.warn(`[exp-check] Campaign ${campaign.id}: Campaign not found in KV for counter update`);
-              }
-            } catch (err) {
-              console.error(`[exp-check] Campaign ${campaign.id}: Error updating exp_count`, err);
-              // Ігноруємо помилки інкременту лічильника, але логуємо їх
-            }
           } else {
             result.errors.push(`Card ${cardId}: move failed (status ${moveResult.status})`);
           }
@@ -549,6 +493,64 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
         }
       } catch (err) {
         result.errors.push(`Card ${card.id}: check error - ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    
+    // Оновлюємо лічильник exp_count один раз після обробки всіх карток
+    // Це запобігає race condition, коли кілька карток переміщується одночасно
+    if (result.cardsMoved > 0) {
+      try {
+        const itemKey = campaignKeys.ITEM_KEY(campaign.id);
+        const raw = await kvRead.getRaw(itemKey);
+        if (raw) {
+          const obj = JSON.parse(raw);
+          const oldExpCount = typeof obj.exp_count === 'number' ? obj.exp_count : 0;
+          const newExpCount = oldExpCount + result.cardsMoved;
+          obj.exp_count = newExpCount;
+          
+          // Оновлюємо лічильники переміщених карток
+          const v1Count = obj.counters?.v1 || obj.v1_count || 0;
+          const v2Count = obj.counters?.v2 || obj.v2_count || 0;
+          const expCount = obj.exp_count;
+          
+          // Оновлюємо counters.exp для сумісності з адмінкою
+          if (!obj.counters) {
+            obj.counters = { v1: 0, v2: 0, exp: 0 };
+          }
+          obj.counters.exp = expCount;
+          obj.counters.v1 = v1Count;
+          obj.counters.v2 = v2Count;
+          
+          obj.movedTotal = v1Count + v2Count + expCount;
+          obj.movedV1 = v1Count;
+          obj.movedV2 = v2Count;
+          obj.movedExp = expCount;
+          
+          console.log(`[exp-check] Campaign ${campaign.id}: Updated counters after moving ${result.cardsMoved} cards`, {
+            oldExpCount,
+            newExpCount,
+            expCount,
+            movedTotal: obj.movedTotal,
+            cardsMoved: result.cardsMoved,
+          });
+          
+          // Зберігаємо через обидва методи для сумісності
+          await kvWrite.setRaw(itemKey, JSON.stringify(obj));
+          // Також спробуємо зберегти через @vercel/kv для сумісності
+          try {
+            const { kv } = await import('@vercel/kv');
+            await kv.set(itemKey, obj);
+          } catch {
+            // Ігноруємо помилки @vercel/kv
+          }
+          
+          console.log(`[exp-check] Campaign ${campaign.id}: Saved updated campaign to KV`);
+        } else {
+          console.warn(`[exp-check] Campaign ${campaign.id}: Campaign not found in KV for counter update`);
+        }
+      } catch (err) {
+        console.error(`[exp-check] Campaign ${campaign.id}: Error updating exp_count`, err);
+        result.errors.push(`Failed to update counters: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     
