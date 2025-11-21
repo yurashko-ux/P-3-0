@@ -128,21 +128,31 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
   
   try {
     // Перевіряємо, чи кампанія має EXP
-    const expDays = campaign.expDays || campaign.expireDays || campaign.exp || campaign.vexp || campaign.expire;
+    // Перевіряємо всі можливі поля для EXP, ігноруючи undefined
+    const expDaysRaw = campaign.expDays ?? campaign.expireDays ?? campaign.exp ?? campaign.vexp ?? campaign.expire;
+    // Конвертуємо рядок в число, якщо потрібно
+    const expDays = typeof expDaysRaw === 'string' ? Number(expDaysRaw) : expDaysRaw;
+    
     console.log(`[exp-check] Campaign ${campaign.id} (${campaign.name}): Checking EXP configuration`, {
       expDays,
       expDaysType: typeof expDays,
+      expDaysRaw,
+      expDaysRawType: typeof expDaysRaw,
       hasExpDays: 'expDays' in campaign,
       hasExpireDays: 'expireDays' in campaign,
       hasExp: 'exp' in campaign,
       hasVexp: 'vexp' in campaign,
       hasExpire: 'expire' in campaign,
+      expDaysValue: campaign.expDays,
+      expValue: campaign.exp,
     });
     
-    if (expDays == null || typeof expDays !== 'number' || expDays < 0) {
+    if (expDays == null || (typeof expDays !== 'number') || isNaN(expDays) || expDays < 0) {
       console.log(`[exp-check] Campaign ${campaign.id}: No valid EXP configuration, skipping`, {
         expDays,
         expDaysType: typeof expDays,
+        expDaysRaw,
+        expDaysRawType: typeof expDaysRaw,
       });
       return result; // Кампанія не має EXP (або негативне значення)
     }
