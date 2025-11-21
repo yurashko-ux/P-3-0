@@ -611,6 +611,7 @@ export async function POST(req: NextRequest) {
         if (!raw) {
           console.warn('[manychat] Campaign not found in KV:', { campaignId, possibleKeys });
         } else {
+          console.log('[manychat] Campaign found in KV, proceeding with counter update');
           // Розпаршуємо JSON якщо це рядок
           let campaign: any;
           if (typeof raw === 'string') {
