@@ -5,7 +5,6 @@ import { keycrmHeaders, keycrmUrl } from '@/lib/env';
 import { kvRead, kvWrite, campaignKeys } from '@/lib/kv';
 import { moveKeycrmCard } from '@/lib/keycrm-move';
 import { getExpTracking, deleteExpTracking, extractTimestampFromKeycrmCard } from './exp-tracking';
-import { updateCampaignBaseCardsCount } from './campaign-stats';
 
 export type ExpCheckResult = {
   campaignId: string;
@@ -15,15 +14,36 @@ export type ExpCheckResult = {
   errors: string[];
 };
 
+// Кеш для результатів отримання карток (щоб уникнути дублювання запитів для однакових pipelineId/statusId)
+const cardsCache = new Map<string, Array<{ id: number; [key: string]: any }>>();
+
+/**
+ * Очищає кеш карток (викликається на початку кожного cron job)
+ */
+export function clearCardsCache(): void {
+  cardsCache.clear();
+  console.log('[exp-check] Cards cache cleared');
+}
+
 /**
  * Отримує всі картки з базової воронки/статусу кампанії
+ * Використовує кеш для однакових pipelineId/statusId
  */
 async function getCardsFromBasePipeline(
   pipelineId: number,
   statusId: number,
   perPage = 50,
-  maxPages = 20
+  maxPages = 20,
+  useCache = true
 ): Promise<Array<{ id: number; [key: string]: any }>> {
+  // Перевіряємо кеш
+  const cacheKey = `${pipelineId}:${statusId}`;
+  if (useCache && cardsCache.has(cacheKey)) {
+    console.log(`[exp-check] getCardsFromBasePipeline: Using cached result for ${cacheKey}`, {
+      cachedCardsCount: cardsCache.get(cacheKey)!.length,
+    });
+    return cardsCache.get(cacheKey)!;
+  }
   const cards: Array<{ id: number; [key: string]: any }> = [];
   
   console.log(`[exp-check] getCardsFromBasePipeline: Starting fetch`, {
@@ -35,16 +55,30 @@ async function getCardsFromBasePipeline(
   
   for (let page = 1; page <= maxPages; page++) {
     // Додаємо затримку між запитами, щоб уникнути rate limiting
+    // Зменшуємо затримку для оптимізації
     if (page > 1) {
-      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms затримка між сторінками
+      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms затримка між сторінками (було 500ms)
     }
     
-    const qs = new URLSearchParams({
-      page: String(page),
-      per_page: String(perPage),
-      pipeline_id: String(pipelineId),
-      status_id: String(statusId),
-    });
+    const qs = new URLSearchParams();
+    qs.set("page[number]", String(page));
+    qs.set("page[size]", String(perPage));
+    
+    // Використовуємо правильний формат фільтрів, як у keycrm-card-search.ts
+    if (statusId != null) {
+      qs.set("filter[status_id]", String(statusId));
+    }
+    
+    if (pipelineId != null) {
+      qs.set("filter[pipeline_id]", String(pipelineId));
+    }
+    
+    // Додаємо include та with параметри для отримання повної інформації про картки
+    const relations = ["contact", "contact.client", "status"];
+    for (const relation of relations) {
+      qs.append("include[]", relation);
+      qs.append("with[]", relation);
+    }
     
     const url = keycrmUrl(`/pipelines/cards?${qs.toString()}`);
     console.log(`[exp-check] getCardsFromBasePipeline: Fetching page ${page}`, { url });
@@ -110,14 +144,55 @@ async function getCardsFromBasePipeline(
     
     if (data.length === 0) break;
     
+    // Ручна фільтрація карток по status_id, оскільки KeyCRM API може не фільтрувати правильно
+    let filteredCount = 0;
+    let skippedByStatus = 0;
     for (const card of data) {
       const cardId = card?.id ?? card?.card_id;
       if (cardId && typeof cardId === 'number') {
+        // Перевіряємо, чи картка належить до потрібного статусу
+        // Перевіряємо всі можливі місця, де може бути status_id
+        const cardStatusId = card?.status_id ?? card?.statusId ?? card?.status?.id ?? card?.status ?? 
+                             card?.pipeline_status_id ?? card?.pipelineStatusId;
+        
+        // Нормалізуємо status_id до числа
+        let cardStatusIdNum: number | null = null;
+        if (cardStatusId != null) {
+          if (typeof cardStatusId === 'number' && Number.isFinite(cardStatusId)) {
+            cardStatusIdNum = cardStatusId;
+          } else if (typeof cardStatusId === 'string') {
+            const parsed = Number(cardStatusId);
+            if (Number.isFinite(parsed)) {
+              cardStatusIdNum = parsed;
+            }
+          }
+        }
+        
+        // Якщо status_id не знайдено або не співпадає з очікуваним - пропускаємо картку
+        if (cardStatusIdNum === null || cardStatusIdNum !== statusId) {
+          skippedByStatus++;
+          if (skippedByStatus <= 3) { // Логуємо тільки перші 3 для діагностики
+            console.log(`[exp-check] getCardsFromBasePipeline: Skipping card ${cardId} - status mismatch`, {
+              cardStatusId,
+              cardStatusIdNum,
+              expectedStatusId: statusId,
+              hasStatus: cardStatusId != null,
+              cardKeys: Object.keys(card),
+            });
+          }
+          continue;
+        }
+        
         cards.push({ id: cardId, ...card });
+        filteredCount++;
       }
     }
     
-    console.log(`[exp-check] getCardsFromBasePipeline: Page ${page} added ${data.length} cards, total: ${cards.length}`);
+    if (skippedByStatus > 0) {
+      console.log(`[exp-check] getCardsFromBasePipeline: Page ${page} - skipped ${skippedByStatus} cards due to status mismatch`);
+    }
+    
+    console.log(`[exp-check] getCardsFromBasePipeline: Page ${page} - filtered ${filteredCount} cards (from ${data.length} total), total in cache: ${cards.length}`);
     
     // Перевіряємо, чи є наступна сторінка
     const hasNext = json?.links?.next || json?.next_page_url || 
@@ -126,6 +201,12 @@ async function getCardsFromBasePipeline(
   }
   
   console.log(`[exp-check] getCardsFromBasePipeline: Total cards found: ${cards.length}`);
+  
+  // Зберігаємо в кеш
+  if (useCache) {
+    cardsCache.set(cacheKey, cards);
+    console.log(`[exp-check] getCardsFromBasePipeline: Cached result for ${cacheKey}`);
+  }
   
   return cards;
 }
@@ -294,10 +375,22 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     });
     
     // Отримуємо всі картки з базової воронки
+    console.log(`[exp-check] Campaign ${campaign.id}: Fetching cards from base pipeline`, {
+      basePipelineId: basePipelineIdNum,
+      baseStatusId: baseStatusIdNum,
+      expDays,
+      isImmediate: expDays === 0,
+    });
+    
     const cards = await getCardsFromBasePipeline(basePipelineIdNum, baseStatusIdNum);
     result.cardsChecked = cards.length;
     
-    console.log(`[exp-check] Campaign ${campaign.id}: Found ${cards.length} cards in base pipeline`);
+    console.log(`[exp-check] Campaign ${campaign.id}: Found ${cards.length} cards in base pipeline/status`, {
+      basePipelineId: basePipelineIdNum,
+      baseStatusId: baseStatusIdNum,
+      expDays,
+      isImmediate: expDays === 0,
+    });
     
     const now = Date.now();
     const isImmediate = expDays === 0; // EXP=0 означає негайне переміщення (той самий день)
@@ -310,9 +403,9 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
       
-      // Додаємо затримку між обробкою карток, щоб уникнути rate limiting
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 300)); // 300ms затримка між картками
+      // Затримки потрібні тільки для великих наборів (>20 карток) для уникнення rate limiting
+      if (i > 0 && cards.length > 20) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       try {
@@ -320,8 +413,8 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
         
         // Спробувати отримати timestamp переміщення в базову воронку
         // 1. Спочатку перевіряємо KV (для карток, переміщених через v1/v2 автоматично)
-        // 2. Якщо немає в KV - використовуємо updated_at з KeyCRM
-        //    (це працює для карток, переміщених вручну безпосередньо в KeyCRM)
+        // 2. Якщо немає в KV - використовуємо updated_at з об'єкта card з API
+        // 3. Тільки якщо не знайшли в об'єкті card - робимо окремий запит до KeyCRM
         let timestamp: number | null = null;
         const tracking = await getExpTracking(campaign.id, cardId);
         
@@ -329,16 +422,25 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
           // Картка була переміщена через v1/v2 - використовуємо точний timestamp з KV
           timestamp = tracking.timestamp;
         } else {
-          // Картка не знайдена в KV - використовуємо updated_at з KeyCRM
-          // Це працює для карток, які були переміщені вручну в KeyCRM
-          try {
-            const cardDetails = await getCardDetails(card.id);
-            timestamp = extractTimestampFromKeycrmCard(cardDetails);
-          } catch (err) {
-            // Якщо не вдалося отримати - пропускаємо картку
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            result.errors.push(`Card ${cardId}: failed to get timestamp (${errorMsg})`);
-            continue;
+          // Спочатку перевіряємо updated_at в об'єкті card з API (оптимізація - не робимо зайвих запитів)
+          if (card.updated_at || card.updatedAt || card.updated) {
+            timestamp = extractTimestampFromKeycrmCard(card);
+            if (timestamp) {
+              console.log(`[exp-check] Campaign ${campaign.id}: Using timestamp from card object for card ${cardId}`);
+            }
+          }
+          
+          // Тільки якщо не знайшли timestamp в об'єкті card, робимо окремий запит
+          if (!timestamp) {
+            try {
+              const cardDetails = await getCardDetails(card.id);
+              timestamp = extractTimestampFromKeycrmCard(cardDetails);
+            } catch (err) {
+              // Якщо не вдалося отримати - пропускаємо картку
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              result.errors.push(`Card ${cardId}: failed to get timestamp (${errorMsg})`);
+              continue;
+            }
           }
         }
         
@@ -348,7 +450,9 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
         
         if (isImmediate) {
           // EXP=0: негайне переміщення - переміщуємо всі картки, які знаходяться в базовій воронці
+          // Але тільки ті, які дійсно належать до цієї кампанії (вже відфільтровані в getCardsFromBasePipeline)
           shouldMove = true;
+          console.log(`[exp-check] Campaign ${campaign.id}: EXP=0 - will move card ${cardId} immediately`);
         } else {
           // EXP>0: перевіряємо час перебування в базовій воронці
           if (!timestamp) {
@@ -376,6 +480,7 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
             
           if (moveResult.ok) {
             result.cardsMoved++;
+            console.log(`[exp-check] Campaign ${campaign.id}: Successfully moved card ${cardId} to EXP target`);
             
             // Видаляємо tracking запис
             await deleteExpTracking(campaign.id, cardId);
@@ -386,7 +491,8 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
               const raw = await kvRead.getRaw(itemKey);
               if (raw) {
                 const obj = JSON.parse(raw);
-                obj.exp_count = (typeof obj.exp_count === 'number' ? obj.exp_count : 0) + 1;
+                const oldExpCount = typeof obj.exp_count === 'number' ? obj.exp_count : 0;
+                obj.exp_count = oldExpCount + 1;
                 
                 // Оновлюємо лічильники переміщених карток
                 const v1Count = obj.counters?.v1 || obj.v1_count || 0;
@@ -397,6 +503,12 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
                 obj.movedV1 = v1Count;
                 obj.movedV2 = v2Count;
                 obj.movedExp = expCount;
+                
+                console.log(`[exp-check] Campaign ${campaign.id}: Updated counters`, {
+                  expCount,
+                  oldExpCount,
+                  movedTotal: obj.movedTotal,
+                });
                 
                 // baseCardsTotalPassed не змінюється при переміщенні карток
                 // Він оновлюється тільки при перерахуванні статистики (updateCampaignBaseCardsCount)
@@ -411,9 +523,14 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
                 } catch {
                   // Ігноруємо помилки @vercel/kv
                 }
+                
+                console.log(`[exp-check] Campaign ${campaign.id}: Saved updated campaign to KV`);
+              } else {
+                console.warn(`[exp-check] Campaign ${campaign.id}: Campaign not found in KV for counter update`);
               }
-            } catch {
-              // Ігноруємо помилки інкременту лічильника
+            } catch (err) {
+              console.error(`[exp-check] Campaign ${campaign.id}: Error updating exp_count`, err);
+              // Ігноруємо помилки інкременту лічильника, але логуємо їх
             }
           } else {
             result.errors.push(`Card ${cardId}: move failed (status ${moveResult.status})`);
@@ -427,15 +544,9 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
       }
     }
     
-    // Оновлюємо кількість карток в базовій воронці для кампаній з EXP (раз на день)
-    try {
-      await updateCampaignBaseCardsCount(campaign.id);
-    } catch (err) {
-      // Ігноруємо помилки оновлення статистики - не критично
-      if (process.env.NODE_ENV !== 'production') {
-        result.errors.push(`Failed to update base cards count: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    // ПРИБРАНО: updateCampaignBaseCardsCount викликається не критично для переміщення карток
+    // і може сповільнити процес. Статистику можна оновлювати окремо через cron або при необхідності.
+    
   } catch (err) {
     result.errors.push(`Campaign check error: ${err instanceof Error ? err.message : String(err)}`);
   }
