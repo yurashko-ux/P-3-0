@@ -499,6 +499,14 @@ export async function checkCampaignExp(campaign: any): Promise<ExpCheckResult> {
                 const v2Count = obj.counters?.v2 || obj.v2_count || 0;
                 const expCount = obj.exp_count;
                 
+                // Оновлюємо counters.exp для сумісності з адмінкою
+                if (!obj.counters) {
+                  obj.counters = { v1: 0, v2: 0, exp: 0 };
+                }
+                obj.counters.exp = expCount;
+                obj.counters.v1 = v1Count;
+                obj.counters.v2 = v2Count;
+                
                 obj.movedTotal = v1Count + v2Count + expCount;
                 obj.movedV1 = v1Count;
                 obj.movedV2 = v2Count;
