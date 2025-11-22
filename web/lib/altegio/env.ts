@@ -57,10 +57,48 @@ export function assertAltegioEnv() {
 export function altegioHeaders(includeUserToken = true) {
   assertAltegioEnv();
   
-  // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо Partner Token не вказано, використовуємо тільки User Token
-  // Це для непублічних програм, які використовуються тільки для вашої філії
-  // Для непублічних програм може знадобитися Application ID як Partner ID
+  // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token, використовуємо його разом з User Token
+  // Partner Token може бути присутній і для непублічних програм
+  // Якщо Partner Token не вказано, використовуємо тільки User Token
+  // Для непублічних програм може знадобитися Application ID або числовий Partner ID
   // (в заголовках, але не в Authorization header)
+  
+  // Якщо є Partner Token (навіть для непублічної програми), спробуємо використати його
+  if (ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
+    // Варіант 1: Формат для публічних програм (може працювати і для непублічних)
+    // "Bearer <partner_token>, User <user_token>"
+    const authHeader = `Bearer ${ALTEGIO_ENV.PARTNER_TOKEN}, User ${ALTEGIO_ENV.USER_TOKEN}`;
+    
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: authHeader,
+    };
+    
+    // Partner ID може бути потрібен окремо (числовий ID, наприклад 784)
+    const partnerId = ALTEGIO_ENV.PARTNER_ID;
+    if (partnerId) {
+      headers['X-Partner-ID'] = partnerId;
+      headers['Partner-ID'] = partnerId;
+      headers['X-Partner-Id'] = partnerId;
+      headers['X-PartnerId'] = partnerId;
+    }
+    
+    console.log('[altegio/env] Authorization header (with Partner Token - may be non-public):', {
+      format: 'Bearer <partner_token>, User <user_token>',
+      programType: 'Non-public (with Partner Token)',
+      partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
+      partnerId: partnerId || 'not set',
+      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+      authorizationHeader: authHeader.substring(0, 80) + '...',
+      allHeaders: Object.keys(headers),
+      note: 'Using Partner Token with User Token (may be for non-public program)',
+    });
+    
+    return headers;
+  }
+  
+  // Якщо Partner Token не вказано, використовуємо тільки User Token
   if (!ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
     const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
     
