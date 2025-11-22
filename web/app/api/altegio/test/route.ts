@@ -86,7 +86,6 @@ export async function GET(req: NextRequest) {
           : 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN у змінних середовища Vercel.'),
         programType,
         needsPartnerToken: isPartnerIdError && !hasPartnerToken,
-        programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
         recommendation: isPartnerIdError && !hasPartnerId && hasUserToken && !hasPartnerToken
           ? 'Для непублічної програми: додайте ALTEGIO_PARTNER_ID (ID вашої філії/салону в Alteg.io, наприклад: 1169323) в Vercel environment variables'
           : (hasPartnerToken && isPartnerIdError && hasUserToken
