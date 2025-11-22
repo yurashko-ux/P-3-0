@@ -210,14 +210,24 @@ export default function AltegioLanding() {
                         Для публічних програм Partner ID - це Application ID або Partner Token.
                       </p>
                       <p style={{ margin: '8px 0', fontSize: '0.9em', fontWeight: 600 }}>
-                        Варіант 1: Application ID з налаштувань додатку
+                        Варіант 1: ID філії/салону з вашої адмінки Alteg.io (для непублічних програм)
+                      </p>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
+                        <li>Відкрийте вашу адмінку Alteg.io (https://app.alteg.io або https://alteg.io)</li>
+                        <li>Перейдіть в налаштування філії/салону</li>
+                        <li>Знайдіть <strong>ID філії</strong> (може бути в URL або в налаштуваннях)</li>
+                        <li>ID філії зазвичай виглядає як числовий ID (наприклад: 1169323)</li>
+                        <li>Скопіюйте його та додайте як змінну середовища <code>ALTEGIO_PARTNER_ID</code> в Vercel</li>
+                      </ol>
+                      <p style={{ margin: '12px 0 8px 0', fontSize: '0.9em', fontWeight: 600 }}>
+                        Варіант 2: Application ID з налаштувань додатку (для публічних програм)
                       </p>
                       <ol style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
                         <li>Відкрийте <a href="https://marketplace.alteg.io" target="_blank" rel="noopener noreferrer" style={{ color: '#2a6df5' }}>Alteg.io Marketplace</a></li>
                         <li>Перейдіть в "Мої програми" → ваш додаток</li>
                         <li>Відкрийте розділ <strong>"Загальна інформація"</strong></li>
-                        <li>Знайдіть <strong>Application ID</strong> (може бути числовий, наприклад: #1169323, або UUID)</li>
-                        <li>Скопіюйте його та додайте як змінну середовища <code>ALTEGIO_PARTNER_TOKEN</code> в Vercel</li>
+                        <li>Знайдіть <strong>Application ID</strong> (наприклад: 1193)</li>
+                        <li>Скопіюйте його та додайте як змінну середовища <code>ALTEGIO_PARTNER_ID</code> або <code>ALTEGIO_PARTNER_TOKEN</code> в Vercel</li>
                       </ol>
                       <p style={{ margin: '12px 0 8px 0', fontSize: '0.9em', fontWeight: 600 }}>
                         Варіант 2: Partner Token з налаштувань акаунта
