@@ -11,8 +11,10 @@ export const ALTEGIO_ENV = {
   // PARTNER_TOKEN - партнерський токен (потрібен тільки для публічних додатків у маркетплейсі)
   // Для непублічного додатку достатньо USER_TOKEN
   PARTNER_TOKEN: process.env.ALTEGIO_PARTNER_TOKEN?.trim() || "",
-  // PARTNER_ID - ідентифікатор партнера (може відрізнятися від PARTNER_TOKEN)
-  // Якщо не вказано, використовується PARTNER_TOKEN як PARTNER_ID
+  // PARTNER_ID - ідентифікатор філії/салону в Alteg.io (для непублічних програм)
+  // або Application ID / Partner Token (для публічних програм)
+  // Для непублічних програм це ID вашої філії в Alteg.io (наприклад, 1169323)
+  // API використовує Partner ID, щоб знати, з якої філії брати дані
   PARTNER_ID: process.env.ALTEGIO_PARTNER_ID?.trim() || "",
 };
 
