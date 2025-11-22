@@ -34,13 +34,35 @@ export function assertAltegioEnv() {
  * Формат "Bearer <partner_token>, User <user_token>" - це кастомна реалізація Alteg.io
  * і не є частиною стандарту OAuth 2.0.
  * 
- * Формат для USER_TOKEN: "Bearer <user_token>"
- * Формат для PARTNER_TOKEN: "Bearer <partner_token>, User <user_token>"
+ * Важливо: Згідно з документацією Alteg.io Marketplace:
+ * - Для доступу до API філій використовується User Token користувача, який додається
+ *   при підключенні інтеграції до філії
+ * - Partner ID може бути потрібен тільки для маркетплейсу API, а не для API філій
+ * 
+ * Формат для USER_TOKEN (API філій): "Bearer <user_token>"
+ * Формат для PARTNER_TOKEN (маркетплейс): "Bearer <partner_token>, User <user_token>"
  */
 export function altegioHeaders(includeUserToken = true) {
   assertAltegioEnv();
   
-  // Якщо є партнерський токен - використовуємо повний формат
+  // Спочатку спробуємо тільки User Token (для API філій)
+  // Якщо Partner Token не вказано, використовуємо тільки User Token
+  if (!ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
+    const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
+    
+    console.log('[altegio/env] Authorization header (USER_TOKEN only - for branch API):', {
+      format: 'Bearer <user_token>',
+      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+    });
+    
+    return {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: authHeader,
+    };
+  }
+  
+  // Якщо є партнерський токен - використовуємо повний формат (для маркетплейсу API)
   if (ALTEGIO_ENV.PARTNER_TOKEN) {
     // Partner ID може передаватися окремим заголовком
     // Якщо явно не вказано PARTNER_ID, використовуємо PARTNER_TOKEN як Partner ID
@@ -107,23 +129,7 @@ export function altegioHeaders(includeUserToken = true) {
     return headers;
   }
   
-  // Для непублічних додатків (або без PARTNER_TOKEN): використовуємо тільки USER_TOKEN
-  // Формат: "Bearer <user_token>" (стандартний OAuth 2.0)
-  if (ALTEGIO_ENV.USER_TOKEN) {
-    const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
-    
-    console.log('[altegio/env] Authorization header (USER_TOKEN only):', {
-      format: 'Bearer <user_token>',
-      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
-    });
-    
-    return {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: authHeader,
-    };
-  }
-  
+  // Якщо досягли сюди - немає ні Partner Token, ні User Token
   throw new Error("No valid Altegio token configured");
 }
 
