@@ -12,6 +12,23 @@ export default function AltegioLanding() {
     companiesCount?: number;
     error?: string;
   }>({ loading: false, ok: null });
+  
+  const [webhookUrl, setWebhookUrl] = useState<string>('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setWebhookUrl(`${window.location.origin}/api/altegio/webhook`);
+    }
+  }, []);
+
+  async function copyWebhookUrl() {
+    if (webhookUrl) {
+      await navigator.clipboard.writeText(webhookUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
 
   async function testConnection() {
     setTestStatus({ loading: true, ok: null });
@@ -74,21 +91,40 @@ export default function AltegioLanding() {
             <p style={{ margin: 0, marginBottom: 8, fontWeight: 600 }}>
               URL для webhook в налаштуваннях Alteg.io:
             </p>
-            <code
-              style={{
-                display: 'block',
-                padding: '8px 12px',
-                background: '#fff',
-                borderRadius: 6,
-                border: '1px solid #e8ebf0',
-                fontSize: '0.9em',
-                wordBreak: 'break-all',
-              }}
-            >
-              {typeof window !== 'undefined' ? `${window.location.origin}/api/altegio/webhook` : '/api/altegio/webhook'}
-            </code>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <code
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  background: '#fff',
+                  borderRadius: 6,
+                  border: '1px solid #e8ebf0',
+                  fontSize: '0.9em',
+                  wordBreak: 'break-all',
+                  display: 'block',
+                }}
+              >
+                {webhookUrl || '/api/altegio/webhook'}
+              </code>
+              <button
+                onClick={copyWebhookUrl}
+                style={{
+                  padding: '8px 16px',
+                  background: copied ? '#22c55e' : '#2a6df5',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'background 0.2s',
+                }}
+              >
+                {copied ? '✓ Скопійовано' : 'Скопіювати'}
+              </button>
+            </div>
             <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: 'rgba(0,0,0,0.6)' }}>
-              Скопіюйте цю адресу та вкажіть її в полі "Адреса для надсилання повідомлень" в налаштуваннях маркетплейсу Alteg.io.
+              Скопіюйте цю адресу та вкажіть її в полі <strong>"Адреса для надсилання повідомлень"</strong> в налаштуваннях маркетплейсу Alteg.io (розділ "Налаштування для розробки").
             </p>
           </div>
 
@@ -111,7 +147,22 @@ export default function AltegioLanding() {
               )}
               {testStatus.error && (
                 <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
-                  {testStatus.error}
+                  <div style={{ marginBottom: 8 }}>{testStatus.error}</div>
+                  {(testStatus.error.includes('Partner ID') || testStatus.error.includes('partner') || testStatus.error.includes('401')) && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
+                      <strong>💡 Як знайти Partner ID:</strong>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
+                        <li>Відкрийте <a href="https://marketplace.alteg.io" target="_blank" rel="noopener noreferrer" style={{ color: '#2a6df5' }}>Alteg.io Marketplace</a></li>
+                        <li>Перейдіть в "Мої програми" → ваш додаток</li>
+                        <li>Відкрийте розділ "Загальна інформація" або "Доступ до API"</li>
+                        <li>Знайдіть Partner ID / Partner Token (може бути у вигляді UUID або API ключа)</li>
+                        <li>Скопіюйте його та додайте як змінну середовища <code>ALTEGIO_PARTNER_TOKEN</code> в Vercel</li>
+                      </ol>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.85em' }}>
+                        Після додавання змінної середовища перезапустіть деплой або зачекайте 1-2 хвилини.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
