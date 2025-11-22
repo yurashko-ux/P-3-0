@@ -11,6 +11,9 @@ export const ALTEGIO_ENV = {
   // PARTNER_TOKEN - партнерський токен (потрібен тільки для публічних додатків у маркетплейсі)
   // Для непублічного додатку достатньо USER_TOKEN
   PARTNER_TOKEN: process.env.ALTEGIO_PARTNER_TOKEN?.trim() || "",
+  // PARTNER_ID - ідентифікатор партнера (може відрізнятися від PARTNER_TOKEN)
+  // Якщо не вказано, використовується PARTNER_TOKEN як PARTNER_ID
+  PARTNER_ID: process.env.ALTEGIO_PARTNER_ID?.trim() || "",
 };
 
 export function assertAltegioEnv() {
@@ -47,19 +50,36 @@ export function altegioHeaders(includeUserToken = true) {
     
     const authHeader = authParts.join(", ");
     
+    // Partner ID може передаватися окремим заголовком
+    // Якщо явно не вказано PARTNER_ID, використовуємо PARTNER_TOKEN як Partner ID
+    const partnerId = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN;
+    
     // Логування для діагностики
     console.log('[altegio/env] Authorization header:', {
       format: 'Bearer <partner_token>, User <user_token>',
       partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
+      partnerId: partnerId,
+      partnerIdLength: partnerId.length,
       userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
       authHeaderPreview: authHeader.substring(0, 50) + '...',
     });
     
-    return {
+    const headers: Record<string, string> = {
       Accept: "application/json",
       "Content-Type": "application/json",
       Authorization: authHeader,
     };
+    
+    // Додаємо Partner ID як окремий заголовок (якщо потрібно)
+    // API може вимагати Partner ID в окремому заголовку або query параметрі
+    if (partnerId) {
+      // Спробуємо різні варіанти заголовків
+      headers['X-Partner-ID'] = partnerId;
+      headers['Partner-ID'] = partnerId;
+      headers['X-Partner-Id'] = partnerId;
+    }
+    
+    return headers;
   }
   
   // Для непублічних додатків (або без PARTNER_TOKEN): використовуємо тільки USER_TOKEN
