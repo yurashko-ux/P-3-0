@@ -33,7 +33,16 @@ export async function GET(req: NextRequest) {
     
     assertAltegioEnv();
     
-    const companies = await getCompanies();
+    // Спробуємо використати Partner ID як ID філії для фільтрації
+    // Partner ID (784) може бути ID салону, але якщо ні - покажемо всі компанії
+    const partnerId = process.env.ALTEGIO_PARTNER_ID;
+    const partnerIdNum = partnerId ? parseInt(partnerId, 10) : null;
+    
+    // Перевіряємо, чи Partner ID - це числовий ID компанії
+    // Якщо так, спробуємо отримати тільки цю компанію
+    const companies = await getCompanies(
+      partnerIdNum && !isNaN(partnerIdNum) ? partnerIdNum : undefined
+    );
     
     return NextResponse.json({
       ok: true,
