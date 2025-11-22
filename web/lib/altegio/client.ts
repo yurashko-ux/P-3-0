@@ -38,11 +38,15 @@ export async function altegioFetch<T = any>(
   let url = altegioUrl(path);
   
   // Partner ID може передаватися як query параметр або окремий заголовок
-  // Отримуємо Partner ID з env (якщо є PARTNER_ID, використовуємо його, інакше PARTNER_TOKEN)
-  const partnerId = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN || '';
+  // АЛЕ тільки для публічних програм (якщо є PARTNER_TOKEN)
+  // Для непублічних програм (тільки USER_TOKEN) Partner ID не потрібен
+  const hasPartnerToken = !!ALTEGIO_ENV.PARTNER_TOKEN;
+  const partnerId = hasPartnerToken 
+    ? (ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN || '')
+    : '';
   
-  // Додаємо Partner ID як query параметр (якщо потрібно)
-  if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=')) {
+  // Додаємо Partner ID як query параметр ТІЛЬКИ якщо є Partner Token (для публічних програм)
+  if (hasPartnerToken && partnerId && !url.includes('partner_id=') && !url.includes('partnerId=')) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
   }
@@ -65,16 +69,18 @@ export async function altegioFetch<T = any>(
       // Детальне логування для діагностики
       console.log('[altegio/client] Making request:', {
         url,
-        urlWithParams: url.includes('partner_id') ? '✅ Partner ID in URL' : '❌ No Partner ID in URL',
+        programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
+        urlWithParams: url.includes('partner_id') ? '✅ Partner ID in URL' : '❌ No Partner ID in URL (OK for non-public)',
         headers: Object.keys(finalHeaders),
+        hasPartnerToken,
         hasPartnerId: !!partnerId,
-        partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set',
+        partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set (OK for non-public)',
         authorizationHeader: finalHeaders['Authorization']?.substring(0, 80) + '...',
-        partnerIdHeaders: {
+        partnerIdHeaders: hasPartnerToken ? {
           'X-Partner-ID': finalHeaders['X-Partner-ID'],
           'Partner-ID': finalHeaders['Partner-ID'],
           'X-Partner-Id': finalHeaders['X-Partner-Id'],
-        },
+        } : 'No Partner ID headers (OK for non-public)',
       });
       
       const response = await fetch(url, {

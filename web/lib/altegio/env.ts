@@ -35,24 +35,33 @@ export function assertAltegioEnv() {
  * і не є частиною стандарту OAuth 2.0.
  * 
  * Важливо: Згідно з документацією Alteg.io Marketplace:
- * - Для доступу до API філій використовується User Token користувача, який додається
- *   при підключенні інтеграції до філії
- * - Partner ID може бути потрібен тільки для маркетплейсу API, а не для API філій
  * 
- * Формат для USER_TOKEN (API філій): "Bearer <user_token>"
- * Формат для PARTNER_TOKEN (маркетплейс): "Bearer <partner_token>, User <user_token>"
+ * **Непублічні програми (тільки для вашої філії):**
+ * - Використовується тільки USER_TOKEN
+ * - Формат: "Bearer <user_token>"
+ * - Partner ID не потрібен
+ * - Достатньо встановити ALTEGIO_USER_TOKEN
+ * 
+ * **Публічні програми (для маркетплейсу):**
+ * - Використовується PARTNER_TOKEN + USER_TOKEN
+ * - Формат: "Bearer <partner_token>, User <user_token>"
+ * - Partner ID додається в заголовки та query параметри
+ * - Потрібно встановити ALTEGIO_PARTNER_TOKEN та ALTEGIO_USER_TOKEN
  */
 export function altegioHeaders(includeUserToken = true) {
   assertAltegioEnv();
   
-  // Спочатку спробуємо тільки User Token (для API філій)
-  // Якщо Partner Token не вказано, використовуємо тільки User Token
+  // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо Partner Token не вказано, використовуємо тільки User Token
+  // Це для непублічних програм, які використовуються тільки для вашої філії
+  // Partner ID не потрібен, достатньо User Token
   if (!ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
     const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
     
-    console.log('[altegio/env] Authorization header (USER_TOKEN only - for branch API):', {
+    console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN only):', {
       format: 'Bearer <user_token>',
+      programType: 'Non-public',
       userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+      note: 'Partner ID not needed for non-public programs',
     });
     
     return {
@@ -62,7 +71,9 @@ export function altegioHeaders(includeUserToken = true) {
     };
   }
   
-  // Якщо є партнерський токен - використовуємо повний формат (для маркетплейсу API)
+  // ПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token - використовуємо повний формат
+  // Це для публічних програм на маркетплейсі
+  // Потрібен Partner Token + User Token + Partner ID в заголовках
   if (ALTEGIO_ENV.PARTNER_TOKEN) {
     // Partner ID може передаватися окремим заголовком
     // Якщо явно не вказано PARTNER_ID, використовуємо PARTNER_TOKEN як Partner ID
