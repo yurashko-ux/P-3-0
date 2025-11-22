@@ -28,11 +28,17 @@ export async function GET(req: NextRequest) {
     
     const errorMessage = err instanceof Error ? err.message : String(err);
     
+    // Перевіряємо, чи помилка пов'язана з Partner ID
+    const isPartnerIdError = errorMessage.includes('Partner ID') || errorMessage.includes('partner') || errorMessage.includes('401');
+    
     return NextResponse.json(
       {
         ok: false,
         error: errorMessage,
-        hint: 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN у змінних середовища',
+        hint: isPartnerIdError 
+          ? 'Потрібен ALTEGIO_PARTNER_TOKEN. Його можна знайти в налаштуваннях додатку на маркетплейсі Alteg.io (розділ "Загальна інформація" або "Доступ до API").'
+          : 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN та ALTEGIO_PARTNER_TOKEN у змінних середовища Vercel.',
+        needsPartnerToken: isPartnerIdError,
       },
       { status: 500 }
     );
