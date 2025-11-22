@@ -11,11 +11,15 @@ export const ALTEGIO_ENV = {
   // PARTNER_TOKEN - партнерський токен (потрібен тільки для публічних додатків у маркетплейсі)
   // Для непублічного додатку достатньо USER_TOKEN
   PARTNER_TOKEN: process.env.ALTEGIO_PARTNER_TOKEN?.trim() || "",
-  // PARTNER_ID - ідентифікатор філії/салону в Alteg.io (для непублічних програм)
-  // або Application ID / Partner Token (для публічних програм)
-  // Для непублічних програм це ID вашої філії в Alteg.io (наприклад, 1169323)
+  // PARTNER_ID - може бути:
+  // 1. ID філії/салону в Alteg.io (для непублічних програм) - наприклад, 1169323
+  // 2. Application ID (для публічних програм) - наприклад, 1193
   // API використовує Partner ID, щоб знати, з якої філії брати дані
   PARTNER_ID: process.env.ALTEGIO_PARTNER_ID?.trim() || "",
+  // APPLICATION_ID - ID програми в маркетплейсі (для непублічних програм)
+  // Може відрізнятися від Partner ID (ID філії)
+  // Якщо не вказано, використовується PARTNER_ID
+  APPLICATION_ID: process.env.ALTEGIO_APPLICATION_ID?.trim() || "",
 };
 
 export function assertAltegioEnv() {
@@ -60,9 +64,15 @@ export function altegioHeaders(includeUserToken = true) {
   if (!ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
     const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
     
-    // Для непублічних програм Application ID може бути потрібен як Partner ID
-    // Спробуємо використати PARTNER_ID якщо він вказаний (Application ID)
+    // Для непублічних програм потрібен Partner ID
+    // Може бути: ID філії (1169323) або Application ID (1193)
+    // Спробуємо Application ID спочатку, якщо він вказаний, інакше використаємо PARTNER_ID
+    const applicationId = ALTEGIO_ENV.APPLICATION_ID || '';
     const partnerId = ALTEGIO_ENV.PARTNER_ID;
+    
+    // Для непублічних програм API може вимагати Application ID як Partner ID
+    // Спробуємо обидва варіанти: Application ID або Partner ID (ID філії)
+    const partnerIdToUse = applicationId || partnerId;
     
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -70,32 +80,35 @@ export function altegioHeaders(includeUserToken = true) {
       Authorization: authHeader,
     };
     
-    // Якщо є PARTNER_ID (ID філії), спробуємо різні варіанти передачі
-    // API може очікувати Partner ID в Authorization header або окремих заголовках
-    if (partnerId) {
-      // Варіант 1: Додаємо Partner ID в Authorization header
-      // Формат: "Bearer <user_token>, Partner <partner_id>"
-      const authHeaderWithPartner = `${authHeader}, Partner ${partnerId}`;
+    // Якщо є Partner ID (Application ID або ID філії), спробуємо різні варіанти передачі
+    if (partnerIdToUse) {
+      // Варіант 1: Формат для публічних програм (можливо працює і для непублічних)
+      // "Bearer <application_id>, User <user_token>"
+      const authHeaderAsPublic = `Bearer ${partnerIdToUse}, User ${ALTEGIO_ENV.USER_TOKEN}`;
       
-      // Варіант 2: Додаємо як окремі заголовки
-      headers['X-Partner-ID'] = partnerId;
-      headers['Partner-ID'] = partnerId;
-      headers['X-Partner-Id'] = partnerId;
-      headers['X-PartnerId'] = partnerId;
+      // Варіант 2: Формат "Bearer <user_token>, Partner <partner_id>"
+      const authHeaderWithPartner = `${authHeader}, Partner ${partnerIdToUse}`;
       
-      // Спробуємо спочатку з Partner ID в Authorization header
-      // (навіть для непублічних програм API може вимагати Partner ID тут)
-      headers['Authorization'] = authHeaderWithPartner;
+      // Варіант 3: Додаємо як окремі заголовки
+      headers['X-Partner-ID'] = partnerIdToUse;
+      headers['Partner-ID'] = partnerIdToUse;
+      headers['X-Partner-Id'] = partnerIdToUse;
+      headers['X-PartnerId'] = partnerIdToUse;
       
-      console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN + Partner ID in Auth):', {
-        format: 'Bearer <user_token>, Partner <partner_id>',
+      // Спробуємо формат як для публічних програм (Bearer Application ID, User Token)
+      // Це найбільш вірогідний формат, який працює для непублічних програм
+      headers['Authorization'] = authHeaderAsPublic;
+      
+      console.log('[altegio/env] Authorization header (Non-public program - trying public format):', {
+        format: 'Bearer <application_id>, User <user_token>',
         programType: 'Non-public',
+        applicationId: applicationId || 'not set',
+        partnerId: partnerId || 'not set',
+        usingAsPartnerId: partnerIdToUse,
         userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
-        partnerId: partnerId,
-        partnerIdLength: partnerId.length,
-        authorizationHeader: authHeaderWithPartner.substring(0, 80) + '...',
+        authorizationHeader: authHeaderAsPublic.substring(0, 80) + '...',
         allHeaders: Object.keys(headers),
-        note: 'Trying Partner ID in Authorization header (Bearer token, Partner ID)',
+        note: 'Trying public program format: Bearer <application_id>, User <token>',
       });
     } else {
       console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN only):', {

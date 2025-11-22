@@ -39,9 +39,10 @@ export async function altegioFetch<T = any>(
   
   // Partner ID може передаватися як query параметр або окремий заголовок
   // Для публічних програм: якщо є PARTNER_TOKEN
-  // Для непублічних програм: якщо є PARTNER_ID (Application ID)
+  // Для непублічних програм: якщо є APPLICATION_ID або PARTNER_ID (ID філії)
   const hasPartnerToken = !!ALTEGIO_ENV.PARTNER_TOKEN;
-  const partnerId = ALTEGIO_ENV.PARTNER_ID || (hasPartnerToken ? ALTEGIO_ENV.PARTNER_TOKEN : '');
+  const applicationId = ALTEGIO_ENV.APPLICATION_ID || '';
+  const partnerId = ALTEGIO_ENV.PARTNER_ID || applicationId || (hasPartnerToken ? ALTEGIO_ENV.PARTNER_TOKEN : '');
   
   // Додаємо Partner ID як query параметр якщо є Partner ID
   // (для публічних програм - Partner Token, для непублічних - Application ID)
