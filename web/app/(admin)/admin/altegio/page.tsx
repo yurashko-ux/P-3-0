@@ -157,14 +157,35 @@ export default function AltegioLanding() {
                 <div style={{ marginTop: 8, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd', fontSize: '0.85em' }}>
                   <strong>🔍 Діагностика:</strong>
                   <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
-                    <li>Partner Token в env: <code>{testStatus.debug.partnerTokenInEnv ? '✅ Так' : '❌ Ні'}</code></li>
-                    <li>Довжина Partner Token: <code>{testStatus.debug.partnerTokenLength || 0}</code></li>
+                    <li>Тип програми: <code>{testStatus.programType || 'Unknown'}</code></li>
+                    <li>User Token в env: <code>{testStatus.debug.userTokenInEnv ? '✅ Так' : '❌ Ні'}</code></li>
+                    <li>Partner Token в env: <code>{testStatus.debug.partnerTokenInEnv ? '✅ Так' : '❌ Ні (OK for non-public)'}</code></li>
+                    {testStatus.debug.partnerTokenInEnv && (
+                      <li>Довжина Partner Token: <code>{testStatus.debug.partnerTokenLength || 0}</code></li>
+                    )}
+                    {testStatus.debug.userTokenInEnv && (
+                      <li>Довжина User Token: <code>{testStatus.debug.userTokenLength || 0}</code></li>
+                    )}
                   </ul>
-                  {!testStatus.debug.partnerTokenInEnv && (
-                    <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: '#dc2626' }}>
-                      ⚠️ Змінна ALTEGIO_PARTNER_TOKEN не знайдена. Переконайтеся, що:
-                      <br />1. Змінна додана в Vercel для правильного середовища (Production/Preview)
-                      <br />2. Після додавання змінної перезапущено деплой або зачекано 1-2 хвилини
+                  {testStatus.debug.partnerTokenInEnv && testStatus.error && testStatus.error.includes('Partner ID') && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
+                      <strong>⚠️ Важливо:</strong>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.9em' }}>
+                        Partner Token все ще знайдено в environment variables, але для <strong>непублічної програми</strong> він не потрібен.
+                      </p>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', fontWeight: 600 }}>
+                        Якщо ви видалили ALTEGIO_PARTNER_TOKEN з Vercel, але діагностика все ще показує його:
+                      </p>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 20, fontSize: '0.9em' }}>
+                        <li>Перевірте, чи видалено змінну для правильного середовища (Production/Preview)</li>
+                        <li><strong>ОБОВ'ЯЗКОВО перезапустіть деплой</strong> в Vercel (Redeploy)</li>
+                        <li>Зачекайте 1-2 хвилини після перезапуску</li>
+                      </ol>
+                    </div>
+                  )}
+                  {!testStatus.debug.partnerTokenInEnv && testStatus.programType === 'Non-public (User Token only)' && (
+                    <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: '#22c55e', fontWeight: 600 }}>
+                      ✅ Правильна конфігурація для непублічної програми: тільки User Token
                     </p>
                   )}
                 </div>
