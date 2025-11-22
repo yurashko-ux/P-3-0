@@ -43,29 +43,30 @@ export async function GET(req: NextRequest) {
         try {
           const { getCompany, getCompaniesByGroup } = await import('@/lib/altegio/companies');
           
-          // Спочатку спробуємо отримати компанію як філію (салон)
+          // Спочатку спробуємо отримати компанію за ID (може бути як філія, так і мережа)
           let userCompany = await getCompany(companyIdNum);
           
           // Якщо отримали компанію, перевіримо чи це мережа (є business_group_id або main_group_id)
           if (userCompany) {
             const groupId = (userCompany as any).business_group_id || (userCompany as any).main_group_id;
+            const companyName = (userCompany as any).public_title || (userCompany as any).title || (userCompany as any).name || 'Без назви';
             
             // Якщо це мережа (є group_id), спробуємо отримати філії цієї мережі
             if (groupId) {
-              console.log(`[altegio/test] Company ${companyId} is a network with group_id ${groupId}, getting branches...`);
+              console.log(`[altegio/test] Company ${companyId} (${companyName}) is a network with group_id ${groupId}, getting branches...`);
               const branches = await getCompaniesByGroup(groupId);
               if (branches.length > 0) {
                 companies = branches;
-                console.log(`[altegio/test] Found ${branches.length} branches in network ${companyId}`);
+                console.log(`[altegio/test] ✅ Found ${branches.length} branches in network ${companyId} (${companyName})`);
               } else {
                 // Якщо не знайшли філії, показуємо саму мережу
                 companies = [userCompany];
-                console.log(`[altegio/test] Network ${companyId} has no branches, showing network itself`);
+                console.log(`[altegio/test] ⚠️ Network ${companyId} (${companyName}) has no branches, showing network itself`);
               }
             } else {
               // Якщо це філія (салон), показуємо її
               companies = [userCompany];
-              console.log(`[altegio/test] Found company by ALTEGIO_COMPANY_ID ${companyId}:`, userCompany);
+              console.log(`[altegio/test] ✅ Found branch (salon) by ALTEGIO_COMPANY_ID ${companyId}: ${companyName}`);
             }
           } else {
             console.warn(`[altegio/test] Company with ID ${companyId} not found, falling back to list`);
