@@ -5,9 +5,11 @@ const ALTEGIO_DEFAULT_API_URL = "https://api.alteg.io/api/v1";
 
 export const ALTEGIO_ENV = {
   API_URL: process.env.ALTEGIO_API_URL?.trim() || ALTEGIO_DEFAULT_API_URL,
-  // USER_TOKEN - використовуємо для тестування та розробки
+  // USER_TOKEN - токен користувача, отримується в розділі "Доступ до API" маркетплейсу
+  // Працює як для публічних, так і для непублічних додатків
   USER_TOKEN: process.env.ALTEGIO_USER_TOKEN?.trim() || "",
-  // PARTNER_TOKEN - для продакшену (поки не потрібен)
+  // PARTNER_TOKEN - партнерський токен (потрібен тільки для публічних додатків у маркетплейсі)
+  // Для непублічного додатку достатньо USER_TOKEN
   PARTNER_TOKEN: process.env.ALTEGIO_PARTNER_TOKEN?.trim() || "",
 };
 
@@ -15,7 +17,8 @@ export function assertAltegioEnv() {
   if (!ALTEGIO_ENV.API_URL) {
     throw new Error("Missing env ALTEGIO_API_URL");
   }
-  // Для тестування достатньо USER_TOKEN
+  // USER_TOKEN достатньо для роботи (працює для публічних та непублічних додатків)
+  // PARTNER_TOKEN потрібен тільки для публічних додатків у маркетплейсі
   if (!ALTEGIO_ENV.USER_TOKEN && !ALTEGIO_ENV.PARTNER_TOKEN) {
     throw new Error("Missing env ALTEGIO_USER_TOKEN or ALTEGIO_PARTNER_TOKEN");
   }
@@ -44,7 +47,8 @@ export function altegioHeaders(includeUserToken = true) {
     };
   }
   
-  // Для тестування: використовуємо тільки USER_TOKEN
+  // Для непублічних додатків (або без PARTNER_TOKEN): використовуємо тільки USER_TOKEN
+  // Формат: "Bearer <user_token>"
   if (ALTEGIO_ENV.USER_TOKEN) {
     return {
       Accept: "application/json",
