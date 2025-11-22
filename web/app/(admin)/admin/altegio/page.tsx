@@ -11,6 +11,8 @@ export default function AltegioLanding() {
     message?: string;
     companiesCount?: number;
     error?: string;
+    env?: any;
+    debug?: any;
   }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
@@ -41,6 +43,8 @@ export default function AltegioLanding() {
         message: data.message || data.error,
         companiesCount: data.count,
         error: data.error,
+        env: data.env,
+        debug: data.debug,
       });
     } catch (err) {
       setTestStatus({
@@ -143,6 +147,22 @@ export default function AltegioLanding() {
               {testStatus.companiesCount !== undefined && (
                 <div style={{ marginTop: 8 }}>
                   Знайдено компаній: <strong>{testStatus.companiesCount}</strong>
+                </div>
+              )}
+              {testStatus.debug && (
+                <div style={{ marginTop: 8, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd', fontSize: '0.85em' }}>
+                  <strong>🔍 Діагностика:</strong>
+                  <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
+                    <li>Partner Token в env: <code>{testStatus.debug.partnerTokenInEnv ? '✅ Так' : '❌ Ні'}</code></li>
+                    <li>Довжина Partner Token: <code>{testStatus.debug.partnerTokenLength || 0}</code></li>
+                  </ul>
+                  {!testStatus.debug.partnerTokenInEnv && (
+                    <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: '#dc2626' }}>
+                      ⚠️ Змінна ALTEGIO_PARTNER_TOKEN не знайдена. Переконайтеся, що:
+                      <br />1. Змінна додана в Vercel для правильного середовища (Production/Preview)
+                      <br />2. Після додавання змінної перезапущено деплой або зачекано 1-2 хвилини
+                    </p>
+                  )}
                 </div>
               )}
               {testStatus.error && (
