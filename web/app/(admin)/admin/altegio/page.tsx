@@ -208,6 +208,25 @@ export default function AltegioLanding() {
                       ⚠️ Увага: API повернув {testStatus.companies.length} компаній, але count = {testStatus.companiesCount}
                     </p>
                   )}
+                  {testStatus.companies && testStatus.companies.length > 1 && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
+                      <strong>💡 Якщо серед компаній є ваш салон:</strong>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.9em' }}>
+                        Якщо ви бачите тут більше компаній, ніж очікували, це означає, що API повертає всі компанії, до яких має доступ ваш User Token.
+                      </p>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', fontWeight: 600 }}>
+                        Щоб показувати тільки ваш салон:
+                      </p>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 20, fontSize: '0.9em' }}>
+                        <li>Знайдіть ID вашого салону в таблиці вище</li>
+                        <li>Додайте змінну <code>ALTEGIO_COMPANY_ID</code> в Vercel з ID вашого салону</li>
+                        <li>Або відфільтруйте компанії за назвою в налаштуваннях</li>
+                      </ol>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.85em', fontStyle: 'italic', color: '#6b7280' }}>
+                        Partner ID (784) - це не ID компанії, а ID в маркетплейсі Alteg.io. ID вашої компанії (салону) - це числове значення з колонки "ID" вище.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               {testStatus.debug && (
