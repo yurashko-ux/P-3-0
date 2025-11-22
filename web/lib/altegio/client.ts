@@ -62,10 +62,19 @@ export async function altegioFetch<T = any>(
         await new Promise(resolve => setTimeout(resolve, delay * attempt));
       }
 
+      // Детальне логування для діагностики
       console.log('[altegio/client] Making request:', {
         url,
+        urlWithParams: url.includes('partner_id') ? '✅ Partner ID in URL' : '❌ No Partner ID in URL',
         headers: Object.keys(finalHeaders),
         hasPartnerId: !!partnerId,
+        partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set',
+        authorizationHeader: finalHeaders['Authorization']?.substring(0, 80) + '...',
+        partnerIdHeaders: {
+          'X-Partner-ID': finalHeaders['X-Partner-ID'],
+          'Partner-ID': finalHeaders['Partner-ID'],
+          'X-Partner-Id': finalHeaders['X-Partner-Id'],
+        },
       });
       
       const response = await fetch(url, {
