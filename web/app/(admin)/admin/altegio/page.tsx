@@ -180,11 +180,11 @@ export default function AltegioLanding() {
                               {company.id || company.company_id || 'N/A'}
                             </td>
                             <td style={{ padding: '8px 12px' }}>
-                              {company.name || company.title || 'Без назви'}
+                              {company.name || company.public_title || company.title || 'Без назви'}
                             </td>
                             <td style={{ padding: '8px 12px' }}>
                               {company.active !== undefined ? (
-                                company.active ? (
+                                (company.active === true || company.active === 1) ? (
                                   <span style={{ color: '#22c55e', fontWeight: 600 }}>✅ Активна</span>
                                 ) : (
                                   <span style={{ color: '#ef4444', fontWeight: 600 }}>❌ Неактивна</span>
