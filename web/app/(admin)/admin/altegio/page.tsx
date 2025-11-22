@@ -150,19 +150,31 @@ export default function AltegioLanding() {
                   <div style={{ marginBottom: 8 }}>{testStatus.error}</div>
                   {(testStatus.error.includes('Partner ID') || testStatus.error.includes('partner') || testStatus.error.includes('401')) && (
                     <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
-                      <strong>💡 Як знайти Partner Token:</strong>
+                      <strong>💡 Як знайти Partner Token / Application ID:</strong>
                       <p style={{ margin: '8px 0', fontSize: '0.9em' }}>
-                        Для додатків у маркетплейсі Alteg.io обов'язково потрібен Partner Token, навіть якщо є User Token з налаштованими правами доступу.
+                        Для додатків у маркетплейсі Alteg.io обов'язково потрібен Partner Token (Application ID), навіть якщо є User Token з налаштованими правами доступу.
+                      </p>
+                      <p style={{ margin: '8px 0', fontSize: '0.9em', fontWeight: 600 }}>
+                        Варіант 1: Application ID з налаштувань додатку
                       </p>
                       <ol style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
                         <li>Відкрийте <a href="https://marketplace.alteg.io" target="_blank" rel="noopener noreferrer" style={{ color: '#2a6df5' }}>Alteg.io Marketplace</a></li>
+                        <li>Перейдіть в "Мої програми" → ваш додаток</li>
+                        <li>Відкрийте розділ <strong>"Загальна інформація"</strong></li>
+                        <li>Знайдіть <strong>Application ID</strong> (може бути числовий, наприклад: #1169323, або UUID)</li>
+                        <li>Скопіюйте його та додайте як змінну середовища <code>ALTEGIO_PARTNER_TOKEN</code> в Vercel</li>
+                      </ol>
+                      <p style={{ margin: '12px 0 8px 0', fontSize: '0.9em', fontWeight: 600 }}>
+                        Варіант 2: Partner Token з налаштувань акаунта
+                      </p>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
                         <li>Натисніть на "Налаштування облікового запису" (праворуч вгорі)</li>
                         <li>Перейдіть в розділ "Акаунт розробника"</li>
                         <li>Знайдіть поле "Токен партнера" (Partner Token)</li>
-                        <li>Скопіюйте його та додайте як змінну середовища <code>ALTEGIO_PARTNER_TOKEN</code> в Vercel</li>
+                        <li>Якщо є - скопіюйте його</li>
                       </ol>
-                      <p style={{ margin: '8px 0 0 0', fontSize: '0.85em', fontStyle: 'italic' }}>
-                        Альтернативно: Partner Token може бути Application ID з розділу "Загальна інформація" вашого додатку. Спробуйте скопіювати UUID/ID з цього розділу.
+                      <p style={{ margin: '12px 0 0 0', fontSize: '0.85em', fontStyle: 'italic', background: '#e7f3ff', padding: 8, borderRadius: 4 }}>
+                        💡 Зазвичай Partner Token = Application ID з розділу "Загальна інформація". Якщо бачите ID типу #1169323 - спробуйте використати саме його (без символу #).
                       </p>
                       <p style={{ margin: '8px 0 0 0', fontSize: '0.85em' }}>
                         Після додавання змінної середовища перезапустіть деплой або зачекайте 1-2 хвилини.
