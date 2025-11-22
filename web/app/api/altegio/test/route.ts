@@ -50,24 +50,27 @@ export async function GET(req: NextRequest) {
           if (userCompany) {
             const groupId = (userCompany as any).business_group_id || (userCompany as any).main_group_id;
             const companyName = (userCompany as any).public_title || (userCompany as any).title || (userCompany as any).name || 'Без назви';
+            const active = (userCompany as any).active;
+            const activeStatus = active === true || active === 1 ? 'активна' : 'неактивна';
             
-            // Якщо це мережа (є group_id), спробуємо отримати філії цієї мережі
-            if (groupId) {
-              console.log(`[altegio/test] Company ${companyId} (${companyName}) is a network with group_id ${groupId}, getting branches...`);
-              const branches = await getCompaniesByGroup(groupId);
-              if (branches.length > 0) {
-                companies = branches;
-                console.log(`[altegio/test] ✅ Found ${branches.length} branches in network ${companyId} (${companyName})`);
-              } else {
-                // Якщо не знайшли філії, показуємо саму мережу
-                companies = [userCompany];
-                console.log(`[altegio/test] ⚠️ Network ${companyId} (${companyName}) has no branches, showing network itself`);
-              }
-            } else {
-              // Якщо це філія (салон), показуємо її
-              companies = [userCompany];
-              console.log(`[altegio/test] ✅ Found branch (salon) by ALTEGIO_COMPANY_ID ${companyId}: ${companyName}`);
-            }
+            console.log(`[altegio/test] Company ${companyId} details:`, {
+              id: (userCompany as any).id,
+              name: companyName,
+              business_group_id: (userCompany as any).business_group_id,
+              main_group_id: (userCompany as any).main_group_id,
+              groupId: groupId,
+              active: active,
+              activeStatus: activeStatus,
+            });
+            
+            // ВИМИКАЄМО автоматичне отримання філій з мережі
+            // Завжди показуємо тільки ту компанію, яку запитували
+            // Якщо потрібно отримати філії - це треба робити окремо через інший endpoint або параметр
+            companies = [userCompany];
+            console.log(`[altegio/test] ✅ Showing company by ALTEGIO_COMPANY_ID ${companyId}: ${companyName} (${activeStatus})`);
+            
+            // Якщо користувач хоче отримати філії з мережі, він має використати окремий endpoint
+            // Наразі просто показуємо ту компанію, яку він запитував
           } else {
             console.warn(`[altegio/test] Company with ID ${companyId} not found, falling back to list`);
           }
