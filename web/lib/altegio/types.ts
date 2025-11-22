@@ -3,8 +3,10 @@
 
 export type Company = {
   id: number;
-  name: string;
-  active?: boolean;
+  name?: string; // Може бути в title, public_title або name
+  title?: string;
+  public_title?: string;
+  active?: boolean | number; // Може бути 0/1 або true/false
   // ... інші поля з API
 };
 
