@@ -13,6 +13,8 @@ export default function AltegioLanding() {
     error?: string;
     env?: any;
     debug?: any;
+    programType?: string;
+    recommendation?: string;
   }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
@@ -45,6 +47,8 @@ export default function AltegioLanding() {
         error: data.error,
         env: data.env,
         debug: data.debug,
+        programType: data.programType,
+        recommendation: data.recommendation,
       });
     } catch (err) {
       setTestStatus({
@@ -168,6 +172,12 @@ export default function AltegioLanding() {
               {testStatus.error && (
                 <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
                   <div style={{ marginBottom: 8 }}>{testStatus.error}</div>
+                  {testStatus.recommendation && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
+                      <strong>💡 Рекомендація:</strong>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.9em' }}>{testStatus.recommendation}</p>
+                    </div>
+                  )}
                   {(testStatus.error.includes('Partner ID') || testStatus.error.includes('partner') || testStatus.error.includes('401')) && (
                     <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
                       <strong>💡 Як знайти Partner Token / Application ID:</strong>

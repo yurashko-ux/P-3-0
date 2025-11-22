@@ -45,19 +45,33 @@ export async function GET(req: NextRequest) {
     
     // Перевіряємо, чи помилка пов'язана з Partner ID
     const isPartnerIdError = errorMessage.includes('Partner ID') || errorMessage.includes('partner') || errorMessage.includes('401');
+    const hasPartnerToken = !!process.env.ALTEGIO_PARTNER_TOKEN;
+    const hasUserToken = !!process.env.ALTEGIO_USER_TOKEN;
+    
+    // Для непублічних програм Partner Token не потрібен
+    // Якщо є Partner Token і помилка "Partner ID not specified", можливо потрібно видалити Partner Token
+    const hintForNonPublic = hasPartnerToken && isPartnerIdError
+      ? 'Для непублічних програм Partner Token не потрібен. Видаліть ALTEGIO_PARTNER_TOKEN з Vercel environment variables та використовуйте тільки ALTEGIO_USER_TOKEN.'
+      : null;
     
     return NextResponse.json(
       {
         ok: false,
         error: errorMessage,
-        hint: isPartnerIdError 
-          ? 'Потрібен ALTEGIO_PARTNER_TOKEN. Перевірте, чи змінна додана для правильного середовища (Production/Preview) та чи перезапущено деплой.'
-          : 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN та ALTEGIO_PARTNER_TOKEN у змінних середовища Vercel.',
-        needsPartnerToken: isPartnerIdError,
+        hint: hintForNonPublic || (isPartnerIdError 
+          ? 'Потрібен ALTEGIO_PARTNER_TOKEN (для публічних програм) або видаліть його (для непублічних програм). Перевірте, чи змінна додана для правильного середовища (Production/Preview) та чи перезапущено деплой.'
+          : 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN у змінних середовища Vercel.'),
+        needsPartnerToken: isPartnerIdError && !hasPartnerToken,
+        programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
+        recommendation: hasPartnerToken && isPartnerIdError && hasUserToken
+          ? 'Для непублічної програми: видаліть ALTEGIO_PARTNER_TOKEN з Vercel і використовуйте тільки ALTEGIO_USER_TOKEN'
+          : null,
         env: envCheck,
         debug: {
-          partnerTokenInEnv: !!process.env.ALTEGIO_PARTNER_TOKEN,
+          partnerTokenInEnv: hasPartnerToken,
           partnerTokenLength: process.env.ALTEGIO_PARTNER_TOKEN?.length || 0,
+          userTokenInEnv: hasUserToken,
+          userTokenLength: process.env.ALTEGIO_USER_TOKEN?.length || 0,
         },
       },
       { status: 500 }
