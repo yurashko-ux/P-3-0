@@ -16,6 +16,9 @@ export async function GET(req: NextRequest) {
       hasPartnerToken: !!process.env.ALTEGIO_PARTNER_TOKEN,
       partnerTokenValue: process.env.ALTEGIO_PARTNER_TOKEN ? String(process.env.ALTEGIO_PARTNER_TOKEN).substring(0, 10) + '...' : 'not set',
       partnerTokenLength: process.env.ALTEGIO_PARTNER_TOKEN?.length || 0,
+      hasPartnerId: !!process.env.ALTEGIO_PARTNER_ID,
+      partnerIdValue: process.env.ALTEGIO_PARTNER_ID || 'not set',
+      partnerIdLength: process.env.ALTEGIO_PARTNER_ID?.length || 0,
     };
     
     console.log('[altegio/test] Environment check:', envCheck);
@@ -41,11 +44,15 @@ export async function GET(req: NextRequest) {
       hasUserToken: !!process.env.ALTEGIO_USER_TOKEN,
       hasPartnerToken: !!process.env.ALTEGIO_PARTNER_TOKEN,
       partnerTokenValue: process.env.ALTEGIO_PARTNER_TOKEN || 'not set',
+      hasPartnerId: !!process.env.ALTEGIO_PARTNER_ID,
+      partnerIdValue: process.env.ALTEGIO_PARTNER_ID || 'not set',
+      partnerIdLength: process.env.ALTEGIO_PARTNER_ID?.length || 0,
     };
     
     // Перевіряємо, чи помилка пов'язана з Partner ID
     const isPartnerIdError = errorMessage.includes('Partner ID') || errorMessage.includes('partner') || errorMessage.includes('401');
     const hasPartnerToken = !!process.env.ALTEGIO_PARTNER_TOKEN;
+    const hasPartnerId = !!process.env.ALTEGIO_PARTNER_ID;
     const hasUserToken = !!process.env.ALTEGIO_USER_TOKEN;
     
     // Для непублічних програм Partner Token не потрібен
@@ -63,13 +70,18 @@ export async function GET(req: NextRequest) {
           : 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN у змінних середовища Vercel.'),
         needsPartnerToken: isPartnerIdError && !hasPartnerToken,
         programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
-        recommendation: hasPartnerToken && isPartnerIdError && hasUserToken
-          ? 'Для непублічної програми: видаліть ALTEGIO_PARTNER_TOKEN з Vercel і використовуйте тільки ALTEGIO_USER_TOKEN'
-          : null,
+        recommendation: isPartnerIdError && !hasPartnerId && hasUserToken && !hasPartnerToken
+          ? 'Для непублічної програми: додайте ALTEGIO_PARTNER_ID (ID вашої філії/салону в Alteg.io, наприклад: 1169323) в Vercel environment variables'
+          : (hasPartnerToken && isPartnerIdError && hasUserToken
+            ? 'Для непублічної програми: видаліть ALTEGIO_PARTNER_TOKEN з Vercel і використовуйте тільки ALTEGIO_USER_TOKEN + ALTEGIO_PARTNER_ID'
+            : null),
         env: envCheck,
         debug: {
           partnerTokenInEnv: hasPartnerToken,
           partnerTokenLength: process.env.ALTEGIO_PARTNER_TOKEN?.length || 0,
+          partnerIdInEnv: hasPartnerId,
+          partnerIdValue: process.env.ALTEGIO_PARTNER_ID ? String(process.env.ALTEGIO_PARTNER_ID).substring(0, 15) + '...' : 'not set',
+          partnerIdLength: process.env.ALTEGIO_PARTNER_ID?.length || 0,
           userTokenInEnv: hasUserToken,
           userTokenLength: process.env.ALTEGIO_USER_TOKEN?.length || 0,
         },
