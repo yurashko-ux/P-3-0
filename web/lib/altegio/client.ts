@@ -75,11 +75,13 @@ export async function altegioFetch<T = any>(
         hasPartnerId: !!partnerId,
         partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set (OK for non-public)',
         authorizationHeader: finalHeaders['Authorization']?.substring(0, 80) + '...',
-        partnerIdHeaders: hasPartnerToken ? {
+        partnerIdHeaders: {
           'X-Partner-ID': finalHeaders['X-Partner-ID'],
           'Partner-ID': finalHeaders['Partner-ID'],
           'X-Partner-Id': finalHeaders['X-Partner-Id'],
-        } : 'No Partner ID headers (OK for non-public)',
+          'X-PartnerId': finalHeaders['X-PartnerId'],
+          'Authorization': finalHeaders['Authorization']?.includes('Partner') ? 'Contains Partner ID' : 'No Partner ID in Auth',
+        },
       });
       
       const response = await fetch(url, {
