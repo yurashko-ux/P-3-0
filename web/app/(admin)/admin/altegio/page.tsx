@@ -10,6 +10,7 @@ export default function AltegioLanding() {
     ok: boolean | null;
     message?: string;
     companiesCount?: number;
+    companies?: Array<{ id: number; name: string; [key: string]: any }>;
     error?: string;
     env?: any;
     debug?: any;
@@ -44,6 +45,7 @@ export default function AltegioLanding() {
         ok: data.ok === true,
         message: data.message || data.error,
         companiesCount: data.count,
+        companies: data.companies || [],
         error: data.error,
         env: data.env,
         debug: data.debug,
@@ -151,6 +153,61 @@ export default function AltegioLanding() {
               {testStatus.companiesCount !== undefined && (
                 <div style={{ marginTop: 8 }}>
                   Знайдено компаній: <strong>{testStatus.companiesCount}</strong>
+                </div>
+              )}
+              {testStatus.ok && testStatus.companies && testStatus.companies.length > 0 && (
+                <div style={{ marginTop: 16, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd' }}>
+                  <strong style={{ display: 'block', marginBottom: 12 }}>📋 Список компаній (філій/салонів):</strong>
+                  <div style={{ maxHeight: '400px', overflowY: 'auto', fontSize: '0.9em' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e0e7ef', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 12px', fontWeight: 600 }}>ID</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 600 }}>Назва</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 600 }}>Статус</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {testStatus.companies.slice(0, 50).map((company: any, index: number) => (
+                          <tr 
+                            key={company.id || index} 
+                            style={{ 
+                              borderBottom: '1px solid #f0f0f0',
+                              backgroundColor: index % 2 === 0 ? '#fff' : '#fafafa'
+                            }}
+                          >
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: '0.85em' }}>
+                              {company.id || company.company_id || 'N/A'}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {company.name || company.title || 'Без назви'}
+                            </td>
+                            <td style={{ padding: '8px 12px' }}>
+                              {company.active !== undefined ? (
+                                company.active ? (
+                                  <span style={{ color: '#22c55e', fontWeight: 600 }}>✅ Активна</span>
+                                ) : (
+                                  <span style={{ color: '#ef4444', fontWeight: 600 }}>❌ Неактивна</span>
+                                )
+                              ) : (
+                                <span style={{ color: '#6b7280' }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {testStatus.companies.length > 50 && (
+                      <p style={{ marginTop: 12, fontSize: '0.85em', color: '#6b7280', textAlign: 'center' }}>
+                        Показано перші 50 з {testStatus.companies.length} компаній
+                      </p>
+                    )}
+                  </div>
+                  {testStatus.companiesCount && testStatus.companiesCount !== testStatus.companies.length && (
+                    <p style={{ marginTop: 8, fontSize: '0.85em', color: '#6b7280' }}>
+                      ⚠️ Увага: API повернув {testStatus.companies.length} компаній, але count = {testStatus.companiesCount}
+                    </p>
+                  )}
                 </div>
               )}
               {testStatus.debug && (
