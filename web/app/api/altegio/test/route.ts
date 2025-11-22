@@ -33,20 +33,40 @@ export async function GET(req: NextRequest) {
     
     assertAltegioEnv();
     
-    // Перевіряємо, чи вказано ID компанії (салону) в environment variables
+    // Перевіряємо, чи вказано ID компанії (салону) або ID мережі в environment variables
     const companyId = process.env.ALTEGIO_COMPANY_ID;
     let companies: any[] = [];
     
     if (companyId) {
-      // Якщо є ALTEGIO_COMPANY_ID, отримуємо тільки цю компанію
       const companyIdNum = parseInt(companyId, 10);
       if (!isNaN(companyIdNum)) {
         try {
-          const { getCompany } = await import('@/lib/altegio/companies');
-          const userCompany = await getCompany(companyIdNum);
+          const { getCompany, getCompaniesByGroup } = await import('@/lib/altegio/companies');
+          
+          // Спочатку спробуємо отримати компанію як філію (салон)
+          let userCompany = await getCompany(companyIdNum);
+          
+          // Якщо отримали компанію, перевіримо чи це мережа (є business_group_id або main_group_id)
           if (userCompany) {
-            companies = [userCompany];
-            console.log(`[altegio/test] Found company by ALTEGIO_COMPANY_ID ${companyId}:`, userCompany);
+            const groupId = (userCompany as any).business_group_id || (userCompany as any).main_group_id;
+            
+            // Якщо це мережа (є group_id), спробуємо отримати філії цієї мережі
+            if (groupId) {
+              console.log(`[altegio/test] Company ${companyId} is a network with group_id ${groupId}, getting branches...`);
+              const branches = await getCompaniesByGroup(groupId);
+              if (branches.length > 0) {
+                companies = branches;
+                console.log(`[altegio/test] Found ${branches.length} branches in network ${companyId}`);
+              } else {
+                // Якщо не знайшли філії, показуємо саму мережу
+                companies = [userCompany];
+                console.log(`[altegio/test] Network ${companyId} has no branches, showing network itself`);
+              }
+            } else {
+              // Якщо це філія (салон), показуємо її
+              companies = [userCompany];
+              console.log(`[altegio/test] Found company by ALTEGIO_COMPANY_ID ${companyId}:`, userCompany);
+            }
           } else {
             console.warn(`[altegio/test] Company with ID ${companyId} not found, falling back to list`);
           }
