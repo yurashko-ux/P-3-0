@@ -81,6 +81,52 @@ export async function getCompany(companyId: number): Promise<Company | null> {
 }
 
 /**
+ * Отримує філії (компанії) з мережі за business_group_id або main_group_id
+ * Якщо передано ID мережі, спробуємо отримати філії цієї мережі
+ */
+export async function getCompaniesByGroup(groupId: number | string): Promise<Company[]> {
+  try {
+    const groupIdStr = String(groupId);
+    
+    // Спробуємо різні endpoint'и для отримання філій з мережі
+    const endpoints = [
+      `/companies?business_group_id=${groupIdStr}`,
+      `/companies?main_group_id=${groupIdStr}`,
+      `/companies?group_id=${groupIdStr}`,
+      `/business_groups/${groupIdStr}/companies`,
+      `/groups/${groupIdStr}/companies`,
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const response = await altegioFetch<Company[] | { data?: Company[] }>(endpoint);
+        
+        let companies: Company[] = [];
+        if (Array.isArray(response)) {
+          companies = response;
+        } else if (response && typeof response === 'object' && 'data' in response) {
+          companies = Array.isArray(response.data) ? response.data : [];
+        }
+        
+        if (companies.length > 0) {
+          console.log(`[altegio/companies] Found ${companies.length} companies by group ID ${groupId} using ${endpoint}`);
+          return companies;
+        }
+      } catch (err) {
+        // Продовжуємо спробувати інші endpoint'и
+        console.log(`[altegio/companies] Endpoint ${endpoint} failed, trying next...`);
+        continue;
+      }
+    }
+    
+    return [];
+  } catch (err) {
+    console.error(`[altegio/companies] Failed to get companies by group ID ${groupId}:`, err);
+    return [];
+  }
+}
+
+/**
  * Отримує компанію за Partner ID (може бути ID в маркетплейсі)
  * Спробуємо різні endpoint'и для отримання своєї філії
  */
