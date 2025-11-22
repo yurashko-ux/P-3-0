@@ -42,17 +42,26 @@ export function altegioHeaders(includeUserToken = true) {
   
   // Якщо є партнерський токен - використовуємо повний формат
   if (ALTEGIO_ENV.PARTNER_TOKEN) {
+    // Partner ID може передаватися окремим заголовком
+    // Якщо явно не вказано PARTNER_ID, використовуємо PARTNER_TOKEN як Partner ID
+    const partnerId = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN;
+    
+    // Спробуємо різні формати Authorization header:
+    // 1. Стандартний: "Bearer <partner_token>, User <user_token>"
+    // 2. З Partner ID: "Bearer <partner_token>, User <user_token>, Partner <partner_id>"
     const authParts = [`Bearer ${ALTEGIO_ENV.PARTNER_TOKEN}`];
     
     if (includeUserToken && ALTEGIO_ENV.USER_TOKEN) {
       authParts.push(`User ${ALTEGIO_ENV.USER_TOKEN}`);
     }
     
-    const authHeader = authParts.join(", ");
+    // Додаємо Partner ID в Authorization header (альтернативний варіант)
+    // Можливо, API очікує Partner ID саме тут
+    if (partnerId && partnerId !== ALTEGIO_ENV.PARTNER_TOKEN) {
+      authParts.push(`Partner ${partnerId}`);
+    }
     
-    // Partner ID може передаватися окремим заголовком
-    // Якщо явно не вказано PARTNER_ID, використовуємо PARTNER_TOKEN як Partner ID
-    const partnerId = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN;
+    const authHeader = authParts.join(", ");
     
     // Логування для діагностики
     console.log('[altegio/env] Authorization header:', {
@@ -73,11 +82,27 @@ export function altegioHeaders(includeUserToken = true) {
     // Додаємо Partner ID як окремий заголовок (якщо потрібно)
     // API може вимагати Partner ID в окремому заголовку або query параметрі
     if (partnerId) {
-      // Спробуємо різні варіанти заголовків
+      // Спробуємо різні варіанти заголовків (API може очікувати будь-який з них)
       headers['X-Partner-ID'] = partnerId;
       headers['Partner-ID'] = partnerId;
       headers['X-Partner-Id'] = partnerId;
+      headers['X-PartnerId'] = partnerId;
+      headers['PartnerId'] = partnerId;
+      // Також спробуємо в Authorization header як окремий параметр
+      // Можливо, формат має бути: "Bearer <partner_token>, User <user_token>, Partner <partner_id>"
+      // Але спочатку спробуємо стандартний формат
     }
+    
+    // Логування всіх заголовків для діагностики
+    console.log('[altegio/env] Headers with Partner ID:', {
+      authorization: authHeader.substring(0, 80) + '...',
+      partnerIdHeaders: {
+        'X-Partner-ID': headers['X-Partner-ID'],
+        'Partner-ID': headers['Partner-ID'],
+        'X-Partner-Id': headers['X-Partner-Id'],
+      },
+      allHeaderKeys: Object.keys(headers),
+    });
     
     return headers;
   }
