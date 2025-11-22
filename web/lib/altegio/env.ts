@@ -26,6 +26,11 @@ export function assertAltegioEnv() {
 
 /**
  * Заголовки авторизації для Alteg.io API
+ * 
+ * Примітка: RFC 6749 описує стандартний формат OAuth 2.0: "Bearer <token>"
+ * Формат "Bearer <partner_token>, User <user_token>" - це кастомна реалізація Alteg.io
+ * і не є частиною стандарту OAuth 2.0.
+ * 
  * Формат для USER_TOKEN: "Bearer <user_token>"
  * Формат для PARTNER_TOKEN: "Bearer <partner_token>, User <user_token>"
  */
@@ -40,20 +45,37 @@ export function altegioHeaders(includeUserToken = true) {
       authParts.push(`User ${ALTEGIO_ENV.USER_TOKEN}`);
     }
     
+    const authHeader = authParts.join(", ");
+    
+    // Логування для діагностики
+    console.log('[altegio/env] Authorization header:', {
+      format: 'Bearer <partner_token>, User <user_token>',
+      partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
+      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+      authHeaderPreview: authHeader.substring(0, 50) + '...',
+    });
+    
     return {
       Accept: "application/json",
       "Content-Type": "application/json",
-      Authorization: authParts.join(", "),
+      Authorization: authHeader,
     };
   }
   
   // Для непублічних додатків (або без PARTNER_TOKEN): використовуємо тільки USER_TOKEN
-  // Формат: "Bearer <user_token>"
+  // Формат: "Bearer <user_token>" (стандартний OAuth 2.0)
   if (ALTEGIO_ENV.USER_TOKEN) {
+    const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
+    
+    console.log('[altegio/env] Authorization header (USER_TOKEN only):', {
+      format: 'Bearer <user_token>',
+      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+    });
+    
     return {
       Accept: "application/json",
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ALTEGIO_ENV.USER_TOKEN}`,
+      Authorization: authHeader,
     };
   }
   
