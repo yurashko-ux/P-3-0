@@ -21,7 +21,12 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const headers = Object.fromEntries(req.headers.entries());
+    
+    // Перетворюємо Headers в об'єкт
+    const headers: Record<string, string> = {};
+    req.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
     
     // Зберігаємо останній webhook для діагностики
     const timestamp = Date.now();
