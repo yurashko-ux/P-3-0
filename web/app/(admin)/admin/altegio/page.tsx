@@ -1,11 +1,40 @@
 // web/app/(admin)/admin/altegio/page.tsx
-// Заглушка для майбутнього модуля інтеграції з Alteg.io.
+"use client";
 
 import Link from 'next/link';
-
-export const dynamic = 'force-dynamic';
+import { useEffect, useState } from 'react';
 
 export default function AltegioLanding() {
+  const [testStatus, setTestStatus] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    message?: string;
+    companiesCount?: number;
+    error?: string;
+  }>({ loading: false, ok: null });
+
+  async function testConnection() {
+    setTestStatus({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/altegio/test', { cache: 'no-store' });
+      const data = await res.json();
+      setTestStatus({
+        loading: false,
+        ok: data.ok === true,
+        message: data.message || data.error,
+        companiesCount: data.count,
+        error: data.error,
+      });
+    } catch (err) {
+      setTestStatus({
+        loading: false,
+        ok: false,
+        message: 'Помилка з\'єднання',
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
   return (
     <main style={{ maxWidth: 960, margin: '48px auto', padding: '0 20px' }}>
       <header style={{ marginBottom: 28 }}>
@@ -18,18 +47,68 @@ export default function AltegioLanding() {
       </header>
 
       <section style={{ display: 'grid', gap: 18 }}>
+        <Card title="Підключення до API" emoji="🔌">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Перевірка підключення до Alteg.io API з використанням USER_TOKEN.
+            </p>
+            <button
+              onClick={testConnection}
+              disabled={testStatus.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#2a6df5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: testStatus.loading ? 'not-allowed' : 'pointer',
+                opacity: testStatus.loading ? 0.6 : 1,
+              }}
+            >
+              {testStatus.loading ? 'Перевірка...' : 'Тестувати підключення'}
+            </button>
+          </div>
+
+          {testStatus.ok !== null && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                background: testStatus.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${testStatus.ok ? '#86efac' : '#fca5a5'}`,
+                color: testStatus.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              <strong>{testStatus.ok ? '✅ Успішно' : '❌ Помилка'}:</strong>{' '}
+              {testStatus.message}
+              {testStatus.companiesCount !== undefined && (
+                <div style={{ marginTop: 8 }}>
+                  Знайдено компаній: <strong>{testStatus.companiesCount}</strong>
+                </div>
+              )}
+              {testStatus.error && (
+                <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
+                  {testStatus.error}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
         <Card title="Статус" emoji="🚧">
           <p>
-            Технічне завдання зафіксоване у <code>PROJECT_NOTES.md</code>. Поточний етап — збір вимог та
-            підтвердження доступів до Alteg.io API.
+            Технічне завдання зафіксоване у <code>PROJECT_NOTES.md</code>. Поточний етап —
+            налаштування підключення до Alteg.io API.
           </p>
         </Card>
 
-        <Card title="Дії на старті" emoji="✅">
+        <Card title="Наступні кроки" emoji="✅">
           <ol style={{ margin: 0, paddingLeft: 22 }}>
-            <li>Уточнити механізм авторизації Alteg.io (OAuth чи API token).</li>
-            <li>Підтвердити вибір СУБД для сховища (PostgreSQL/Supabase).</li>
-            <li>Підготувати тестовий токен та список салонів/майстрів для первинного імпорту.</li>
+            <li>Перевірити підключення до API (використовується USER_TOKEN).</li>
+            <li>Отримати список компаній (салонів) для тестування.</li>
+            <li>Реалізувати базові методи роботи з клієнтами та записами.</li>
+            <li>Створити ETL-процес для синхронізації даних.</li>
           </ol>
         </Card>
 

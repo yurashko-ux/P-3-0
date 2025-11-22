@@ -1,0 +1,8 @@
+// web/lib/altegio/index.ts
+// Центральний експорт для модуля Alteg.io
+
+export * from './env';
+export * from './client';
+export * from './types';
+export * from './companies';
+
