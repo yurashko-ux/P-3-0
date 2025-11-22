@@ -33,27 +33,33 @@ export async function GET(req: NextRequest) {
     
     assertAltegioEnv();
     
-    // Спробуємо отримати компанію за Partner ID
-    // Partner ID (784) - це ID в маркетплейсі, можливо потрібен інший endpoint
-    const partnerId = process.env.ALTEGIO_PARTNER_ID;
+    // Перевіряємо, чи вказано ID компанії (салону) в environment variables
+    const companyId = process.env.ALTEGIO_COMPANY_ID;
     let companies: any[] = [];
-    let userCompany: any = null;
     
-    if (partnerId) {
-      // Спробуємо отримати компанію за Partner ID через альтернативні endpoint'и
-      const { getCompanyByPartnerId } = await import('@/lib/altegio/companies');
-      userCompany = await getCompanyByPartnerId(partnerId);
-      
-      if (userCompany) {
-        companies = [userCompany];
-        console.log(`[altegio/test] Found company by Partner ID ${partnerId}:`, userCompany);
+    if (companyId) {
+      // Якщо є ALTEGIO_COMPANY_ID, отримуємо тільки цю компанію
+      const companyIdNum = parseInt(companyId, 10);
+      if (!isNaN(companyIdNum)) {
+        try {
+          const { getCompany } = await import('@/lib/altegio/companies');
+          const userCompany = await getCompany(companyIdNum);
+          if (userCompany) {
+            companies = [userCompany];
+            console.log(`[altegio/test] Found company by ALTEGIO_COMPANY_ID ${companyId}:`, userCompany);
+          } else {
+            console.warn(`[altegio/test] Company with ID ${companyId} not found, falling back to list`);
+          }
+        } catch (err) {
+          console.warn(`[altegio/test] Failed to get company by ID ${companyId}, falling back to list:`, err);
+        }
       }
     }
     
-    // Якщо не знайшли за Partner ID, отримуємо всі компанії
+    // Якщо не знайшли за ALTEGIO_COMPANY_ID, отримуємо всі компанії
     if (companies.length === 0) {
       companies = await getCompanies();
-      console.log(`[altegio/test] Got ${companies.length} companies (Partner ID ${partnerId} didn't match any company)`);
+      console.log(`[altegio/test] Got ${companies.length} companies ${companyId ? `(ALTEGIO_COMPANY_ID ${companyId} not found)` : '(ALTEGIO_COMPANY_ID not set)'}`);
     }
     
     return NextResponse.json({
