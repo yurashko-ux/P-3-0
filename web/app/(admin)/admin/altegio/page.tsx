@@ -70,6 +70,28 @@ export default function AltegioLanding() {
             </button>
           </div>
 
+          <div style={{ marginTop: 16, padding: 12, background: '#f3f5f9', borderRadius: 8 }}>
+            <p style={{ margin: 0, marginBottom: 8, fontWeight: 600 }}>
+              URL для webhook в налаштуваннях Alteg.io:
+            </p>
+            <code
+              style={{
+                display: 'block',
+                padding: '8px 12px',
+                background: '#fff',
+                borderRadius: 6,
+                border: '1px solid #e8ebf0',
+                fontSize: '0.9em',
+                wordBreak: 'break-all',
+              }}
+            >
+              {typeof window !== 'undefined' ? `${window.location.origin}/api/altegio/webhook` : '/api/altegio/webhook'}
+            </code>
+            <p style={{ margin: '8px 0 0 0', fontSize: '0.9em', color: 'rgba(0,0,0,0.6)' }}>
+              Скопіюйте цю адресу та вкажіть її в полі "Адреса для надсилання повідомлень" в налаштуваннях маркетплейсу Alteg.io.
+            </p>
+          </div>
+
           {testStatus.ok !== null && (
             <div
               style={{
