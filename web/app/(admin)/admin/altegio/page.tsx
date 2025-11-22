@@ -159,12 +159,19 @@ export default function AltegioLanding() {
                   <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
                     <li>Тип програми: <code>{testStatus.programType || 'Unknown'}</code></li>
                     <li>User Token в env: <code>{testStatus.debug.userTokenInEnv ? '✅ Так' : '❌ Ні'}</code></li>
+                    {testStatus.debug.userTokenInEnv && (
+                      <li>Довжина User Token: <code>{testStatus.debug.userTokenLength || 0}</code></li>
+                    )}
                     <li>Partner Token в env: <code>{testStatus.debug.partnerTokenInEnv ? '✅ Так' : '❌ Ні (OK for non-public)'}</code></li>
                     {testStatus.debug.partnerTokenInEnv && (
                       <li>Довжина Partner Token: <code>{testStatus.debug.partnerTokenLength || 0}</code></li>
                     )}
-                    {testStatus.debug.userTokenInEnv && (
-                      <li>Довжина User Token: <code>{testStatus.debug.userTokenLength || 0}</code></li>
+                    <li>Partner ID в env: <code>{testStatus.debug.partnerIdInEnv ? '✅ Так' : '❌ Ні'}</code></li>
+                    {testStatus.debug.partnerIdInEnv && (
+                      <>
+                        <li>Значення Partner ID: <code>{testStatus.debug.partnerIdValue || 'not set'}</code></li>
+                        <li>Довжина Partner ID: <code>{testStatus.debug.partnerIdLength || 0}</code></li>
+                      </>
                     )}
                   </ul>
                   {testStatus.debug.partnerTokenInEnv && testStatus.error && testStatus.error.includes('Partner ID') && (
