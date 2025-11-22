@@ -9,11 +9,16 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   try {
     // Діагностика: перевіряємо змінні середовища
+    const hasPartnerToken = !!process.env.ALTEGIO_PARTNER_TOKEN;
+    const hasUserToken = !!process.env.ALTEGIO_USER_TOKEN;
+    const programType = hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)';
+    
     const envCheck = {
       apiUrl: process.env.ALTEGIO_API_URL || 'https://api.alteg.io/api/v1',
-      hasUserToken: !!process.env.ALTEGIO_USER_TOKEN,
+      programType,
+      hasUserToken,
       userTokenLength: process.env.ALTEGIO_USER_TOKEN?.length || 0,
-      hasPartnerToken: !!process.env.ALTEGIO_PARTNER_TOKEN,
+      hasPartnerToken,
       partnerTokenValue: process.env.ALTEGIO_PARTNER_TOKEN ? String(process.env.ALTEGIO_PARTNER_TOKEN).substring(0, 10) + '...' : 'not set',
       partnerTokenLength: process.env.ALTEGIO_PARTNER_TOKEN?.length || 0,
       hasApplicationId: !!process.env.ALTEGIO_APPLICATION_ID,
@@ -43,37 +48,43 @@ export async function GET(req: NextRequest) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     
     // Діагностика змінних середовища
+    const hasPartnerToken = !!process.env.ALTEGIO_PARTNER_TOKEN;
+    const hasUserToken = !!process.env.ALTEGIO_USER_TOKEN;
+    const hasPartnerId = !!process.env.ALTEGIO_PARTNER_ID;
+    const programType = hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)';
+    
     const envCheck = {
-      hasUserToken: !!process.env.ALTEGIO_USER_TOKEN,
-      hasPartnerToken: !!process.env.ALTEGIO_PARTNER_TOKEN,
-      partnerTokenValue: process.env.ALTEGIO_PARTNER_TOKEN || 'not set',
+      programType,
+      hasUserToken,
+      hasPartnerToken,
+      partnerTokenValue: process.env.ALTEGIO_PARTNER_TOKEN ? String(process.env.ALTEGIO_PARTNER_TOKEN).substring(0, 10) + '...' : 'not set',
+      partnerTokenLength: process.env.ALTEGIO_PARTNER_TOKEN?.length || 0,
       hasApplicationId: !!process.env.ALTEGIO_APPLICATION_ID,
       applicationIdValue: process.env.ALTEGIO_APPLICATION_ID || 'not set',
       applicationIdLength: process.env.ALTEGIO_APPLICATION_ID?.length || 0,
-      hasPartnerId: !!process.env.ALTEGIO_PARTNER_ID,
+      hasPartnerId,
       partnerIdValue: process.env.ALTEGIO_PARTNER_ID || 'not set',
       partnerIdLength: process.env.ALTEGIO_PARTNER_ID?.length || 0,
     };
     
     // Перевіряємо, чи помилка пов'язана з Partner ID
     const isPartnerIdError = errorMessage.includes('Partner ID') || errorMessage.includes('partner') || errorMessage.includes('401');
-    const hasPartnerToken = !!process.env.ALTEGIO_PARTNER_TOKEN;
-    const hasPartnerId = !!process.env.ALTEGIO_PARTNER_ID;
-    const hasUserToken = !!process.env.ALTEGIO_USER_TOKEN;
     
-    // Для непублічних програм Partner Token не потрібен
-    // Якщо є Partner Token і помилка "Partner ID not specified", можливо потрібно видалити Partner Token
-    const hintForNonPublic = hasPartnerToken && isPartnerIdError
-      ? 'Для непублічних програм Partner Token не потрібен. Видаліть ALTEGIO_PARTNER_TOKEN з Vercel environment variables та використовуйте тільки ALTEGIO_USER_TOKEN.'
+    // Для публічних програм (з Partner Token) потрібні обидва токени
+    const hintForPublic = hasPartnerToken && (!hasUserToken || isPartnerIdError)
+      ? 'Для публічних програм потрібні обидва токени: ALTEGIO_PARTNER_TOKEN та ALTEGIO_USER_TOKEN. Переконайтеся, що обидва встановлені правильно.'
       : null;
     
     return NextResponse.json(
       {
         ok: false,
         error: errorMessage,
-        hint: hintForNonPublic || (isPartnerIdError 
-          ? 'Потрібен ALTEGIO_PARTNER_TOKEN (для публічних програм) або видаліть його (для непублічних програм). Перевірте, чи змінна додана для правильного середовища (Production/Preview) та чи перезапущено деплой.'
+        hint: hintForPublic || (isPartnerIdError 
+          ? (hasPartnerToken 
+            ? 'Для публічних програм потрібні ALTEGIO_PARTNER_TOKEN та ALTEGIO_USER_TOKEN. Перевірте, чи обидва встановлені правильно.'
+            : 'Потрібен ALTEGIO_PARTNER_TOKEN (для публічних програм) або видаліть його (для непублічних програм). Перевірте, чи змінна додана для правильного середовища (Production/Preview) та чи перезапущено деплой.')
           : 'Перевірте, чи правильно налаштовано ALTEGIO_USER_TOKEN у змінних середовища Vercel.'),
+        programType,
         needsPartnerToken: isPartnerIdError && !hasPartnerToken,
         programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
         recommendation: isPartnerIdError && !hasPartnerId && hasUserToken && !hasPartnerToken
