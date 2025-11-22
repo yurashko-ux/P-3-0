@@ -70,7 +70,7 @@ export function altegioHeaders(includeUserToken = true) {
     const authHeader = `Bearer ${ALTEGIO_ENV.PARTNER_TOKEN}, User ${ALTEGIO_ENV.USER_TOKEN}`;
     
     const headers: Record<string, string> = {
-      Accept: "application/json",
+      Accept: "application/vnd.api.v2+json",
       "Content-Type": "application/json",
       Authorization: authHeader,
     };
@@ -113,7 +113,7 @@ export function altegioHeaders(includeUserToken = true) {
     const partnerIdToUse = applicationId || partnerId;
     
     const headers: Record<string, string> = {
-      Accept: "application/json",
+      Accept: "application/vnd.api.v2+json",
       "Content-Type": "application/json",
       Authorization: authHeader,
     };
@@ -196,7 +196,7 @@ export function altegioHeaders(includeUserToken = true) {
     });
     
     const headers: Record<string, string> = {
-      Accept: "application/json",
+      Accept: "application/vnd.api.v2+json",
       "Content-Type": "application/json",
       Authorization: authHeader,
     };
