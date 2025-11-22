@@ -1,7 +1,7 @@
 // web/lib/altegio/client.ts
 // Базовий HTTP-клієнт для Alteg.io API з retry логікою та rate limiting
 
-import { altegioUrl, altegioHeaders } from './env';
+import { altegioUrl, altegioHeaders, ALTEGIO_ENV } from './env';
 
 export type AltegioResponse<T = any> = {
   success?: boolean;
@@ -35,9 +35,21 @@ export async function altegioFetch<T = any>(
   retries = 3,
   delay = 200
 ): Promise<T> {
-  const url = altegioUrl(path);
-  const headers = {
-    ...altegioHeaders(),
+  let url = altegioUrl(path);
+  
+  // Partner ID може передаватися як query параметр або окремий заголовок
+  // Отримуємо Partner ID з env (якщо є PARTNER_ID, використовуємо його, інакше PARTNER_TOKEN)
+  const partnerId = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN || '';
+  
+  // Додаємо Partner ID як query параметр (якщо потрібно)
+  if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=')) {
+    const separator = url.includes('?') ? '&' : '?';
+    url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
+  }
+  
+  const headers = altegioHeaders();
+  const finalHeaders = {
+    ...headers,
     ...options.headers,
   };
 
@@ -50,9 +62,15 @@ export async function altegioFetch<T = any>(
         await new Promise(resolve => setTimeout(resolve, delay * attempt));
       }
 
+      console.log('[altegio/client] Making request:', {
+        url,
+        headers: Object.keys(finalHeaders),
+        hasPartnerId: !!partnerId,
+      });
+      
       const response = await fetch(url, {
         ...options,
-        headers,
+        headers: finalHeaders,
         cache: 'no-store',
       });
 
