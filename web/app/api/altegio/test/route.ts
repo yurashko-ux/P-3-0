@@ -33,16 +33,28 @@ export async function GET(req: NextRequest) {
     
     assertAltegioEnv();
     
-    // Спробуємо використати Partner ID як ID філії для фільтрації
-    // Partner ID (784) може бути ID салону, але якщо ні - покажемо всі компанії
+    // Спробуємо отримати компанію за Partner ID
+    // Partner ID (784) - це ID в маркетплейсі, можливо потрібен інший endpoint
     const partnerId = process.env.ALTEGIO_PARTNER_ID;
-    const partnerIdNum = partnerId ? parseInt(partnerId, 10) : null;
+    let companies: any[] = [];
+    let userCompany: any = null;
     
-    // Перевіряємо, чи Partner ID - це числовий ID компанії
-    // Якщо так, спробуємо отримати тільки цю компанію
-    const companies = await getCompanies(
-      partnerIdNum && !isNaN(partnerIdNum) ? partnerIdNum : undefined
-    );
+    if (partnerId) {
+      // Спробуємо отримати компанію за Partner ID через альтернативні endpoint'и
+      const { getCompanyByPartnerId } = await import('@/lib/altegio/companies');
+      userCompany = await getCompanyByPartnerId(partnerId);
+      
+      if (userCompany) {
+        companies = [userCompany];
+        console.log(`[altegio/test] Found company by Partner ID ${partnerId}:`, userCompany);
+      }
+    }
+    
+    // Якщо не знайшли за Partner ID, отримуємо всі компанії
+    if (companies.length === 0) {
+      companies = await getCompanies();
+      console.log(`[altegio/test] Got ${companies.length} companies (Partner ID ${partnerId} didn't match any company)`);
+    }
     
     return NextResponse.json({
       ok: true,
