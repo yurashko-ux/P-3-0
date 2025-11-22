@@ -201,9 +201,13 @@ export default function AltegioLanding() {
                   )}
                   {(testStatus.error.includes('Partner ID') || testStatus.error.includes('partner') || testStatus.error.includes('401')) && (
                     <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107' }}>
-                      <strong>💡 Як знайти Partner Token / Application ID:</strong>
+                      <strong>💡 Як знайти Partner ID:</strong>
                       <p style={{ margin: '8px 0', fontSize: '0.9em' }}>
-                        Для додатків у маркетплейсі Alteg.io обов'язково потрібен Partner Token (Application ID), навіть якщо є User Token з налаштованими правами доступу.
+                        Для <strong>непублічних програм</strong> Partner ID - це ID вашої філії/салону в Alteg.io (наприклад, 1169323).
+                        API використовує Partner ID, щоб знати, з якої філії брати дані.
+                      </p>
+                      <p style={{ margin: '8px 0', fontSize: '0.9em', fontWeight: 600 }}>
+                        Для публічних програм Partner ID - це Application ID або Partner Token.
                       </p>
                       <p style={{ margin: '8px 0', fontSize: '0.9em', fontWeight: 600 }}>
                         Варіант 1: Application ID з налаштувань додатку
