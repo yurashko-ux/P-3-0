@@ -53,22 +53,45 @@ export function altegioHeaders(includeUserToken = true) {
   
   // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо Partner Token не вказано, використовуємо тільки User Token
   // Це для непублічних програм, які використовуються тільки для вашої філії
-  // Partner ID не потрібен, достатньо User Token
+  // Для непублічних програм може знадобитися Application ID як Partner ID
+  // (в заголовках, але не в Authorization header)
   if (!ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
     const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
     
-    console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN only):', {
-      format: 'Bearer <user_token>',
-      programType: 'Non-public',
-      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
-      note: 'Partner ID not needed for non-public programs',
-    });
+    // Для непублічних програм Application ID може бути потрібен як Partner ID
+    // Спробуємо використати PARTNER_ID якщо він вказаний (Application ID)
+    const partnerId = ALTEGIO_ENV.PARTNER_ID;
     
-    return {
+    const headers: Record<string, string> = {
       Accept: "application/json",
       "Content-Type": "application/json",
       Authorization: authHeader,
     };
+    
+    // Якщо є PARTNER_ID (Application ID), додаємо його як окремі заголовки
+    // для непублічних програм (без використання в Authorization)
+    if (partnerId) {
+      headers['X-Partner-ID'] = partnerId;
+      headers['Partner-ID'] = partnerId;
+      headers['X-Partner-Id'] = partnerId;
+      
+      console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN + Partner ID):', {
+        format: 'Bearer <user_token> + X-Partner-ID header',
+        programType: 'Non-public',
+        userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+        partnerId: partnerId,
+        note: 'Using Application ID as Partner ID in headers (not in Authorization)',
+      });
+    } else {
+      console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN only):', {
+        format: 'Bearer <user_token>',
+        programType: 'Non-public',
+        userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+        note: 'Partner ID not provided - may need ALTEGIO_PARTNER_ID (Application ID)',
+      });
+    }
+    
+    return headers;
   }
   
   // ПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token - використовуємо повний формат

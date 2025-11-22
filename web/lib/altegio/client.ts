@@ -38,15 +38,14 @@ export async function altegioFetch<T = any>(
   let url = altegioUrl(path);
   
   // Partner ID може передаватися як query параметр або окремий заголовок
-  // АЛЕ тільки для публічних програм (якщо є PARTNER_TOKEN)
-  // Для непублічних програм (тільки USER_TOKEN) Partner ID не потрібен
+  // Для публічних програм: якщо є PARTNER_TOKEN
+  // Для непублічних програм: якщо є PARTNER_ID (Application ID)
   const hasPartnerToken = !!ALTEGIO_ENV.PARTNER_TOKEN;
-  const partnerId = hasPartnerToken 
-    ? (ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.PARTNER_TOKEN || '')
-    : '';
+  const partnerId = ALTEGIO_ENV.PARTNER_ID || (hasPartnerToken ? ALTEGIO_ENV.PARTNER_TOKEN : '');
   
-  // Додаємо Partner ID як query параметр ТІЛЬКИ якщо є Partner Token (для публічних програм)
-  if (hasPartnerToken && partnerId && !url.includes('partner_id=') && !url.includes('partnerId=')) {
+  // Додаємо Partner ID як query параметр якщо є Partner ID
+  // (для публічних програм - Partner Token, для непублічних - Application ID)
+  if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=')) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
   }
