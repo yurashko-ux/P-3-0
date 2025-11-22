@@ -80,3 +80,62 @@ export async function getCompany(companyId: number): Promise<Company | null> {
   }
 }
 
+/**
+ * Отримує компанію за Partner ID (може бути ID в маркетплейсі)
+ * Спробуємо різні endpoint'и для отримання своєї філії
+ */
+export async function getCompanyByPartnerId(partnerId: string | number): Promise<Company | null> {
+  try {
+    const partnerIdStr = String(partnerId);
+    
+    // Варіант 1: Спробуємо отримати компанію безпосередньо за Partner ID
+    // Можливо, endpoint такий: /company/by-partner/{partnerId} або /partner/{partnerId}/company
+    const endpoints = [
+      `/company/by-partner/${partnerIdStr}`,
+      `/partner/${partnerIdStr}/company`,
+      `/companies?partner_id=${partnerIdStr}`,
+      `/company/${partnerIdStr}`, // Можливо, Partner ID співпадає з Company ID
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const response = await altegioFetch<Company | Company[] | { data?: Company | Company[] }>(endpoint);
+        
+        if (response && typeof response === 'object') {
+          // Якщо це масив, беремо перший елемент
+          if (Array.isArray(response)) {
+            if (response.length > 0) {
+              return response[0] as Company;
+            }
+          }
+          
+          // Якщо це об'єкт з data
+          if ('data' in response && response.data) {
+            const data = response.data;
+            if (Array.isArray(data) && data.length > 0) {
+              return data[0] as Company;
+            }
+            if (typeof data === 'object' && 'id' in data) {
+              return data as Company;
+            }
+          }
+          
+          // Якщо це об'єкт Company
+          if ('id' in response) {
+            return response as Company;
+          }
+        }
+      } catch (err) {
+        // Продовжуємо спробувати інші endpoint'и
+        console.log(`[altegio/companies] Endpoint ${endpoint} failed, trying next...`);
+        continue;
+      }
+    }
+    
+    return null;
+  } catch (err) {
+    console.error(`[altegio/companies] Failed to get company by Partner ID ${partnerId}:`, err);
+    return null;
+  }
+}
+
