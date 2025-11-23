@@ -681,6 +681,154 @@ export default function AltegioLanding() {
           )}
         </Card>
 
+        <Card title="📤 Експорт помилки для підтримки" emoji="📤">
+          <p style={{ marginBottom: 16 }}>
+            Щоб зробити скріншот для підтримки Altegio, натисніть кнопку нижче. 
+            Вона покаже всі деталі помилки в одному місці.
+          </p>
+          <button
+            onClick={() => {
+              // Створюємо великий блок з усіма деталями
+              const errorDetails = {
+                timestamp: new Date().toISOString(),
+                companyId: process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || '1169323',
+                errors: {
+                  clients: clientsTestStatus.error || 'Not tested',
+                  appointments: appointmentsTestStatus.error || 'Not tested',
+                },
+                working: {
+                  companies: testStatus.ok ? '✅ Working' : '❌ Not working',
+                },
+                attemptedEndpoints: [
+                  'POST /api/v1/clients (with company_id in body)',
+                  'POST /api/v1/company/1169323/clients',
+                  'GET /api/v1/company/1169323/appointments',
+                ],
+              };
+
+              // Відкриваємо нове вікно з деталями для скріншота
+              const detailsWindow = window.open('', '_blank');
+              if (detailsWindow) {
+                detailsWindow.document.write(`
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                    <title>Altegio API Error Details for Support</title>
+                    <style>
+                      body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        max-width: 800px;
+                        margin: 40px auto;
+                        padding: 20px;
+                        background: #f5f5f5;
+                      }
+                      .card {
+                        background: white;
+                        padding: 30px;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                        margin-bottom: 20px;
+                      }
+                      h1 { color: #d32f2f; margin-top: 0; }
+                      h2 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+                      .error { background: #ffebee; padding: 15px; border-radius: 4px; border-left: 4px solid #d32f2f; margin: 10px 0; }
+                      .success { background: #e8f5e9; padding: 15px; border-radius: 4px; border-left: 4px solid #4caf50; margin: 10px 0; }
+                      pre { background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto; }
+                      .info { background: #e3f2fd; padding: 15px; border-radius: 4px; margin: 10px 0; }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="card">
+                      <h1>🚨 Altegio API Error Report</h1>
+                      <p><strong>Date:</strong> ${errorDetails.timestamp}</p>
+                      <p><strong>Company ID:</strong> ${errorDetails.companyId}</p>
+                    </div>
+
+                    <div class="card">
+                      <h2>✅ What Works</h2>
+                      <div class="success">
+                        <strong>GET /api/v1/companies</strong> - Returns company information successfully
+                      </div>
+                    </div>
+
+                    <div class="card">
+                      <h2>❌ What Doesn't Work</h2>
+                      <div class="error">
+                        <strong>POST /api/v1/clients</strong><br>
+                        Error: ${errorDetails.errors.clients}
+                      </div>
+                      <div class="error">
+                        <strong>GET /api/v1/company/1169323/appointments</strong><br>
+                        Error: ${errorDetails.errors.appointments}
+                      </div>
+                    </div>
+
+                    <div class="card">
+                      <h2>📋 Attempted Endpoints</h2>
+                      <ul>
+                        ${errorDetails.attemptedEndpoints.map(e => `<li>${e}</li>`).join('')}
+                      </ul>
+                    </div>
+
+                    <div class="card">
+                      <h2>🔧 Request Details</h2>
+                      <div class="info">
+                        <strong>Authorization Header Format:</strong><br>
+                        <code>Bearer 48kfgfmy8s7u84ruhtju, User [USER_TOKEN]</code>
+                      </div>
+                      <div class="info">
+                        <strong>Headers:</strong><br>
+                        <pre>Accept: application/vnd.api.v2+json
+Content-Type: application/json
+Authorization: Bearer 48kfgfmy8s7u84ruhtju, User [USER_TOKEN]
+X-Partner-ID: 784
+X-Application-ID: 1195</pre>
+                      </div>
+                    </div>
+
+                    <div class="card">
+                      <h2>📝 Application Details</h2>
+                      <pre>Application ID: 1195
+Partner ID: 784
+Company ID: 1169323
+Application Type: Non-public</pre>
+                    </div>
+
+                    <div class="card">
+                      <h2>💡 Next Steps</h2>
+                      <p>Please provide:</p>
+                      <ol>
+                        <li>Why API returns 403 even though permissions are enabled?</li>
+                        <li>Correct endpoint and method for retrieving clients?</li>
+                        <li>Any additional settings needed for non-public applications?</li>
+                      </ol>
+                    </div>
+                  </body>
+                  </html>
+                `);
+                detailsWindow.document.close();
+                alert('Відкрито нове вікно з деталями. Зробіть скріншот цього вікна для підтримки!');
+              }
+            }}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#2a6df5',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 16,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(42, 109, 245, 0.3)',
+            }}
+          >
+            📸 Створити звіт для підтримки
+          </button>
+          <p style={{ marginTop: 12, fontSize: '0.9em', color: '#666' }}>
+            Кнопка відкриє нове вікно з усіма деталями помилки. Зробіть скріншот цього вікна.
+          </p>
+        </Card>
+
         <Card title="Статус" emoji="🚧">
           <p>
             Технічне завдання зафіксоване у <code>PROJECT_NOTES.md</code>. Поточний етап —
