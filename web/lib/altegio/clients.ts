@@ -12,26 +12,17 @@ import type { Client } from './types';
 export async function getClients(companyId: number, limit?: number): Promise<Client[]> {
   try {
     // Згідно з документацією Altegio API, для отримання списку клієнтів використовується POST endpoint
-    // з можливими параметрами фільтрації
+    // POST /company/{company_id}/clients з тілом запиту для фільтрації (може бути порожнім об'єктом)
     const url = `/company/${companyId}/clients`;
     
-    // Спробуємо POST запит з пустим тілом (для отримання списку)
-    // Або GET, якщо API підтримує обидва методи
-    let response: any;
-    
-    try {
-      // Спочатку спробуємо GET (може працювати для деяких версій API)
-      response = await altegioFetch<Client[] | { data?: Client[] }>(url, {
-        method: 'GET',
-      });
-    } catch (getError) {
-      // Якщо GET не працює, спробуємо POST з пустим тілом
-      console.log(`[altegio/clients] GET failed, trying POST:`, getError);
-      response = await altegioFetch<Client[] | { data?: Client[] }>(url, {
+    // Створюємо POST запит з пустим тілом (або можна додати параметри фільтрації)
+    const response = await altegioFetch<Client[] | { data?: Client[]; clients?: Client[]; items?: Client[] }>(
+      url,
+      {
         method: 'POST',
         body: JSON.stringify({}),
-      });
-    }
+      }
+    );
     
     let clients: Client[] = [];
     if (Array.isArray(response)) {
