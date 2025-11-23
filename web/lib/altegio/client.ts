@@ -44,9 +44,15 @@ export async function altegioFetch<T = any>(
   const applicationId = ALTEGIO_ENV.APPLICATION_ID || '';
   const partnerId = ALTEGIO_ENV.PARTNER_ID || applicationId || (hasPartnerToken ? ALTEGIO_ENV.PARTNER_TOKEN : '');
   
-  // Додаємо Partner ID як query параметр якщо є Partner ID
-  // (для публічних програм - Partner Token, для непублічних - Application ID)
-  if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=')) {
+  // НЕ додаємо partner_id в query для endpoint'ів з company_id в URL
+  // (бо company_id вже вказує на конкретну філію, і partner_id може конфліктувати)
+  const hasCompanyIdInPath = /\/company\/\d+/.test(path);
+  
+  // Додаємо Partner ID як query параметр тільки якщо:
+  // 1. Є Partner ID
+  // 2. URL не містить partner_id вже
+  // 3. URL не містить company_id в шляху (бо тоді company_id вже вказує на філію)
+  if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=') && !hasCompanyIdInPath) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
   }
