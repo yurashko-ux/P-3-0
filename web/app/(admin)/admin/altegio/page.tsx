@@ -33,6 +33,23 @@ export default function AltegioLanding() {
     error?: string;
   }>({ loading: false, ok: null });
   
+  const [appointmentsTestStatus, setAppointmentsTestStatus] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    message?: string;
+    appointmentsCount?: number;
+    appointmentsWithInstagram?: number;
+    appointments?: Array<{
+      id: number;
+      datetime: string;
+      client_name: string;
+      instagram_username?: string | null;
+      status?: string;
+    }>;
+    days?: number;
+    error?: string;
+  }>({ loading: false, ok: null });
+  
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
@@ -101,6 +118,31 @@ export default function AltegioLanding() {
         loading: false,
         ok: false,
         message: 'Помилка з\'єднання',
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
+  async function testAppointments() {
+    setAppointmentsTestStatus({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/altegio/test/appointments?days=30', { cache: 'no-store' });
+      const data = await res.json();
+      setAppointmentsTestStatus({
+        loading: false,
+        ok: data.ok === true,
+        message: data.message || data.error,
+        appointmentsCount: data.appointmentsCount,
+        appointmentsWithInstagram: data.appointmentsWithInstagram,
+        appointments: data.appointments || [],
+        days: data.days,
+        error: data.error,
+      });
+    } catch (err) {
+      setAppointmentsTestStatus({
+        loading: false,
+        ok: false,
+        message: 'Помилка з\'єднання з API записів',
         error: err instanceof Error ? err.message : 'Невідома помилка',
       });
     }
@@ -483,6 +525,111 @@ export default function AltegioLanding() {
               {clientsTestStatus.error && (
                 <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
                   {clientsTestStatus.error}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Календар записів" emoji="📅">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Отримання майбутніх записів з календаря (на наступні 30 днів). Перевірка наявності Instagram username у клієнтів.
+            </p>
+            <button
+              onClick={testAppointments}
+              disabled={appointmentsTestStatus.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#2a6df5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: appointmentsTestStatus.loading ? 'not-allowed' : 'pointer',
+                opacity: appointmentsTestStatus.loading ? 0.6 : 1,
+              }}
+            >
+              {appointmentsTestStatus.loading ? 'Завантаження...' : 'Отримати майбутні записи'}
+            </button>
+          </div>
+
+          {appointmentsTestStatus.ok !== null && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                background: appointmentsTestStatus.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${appointmentsTestStatus.ok ? '#86efac' : '#fca5a5'}`,
+                color: appointmentsTestStatus.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              <strong>{appointmentsTestStatus.ok ? '✅ Успішно' : '❌ Помилка'}:</strong>{' '}
+              {appointmentsTestStatus.message}
+              
+              {appointmentsTestStatus.ok && appointmentsTestStatus.appointmentsCount !== undefined && (
+                <div style={{ marginTop: 12, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd', color: '#0c4a6e' }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>📊 Статистика:</strong>
+                  </div>
+                  <ul style={{ margin: '8px 0', paddingLeft: 22 }}>
+                    <li>Всього майбутніх записів: <strong>{appointmentsTestStatus.appointmentsCount}</strong></li>
+                    <li>Записів з Instagram username: <strong>{appointmentsTestStatus.appointmentsWithInstagram || 0}</strong></li>
+                    <li>Період: <strong>наступні {appointmentsTestStatus.days || 30} днів</strong></li>
+                  </ul>
+                </div>
+              )}
+
+              {appointmentsTestStatus.ok && appointmentsTestStatus.appointments && appointmentsTestStatus.appointments.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <strong style={{ display: 'block', marginBottom: 12 }}>📋 Список записів ({appointmentsTestStatus.appointments.slice(0, 10).length} з {appointmentsTestStatus.appointments.length}):</strong>
+                  <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 6, padding: 8 }}>
+                    {appointmentsTestStatus.appointments.slice(0, 10).map((apt, idx) => (
+                      <div
+                        key={apt.id || idx}
+                        style={{
+                          padding: 10,
+                          marginBottom: 8,
+                          background: '#fff',
+                          borderRadius: 6,
+                          border: '1px solid #e5e7eb',
+                          fontSize: '0.9em',
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                          {apt.client_name || 'Без імені'}
+                          {apt.instagram_username && (
+                            <span style={{ marginLeft: 8, color: '#22c55e', fontSize: '0.85em' }}>
+                              📱 @{apt.instagram_username}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: '#6b7280', fontSize: '0.85em' }}>
+                          {apt.datetime ? new Date(apt.datetime).toLocaleString('uk-UA', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }) : 'Дата не вказана'}
+                          {apt.status && (
+                            <span style={{ marginLeft: 8 }}>• Статус: {apt.status}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {appointmentsTestStatus.appointments.length > 10 && (
+                      <div style={{ textAlign: 'center', padding: 8, color: '#6b7280', fontSize: '0.85em' }}>
+                        ... та ще {appointmentsTestStatus.appointments.length - 10} записів
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {appointmentsTestStatus.error && (
+                <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
+                  {appointmentsTestStatus.error}
                 </div>
               )}
             </div>

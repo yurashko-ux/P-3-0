@@ -29,7 +29,18 @@ export type Appointment = {
   id: number;
   company_id: number;
   client_id?: number;
+  client?: Client; // Інформація про клієнта (якщо включена)
   date?: string;
+  datetime?: string; // Дата та час запису
+  start_datetime?: string;
+  end_datetime?: string;
+  service_id?: number;
+  service?: any; // Інформація про послугу
+  staff_id?: number; // ID майстра/співробітника
+  staff?: any; // Інформація про майстра
+  status?: string; // Статус запису (pending, confirmed, completed, canceled)
+  comment?: string;
   // ... інші поля з API
+  [key: string]: any; // Дозволяємо додаткові поля
 };
 
