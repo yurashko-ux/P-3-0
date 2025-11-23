@@ -52,9 +52,14 @@ export async function altegioFetch<T = any>(
   }
   
   const headers = altegioHeaders();
+  // Важливо: наші заголовки (Accept, Authorization) мають пріоритет
+  // options.headers може додати додаткові заголовки, але не перезаписувати обов'язкові
   const finalHeaders = {
     ...headers,
     ...options.headers,
+    // Гарантуємо, що Accept header завжди присутній
+    Accept: headers.Accept || "application/vnd.api.v2+json",
+    Authorization: headers.Authorization || headers.Authorization,
   };
 
   let lastError: AltegioHttpError | null = null;
@@ -72,6 +77,8 @@ export async function altegioFetch<T = any>(
         programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
         urlWithParams: url.includes('partner_id') ? '✅ Partner ID in URL' : '❌ No Partner ID in URL (OK for non-public)',
         headers: Object.keys(finalHeaders),
+        acceptHeader: finalHeaders['Accept'] || '❌ MISSING!',
+        hasAcceptHeader: !!finalHeaders['Accept'],
         hasPartnerToken,
         hasPartnerId: !!partnerId,
         partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set (OK for non-public)',
