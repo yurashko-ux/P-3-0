@@ -55,7 +55,21 @@ export default function AltegioLanding() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setWebhookUrl(`${window.location.origin}/api/altegio/webhook`);
+      // Використовуємо production URL якщо доступний, інакше - поточний origin
+      const origin = window.location.origin;
+      // Перевіряємо чи це preview URL (містить хеш)
+      const isPreviewUrl = origin.includes('vercel.app') && origin.match(/[a-z0-9]{20,}/);
+      
+      if (isPreviewUrl) {
+        // Якщо це preview URL, показуємо попередження та production URL
+        // Production URL зазвичай має формат: project-name.vercel.app
+        const projectName = origin.split('.')[0].split('-').slice(0, -2).join('-');
+        const productionUrl = `https://${projectName}.vercel.app/api/altegio/webhook`;
+        // Використовуємо production URL якщо можемо його визначити
+        setWebhookUrl(productionUrl || `${origin}/api/altegio/webhook`);
+      } else {
+        setWebhookUrl(`${origin}/api/altegio/webhook`);
+      }
     }
   }, []);
 
