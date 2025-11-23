@@ -1,0 +1,10 @@
+{
+  "note": "This is an example file. Copy this to tokens.json and fill in your actual tokens. DO NOT commit tokens.json to git!",
+  "partner_token": "48kfgfmy8s7u84ruhtju",
+  "user_token": "[YOUR_USER_TOKEN_FROM_VERCEL_ENV_VARS]",
+  "partner_id": "784",
+  "application_id": "1195",
+  "company_id": "1169323",
+  "api_url": "https://api.alteg.io/api/v1"
+}
+
