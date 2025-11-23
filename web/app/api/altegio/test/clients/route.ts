@@ -36,12 +36,52 @@ export async function GET(req: NextRequest) {
     }
     
     // Отримуємо список клієнтів (обмежуємо до 10 для тесту)
-    const clients = await getClients(companyId, 10);
+    let clients: any[] = [];
+    let source = 'direct';
+    let errorMessage = '';
+    
+    try {
+      clients = await getClients(companyId, 10);
+      source = 'direct';
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      console.warn('[altegio/test/clients] Direct API failed, trying via appointments...', errorMessage);
+      
+      // Якщо прямі запити не працюють, спробуємо через appointments
+      try {
+        const { getUpcomingAppointments } = await import('@/lib/altegio/appointments');
+        const appointments = await getUpcomingAppointments(companyId, 90, true);
+        
+        // Витягуємо унікальних клієнтів з appointments
+        const clientsMap = new Map<number, any>();
+        for (const apt of appointments) {
+          if (apt.client && apt.client.id) {
+            const clientId = apt.client.id;
+            if (!clientsMap.has(clientId)) {
+              clientsMap.set(clientId, apt.client);
+            }
+          }
+        }
+        
+        clients = Array.from(clientsMap.values()).slice(0, 10);
+        source = 'via_appointments';
+        console.log(`[altegio/test/clients] ✅ Got ${clients.length} clients via appointments`);
+      } catch (appointmentsErr) {
+        console.error('[altegio/test/clients] Appointments fallback also failed:', appointmentsErr);
+        // Якщо і appointments не працюють, повертаємо помилку
+        return NextResponse.json({
+          ok: false,
+          error: `Direct API error: ${errorMessage}. Appointments fallback also failed.`,
+          directError: errorMessage,
+        }, { status: 500 });
+      }
+    }
     
     if (clients.length === 0) {
       return NextResponse.json({
         ok: true,
-        message: 'No clients found',
+        message: `No clients found (source: ${source})`,
+        source,
         clientsCount: 0,
         clients: [],
         firstClientStructure: null,
@@ -122,7 +162,8 @@ export async function GET(req: NextRequest) {
     
     return NextResponse.json({
       ok: true,
-      message: `Found ${clients.length} clients`,
+      message: `Found ${clients.length} clients (source: ${source})`,
+      source,
       clientsCount: clients.length,
       clients: clients.map(client => ({
         id: client.id,
