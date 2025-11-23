@@ -522,25 +522,33 @@ export default function AltegioLanding() {
                 </div>
               )}
 
-              {clientsTestStatus.error && (
+                  {clientsTestStatus.error && (
                 <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
                   {clientsTestStatus.error}
-                  {clientsTestStatus.error.includes('No company management rights') && (
+                  {(clientsTestStatus.error.includes('No company management rights') || clientsTestStatus.error.includes('403')) && (
                     <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107', color: '#856404' }}>
-                      <strong>💡 Як вирішити помилку "No company management rights":</strong>
+                      <strong>💡 Важливо! Після надання прав потрібно згенерувати новий USER_TOKEN:</strong>
                       <ol style={{ margin: '8px 0 0 0', paddingLeft: 22 }}>
                         <li>Перейдіть в кабінет Altegio → Маркетплейс → Ваш додаток</li>
                         <li>Відкрийте розділ "Доступ до API" (API Access)</li>
-                        <li>Переконайтеся, що у вашому USER_TOKEN включені права:
+                        <li>Переконайтеся, що права надані:
                           <ul style={{ marginTop: 4, paddingLeft: 18 }}>
-                            <li>✅ Читання клієнтів (Read clients)</li>
-                            <li>✅ Читання записів (Read appointments)</li>
-                            <li>✅ Управління компанією (Company management)</li>
+                            <li>✅ "Клієнтська база" (Client base) - всі права</li>
+                            <li>✅ "Журнал запису" (Record log) - всі права</li>
                           </ul>
                         </li>
-                        <li>Якщо права не налаштовані, оновіть токен або створіть новий з необхідними правами</li>
-                        <li>Після оновлення прав оновіть ALTEGIO_USER_TOKEN в Vercel environment variables</li>
+                        <li><strong>ВАЖЛИВО:</strong> Після надання прав <strong>необхідно згенерувати новий USER_TOKEN</strong>:
+                          <ul style={{ marginTop: 4, paddingLeft: 18 }}>
+                            <li>Скопіюйте новий токен з поля "User Token"</li>
+                            <li>Оновіть змінну середовища <code>ALTEGIO_USER_TOKEN</code> в Vercel</li>
+                            <li>Старий токен може не мати нових прав, навіть якщо права надані!</li>
+                          </ul>
+                        </li>
+                        <li>Після оновлення токена зачекайте 1-2 хвилини або перезапустіть деплой</li>
                       </ol>
+                      <p style={{ margin: '12px 0 0 0', padding: 8, background: '#ffe69c', borderRadius: 4, fontSize: '0.9em' }}>
+                        ⚠️ <strong>Поточна помилка:</strong> Навіть якщо права надані, старий USER_TOKEN не має цих прав. Потрібно згенерувати новий токен!
+                      </p>
                     </div>
                   )}
                 </div>
