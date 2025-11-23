@@ -106,8 +106,46 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
     }
   }
   
-  // Якщо всі спроби не вдалися
+  // Якщо всі спроби не вдалися, спробуємо отримати клієнтів через appointments
   if (lastError) {
+    console.warn(`[altegio/clients] All direct attempts failed for company ${companyId}, trying to get clients via appointments...`);
+    
+    try {
+      // Спробуємо отримати клієнтів через appointments (обхідний шлях)
+      const { getUpcomingAppointments } = await import('./appointments');
+      const appointments = await getUpcomingAppointments(companyId, 90, true); // 90 днів для отримання більше клієнтів
+      
+      // Витягуємо унікальних клієнтів з appointments
+      const clientsMap = new Map<number, Client>();
+      
+      for (const apt of appointments) {
+        if (apt.client && apt.client.id) {
+          const clientId = apt.client.id;
+          if (!clientsMap.has(clientId)) {
+            clientsMap.set(clientId, apt.client);
+          }
+        }
+      }
+      
+      const clients = Array.from(clientsMap.values());
+      
+      if (clients.length > 0) {
+        console.log(`[altegio/clients] ✅ Got ${clients.length} unique clients via appointments`);
+        
+        // Обмежуємо кількість, якщо вказано
+        if (limit && clients.length > limit) {
+          return clients.slice(0, limit);
+        }
+        
+        return clients;
+      }
+      
+      console.warn(`[altegio/clients] No clients found via appointments either`);
+    } catch (appointmentsError) {
+      console.error(`[altegio/clients] Failed to get clients via appointments:`, appointmentsError);
+    }
+    
+    // Якщо і через appointments не вдалося, викидаємо оригінальну помилку
     console.error(`[altegio/clients] All attempts failed for company ${companyId}`);
     throw lastError;
   }

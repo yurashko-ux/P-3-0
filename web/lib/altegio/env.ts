@@ -75,13 +75,21 @@ export function altegioHeaders(includeUserToken = true) {
       Authorization: authHeader,
     };
     
-    // Partner ID може бути потрібен окремо (числовий ID, наприклад 784)
-    const partnerId = ALTEGIO_ENV.PARTNER_ID;
+    // Для непублічних програм: використовуємо Application ID (1195) якщо є, інакше Partner ID (784)
+    // Application ID зазвичай правильніший для непублічних програм
+    const applicationId = ALTEGIO_ENV.APPLICATION_ID || '';
+    const partnerId = applicationId || ALTEGIO_ENV.PARTNER_ID || '';
+    
     if (partnerId) {
       headers['X-Partner-ID'] = partnerId;
       headers['Partner-ID'] = partnerId;
       headers['X-Partner-Id'] = partnerId;
       headers['X-PartnerId'] = partnerId;
+      // Також спробуємо додати Application ID як окремий заголовок
+      if (applicationId) {
+        headers['X-Application-ID'] = applicationId;
+        headers['Application-ID'] = applicationId;
+      }
     }
     
     console.log('[altegio/env] Authorization header (with Partner Token - may be non-public):', {
