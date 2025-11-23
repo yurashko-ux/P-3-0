@@ -14,37 +14,61 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   
   // Спробуємо різні варіанти endpoint та методів
   const attempts = [
-    // Варіант 1: POST з пустим тілом (стандартний для Altegio API)
+    // Варіант 1: POST /company/{id}/clients з пустим тілом (стандартний для Altegio API)
     {
-      name: 'POST with empty body',
+      name: 'POST /company/{id}/clients with empty body',
       method: 'POST' as const,
       url: url,
       body: JSON.stringify({}),
-      useUserTokenOnly: false, // Використовувати стандартний формат
     },
-    // Варіант 2: POST з параметрами пагінації
+    // Варіант 2: GET /company/{id}/clients (може працювати в деяких версіях)
     {
-      name: 'POST with pagination',
-      method: 'POST' as const,
+      name: 'GET /company/{id}/clients',
+      method: 'GET' as const,
       url: url,
-      body: JSON.stringify({ page: 1, per_page: limit || 100 }),
-      useUserTokenOnly: false,
+      body: undefined,
     },
-    // Варіант 3: POST з фільтрацією (може допомогти з правами)
+    // Варіант 3: GET /clients з company_id в query параметрі
     {
-      name: 'POST with filter',
-      method: 'POST' as const,
-      url: url,
-      body: JSON.stringify({ filter: {}, limit: limit || 100 }),
-      useUserTokenOnly: false,
+      name: 'GET /clients?company_id={id}',
+      method: 'GET' as const,
+      url: `/clients?company_id=${companyId}`,
+      body: undefined,
     },
-    // Варіант 4: Альтернативний endpoint /clients (без company_id в шляху)
+    // Варіант 4: POST /clients з company_id в тілі
     {
-      name: 'POST to /clients endpoint',
+      name: 'POST /clients with company_id',
       method: 'POST' as const,
       url: `/clients`,
       body: JSON.stringify({ company_id: companyId }),
-      useUserTokenOnly: false,
+    },
+    // Варіант 5: POST /company/{id}/clients з параметрами пагінації
+    {
+      name: 'POST /company/{id}/clients with pagination',
+      method: 'POST' as const,
+      url: url,
+      body: JSON.stringify({ page: 1, per_page: limit || 100 }),
+    },
+    // Варіант 6: POST /company/{id}/clients з limit
+    {
+      name: 'POST /company/{id}/clients with limit',
+      method: 'POST' as const,
+      url: url,
+      body: JSON.stringify({ limit: limit || 100 }),
+    },
+    // Варіант 7: GET /v1/company/{id}/clients (з версією в URL)
+    {
+      name: 'GET /v1/company/{id}/clients',
+      method: 'GET' as const,
+      url: `/v1/company/${companyId}/clients`,
+      body: undefined,
+    },
+    // Варіант 8: POST /api/v1/company/{id}/clients (повний шлях)
+    {
+      name: 'POST /api/v1/company/{id}/clients',
+      method: 'POST' as const,
+      url: `/api/v1/company/${companyId}/clients`,
+      body: JSON.stringify({}),
     },
   ];
   
