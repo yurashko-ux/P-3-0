@@ -14,33 +14,37 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   
   // Спробуємо різні варіанти endpoint та методів
   const attempts = [
-    // Варіант 1: GET запит (може працювати для деяких версій API)
-    {
-      name: 'GET request',
-      method: 'GET' as const,
-      url: url,
-      body: undefined,
-    },
-    // Варіант 2: POST з пустим тілом
+    // Варіант 1: POST з пустим тілом (стандартний для Altegio API)
     {
       name: 'POST with empty body',
       method: 'POST' as const,
       url: url,
       body: JSON.stringify({}),
+      useUserTokenOnly: false, // Використовувати стандартний формат
     },
-    // Варіант 3: POST з параметрами пагінації
+    // Варіант 2: POST з параметрами пагінації
     {
       name: 'POST with pagination',
       method: 'POST' as const,
       url: url,
       body: JSON.stringify({ page: 1, per_page: limit || 100 }),
+      useUserTokenOnly: false,
     },
-    // Варіант 4: Альтернативний endpoint (може бути /clients?company_id=...)
+    // Варіант 3: POST з фільтрацією (може допомогти з правами)
     {
-      name: 'GET with query param',
-      method: 'GET' as const,
-      url: `/clients?company_id=${companyId}`,
-      body: undefined,
+      name: 'POST with filter',
+      method: 'POST' as const,
+      url: url,
+      body: JSON.stringify({ filter: {}, limit: limit || 100 }),
+      useUserTokenOnly: false,
+    },
+    // Варіант 4: Альтернативний endpoint /clients (без company_id в шляху)
+    {
+      name: 'POST to /clients endpoint',
+      method: 'POST' as const,
+      url: `/clients`,
+      body: JSON.stringify({ company_id: companyId }),
+      useUserTokenOnly: false,
     },
   ];
   
