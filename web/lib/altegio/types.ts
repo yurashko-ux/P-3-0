@@ -15,7 +15,14 @@ export type Client = {
   name: string;
   phone?: string;
   email?: string;
-  // ... інші поля з API
+  // Кастомні поля для Instagram username (можливі варіанти назв)
+  'instagram-user-name'?: string; // API key з налаштувань (kebab-case)
+  instagram_user_name?: string; // snake_case варіант
+  instagramUsername?: string; // camelCase варіант
+  instagram_username?: string; // інший snake_case варіант
+  // Додаткові поля (може бути об'єкт custom_fields)
+  custom_fields?: Record<string, any>;
+  [key: string]: any; // Дозволяємо додаткові поля
 };
 
 export type Appointment = {

@@ -18,6 +18,21 @@ export default function AltegioLanding() {
     recommendation?: string;
   }>({ loading: false, ok: null });
   
+  const [clientsTestStatus, setClientsTestStatus] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    message?: string;
+    clientsCount?: number;
+    clients?: Array<{ id: number; name: string; phone?: string; email?: string }>;
+    firstClientStructure?: any;
+    instagramFieldFound?: boolean;
+    instagramFieldName?: string | null;
+    instagramFieldValue?: string | null;
+    allKeys?: string[];
+    customFields?: string[];
+    error?: string;
+  }>({ loading: false, ok: null });
+  
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
@@ -54,6 +69,35 @@ export default function AltegioLanding() {
       });
     } catch (err) {
       setTestStatus({
+        loading: false,
+        ok: false,
+        message: 'Помилка з\'єднання',
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
+  async function testClients() {
+    setClientsTestStatus({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/altegio/test/clients', { cache: 'no-store' });
+      const data = await res.json();
+      setClientsTestStatus({
+        loading: false,
+        ok: data.ok === true,
+        message: data.message || data.error,
+        clientsCount: data.clientsCount,
+        clients: data.clients || [],
+        firstClientStructure: data.firstClientStructure,
+        instagramFieldFound: data.instagramFieldFound,
+        instagramFieldName: data.instagramFieldName,
+        instagramFieldValue: data.instagramFieldValue,
+        allKeys: data.allKeys,
+        customFields: data.customFields,
+        error: data.error,
+      });
+    } catch (err) {
+      setClientsTestStatus({
         loading: false,
         ok: false,
         message: 'Помилка з\'єднання',
@@ -329,6 +373,116 @@ export default function AltegioLanding() {
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Тестування клієнтів" emoji="👥">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Перевірка отримання клієнтів та кастомного поля "Instagram user name" через API.
+            </p>
+            <button
+              onClick={testClients}
+              disabled={clientsTestStatus.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#2a6df5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: clientsTestStatus.loading ? 'not-allowed' : 'pointer',
+                opacity: clientsTestStatus.loading ? 0.6 : 1,
+              }}
+            >
+              {clientsTestStatus.loading ? 'Перевірка...' : 'Отримати клієнтів'}
+            </button>
+          </div>
+
+          {clientsTestStatus.ok !== null && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                background: clientsTestStatus.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${clientsTestStatus.ok ? '#86efac' : '#fca5a5'}`,
+                color: clientsTestStatus.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              <strong>{clientsTestStatus.ok ? '✅ Успішно' : '❌ Помилка'}:</strong>{' '}
+              {clientsTestStatus.message}
+              {clientsTestStatus.clientsCount !== undefined && (
+                <div style={{ marginTop: 8 }}>
+                  Знайдено клієнтів: <strong>{clientsTestStatus.clientsCount}</strong>
+                </div>
+              )}
+
+              {clientsTestStatus.ok && clientsTestStatus.firstClientStructure && (
+                <div style={{ marginTop: 16, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd' }}>
+                  <strong style={{ display: 'block', marginBottom: 12 }}>📋 Структура першого клієнта:</strong>
+                  
+                  {clientsTestStatus.instagramFieldFound ? (
+                    <div style={{ padding: 12, background: '#dcfce7', borderRadius: 6, border: '1px solid #86efac', marginBottom: 12 }}>
+                      <strong style={{ color: '#166534' }}>✅ Instagram поле знайдено!</strong>
+                      <div style={{ marginTop: 8, fontSize: '0.9em' }}>
+                        <strong>Назва поля:</strong> <code>{clientsTestStatus.instagramFieldName}</code>
+                        <br />
+                        <strong>Значення:</strong> <code>{clientsTestStatus.instagramFieldValue}</code>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: 12, background: '#fef3c7', borderRadius: 6, border: '1px solid #fcd34d', marginBottom: 12 }}>
+                      <strong style={{ color: '#92400e' }}>⚠️ Instagram поле не знайдено</strong>
+                      <p style={{ margin: '8px 0 0 0', fontSize: '0.9em' }}>
+                        Перевірте всі можливі варіанти назв поля в структурі нижче.
+                      </p>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 12 }}>
+                    <strong>Основні поля:</strong>
+                    <ul style={{ margin: '4px 0 0 0', paddingLeft: 20, fontSize: '0.9em' }}>
+                      <li>ID: <code>{clientsTestStatus.firstClientStructure.id}</code></li>
+                      <li>Ім'я: <code>{clientsTestStatus.firstClientStructure.name}</code></li>
+                      {clientsTestStatus.firstClientStructure.phone && (
+                        <li>Телефон: <code>{clientsTestStatus.firstClientStructure.phone}</code></li>
+                      )}
+                      {clientsTestStatus.firstClientStructure.email && (
+                        <li>Email: <code>{clientsTestStatus.firstClientStructure.email}</code></li>
+                      )}
+                    </ul>
+                  </div>
+
+                  {clientsTestStatus.customFields && clientsTestStatus.customFields.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <strong>Всі поля клієнта ({clientsTestStatus.allKeys?.length || 0}):</strong>
+                      <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 4, fontSize: '0.85em', maxHeight: '200px', overflowY: 'auto' }}>
+                        <code style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                          {JSON.stringify(clientsTestStatus.firstClientStructure.customFieldsData, null, 2)}
+                        </code>
+                      </div>
+                    </div>
+                  )}
+
+                  {clientsTestStatus.firstClientStructure.custom_fields && (
+                    <div style={{ marginTop: 12 }}>
+                      <strong>Custom fields об'єкт:</strong>
+                      <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 4, fontSize: '0.85em', maxHeight: '150px', overflowY: 'auto' }}>
+                        <code style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                          {JSON.stringify(clientsTestStatus.firstClientStructure.custom_fields, null, 2)}
+                        </code>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {clientsTestStatus.error && (
+                <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
+                  {clientsTestStatus.error}
                 </div>
               )}
             </div>
