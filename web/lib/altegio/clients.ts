@@ -12,57 +12,40 @@ import type { Client } from './types';
 export async function getClients(companyId: number, limit?: number): Promise<Client[]> {
   const url = `/company/${companyId}/clients`;
   
-  // Спробуємо різні варіанти endpoint та методів
-  // Згідно з документацією Altegio API, можливі різні формати
+  // Згідно з документацією Altegio API (https://developer.alteg.io/api):
+  // "postGet a list of clients" - використовує POST метод (GET deprecated)
+  // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /company/{id}/clients з пустим тілом (стандартний для Altegio API v2)
+    // Варіант 1: POST /clients з company_id в тілі (найбільш вірогідний згідно з документацією)
     {
-      name: 'POST /company/{id}/clients with empty body',
+      name: 'POST /clients with company_id',
       method: 'POST' as const,
-      url: url,
+      url: `/clients`,
+      body: JSON.stringify({ 
+        company_id: companyId,
+        ...(limit ? { limit } : {}),
+      }),
+    },
+    // Варіант 2: POST /company/{id}/clients з пустим тілом
+    {
+      name: 'POST /company/{id}/clients',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients`,
       body: JSON.stringify({}),
     },
-    // Варіант 2: GET /clients (як для компаній - /companies)
+    // Варіант 3: POST /clients з пустим тілом (може працювати якщо company_id береться з токена)
     {
-      name: 'GET /clients',
-      method: 'GET' as const,
-      url: `/clients`,
-      body: undefined,
-    },
-    // Варіант 3: GET /clients з company_id в query параметрі
-    {
-      name: 'GET /clients?company_id={id}',
-      method: 'GET' as const,
-      url: `/clients?company_id=${companyId}`,
-      body: undefined,
-    },
-    // Варіант 4: GET /company/{id}/clients (може працювати як GET /companies)
-    {
-      name: 'GET /company/{id}/clients',
-      method: 'GET' as const,
-      url: url,
-      body: undefined,
-    },
-    // Варіант 5: POST /clients з company_id в тілі
-    {
-      name: 'POST /clients with company_id in body',
+      name: 'POST /clients empty body',
       method: 'POST' as const,
       url: `/clients`,
-      body: JSON.stringify({ company_id: companyId }),
+      body: JSON.stringify({}),
     },
-    // Варіант 6: POST /company/{id}/clients з параметрами пагінації
+    // Варіант 4: POST /company/{id}/clients з параметрами пагінації
     {
       name: 'POST /company/{id}/clients with pagination',
       method: 'POST' as const,
-      url: url,
+      url: `/company/${companyId}/clients`,
       body: JSON.stringify({ page: 1, per_page: limit || 100 }),
-    },
-    // Варіант 7: POST /company/{id}/clients з limit
-    {
-      name: 'POST /company/{id}/clients with limit',
-      method: 'POST' as const,
-      url: url,
-      body: JSON.stringify({ limit: limit || 100 }),
     },
   ];
   
