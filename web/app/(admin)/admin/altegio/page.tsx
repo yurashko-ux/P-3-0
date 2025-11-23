@@ -525,6 +525,24 @@ export default function AltegioLanding() {
               {clientsTestStatus.error && (
                 <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
                   {clientsTestStatus.error}
+                  {clientsTestStatus.error.includes('No company management rights') && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107', color: '#856404' }}>
+                      <strong>💡 Як вирішити помилку "No company management rights":</strong>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 22 }}>
+                        <li>Перейдіть в кабінет Altegio → Маркетплейс → Ваш додаток</li>
+                        <li>Відкрийте розділ "Доступ до API" (API Access)</li>
+                        <li>Переконайтеся, що у вашому USER_TOKEN включені права:
+                          <ul style={{ marginTop: 4, paddingLeft: 18 }}>
+                            <li>✅ Читання клієнтів (Read clients)</li>
+                            <li>✅ Читання записів (Read appointments)</li>
+                            <li>✅ Управління компанією (Company management)</li>
+                          </ul>
+                        </li>
+                        <li>Якщо права не налаштовані, оновіть токен або створіть новий з необхідними правами</li>
+                        <li>Після оновлення прав оновіть ALTEGIO_USER_TOKEN в Vercel environment variables</li>
+                      </ol>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -630,6 +648,24 @@ export default function AltegioLanding() {
               {appointmentsTestStatus.error && (
                 <div style={{ marginTop: 8, fontSize: '0.9em', opacity: 0.9 }}>
                   {appointmentsTestStatus.error}
+                  {appointmentsTestStatus.error.includes('No company management rights') && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff3cd', borderRadius: 6, border: '1px solid #ffc107', color: '#856404' }}>
+                      <strong>💡 Як вирішити помилку "No company management rights":</strong>
+                      <ol style={{ margin: '8px 0 0 0', paddingLeft: 22 }}>
+                        <li>Перейдіть в кабінет Altegio → Маркетплейс → Ваш додаток</li>
+                        <li>Відкрийте розділ "Доступ до API" (API Access)</li>
+                        <li>Переконайтеся, що у вашому USER_TOKEN включені права:
+                          <ul style={{ marginTop: 4, paddingLeft: 18 }}>
+                            <li>✅ Читання клієнтів (Read clients)</li>
+                            <li>✅ Читання записів (Read appointments)</li>
+                            <li>✅ Управління компанією (Company management)</li>
+                          </ul>
+                        </li>
+                        <li>Якщо права не налаштовані, оновіть токен або створіть новий з необхідними правами</li>
+                        <li>Після оновлення прав оновіть ALTEGIO_USER_TOKEN в Vercel environment variables</li>
+                      </ol>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
