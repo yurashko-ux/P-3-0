@@ -10,44 +10,106 @@ import type { Client } from './types';
  * @param limit - Максимальна кількість клієнтів для отримання (опціонально)
  */
 export async function getClients(companyId: number, limit?: number): Promise<Client[]> {
-  try {
-    // Згідно з документацією Altegio API, для отримання списку клієнтів використовується POST endpoint
-    // POST /company/{company_id}/clients з тілом запиту для фільтрації (може бути порожнім об'єктом)
-    const url = `/company/${companyId}/clients`;
-    
-    // Створюємо POST запит з пустим тілом (або можна додати параметри фільтрації)
-    const response = await altegioFetch<Client[] | { data?: Client[]; clients?: Client[]; items?: Client[] }>(
-      url,
-      {
-        method: 'POST',
-        body: JSON.stringify({}),
+  const url = `/company/${companyId}/clients`;
+  
+  // Спробуємо різні варіанти endpoint та методів
+  const attempts = [
+    // Варіант 1: GET запит (може працювати для деяких версій API)
+    {
+      name: 'GET request',
+      method: 'GET' as const,
+      url: url,
+      body: undefined,
+    },
+    // Варіант 2: POST з пустим тілом
+    {
+      name: 'POST with empty body',
+      method: 'POST' as const,
+      url: url,
+      body: JSON.stringify({}),
+    },
+    // Варіант 3: POST з параметрами пагінації
+    {
+      name: 'POST with pagination',
+      method: 'POST' as const,
+      url: url,
+      body: JSON.stringify({ page: 1, per_page: limit || 100 }),
+    },
+    // Варіант 4: Альтернативний endpoint (може бути /clients?company_id=...)
+    {
+      name: 'GET with query param',
+      method: 'GET' as const,
+      url: `/clients?company_id=${companyId}`,
+      body: undefined,
+    },
+  ];
+  
+  let lastError: Error | null = null;
+  
+  for (const attempt of attempts) {
+    try {
+      console.log(`[altegio/clients] Trying ${attempt.name} for company ${companyId}...`);
+      
+      const options: RequestInit = {
+        method: attempt.method,
+      };
+      
+      if (attempt.body) {
+        options.body = attempt.body;
       }
-    );
-    
-    let clients: Client[] = [];
-    if (Array.isArray(response)) {
-      clients = response;
-    } else if (response && typeof response === 'object') {
-      if ('data' in response && Array.isArray(response.data)) {
-        clients = response.data;
-      } else if ('clients' in response && Array.isArray(response.clients)) {
-        clients = response.clients;
-      } else if ('items' in response && Array.isArray(response.items)) {
-        clients = response.items;
+      
+      const response = await altegioFetch<Client[] | { data?: Client[]; clients?: Client[]; items?: Client[] }>(
+        attempt.url,
+        options
+      );
+      
+      let clients: Client[] = [];
+      if (Array.isArray(response)) {
+        clients = response;
+      } else if (response && typeof response === 'object') {
+        if ('data' in response && Array.isArray(response.data)) {
+          clients = response.data;
+        } else if ('clients' in response && Array.isArray(response.clients)) {
+          clients = response.clients;
+        } else if ('items' in response && Array.isArray(response.items)) {
+          clients = response.items;
+        }
       }
+      
+      // Якщо отримали клієнтів, повертаємо результат
+      if (clients.length > 0 || attempt === attempts[attempts.length - 1]) {
+        // Обмежуємо кількість, якщо вказано
+        if (limit && clients.length > limit) {
+          clients = clients.slice(0, limit);
+        }
+        
+        console.log(`[altegio/clients] ✅ Got ${clients.length} clients using ${attempt.name}`);
+        return clients;
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.log(`[altegio/clients] ❌ ${attempt.name} failed:`, errorMessage);
+      lastError = err instanceof Error ? err : new Error(String(err));
+      
+      // Якщо це помилка прав доступу, продовжуємо спроби
+      if (errorMessage.includes('403') || errorMessage.includes('No company management rights')) {
+        continue;
+      }
+      
+      // Для інших помилок (крім прав доступу) продовжуємо спроби
+      continue;
     }
-    
-    // Обмежуємо кількість, якщо вказано
-    if (limit && clients.length > limit) {
-      clients = clients.slice(0, limit);
-    }
-    
-    console.log(`[altegio/clients] Got ${clients.length} clients for company ${companyId}`);
-    return clients;
-  } catch (err) {
-    console.error(`[altegio/clients] Failed to get clients for company ${companyId}:`, err);
-    throw err;
   }
+  
+  // Якщо всі спроби не вдалися
+  if (lastError) {
+    console.error(`[altegio/clients] All attempts failed for company ${companyId}`);
+    throw lastError;
+  }
+  
+  // Якщо нічого не знайдено, повертаємо порожній масив
+  console.log(`[altegio/clients] No clients found for company ${companyId}`);
+  return [];
 }
 
 /**
