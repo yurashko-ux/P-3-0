@@ -1,8 +1,11 @@
-# Запит до техпідтримки Alteg.io API
+image.png# Запит до техпідтримки Alteg.io API
 
 ## Проблема
 
-Отримую помилку `401 Unauthorized: {"success":false,"data":null,"meta":{"message":"Partner ID not specified"}}` при спробі підключення до API для непублічної програми.
+Отримую помилку `403 Forbidden: {"success":false,"data":null,"meta":{"message":"No company management rights"}}` при спробі отримати клієнтів або записи через API для непублічної програми.
+
+**Статус авторизації**: ✅ Вирішено (Partner ID issue)
+**Поточна проблема**: ❌ Немає прав доступу до клієнтів та записів
 
 ## Контекст
 
@@ -111,11 +114,46 @@ Content-Type: application/json
 
 - Webhook URL налаштовано в маркетплейсі: `https://our-domain.vercel.app/api/altegio/webhook`
 - User Token отримано в розділі "Доступ до API" маркетплейсу Alteg.io
-- Права доступу налаштовані для User Token
+- **Права доступу налаштовані для User Token в інтерфейсі Altegio (всі права включені)**
+- ✅ **GET /companies** - працює (отримуємо компанію 1169323)
+- ❌ **POST /company/1169323/clients** - 403 Forbidden: No company management rights
+- ❌ **GET /company/1169323/appointments** - 403 Forbidden: No company management rights
+
+## Поточна проблема
+
+Після того, як ми вирішили проблему з Partner ID, API почав повертати `401 Unauthorized: Partner ID not specified` → `403 Forbidden: No company management rights`.
+
+**Що працює:**
+- ✅ Отримання інформації про компанію (`GET /companies`)
+- ✅ Авторизація (Authorization header приймається)
+
+**Що НЕ працює:**
+- ❌ Отримання списку клієнтів (`POST /company/1169323/clients` або `GET /company/1169323/clients`)
+- ❌ Отримання записів (`GET /company/1169323/appointments`)
+
+**Спробовані методи отримання клієнтів:**
+1. `GET /company/1169323/clients` → `405 Method Not Allowed`
+2. `POST /company/1169323/clients` → `403 Forbidden: No company management rights`
+3. `POST /clients` з `company_id: 1169323` в body → `403 Forbidden: No company management rights`
+4. `GET /clients?company_id=1169323` → `404 Not Found`
+
+**Спробовані методи отримання записів:**
+1. `GET /company/1169323/appointments` → `403 Forbidden: No company management rights`
+
+## Питання до підтримки
+
+1. Чому API повертає `403 Forbidden: No company management rights`, якщо всі права включені в інтерфейсі Altegio для User Token?
+2. Чи потрібні додаткові налаштування для непублічних програм?
+3. Які саме права мають бути включені для доступу до клієнтів та записів?
+4. Чи може бути проблема в тому, що User Token було створено до включення прав, і потрібен новий токен?
+5. Який правильний endpoint та метод HTTP для отримання клієнтів компанії?
 
 ## Очікувана поведінка
 
-Очікую, що з правильним форматом Authorization header та Partner ID API повинен повернути список компаній (салонів) для даної філії.
+Очікую, що з правильним форматом Authorization header та налаштованими правами API повинен:
+- ✅ Отримати список клієнтів компанії (`/company/1169323/clients`)
+- ✅ Отримати список записів компанії (`/company/1169323/appointments`)
+- ✅ Отримати інформацію про клієнта разом з кастомними полями (зокрема, Instagram username)
 
 ---
 

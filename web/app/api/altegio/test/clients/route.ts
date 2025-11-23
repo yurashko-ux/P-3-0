@@ -67,12 +67,16 @@ export async function GET(req: NextRequest) {
         source = 'via_appointments';
         console.log(`[altegio/test/clients] ✅ Got ${clients.length} clients via appointments`);
       } catch (appointmentsErr) {
-        console.error('[altegio/test/clients] Appointments fallback also failed:', appointmentsErr);
-        // Якщо і appointments не працюють, повертаємо помилку
+        const appointmentsErrorMessage = appointmentsErr instanceof Error ? appointmentsErr.message : String(appointmentsErr);
+        console.error('[altegio/test/clients] Appointments fallback also failed:', appointmentsErrorMessage);
+        
+        // Якщо і appointments не працюють, повертаємо детальну помилку
         return NextResponse.json({
           ok: false,
-          error: `Direct API error: ${errorMessage}. Appointments fallback also failed.`,
+          error: `Direct API error: ${errorMessage}. Appointments fallback also failed: ${appointmentsErrorMessage}`,
           directError: errorMessage,
+          appointmentsError: appointmentsErrorMessage,
+          recommendation: 'Перевірте логи Vercel для деталей. Можливо, потрібно звернутися до підтримки Altegio щодо прав доступу для непублічних програм.',
         }, { status: 500 });
       }
     }
