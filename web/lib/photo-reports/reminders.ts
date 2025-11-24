@@ -23,26 +23,29 @@ export async function sendReminderMessage(
     `Будь ласка, надішліть фото прямо в цей чат до завершення візиту.`,
   ].join("\n");
 
+  // Зберігаємо pending request, щоб знати, що чекаємо фото
+  await rememberPendingPhotoRequest(chatId, appointment);
+
   return sendMessage(chatId, text, {
     reply_markup: {
-      inline_keyboard: [
+      keyboard: [
         [
           {
-            text: "📸 Надіслати фото",
-            callback_data: `photo:${appointment.id}`,
+            text: "📸 Зробити фото",
+            request_photo: true,
           },
         ],
         [
           {
-            text: "⏰ Нагадати через 5 хв",
-            callback_data: `remind:${appointment.id}`,
+            text: `⏰ Нагадати через 5 хв (${appointment.id})`,
           },
           {
-            text: "❌ Клієнт пішов",
-            callback_data: `missed:${appointment.id}`,
+            text: `❌ Клієнт пішов (${appointment.id})`,
           },
         ],
       ],
+      resize_keyboard: true,
+      one_time_keyboard: false,
     },
   });
 }

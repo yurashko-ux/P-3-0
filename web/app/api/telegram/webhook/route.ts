@@ -82,9 +82,46 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   }
 
   if (message.text) {
+    // Обробка кнопок з Reply Keyboard
+    if (message.text.includes("⏰ Нагадати через 5 хв")) {
+      const appointmentId = message.text.match(/\(([^)]+)\)$/)?.[1];
+      if (appointmentId) {
+        const appointment = findAppointmentById(appointmentId);
+        if (appointment) {
+          await sendMessage(
+            chatId,
+            `Нагадування для клієнта ${appointment.clientName} повторимо через кілька хвилин.`
+          );
+          return;
+        }
+      }
+    }
+
+    if (message.text.includes("❌ Клієнт пішов")) {
+      const appointmentId = message.text.match(/\(([^)]+)\)$/)?.[1];
+      if (appointmentId) {
+        const appointment = findAppointmentById(appointmentId);
+        if (appointment) {
+          await notifyAdminsPlaceholder(
+            `⚠️ ${appointment.masterName} зазначив, що клієнт ${appointment.clientName} пішов без фото.`
+          );
+          await sendMessage(
+            chatId,
+            "Адміністратор сповіщений. Дякую за інформацію!",
+            {
+              reply_markup: {
+                remove_keyboard: true,
+              },
+            }
+          );
+          return;
+        }
+      }
+    }
+
     await sendMessage(
       chatId,
-      "Надішли фото у відповідь на нагадування або дочекайся нового нагадування."
+      "Надішли фото через кнопку «📸 Зробити фото» або дочекайся нового нагадування."
     );
   }
 }
@@ -113,14 +150,77 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
   }
 
   switch (action) {
-    case "photo":
-      await rememberPendingPhotoRequest(chatId, appointment);
+    case "send_photo": {
+      const [, , fileId] = data.split(":");
+      if (!fileId) {
+        await answerCallbackQuery(callback.id, {
+          text: "Помилка: не знайдено фото",
+          show_alert: true,
+        });
+        return;
+      }
+
+      const pending = await getPendingRequestForChat(chatId);
+      if (!pending) {
+        await answerCallbackQuery(callback.id, {
+          text: "Нагадування вже неактивне",
+          show_alert: true,
+        });
+        return;
+      }
+
+      const reportId = randomUUID();
+      const report = {
+        id: reportId,
+        appointmentId: pending.appointment.id,
+        masterId: pending.masterId,
+        masterName: pending.appointment.masterName,
+        clientName: pending.appointment.clientName,
+        serviceName: pending.appointment.serviceName,
+        createdAt: new Date().toISOString(),
+        telegramFileId: fileId,
+        telegramMessageId: callback.message?.message_id || 0,
+        caption: undefined,
+      };
+
+      await resolvePhotoReport(chatId, report);
+
       await answerCallbackQuery(callback.id, {
-        text: "Надішліть фото у відповідь на це повідомлення",
+        text: "✅ Фото відправлено в групу!",
       });
+
       await sendMessage(
         chatId,
-        `Чекаю на фото клієнта ${appointment.clientName}. Просто відправ його у відповідь.`
+        `✅ Дякую! Фото по клієнту <b>${pending.appointment.clientName}</b> відправлено адміністраторам.`,
+        {
+          reply_markup: {
+            remove_keyboard: true,
+          },
+        }
+      );
+
+      await forwardPhotoToReportGroup(
+        fileId,
+        [
+          `📷 <b>${pending.appointment.masterName}</b>`,
+          `<b>Клієнт:</b> ${pending.appointment.clientName}`,
+          `<b>Процедура:</b> ${pending.appointment.serviceName}`,
+          `<b>Час:</b> ${new Date().toLocaleString("uk-UA")}`,
+        ].join("\n")
+      );
+      break;
+    }
+
+    case "cancel_photo":
+      await answerCallbackQuery(callback.id, { text: "Скасовано" });
+      await sendMessage(
+        chatId,
+        "Фото не відправлено. Можете надіслати його пізніше.",
+        {
+          reply_markup: {
+            remove_keyboard: true,
+          },
+        }
       );
       break;
 
@@ -137,6 +237,15 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
       await notifyAdminsPlaceholder(
         `⚠️ ${appointment.masterName} зазначив, що клієнт ${appointment.clientName} пішов без фото.`
       );
+      await sendMessage(
+        chatId,
+        "Адміністратор сповіщений. Дякую за інформацію!",
+        {
+          reply_markup: {
+            remove_keyboard: true,
+          },
+        }
+      );
       break;
 
     default:
@@ -151,7 +260,12 @@ async function processPhotoMessage(message: NonNullable<TelegramUpdate["message"
   if (!pending) {
     await sendMessage(
       chatId,
-      "Не знайдено активного нагадування. Натисніть «📸 Надіслати фото» у повідомленні-нагадуванні."
+      "Не знайдено активного нагадування. Дочекайтеся нового нагадування та натисніть «📸 Зробити фото».",
+      {
+        reply_markup: {
+          remove_keyboard: true,
+        },
+      }
     );
     return;
   }
@@ -163,35 +277,28 @@ async function processPhotoMessage(message: NonNullable<TelegramUpdate["message"
     return;
   }
 
-  const reportId = randomUUID();
-  const report = {
-    id: reportId,
-    appointmentId: pending.appointment.id,
-    masterId: pending.masterId,
-    masterName: pending.appointment.masterName,
-    clientName: pending.appointment.clientName,
-    serviceName: pending.appointment.serviceName,
-    createdAt: new Date().toISOString(),
-    telegramFileId: bestPhoto.file_id,
-    telegramMessageId: message.message_id,
-    caption: message.caption,
-  };
-
-  await resolvePhotoReport(chatId, report);
-
+  // Показуємо кнопку "Відправити в групу" після отримання фото
   await sendMessage(
     chatId,
-    `Дякую! Фото по клієнту ${pending.appointment.clientName} отримано.`
-  );
-
-  await forwardPhotoToReportGroup(
-    bestPhoto.file_id,
-    [
-      `📷 <b>${pending.appointment.masterName}</b>`,
-      `<b>Клієнт:</b> ${pending.appointment.clientName}`,
-      `<b>Процедура:</b> ${pending.appointment.serviceName}`,
-      `<b>Час:</b> ${new Date().toLocaleString("uk-UA")}`,
-    ].join("\n")
+    `✅ Фото отримано!\n\nКлієнт: <b>${pending.appointment.clientName}</b>\nПроцедура: <b>${pending.appointment.serviceName}</b>\n\nНатисніть «✅ Відправити в групу», щоб надіслати фото адміністраторам.`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "✅ Відправити в групу",
+              callback_data: `send_photo:${pending.appointment.id}:${bestPhoto.file_id}`,
+            },
+          ],
+          [
+            {
+              text: "❌ Скасувати",
+              callback_data: `cancel_photo:${pending.appointment.id}`,
+            },
+          ],
+        ],
+      },
+    }
   );
 }
 
