@@ -15,7 +15,6 @@ import {
   notifyAdminsPlaceholder,
 } from "@/lib/photo-reports/reminders";
 import { addPhotoToPendingRequest, clearPendingPhotoRequest } from "@/lib/photo-reports/store";
-import { addPhotoToPendingRequest } from "@/lib/photo-reports/store";
 import {
   findAppointmentById,
   findMasterByUsername,
