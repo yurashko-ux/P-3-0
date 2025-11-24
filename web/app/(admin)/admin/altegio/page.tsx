@@ -758,11 +758,29 @@ export default function AltegioLanding() {
             Вона покаже всі деталі помилки в одному місці.
           </p>
           <button
-            onClick={() => {
+            onClick={async () => {
+              // Отримуємо актуальні дані з діагностики
+              let diagnosticsData: any = null;
+              try {
+                const diagRes = await fetch('/api/altegio/diagnostics', { cache: 'no-store' });
+                const diagJson = await diagRes.json();
+                if (diagJson.ok && diagJson.diagnostics) {
+                  diagnosticsData = diagJson.diagnostics;
+                }
+              } catch (err) {
+                console.warn('Failed to get diagnostics:', err);
+              }
+
               // Створюємо великий блок з усіма деталями
+              const companyId = diagnosticsData?.environment?.companyId || '1169323';
+              const partnerToken = diagnosticsData?.environment?.partnerTokenFull || '[PARTNER_TOKEN]';
+              const userTokenPreview = diagnosticsData?.environment?.userTokenPreview || '[USER_TOKEN]';
+              const applicationId = diagnosticsData?.environment?.applicationId || '[APPLICATION_ID]';
+              const partnerId = diagnosticsData?.environment?.partnerId || '[PARTNER_ID]';
+              
               const errorDetails = {
                 timestamp: new Date().toISOString(),
-                companyId: process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || '1169323',
+                companyId: companyId,
                 errors: {
                   clients: clientsTestStatus.error || 'Not tested',
                   appointments: appointmentsTestStatus.error || 'Not tested',
@@ -772,9 +790,10 @@ export default function AltegioLanding() {
                 },
                 attemptedEndpoints: [
                   'POST /api/v1/clients (with company_id in body)',
-                  'POST /api/v1/company/1169323/clients',
-                  'GET /api/v1/company/1169323/appointments',
+                  `POST /api/v1/company/${companyId}/clients`,
+                  `GET /api/v1/company/${companyId}/appointments`,
                 ],
+                diagnostics: diagnosticsData,
               };
 
               // Відкриваємо нове вікно з деталями для скріншота
@@ -845,25 +864,32 @@ export default function AltegioLanding() {
                       <h2>🔧 Request Details</h2>
                       <div class="info">
                         <strong>Authorization Header Format:</strong><br>
-                        <code>Bearer 48kfgfmy8s7u84ruhtju, User [USER_TOKEN]</code>
+                        <code>${errorDetails.diagnostics?.headers?.authorization || 'Bearer [PARTNER_TOKEN], User [USER_TOKEN]'}</code>
                       </div>
                       <div class="info">
                         <strong>Headers:</strong><br>
                         <pre>Accept: application/vnd.api.v2+json
 Content-Type: application/json
-Authorization: Bearer 48kfgfmy8s7u84ruhtju, User [USER_TOKEN]
-X-Partner-ID: 784
-X-Application-ID: 1195</pre>
+Authorization: ${errorDetails.diagnostics?.headers?.authorization || 'Bearer [PARTNER_TOKEN], User [USER_TOKEN]'}
+X-Partner-ID: ${errorDetails.diagnostics?.headers?.xPartnerId || '[PARTNER_ID]'}
+X-Application-ID: ${errorDetails.diagnostics?.headers?.xApplicationId || '[APPLICATION_ID]'}</pre>
                       </div>
                     </div>
 
                     <div class="card">
                       <h2>📝 Application Details</h2>
-                      <pre>Application ID: 1195
-Partner ID: 784
-Company ID: 1169323
+                      <pre>Application ID: ${errorDetails.diagnostics?.environment?.applicationId || '[APPLICATION_ID]'}
+Partner ID: ${errorDetails.diagnostics?.environment?.partnerId || '[PARTNER_ID]'}
+Company ID: ${errorDetails.companyId}
 Application Type: Non-public</pre>
                     </div>
+                    
+                    ${errorDetails.diagnostics ? `
+                    <div class="card">
+                      <h2>🔍 Full Diagnostics</h2>
+                      <pre>${JSON.stringify(errorDetails.diagnostics, null, 2)}</pre>
+                    </div>
+                    ` : ''}
 
                     <div class="card">
                       <h2>💡 Next Steps</h2>
