@@ -63,6 +63,18 @@ export function altegioHeaders(includeUserToken = true) {
     throw new Error("ALTEGIO_USER_TOKEN is required. Please set it in environment variables.");
   }
   
+  // Діагностика: перевіряємо наявність всіх токенів
+  console.log('[altegio/env] Token check:', {
+    hasUserToken: !!ALTEGIO_ENV.USER_TOKEN,
+    userTokenLength: ALTEGIO_ENV.USER_TOKEN?.length || 0,
+    hasPartnerToken: !!ALTEGIO_ENV.PARTNER_TOKEN,
+    partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN?.length || 0,
+    hasApplicationId: !!ALTEGIO_ENV.APPLICATION_ID,
+    applicationId: ALTEGIO_ENV.APPLICATION_ID || 'not set',
+    hasPartnerId: !!ALTEGIO_ENV.PARTNER_ID,
+    partnerId: ALTEGIO_ENV.PARTNER_ID || 'not set',
+  });
+  
   // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token, використовуємо його разом з User Token
   // Partner Token може бути присутній і для непублічних програм
   // Якщо Partner Token не вказано, використовуємо тільки User Token
