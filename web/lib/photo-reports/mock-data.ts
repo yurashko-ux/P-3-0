@@ -81,5 +81,14 @@ export const MOCK_APPOINTMENTS: AppointmentReminder[] = [
     startAt: addMinutes(now, -20),
     endAt: addMinutes(now, 20),
   },
+  {
+    id: "apt-1004",
+    clientName: "Тестовий клієнт",
+    serviceName: "Нарощення волосся (тест)",
+    masterId: "master-test",
+    masterName: "Тестовий майстер (Mykolay)",
+    startAt: addMinutes(now, -10),
+    endAt: addMinutes(now, 15),
+  },
 ];
 
