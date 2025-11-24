@@ -101,12 +101,12 @@ export async function forwardMultiplePhotosToReportGroup(
     return;
   }
 
-  // Відправляємо перше фото з підписом
-  await sendPhoto(TELEGRAM_ENV.REPORT_GROUP_ID, photoFileIds[0], { caption });
-
-  // Відправляємо решту фото без підпису
-  for (let i = 1; i < photoFileIds.length; i++) {
+  // Відправляємо всі фото без підпису, крім останнього
+  for (let i = 0; i < photoFileIds.length - 1; i++) {
     await sendPhoto(TELEGRAM_ENV.REPORT_GROUP_ID, photoFileIds[i]);
   }
+
+  // Відправляємо останнє фото з підписом
+  await sendPhoto(TELEGRAM_ENV.REPORT_GROUP_ID, photoFileIds[photoFileIds.length - 1], { caption });
 }
 
