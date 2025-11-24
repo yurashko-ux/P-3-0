@@ -12,8 +12,9 @@ export async function POST(req: NextRequest) {
   try {
     assertTelegramEnv();
 
-    const { minutesAhead = 20 } = (await req.json().catch(() => ({}))) as {
+    const { minutesAhead = 20, testChatId } = (await req.json().catch(() => ({}))) as {
       minutesAhead?: number;
+      testChatId?: number; // Для тестування: якщо вказано, використовуємо цей chatId для всіх нагадувань
     };
 
     const appointments = getUpcomingMockAppointmentsBuffer(minutesAhead);
@@ -31,7 +32,12 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const chatId = await getChatIdForMaster(appointment.masterId);
+      // Якщо вказано testChatId, використовуємо його для тестування
+      let chatId = testChatId;
+      if (!chatId) {
+        chatId = await getChatIdForMaster(appointment.masterId);
+      }
+      
       if (!chatId) {
         results.push({
           appointmentId: appointment.id,
