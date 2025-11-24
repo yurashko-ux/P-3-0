@@ -2,9 +2,21 @@ import { AppointmentReminder, MasterProfile } from "./types";
 
 export const MOCK_MASTERS: MasterProfile[] = [
   {
+    id: "master-test",
+    name: "Тестовий майстер (Mykolay)",
+    telegramUsername: "Mykolay007",
+    role: "master",
+  },
+  {
     id: "master-olena",
     name: "Олена",
     telegramUsername: "o_sarbeeva",
+    role: "master",
+  },
+  {
+    id: "master-tester",
+    name: "Mykolay (тест-режим)",
+    telegramUsername: "Mykolay007",
     role: "master",
   },
   {
