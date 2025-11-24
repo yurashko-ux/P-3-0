@@ -21,16 +21,43 @@ export async function GET(req: NextRequest) {
     // Формуємо URL для тестового запиту
     const testUrl = altegioUrl(`/company/${companyId}/clients`);
     
+    // Формуємо повний Authorization header для показу (з частковим USER_TOKEN)
+    let authorizationHeaderFull = 'not set';
+    if (headers.Authorization) {
+      const authHeader = headers.Authorization;
+      // Показуємо повний header, але з частковим USER_TOKEN для безпеки
+      if (authHeader.includes('User ')) {
+        const parts = authHeader.split('User ');
+        if (parts.length === 2) {
+          const userToken = parts[1];
+          // Показуємо перші 10 і останні 4 символи USER_TOKEN
+          const userTokenPreview = userToken.length > 14 
+            ? `${userToken.substring(0, 10)}...${userToken.substring(userToken.length - 4)}`
+            : userToken.substring(0, 10) + '...';
+          authorizationHeaderFull = `${parts[0]}User ${userTokenPreview}`;
+        } else {
+          authorizationHeaderFull = authHeader.substring(0, 100) + '...';
+        }
+      } else {
+        authorizationHeaderFull = authHeader.substring(0, 100) + '...';
+      }
+    }
+
     // Збираємо всю діагностичну інформацію
     const diagnostics = {
       timestamp: new Date().toISOString(),
       environment: {
         hasUserToken: !!ALTEGIO_ENV.USER_TOKEN,
         userTokenLength: ALTEGIO_ENV.USER_TOKEN?.length || 0,
-        userTokenPreview: ALTEGIO_ENV.USER_TOKEN ? ALTEGIO_ENV.USER_TOKEN.substring(0, 10) + '...' : 'not set',
+        userTokenPreview: ALTEGIO_ENV.USER_TOKEN 
+          ? `${ALTEGIO_ENV.USER_TOKEN.substring(0, 10)}...${ALTEGIO_ENV.USER_TOKEN.substring(ALTEGIO_ENV.USER_TOKEN.length - 4)}`
+          : 'not set',
         hasPartnerToken: !!ALTEGIO_ENV.PARTNER_TOKEN,
         partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN?.length || 0,
-        partnerTokenPreview: ALTEGIO_ENV.PARTNER_TOKEN ? ALTEGIO_ENV.PARTNER_TOKEN.substring(0, 10) + '...' : 'not set',
+        partnerTokenPreview: ALTEGIO_ENV.PARTNER_TOKEN 
+          ? `${ALTEGIO_ENV.PARTNER_TOKEN.substring(0, 10)}...${ALTEGIO_ENV.PARTNER_TOKEN.substring(ALTEGIO_ENV.PARTNER_TOKEN.length - 4)}`
+          : 'not set',
+        partnerTokenFull: ALTEGIO_ENV.PARTNER_TOKEN || 'not set', // Повний PARTNER_TOKEN (він не секретний)
         hasApplicationId: !!ALTEGIO_ENV.APPLICATION_ID,
         applicationId: ALTEGIO_ENV.APPLICATION_ID || 'not set',
         hasPartnerId: !!ALTEGIO_ENV.PARTNER_ID,
@@ -41,10 +68,25 @@ export async function GET(req: NextRequest) {
       headers: {
         accept: headers.Accept,
         contentType: headers['Content-Type'],
-        authorization: headers.Authorization ? headers.Authorization.substring(0, 80) + '...' : 'not set',
+        authorization: authorizationHeaderFull,
+        authorizationFormat: headers.Authorization 
+          ? (headers.Authorization.includes('User ') 
+              ? 'Bearer <PARTNER_TOKEN>, User <USER_TOKEN>' 
+              : 'Bearer <USER_TOKEN>')
+          : 'not set',
         xPartnerId: headers['X-Partner-ID'] || 'not set',
+        xApplicationId: headers['X-Application-ID'] || 'not set',
         partnerId: headers['Partner-ID'] || 'not set',
         allHeaderKeys: Object.keys(headers),
+      },
+      tokenExplanation: {
+        partnerToken: ALTEGIO_ENV.PARTNER_TOKEN 
+          ? `Bearer token (${ALTEGIO_ENV.PARTNER_TOKEN}) - це ALTEGIO_PARTNER_TOKEN з environment variables`
+          : 'PARTNER_TOKEN не встановлено',
+        userToken: ALTEGIO_ENV.USER_TOKEN
+          ? `User token (${ALTEGIO_ENV.USER_TOKEN.substring(0, 10)}...${ALTEGIO_ENV.USER_TOKEN.substring(ALTEGIO_ENV.USER_TOKEN.length - 4)}) - це ALTEGIO_USER_TOKEN з environment variables`
+          : 'USER_TOKEN не встановлено',
+        note: 'USER_TOKEN показується частково для безпеки, але він використовується в Authorization header',
       },
       testRequest: {
         url: testUrl,
