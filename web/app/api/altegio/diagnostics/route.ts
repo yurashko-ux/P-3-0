@@ -53,8 +53,12 @@ export async function GET(req: NextRequest) {
       },
       recommendations: [
         'Перевірте, чи USER_TOKEN має права доступу до компанії в Altegio',
-        'Перевірте, чи Application ID (1195) правильний для вашої непублічної програми',
-        'Перевірте, чи Company ID (1169323) правильний для вашої філії',
+        ALTEGIO_ENV.APPLICATION_ID 
+          ? `Перевірте, чи Application ID (${ALTEGIO_ENV.APPLICATION_ID}) правильний для вашої непублічної програми`
+          : 'Перевірте, чи Application ID встановлено в environment variables',
+        companyId !== '1169323' || ALTEGIO_ENV.PARTNER_ID
+          ? `Перевірте, чи Company ID (${companyId}) та Partner ID (${ALTEGIO_ENV.PARTNER_ID || 'not set'}) правильні для вашої філії`
+          : 'Перевірте, чи Company ID та Partner ID правильні для вашої філії',
         'Можливо, потрібно надати додаткові права користувачу в Altegio',
         'Спробуйте перегенерувати USER_TOKEN в Altegio Marketplace',
       ],
