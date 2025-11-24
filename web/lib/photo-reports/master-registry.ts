@@ -54,7 +54,8 @@ export async function getRegisteredMasterByChatId(chatId: number) {
 
 export async function listRegisteredChats() {
   const all = await kv.hgetall<ChatRegistryEntry>(CHAT_INDEX_KEY);
-  return all ? (Object.values(all) as ChatRegistryEntry[]) : [];
+  if (!all) return [];
+  return Object.values(all) as unknown as ChatRegistryEntry[];
 }
 
 export async function getChatIdForMaster(masterId: string) {
