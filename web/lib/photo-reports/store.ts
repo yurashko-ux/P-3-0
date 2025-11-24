@@ -13,6 +13,7 @@ export type PendingPhotoRequest = {
   masterId: string;
   appointment: AppointmentReminder;
   createdAt: string;
+  photoFileIds: string[]; // Масив ID фото, які очікують відправки
 };
 
 export async function savePendingPhotoRequest(
@@ -32,7 +33,32 @@ export async function clearPendingPhotoRequest(chatId: number) {
 }
 
 export async function savePhotoReport(report: PhotoReport) {
+  // Зберігаємо перше фото для сумісності
+  if (!report.telegramFileId && report.telegramFileIds?.length > 0) {
+    report.telegramFileId = report.telegramFileIds[0];
+  }
   await kv.set(reportKey(report.appointmentId), report);
+}
+
+export async function addPhotoToPendingRequest(
+  chatId: number,
+  photoFileId: string
+): Promise<boolean> {
+  const pending = await getPendingPhotoRequest(chatId);
+  if (!pending) {
+    return false;
+  }
+  
+  if (!pending.photoFileIds) {
+    pending.photoFileIds = [];
+  }
+  
+  if (!pending.photoFileIds.includes(photoFileId)) {
+    pending.photoFileIds.push(photoFileId);
+    await savePendingPhotoRequest(pending);
+  }
+  
+  return true;
 }
 
 export async function getPhotoReportByAppointmentId(appointmentId: string) {
