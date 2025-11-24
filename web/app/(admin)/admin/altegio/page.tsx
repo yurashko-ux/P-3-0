@@ -52,6 +52,8 @@ export default function AltegioLanding() {
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
 
   useEffect(() => {
     // Завжди використовуємо production URL для webhook
@@ -92,6 +94,28 @@ export default function AltegioLanding() {
         message: 'Помилка з\'єднання',
         error: err instanceof Error ? err.message : 'Невідома помилка',
       });
+    }
+  }
+
+  async function getDiagnostics() {
+    setDiagnostics(null);
+    try {
+      const res = await fetch('/api/altegio/diagnostics', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.ok && data.diagnostics) {
+        setDiagnostics(data.diagnostics);
+      }
+    } catch (err) {
+      console.error('Failed to get diagnostics:', err);
+    }
+  }
+
+  async function copyDiagnostics() {
+    if (diagnostics) {
+      const diagnosticsText = JSON.stringify(diagnostics, null, 2);
+      await navigator.clipboard.writeText(diagnosticsText);
+      setDiagnosticsCopied(true);
+      setTimeout(() => setDiagnosticsCopied(false), 2000);
     }
   }
 
@@ -427,23 +451,70 @@ export default function AltegioLanding() {
             <p style={{ marginBottom: 12 }}>
               Перевірка отримання клієнтів та кастомного поля "Instagram user name" через API.
             </p>
-            <button
-              onClick={testClients}
-              disabled={clientsTestStatus.loading}
-              style={{
-                padding: '10px 20px',
-                background: '#2a6df5',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                fontWeight: 600,
-                cursor: clientsTestStatus.loading ? 'not-allowed' : 'pointer',
-                opacity: clientsTestStatus.loading ? 0.6 : 1,
-              }}
-            >
-              {clientsTestStatus.loading ? 'Перевірка...' : 'Отримати клієнтів'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={testClients}
+                disabled={clientsTestStatus.loading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#2a6df5',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: clientsTestStatus.loading ? 'not-allowed' : 'pointer',
+                  opacity: clientsTestStatus.loading ? 0.6 : 1,
+                }}
+              >
+                {clientsTestStatus.loading ? 'Перевірка...' : 'Отримати клієнтів'}
+              </button>
+              <button
+                onClick={getDiagnostics}
+                style={{
+                  padding: '10px 20px',
+                  background: '#6b7280',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🔍 Діагностика для підтримки
+              </button>
+            </div>
           </div>
+
+          {diagnostics && (
+            <div style={{ marginTop: 16, padding: 12, background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <strong>📋 Діагностична інформація для техпідтримки Altegio:</strong>
+                <button
+                  onClick={copyDiagnostics}
+                  style={{
+                    padding: '6px 12px',
+                    background: diagnosticsCopied ? '#22c55e' : '#3b82f6',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontSize: '0.85em',
+                  }}
+                >
+                  {diagnosticsCopied ? '✓ Скопійовано' : 'Скопіювати JSON'}
+                </button>
+              </div>
+              <div style={{ padding: 12, background: '#fff', borderRadius: 6, fontSize: '0.85em', maxHeight: '400px', overflowY: 'auto' }}>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {JSON.stringify(diagnostics, null, 2)}
+                </pre>
+              </div>
+              <p style={{ marginTop: 12, fontSize: '0.9em', color: '#6b7280' }}>
+                Скопіюйте цю інформацію та надішліть її в техпідтримку Altegio для діагностики проблеми з правами доступу.
+              </p>
+            </div>
+          )}
 
           {clientsTestStatus.ok !== null && (
             <div
