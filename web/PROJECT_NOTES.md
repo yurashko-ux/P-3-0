@@ -72,6 +72,18 @@
 - Формат фінансових звітів (готові шаблони чи дизайн з нуля) та потреба в історичних даних.
 - Налаштування моніторингу/алертів при збоях ETL або нагадувань.
 
+## Telegram бот для фото-звітів (mock-етап)
+- Додано модулі `lib/telegram/*` та `lib/photo-reports/*` для інтеграції з Telegram API без сторонніх SDK.
+- Вебхук: `POST /api/telegram/webhook` — приймає `/start`, callback-кнопки, фото, пересилає звіти у групу.
+- Тестовий тригер: `POST /api/telegram/mock-reminders` — розсилає нагадування по `MOCK_APPOINTMENTS`.
+- Статичний список майстрів/адмінів: `lib/photo-reports/mock-data.ts`. Після `/start` чат-айді зберігається в KV (`photo-reports:telegram:chats`).
+- Звіти та pending-запити лежать в KV (`photo-reports:*`), фото пересилаються в групу `TELEGRAM_PHOTO_GROUP_ID`.
+- Нові ENV:
+  - `TELEGRAM_BOT_TOKEN` — токен з BotFather (обов’язково).
+  - `TELEGRAM_PHOTO_GROUP_ID` — ID групи для фото (опційно, інакше лише ACK).
+  - `TELEGRAM_ADMIN_CHAT_IDS` — список chat_id для ескалацій (опційно).
+- TODO: підключити реальні дані з Altegio, додати UI у `/admin/altegio` для контролю фото-звітів.
+
 ## Корисні посилання та маршрути
 - ManyChat webhook: `POST /api/mc/manychat`.
 - Тестова ManyChat-сторінка: `/admin/debug` → «ManyChat інтеграція».
