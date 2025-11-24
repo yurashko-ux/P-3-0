@@ -57,6 +57,12 @@ export function assertAltegioEnv() {
 export function altegioHeaders(includeUserToken = true) {
   assertAltegioEnv();
   
+  // ВАЖЛИВО: Згідно з техпідтримкою Altegio, User_token обов'язковий для доступу до location
+  // Завжди перевіряємо, що USER_TOKEN присутній
+  if (!ALTEGIO_ENV.USER_TOKEN) {
+    throw new Error("ALTEGIO_USER_TOKEN is required. Please set it in environment variables.");
+  }
+  
   // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token, використовуємо його разом з User Token
   // Partner Token може бути присутній і для непублічних програм
   // Якщо Partner Token не вказано, використовуємо тільки User Token
