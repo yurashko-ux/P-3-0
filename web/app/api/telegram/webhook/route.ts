@@ -82,6 +82,30 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   }
 
   if (message.text) {
+    // Обробка кнопки "📸 Зробити фото"
+    if (message.text === "📸 Зробити фото" || message.text.includes("📸 Зробити фото")) {
+      const pending = await getPendingRequestForChat(chatId);
+      if (pending) {
+        await sendMessage(
+          chatId,
+          [
+            `📸 <b>Надішліть фото для клієнта ${pending.appointment.clientName}</b>`,
+            ``,
+            `Використайте кнопку камери 📷 внизу екрану або вкладення (📎) → Фото або Відео.`,
+            ``,
+            `Після надсилання фото з'явиться кнопка для відправки в групу.`,
+          ].join("\n")
+        );
+        return;
+      } else {
+        await sendMessage(
+          chatId,
+          "Немає активного запиту на фото. Дочекайтеся нагадування."
+        );
+        return;
+      }
+    }
+
     // Обробка кнопок з Reply Keyboard
     if (message.text.includes("⏰ Нагадати через 5 хв")) {
       const appointmentId = message.text.match(/\(([^)]+)\)$/)?.[1];
