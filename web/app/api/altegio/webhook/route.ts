@@ -1,132 +1,56 @@
 // web/app/api/altegio/webhook/route.ts
-// Webhook endpoint для отримання подій від Alteg.io
+// Webhook endpoint для отримання сповіщень від Altegio API
 
 import { NextRequest, NextResponse } from 'next/server';
-import { kvWrite } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
- * Webhook endpoint для отримання подій від Alteg.io
- * 
- * Alteg.io надсилає webhook при різних подіях:
- * - Створення/оновлення клієнтів
- * - Створення/оновлення записів
- * - Зміни в товарах/послугах
- * - Інші події
- * 
- * URL для налаштування: https://your-domain.vercel.app/api/altegio/webhook
+ * Webhook endpoint для Altegio
+ * Отримує сповіщення про події в Altegio (appointments, clients, etc.)
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     
-    // Перетворюємо Headers в об'єкт
-    const headers: Record<string, string> = {};
-    req.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
-    
-    // Зберігаємо останній webhook для діагностики
-    const timestamp = Date.now();
-    const webhookData = {
-      timestamp,
-      headers,
-      body,
-      received_at: new Date().toISOString(),
-    };
-    
-    // Зберігаємо в KV для перегляду в адмінці
-    await kvWrite.setRaw('altegio:last-webhook', JSON.stringify(webhookData));
-    
     console.log('[altegio/webhook] Received webhook:', {
-      timestamp,
-      type: body.type || body.event || 'unknown',
-      company_id: body.company_id || body.companyId,
-      event: body.event || body.type,
+      timestamp: new Date().toISOString(),
+      bodyKeys: Object.keys(body),
+      eventType: body.event || body.type || 'unknown',
     });
     
-    // Обробка різних типів подій
-    const eventType = body.type || body.event || 'unknown';
+    // Тут можна додати обробку різних типів подій від Altegio
+    // Наприклад: appointment.created, appointment.updated, client.created, etc.
     
-    switch (eventType) {
-      case 'client.created':
-      case 'client.updated':
-        // Подія по клієнту
-        await handleClientEvent(body);
-        break;
-        
-      case 'appointment.created':
-      case 'appointment.updated':
-        // Подія по запису
-        await handleAppointmentEvent(body);
-        break;
-        
-      case 'company.updated':
-        // Подія по компанії
-        await handleCompanyEvent(body);
-        break;
-        
-      default:
-        console.log('[altegio/webhook] Unknown event type:', eventType);
+    // Поки що просто логуємо отримані дані
+    if (body.event) {
+      console.log('[altegio/webhook] Event:', body.event, body);
     }
     
     // Повертаємо успішну відповідь
-    return NextResponse.json({
-      ok: true,
+    return NextResponse.json({ 
+      ok: true, 
       received: true,
-      event_type: eventType,
-      timestamp,
+      timestamp: new Date().toISOString(),
     });
-  } catch (err) {
-    console.error('[altegio/webhook] Error processing webhook:', err);
+  } catch (error) {
+    console.error('[altegio/webhook] Error processing webhook:', error);
     
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 }
-    );
+    // Важливо: повертаємо 200 OK навіть при помилці,
+    // щоб Altegio не намагався повторно надсилати webhook
+    return NextResponse.json({ 
+      ok: false, 
+      error: error instanceof Error ? error.message : String(error),
+    }, { status: 200 });
   }
 }
 
-/**
- * Обробка подій по клієнтам
- */
-async function handleClientEvent(data: any) {
-  console.log('[altegio/webhook] Client event:', {
-    client_id: data.client_id || data.clientId,
-    action: data.action || data.type,
+// GET для перевірки, що endpoint працює
+export async function GET(req: NextRequest) {
+  return NextResponse.json({ 
+    ok: true, 
+    message: 'Altegio webhook endpoint is active',
+    timestamp: new Date().toISOString(),
   });
-  
-  // Тут буде логіка обробки подій по клієнтах
-  // Наприклад: синхронізація з нашою БД
 }
-
-/**
- * Обробка подій по записах
- */
-async function handleAppointmentEvent(data: any) {
-  console.log('[altegio/webhook] Appointment event:', {
-    appointment_id: data.appointment_id || data.appointmentId,
-    action: data.action || data.type,
-  });
-  
-  // Тут буде логіка обробки подій по записах
-  // Наприклад: синхронізація з нашою БД
-}
-
-/**
- * Обробка подій по компаніях
- */
-async function handleCompanyEvent(data: any) {
-  console.log('[altegio/webhook] Company event:', {
-    company_id: data.company_id || data.companyId,
-    action: data.action || data.type,
-  });
-  
-  // Тут буде логіка обробки подій по компаніях
-}
-
