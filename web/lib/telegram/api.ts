@@ -86,3 +86,27 @@ export async function forwardPhotoToReportGroup(
   return sendPhoto(TELEGRAM_ENV.REPORT_GROUP_ID, photoFileId, { caption });
 }
 
+export async function forwardMultiplePhotosToReportGroup(
+  photoFileIds: string[],
+  caption: string
+) {
+  if (!TELEGRAM_ENV.REPORT_GROUP_ID) {
+    console.warn(
+      "[telegram] TELEGRAM_PHOTO_GROUP_ID not configured. Skipping forward."
+    );
+    return;
+  }
+
+  if (photoFileIds.length === 0) {
+    return;
+  }
+
+  // Відправляємо перше фото з підписом
+  await sendPhoto(TELEGRAM_ENV.REPORT_GROUP_ID, photoFileIds[0], { caption });
+
+  // Відправляємо решту фото без підпису
+  for (let i = 1; i < photoFileIds.length; i++) {
+    await sendPhoto(TELEGRAM_ENV.REPORT_GROUP_ID, photoFileIds[i]);
+  }
+}
+

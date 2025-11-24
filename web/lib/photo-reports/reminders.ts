@@ -60,6 +60,7 @@ export async function rememberPendingPhotoRequest(
     masterId: appointment.masterId,
     appointment,
     createdAt: new Date().toISOString(),
+    photoFileIds: [], // Починаємо з порожнього масиву
   });
 }
 

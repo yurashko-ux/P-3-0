@@ -26,7 +26,8 @@ export type PhotoReport = {
   clientName: string;
   serviceName: string;
   createdAt: string;
-  telegramFileId: string;
+  telegramFileId: string; // Перше фото (для сумісності)
+  telegramFileIds: string[]; // Всі фото
   telegramMessageId?: number;
   caption?: string;
 };
