@@ -16,7 +16,7 @@ export const MOCK_MASTERS: MasterProfile[] = [
   {
     id: "master-maryana",
     name: "Мар'яна",
-    telegramUsername: undefined,
+    telegramUsername: "maryana24021989",
     role: "master",
   },
   {
