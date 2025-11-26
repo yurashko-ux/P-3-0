@@ -16,16 +16,25 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /clients з company_id в тілі + параметри для отримання всіх полів
+    // Варіант 1: POST /clients з company_id в тілі (згідно з документацією: postGet a list of clients)
+    // Згідно з документацією: POST /clients з company_id в body
     {
-      name: 'POST /clients with company_id + fields',
+      name: 'POST /clients with company_id (doc standard)',
       method: 'POST' as const,
       url: `/clients`,
       body: JSON.stringify({ 
         company_id: companyId,
         ...(limit ? { limit } : {}),
-        // Спробуємо додати параметри для отримання всіх полів
-        fields: ['*'], // Запитуємо всі поля
+      }),
+    },
+    // Варіант 2: POST /clients з company_id + query params для полів
+    {
+      name: 'POST /clients with company_id + query fields',
+      method: 'POST' as const,
+      url: `/clients?fields[]=*&include[]=*`,
+      body: JSON.stringify({ 
+        company_id: companyId,
+        ...(limit ? { limit } : {}),
       }),
     },
     // Варіант 2: POST /clients з company_id в тілі (найбільш вірогідний згідно з документацією)
@@ -86,6 +95,23 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         attempt.url,
         options
       );
+      
+      // Детальне логування для діагностики
+      console.log(`[altegio/clients] Response from ${attempt.name}:`, {
+        isArray: Array.isArray(response),
+        responseType: typeof response,
+        responseKeys: response && typeof response === 'object' ? Object.keys(response) : [],
+        firstItemKeys: Array.isArray(response) && response[0] 
+          ? Object.keys(response[0]) 
+          : (response && typeof response === 'object' && 'data' in response && Array.isArray(response.data) && response.data[0])
+            ? Object.keys(response.data[0])
+            : [],
+        firstItemSample: Array.isArray(response) && response[0]
+          ? response[0]
+          : (response && typeof response === 'object' && 'data' in response && Array.isArray(response.data) && response.data[0])
+            ? response.data[0]
+            : null,
+      });
       
       let clients: Client[] = [];
       if (Array.isArray(response)) {
