@@ -775,6 +775,89 @@ export default function AltegioLanding() {
               )}
             </div>
           )}
+
+          {selectedClientDetails && (
+            <div style={{ marginTop: 24, padding: 16, background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: '1.2em' }}>🔍</span> Повна структура клієнта {selectedClientDetails.clientId}
+                </h3>
+                <button
+                  onClick={() => setSelectedClientDetails(null)}
+                  style={{
+                    padding: '6px 12px',
+                    background: '#6b7280',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    fontSize: '0.85em',
+                  }}
+                >
+                  ✕ Закрити
+                </button>
+              </div>
+
+              {selectedClientDetails.ok && selectedClientDetails.rawStructure && (
+                <div>
+                  <div style={{ marginBottom: 12, padding: 12, background: '#fff', borderRadius: 6, border: '1px solid #e0e7ef' }}>
+                    <strong style={{ display: 'block', marginBottom: 8 }}>📋 Повна raw структура:</strong>
+                    <pre style={{ 
+                      margin: 0, 
+                      padding: 12, 
+                      background: '#f8fafc', 
+                      borderRadius: 4, 
+                      fontSize: '0.85em', 
+                      maxHeight: '500px', 
+                      overflow: 'auto',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all'
+                    }}>
+                      {selectedClientDetails.rawStructure}
+                    </pre>
+                  </div>
+
+                  {selectedClientDetails.customFieldsData && (
+                    <div style={{ marginBottom: 12, padding: 12, background: '#dcfce7', borderRadius: 6, border: '1px solid #86efac' }}>
+                      <strong style={{ display: 'block', marginBottom: 8, color: '#166534' }}>✅ Custom Fields:</strong>
+                      <pre style={{ 
+                        margin: 0, 
+                        padding: 12, 
+                        background: '#fff', 
+                        borderRadius: 4, 
+                        fontSize: '0.85em', 
+                        maxHeight: '300px', 
+                        overflow: 'auto',
+                        whiteSpace: 'pre-wrap',
+                      }}>
+                        {JSON.stringify(selectedClientDetails.customFieldsData, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {selectedClientDetails.client?._meta && (
+                    <div style={{ marginTop: 12, padding: 12, background: '#fff', borderRadius: 6, border: '1px solid #e0e7ef' }}>
+                      <strong style={{ display: 'block', marginBottom: 8 }}>📊 Мета-інформація:</strong>
+                      <ul style={{ margin: 0, paddingLeft: 20, fontSize: '0.9em' }}>
+                        <li>Всього полів: {selectedClientDetails.client._meta.allKeys?.length || 0}</li>
+                        <li>Кастомні поля: {selectedClientDetails.client._meta.customFields?.length || 0}</li>
+                        <li>Має custom_fields: {selectedClientDetails.client._meta.hasCustomFields ? '✅ Так' : '❌ Ні'}</li>
+                        {selectedClientDetails.client._meta.customFieldsKeys && selectedClientDetails.client._meta.customFieldsKeys.length > 0 && (
+                          <li>Ключі custom_fields: {selectedClientDetails.client._meta.customFieldsKeys.join(', ')}</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!selectedClientDetails.ok && selectedClientDetails.error && (
+                <div style={{ padding: 12, background: '#fef2f2', borderRadius: 6, border: '1px solid #fca5a5', color: '#991b1b' }}>
+                  <strong>❌ Помилка:</strong> {selectedClientDetails.error}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
 
         {clientsDebug && (
