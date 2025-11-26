@@ -16,40 +16,50 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: GET /company/{id}/clients (за аналогією з /companies)
+    // Варіант 1: POST /company/{id}/clients з параметрами fields та include (спробуємо отримати всі поля)
     {
-      name: 'GET /company/{id}/clients',
-      method: 'GET' as const,
-      url: `/company/${companyId}/clients`,
-      body: undefined,
-    },
-    // Варіант 2: GET /clients?company_id={id}
-    {
-      name: 'GET /clients?company_id={id}',
-      method: 'GET' as const,
-      url: `/clients?company_id=${companyId}${limit ? `&limit=${limit}` : ''}`,
-      body: undefined,
-    },
-    // Варіант 3: POST /clients з company_id (згідно з документацією: postGet a list of clients)
-    {
-      name: 'POST /clients with company_id',
+      name: 'POST /company/{id}/clients with fields and include',
       method: 'POST' as const,
-      url: `/clients`,
-      body: JSON.stringify({ 
-        company_id: companyId,
+      url: `/company/${companyId}/clients?fields[]=*&include[]=*&with[]=*`,
+      body: JSON.stringify({
         ...(limit ? { limit } : {}),
       }),
     },
-    // Варіант 3: POST /company/{id}/clients з пустим тілом + query params
+    // Варіант 2: POST /company/{id}/clients з параметрами в body
     {
-      name: 'POST /company/{id}/clients with include',
+      name: 'POST /company/{id}/clients with fields in body',
       method: 'POST' as const,
-      url: `/company/${companyId}/clients?include[]=*&with[]=*`,
-      body: JSON.stringify({}),
+      url: `/company/${companyId}/clients`,
+      body: JSON.stringify({
+        fields: ['*'],
+        include: ['*'],
+        with: ['*'],
+        ...(limit ? { limit } : {}),
+      }),
     },
-    // Варіант 4: POST /company/{id}/clients з пустим тілом
+    // Варіант 3: POST /company/{id}/clients з explicit fields list
     {
-      name: 'POST /company/{id}/clients',
+      name: 'POST /company/{id}/clients with explicit fields',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients`,
+      body: JSON.stringify({
+        fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+        include: ['custom_fields'],
+        ...(limit ? { limit } : {}),
+      }),
+    },
+    // Варіант 4: POST /company/{id}/clients з query параметрами для полів
+    {
+      name: 'POST /company/{id}/clients with query fields',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients?fields=id,name,phone,email,custom_fields&include[]=custom_fields`,
+      body: JSON.stringify({
+        ...(limit ? { limit } : {}),
+      }),
+    },
+    // Варіант 5: POST /company/{id}/clients з пустим тілом (fallback - працює, але повертає тільки ID)
+    {
+      name: 'POST /company/{id}/clients (fallback - IDs only)',
       method: 'POST' as const,
       url: `/company/${companyId}/clients`,
       body: JSON.stringify({}),
