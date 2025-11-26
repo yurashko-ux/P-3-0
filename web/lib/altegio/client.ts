@@ -37,6 +37,8 @@ export async function altegioFetch<T = any>(
 ): Promise<T> {
   let url = altegioUrl(path);
   
+  console.log(`[altegio/client] Initial URL: ${url}, path: ${path}`);
+  
   // Partner ID може передаватися як query параметр або окремий заголовок
   // Для публічних програм: якщо є PARTNER_TOKEN
   // Для непублічних програм: якщо є APPLICATION_ID або PARTNER_ID (ID філії)
@@ -55,6 +57,9 @@ export async function altegioFetch<T = any>(
   if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=') && !hasCompanyIdInPath) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
+    console.log(`[altegio/client] Added partner_id to URL: ${url}`);
+  } else {
+    console.log(`[altegio/client] Skipped partner_id: hasCompanyIdInPath=${hasCompanyIdInPath}, url already has partner_id=${url.includes('partner_id=')}`);
   }
   
   const headers = altegioHeaders();
