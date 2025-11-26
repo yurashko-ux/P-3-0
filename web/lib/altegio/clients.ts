@@ -342,15 +342,25 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           
           if (client && client.id) {
             // Логуємо структуру для діагностики кастомних полів
-            console.log(`[altegio/clients] Client ${clientId} structure:`, {
+            console.log(`[altegio/clients] Client ${clientId} structure from ${url}:`, {
               keys: Object.keys(client),
               hasCustomFields: 'custom_fields' in client,
+              customFields: client.custom_fields || null,
+              customFieldsKeys: client.custom_fields ? Object.keys(client.custom_fields) : [],
               hasInstagramField: Object.keys(client).some(key => 
                 key.toLowerCase().includes('instagram')
               ),
-              url,
+              fullResponse: JSON.stringify(client, null, 2).substring(0, 500), // Перші 500 символів для діагностики
             });
-            return client;
+            
+            // Якщо отримали custom_fields, повертаємо клієнта
+            if (client.custom_fields) {
+              console.log(`[altegio/clients] ✅ Got custom_fields for client ${clientId}:`, Object.keys(client.custom_fields));
+              return client;
+            }
+            
+            // Якщо не отримали custom_fields, продовжуємо спроби з іншими URL
+            console.log(`[altegio/clients] ⚠️ No custom_fields in response from ${url}, trying next...`);
           }
         }
       } catch (err) {
