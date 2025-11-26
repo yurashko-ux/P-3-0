@@ -161,21 +161,27 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         
         // Перевіряємо, чи є повна інформація про клієнтів (не тільки ID)
         const firstClient = clients[0];
+        const hasOnlyIds = clients.length > 0 && clients.every((c: any) => {
+          // Перевіряємо, чи об'єкт має тільки поле 'id' або тільки числові ID
+          const keys = Object.keys(c);
+          return keys.length === 1 && keys[0] === 'id' && typeof c.id === 'number';
+        });
+        
         const hasFullInfo = firstClient && (
           firstClient.name !== undefined || 
           firstClient.phone !== undefined || 
-          Object.keys(firstClient).length > 1
+          (Object.keys(firstClient).length > 1 && !hasOnlyIds)
         );
         
         console.log(`[altegio/clients] ✅ Got ${clients.length} clients using ${attempt.name}`, {
           hasFullInfo,
+          hasOnlyIds,
           firstClientKeys: firstClient ? Object.keys(firstClient) : [],
+          firstClientSample: firstClient,
         });
         
-        // Якщо є повна інформація, повертаємо
-        if (hasFullInfo || attempt === attempts[attempts.length - 1]) {
-          // Якщо тільки ID, спробуємо отримати повну інформацію через окремі запити
-          if (!hasFullInfo && clients.length > 0) {
+        // Якщо отримали тільки ID, спробуємо отримати повну інформацію через окремі запити
+        if (hasOnlyIds && clients.length > 0) {
             console.log(`[altegio/clients] ⚠️ Only IDs received, fetching full client details for ${clients.length} clients...`);
             const clientsWithFullInfo: Client[] = [];
             let skippedCount = 0;
