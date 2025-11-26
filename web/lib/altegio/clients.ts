@@ -351,30 +351,38 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
 export async function getClient(companyId: number, clientId: number): Promise<Client | null> {
   try {
     // Спробуємо різні варіанти URL з параметрами для отримання всіх полів, включаючи custom_fields
+    // Згідно з документацією: GET /company/{company_id}/client/{client_id}
     const attempts = [
-      // Варіант 1: GET з include[]=custom_fields
+      // Варіант 1: GET /company/{id}/client/{id} з explicit fields (згідно з документацією)
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
+      },
+      // Варіант 2: GET з include[]=custom_fields
       {
         method: 'GET' as const,
         url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
       },
-      // Варіант 2: POST з custom_fields в body
-      {
-        method: 'POST' as const,
-        url: `/company/${companyId}/client/${clientId}`,
-        body: JSON.stringify({ include: ['custom_fields'], with: ['custom_fields'] }),
-      },
-      // Варіант 3: GET з include[]=*
+      // Варіант 3: GET з усіма полями
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?include[]=*&with[]=*&fields[]=*`,
+        url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
       },
-      // Варіант 4: POST /clients з client_id
+      // Варіант 4: GET /company/{id}/clients/{id} (альтернативний шлях)
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/clients/${clientId}?include[]=custom_fields`,
+      },
+      // Варіант 5: POST /clients/search з фільтром по client_id
       {
         method: 'POST' as const,
-        url: `/clients`,
-        body: JSON.stringify({ company_id: companyId, client_id: clientId, include: ['custom_fields'] }),
+        url: `/company/${companyId}/clients/search`,
+        body: JSON.stringify({
+          filters: [{ field: 'id', operation: 'equals', value: clientId }],
+          fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+        }),
       },
-      // Варіант 5: GET без параметрів (fallback)
+      // Варіант 6: GET без параметрів (fallback)
       {
         method: 'GET' as const,
         url: `/company/${companyId}/client/${clientId}`,
