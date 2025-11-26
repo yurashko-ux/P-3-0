@@ -100,28 +100,57 @@ export async function GET(req: NextRequest) {
     
     // Шукаємо поле Instagram username в різних варіантах
     const instagramFieldVariants = [
-      'instagram-user-name',
-      'instagram_user_name',
-      'instagramUsername',
-      'instagram_username',
-      'instagram',
+      'instagram-user-name',      // API key (kebab-case)
+      'instagram_user_name',      // snake_case
+      'instagramUsername',        // camelCase
+      'instagram_username',       // інший snake_case варіант
+      'instagram',                // коротка назва
+      'instagram_user',           // ще варіант
+      'insta_username',           // ще варіант
+      'instausername',            // без підкреслення
+      'insta',                    // дуже коротка назва
+      // Також шукаємо за частиною слова
+      'gram',
     ];
     
     let instagramFieldFound = false;
     let instagramFieldName: string | null = null;
     let instagramFieldValue: string | null = null;
     
-    // Перевіряємо всі можливі варіанти назв
+    // Перевіряємо всі можливі варіанти назв (точна відповідність)
     for (const variant of instagramFieldVariants) {
-      const foundKey = allKeys.find(key => 
-        key.toLowerCase().replace(/[-_]/g, '') === variant.toLowerCase().replace(/[-_]/g, '')
-      );
+      const foundKey = allKeys.find(key => {
+        const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
+        const normalizedVariant = variant.toLowerCase().replace(/[-_]/g, '');
+        return normalizedKey === normalizedVariant || 
+               normalizedKey.includes(normalizedVariant) ||
+               normalizedVariant.includes(normalizedKey);
+      });
       
       if (foundKey && firstClient[foundKey]) {
         instagramFieldFound = true;
         instagramFieldName = foundKey;
-        instagramFieldValue = String(firstClient[foundKey]);
-        break;
+        instagramFieldValue = String(firstClient[foundKey]).trim();
+        if (instagramFieldValue) break;
+      }
+    }
+    
+    // Якщо не знайдено точну відповідність, шукаємо за ключовими словами в назвах полів
+    if (!instagramFieldFound) {
+      const instagramKeywords = ['instagram', 'insta', 'gram'];
+      for (const keyword of instagramKeywords) {
+        const foundKey = allKeys.find(key => 
+          key.toLowerCase().includes(keyword.toLowerCase())
+        );
+        if (foundKey && firstClient[foundKey]) {
+          const value = String(firstClient[foundKey]).trim();
+          if (value) {
+            instagramFieldFound = true;
+            instagramFieldName = foundKey;
+            instagramFieldValue = value;
+            break;
+          }
+        }
       }
     }
     
@@ -172,16 +201,41 @@ export async function GET(req: NextRequest) {
       // Шукаємо Instagram в різних варіантах для кожного клієнта
       const instagramVariants = [
         'instagram-user-name', 'instagram_user_name', 'instagramUsername', 
-        'instagram_username', 'instagram', 'instagram_user', 'insta_username'
+        'instagram_username', 'instagram', 'instagram_user', 'insta_username',
+        'instausername', 'insta', 'gram'
       ];
       
       for (const variant of instagramVariants) {
-        const foundKey = clientKeys.find(key => 
-          key.toLowerCase().replace(/[-_]/g, '') === variant.toLowerCase().replace(/[-_]/g, '')
-        );
+        const foundKey = clientKeys.find(key => {
+          const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
+          const normalizedVariant = variant.toLowerCase().replace(/[-_]/g, '');
+          return normalizedKey === normalizedVariant || 
+                 normalizedKey.includes(normalizedVariant) ||
+                 normalizedVariant.includes(normalizedKey);
+        });
         if (foundKey && client[foundKey]) {
-          instagramValue = String(client[foundKey]);
-          break;
+          const value = String(client[foundKey]).trim();
+          if (value) {
+            instagramValue = value;
+            break;
+          }
+        }
+      }
+      
+      // Якщо не знайдено точну відповідність, шукаємо за ключовими словами
+      if (!instagramValue) {
+        const instagramKeywords = ['instagram', 'insta', 'gram'];
+        for (const keyword of instagramKeywords) {
+          const foundKey = clientKeys.find(key => 
+            key.toLowerCase().includes(keyword.toLowerCase())
+          );
+          if (foundKey && client[foundKey]) {
+            const value = String(client[foundKey]).trim();
+            if (value) {
+              instagramValue = value;
+              break;
+            }
+          }
         }
       }
       
