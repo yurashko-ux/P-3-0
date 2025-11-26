@@ -313,13 +313,16 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
  */
 export async function getClient(companyId: number, clientId: number): Promise<Client | null> {
   try {
-    // Спробуємо різні варіанти URL з параметрами для отримання всіх полів
+    // Спробуємо різні варіанти URL з параметрами для отримання всіх полів, включаючи custom_fields
     const urlAttempts = [
-      `/company/${companyId}/client/${clientId}?include[]=*&with[]=*`,
+      `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
+      `/company/${companyId}/client/${clientId}?include[]=*&with[]=*&fields[]=*`,
+      `/company/${companyId}/clients/${clientId}?include[]=custom_fields&with[]=custom_fields`,
       `/company/${companyId}/clients/${clientId}?include[]=*&with[]=*`,
+      `/company/${companyId}/client/${clientId}?fields=id,name,phone,email,custom_fields`,
       `/company/${companyId}/client/${clientId}`,
       `/company/${companyId}/clients/${clientId}`,
-      `/clients/${clientId}?company_id=${companyId}`,
+      `/clients/${clientId}?company_id=${companyId}&include[]=custom_fields`,
     ];
     
     let lastError: Error | null = null;
