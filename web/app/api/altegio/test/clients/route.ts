@@ -302,10 +302,50 @@ export async function GET(req: NextRequest) {
       } : null,
     };
     
-    // Повна інформація про всіх клієнтів
+      // Повна інформація про всіх клієнтів
     const clientsFull = clients.map(client => {
       const clientKeys = Object.keys(client);
       let instagramValue: string | null = null;
+      let cardNumber: string | null = null;
+      let note: string | null = null;
+      
+      // Шукаємо Card number (можливі варіанти назв)
+      const cardNumberVariants = ['card_number', 'cardNumber', 'card-number', 'card', 'card_id', 'loyalty_card'];
+      for (const variant of cardNumberVariants) {
+        if (client[variant]) {
+          cardNumber = String(client[variant]).trim();
+          break;
+        }
+      }
+      
+      // Також перевіряємо в custom_fields
+      if (!cardNumber && client.custom_fields) {
+        for (const variant of cardNumberVariants) {
+          if (client.custom_fields[variant]) {
+            cardNumber = String(client.custom_fields[variant]).trim();
+            break;
+          }
+        }
+      }
+      
+      // Шукаємо Note (можливі варіанти назв)
+      const noteVariants = ['note', 'notes', 'comment', 'comments', 'description', 'remarks'];
+      for (const variant of noteVariants) {
+        if (client[variant]) {
+          note = String(client[variant]).trim();
+          break;
+        }
+      }
+      
+      // Також перевіряємо в custom_fields
+      if (!note && client.custom_fields) {
+        for (const variant of noteVariants) {
+          if (client.custom_fields[variant]) {
+            note = String(client.custom_fields[variant]).trim();
+            break;
+          }
+        }
+      }
       
       // Виключаємо стандартні поля з пошуку
       const excludedFields = ['id', 'name', 'phone', 'email', 'created_at', 'updated_at', 'company_id'];
@@ -380,6 +420,8 @@ export async function GET(req: NextRequest) {
         phone: client.phone || '—',
         email: client.email || '—',
         instagram: instagramValue || '—',
+        cardNumber: cardNumber || '—',
+        note: note || '—',
         // Повна структура для діагностики (тільки перші 3 символи для полів)
         allFields: Object.fromEntries(
           Object.entries(client).map(([key, value]) => [
