@@ -39,10 +39,36 @@ export async function GET(req: NextRequest) {
     let clients: any[] = [];
     let source = 'direct';
     let errorMessage = '';
+    let rawResponse: any = null;
     
     try {
+      // Спочатку отримуємо список (може бути тільки ID)
       clients = await getClients(companyId, 10);
       source = 'direct';
+      
+      // Якщо отримали тільки ID, робимо окремі запити для кожного клієнта
+      if (clients.length > 0 && clients.every((c: any) => Object.keys(c).length === 1 && 'id' in c)) {
+        console.log('[altegio/test/clients] ⚠️ Received only IDs, fetching full details...');
+        const clientsWithDetails: any[] = [];
+        
+        for (const client of clients.slice(0, 10)) {
+          try {
+            const fullClient = await getClient(companyId, client.id);
+            if (fullClient) {
+              clientsWithDetails.push(fullClient);
+            } else {
+              clientsWithDetails.push(client); // Залишаємо як є
+            }
+            // Невелика затримка, щоб не перевантажити API
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (err) {
+            console.warn(`[altegio/test/clients] Failed to get client ${client.id}:`, err);
+            clientsWithDetails.push(client);
+          }
+        }
+        
+        clients = clientsWithDetails;
+      }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
       console.warn('[altegio/test/clients] Direct API failed, trying via appointments...', errorMessage);
