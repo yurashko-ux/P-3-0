@@ -56,6 +56,8 @@ export default function AltegioLanding() {
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [clientsDebug, setClientsDebug] = useState<any>(null);
   const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
+  const [selectedClientDetails, setSelectedClientDetails] = useState<any>(null);
+  const [selectedClientLoading, setSelectedClientLoading] = useState(false);
 
   useEffect(() => {
     // Завжди використовуємо production URL для webhook
@@ -164,6 +166,23 @@ export default function AltegioLanding() {
       });
     } finally {
       setClientsDebugLoading(false);
+    }
+  }
+
+  async function getClientDetails(clientId: number) {
+    setSelectedClientLoading(true);
+    setSelectedClientDetails(null);
+    try {
+      const res = await fetch(`/api/altegio/test/clients/${clientId}`, { cache: 'no-store' });
+      const data = await res.json();
+      setSelectedClientDetails(data);
+    } catch (err) {
+      setSelectedClientDetails({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    } finally {
+      setSelectedClientLoading(false);
     }
   }
 
@@ -598,7 +617,28 @@ export default function AltegioLanding() {
                               {client.id || 'N/A'}
                             </td>
                             <td style={{ padding: '8px', fontWeight: 500 }}>
-                              {client.name || '—'}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span>{client.name || '—'}</span>
+                                {client.id && (
+                                  <button
+                                    onClick={() => getClientDetails(client.id)}
+                                    disabled={selectedClientLoading}
+                                    style={{
+                                      padding: '4px 8px',
+                                      background: '#f59e0b',
+                                      color: '#fff',
+                                      border: 'none',
+                                      borderRadius: 4,
+                                      fontSize: '0.75em',
+                                      cursor: selectedClientLoading ? 'not-allowed' : 'pointer',
+                                      opacity: selectedClientLoading ? 0.6 : 1,
+                                    }}
+                                    title="Отримати повну структуру клієнта"
+                                  >
+                                    {selectedClientLoading && selectedClientDetails?.clientId === client.id ? '...' : '🔍'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '0.85em' }}>
                               {client.phone || '—'}
