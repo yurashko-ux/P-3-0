@@ -117,6 +117,12 @@ export async function GET(req: NextRequest) {
           responseData = responseText;
         }
         
+        // Збираємо заголовки вручну (Headers не має entries() в Node.js)
+        const headersObj: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          headersObj[key] = value;
+        });
+        
         results.push({
           test: test.name,
           url: fullUrl,
@@ -124,7 +130,7 @@ export async function GET(req: NextRequest) {
           status: response.status,
           statusText: response.statusText,
           success: response.ok,
-          headers: Object.fromEntries(response.headers.entries()),
+          headers: headersObj,
           body: test.body,
           response: responseData,
         });
