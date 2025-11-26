@@ -35,6 +35,25 @@ export async function GET(req: NextRequest) {
       );
     }
     
+    // Спочатку перевіримо, чи працює отримання компанії (щоб переконатися, що company_id правильний)
+    let companyExists = false;
+    try {
+      const { getCompany } = await import('@/lib/altegio/companies');
+      const company = await getCompany(companyId);
+      companyExists = !!company;
+      console.log(`[altegio/test/clients] Company ${companyId} exists: ${companyExists}`, company ? { id: company.id, title: company.title || company.public_title } : '');
+    } catch (companyErr) {
+      console.warn(`[altegio/test/clients] Failed to verify company ${companyId}:`, companyErr);
+    }
+    
+    if (!companyExists) {
+      return NextResponse.json({
+        ok: false,
+        error: `Company with ID ${companyId} not found. Please check ALTEGIO_COMPANY_ID environment variable.`,
+        companyId,
+      }, { status: 400 });
+    }
+    
     // Отримуємо список клієнтів (обмежуємо до 10 для тесту)
     let clients: any[] = [];
     let source = 'direct';
