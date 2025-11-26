@@ -46,28 +46,57 @@ export async function GET(req: NextRequest) {
       clients = await getClients(companyId, 10);
       source = 'direct';
       
-      // Якщо отримали тільки ID, робимо окремі запити для кожного клієнта
-      if (clients.length > 0 && clients.every((c: any) => Object.keys(c).length === 1 && 'id' in c)) {
-        console.log('[altegio/test/clients] ⚠️ Received only IDs, fetching full details...');
+      // Перевіряємо, чи клієнти мають дані
+      const clientsWithData = clients.filter((c: any) => {
+        // Перевіряємо, чи є хоча б ім'я, телефон або email
+        return c.name || c.phone || c.email || Object.keys(c).length > 1;
+      });
+      
+      if (clientsWithData.length < clients.length) {
+        console.log(`[altegio/test/clients] ⚠️ Filtered ${clients.length - clientsWithData.length} clients without data (only ID or empty)`);
+      }
+      
+      // Якщо отримали тільки ID або клієнти без даних, робимо окремі запити
+      const needsFullFetch = clients.length > 0 && (
+        clients.every((c: any) => Object.keys(c).length === 1 && 'id' in c) ||
+        clientsWithData.length === 0
+      );
+      
+      if (needsFullFetch) {
+        console.log('[altegio/test/clients] ⚠️ Received only IDs or clients without data, fetching full details...');
         const clientsWithDetails: any[] = [];
+        let skippedCount = 0;
         
         for (const client of clients.slice(0, 10)) {
           try {
             const fullClient = await getClient(companyId, client.id);
             if (fullClient) {
-              clientsWithDetails.push(fullClient);
+              // Перевіряємо, чи клієнт має дані
+              const hasData = fullClient.name || fullClient.phone || fullClient.email;
+              if (hasData) {
+                clientsWithDetails.push(fullClient);
+                console.log(`[altegio/test/clients] ✅ Got client ${client.id}: name="${fullClient.name || 'none'}", phone="${fullClient.phone || 'none'}"`);
+              } else {
+                skippedCount++;
+                console.log(`[altegio/test/clients] ⚠️ Client ${client.id} has no data - skipping`);
+              }
             } else {
-              clientsWithDetails.push(client); // Залишаємо як є
+              skippedCount++;
+              console.log(`[altegio/test/clients] ⚠️ Client ${client.id} not found - skipping`);
             }
             // Невелика затримка, щоб не перевантажити API
             await new Promise(resolve => setTimeout(resolve, 100));
           } catch (err) {
+            skippedCount++;
             console.warn(`[altegio/test/clients] Failed to get client ${client.id}:`, err);
-            clientsWithDetails.push(client);
           }
         }
         
+        console.log(`[altegio/test/clients] Summary: ${clientsWithDetails.length} clients with data, ${skippedCount} skipped`);
         clients = clientsWithDetails;
+      } else {
+        // Якщо вже є дані, фільтруємо тільки тих, хто має дані
+        clients = clientsWithData;
       }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
