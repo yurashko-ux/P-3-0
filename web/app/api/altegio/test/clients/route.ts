@@ -111,48 +111,7 @@ export async function GET(req: NextRequest) {
         clients = clientsWithFullDetails;
       }
       
-      // Перевіряємо, чи потрібно робити окремі запити для даних
-      const needsFullFetch = clients.length > 0 && (
-        clients.every((c: any) => Object.keys(c).length === 1 && 'id' in c) ||
-        clientsWithData.length === 0
-      );
-      
-      if (needsFullFetch && clients.length > 0 && clients.every((c: any) => !c.custom_fields)) {
-        console.log('[altegio/test/clients] ⚠️ Received only IDs or clients without data, fetching full details...');
-        const clientsWithDetails: any[] = [];
-        let skippedCount = 0;
-        
-        for (const client of clients.slice(0, 10)) {
-          try {
-            const fullClient = await getClient(companyId, client.id);
-            if (fullClient) {
-              // Перевіряємо, чи клієнт має дані
-              const hasData = fullClient.name || fullClient.phone || fullClient.email;
-              if (hasData) {
-                clientsWithDetails.push(fullClient);
-                console.log(`[altegio/test/clients] ✅ Got client ${client.id}: name="${fullClient.name || 'none'}", phone="${fullClient.phone || 'none'}"`);
-              } else {
-                skippedCount++;
-                console.log(`[altegio/test/clients] ⚠️ Client ${client.id} has no data - skipping`);
-              }
-            } else {
-              skippedCount++;
-              console.log(`[altegio/test/clients] ⚠️ Client ${client.id} not found - skipping`);
-            }
-            // Невелика затримка, щоб не перевантажити API
-            await new Promise(resolve => setTimeout(resolve, 100));
-          } catch (err) {
-            skippedCount++;
-            console.warn(`[altegio/test/clients] Failed to get client ${client.id}:`, err);
-          }
-        }
-        
-        console.log(`[altegio/test/clients] Summary: ${clientsWithDetails.length} clients with data, ${skippedCount} skipped`);
-        clients = clientsWithDetails;
-      } else {
-        // Якщо вже є дані, фільтруємо тільки тих, хто має дані
-        clients = clientsWithData;
-      }
+      // Видаляємо дублювання коду - вже отримали повні дані вище
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
       console.warn('[altegio/test/clients] Direct API failed, trying via appointments...', errorMessage);
