@@ -16,7 +16,18 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /company/{id}/clients з параметрами fields та include (спробуємо отримати всі поля)
+    // Варіант 1: POST /company/{id}/clients з параметрами для отримання custom_fields
+    {
+      name: 'POST /company/{id}/clients with custom_fields',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
+      body: JSON.stringify({
+        ...(limit ? { limit } : {}),
+        include: ['custom_fields'],
+        with: ['custom_fields'],
+      }),
+    },
+    // Варіант 2: POST /company/{id}/clients з параметрами fields та include (спробуємо отримати всі поля)
     {
       name: 'POST /company/{id}/clients with fields and include',
       method: 'POST' as const,

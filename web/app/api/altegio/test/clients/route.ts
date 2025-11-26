@@ -75,13 +75,49 @@ export async function GET(req: NextRequest) {
         console.log(`[altegio/test/clients] ⚠️ Filtered ${clients.length - clientsWithData.length} clients without data (only ID or empty)`);
       }
       
-      // Якщо отримали тільки ID або клієнти без даних, робимо окремі запити
+      // Завжди отримуємо повні дані через окремі запити getClient() для отримання custom_fields
+      // (API може повертати тільки базові поля, а custom_fields потрібні окремі запити)
+      if (clients.length > 0) {
+        console.log('[altegio/test/clients] ⚠️ Fetching full client details to get custom_fields (Card number, Note, Instagram)...');
+        const clientsWithFullDetails: any[] = [];
+        let skippedCount = 0;
+        
+        for (const client of clients.slice(0, 10)) {
+          try {
+            // Отримуємо повні дані клієнта через getClient() - там мають бути custom_fields
+            const fullClient = await getClient(companyId, client.id);
+            if (fullClient) {
+              clientsWithFullDetails.push(fullClient);
+              console.log(`[altegio/test/clients] ✅ Got full info for client ${client.id}:`, {
+                name: fullClient.name,
+                hasCustomFields: !!fullClient.custom_fields,
+                customFieldsKeys: fullClient.custom_fields ? Object.keys(fullClient.custom_fields) : [],
+              });
+            } else {
+              // Якщо не отримали повні дані, використовуємо те, що є
+              clientsWithFullDetails.push(client);
+            }
+            // Невелика затримка, щоб не перевантажити API
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (err) {
+            skippedCount++;
+            console.warn(`[altegio/test/clients] Failed to get full info for client ${client.id}:`, err);
+            // Якщо не вдалося, використовуємо базові дані
+            clientsWithFullDetails.push(client);
+          }
+        }
+        
+        console.log(`[altegio/test/clients] Summary: ${clientsWithFullDetails.length} clients with full details, ${skippedCount} skipped`);
+        clients = clientsWithFullDetails;
+      }
+      
+      // Перевіряємо, чи потрібно робити окремі запити для даних
       const needsFullFetch = clients.length > 0 && (
         clients.every((c: any) => Object.keys(c).length === 1 && 'id' in c) ||
         clientsWithData.length === 0
       );
       
-      if (needsFullFetch) {
+      if (needsFullFetch && clients.length > 0 && clients.every((c: any) => !c.custom_fields)) {
         console.log('[altegio/test/clients] ⚠️ Received only IDs or clients without data, fetching full details...');
         const clientsWithDetails: any[] = [];
         let skippedCount = 0;
