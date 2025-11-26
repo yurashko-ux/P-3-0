@@ -314,22 +314,49 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
 export async function getClient(companyId: number, clientId: number): Promise<Client | null> {
   try {
     // Спробуємо різні варіанти URL з параметрами для отримання всіх полів, включаючи custom_fields
-    const urlAttempts = [
-      `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
-      `/company/${companyId}/client/${clientId}?include[]=*&with[]=*&fields[]=*`,
-      `/company/${companyId}/clients/${clientId}?include[]=custom_fields&with[]=custom_fields`,
-      `/company/${companyId}/clients/${clientId}?include[]=*&with[]=*`,
-      `/company/${companyId}/client/${clientId}?fields=id,name,phone,email,custom_fields`,
-      `/company/${companyId}/client/${clientId}`,
-      `/company/${companyId}/clients/${clientId}`,
-      `/clients/${clientId}?company_id=${companyId}&include[]=custom_fields`,
+    const attempts = [
+      // Варіант 1: GET з include[]=custom_fields
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
+      },
+      // Варіант 2: POST з custom_fields в body
+      {
+        method: 'POST' as const,
+        url: `/company/${companyId}/client/${clientId}`,
+        body: JSON.stringify({ include: ['custom_fields'], with: ['custom_fields'] }),
+      },
+      // Варіант 3: GET з include[]=*
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}?include[]=*&with[]=*&fields[]=*`,
+      },
+      // Варіант 4: POST /clients з client_id
+      {
+        method: 'POST' as const,
+        url: `/clients`,
+        body: JSON.stringify({ company_id: companyId, client_id: clientId, include: ['custom_fields'] }),
+      },
+      // Варіант 5: GET без параметрів (fallback)
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}`,
+      },
     ];
     
     let lastError: Error | null = null;
     
-    for (const url of urlAttempts) {
+    for (const attempt of attempts) {
       try {
-        const response = await altegioFetch<Client | { data?: Client }>(url);
+        const options: RequestInit = {
+          method: attempt.method,
+        };
+        
+        if (attempt.body) {
+          options.body = attempt.body;
+        }
+        
+        const response = await altegioFetch<Client | { data?: Client }>(attempt.url, options);
         
         if (response && typeof response === 'object') {
           let client: Client | null = null;
@@ -342,7 +369,7 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           
           if (client && client.id) {
             // Логуємо структуру для діагностики кастомних полів
-            console.log(`[altegio/clients] Client ${clientId} structure from ${url}:`, {
+            console.log(`[altegio/clients] Client ${clientId} structure from ${attempt.method} ${attempt.url}:`, {
               keys: Object.keys(client),
               hasCustomFields: 'custom_fields' in client,
               customFields: client.custom_fields || null,
@@ -355,12 +382,12 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             
             // Якщо отримали custom_fields, повертаємо клієнта
             if (client.custom_fields) {
-              console.log(`[altegio/clients] ✅ Got custom_fields for client ${clientId}:`, Object.keys(client.custom_fields));
+              console.log(`[altegio/clients] ✅ Got custom_fields for client ${clientId} using ${attempt.method} ${attempt.url}:`, Object.keys(client.custom_fields));
               return client;
             }
             
             // Якщо не отримали custom_fields, продовжуємо спроби з іншими URL
-            console.log(`[altegio/clients] ⚠️ No custom_fields in response from ${url}, trying next...`);
+            console.log(`[altegio/clients] ⚠️ No custom_fields in response from ${attempt.method} ${attempt.url}, trying next...`);
           }
         }
       } catch (err) {
