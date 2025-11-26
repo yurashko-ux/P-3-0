@@ -191,9 +191,16 @@ export async function GET(req: NextRequest) {
     let instagramFieldName: string | null = null;
     let instagramFieldValue: string | null = null;
     
+    // Виключаємо стандартні поля з пошуку (name, phone, email не можуть бути Instagram)
+    const excludedFields = ['id', 'name', 'phone', 'email', 'created_at', 'updated_at', 'company_id'];
+    
     // Перевіряємо всі можливі варіанти назв (точна відповідність)
     for (const variant of instagramFieldVariants) {
       const foundKey = allKeys.find(key => {
+        // Пропускаємо виключені поля
+        if (excludedFields.includes(key.toLowerCase())) {
+          return false;
+        }
         const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
         const normalizedVariant = variant.toLowerCase().replace(/[-_]/g, '');
         return normalizedKey === normalizedVariant || 
@@ -202,10 +209,14 @@ export async function GET(req: NextRequest) {
       });
       
       if (foundKey && firstClient[foundKey]) {
-        instagramFieldFound = true;
-        instagramFieldName = foundKey;
-        instagramFieldValue = String(firstClient[foundKey]).trim();
-        if (instagramFieldValue) break;
+        const value = String(firstClient[foundKey]).trim();
+        // Перевіряємо, що значення не є ім'ям клієнта
+        if (value && value !== firstClient.name) {
+          instagramFieldFound = true;
+          instagramFieldName = foundKey;
+          instagramFieldValue = value;
+          break;
+        }
       }
     }
     
@@ -213,12 +224,17 @@ export async function GET(req: NextRequest) {
     if (!instagramFieldFound) {
       const instagramKeywords = ['instagram', 'insta', 'gram'];
       for (const keyword of instagramKeywords) {
-        const foundKey = allKeys.find(key => 
-          key.toLowerCase().includes(keyword.toLowerCase())
-        );
+        const foundKey = allKeys.find(key => {
+          // Пропускаємо виключені поля
+          if (excludedFields.includes(key.toLowerCase())) {
+            return false;
+          }
+          return key.toLowerCase().includes(keyword.toLowerCase());
+        });
         if (foundKey && firstClient[foundKey]) {
           const value = String(firstClient[foundKey]).trim();
-          if (value) {
+          // Перевіряємо, що значення не є ім'ям клієнта
+          if (value && value !== firstClient.name) {
             instagramFieldFound = true;
             instagramFieldName = foundKey;
             instagramFieldValue = value;
@@ -272,6 +288,9 @@ export async function GET(req: NextRequest) {
       const clientKeys = Object.keys(client);
       let instagramValue: string | null = null;
       
+      // Виключаємо стандартні поля з пошуку
+      const excludedFields = ['id', 'name', 'phone', 'email', 'created_at', 'updated_at', 'company_id'];
+      
       // Шукаємо Instagram в різних варіантах для кожного клієнта
       const instagramVariants = [
         'instagram-user-name', 'instagram_user_name', 'instagramUsername', 
@@ -281,6 +300,10 @@ export async function GET(req: NextRequest) {
       
       for (const variant of instagramVariants) {
         const foundKey = clientKeys.find(key => {
+          // Пропускаємо виключені поля
+          if (excludedFields.includes(key.toLowerCase())) {
+            return false;
+          }
           const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
           const normalizedVariant = variant.toLowerCase().replace(/[-_]/g, '');
           return normalizedKey === normalizedVariant || 
@@ -289,7 +312,8 @@ export async function GET(req: NextRequest) {
         });
         if (foundKey && client[foundKey]) {
           const value = String(client[foundKey]).trim();
-          if (value) {
+          // Перевіряємо, що значення не є ім'ям клієнта
+          if (value && value !== client.name) {
             instagramValue = value;
             break;
           }
@@ -300,12 +324,17 @@ export async function GET(req: NextRequest) {
       if (!instagramValue) {
         const instagramKeywords = ['instagram', 'insta', 'gram'];
         for (const keyword of instagramKeywords) {
-          const foundKey = clientKeys.find(key => 
-            key.toLowerCase().includes(keyword.toLowerCase())
-          );
+          const foundKey = clientKeys.find(key => {
+            // Пропускаємо виключені поля
+            if (excludedFields.includes(key.toLowerCase())) {
+              return false;
+            }
+            return key.toLowerCase().includes(keyword.toLowerCase());
+          });
           if (foundKey && client[foundKey]) {
             const value = String(client[foundKey]).trim();
-            if (value) {
+            // Перевіряємо, що значення не є ім'ям клієнта
+            if (value && value !== client.name) {
               instagramValue = value;
               break;
             }
