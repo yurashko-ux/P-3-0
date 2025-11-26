@@ -581,6 +581,8 @@ export default function AltegioLanding() {
                           <th style={{ padding: '8px', fontWeight: 600 }}>Телефон</th>
                           <th style={{ padding: '8px', fontWeight: 600 }}>Email</th>
                           <th style={{ padding: '8px', fontWeight: 600 }}>Instagram</th>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>Card Number</th>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>Note</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -610,6 +612,12 @@ export default function AltegioLanding() {
                               ) : (
                                 <span style={{ color: '#ef4444' }}>—</span>
                               )}
+                            </td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '0.85em', color: client.cardNumber && client.cardNumber !== '—' ? '#166534' : '#6b7280' }}>
+                              {client.cardNumber || '—'}
+                            </td>
+                            <td style={{ padding: '8px', fontSize: '0.85em', color: client.note && client.note !== '—' ? '#166534' : '#6b7280', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {client.note || '—'}
                             </td>
                           </tr>
                         ))}
