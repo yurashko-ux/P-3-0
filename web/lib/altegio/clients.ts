@@ -16,9 +16,34 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /company/{id}/clients з параметрами для отримання custom_fields
+    // Варіант 1: POST /company/{id}/clients/search з fields включаючи custom_fields (згідно з документацією)
     {
-      name: 'POST /company/{id}/clients with custom_fields',
+      name: 'POST /company/{id}/clients/search with custom_fields',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients/search`,
+      body: JSON.stringify({
+        page: 1,
+        page_size: limit || 10,
+        fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+        order_by: 'last_visit_date',
+        order_by_direction: 'desc',
+      }),
+    },
+    // Варіант 2: POST /company/{id}/clients/search без fields (поверне всі поля)
+    {
+      name: 'POST /company/{id}/clients/search without fields (all fields)',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients/search`,
+      body: JSON.stringify({
+        page: 1,
+        page_size: limit || 10,
+        order_by: 'last_visit_date',
+        order_by_direction: 'desc',
+      }),
+    },
+    // Варіант 3: POST /company/{id}/clients (старий endpoint - fallback)
+    {
+      name: 'POST /company/{id}/clients with custom_fields (fallback)',
       method: 'POST' as const,
       url: `/company/${companyId}/clients?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
       body: JSON.stringify({
@@ -115,15 +140,27 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
       
       // Детальне логування для діагностики
       let clients: Client[] = [];
+      
+      // Логуємо повну структуру відповіді для діагностики
+      console.log(`[altegio/clients] Raw response structure from ${attempt.name}:`, {
+        isArray: Array.isArray(response),
+        responseType: typeof response,
+        responseKeys: response && typeof response === 'object' ? Object.keys(response) : [],
+        responseSample: JSON.stringify(response).substring(0, 500), // Перші 500 символів
+      });
+      
       if (Array.isArray(response)) {
         clients = response;
       } else if (response && typeof response === 'object') {
+        // Для /clients/search може бути структура { data: [...], meta: {...} }
         if ('data' in response && Array.isArray(response.data)) {
           clients = response.data;
         } else if ('clients' in response && Array.isArray(response.clients)) {
           clients = response.clients;
         } else if ('items' in response && Array.isArray(response.items)) {
           clients = response.items;
+        } else if ('results' in response && Array.isArray(response.results)) {
+          clients = response.results;
         }
       }
       
