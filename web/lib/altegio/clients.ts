@@ -16,31 +16,21 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /clients з company_id + сортування за датою створення (DESC - останні спочатку)
+    // Варіант 1: GET /company/{id}/clients (за аналогією з /companies)
     {
-      name: 'POST /clients with company_id + sort by created_at DESC',
-      method: 'POST' as const,
-      url: `/clients`,
-      body: JSON.stringify({ 
-        company_id: companyId,
-        ...(limit ? { limit } : {}),
-        sort: 'created_at',
-        order: 'desc', // Останні спочатку
-      }),
+      name: 'GET /company/{id}/clients',
+      method: 'GET' as const,
+      url: `/company/${companyId}/clients`,
+      body: undefined,
     },
-    // Варіант 2: POST /clients з company_id + сортування за датою оновлення (DESC - останні оновлені спочатку)
+    // Варіант 2: GET /clients?company_id={id}
     {
-      name: 'POST /clients with company_id + sort by updated_at DESC',
-      method: 'POST' as const,
-      url: `/clients`,
-      body: JSON.stringify({ 
-        company_id: companyId,
-        ...(limit ? { limit } : {}),
-        sort: 'updated_at',
-        order: 'desc',
-      }),
+      name: 'GET /clients?company_id={id}',
+      method: 'GET' as const,
+      url: `/clients?company_id=${companyId}${limit ? `&limit=${limit}` : ''}`,
+      body: undefined,
     },
-    // Варіант 3: POST /clients з company_id без сортування (найпростіший варіант)
+    // Варіант 3: POST /clients з company_id (згідно з документацією: postGet a list of clients)
     {
       name: 'POST /clients with company_id',
       method: 'POST' as const,
@@ -92,6 +82,9 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
       
       if (attempt.body) {
         options.body = attempt.body;
+      } else if (attempt.body === undefined && attempt.method === 'POST') {
+        // Якщо method POST, але body не вказано, використовуємо пусте тіло
+        options.body = JSON.stringify({});
       }
       
       const response = await altegioFetch<Client[] | { data?: Client[]; clients?: Client[]; items?: Client[] }>(
