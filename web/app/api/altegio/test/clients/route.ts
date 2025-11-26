@@ -164,18 +164,69 @@ export async function GET(req: NextRequest) {
       } : null,
     };
     
+    // Повна інформація про всіх клієнтів
+    const clientsFull = clients.map(client => {
+      const clientKeys = Object.keys(client);
+      let instagramValue: string | null = null;
+      
+      // Шукаємо Instagram в різних варіантах для кожного клієнта
+      const instagramVariants = [
+        'instagram-user-name', 'instagram_user_name', 'instagramUsername', 
+        'instagram_username', 'instagram', 'instagram_user', 'insta_username'
+      ];
+      
+      for (const variant of instagramVariants) {
+        const foundKey = clientKeys.find(key => 
+          key.toLowerCase().replace(/[-_]/g, '') === variant.toLowerCase().replace(/[-_]/g, '')
+        );
+        if (foundKey && client[foundKey]) {
+          instagramValue = String(client[foundKey]);
+          break;
+        }
+      }
+      
+      // Також перевіряємо custom_fields
+      if (!instagramValue && client.custom_fields) {
+        for (const variant of instagramVariants) {
+          const foundKey = Object.keys(client.custom_fields).find(key => 
+            key.toLowerCase().replace(/[-_]/g, '') === variant.toLowerCase().replace(/[-_]/g, '')
+          );
+          if (foundKey && client.custom_fields[foundKey]) {
+            instagramValue = String(client.custom_fields[foundKey]);
+            break;
+          }
+        }
+      }
+      
+      return {
+        id: client.id,
+        name: client.name || 'Без імені',
+        phone: client.phone || '—',
+        email: client.email || '—',
+        instagram: instagramValue || '—',
+        // Повна структура для діагностики (тільки перші 3 символи для полів)
+        allFields: Object.fromEntries(
+          Object.entries(client).map(([key, value]) => [
+            key, 
+            typeof value === 'string' && value.length > 100 
+              ? value.substring(0, 100) + '...' 
+              : value
+          ])
+        ),
+      };
+    });
+    
     return NextResponse.json({
       ok: true,
       message: `Found ${clients.length} clients (source: ${source})`,
       source,
       clientsCount: clients.length,
-      clients: clients.map(client => ({
-        id: client.id,
-        name: client.name,
-        phone: client.phone,
-        email: client.email,
-      })),
-      firstClientStructure,
+      clients: clientsFull,
+      firstClientStructure: {
+        ...firstClientStructure,
+        // Додаємо повну raw структуру для детальної діагностики
+        rawStructure: JSON.stringify(firstClient, null, 2),
+      },
       instagramFieldFound,
       instagramFieldName,
       instagramFieldValue,
@@ -183,7 +234,7 @@ export async function GET(req: NextRequest) {
       customFields: customFields,
       note: instagramFieldFound 
         ? `✅ Instagram field found: ${instagramFieldName} = ${instagramFieldValue}`
-        : '⚠️ Instagram field not found. Check field name variants or custom_fields object.',
+        : '⚠️ Instagram field not found. Showing full structure below for analysis.',
     });
   } catch (err) {
     console.error('[altegio/test/clients] Error:', err);
