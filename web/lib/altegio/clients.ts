@@ -16,7 +16,19 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /clients з company_id в тілі (найбільш вірогідний згідно з документацією)
+    // Варіант 1: POST /clients з company_id в тілі + параметри для отримання всіх полів
+    {
+      name: 'POST /clients with company_id + fields',
+      method: 'POST' as const,
+      url: `/clients`,
+      body: JSON.stringify({ 
+        company_id: companyId,
+        ...(limit ? { limit } : {}),
+        // Спробуємо додати параметри для отримання всіх полів
+        fields: ['*'], // Запитуємо всі поля
+      }),
+    },
+    // Варіант 2: POST /clients з company_id в тілі (найбільш вірогідний згідно з документацією)
     {
       name: 'POST /clients with company_id',
       method: 'POST' as const,
@@ -26,21 +38,28 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         ...(limit ? { limit } : {}),
       }),
     },
-    // Варіант 2: POST /company/{id}/clients з пустим тілом
+    // Варіант 3: POST /company/{id}/clients з пустим тілом + query params
+    {
+      name: 'POST /company/{id}/clients with include',
+      method: 'POST' as const,
+      url: `/company/${companyId}/clients?include[]=*&with[]=*`,
+      body: JSON.stringify({}),
+    },
+    // Варіант 4: POST /company/{id}/clients з пустим тілом
     {
       name: 'POST /company/{id}/clients',
       method: 'POST' as const,
       url: `/company/${companyId}/clients`,
       body: JSON.stringify({}),
     },
-    // Варіант 3: POST /clients з пустим тілом (може працювати якщо company_id береться з токена)
+    // Варіант 5: POST /clients з пустим тілом (може працювати якщо company_id береться з токена)
     {
       name: 'POST /clients empty body',
       method: 'POST' as const,
       url: `/clients`,
       body: JSON.stringify({}),
     },
-    // Варіант 4: POST /company/{id}/clients з параметрами пагінації
+    // Варіант 6: POST /company/{id}/clients з параметрами пагінації
     {
       name: 'POST /company/{id}/clients with pagination',
       method: 'POST' as const,
@@ -81,15 +100,52 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         }
       }
       
-      // Якщо отримали клієнтів, повертаємо результат
-      if (clients.length > 0 || attempt === attempts[attempts.length - 1]) {
+      // Якщо отримали клієнтів, перевіряємо чи є повна інформація
+      if (clients.length > 0) {
         // Обмежуємо кількість, якщо вказано
         if (limit && clients.length > limit) {
           clients = clients.slice(0, limit);
         }
         
-        console.log(`[altegio/clients] ✅ Got ${clients.length} clients using ${attempt.name}`);
-        return clients;
+        // Перевіряємо, чи є повна інформація про клієнтів (не тільки ID)
+        const firstClient = clients[0];
+        const hasFullInfo = firstClient && (
+          firstClient.name !== undefined || 
+          firstClient.phone !== undefined || 
+          Object.keys(firstClient).length > 1
+        );
+        
+        console.log(`[altegio/clients] ✅ Got ${clients.length} clients using ${attempt.name}`, {
+          hasFullInfo,
+          firstClientKeys: firstClient ? Object.keys(firstClient) : [],
+        });
+        
+        // Якщо є повна інформація, повертаємо
+        if (hasFullInfo || attempt === attempts[attempts.length - 1]) {
+          // Якщо тільки ID, спробуємо отримати повну інформацію через окремі запити
+          if (!hasFullInfo && clients.length > 0) {
+            console.log(`[altegio/clients] ⚠️ Only IDs received, fetching full client details...`);
+            const clientsWithFullInfo: Client[] = [];
+            
+            for (const client of clients.slice(0, limit || 10)) {
+              try {
+                const fullClient = await getClient(companyId, client.id);
+                if (fullClient) {
+                  clientsWithFullInfo.push(fullClient);
+                } else {
+                  clientsWithFullInfo.push(client); // Залишаємо як є, якщо не вдалося
+                }
+              } catch (err) {
+                console.warn(`[altegio/clients] Failed to get full info for client ${client.id}:`, err);
+                clientsWithFullInfo.push(client); // Залишаємо як є
+              }
+            }
+            
+            return clientsWithFullInfo;
+          }
+          
+          return clients;
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
