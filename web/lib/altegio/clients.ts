@@ -16,42 +16,7 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /clients з company_id + фільтр активних клієнтів
-    // Згідно з документацією: POST /clients з company_id в body
-    {
-      name: 'POST /clients with company_id + active filter',
-      method: 'POST' as const,
-      url: `/clients`,
-      body: JSON.stringify({ 
-        company_id: companyId,
-        ...(limit ? { limit } : {}),
-        // Спробуємо фільтрувати тільки активних клієнтів
-        filter: {
-          active: 1, // Тільки активні
-        },
-      }),
-    },
-    // Варіант 2: POST /clients з company_id без фільтрів (за замовчуванням)
-    {
-      name: 'POST /clients with company_id (doc standard)',
-      method: 'POST' as const,
-      url: `/clients`,
-      body: JSON.stringify({ 
-        company_id: companyId,
-        ...(limit ? { limit } : {}),
-      }),
-    },
-    // Варіант 2: POST /clients з company_id + query params для полів
-    {
-      name: 'POST /clients with company_id + query fields',
-      method: 'POST' as const,
-      url: `/clients?fields[]=*&include[]=*`,
-      body: JSON.stringify({ 
-        company_id: companyId,
-        ...(limit ? { limit } : {}),
-      }),
-    },
-    // Варіант 2: POST /clients з company_id в тілі (найбільш вірогідний згідно з документацією)
+    // Варіант 1: POST /clients з company_id (найпростіший варіант згідно з документацією)
     {
       name: 'POST /clients with company_id',
       method: 'POST' as const,
