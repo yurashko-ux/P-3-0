@@ -54,6 +54,8 @@ export default function AltegioLanding() {
   const [copied, setCopied] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const [clientsDebug, setClientsDebug] = useState<any>(null);
+  const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
 
   useEffect(() => {
     // Завжди використовуємо production URL для webhook
@@ -145,6 +147,23 @@ export default function AltegioLanding() {
         message: 'Помилка з\'єднання',
         error: err instanceof Error ? err.message : 'Невідома помилка',
       });
+    }
+  }
+
+  async function testClientsDebug() {
+    setClientsDebugLoading(true);
+    setClientsDebug(null);
+    try {
+      const res = await fetch('/api/altegio/test/clients-debug', { cache: 'no-store' });
+      const data = await res.json();
+      setClientsDebug(data);
+    } catch (err) {
+      setClientsDebug({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    } finally {
+      setClientsDebugLoading(false);
     }
   }
 
@@ -469,6 +488,22 @@ export default function AltegioLanding() {
                 {clientsTestStatus.loading ? 'Перевірка...' : 'Отримати клієнтів'}
               </button>
               <button
+                onClick={testClientsDebug}
+                disabled={clientsDebugLoading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: clientsDebugLoading ? 'not-allowed' : 'pointer',
+                  opacity: clientsDebugLoading ? 0.6 : 1,
+                }}
+              >
+                {clientsDebugLoading ? 'Тестування...' : '🔧 Діагностика API'}
+              </button>
+              <button
                 onClick={getDiagnostics}
                 style={{
                   padding: '10px 20px',
@@ -693,6 +728,90 @@ export default function AltegioLanding() {
             </div>
           )}
         </Card>
+
+        {clientsDebug && (
+          <Card title="🔧 Діагностика API клієнтів" emoji="🔧">
+            <div style={{ padding: 16 }}>
+              {clientsDebug.ok && clientsDebug.results && (
+                <div>
+                  <div style={{ marginBottom: 16, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd' }}>
+                    <strong>📊 Підсумок тестування:</strong>
+                    <ul style={{ margin: '8px 0 0 0', paddingLeft: 22 }}>
+                      <li>Всього тестів: <strong>{clientsDebug.summary?.totalTests || 0}</strong></li>
+                      <li>Успішних: <strong style={{ color: '#16a34a' }}>{clientsDebug.summary?.successful || 0}</strong></li>
+                      <li>Помилок: <strong style={{ color: '#dc2626' }}>{clientsDebug.summary?.failed || 0}</strong></li>
+                      <li>Винятків: <strong style={{ color: '#dc2626' }}>{clientsDebug.summary?.errors || 0}</strong></li>
+                    </ul>
+                  </div>
+
+                  <div style={{ marginTop: 16 }}>
+                    <strong>Детальні результати:</strong>
+                    <div style={{ marginTop: 12 }}>
+                      {clientsDebug.results.map((result: any, index: number) => (
+                        <div
+                          key={index}
+                          style={{
+                            marginBottom: 12,
+                            padding: 12,
+                            background: result.success ? '#f0fdf4' : result.error ? '#fef2f2' : '#fef3c7',
+                            borderRadius: 6,
+                            border: `1px solid ${result.success ? '#86efac' : result.error ? '#fca5a5' : '#fcd34d'}`,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <strong style={{ color: result.success ? '#166534' : result.error ? '#991b1b' : '#92400e' }}>
+                              {result.success ? '✅' : result.error ? '❌' : '⚠️'} {result.test}
+                            </strong>
+                            {result.status && (
+                              <span style={{ fontSize: '0.9em', color: result.success ? '#16a34a' : '#dc2626' }}>
+                                {result.status} {result.statusText}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {result.url && (
+                            <div style={{ marginTop: 8, fontSize: '0.85em', color: '#6b7280' }}>
+                              <strong>URL:</strong> <code style={{ wordBreak: 'break-all' }}>{result.url}</code>
+                            </div>
+                          )}
+                          
+                          {result.method && (
+                            <div style={{ marginTop: 4, fontSize: '0.85em', color: '#6b7280' }}>
+                              <strong>Method:</strong> <code>{result.method}</code>
+                            </div>
+                          )}
+
+                          {result.response && (
+                            <details style={{ marginTop: 8, cursor: 'pointer' }}>
+                              <summary style={{ fontWeight: 600, fontSize: '0.9em' }}>Відповідь API</summary>
+                              <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 4, fontSize: '0.85em', maxHeight: '300px', overflowY: 'auto' }}>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                  {JSON.stringify(result.response, null, 2)}
+                                </pre>
+                              </div>
+                            </details>
+                          )}
+
+                          {result.error && (
+                            <div style={{ marginTop: 8, padding: 8, background: '#fee2e2', borderRadius: 4, color: '#991b1b', fontSize: '0.85em' }}>
+                              <strong>Помилка:</strong> {result.error}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!clientsDebug.ok && clientsDebug.error && (
+                <div style={{ padding: 12, background: '#fef2f2', borderRadius: 6, border: '1px solid #fca5a5', color: '#991b1b' }}>
+                  <strong>❌ Помилка:</strong> {clientsDebug.error}
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         <Card title="Календар записів" emoji="📅">
           <div style={{ marginBottom: 16 }}>
