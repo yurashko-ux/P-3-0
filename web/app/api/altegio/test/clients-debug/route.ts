@@ -1,7 +1,6 @@
 // web/app/api/altegio/test/clients-debug/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { altegioFetch, altegioUrl } from '@/lib/altegio/client';
-import { assertAltegioEnv, altegioHeaders } from '@/lib/altegio/env';
+import { assertAltegioEnv, altegioHeaders, altegioUrl } from '@/lib/altegio/env';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
