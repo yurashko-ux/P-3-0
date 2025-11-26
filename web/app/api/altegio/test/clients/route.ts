@@ -244,18 +244,37 @@ export async function GET(req: NextRequest) {
       }
     }
     
-    // Перевіряємо custom_fields, якщо вони є
+    // Перевіряємо custom_fields, якщо вони є (пріоритет #1 - там зберігається Instagram username)
     if (!instagramFieldFound && firstClient.custom_fields) {
-      for (const variant of instagramFieldVariants) {
-        const foundKey = Object.keys(firstClient.custom_fields).find(key => 
-          key.toLowerCase().replace(/[-_]/g, '') === variant.toLowerCase().replace(/[-_]/g, '')
-        );
-        
-        if (foundKey && firstClient.custom_fields[foundKey]) {
-          instagramFieldFound = true;
-          instagramFieldName = `custom_fields.${foundKey}`;
-          instagramFieldValue = String(firstClient.custom_fields[foundKey]);
-          break;
+      console.log('[altegio/test/clients] Checking custom_fields for Instagram:', Object.keys(firstClient.custom_fields));
+      
+      // Спочатку шукаємо точний API key 'instagram-user-name' (як користувач згадував)
+      if (firstClient.custom_fields['instagram-user-name']) {
+        instagramFieldFound = true;
+        instagramFieldName = 'custom_fields.instagram-user-name';
+        instagramFieldValue = String(firstClient.custom_fields['instagram-user-name']).trim();
+        console.log('[altegio/test/clients] ✅ Found Instagram in custom_fields.instagram-user-name:', instagramFieldValue);
+      } else {
+        // Якщо точний ключ не знайдено, шукаємо за варіантами
+        for (const variant of instagramFieldVariants) {
+          const foundKey = Object.keys(firstClient.custom_fields).find(key => {
+            const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
+            const normalizedVariant = variant.toLowerCase().replace(/[-_]/g, '');
+            return normalizedKey === normalizedVariant || 
+                   normalizedKey.includes(normalizedVariant) ||
+                   normalizedVariant.includes(normalizedKey);
+          });
+          
+          if (foundKey && firstClient.custom_fields[foundKey]) {
+            const value = String(firstClient.custom_fields[foundKey]).trim();
+            if (value && value !== firstClient.name) {
+              instagramFieldFound = true;
+              instagramFieldName = `custom_fields.${foundKey}`;
+              instagramFieldValue = value;
+              console.log('[altegio/test/clients] ✅ Found Instagram in custom_fields:', instagramFieldName, instagramFieldValue);
+              break;
+            }
+          }
         }
       }
     }
