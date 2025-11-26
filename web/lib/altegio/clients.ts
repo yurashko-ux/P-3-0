@@ -16,8 +16,22 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
   // "postGet a list of clients" - використовує POST метод (GET deprecated)
   // Спробуємо різні варіанти endpoint згідно з документацією
   const attempts = [
-    // Варіант 1: POST /clients з company_id в тілі (згідно з документацією: postGet a list of clients)
+    // Варіант 1: POST /clients з company_id + фільтр активних клієнтів
     // Згідно з документацією: POST /clients з company_id в body
+    {
+      name: 'POST /clients with company_id + active filter',
+      method: 'POST' as const,
+      url: `/clients`,
+      body: JSON.stringify({ 
+        company_id: companyId,
+        ...(limit ? { limit } : {}),
+        // Спробуємо фільтрувати тільки активних клієнтів
+        filter: {
+          active: 1, // Тільки активні
+        },
+      }),
+    },
+    // Варіант 2: POST /clients з company_id без фільтрів (за замовчуванням)
     {
       name: 'POST /clients with company_id (doc standard)',
       method: 'POST' as const,
@@ -97,22 +111,6 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
       );
       
       // Детальне логування для діагностики
-      console.log(`[altegio/clients] Response from ${attempt.name}:`, {
-        isArray: Array.isArray(response),
-        responseType: typeof response,
-        responseKeys: response && typeof response === 'object' ? Object.keys(response) : [],
-        firstItemKeys: Array.isArray(response) && response[0] 
-          ? Object.keys(response[0]) 
-          : (response && typeof response === 'object' && 'data' in response && Array.isArray(response.data) && response.data[0])
-            ? Object.keys(response.data[0])
-            : [],
-        firstItemSample: Array.isArray(response) && response[0]
-          ? response[0]
-          : (response && typeof response === 'object' && 'data' in response && Array.isArray(response.data) && response.data[0])
-            ? response.data[0]
-            : null,
-      });
-      
       let clients: Client[] = [];
       if (Array.isArray(response)) {
         clients = response;
@@ -124,6 +122,42 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         } else if ('items' in response && Array.isArray(response.items)) {
           clients = response.items;
         }
+      }
+      
+      console.log(`[altegio/clients] Response from ${attempt.name}:`, {
+        isArray: Array.isArray(response),
+        responseType: typeof response,
+        responseKeys: response && typeof response === 'object' ? Object.keys(response) : [],
+        clientsCount: clients.length,
+        firstClientKeys: clients[0] ? Object.keys(clients[0]) : [],
+        firstClientSample: clients[0] || null,
+        // Перевіряємо, чи клієнти мають хоча б ім'я або телефон
+        clientsWithNames: clients.filter(c => c.name && c.name.trim()).length,
+        clientsWithPhones: clients.filter(c => c.phone && c.phone.trim()).length,
+        clientsWithOnlyId: clients.filter(c => Object.keys(c).length === 1 && 'id' in c).length,
+      });
+      
+      // Якщо отримали порожній список, продовжуємо спроби
+      if (clients.length === 0) {
+        continue;
+      }
+      
+      // Фільтруємо видалених/неактивних клієнтів (якщо є поле deleted_at або active)
+      const activeClients = clients.filter((client: any) => {
+        // Пропускаємо клієнтів, які мають deleted_at
+        if (client.deleted_at) {
+          return false;
+        }
+        // Пропускаємо неактивних клієнтів
+        if (client.active === false || client.active === 0) {
+          return false;
+        }
+        return true;
+      });
+      
+      if (activeClients.length < clients.length) {
+        console.log(`[altegio/clients] Filtered ${clients.length - activeClients.length} inactive/deleted clients`);
+        clients = activeClients;
       }
       
       // Якщо отримали клієнтів, перевіряємо чи є повна інформація
@@ -150,21 +184,42 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         if (hasFullInfo || attempt === attempts[attempts.length - 1]) {
           // Якщо тільки ID, спробуємо отримати повну інформацію через окремі запити
           if (!hasFullInfo && clients.length > 0) {
-            console.log(`[altegio/clients] ⚠️ Only IDs received, fetching full client details...`);
+            console.log(`[altegio/clients] ⚠️ Only IDs received, fetching full client details for ${clients.length} clients...`);
             const clientsWithFullInfo: Client[] = [];
+            let skippedCount = 0;
             
             for (const client of clients.slice(0, limit || 10)) {
               try {
                 const fullClient = await getClient(companyId, client.id);
                 if (fullClient) {
-                  clientsWithFullInfo.push(fullClient);
+                  // Перевіряємо, чи клієнт має хоч якісь дані (ім'я, телефон, email)
+                  const hasAnyData = fullClient.name || fullClient.phone || fullClient.email;
+                  if (hasAnyData) {
+                    clientsWithFullInfo.push(fullClient);
+                    console.log(`[altegio/clients] ✅ Got full info for client ${client.id}: name="${fullClient.name || 'none'}", phone="${fullClient.phone || 'none'}"`);
+                  } else {
+                    skippedCount++;
+                    console.log(`[altegio/clients] ⚠️ Client ${client.id} has no data (no name, phone, email) - skipping`);
+                  }
                 } else {
-                  clientsWithFullInfo.push(client); // Залишаємо як є, якщо не вдалося
+                  skippedCount++;
+                  console.log(`[altegio/clients] ⚠️ Client ${client.id} not found or has no data - skipping`);
                 }
               } catch (err) {
+                skippedCount++;
                 console.warn(`[altegio/clients] Failed to get full info for client ${client.id}:`, err);
-                clientsWithFullInfo.push(client); // Залишаємо як є
               }
+              
+              // Невелика затримка, щоб не перевантажити API
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            console.log(`[altegio/clients] Summary: ${clientsWithFullInfo.length} clients with data, ${skippedCount} skipped (no data or not found)`);
+            
+            if (clientsWithFullInfo.length === 0) {
+              console.warn(`[altegio/clients] ⚠️ No clients with data found! All ${clients.length} clients appear to be deleted/inactive or have no data.`);
+              // Продовжуємо спроби з іншими методами
+              continue;
             }
             
             return clientsWithFullInfo;
