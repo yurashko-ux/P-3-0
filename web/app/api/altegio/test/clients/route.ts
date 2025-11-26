@@ -92,7 +92,14 @@ export async function GET(req: NextRequest) {
                 name: fullClient.name,
                 hasCustomFields: !!fullClient.custom_fields,
                 customFieldsKeys: fullClient.custom_fields ? Object.keys(fullClient.custom_fields) : [],
+                customFieldsData: fullClient.custom_fields || null,
+                allKeys: Object.keys(fullClient),
               });
+              
+              // Якщо немає custom_fields, логуємо повну структуру для діагностики
+              if (!fullClient.custom_fields) {
+                console.warn(`[altegio/test/clients] ⚠️ Client ${client.id} has no custom_fields! Full structure:`, JSON.stringify(fullClient, null, 2).substring(0, 1000));
+              }
             } else {
               // Якщо не отримали повні дані, використовуємо те, що є
               clientsWithFullDetails.push(client);
