@@ -534,6 +534,56 @@ export default function AltegioLanding() {
                 </div>
               )}
 
+              {clientsTestStatus.ok && clientsTestStatus.clients && clientsTestStatus.clients.length > 0 && (
+                <div style={{ marginTop: 16, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd' }}>
+                  <strong style={{ display: 'block', marginBottom: 12 }}>👥 Список клієнтів:</strong>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9em' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #bae6fd', textAlign: 'left' }}>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>ID</th>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>Ім'я</th>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>Телефон</th>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>Email</th>
+                          <th style={{ padding: '8px', fontWeight: 600 }}>Instagram</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientsTestStatus.clients.map((client: any, index: number) => (
+                          <tr 
+                            key={client.id || index}
+                            style={{ 
+                              borderBottom: '1px solid #e0e7ef',
+                              backgroundColor: index % 2 === 0 ? '#fff' : '#fafafa'
+                            }}
+                          >
+                            <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '0.85em' }}>
+                              {client.id || 'N/A'}
+                            </td>
+                            <td style={{ padding: '8px', fontWeight: 500 }}>
+                              {client.name || '—'}
+                            </td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '0.85em' }}>
+                              {client.phone || '—'}
+                            </td>
+                            <td style={{ padding: '8px', fontSize: '0.85em' }}>
+                              {client.email || '—'}
+                            </td>
+                            <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '0.85em' }}>
+                              {client.instagram && client.instagram !== '—' ? (
+                                <span style={{ color: '#22c55e', fontWeight: 600 }}>@{client.instagram}</span>
+                              ) : (
+                                <span style={{ color: '#ef4444' }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {clientsTestStatus.ok && clientsTestStatus.firstClientStructure && (
                 <div style={{ marginTop: 16, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd' }}>
                   <strong style={{ display: 'block', marginBottom: 12 }}>📋 Структура першого клієнта:</strong>
@@ -589,6 +639,21 @@ export default function AltegioLanding() {
                           {JSON.stringify(clientsTestStatus.firstClientStructure.custom_fields, null, 2)}
                         </code>
                       </div>
+                    </div>
+                  )}
+
+                  {clientsTestStatus.firstClientStructure.rawStructure && (
+                    <div style={{ marginTop: 12 }}>
+                      <details>
+                        <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: 8 }}>
+                          🔍 Повна raw структура першого клієнта (для діагностики)
+                        </summary>
+                        <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 4, fontSize: '0.8em', maxHeight: '400px', overflowY: 'auto', border: '1px solid #e0e7ef' }}>
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                            {clientsTestStatus.firstClientStructure.rawStructure}
+                          </pre>
+                        </div>
+                      </details>
                     </div>
                   )}
                 </div>
