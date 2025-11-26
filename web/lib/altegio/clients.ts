@@ -218,24 +218,51 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
  */
 export async function getClient(companyId: number, clientId: number): Promise<Client | null> {
   try {
-    const url = `/company/${companyId}/client/${clientId}`;
-    const response = await altegioFetch<Client | { data?: Client }>(url);
+    // Спробуємо різні варіанти URL з параметрами для отримання всіх полів
+    const urlAttempts = [
+      `/company/${companyId}/client/${clientId}?include[]=*&with[]=*`,
+      `/company/${companyId}/clients/${clientId}?include[]=*&with[]=*`,
+      `/company/${companyId}/client/${clientId}`,
+      `/company/${companyId}/clients/${clientId}`,
+      `/clients/${clientId}?company_id=${companyId}`,
+    ];
     
-    if (response && typeof response === 'object') {
-      if ('id' in response) {
-        // Логуємо структуру для діагностики кастомних полів
-        console.log(`[altegio/clients] Client ${clientId} structure:`, {
-          keys: Object.keys(response),
-          hasCustomFields: 'custom_fields' in response,
-          hasInstagramField: Object.keys(response).some(key => 
-            key.toLowerCase().includes('instagram')
-          ),
-        });
-        return response as Client;
+    let lastError: Error | null = null;
+    
+    for (const url of urlAttempts) {
+      try {
+        const response = await altegioFetch<Client | { data?: Client }>(url);
+        
+        if (response && typeof response === 'object') {
+          let client: Client | null = null;
+          
+          if ('id' in response) {
+            client = response as Client;
+          } else if ('data' in response && response.data) {
+            client = response.data as Client;
+          }
+          
+          if (client && client.id) {
+            // Логуємо структуру для діагностики кастомних полів
+            console.log(`[altegio/clients] Client ${clientId} structure:`, {
+              keys: Object.keys(client),
+              hasCustomFields: 'custom_fields' in client,
+              hasInstagramField: Object.keys(client).some(key => 
+                key.toLowerCase().includes('instagram')
+              ),
+              url,
+            });
+            return client;
+          }
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        continue; // Пробуємо наступний URL
       }
-      if ('data' in response && response.data) {
-        return response.data as Client;
-      }
+    }
+    
+    if (lastError) {
+      console.error(`[altegio/clients] All attempts failed for client ${clientId}:`, lastError);
     }
     
     return null;
