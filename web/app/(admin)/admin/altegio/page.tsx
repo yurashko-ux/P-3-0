@@ -286,6 +286,26 @@ export default function AltegioLanding() {
     }
   }
 
+  async function testFullWeekAppointments() {
+    setFullWeekAppointmentsStatus({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/altegio/test/appointments/full-week', { cache: 'no-store' });
+      const data = await res.json();
+      setFullWeekAppointmentsStatus({
+        loading: false,
+        ok: data.ok === true,
+        data: data,
+        error: data.error,
+      });
+    } catch (err) {
+      setFullWeekAppointmentsStatus({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
   return (
     <main style={{ maxWidth: 960, margin: '48px auto', padding: '0 20px' }}>
       <header style={{ marginBottom: 28 }}>
