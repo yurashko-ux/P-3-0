@@ -246,7 +246,19 @@ export async function GET(req: NextRequest) {
       }
     }
     
-    // Перевіряємо custom_fields, якщо вони є (пріоритет #1 - там зберігається Instagram username)
+    // Перевіряємо email поле для Instagram username (якщо там зберігається Instagram)
+    // Формат: "instagram_username@gmail.com" -> "instagram_username"
+    if (!instagramFieldFound && firstClient.email && firstClient.email.includes('@')) {
+      const emailParts = firstClient.email.split('@');
+      if (emailParts[0] && emailParts[0].trim()) {
+        instagramFieldFound = true;
+        instagramFieldName = 'email (Instagram username)';
+        instagramFieldValue = emailParts[0].trim();
+        console.log(`[altegio/test/clients] ✅ Found Instagram in email field: ${instagramFieldValue} from ${firstClient.email}`);
+      }
+    }
+    
+    // Перевіряємо custom_fields, якщо вони є (пріоритет #2 - якщо не знайдено в email)
     if (!instagramFieldFound && firstClient.custom_fields) {
       console.log('[altegio/test/clients] Checking custom_fields for Instagram:', Object.keys(firstClient.custom_fields));
       
@@ -310,6 +322,17 @@ export async function GET(req: NextRequest) {
       let instagramValue: string | null = null;
       let cardNumber: string | null = null;
       let note: string | null = null;
+      
+      // Шукаємо Instagram username в полі email (якщо там зберігається Instagram)
+      // Формат: "instagram_username@gmail.com" -> "instagram_username"
+      if (client.email && client.email.includes('@')) {
+        const emailParts = client.email.split('@');
+        if (emailParts[0] && emailParts[0].trim()) {
+          // Беремо частину перед "@" як Instagram username
+          instagramValue = emailParts[0].trim();
+          console.log(`[altegio/test/clients] Found Instagram in email for client ${client.id}: ${instagramValue} from ${client.email}`);
+        }
+      }
       
       // Шукаємо Card number (можливі варіанти назв)
       const cardNumberVariants = ['card_number', 'cardNumber', 'card-number', 'card', 'card_id', 'loyalty_card'];
