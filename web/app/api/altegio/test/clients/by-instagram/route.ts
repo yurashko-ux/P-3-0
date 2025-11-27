@@ -44,17 +44,35 @@ export async function GET(req: NextRequest) {
     
     console.log(`[altegio/test/clients/by-instagram] Searching for client with Instagram: ${normalizedInstagram}`);
     
-    // Отримуємо всіх клієнтів (для пошуку потрібно отримати більше клієнтів)
-    // Спробуємо отримати більше клієнтів для пошуку (500)
-    let clients = await getClients(companyId, 500);
+    // Отримуємо клієнтів з великим лімітом для пошуку
+    // Спробуємо отримати максимальну кількість клієнтів для пошуку
+    // Використовуємо кілька спроб з різними лімітами, щоб знайти всіх клієнтів
+    let allClients: any[] = [];
+    const limitsToTry = [500, 1000, 2000, 5000];
     
-    console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients for search`);
-    
-    // Додатково: якщо знайдено менше 500, спробуємо ще раз без ліміту
-    if (clients.length < 500) {
-      console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients, trying without limit...`);
-      // Можливо, треба спробувати без ліміту або з більшим лімітом
+    for (const limit of limitsToTry) {
+      console.log(`[altegio/test/clients/by-instagram] Trying to get clients with limit ${limit}...`);
+      const clients = await getClients(companyId, limit);
+      console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients with limit ${limit}`);
+      
+      // Якщо отримали менше ніж ліміт, значить це всі клієнти
+      if (clients.length < limit) {
+        allClients = clients;
+        console.log(`[altegio/test/clients/by-instagram] All clients retrieved (${allClients.length} total)`);
+        break;
+      } else {
+        // Якщо отримали рівно ліміт, можливо є ще
+        allClients = clients;
+        console.log(`[altegio/test/clients/by-instagram] Received exactly ${limit} clients, there might be more...`);
+        // Якщо це не останній ліміт, продовжуємо
+        if (limit !== limitsToTry[limitsToTry.length - 1]) {
+          continue;
+        }
+      }
     }
+    
+    const clients = allClients;
+    console.log(`[altegio/test/clients/by-instagram] Total clients for search: ${clients.length}`);
     
     // Відфільтруємо клієнтів з email для логування
     const clientsWithEmail = clients.filter(c => c.email && c.email.includes('@'));
