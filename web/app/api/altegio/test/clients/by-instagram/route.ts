@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getClients } from '@/lib/altegio/clients';
 import { getAllClientsPaginated } from '@/lib/altegio/clients-search';
 import { assertAltegioEnv } from '@/lib/altegio/env';
+import type { Client } from '@/lib/altegio/types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
