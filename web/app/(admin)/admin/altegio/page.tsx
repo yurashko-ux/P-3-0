@@ -58,6 +58,19 @@ export default function AltegioLanding() {
   const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
   const [selectedClientDetails, setSelectedClientDetails] = useState<any>(null);
   const [selectedClientLoading, setSelectedClientLoading] = useState(false);
+  const [instagramSearchValue, setInstagramSearchValue] = useState<string>('');
+  const [instagramSearchResult, setInstagramSearchResult] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    client?: {
+      id: number;
+      name: string;
+      phone?: string;
+      email?: string;
+      instagramUsername?: string;
+    };
+    error?: string;
+  }>({ loading: false, ok: null });
 
   useEffect(() => {
     // Завжди використовуємо production URL для webhook
@@ -183,6 +196,41 @@ export default function AltegioLanding() {
       });
     } finally {
       setSelectedClientLoading(false);
+    }
+  }
+
+  async function searchClientByInstagram() {
+    if (!instagramSearchValue.trim()) {
+      return;
+    }
+    
+    setInstagramSearchResult({ loading: true, ok: null });
+    try {
+      const res = await fetch(
+        `/api/altegio/test/clients/by-instagram?instagram=${encodeURIComponent(instagramSearchValue.trim())}`,
+        { cache: 'no-store' }
+      );
+      const data = await res.json();
+      
+      if (data.ok && data.client) {
+        setInstagramSearchResult({
+          loading: false,
+          ok: true,
+          client: data.client,
+        });
+      } else {
+        setInstagramSearchResult({
+          loading: false,
+          ok: false,
+          error: data.error || 'Клієнт не знайдено',
+        });
+      }
+    } catch (err) {
+      setInstagramSearchResult({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
     }
   }
 
@@ -478,6 +526,114 @@ export default function AltegioLanding() {
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Пошук клієнта за Instagram" emoji="🔍">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Введіть Instagram username для пошуку клієнта. Система шукає в полі email (формат: instagram_username@gmail.com).
+            </p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                value={instagramSearchValue}
+                onChange={(e) => setInstagramSearchValue(e.target.value)}
+                placeholder="Наприклад: mv_valeria або @mv_valeria"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && instagramSearchValue.trim()) {
+                    searchClientByInstagram();
+                  }
+                }}
+                style={{
+                  flex: '1 1 300px',
+                  padding: '10px 16px',
+                  border: '1px solid #e0e7ef',
+                  borderRadius: 8,
+                  fontSize: '1em',
+                  minWidth: '200px',
+                }}
+              />
+              <button
+                onClick={searchClientByInstagram}
+                disabled={instagramSearchResult.loading || !instagramSearchValue.trim()}
+                style={{
+                  padding: '10px 24px',
+                  background: instagramSearchResult.loading || !instagramSearchValue.trim() ? '#9ca3af' : '#2a6df5',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: instagramSearchResult.loading || !instagramSearchValue.trim() ? 'not-allowed' : 'pointer',
+                  opacity: instagramSearchResult.loading || !instagramSearchValue.trim() ? 0.6 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {instagramSearchResult.loading ? 'Пошук...' : 'Знайти'}
+              </button>
+            </div>
+          </div>
+
+          {instagramSearchResult.ok !== null && (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 8,
+                background: instagramSearchResult.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${instagramSearchResult.ok ? '#86efac' : '#fca5a5'}`,
+                color: instagramSearchResult.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              {instagramSearchResult.ok && instagramSearchResult.client ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                    <span style={{ fontSize: '1.5em' }}>✅</span>
+                    <strong style={{ fontSize: '1.1em' }}>Клієнт знайдено!</strong>
+                  </div>
+                  <div style={{ background: '#fff', padding: 16, borderRadius: 8, border: '1px solid #d1d5db' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
+                      <div>
+                        <strong style={{ display: 'block', marginBottom: 4, color: '#6b7280', fontSize: '0.9em' }}>Ім'я та прізвище:</strong>
+                        <div style={{ fontSize: '1.1em', fontWeight: 600, color: '#1f2937' }}>
+                          {instagramSearchResult.client.name || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <strong style={{ display: 'block', marginBottom: 4, color: '#6b7280', fontSize: '0.9em' }}>Номер телефону:</strong>
+                        <div style={{ fontSize: '1.1em', fontFamily: 'monospace', color: '#1f2937' }}>
+                          {instagramSearchResult.client.phone || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <strong style={{ display: 'block', marginBottom: 4, color: '#6b7280', fontSize: '0.9em' }}>Email:</strong>
+                        <div style={{ fontSize: '1em', color: '#1f2937', wordBreak: 'break-all' }}>
+                          {instagramSearchResult.client.email || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <strong style={{ display: 'block', marginBottom: 4, color: '#6b7280', fontSize: '0.9em' }}>Instagram:</strong>
+                        <div style={{ fontSize: '1em', fontFamily: 'monospace', color: '#22c55e', fontWeight: 600 }}>
+                          @{instagramSearchResult.client.instagramUsername || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <strong style={{ display: 'block', marginBottom: 4, color: '#6b7280', fontSize: '0.9em' }}>ID клієнта:</strong>
+                        <div style={{ fontSize: '1em', fontFamily: 'monospace', color: '#6b7280' }}>
+                          {instagramSearchResult.client.id}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>❌ Клієнт не знайдено</strong>
+                  <div style={{ fontSize: '0.9em', opacity: 0.9 }}>
+                    {instagramSearchResult.error || 'Клієнт з таким Instagram username не знайдено в системі.'}
+                  </div>
                 </div>
               )}
             </div>
