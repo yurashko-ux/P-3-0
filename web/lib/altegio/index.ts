@@ -7,4 +7,5 @@ export * from './types';
 export * from './companies';
 export * from './clients';
 export * from './appointments';
+export * from './visits';
 
