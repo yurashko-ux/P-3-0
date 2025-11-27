@@ -54,24 +54,24 @@ export async function GET(req: NextRequest) {
     
     // Спробуємо отримати і appointments, і visits
     // Appointments - майбутні записи, Visits - минулі/завершені візити
-    let appointments: any[] = [];
-    let visits: any[] = [];
+    let appointmentsList: any[] = [];
+    let visitsList: any[] = [];
     
     // Отримуємо appointments (можуть бути майбутні та минулі)
     try {
-      appointments = await getAppointments(companyId, {
+      appointmentsList = await getAppointments(companyId, {
         dateFrom,
         dateTo,
         includeClient: true,
       });
-      console.log(`[altegio/test/appointments/full-week] Got ${appointments.length} appointments`);
+      console.log(`[altegio/test/appointments/full-week] Got ${appointmentsList.length} appointments`);
     } catch (err) {
       console.warn(`[altegio/test/appointments/full-week] Failed to get appointments:`, err);
     }
     
     // Отримуємо visits (завершені візити з оплатами)
     try {
-      visits = await getVisits(companyId, {
+      visitsList = await getVisits(companyId, {
         dateFrom,
         dateTo,
         includeClient: true,
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
         includeStaff: true,
         includePayment: true,
       });
-      console.log(`[altegio/test/appointments/full-week] Got ${visits.length} visits`);
+      console.log(`[altegio/test/appointments/full-week] Got ${visitsList.length} visits`);
     } catch (err) {
       console.warn(`[altegio/test/appointments/full-week] Failed to get visits:`, err);
     }
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     // Об'єднуємо appointments та visits в один список
     // Створюємо map для об'єднання даних (visit може мати appointment_id)
     const visitsMap = new Map<number, any>();
-    visits.forEach(visit => {
+    visitsList.forEach(visit => {
       if (visit.appointment_id) {
         visitsMap.set(visit.appointment_id, visit);
       }
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
     const allRecords: any[] = [];
     
     // Додаємо appointments
-    appointments.forEach(apt => {
+    appointmentsList.forEach(apt => {
       const visit = visitsMap.get(apt.id);
       if (visit) {
         // Якщо є visit, об'єднуємо дані (visit має інформацію про оплату)
@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
     });
     
     // Додаємо visits, які не мають відповідного appointment
-    visits.forEach(visit => {
+    visitsList.forEach(visit => {
       if (!allRecords.find(r => r.id === visit.id || r.visit_id === visit.id)) {
         allRecords.push({
           ...visit,
@@ -264,8 +264,8 @@ export async function GET(req: NextRequest) {
         future: futureAppointments.length,
         statusStats,
         paymentStats,
-        appointmentsCount: appointments.length,
-        visitsCount: visits.length,
+        appointmentsCount: appointmentsList.length,
+        visitsCount: visitsList.length,
       },
       appointments: appointmentsData,
       pastAppointments,
