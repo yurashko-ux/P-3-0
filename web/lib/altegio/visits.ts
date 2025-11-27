@@ -53,9 +53,11 @@ export async function getVisits(
 ): Promise<Visit[]> {
   try {
     // Спробуємо різні варіанти endpoint для візитів
+    // Згідно з документацією: GET /company/{company_id}/visit/{visit_id} - для конкретного візиту
+    // Для списку візитів спробуємо різні варіанти
     const attempts = [
       {
-        name: 'GET /company/{id}/visits',
+        name: 'GET /company/{id}/visits (list)',
         method: 'GET' as const,
         url: altegioUrl(`/company/${companyId}/visits`),
         queryParams: new URLSearchParams(),
@@ -64,6 +66,12 @@ export async function getVisits(
         name: 'GET /visits?company_id={id}',
         method: 'GET' as const,
         url: altegioUrl(`/visits`),
+        queryParams: new URLSearchParams(),
+      },
+      {
+        name: 'GET /company/{id}/visit (list)',
+        method: 'GET' as const,
+        url: altegioUrl(`/company/${companyId}/visit`),
         queryParams: new URLSearchParams(),
       },
     ];
