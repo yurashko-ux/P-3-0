@@ -70,6 +70,23 @@ export default function AltegioLanding() {
       instagramUsername?: string;
     };
     error?: string;
+    diagnostics?: {
+      searchedClients: number;
+      clientsWithEmail: number;
+      clientsWithoutEmail: number;
+    };
+    similarMatches?: Array<{
+      id: number;
+      name: string;
+      email: string;
+      instagramPart: string;
+    }>;
+    sampleEmails?: Array<{
+      id: number;
+      name: string;
+      email: string;
+      instagramPart: string;
+    }>;
   }>({ loading: false, ok: null });
 
   useEffect(() => {
@@ -223,6 +240,9 @@ export default function AltegioLanding() {
           loading: false,
           ok: false,
           error: data.error || 'Клієнт не знайдено',
+          diagnostics: data.diagnostics,
+          similarMatches: data.similarMatches,
+          sampleEmails: data.sampleEmails,
         });
       }
     } catch (err) {
@@ -631,9 +651,67 @@ export default function AltegioLanding() {
               ) : (
                 <div>
                   <strong style={{ display: 'block', marginBottom: 8 }}>❌ Клієнт не знайдено</strong>
-                  <div style={{ fontSize: '0.9em', opacity: 0.9 }}>
+                  <div style={{ fontSize: '0.9em', opacity: 0.9, marginBottom: 12 }}>
                     {instagramSearchResult.error || 'Клієнт з таким Instagram username не знайдено в системі.'}
                   </div>
+                  {instagramSearchResult.diagnostics && (
+                    <div style={{ 
+                      padding: 12, 
+                      background: '#f0f9ff', 
+                      borderRadius: 6, 
+                      border: '1px solid #bae6fd',
+                      fontSize: '0.85em',
+                      marginTop: 12
+                    }}>
+                      <strong style={{ display: 'block', marginBottom: 4 }}>📊 Діагностика:</strong>
+                      <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
+                        <li>Перевірено клієнтів: <strong>{instagramSearchResult.diagnostics.searchedClients}</strong></li>
+                        <li>Клієнтів з email: <strong>{instagramSearchResult.diagnostics.clientsWithEmail}</strong></li>
+                        <li>Клієнтів без email: <strong>{instagramSearchResult.diagnostics.clientsWithoutEmail}</strong></li>
+                      </ul>
+                    </div>
+                  )}
+                  {instagramSearchResult.similarMatches && instagramSearchResult.similarMatches.length > 0 && (
+                    <div style={{ 
+                      padding: 12, 
+                      background: '#fff3cd', 
+                      borderRadius: 6, 
+                      border: '1px solid #ffc107',
+                      fontSize: '0.85em',
+                      marginTop: 12
+                    }}>
+                      <strong style={{ display: 'block', marginBottom: 4 }}>🔍 Схожі збіги:</strong>
+                      <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
+                        {instagramSearchResult.similarMatches.map((match: any, idx: number) => (
+                          <li key={idx}>
+                            {match.name || 'Без імені'} - {match.email} (Instagram: @{match.instagramPart})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {instagramSearchResult.sampleEmails && instagramSearchResult.sampleEmails.length > 0 && (
+                    <details style={{ marginTop: 12 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
+                        📋 Приклади email в системі (перші 10)
+                      </summary>
+                      <div style={{ 
+                        marginTop: 8, 
+                        padding: 12, 
+                        background: '#f8fafc', 
+                        borderRadius: 6,
+                        fontSize: '0.85em'
+                      }}>
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          {instagramSearchResult.sampleEmails.map((sample: any, idx: number) => (
+                            <li key={idx} style={{ marginBottom: 4 }}>
+                              {sample.name || 'Без імені'} - <code>{sample.email}</code> (Instagram: <code>@{sample.instagramPart}</code>)
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </details>
+                  )}
                 </div>
               )}
             </div>
