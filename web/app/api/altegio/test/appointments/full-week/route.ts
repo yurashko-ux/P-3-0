@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { altegioFetch } from '@/lib/altegio/client';
 import { assertAltegioEnv } from '@/lib/altegio/env';
 import { altegioUrl } from '@/lib/altegio/env';
+import { getVisits, getPastVisits } from '@/lib/altegio/visits';
+import { getAppointments } from '@/lib/altegio/appointments';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -48,89 +50,97 @@ export async function GET(req: NextRequest) {
     const dateFrom = weekAgo.toISOString().split('T')[0];
     const dateTo = weekAhead.toISOString().split('T')[0];
     
-    console.log(`[altegio/test/appointments/full-week] Fetching appointments from ${dateFrom} to ${dateTo}`);
+    console.log(`[altegio/test/appointments/full-week] Fetching appointments and visits from ${dateFrom} to ${dateTo}`);
     
-    // Спробуємо різні варіанти endpoint для отримання всіх полів
-    const attempts = [
-      {
-        name: 'GET /company/{id}/appointments with all includes',
-        method: 'GET' as const,
-        url: altegioUrl(`/company/${companyId}/appointments?date_from=${dateFrom}&date_to=${dateTo}&include[]=client&include[]=service&include[]=staff&include[]=payment&with[]=client&with[]=service&with[]=staff&with[]=payment`),
-      },
-      {
-        name: 'GET /company/{id}/appointments with includes',
-        method: 'GET' as const,
-        url: altegioUrl(`/company/${companyId}/appointments?date_from=${dateFrom}&date_to=${dateTo}&include[]=*&with[]=*`),
-      },
-      {
-        name: 'GET /company/{id}/appointments basic',
-        method: 'GET' as const,
-        url: altegioUrl(`/company/${companyId}/appointments?date_from=${dateFrom}&date_to=${dateTo}`),
-      },
-      {
-        name: 'POST /company/{id}/appointments/search',
-        method: 'POST' as const,
-        url: altegioUrl(`/company/${companyId}/appointments/search`),
-        body: JSON.stringify({
-          date_from: dateFrom,
-          date_to: dateTo,
-          include: ['client', 'service', 'staff', 'payment'],
-          with: ['client', 'service', 'staff', 'payment'],
-        }),
-      },
-    ];
-    
+    // Спробуємо отримати і appointments, і visits
+    // Appointments - майбутні записи, Visits - минулі/завершені візити
     let appointments: any[] = [];
-    let lastSuccessfulAttempt: string | null = null;
-    let lastError: Error | null = null;
+    let visits: any[] = [];
     
-    for (const attempt of attempts) {
-      try {
-        console.log(`[altegio/test/appointments/full-week] Trying ${attempt.name}...`);
-        
-        const options: RequestInit = {
-          method: attempt.method,
-        };
-        
-        if (attempt.body) {
-          options.body = attempt.body;
-        }
-        
-        const response = await altegioFetch<any>(attempt.url, options);
-        
-        // Парсимо відповідь
-        let parsedAppointments: any[] = [];
-        if (Array.isArray(response)) {
-          parsedAppointments = response;
-        } else if (response && typeof response === 'object') {
-          if ('data' in response && Array.isArray(response.data)) {
-            parsedAppointments = response.data;
-          } else if ('appointments' in response && Array.isArray(response.appointments)) {
-            parsedAppointments = response.appointments;
-          } else if ('items' in response && Array.isArray(response.items)) {
-            parsedAppointments = response.items;
-          }
-        }
-        
-        if (parsedAppointments.length > 0) {
-          appointments = parsedAppointments;
-          lastSuccessfulAttempt = attempt.name;
-          console.log(`[altegio/test/appointments/full-week] ✅ Success with ${attempt.name}, got ${appointments.length} appointments`);
-          break;
-        }
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        console.warn(`[altegio/test/appointments/full-week] ❌ Failed with ${attempt.name}:`, lastError.message);
-        continue;
-      }
+    // Отримуємо appointments (можуть бути майбутні та минулі)
+    try {
+      appointments = await getAppointments(companyId, {
+        dateFrom,
+        dateTo,
+        includeClient: true,
+      });
+      console.log(`[altegio/test/appointments/full-week] Got ${appointments.length} appointments`);
+    } catch (err) {
+      console.warn(`[altegio/test/appointments/full-week] Failed to get appointments:`, err);
     }
+    
+    // Отримуємо visits (завершені візити з оплатами)
+    try {
+      visits = await getVisits(companyId, {
+        dateFrom,
+        dateTo,
+        includeClient: true,
+        includeService: true,
+        includeStaff: true,
+        includePayment: true,
+      });
+      console.log(`[altegio/test/appointments/full-week] Got ${visits.length} visits`);
+    } catch (err) {
+      console.warn(`[altegio/test/appointments/full-week] Failed to get visits:`, err);
+    }
+    
+    // Об'єднуємо appointments та visits
+    // Використовуємо appointments як основне джерело, але додаємо дані про оплати з visits
+    
+    // Об'єднуємо appointments та visits в один список
+    // Створюємо map для об'єднання даних (visit може мати appointment_id)
+    const visitsMap = new Map<number, any>();
+    visits.forEach(visit => {
+      if (visit.appointment_id) {
+        visitsMap.set(visit.appointment_id, visit);
+      }
+      // Також додаємо visit за його ID
+      visitsMap.set(visit.id, visit);
+    });
+    
+    // Об'єднуємо дані
+    const allRecords: any[] = [];
+    
+    // Додаємо appointments
+    appointments.forEach(apt => {
+      const visit = visitsMap.get(apt.id);
+      if (visit) {
+        // Якщо є visit, об'єднуємо дані (visit має інформацію про оплату)
+        allRecords.push({
+          ...apt,
+          visit_id: visit.id,
+          payment: visit.payment || visit.transactions || apt.payment,
+          transactions: visit.transactions,
+          is_visit: true,
+        });
+        visitsMap.delete(apt.id);
+      } else {
+        // Якщо немає visit, це просто appointment
+        allRecords.push({
+          ...apt,
+          is_visit: false,
+        });
+      }
+    });
+    
+    // Додаємо visits, які не мають відповідного appointment
+    visits.forEach(visit => {
+      if (!allRecords.find(r => r.id === visit.id || r.visit_id === visit.id)) {
+        allRecords.push({
+          ...visit,
+          is_visit: true,
+        });
+      }
+    });
+    
+    const appointments = allRecords;
+    console.log(`[altegio/test/appointments/full-week] Total records: ${appointments.length} (appointments + visits)`);
     
     if (appointments.length === 0) {
       return NextResponse.json({
         ok: false,
-        error: lastError?.message || 'No appointments found',
-        attempts: attempts.map(a => a.name),
-        lastError: lastError ? lastError.message : null,
+        error: 'No appointments or visits found',
+        note: 'Tried both /appointments and /visits endpoints',
       }, { status: 404 });
     }
     
