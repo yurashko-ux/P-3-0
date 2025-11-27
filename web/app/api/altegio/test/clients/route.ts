@@ -246,14 +246,15 @@ export async function GET(req: NextRequest) {
       }
     }
     
-    // Перевіряємо email поле для Instagram username (якщо там зберігається Instagram)
+    // Пріоритет #1: Перевіряємо email поле для Instagram username (якщо там зберігається Instagram)
     // Формат: "instagram_username@gmail.com" -> "instagram_username"
-    if (!instagramFieldFound && firstClient.email && firstClient.email.includes('@')) {
+    // Нормалізуємо: беремо частину перед "@", відкидаємо "@" та все після нього
+    if (firstClient.email && firstClient.email.includes('@')) {
       const emailParts = firstClient.email.split('@');
       if (emailParts[0] && emailParts[0].trim()) {
         instagramFieldFound = true;
         instagramFieldName = 'email (Instagram username)';
-        instagramFieldValue = emailParts[0].trim();
+        instagramFieldValue = emailParts[0].trim(); // Частина перед "@" - це Instagram username
         console.log(`[altegio/test/clients] ✅ Found Instagram in email field: ${instagramFieldValue} from ${firstClient.email}`);
       }
     }
@@ -323,14 +324,15 @@ export async function GET(req: NextRequest) {
       let cardNumber: string | null = null;
       let note: string | null = null;
       
-      // Шукаємо Instagram username в полі email (якщо там зберігається Instagram)
+      // Пріоритет #1: Шукаємо Instagram username в полі email (якщо там зберігається Instagram)
       // Формат: "instagram_username@gmail.com" -> "instagram_username"
+      // Нормалізуємо: беремо частину перед "@", відкидаємо "@" та все після нього
       if (client.email && client.email.includes('@')) {
         const emailParts = client.email.split('@');
         if (emailParts[0] && emailParts[0].trim()) {
-          // Беремо частину перед "@" як Instagram username
+          // Беремо частину перед "@" як Instagram username (нормалізований)
           instagramValue = emailParts[0].trim();
-          console.log(`[altegio/test/clients] Found Instagram in email for client ${client.id}: ${instagramValue} from ${client.email}`);
+          console.log(`[altegio/test/clients] ✅ Found Instagram in email for client ${client.id}: ${instagramValue} from ${client.email}`);
         }
       }
       
