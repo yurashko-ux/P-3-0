@@ -49,6 +49,13 @@ export default function AltegioLanding() {
     days?: number;
     error?: string;
   }>({ loading: false, ok: null });
+
+  const [fullWeekAppointmentsStatus, setFullWeekAppointmentsStatus] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    data?: any;
+    error?: string;
+  }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -1183,22 +1190,40 @@ export default function AltegioLanding() {
             <p style={{ marginBottom: 12 }}>
               Отримання майбутніх записів з календаря (на наступні 30 днів). Перевірка наявності Instagram username у клієнтів.
             </p>
-            <button
-              onClick={testAppointments}
-              disabled={appointmentsTestStatus.loading}
-              style={{
-                padding: '10px 20px',
-                background: '#2a6df5',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                fontWeight: 600,
-                cursor: appointmentsTestStatus.loading ? 'not-allowed' : 'pointer',
-                opacity: appointmentsTestStatus.loading ? 0.6 : 1,
-              }}
-            >
-              {appointmentsTestStatus.loading ? 'Завантаження...' : 'Отримати майбутні записи'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={testAppointments}
+                disabled={appointmentsTestStatus.loading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#2a6df5',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: appointmentsTestStatus.loading ? 'not-allowed' : 'pointer',
+                  opacity: appointmentsTestStatus.loading ? 0.6 : 1,
+                }}
+              >
+                {appointmentsTestStatus.loading ? 'Завантаження...' : 'Отримати майбутні записи'}
+              </button>
+              <button
+                onClick={testFullWeekAppointments}
+                disabled={fullWeekAppointmentsStatus.loading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: fullWeekAppointmentsStatus.loading ? 'not-allowed' : 'pointer',
+                  opacity: fullWeekAppointmentsStatus.loading ? 0.6 : 1,
+                }}
+              >
+                {fullWeekAppointmentsStatus.loading ? 'Завантаження...' : '📊 Отримати записи за тиждень (всі поля)'}
+              </button>
+            </div>
           </div>
 
           {appointmentsTestStatus.ok !== null && (
