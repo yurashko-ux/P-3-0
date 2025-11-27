@@ -1,6 +1,7 @@
 // web/app/api/altegio/test/clients/by-instagram/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getClients } from '@/lib/altegio/clients';
+import { getAllClientsPaginated } from '@/lib/altegio/clients-search';
 import { assertAltegioEnv } from '@/lib/altegio/env';
 
 export const dynamic = 'force-dynamic';
@@ -45,76 +46,25 @@ export async function GET(req: NextRequest) {
     console.log(`[altegio/test/clients/by-instagram] Searching for client with Instagram: ${normalizedInstagram}`);
     
     // Отримуємо клієнтів з пагінацією до 1000
-    // Використовуємо пагінацію, щоб отримати більше клієнтів
-    let allClients: any[] = [];
-    const targetLimit = 1000;
-    const pageSize = 100; // Розмір сторінки
-    let currentPage = 1;
-    let hasMore = true;
+    console.log(`[altegio/test/clients/by-instagram] Fetching up to 1000 clients with pagination...`);
     
-    while (allClients.length < targetLimit && hasMore) {
-      console.log(`[altegio/test/clients/by-instagram] Fetching page ${currentPage} (page size: ${pageSize})...`);
-      
-      // Спробуємо отримати клієнтів для поточної сторінки
+    let clients: Client[] = [];
+    try {
+      // Спочатку спробуємо отримати через пагінований пошук
+      clients = await getAllClientsPaginated(companyId, 1000, 100);
+      console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients via paginated search`);
+    } catch (paginatedErr) {
+      console.warn(`[altegio/test/clients/by-instagram] Paginated search failed, trying direct fetch:`, paginatedErr);
+      // Fallback: спробуємо отримати одним запитом
       try {
-        // Використовуємо getClients з лімітом, який залежить від поточної сторінки
-        const offset = (currentPage - 1) * pageSize;
-        const limitForPage = Math.min(pageSize, targetLimit - allClients.length);
-        
-        // Отримуємо клієнтів (API може не підтримувати пагінацію, тому спробуємо отримати більше)
-        const clients = await getClients(companyId, offset + limitForPage);
-        console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients total`);
-        
-        // Якщо отримали стільки ж або менше клієнтів, ніж вже є, значить більше немає
-        if (clients.length <= allClients.length) {
-          console.log(`[altegio/test/clients/by-instagram] No new clients received, stopping pagination`);
-          hasMore = false;
-          break;
-        }
-        
-        // Додаємо нових клієнтів (без дублювання)
-        const existingIds = new Set(allClients.map(c => c.id));
-        const newClients = clients.filter(c => !existingIds.has(c.id));
-        allClients = [...allClients, ...newClients];
-        
-        console.log(`[altegio/test/clients/by-instagram] Added ${newClients.length} new clients, total: ${allClients.length}`);
-        
-        // Якщо отримали менше клієнтів ніж очікувалося, значить більше немає
-        if (clients.length < offset + limitForPage || newClients.length === 0) {
-          hasMore = false;
-        }
-        
-        currentPage++;
-        
-        // Невелика затримка між запитами
-        if (hasMore && allClients.length < targetLimit) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      } catch (err) {
-        console.warn(`[altegio/test/clients/by-instagram] Error fetching page ${currentPage}:`, err);
-        hasMore = false;
-        break;
+        clients = await getClients(companyId, 1000);
+        console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients via direct fetch`);
+      } catch (directErr) {
+        console.error(`[altegio/test/clients/by-instagram] Both methods failed:`, directErr);
+        throw directErr;
       }
     }
     
-    // Альтернативний підхід: спробуємо отримати клієнтів одним запитом з великим лімітом
-    if (allClients.length < targetLimit) {
-      console.log(`[altegio/test/clients/by-instagram] Trying direct fetch with limit ${targetLimit}...`);
-      try {
-        const directClients = await getClients(companyId, targetLimit);
-        console.log(`[altegio/test/clients/by-instagram] Direct fetch returned ${directClients.length} clients`);
-        
-        // Об'єднуємо без дублювання
-        const existingIds = new Set(allClients.map(c => c.id));
-        const newClients = directClients.filter(c => !existingIds.has(c.id));
-        allClients = [...allClients, ...newClients];
-        console.log(`[altegio/test/clients/by-instagram] Total after direct fetch: ${allClients.length}`);
-      } catch (err) {
-        console.warn(`[altegio/test/clients/by-instagram] Direct fetch failed:`, err);
-      }
-    }
-    
-    const clients = allClients.slice(0, targetLimit); // Обмежуємо до цільового ліміту
     console.log(`[altegio/test/clients/by-instagram] Total clients for search: ${clients.length}`);
     
     // Якщо не знайдено клієнта в основному списку, спробуємо також через appointments
