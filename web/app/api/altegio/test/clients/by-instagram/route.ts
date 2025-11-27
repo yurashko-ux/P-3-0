@@ -44,9 +44,33 @@ export async function GET(req: NextRequest) {
     
     console.log(`[altegio/test/clients/by-instagram] Searching for client with Instagram: ${normalizedInstagram}`);
     
-    // Отримуємо всіх клієнтів (можна обмежити кількість)
-    // Для пошуку потрібно отримати більше клієнтів, тому спробуємо отримати 100
-    const clients = await getClients(companyId, 100);
+    // Отримуємо всіх клієнтів (для пошуку потрібно отримати більше клієнтів)
+    // Спробуємо отримати більше клієнтів для пошуку (500)
+    let clients = await getClients(companyId, 500);
+    
+    console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients for search`);
+    
+    // Додатково: якщо знайдено менше 500, спробуємо ще раз без ліміту
+    if (clients.length < 500) {
+      console.log(`[altegio/test/clients/by-instagram] Received ${clients.length} clients, trying without limit...`);
+      // Можливо, треба спробувати без ліміту або з більшим лімітом
+    }
+    
+    // Відфільтруємо клієнтів з email для логування
+    const clientsWithEmail = clients.filter(c => c.email && c.email.includes('@'));
+    console.log(`[altegio/test/clients/by-instagram] Clients with email: ${clientsWithEmail.length}`);
+    
+    // Логуємо приклади email для діагностики
+    if (clientsWithEmail.length > 0) {
+      const sampleEmails = clientsWithEmail.slice(0, 5).map(c => {
+        const emailParts = c.email.split('@');
+        return {
+          email: c.email,
+          instagramPart: emailParts[0]?.trim().toLowerCase() || null,
+        };
+      });
+      console.log(`[altegio/test/clients/by-instagram] Sample email Instagram parts:`, sampleEmails);
+    }
     
     // Шукаємо клієнта за Instagram username в полі email
     // Формат: "instagram_username@gmail.com" -> порівнюємо частину перед "@"
@@ -60,19 +84,46 @@ export async function GET(req: NextRequest) {
       if (emailParts[0] && emailParts[0].trim()) {
         const clientInstagram = emailParts[0].trim().toLowerCase();
         // Порівнюємо нормалізовані значення
-        return clientInstagram === normalizedInstagram;
+        const match = clientInstagram === normalizedInstagram;
+        if (match) {
+          console.log(`[altegio/test/clients/by-instagram] ✅ Match found! Client ${client.id}, email: ${client.email}`);
+        }
+        return match;
       }
       
       return false;
     });
     
     if (!foundClient) {
+      // Додаткова інформація для діагностики
+      const similarMatches = clientsWithEmail
+        .filter(c => {
+          const emailParts = c.email.split('@');
+          const clientInstagram = emailParts[0]?.trim().toLowerCase() || '';
+          return clientInstagram.includes(normalizedInstagram) || normalizedInstagram.includes(clientInstagram);
+        })
+        .slice(0, 5)
+        .map(c => {
+          const emailParts = c.email.split('@');
+          return {
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            instagramPart: emailParts[0]?.trim().toLowerCase() || null,
+          };
+        });
+      
       return NextResponse.json({
         ok: false,
         error: `Client with Instagram username "${instagramUsername}" not found`,
         instagram: instagramUsername,
         normalizedInstagram,
         searchedClients: clients.length,
+        clientsWithEmail: clientsWithEmail.length,
+        similarMatches: similarMatches.length > 0 ? similarMatches : undefined,
+        note: similarMatches.length > 0 
+          ? `Found ${similarMatches.length} similar matches (see similarMatches array)`
+          : 'No similar matches found',
       }, { status: 404 });
     }
     
