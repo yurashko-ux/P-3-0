@@ -1344,6 +1344,69 @@ export default function AltegioLanding() {
               )}
             </div>
           )}
+                    {fullWeekAppointmentsStatus.ok !== null && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: 12,
+                borderRadius: 8,
+                background: fullWeekAppointmentsStatus.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${fullWeekAppointmentsStatus.ok ? '#86efac' : '#fca5a5'}`,
+                color: fullWeekAppointmentsStatus.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              <strong>
+                {fullWeekAppointmentsStatus.ok
+                  ? '✅ Успішно (записи за тиждень)'
+                  : '❌ Помилка (записи за тиждень)'}
+                :
+              </strong>{' '}
+              {fullWeekAppointmentsStatus.data?.message || fullWeekAppointmentsStatus.error}
+
+              {fullWeekAppointmentsStatus.ok && fullWeekAppointmentsStatus.data && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 12,
+                    background: '#f0f9ff',
+                    borderRadius: 6,
+                    border: '1px solid #bae6fd',
+                    color: '#0c4a6e',
+                  }}
+                >
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>📊 Статистика за тиждень:</strong>
+                  </div>
+                  <ul style={{ margin: '8px 0', paddingLeft: 22, fontSize: '0.9em' }}>
+                    <li>
+                      Всього записів (appointments + visits):{' '}
+                      <strong>
+                        {fullWeekAppointmentsStatus.data.summary?.total ??
+                          fullWeekAppointmentsStatus.data.totalAppointments ??
+                          '—'}
+                      </strong>
+                    </li>
+                    <li>
+                      Минулі записи:{' '}
+                      <strong>
+                        {fullWeekAppointmentsStatus.data.summary?.past ??
+                          fullWeekAppointmentsStatus.data.pastAppointmentsCount ??
+                          '—'}
+                      </strong>
+                    </li>
+                    <li>
+                      Майбутні записи:{' '}
+                      <strong>
+                        {fullWeekAppointmentsStatus.data.summary?.future ??
+                          fullWeekAppointmentsStatus.data.upcomingAppointmentsCount ??
+                          '—'}
+                      </strong>
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </Card>
 
         <Card title="📤 Експорт помилки для підтримки" emoji="📤">
