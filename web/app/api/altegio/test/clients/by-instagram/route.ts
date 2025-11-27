@@ -113,17 +113,34 @@ export async function GET(req: NextRequest) {
           };
         });
       
+      // Приклади email для діагностики (перші 10)
+      const sampleEmails = clientsWithEmail
+        .slice(0, 10)
+        .map(c => {
+          const emailParts = c.email.split('@');
+          return {
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            instagramPart: emailParts[0]?.trim().toLowerCase() || null,
+          };
+        });
+      
       return NextResponse.json({
         ok: false,
         error: `Client with Instagram username "${instagramUsername}" not found`,
         instagram: instagramUsername,
         normalizedInstagram,
-        searchedClients: clients.length,
-        clientsWithEmail: clientsWithEmail.length,
+        diagnostics: {
+          searchedClients: clients.length,
+          clientsWithEmail: clientsWithEmail.length,
+          clientsWithoutEmail: clients.length - clientsWithEmail.length,
+        },
         similarMatches: similarMatches.length > 0 ? similarMatches : undefined,
+        sampleEmails: sampleEmails.length > 0 ? sampleEmails : undefined,
         note: similarMatches.length > 0 
           ? `Found ${similarMatches.length} similar matches (see similarMatches array)`
-          : 'No similar matches found',
+          : `Searched ${clients.length} clients (${clientsWithEmail.length} with email). Check sampleEmails for format examples.`,
       }, { status: 404 });
     }
     
