@@ -56,6 +56,23 @@ export default function AltegioLanding() {
     data?: any;
     error?: string;
   }>({ loading: false, ok: null });
+
+  const [remindersQueue, setRemindersQueue] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    jobs?: Array<{
+      id: string;
+      clientName: string;
+      instagram: string | null;
+      visitDateTime: string;
+      dueAtFormatted: string;
+      daysUntilVisit: number;
+      status: string;
+      serviceTitle: string | null;
+      staffName: string | null;
+    }>;
+    error?: string;
+  }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -299,6 +316,26 @@ export default function AltegioLanding() {
       });
     } catch (err) {
       setFullWeekAppointmentsStatus({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
+  async function loadRemindersQueue() {
+    setRemindersQueue({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/altegio/reminders/queue?status=pending&limit=50', { cache: 'no-store' });
+      const data = await res.json();
+      setRemindersQueue({
+        loading: false,
+        ok: data.ok === true,
+        jobs: data.jobs || [],
+        error: data.error,
+      });
+    } catch (err) {
+      setRemindersQueue({
         loading: false,
         ok: false,
         error: err instanceof Error ? err.message : 'Невідома помилка',
@@ -1403,6 +1440,180 @@ export default function AltegioLanding() {
                       </strong>
                     </li>
                   </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Черга нагадувань" emoji="📬">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Клієнти, які очікують на відправку нагадувань про майбутні візити. Нагадування створюються автоматично при створенні/оновленні записів у Altegio.
+            </p>
+            <button
+              onClick={loadRemindersQueue}
+              disabled={remindersQueue.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#2a6df5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: remindersQueue.loading ? 'not-allowed' : 'pointer',
+                opacity: remindersQueue.loading ? 0.6 : 1,
+              }}
+            >
+              {remindersQueue.loading ? 'Завантаження...' : 'Оновити чергу'}
+            </button>
+          </div>
+
+          {remindersQueue.ok !== null && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                background: remindersQueue.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${remindersQueue.ok ? '#86efac' : '#fca5a5'}`,
+                color: remindersQueue.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              {remindersQueue.ok && remindersQueue.jobs !== undefined ? (
+                <div>
+                  <div style={{ marginBottom: 12, fontWeight: 600 }}>
+                    Знайдено нагадувань: <strong>{remindersQueue.jobs.length}</strong>
+                  </div>
+
+                  {remindersQueue.jobs.length === 0 ? (
+                    <p style={{ margin: 0, color: '#6b7280' }}>
+                      Черга порожня. Нагадування будуть створюватися автоматично при створенні/оновленні записів у Altegio.
+                    </p>
+                  ) : (
+                    <div
+                      style={{
+                        maxHeight: '500px',
+                        overflowY: 'auto',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 6,
+                        padding: 8,
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: '100%',
+                          borderCollapse: 'collapse',
+                          fontSize: '0.9em',
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              borderBottom: '2px solid #bae6fd',
+                              textAlign: 'left',
+                            }}
+                          >
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Клієнт
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Instagram
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Дата візиту
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Відправка
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Днів до візиту
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {remindersQueue.jobs.map((job, idx) => (
+                            <tr
+                              key={job.id}
+                              style={{
+                                borderBottom: '1px solid #e0e7ef',
+                                backgroundColor:
+                                  idx % 2 === 0 ? '#fff' : '#fafafa',
+                              }}
+                            >
+                              <td
+                                style={{ padding: '8px', fontWeight: 500 }}
+                              >
+                                {job.clientName || '—'}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px',
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.85em',
+                                }}
+                              >
+                                {job.instagram ? (
+                                  <span
+                                    style={{
+                                      color: '#22c55e',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    @{job.instagram}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#ef4444' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px', fontSize: '0.85em' }}>
+                                {new Date(job.visitDateTime).toLocaleString(
+                                  'uk-UA',
+                                  {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  },
+                                )}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px',
+                                  fontSize: '0.85em',
+                                  color: '#6b7280',
+                                }}
+                              >
+                                {job.dueAtFormatted}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px',
+                                  fontSize: '0.85em',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {job.daysUntilVisit > 0 ? (
+                                  <span style={{ color: '#f59e0b' }}>
+                                    {job.daysUntilVisit} дн.
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#ef4444' }}>
+                                    Сьогодні
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <strong>❌ Помилка:</strong>{' '}
+                  {remindersQueue.error || 'Не вдалося завантажити чергу'}
                 </div>
               )}
             </div>

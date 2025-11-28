@@ -3,6 +3,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, kvWrite } from '@/lib/kv';
+import {
+  getActiveReminderRules,
+  generateReminderJobId,
+  calculateDueAt,
+  type ReminderJob,
+} from '@/lib/altegio/reminders';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -36,17 +42,191 @@ export async function POST(req: NextRequest) {
       console.warn('[altegio/webhook] Failed to persist webhook to KV:', err);
     }
 
-    // Тут можна додати обробку різних типів подій від Altegio
-    // Наприклад: appointment.created, appointment.updated, client.created, etc.
-    
-    // Поки що просто логуємо отримані дані
-    if (body.event) {
-      console.log('[altegio/webhook] Event:', body.event, body);
+    // Обробка подій по записах (record)
+    if (body.resource === 'record') {
+      const visitId = body.resource_id;
+      const status = body.status; // 'create', 'update', 'delete'
+      const data = body.data || {};
+
+      if (status === 'delete') {
+        // Скасовуємо всі нагадування для видаленого запису
+        try {
+          const visitJobsKey = `altegio:reminder:byVisit:${visitId}`;
+          const jobIdsRaw = await kvRead.getRaw(visitJobsKey);
+
+          if (jobIdsRaw) {
+            const jobIds: string[] = JSON.parse(jobIdsRaw);
+
+            for (const jobId of jobIds) {
+              const jobKey = `altegio:reminder:job:${jobId}`;
+              const jobRaw = await kvRead.getRaw(jobKey);
+
+              if (jobRaw) {
+                const job: ReminderJob = JSON.parse(jobRaw);
+                // Помічаємо як скасований
+                job.status = 'canceled';
+                job.updatedAt = Date.now();
+                job.canceledAt = Date.now();
+                await kvWrite.setRaw(jobKey, JSON.stringify(job));
+              }
+            }
+
+            // Очищаємо індекс по visitId
+            await kvWrite.setRaw(visitJobsKey, JSON.stringify([]));
+          }
+
+          console.log(
+            `[altegio/webhook] ✅ Canceled reminders for deleted visit ${visitId}`,
+          );
+        } catch (err) {
+          console.error(
+            `[altegio/webhook] ❌ Failed to cancel reminders for visit ${visitId}:`,
+            err,
+          );
+        }
+      } else if (status === 'update' || status === 'create') {
+        // Оновлення або створення запису
+        try {
+          const datetime = data.datetime; // ISO string, наприклад "2025-11-28T17:00:00+02:00"
+          if (!datetime) {
+            console.log(`[altegio/webhook] ⏭️ Skipping visit ${visitId} - no datetime`);
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              skipped: 'no_datetime',
+            });
+          }
+
+          const visitAt = new Date(datetime).getTime();
+          const now = Date.now();
+
+          // Якщо запис вже в минулому - не створюємо нагадування
+          if (visitAt <= now) {
+            console.log(
+              `[altegio/webhook] ⏭️ Skipping past visit ${visitId} (datetime: ${datetime})`,
+            );
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              skipped: 'past_visit',
+            });
+          }
+
+          // Правила нагадувань
+          const rules = getActiveReminderRules();
+
+          const client = data.client || {};
+          const instagram =
+            client.custom_fields?.['instagram-user-name'] || null;
+
+          // Якщо немає Instagram - не створюємо нагадування
+          if (!instagram) {
+            console.log(
+              `[altegio/webhook] ⏭️ Skipping visit ${visitId} - no Instagram username`,
+            );
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              skipped: 'no_instagram',
+            });
+          }
+
+          const visitJobsKey = `altegio:reminder:byVisit:${visitId}`;
+          const existingJobIdsRaw = await kvRead.getRaw(visitJobsKey);
+          const existingJobIds: string[] = existingJobIdsRaw
+            ? JSON.parse(existingJobIdsRaw)
+            : [];
+
+          const newJobIds: string[] = [];
+
+          // Для кожного правила створюємо/оновлюємо job
+          for (const rule of rules) {
+            const dueAt = calculateDueAt(datetime, rule.daysBefore);
+
+            // Якщо час вже пройшов - пропускаємо (щоб не спамити запізнілим)
+            if (dueAt <= now) {
+              console.log(
+                `[altegio/webhook] ⏭️ Skipping rule ${rule.id} for visit ${visitId} - dueAt in past`,
+              );
+              continue;
+            }
+
+            const jobId = generateReminderJobId(visitId, rule.id);
+            const jobKey = `altegio:reminder:job:${jobId}`;
+
+            // Перевіряємо, чи вже є такий job
+            const existingJobRaw = await kvRead.getRaw(jobKey);
+            let job: ReminderJob;
+
+            if (existingJobRaw) {
+              // Оновлюємо існуючий job (наприклад, якщо перенесли дату)
+              job = JSON.parse(existingJobRaw);
+              job.datetime = datetime;
+              job.dueAt = dueAt;
+              job.updatedAt = Date.now();
+              // Якщо job був canceled - відновлюємо його
+              if (job.status === 'canceled') {
+                job.status = 'pending';
+                delete job.canceledAt;
+              }
+            } else {
+              // Створюємо новий job
+              job = {
+                id: jobId,
+                ruleId: rule.id,
+                visitId: visitId,
+                companyId: data.company_id || body.company_id || 0,
+                clientId: client.id || 0,
+                instagram: instagram,
+                datetime: datetime,
+                dueAt: dueAt,
+                payload: {
+                  clientName:
+                    client.display_name || client.name || 'Клієнт',
+                  phone: client.phone || null,
+                  email: client.email || null,
+                  serviceTitle: data.services?.[0]?.title || null,
+                  staffName: data.staff?.name || null,
+                },
+                status: 'pending',
+                attempts: 0,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              };
+            }
+
+            // Зберігаємо job
+            await kvWrite.setRaw(jobKey, JSON.stringify(job));
+            newJobIds.push(jobId);
+
+            // Додаємо в індекс для швидкого пошуку
+            const indexKey = 'altegio:reminder:index';
+            const indexRaw = await kvRead.getRaw(indexKey);
+            const index: string[] = indexRaw ? JSON.parse(indexRaw) : [];
+            if (!index.includes(jobId)) {
+              index.push(jobId);
+              await kvWrite.setRaw(indexKey, JSON.stringify(index));
+            }
+          }
+
+          // Оновлюємо індекс по visitId
+          await kvWrite.setRaw(visitJobsKey, JSON.stringify(newJobIds));
+
+          console.log(
+            `[altegio/webhook] ✅ Created/updated ${newJobIds.length} reminders for visit ${visitId}`,
+          );
+        } catch (err) {
+          console.error(
+            `[altegio/webhook] ❌ Failed to process ${status} for visit ${visitId}:`,
+            err,
+          );
+        }
+      }
     }
-    
+
     // Повертаємо успішну відповідь
-    return NextResponse.json({ 
-      ok: true, 
+    return NextResponse.json({
+      ok: true,
       received: true,
       timestamp: new Date().toISOString(),
     });
