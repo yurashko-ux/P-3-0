@@ -3,7 +3,6 @@
 // Візити - це завершені записи (appointments), які вже відбулися
 
 import { altegioFetch } from './client';
-import { altegioUrl } from './env';
 
 export type Visit = {
   id: number;
@@ -59,19 +58,19 @@ export async function getVisits(
       {
         name: 'GET /company/{id}/visits (list)',
         method: 'GET' as const,
-        url: altegioUrl(`/company/${companyId}/visits`),
+        url: `/company/${companyId}/visits`,
         queryParams: new URLSearchParams(),
       },
       {
         name: 'GET /visits?company_id={id}',
         method: 'GET' as const,
-        url: altegioUrl(`/visits`),
+        url: `/visits`,
         queryParams: new URLSearchParams(),
       },
       {
         name: 'GET /company/{id}/visit (list)',
         method: 'GET' as const,
-        url: altegioUrl(`/company/${companyId}/visit`),
+        url: `/company/${companyId}/visit`,
         queryParams: new URLSearchParams(),
       },
     ];
@@ -127,12 +126,14 @@ export async function getVisits(
     for (const attempt of attempts) {
       try {
         const queryString = attempt.queryParams.toString();
-        const fullUrl = queryString ? `${attempt.url}?${queryString}` : attempt.url;
+        const fullPath = queryString ? `${attempt.url}?${queryString}` : attempt.url;
 
-        console.log(`[altegio/visits] Trying ${attempt.name}: ${fullUrl}`);
+        console.log(`[altegio/visits] Trying ${attempt.name}: ${fullPath}`);
 
-        const response = await altegioFetch<Visit[] | { data?: Visit[]; visits?: Visit[]; items?: Visit[] }>(
-          fullUrl,
+        const response = await altegioFetch<
+          Visit[] | { data?: Visit[]; visits?: Visit[]; items?: Visit[] }
+        >(
+          fullPath,
           { method: attempt.method }
         );
 
@@ -185,11 +186,11 @@ export async function getVisitDetails(
     const attempts = [
       {
         name: 'GET /company/{id}/visit/{visit_id}',
-        url: altegioUrl(`/company/${companyId}/visit/${visitId}?include[]=client&include[]=service&include[]=staff&include[]=payment&include[]=transactions`),
+        url: `/company/${companyId}/visit/${visitId}?include[]=client&include[]=service&include[]=staff&include[]=payment&include[]=transactions`,
       },
       {
         name: 'GET /visit/{visit_id}',
-        url: altegioUrl(`/visit/${visitId}?company_id=${companyId}&include[]=client&include[]=service&include[]=staff&include[]=payment&include[]=transactions`),
+        url: `/visit/${visitId}?company_id=${companyId}&include[]=client&include[]=service&include[]=staff&include[]=payment&include[]=transactions`,
       },
     ];
 

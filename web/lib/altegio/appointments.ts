@@ -23,71 +23,200 @@ export async function getAppointments(
   options: GetAppointmentsOptions = {}
 ): Promise<Appointment[]> {
   try {
-    const url = `/company/${companyId}/appointments`;
-    
-    // Формуємо параметри запиту
-    const queryParams = new URLSearchParams();
-    if (options.dateFrom) {
-      queryParams.append('date_from', options.dateFrom);
-    }
-    if (options.dateTo) {
-      queryParams.append('date_to', options.dateTo);
-    }
-    if (options.status) {
-      queryParams.append('status', options.status);
-    }
-    if (options.clientId) {
-      queryParams.append('client_id', String(options.clientId));
-    }
-    if (options.staffId) {
-      queryParams.append('staff_id', String(options.staffId));
-    }
-    
-    // Якщо потрібна інформація про клієнта, додаємо include параметри
+    // Базові параметри періоду/фільтрів
+    const baseFilters: Record<string, any> = {};
+    if (options.dateFrom) baseFilters.date_from = options.dateFrom;
+    if (options.dateTo) baseFilters.date_to = options.dateTo;
+    if (options.status) baseFilters.status = options.status;
+    if (options.clientId) baseFilters.client_id = options.clientId;
+    if (options.staffId) baseFilters.staff_id = options.staffId;
+
+    const includeBlocks: string[] = [];
     if (options.includeClient) {
-      queryParams.append('include[]', 'client');
-      queryParams.append('with[]', 'client');
+      includeBlocks.push('client');
     }
-    
-    const fullUrl = queryParams.toString() ? `${url}?${queryParams.toString()}` : url;
-    
-    const response = await altegioFetch<Appointment[] | { data?: Appointment[] }>(fullUrl, {
-      method: 'GET',
-    });
-    
-    let appointments: Appointment[] = [];
-    if (Array.isArray(response)) {
-      appointments = response;
-    } else if (response && typeof response === 'object') {
-      if ('data' in response && Array.isArray(response.data)) {
-        appointments = response.data;
-      } else if ('appointments' in response && Array.isArray(response.appointments)) {
-        appointments = response.appointments;
-      } else if ('items' in response && Array.isArray(response.items)) {
-        appointments = response.items;
+
+    // Формуємо список різних варіантів endpoint'ів (як у clients.ts)
+    const attempts: Array<{
+      name: string;
+      method: 'GET' | 'POST';
+      path: string;
+      body?: any;
+      useQuery?: boolean;
+    }> = [
+      {
+        name: 'POST /company/{id}/appointments/search (recommended)',
+        method: 'POST',
+        path: `/company/${companyId}/appointments/search`,
+        body: {
+          page: 1,
+          page_size: 500,
+          ...baseFilters,
+          ...(includeBlocks.length
+            ? {
+                include: includeBlocks,
+                with: includeBlocks,
+              }
+            : {}),
+        },
+      },
+      {
+        name: 'POST /company/{id}/appointments',
+        method: 'POST',
+        path: `/company/${companyId}/appointments`,
+        body: {
+          ...baseFilters,
+          ...(includeBlocks.length
+            ? {
+                include: includeBlocks,
+                with: includeBlocks,
+              }
+            : {}),
+        },
+      },
+      {
+        name: 'GET /company/{id}/appointments with query',
+        method: 'GET',
+        path: `/company/${companyId}/appointments`,
+        useQuery: true,
+      },
+      {
+        name: 'POST /appointments/search',
+        method: 'POST',
+        path: `/appointments/search`,
+        body: {
+          company_id: companyId,
+          page: 1,
+          page_size: 500,
+          ...baseFilters,
+          ...(includeBlocks.length
+            ? {
+                include: includeBlocks,
+                with: includeBlocks,
+              }
+            : {}),
+        },
+      },
+      {
+        name: 'GET /appointments?company_id=...',
+        method: 'GET',
+        path: `/appointments`,
+        useQuery: true,
+      },
+    ];
+
+    let lastError: Error | null = null;
+
+    for (const attempt of attempts) {
+      try {
+        const queryParams = new URLSearchParams();
+
+        if (attempt.useQuery) {
+          // Додаємо фільтри до query string
+          if (baseFilters.date_from) queryParams.set('date_from', baseFilters.date_from);
+          if (baseFilters.date_to) queryParams.set('date_to', baseFilters.date_to);
+          if (baseFilters.status) queryParams.set('status', baseFilters.status);
+          if (baseFilters.client_id) queryParams.set('client_id', String(baseFilters.client_id));
+          if (baseFilters.staff_id) queryParams.set('staff_id', String(baseFilters.staff_id));
+          if (includeBlocks.length) {
+            includeBlocks.forEach((inc) => {
+              queryParams.append('include[]', inc);
+              queryParams.append('with[]', inc);
+            });
+          }
+          if (attempt.path === '/appointments') {
+            queryParams.set('company_id', String(companyId));
+          }
+        }
+
+        const fullPath =
+          attempt.useQuery && queryParams.toString()
+            ? `${attempt.path}?${queryParams.toString()}`
+            : attempt.path;
+
+        console.log(`[altegio/appointments] Trying ${attempt.name} → ${fullPath}`);
+
+        const response = await altegioFetch<
+          | Appointment[]
+          | {
+              data?: Appointment[];
+              appointments?: Appointment[];
+              items?: Appointment[];
+              results?: Appointment[];
+              success?: boolean;
+            }
+        >(fullPath, {
+          method: attempt.method,
+          ...(attempt.method === 'POST'
+            ? { body: JSON.stringify(attempt.body ?? {}) }
+            : {}),
+        });
+
+        let appointments: Appointment[] = [];
+
+        if (Array.isArray(response)) {
+          appointments = response;
+        } else if (response && typeof response === 'object') {
+          if ('data' in response && Array.isArray(response.data)) {
+            appointments = response.data;
+          } else if ('appointments' in response && Array.isArray((response as any).appointments)) {
+            appointments = (response as any).appointments;
+          } else if ('items' in response && Array.isArray((response as any).items)) {
+            appointments = (response as any).items;
+          } else if ('results' in response && Array.isArray((response as any).results)) {
+            appointments = (response as any).results;
+          }
+        }
+
+        console.log(
+          `[altegio/appointments] Response from ${attempt.name}: count=${appointments.length}`,
+        );
+
+        if (appointments.length === 0) {
+          // Пробуємо наступний endpoint
+          continue;
+        }
+
+        // Фільтруємо тільки майбутні записи (якщо не вказано dateFrom)
+        if (!options.dateFrom) {
+          const now = new Date();
+          appointments = appointments.filter((apt) => {
+            const aptDate = (apt as any).datetime || (apt as any).start_datetime || (apt as any).date;
+            if (!aptDate) return false;
+            const aptDateTime = new Date(aptDate);
+            return aptDateTime >= now;
+          });
+        }
+
+        // Сортуємо за датою (від найближчих до найвіддаленіших)
+        appointments.sort((a, b) => {
+          const dateA =
+            (a as any).datetime || (a as any).start_datetime || (a as any).date || '';
+          const dateB =
+            (b as any).datetime || (b as any).start_datetime || (b as any).date || '';
+          return new Date(dateA).getTime() - new Date(dateB).getTime();
+        });
+
+        console.log(
+          `[altegio/appointments] ✅ Got ${appointments.length} appointments for company ${companyId} using ${attempt.name}`,
+        );
+        return appointments;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(
+          `[altegio/appointments] ❌ ${attempt.name} failed for company ${companyId}:`,
+          lastError.message,
+        );
+        continue;
       }
     }
-    
-    // Фільтруємо тільки майбутні записи (якщо не вказано dateFrom)
-    if (!options.dateFrom) {
-      const now = new Date();
-      appointments = appointments.filter(apt => {
-        const aptDate = apt.datetime || apt.start_datetime || apt.date;
-        if (!aptDate) return false;
-        const aptDateTime = new Date(aptDate);
-        return aptDateTime >= now;
-      });
+
+    if (lastError) {
+      throw lastError;
     }
-    
-    // Сортуємо за датою (від найближчих до найвіддаленіших)
-    appointments.sort((a, b) => {
-      const dateA = a.datetime || a.start_datetime || a.date || '';
-      const dateB = b.datetime || b.start_datetime || b.date || '';
-      return new Date(dateA).getTime() - new Date(dateB).getTime();
-    });
-    
-    console.log(`[altegio/appointments] Got ${appointments.length} appointments for company ${companyId}`);
-    return appointments;
+
+    console.warn(`[altegio/appointments] No appointments found for company ${companyId}`);
+    return [];
   } catch (err) {
     console.error(`[altegio/appointments] Failed to get appointments for company ${companyId}:`, err);
     throw err;
