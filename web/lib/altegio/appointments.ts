@@ -44,6 +44,13 @@ export async function getAppointments(
       body?: any;
       useQuery?: boolean;
     }> = [
+      // 0. Schedule API — список запланованих записів та подій
+      {
+        name: 'GET /schedule/events (Schedule API, recommended)',
+        method: 'GET',
+        path: `/schedule/events`,
+        useQuery: true,
+      },
       {
         name: 'POST /company/{id}/appointments/search (recommended)',
         method: 'POST',
@@ -118,7 +125,10 @@ export async function getAppointments(
           if (baseFilters.date_to) queryParams.set('date_to', baseFilters.date_to);
           if (baseFilters.status) queryParams.set('status', baseFilters.status);
           if (baseFilters.client_id) queryParams.set('client_id', String(baseFilters.client_id));
-          if (baseFilters.staff_id) queryParams.set('staff_id', String(baseFilters.staff_id));
+          if (baseFilters.staff_id) {
+            // Schedule API використовує staff_id або staff_ids[]
+            queryParams.set('staff_id', String(baseFilters.staff_id));
+          }
           if (includeBlocks.length) {
             includeBlocks.forEach((inc) => {
               queryParams.append('include[]', inc);
@@ -127,6 +137,10 @@ export async function getAppointments(
           }
           if (attempt.path === '/appointments') {
             queryParams.set('company_id', String(companyId));
+          }
+          if (attempt.path === '/schedule/events') {
+            // Schedule API очікує location_id
+            queryParams.set('location_id', String(companyId));
           }
         }
 
@@ -140,10 +154,10 @@ export async function getAppointments(
         const response = await altegioFetch<
           | Appointment[]
           | {
-              data?: Appointment[];
-              appointments?: Appointment[];
-              items?: Appointment[];
-              results?: Appointment[];
+              data?: any[];
+              appointments?: any[];
+              items?: any[];
+              results?: any[];
               success?: boolean;
             }
         >(fullPath, {
@@ -156,16 +170,24 @@ export async function getAppointments(
         let appointments: Appointment[] = [];
 
         if (Array.isArray(response)) {
-          appointments = response;
+          appointments = response as any[];
         } else if (response && typeof response === 'object') {
-          if ('data' in response && Array.isArray(response.data)) {
-            appointments = response.data;
-          } else if ('appointments' in response && Array.isArray((response as any).appointments)) {
-            appointments = (response as any).appointments;
-          } else if ('items' in response && Array.isArray((response as any).items)) {
-            appointments = (response as any).items;
-          } else if ('results' in response && Array.isArray((response as any).results)) {
-            appointments = (response as any).results;
+          const obj: any = response;
+
+          // Стандартні для Altegio контейнери
+          if (Array.isArray(obj.data)) {
+            appointments = obj.data;
+          } else if (Array.isArray(obj.appointments)) {
+            appointments = obj.appointments;
+          } else if (Array.isArray(obj.items)) {
+            appointments = obj.items;
+          } else if (Array.isArray(obj.results)) {
+            appointments = obj.results;
+          }
+
+          // Schedule API: success/data, де data = events[]
+          if (!appointments.length && obj.success === true && Array.isArray(obj.data?.events)) {
+            appointments = obj.data.events;
           }
         }
 
