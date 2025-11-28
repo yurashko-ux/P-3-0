@@ -2,6 +2,7 @@
 // Webhook endpoint для отримання сповіщень від Altegio API
 
 import { NextRequest, NextResponse } from 'next/server';
+import { kvRead, kvWrite } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -13,13 +14,28 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    
+
     console.log('[altegio/webhook] Received webhook:', {
       timestamp: new Date().toISOString(),
       bodyKeys: Object.keys(body),
       eventType: body.event || body.type || 'unknown',
     });
-    
+
+    // Зберігаємо подію в KV (тільки останні 50 штук) для діагностики
+    try {
+      const entry = {
+        receivedAt: new Date().toISOString(),
+        event: body.event || body.type || null,
+        body,
+      };
+      const payload = JSON.stringify(entry);
+      await kvWrite.lpush('altegio:webhook:log', payload);
+      // залишаємо лише останні 50
+      await kvWrite.ltrim('altegio:webhook:log', 0, 49);
+    } catch (err) {
+      console.warn('[altegio/webhook] Failed to persist webhook to KV:', err);
+    }
+
     // Тут можна додати обробку різних типів подій від Altegio
     // Наприклад: appointment.created, appointment.updated, client.created, etc.
     
@@ -48,9 +64,36 @@ export async function POST(req: NextRequest) {
 
 // GET для перевірки, що endpoint працює
 export async function GET(req: NextRequest) {
-  return NextResponse.json({ 
-    ok: true, 
-    message: 'Altegio webhook endpoint is active',
-    timestamp: new Date().toISOString(),
-  });
+  try {
+    const limitParam = req.nextUrl.searchParams.get('limit');
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 10, 1), 100) : 10;
+
+    const rawItems = await kvRead.lrange('altegio:webhook:log', 0, limit - 1);
+    const events = rawItems
+      .map((raw) => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return { raw };
+        }
+      })
+      .filter(Boolean);
+
+    return NextResponse.json({
+      ok: true,
+      message: 'Altegio webhook endpoint is active',
+      timestamp: new Date().toISOString(),
+      eventsCount: events.length,
+      events,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: 'Failed to read webhook log',
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
+    );
+  }
 }
