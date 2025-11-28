@@ -225,10 +225,18 @@ export async function getAppointments(
         );
         return appointments;
       } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        const wrapped =
+          err instanceof Error
+            ? err
+            : new Error(typeof err === 'string' ? err : JSON.stringify(err));
+
+        // Зберігаємо останню помилку з інформацією про endpoint
+        wrapped.message = `[${attempt.name}] ${fullPath} :: ${wrapped.message}`;
+        lastError = wrapped;
+
         console.warn(
           `[altegio/appointments] ❌ ${attempt.name} failed for company ${companyId}:`,
-          lastError.message,
+          wrapped.message,
         );
         continue;
       }
