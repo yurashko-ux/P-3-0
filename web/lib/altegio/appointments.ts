@@ -117,6 +117,7 @@ export async function getAppointments(
 
     for (const attempt of attempts) {
       try {
+        let fullPathForLog = attempt.path;
         const queryParams = new URLSearchParams();
 
         if (attempt.useQuery) {
@@ -149,7 +150,9 @@ export async function getAppointments(
             ? `${attempt.path}?${queryParams.toString()}`
             : attempt.path;
 
-        console.log(`[altegio/appointments] Trying ${attempt.name} → ${fullPath}`);
+        fullPathForLog = fullPath;
+
+        console.log(`[altegio/appointments] Trying ${attempt.name} → ${fullPathForLog}`);
 
         const response = await altegioFetch<
           | Appointment[]
@@ -231,7 +234,7 @@ export async function getAppointments(
             : new Error(typeof err === 'string' ? err : JSON.stringify(err));
 
         // Зберігаємо останню помилку з інформацією про endpoint
-        wrapped.message = `[${attempt.name}] ${fullPath} :: ${wrapped.message}`;
+        wrapped.message = `[${attempt.name}] ${fullPathForLog} :: ${wrapped.message}`;
         lastError = wrapped;
 
         console.warn(
