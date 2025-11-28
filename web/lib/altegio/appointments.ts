@@ -116,8 +116,8 @@ export async function getAppointments(
     let lastError: Error | null = null;
 
     for (const attempt of attempts) {
+      let fullPathForLog = attempt.path;
       try {
-        let fullPathForLog = attempt.path;
         const queryParams = new URLSearchParams();
 
         if (attempt.useQuery) {
