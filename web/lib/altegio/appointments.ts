@@ -85,7 +85,8 @@ export async function getAppointments(
         method: 'POST',
         path: `/appointments/search`,
         body: {
-          company_id: companyId,
+          // у новій документації використовується location_id
+          location_id: companyId,
           page: 1,
           page_size: 500,
           ...baseFilters,
@@ -98,7 +99,7 @@ export async function getAppointments(
         },
       },
       {
-        name: 'GET /appointments?company_id=...',
+        name: 'GET /appointments?location_id=...',
         method: 'GET',
         path: `/appointments`,
         useQuery: true,
