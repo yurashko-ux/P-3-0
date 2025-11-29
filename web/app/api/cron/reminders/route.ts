@@ -62,7 +62,7 @@ async function sendInstagramDM(
   if (manychatApiKey) {
     try {
       console.log(`[reminders] Attempting to send via ManyChat API`);
-      const manychatResult = await sendViaManyChat(instagram, message, manychatApiKey);
+      const manychatResult = await sendViaManyChat(instagram, message, manychatApiKey, job.payload?.clientName);
       if (manychatResult.success) {
         return manychatResult;
       }
@@ -113,34 +113,70 @@ async function sendViaManyChat(
     
     console.log(`[reminders] Searching ManyChat subscriber for ${cleanInstagram} (original: ${instagram})`);
     
-    // Метод 1: findByName (шукає за Instagram username без @) - спробуємо GET
-    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
-    const nameSearchResponse = await fetch(nameSearchUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-      },
-    });
+    // Метод 1: findByName за повним ім'ям (якщо є) - це працює!
+    if (clientName && clientName.trim()) {
+      console.log(`[reminders] Trying findByName by full name: "${clientName}"`);
+      const fullNameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(clientName.trim())}`;
+      const fullNameSearchResponse = await fetch(fullNameSearchUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
 
-    if (nameSearchResponse.ok) {
-      searchData = await nameSearchResponse.json();
-      subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
-      console.log(`[reminders] findByName result:`, JSON.stringify(searchData, null, 2));
-      
-      // Якщо знайдено subscriber, але немає subscriber_id, логуємо структуру
-      if (!subscriberId && searchData) {
-        console.warn(`[reminders] findByName returned data but no subscriber_id. Full response:`, JSON.stringify(searchData, null, 2));
+      if (fullNameSearchResponse.ok) {
+        const fullNameData = await fullNameSearchResponse.json();
+        console.log(`[reminders] findByName (full name) result:`, JSON.stringify(fullNameData, null, 2));
+        
+        // Перевіряємо, чи є дані та чи співпадає ig_username
+        if (fullNameData?.status === 'success' && Array.isArray(fullNameData.data) && fullNameData.data.length > 0) {
+          for (const subscriber of fullNameData.data) {
+            const subscriberIgUsername = subscriber.ig_username || subscriber.instagram_username;
+            if (subscriberIgUsername && subscriberIgUsername.toLowerCase() === cleanInstagram.toLowerCase()) {
+              subscriberId = subscriber.id || subscriber.subscriber_id;
+              searchData = subscriber;
+              console.log(`[reminders] ✅ Found subscriber_id via findByName (full name): ${subscriberId}, ig_username matches: ${subscriberIgUsername}`);
+              break;
+            }
+          }
+          
+          // Якщо не знайшли за ig_username, але є тільки один результат, використовуємо його
+          if (!subscriberId && fullNameData.data.length === 1) {
+            subscriberId = fullNameData.data[0].id || fullNameData.data[0].subscriber_id;
+            searchData = fullNameData.data[0];
+            console.log(`[reminders] ⚠️ Found subscriber by name but ig_username doesn't match. Using anyway: ${subscriberId}`);
+          }
+        }
+      } else {
+        const errorText = await fullNameSearchResponse.text();
+        console.warn(`[reminders] ManyChat findByName (full name) failed: ${fullNameSearchResponse.status} ${errorText}`);
       }
-    } else {
-      const errorText = await nameSearchResponse.text();
-      console.warn(`[reminders] ManyChat findByName failed: ${nameSearchResponse.status} ${errorText}`);
-      
-      // Логуємо повну відповідь для діагностики
-      try {
-        const errorData = JSON.parse(errorText);
-        console.warn(`[reminders] findByName error details:`, JSON.stringify(errorData, null, 2));
-      } catch {
-        // Не JSON, просто текст
+    }
+    
+    // Метод 2: findByName за Instagram username (на випадок, якщо не знайшли за ім'ям)
+    if (!subscriberId) {
+      console.log(`[reminders] Trying findByName by Instagram username: "${cleanInstagram}"`);
+      const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
+      const nameSearchResponse = await fetch(nameSearchUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+
+      if (nameSearchResponse.ok) {
+        searchData = await nameSearchResponse.json();
+        // findByName за Instagram username зазвичай повертає порожній масив
+        if (searchData?.status === 'success' && Array.isArray(searchData.data) && searchData.data.length > 0) {
+          subscriberId = searchData.data[0]?.id || searchData.data[0]?.subscriber_id;
+          if (subscriberId) {
+            console.log(`[reminders] ✅ Found subscriber_id via findByName (Instagram): ${subscriberId}`);
+          }
+        }
+        console.log(`[reminders] findByName (Instagram) result:`, JSON.stringify(searchData, null, 2));
+      } else {
+        const errorText = await nameSearchResponse.text();
+        console.warn(`[reminders] ManyChat findByName (Instagram) failed: ${nameSearchResponse.status} ${errorText}`);
       }
     }
 
