@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rules = getActiveReminderRules();
+    const rules = await getActiveReminderRules();
     const visitJobsKey = `altegio:reminder:byVisit:${visitId}`;
     const newJobIds: string[] = [];
 

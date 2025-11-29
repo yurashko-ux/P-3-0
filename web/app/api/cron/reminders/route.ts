@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const now = Date.now();
-    const rules = getActiveReminderRules();
+    const rules = await getActiveReminderRules();
     const rulesMap = new Map(rules.map((r) => [r.id, r]));
 
     // Отримуємо всі job'и з індексу

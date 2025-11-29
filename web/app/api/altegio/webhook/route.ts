@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
           }
 
           // Правила нагадувань
-          const rules = getActiveReminderRules();
+          const rules = await getActiveReminderRules();
 
           const client = data.client || {};
           
