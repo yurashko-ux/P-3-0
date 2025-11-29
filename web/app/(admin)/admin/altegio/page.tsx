@@ -336,10 +336,10 @@ export default function AltegioLanding() {
     }
   }
 
-  async function loadRemindersQueue() {
+  async function loadRemindersQueue(status: 'pending' | 'all' = 'pending') {
     setRemindersQueue({ loading: true, ok: null });
     try {
-      const res = await fetch('/api/altegio/reminders/queue?status=pending&limit=50', { cache: 'no-store' });
+      const res = await fetch(`/api/altegio/reminders/queue?status=${status}&limit=50`, { cache: 'no-store' });
       const data = await res.json();
       setRemindersQueue({
         loading: false,
@@ -1492,7 +1492,7 @@ export default function AltegioLanding() {
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
-                onClick={loadRemindersQueue}
+                onClick={() => loadRemindersQueue('pending')}
                 disabled={remindersQueue.loading}
                 style={{
                   padding: '10px 20px',
@@ -1506,6 +1506,22 @@ export default function AltegioLanding() {
                 }}
               >
                 {remindersQueue.loading ? 'Завантаження...' : 'Оновити чергу'}
+              </button>
+              <button
+                onClick={() => loadRemindersQueue('all')}
+                disabled={remindersQueue.loading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#6b7280',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: remindersQueue.loading ? 'not-allowed' : 'pointer',
+                  opacity: remindersQueue.loading ? 0.6 : 1,
+                }}
+              >
+                {remindersQueue.loading ? 'Завантаження...' : 'Всі job\'и'}
               </button>
               <button
                 onClick={loadRemindersDebug}
