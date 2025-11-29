@@ -1610,6 +1610,41 @@ export default function AltegioLanding() {
               >
                 🔧 Виправити індекс
               </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/altegio/reminders/check-webhook', {
+                      method: 'GET',
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      const events = data.lastRecordEvents || [];
+                      if (events.length === 0) {
+                        alert('❌ Немає останніх подій по записах. Перевір, чи налаштований webhook в Altegio.');
+                      } else {
+                        const lastEvent = events[0];
+                        const message = `Знайдено ${events.length} останніх подій по записах.\n\nОстання подія:\n- Дата: ${new Date(lastEvent.receivedAt).toLocaleString('uk-UA')}\n- Статус: ${lastEvent.status}\n- Visit ID: ${lastEvent.visitId}\n- Дата візиту: ${lastEvent.datetime || '—'}\n- Клієнт: ${lastEvent.clientName || '—'}\n- Instagram: ${lastEvent.instagram ? '@' + lastEvent.instagram : '—'}\n\n${lastEvent.instagram === 'mykolayyurashko' ? '✅ Це тестовий клієнт!' : '❌ Це не тестовий клієнт'}`;
+                        alert(message);
+                      }
+                    } else {
+                      alert(`❌ Помилка: ${data.error}`);
+                    }
+                  } catch (err) {
+                    alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: '#8b5cf6',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🔍 Перевірити webhook
+              </button>
             </div>
           </div>
 
