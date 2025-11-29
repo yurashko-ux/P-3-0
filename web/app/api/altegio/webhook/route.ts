@@ -181,8 +181,24 @@ export async function POST(req: NextRequest) {
           const newJobIds: string[] = [];
 
           // Для кожного правила створюємо/оновлюємо job
+          console.log(`[altegio/webhook] Processing ${rules.length} rules for visit ${visitId}`, {
+            datetime,
+            visitAt: new Date(visitAt).toISOString(),
+            now: new Date(now).toISOString(),
+            daysUntilVisit: Math.round((visitAt - now) / (24 * 3600_000)),
+          });
+
           for (const rule of rules) {
             const dueAt = calculateDueAt(datetime, rule.daysBefore);
+
+            console.log(`[altegio/webhook] Rule ${rule.id} (${rule.daysBefore} days before):`, {
+              dueAt: new Date(dueAt).toISOString(),
+              now: new Date(now).toISOString(),
+              visitAt: new Date(visitAt).toISOString(),
+              isPast: dueAt <= now,
+              diffMs: dueAt - now,
+              diffHours: Math.round((dueAt - now) / (3600_000)),
+            });
 
             // Якщо час вже пройшов - пропускаємо (щоб не спамити запізнілим)
             if (dueAt <= now) {
