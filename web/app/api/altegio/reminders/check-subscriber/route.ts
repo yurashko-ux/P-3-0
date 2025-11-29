@@ -6,104 +6,56 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-async function findSubscriberInManyChat(instagram: string, apiKey: string, clientName?: string) {
+async function findSubscriberInManyChat(instagram: string, apiKey: string) {
   const results: any[] = [];
 
   // Видаляємо @ з початку, якщо є
   const cleanInstagram = instagram.startsWith('@') ? instagram.slice(1) : instagram;
 
-  // Метод 1: findByName за повним ім'ям (якщо є) - це працює!
-  if (clientName && clientName.trim()) {
-    try {
-      const fullNameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(clientName.trim())}`;
-      const fullNameSearchResponse = await fetch(fullNameSearchUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-      });
-
-      if (fullNameSearchResponse.ok) {
-        const data = await fullNameSearchResponse.json();
-        if (data?.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
-          // Перевіряємо, чи співпадає ig_username
-          for (const subscriber of data.data) {
-            const subscriberIgUsername = subscriber.ig_username || subscriber.instagram_username;
-            if (subscriberIgUsername && subscriberIgUsername.toLowerCase() === cleanInstagram.toLowerCase()) {
-              results.push({
-                method: 'findByName (full name)',
-                success: true,
-                data: subscriber,
-                subscriberId: subscriber.id || subscriber.subscriber_id,
-              });
-              break;
-            }
-          }
-          
-          // Якщо не знайшли за ig_username, але є тільки один результат, використовуємо його
-          if (results.length === 0 && data.data.length === 1) {
-            results.push({
-              method: 'findByName (full name)',
-              success: true,
-              data: data.data[0],
-              subscriberId: data.data[0].id || data.data[0].subscriber_id,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      results.push({
-        method: 'findByName (full name)',
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  // Метод 2: findByName за Instagram username (без @) - зазвичай не працює
+  // Метод 1: findByInstagram - шукаємо виключно за Instagram username
   try {
-    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
-    const nameSearchResponse = await fetch(nameSearchUrl, {
-      method: 'GET',
+    const instagramSearchUrl = `https://api.manychat.com/fb/subscriber/findByInstagram`;
+    const instagramSearchResponse = await fetch(instagramSearchUrl, {
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        username: cleanInstagram,
+      }),
     });
 
-    if (nameSearchResponse.ok) {
-      const data = await nameSearchResponse.json();
-      if (data?.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
-        results.push({
-          method: 'findByName (Instagram username)',
-          success: true,
-          data: data,
-          subscriberId: data.data[0]?.id || data.data[0]?.subscriber_id,
-        });
-      } else {
-        results.push({
-          method: 'findByName (Instagram username)',
-          success: false,
-          data: data,
-          note: 'Empty result - findByName does not search by Instagram username',
-        });
+    if (instagramSearchResponse.ok) {
+      const data = await instagramSearchResponse.json();
+      if (data?.status === 'success' && data.data) {
+        const subscriberId = data.data.id || data.data.subscriber_id || data.data.subscriber?.id;
+        if (subscriberId) {
+          results.push({
+            method: 'findByInstagram',
+            success: true,
+            data: data.data,
+            subscriberId: subscriberId,
+          });
+        }
       }
     } else {
-      const errorText = await nameSearchResponse.text();
+      const errorText = await instagramSearchResponse.text();
       results.push({
-        method: 'findByName (Instagram username)',
+        method: 'findByInstagram',
         success: false,
-        error: `${nameSearchResponse.status}: ${errorText}`,
+        error: `${instagramSearchResponse.status}: ${errorText}`,
       });
     }
   } catch (err) {
     results.push({
-      method: 'findByName',
+      method: 'findByInstagram',
       success: false,
       error: err instanceof Error ? err.message : String(err),
     });
   }
 
-  // Метод 2: findByCustomField (різні варіанти field_id)
+  // Метод 2: findByCustomField - якщо findByInstagram не спрацював
   const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username'];
   
   for (const fieldId of customFieldIds) {
