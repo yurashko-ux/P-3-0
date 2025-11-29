@@ -1782,10 +1782,10 @@ export default function AltegioLanding() {
                     )}
                 </ul>
                 {remindersDebug.data?.webhookEvents?.lastRecordEvents &&
-                  remindersDebug.data.webhookEvents.lastRecordEvents.length > 0 && (
+                  remindersDebug.data?.webhookEvents?.lastRecordEvents.length > 0 && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
-                        Останні події по записах ({remindersDebug.data.webhookEvents.lastRecordEvents.length})
+                        Останні події по записах ({remindersDebug.data?.webhookEvents?.lastRecordEvents?.length || 0})
                       </summary>
                       <div
                         style={{
@@ -1798,7 +1798,7 @@ export default function AltegioLanding() {
                           overflowY: 'auto',
                         }}
                       >
-                        {remindersDebug.data.webhookEvents.lastRecordEvents.map(
+                        {remindersDebug.data?.webhookEvents?.lastRecordEvents?.map(
                           (event: any, idx: number) => (
                             <div
                               key={idx}
@@ -1843,10 +1843,10 @@ export default function AltegioLanding() {
                     </details>
                   )}
                 {remindersDebug.data?.webhookEvents?.lastAllEvents &&
-                  remindersDebug.data.webhookEvents.lastAllEvents.length > 0 && (
+                  remindersDebug.data?.webhookEvents?.lastAllEvents.length > 0 && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
-                        Всі останні webhook події ({remindersDebug.data.webhookEvents.lastAllEvents.length})
+                        Всі останні webhook події ({remindersDebug.data?.webhookEvents?.lastAllEvents?.length || 0})
                       </summary>
                       <div
                         style={{
@@ -1859,7 +1859,7 @@ export default function AltegioLanding() {
                           overflowY: 'auto',
                         }}
                       >
-                        {remindersDebug.data.webhookEvents.lastAllEvents.map(
+                        {remindersDebug.data?.webhookEvents?.lastAllEvents?.map(
                           (event: any, idx: number) => (
                             <div
                               key={idx}
@@ -1952,10 +1952,10 @@ export default function AltegioLanding() {
                   <li>Canceled: {remindersDebug.data?.jobs?.canceled || 0}</li>
                 </ul>
                 {remindersDebug.data?.jobs?.byVisit &&
-                  remindersDebug.data.jobs.byVisit.length > 0 && (
+                  remindersDebug.data?.jobs?.byVisit.length > 0 && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
-                        Job'и по візитах ({remindersDebug.data.jobs.byVisit.length})
+                        Job'и по візитах ({remindersDebug.data?.jobs?.byVisit?.length || 0})
                       </summary>
                       <div
                         style={{
@@ -1968,7 +1968,7 @@ export default function AltegioLanding() {
                           overflowY: 'auto',
                         }}
                       >
-                        {remindersDebug.data.jobs.byVisit.map((visit: any, idx: number) => (
+                        {remindersDebug.data?.jobs?.byVisit?.map((visit: any, idx: number) => (
                           <div
                             key={idx}
                             style={{
