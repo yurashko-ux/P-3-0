@@ -71,10 +71,51 @@ export async function GET(req: NextRequest) {
       const jobKey = `altegio:reminder:job:${jobId}`;
       const jobRaw = await kvRead.getRaw(jobKey);
 
-      if (!jobRaw) continue;
+      if (!jobRaw) {
+        console.warn(`[queue] Job ${jobId} not found in KV`);
+        continue;
+      }
 
       try {
-        const job: ReminderJob = JSON.parse(jobRaw);
+        // kvGetRaw може повернути об'єкт { value: '...' } або рядок
+        let jobData: any;
+        if (typeof jobRaw === 'string') {
+          try {
+            jobData = JSON.parse(jobRaw);
+          } catch {
+            jobData = jobRaw;
+          }
+        } else {
+          jobData = jobRaw;
+        }
+        
+        // Якщо це об'єкт з полем value, витягуємо значення
+        if (jobData && typeof jobData === 'object' && !Array.isArray(jobData)) {
+          const candidate = jobData.value ?? jobData.result ?? jobData.data;
+          if (candidate !== undefined) {
+            if (typeof candidate === 'string') {
+              try {
+                jobData = JSON.parse(candidate);
+              } catch {
+                jobData = candidate;
+              }
+            } else {
+              jobData = candidate;
+            }
+          }
+        }
+        
+        // Якщо все ще рядок, пробуємо парсити
+        if (typeof jobData === 'string') {
+          try {
+            jobData = JSON.parse(jobData);
+          } catch (err) {
+            console.warn(`[queue] Failed to parse job ${jobId} as JSON:`, err);
+            continue;
+          }
+        }
+
+        const job: ReminderJob = jobData;
 
         // Фільтруємо по статусу
         if (statusParam === 'all' || job.status === statusParam) {

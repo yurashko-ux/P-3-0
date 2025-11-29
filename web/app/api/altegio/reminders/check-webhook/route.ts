@@ -132,13 +132,75 @@ export async function POST(req: NextRequest) {
 
       if (existingJobRaw) {
         // Оновлюємо існуючий job
-        job = JSON.parse(existingJobRaw);
-        job.datetime = datetime;
-        job.dueAt = dueAt;
-        job.updatedAt = Date.now();
-        if (job.status === 'canceled') {
-          job.status = 'pending';
-          delete job.canceledAt;
+        let jobData: any;
+        if (typeof existingJobRaw === 'string') {
+          try {
+            jobData = JSON.parse(existingJobRaw);
+          } catch {
+            jobData = existingJobRaw;
+          }
+        } else {
+          jobData = existingJobRaw;
+        }
+        
+        // Якщо це об'єкт з полем value, витягуємо значення
+        if (jobData && typeof jobData === 'object' && !Array.isArray(jobData)) {
+          const candidate = jobData.value ?? jobData.result ?? jobData.data;
+          if (candidate !== undefined) {
+            if (typeof candidate === 'string') {
+              try {
+                jobData = JSON.parse(candidate);
+              } catch {
+                jobData = candidate;
+              }
+            } else {
+              jobData = candidate;
+            }
+          }
+        }
+        
+        // Якщо все ще рядок, пробуємо парсити
+        if (typeof jobData === 'string') {
+          try {
+            jobData = JSON.parse(jobData);
+          } catch (err) {
+            console.warn(`[check-webhook] Failed to parse existing job ${jobId} as JSON:`, err);
+            jobData = null;
+          }
+        }
+        
+        if (jobData && typeof jobData === 'object' && 'id' in jobData) {
+          job = jobData as ReminderJob;
+          job.datetime = datetime;
+          job.dueAt = dueAt;
+          job.updatedAt = Date.now();
+          if (job.status === 'canceled') {
+            job.status = 'pending';
+            delete job.canceledAt;
+          }
+        } else {
+          // Якщо не вдалося розпарсити, створюємо новий
+          job = {
+            id: jobId,
+            ruleId: rule.id,
+            visitId: visitId,
+            companyId: companyId || 1169323,
+            clientId: clientId || 0,
+            instagram: instagram,
+            datetime: datetime,
+            dueAt: dueAt,
+            payload: {
+              clientName: clientName || 'Тестовий клієнт',
+              phone: null,
+              email: null,
+              serviceTitle: null,
+              staffName: null,
+            },
+            status: 'pending',
+            attempts: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
         }
       } else {
         // Створюємо новий job
