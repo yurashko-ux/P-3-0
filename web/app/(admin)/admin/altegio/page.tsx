@@ -1511,6 +1511,47 @@ export default function AltegioLanding() {
               >
                 {remindersDebug.loading ? 'Завантаження...' : '🔍 Діагностика'}
               </button>
+              <button
+                onClick={async () => {
+                  // Тестовий запис на 7 днів наперед
+                  const testDatetime = new Date();
+                  testDatetime.setDate(testDatetime.getDate() + 7);
+                  testDatetime.setHours(15, 0, 0, 0);
+                  
+                  try {
+                    const res = await fetch('/api/altegio/reminders/test-create', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        visitId: 999999999,
+                        datetime: testDatetime.toISOString(),
+                        instagram: 'mykolayyurashko',
+                        clientName: 'Микола Юрашко (тест)',
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      alert(`✅ Створено ${data.jobsCreated.length} job'ів! Тепер оновіть чергу.`);
+                      loadRemindersQueue();
+                    } else {
+                      alert(`❌ Помилка: ${data.error}`);
+                    }
+                  } catch (err) {
+                    alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: '#10b981',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🧪 Тест створення job'ів
+              </button>
             </div>
           </div>
 
