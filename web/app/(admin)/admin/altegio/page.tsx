@@ -128,6 +128,16 @@ export default function AltegioLanding() {
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [clientsDebug, setClientsDebug] = useState<any>(null);
   const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
+  const [diagnosticsModal, setDiagnosticsModal] = useState<{
+    open: boolean;
+    title: string;
+    content: string;
+    jsonData?: any;
+  }>({
+    open: false,
+    title: '',
+    content: '',
+  });
   const [selectedClientDetails, setSelectedClientDetails] = useState<any>(null);
   const [selectedClientLoading, setSelectedClientLoading] = useState(false);
   const [instagramSearchValue, setInstagramSearchValue] = useState<string>('');
@@ -2072,9 +2082,14 @@ export default function AltegioLanding() {
                         }
                       }
                       
-                      // Показуємо в alert, але також копіюємо в консоль для детального аналізу
+                      // Показуємо в модальному вікні з можливістю копіювання
                       console.log('[ManyChat Detailed Test]', data);
-                      alert(message);
+                      setDiagnosticsModal({
+                        open: true,
+                        title: '🔍 ДЕТАЛЬНА ДІАГНОСТИКА ManyChat API',
+                        content: message,
+                        jsonData: data,
+                      });
                     } else {
                       alert(`❌ Помилка: ${data.error || 'Невідома помилка'}`);
                     }
