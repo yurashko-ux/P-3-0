@@ -100,7 +100,9 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string, clien
 
 export async function GET(req: NextRequest) {
   try {
-    const instagram = req.nextUrl.searchParams.get('instagram') || 'mykolayyurashko';
+    const instagramRaw = req.nextUrl.searchParams.get('instagram') || 'mykolayyurashko';
+    // Видаляємо @ з початку, якщо є
+    const instagram = instagramRaw.startsWith('@') ? instagramRaw.slice(1) : instagramRaw;
     
     // Отримуємо API Key
     const manychatApiKey = 
@@ -126,7 +128,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Шукаємо subscriber за Instagram username
+    // Шукаємо subscriber за Instagram username (без @)
     const results = await findSubscriberInManyChat(instagram, manychatApiKey);
     
     const found = results.some((r) => r.success && r.subscriberId);
@@ -134,7 +136,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      instagram,
+      instagram, // Повертаємо без @
       found,
       subscriberId: subscriberId || null,
       results,
@@ -147,7 +149,7 @@ export async function GET(req: NextRequest) {
             status: '❌ Subscriber не знайдено',
             message: 'Користувач не взаємодіяв з ManyChat ботом. Потрібно:',
             steps: [
-              '1. Відкрий Instagram на акаунті @' + instagram,
+              `1. Відкрий Instagram на акаунті @${instagram}`,
               '2. Знайди ManyChat бот (або сторінку, яка використовує ManyChat)',
               '3. Напиши будь-яке повідомлення боту',
               '4. Або натисни на кнопку в автоматизації ManyChat',
