@@ -112,81 +112,50 @@ async function sendViaManyChat(
     // Видаляємо @ з початку, якщо є
     const cleanInstagram = instagram.startsWith('@') ? instagram.slice(1) : instagram;
     
-    console.log(`[reminders] Searching ManyChat subscriber for ${cleanInstagram} (original: ${instagram})`);
+    console.log(`[reminders] Searching ManyChat subscriber for Instagram username: ${cleanInstagram} (original: ${instagram})`);
     
-    // Метод 1: findByName за повним ім'ям (якщо є) - це працює!
-    if (clientName && clientName.trim()) {
-      console.log(`[reminders] Trying findByName by full name: "${clientName}"`);
-      const fullNameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(clientName.trim())}`;
-      const fullNameSearchResponse = await fetch(fullNameSearchUrl, {
-        method: 'GET',
+    // Метод 1: findByInstagram - шукаємо виключно за Instagram username
+    console.log(`[reminders] ===== METHOD 1: findByInstagram =====`);
+    console.log(`[reminders] Searching for Instagram username: "${cleanInstagram}"`);
+    try {
+      const instagramSearchUrl = `https://api.manychat.com/fb/subscriber/findByInstagram`;
+      const instagramSearchResponse = await fetch(instagramSearchUrl, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          username: cleanInstagram,
+        }),
       });
 
-      if (fullNameSearchResponse.ok) {
-        const fullNameData = await fullNameSearchResponse.json();
-        console.log(`[reminders] findByName (full name) result:`, JSON.stringify(fullNameData, null, 2));
+      if (instagramSearchResponse.ok) {
+        const instagramData = await instagramSearchResponse.json();
+        console.log(`[reminders] findByInstagram result:`, JSON.stringify(instagramData, null, 2));
         
-        // Перевіряємо, чи є дані та чи співпадає ig_username
-        if (fullNameData?.status === 'success' && Array.isArray(fullNameData.data) && fullNameData.data.length > 0) {
-          for (const subscriber of fullNameData.data) {
-            const subscriberIgUsername = subscriber.ig_username || subscriber.instagram_username;
-            if (subscriberIgUsername && subscriberIgUsername.toLowerCase() === cleanInstagram.toLowerCase()) {
-              subscriberId = subscriber.id || subscriber.subscriber_id;
-              searchData = subscriber;
-              console.log(`[reminders] ✅ Found subscriber_id via findByName (full name): ${subscriberId}, ig_username matches: ${subscriberIgUsername}`);
-              break;
-            }
-          }
-          
-          // Якщо не знайшли за ig_username, але є тільки один результат, використовуємо його
-          if (!subscriberId && fullNameData.data.length === 1) {
-            subscriberId = fullNameData.data[0].id || fullNameData.data[0].subscriber_id;
-            searchData = fullNameData.data[0];
-            console.log(`[reminders] ⚠️ Found subscriber by name but ig_username doesn't match. Using anyway: ${subscriberId}`);
-          }
-        }
-      } else {
-        const errorText = await fullNameSearchResponse.text();
-        console.warn(`[reminders] ManyChat findByName (full name) failed: ${fullNameSearchResponse.status} ${errorText}`);
-      }
-    }
-    
-    // Метод 2: findByName за Instagram username (на випадок, якщо не знайшли за ім'ям)
-    if (!subscriberId) {
-      console.log(`[reminders] Trying findByName by Instagram username: "${cleanInstagram}"`);
-      const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
-      const nameSearchResponse = await fetch(nameSearchUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-      });
-
-      if (nameSearchResponse.ok) {
-        searchData = await nameSearchResponse.json();
-        // findByName за Instagram username зазвичай повертає порожній масив
-        if (searchData?.status === 'success' && Array.isArray(searchData.data) && searchData.data.length > 0) {
-          subscriberId = searchData.data[0]?.id || searchData.data[0]?.subscriber_id;
+        if (instagramData?.status === 'success' && instagramData.data) {
+          subscriberId = instagramData.data.id || instagramData.data.subscriber_id || instagramData.data.subscriber?.id;
+          searchData = instagramData.data;
           if (subscriberId) {
-            console.log(`[reminders] ✅ Found subscriber_id via findByName (Instagram): ${subscriberId}`);
+            console.log(`[reminders] ✅ Found subscriber_id via findByInstagram: ${subscriberId}`);
           }
         }
-        console.log(`[reminders] findByName (Instagram) result:`, JSON.stringify(searchData, null, 2));
       } else {
-        const errorText = await nameSearchResponse.text();
-        console.warn(`[reminders] ManyChat findByName (Instagram) failed: ${nameSearchResponse.status} ${errorText}`);
+        const errorText = await instagramSearchResponse.text();
+        console.warn(`[reminders] ManyChat findByInstagram failed: ${instagramSearchResponse.status} ${errorText}`);
       }
+    } catch (err) {
+      console.error(`[reminders] findByInstagram error:`, err);
     }
 
-    // Метод 2: Якщо не знайшли, пробуємо findByCustomField (якщо є custom field для Instagram)
+    // Метод 2: findByCustomField - якщо findByInstagram не спрацював
     if (!subscriberId) {
-      console.log(`[reminders] Trying findByCustomField for @${instagram}`);
+      console.log(`[reminders] ===== METHOD 2: findByCustomField =====`);
+      console.log(`[reminders] Trying findByCustomField for Instagram username: "${cleanInstagram}"`);
       // ManyChat може мати custom field для Instagram username
       // Спробуємо різні варіанти field_id
-      const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username'];
+      const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username', 'Instagram Username', 'Instagram'];
       
       for (const fieldId of customFieldIds) {
         const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
