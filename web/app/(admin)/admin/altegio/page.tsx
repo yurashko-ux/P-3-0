@@ -3048,6 +3048,137 @@ Application Type: Non-public</pre>
         </Card>
       </section>
     </main>
+
+    {/* Модальне вікно для діагностики */}
+    {diagnosticsModal.open && (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          padding: '20px',
+        }}
+        onClick={() => setDiagnosticsModal({ open: false, title: '', content: '' })}
+      >
+        <div
+          style={{
+            backgroundColor: '#fff',
+            borderRadius: 12,
+            padding: '24px',
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            position: 'relative',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>{diagnosticsModal.title}</h2>
+            <button
+              onClick={() => setDiagnosticsModal({ open: false, title: '', content: '' })}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '0 8px',
+                color: '#666',
+              }}
+            >
+              ×
+            </button>
+          </div>
+          
+          <div style={{ marginBottom: '16px' }}>
+            <button
+              onClick={async () => {
+                const textToCopy = diagnosticsModal.jsonData 
+                  ? JSON.stringify(diagnosticsModal.jsonData, null, 2)
+                  : diagnosticsModal.content;
+                await navigator.clipboard.writeText(textToCopy);
+                alert('✅ Скопійовано в буфер обміну!');
+              }}
+              style={{
+                padding: '8px 16px',
+                background: '#3b82f6',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontWeight: 500,
+                marginRight: '8px',
+              }}
+            >
+              📋 Копіювати JSON
+            </button>
+            <button
+              onClick={async () => {
+                await navigator.clipboard.writeText(diagnosticsModal.content);
+                alert('✅ Текст скопійовано в буфер обміну!');
+              }}
+              style={{
+                padding: '8px 16px',
+                background: '#10b981',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              📋 Копіювати текст
+            </button>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: '#f9fafb',
+              padding: '16px',
+              borderRadius: 8,
+              fontFamily: 'monospace',
+              fontSize: '13px',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              maxHeight: '60vh',
+              overflow: 'auto',
+              border: '1px solid #e5e7eb',
+            }}
+          >
+            {diagnosticsModal.content}
+          </div>
+
+          {diagnosticsModal.jsonData && (
+            <details style={{ marginTop: '16px' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 500, marginBottom: '8px' }}>
+                📄 Показати повний JSON
+              </summary>
+              <pre
+                style={{
+                  backgroundColor: '#1f2937',
+                  color: '#f9fafb',
+                  padding: '16px',
+                  borderRadius: 8,
+                  overflow: 'auto',
+                  fontSize: '12px',
+                  maxHeight: '40vh',
+                  marginTop: '8px',
+                }}
+              >
+                {JSON.stringify(diagnosticsModal.jsonData, null, 2)}
+              </pre>
+            </details>
+          )}
+        </div>
+      </div>
+    )}
   );
 }
 
