@@ -70,7 +70,12 @@ export async function GET(req: NextRequest) {
 
       const nameResponseText = await nameSearchResponse.text();
       console.log(`[test-detailed] Response status: ${nameSearchResponse.status}`);
-      console.log(`[test-detailed] Response headers:`, Object.fromEntries(nameSearchResponse.headers.entries()));
+      // Логуємо headers через Array.from для сумісності з TypeScript
+      const headersObj: Record<string, string> = {};
+      nameSearchResponse.headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      console.log(`[test-detailed] Response headers:`, headersObj);
       console.log(`[test-detailed] Response text (first 500 chars):`, nameResponseText.substring(0, 500));
 
       let nameResponseData: any = null;
