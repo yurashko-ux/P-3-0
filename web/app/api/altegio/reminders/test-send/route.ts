@@ -97,60 +97,60 @@ async function sendViaManyChat(
     
     console.log(`[test-send] Searching ManyChat subscriber for Instagram username: ${cleanInstagram} (original: ${instagram})`);
     
-    // Метод 1: Спочатку отримуємо список custom fields, щоб знайти правильний field_id для Instagram username
-    console.log(`[test-send] ===== METHOD 1: Getting custom fields =====`);
-    let instagramFieldId: string | null = null;
+    // Метод 1: getSubscribers з фільтрацією за ig_username (системне поле ManyChat)
+    console.log(`[test-send] ===== METHOD 1: getSubscribers with ig_username filter =====`);
     try {
-      // Спробуємо різні endpoints для отримання custom fields
-      const fieldsEndpoints = [
-        'https://api.manychat.com/fb/subscriber/getFields',
-        'https://api.manychat.com/fb/subscriber/getCustomFields',
-        'https://api.manychat.com/fb/fields',
-      ];
+      // ManyChat API: отримуємо subscribers з пагінацією та фільтруємо за ig_username
+      const maxPages = 5; // Обмежуємо кількість сторінок для продуктивності
+      const pageSize = 100;
       
-      for (const fieldsUrl of fieldsEndpoints) {
-        try {
-          const fieldsResponse = await fetch(fieldsUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-            },
+      for (let page = 1; page <= maxPages; page++) {
+        const subscribersUrl = `https://api.manychat.com/fb/subscriber/getSubscribers?page=${page}&limit=${pageSize}`;
+        const subscribersResponse = await fetch(subscribersUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+          },
+        });
+        
+        if (subscribersResponse.ok) {
+          const subscribersData = await subscribersResponse.json();
+          const subscribers = subscribersData?.data || [];
+          
+          // Шукаємо subscriber з відповідним ig_username
+          const foundSubscriber = subscribers.find((sub: any) => {
+            const subIgUsername = sub.ig_username?.toLowerCase().trim();
+            return subIgUsername === cleanInstagram.toLowerCase().trim();
           });
           
-          if (fieldsResponse.ok) {
-            const fieldsData = await fieldsResponse.json();
-            const fields = fieldsData?.data?.fields || fieldsData?.fields || [];
-            
-            // Шукаємо поле, пов'язане з Instagram
-            const instagramField = fields.find((f: any) => 
-              f.name?.toLowerCase().includes('instagram') || 
-              f.field_id?.toLowerCase().includes('instagram') ||
-              f.label?.toLowerCase().includes('instagram') ||
-              f.id?.toString().includes('instagram')
-            );
-            
-            if (instagramField) {
-              instagramFieldId = instagramField.field_id || instagramField.id || instagramField.name;
-              console.log(`[test-send] ✅ Found Instagram field: ${instagramFieldId} (${instagramField.name || instagramField.label})`);
-              break;
-            }
+          if (foundSubscriber) {
+            subscriberId = foundSubscriber.id || foundSubscriber.subscriber_id;
+            searchData = foundSubscriber;
+            console.log(`[test-send] ✅ Found subscriber via getSubscribers: ${subscriberId}`, JSON.stringify(foundSubscriber, null, 2));
+            break;
           }
-        } catch (err) {
-          // Продовжуємо до наступного endpoint
+          
+          // Якщо на цій сторінці менше ніж pageSize, це остання сторінка
+          if (subscribers.length < pageSize) {
+            break;
+          }
+        } else {
+          const errorText = await subscribersResponse.text();
+          console.warn(`[test-send] getSubscribers failed: ${subscribersResponse.status} ${errorText}`);
+          break;
         }
       }
     } catch (err) {
-      console.warn(`[test-send] Failed to get custom fields:`, err);
+      console.error(`[test-send] getSubscribers error:`, err);
     }
 
-    // Метод 2: findByCustomField - використовуємо знайдений field_id або спробуємо стандартні варіанти
-    console.log(`[test-send] ===== METHOD 2: findByCustomField =====`);
-    console.log(`[test-send] Searching for Instagram username: "${cleanInstagram}"`);
-    
-    // Формуємо список field_id для спроби (спочатку знайдений, потім стандартні варіанти)
-    const customFieldIds = instagramFieldId 
-      ? [instagramFieldId, 'instagram_username', 'instagram', 'username', 'ig_username', 'Instagram Username', 'Instagram']
-      : ['instagram_username', 'instagram', 'username', 'ig_username', 'Instagram Username', 'Instagram'];
+    // Метод 2: findByCustomField - якщо getSubscribers не спрацював
+    if (!subscriberId) {
+      console.log(`[test-send] ===== METHOD 2: findByCustomField =====`);
+      console.log(`[test-send] Trying findByCustomField for Instagram username: "${cleanInstagram}"`);
+      
+      // Спробуємо стандартні варіанти field_id
+      const customFieldIds = ['ig_username', 'instagram_username', 'instagram', 'username', 'Instagram Username', 'Instagram'];
       
       for (const fieldId of customFieldIds) {
         if (subscriberId) break; // Якщо вже знайшли, зупиняємося
