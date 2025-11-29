@@ -2014,12 +2014,26 @@ export default function AltegioLanding() {
                         }
                       }
                       
-                      alert(message);
+                      setDiagnosticsModal({
+                        open: true,
+                        title: '🔬 Діагностика ManyChat API',
+                        content: message,
+                        jsonData: data,
+                      });
                     } else {
-                      alert(`❌ Помилка: ${data.error || 'Невідома помилка'}`);
+                      setDiagnosticsModal({
+                        open: true,
+                        title: '❌ Помилка',
+                        content: `Помилка: ${data.error || 'Невідома помилка'}`,
+                        jsonData: data,
+                      });
                     }
                   } catch (err) {
-                    alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                    setDiagnosticsModal({
+                      open: true,
+                      title: '❌ Помилка',
+                      content: `Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`,
+                    });
                   }
                 }}
                 style={{
