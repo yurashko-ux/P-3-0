@@ -3061,10 +3061,9 @@ Application Type: Non-public</pre>
           </ul>
         </Card>
       </section>
-    </main>
 
-    {/* Модальне вікно для діагностики */}
-    {diagnosticsModal.open && (
+      {/* Модальне вікно для діагностики */}
+      {diagnosticsModal.open && (
       <div
         style={{
           position: 'fixed',
@@ -3192,7 +3191,8 @@ Application Type: Non-public</pre>
           )}
         </div>
       </div>
-    )}
+      )}
+    </main>
   );
 }
 
