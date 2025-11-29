@@ -1624,7 +1624,37 @@ export default function AltegioLanding() {
                       } else {
                         const lastEvent = events[0];
                         const message = `Знайдено ${events.length} останніх подій по записах.\n\nОстання подія:\n- Дата: ${new Date(lastEvent.receivedAt).toLocaleString('uk-UA')}\n- Статус: ${lastEvent.status}\n- Visit ID: ${lastEvent.visitId}\n- Дата візиту: ${lastEvent.datetime || '—'}\n- Клієнт: ${lastEvent.clientName || '—'}\n- Instagram: ${lastEvent.instagram ? '@' + lastEvent.instagram : '—'}\n\n${lastEvent.instagram === 'mykolayyurashko' ? '✅ Це тестовий клієнт!' : '❌ Це не тестовий клієнт'}`;
-                        alert(message);
+                        
+                        if (lastEvent.instagram === 'mykolayyurashko' && lastEvent.datetime) {
+                          const createJobs = confirm(message + '\n\nСтворити job\'и для цього запису?');
+                          if (createJobs) {
+                            try {
+                              const createRes = await fetch('/api/altegio/reminders/check-webhook', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  visitId: lastEvent.visitId,
+                                  datetime: lastEvent.datetime,
+                                  instagram: lastEvent.instagram,
+                                  clientName: lastEvent.clientName,
+                                  companyId: 1169323,
+                                  clientId: lastEvent.clientId,
+                                }),
+                              });
+                              const createData = await createRes.json();
+                              if (createData.ok) {
+                                alert(`✅ Створено ${createData.jobsCreated.length} job'ів! Тепер оновіть чергу.`);
+                                loadRemindersQueue();
+                              } else {
+                                alert(`❌ Помилка створення job'ів: ${createData.error}`);
+                              }
+                            } catch (err) {
+                              alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                            }
+                          }
+                        } else {
+                          alert(message);
+                        }
                       }
                     } else {
                       alert(`❌ Помилка: ${data.error}`);
