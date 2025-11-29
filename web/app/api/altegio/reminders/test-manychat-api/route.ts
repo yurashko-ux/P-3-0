@@ -98,8 +98,103 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Тест 3: Спробуємо отримати subscriber через getSubscriberInfo (якщо знаємо ID)
-    // Але спочатку потрібно знайти ID через інші методи
+    // Тест 3: getSubscribers з фільтрацією за ig_username
+    try {
+      console.log(`[test-manychat-api] Testing getSubscribers with ig_username filter`);
+      const maxPages = 3; // Обмежуємо для діагностики
+      const pageSize = 100;
+      let foundViaGetSubscribers = false;
+      
+      for (let page = 1; page <= maxPages; page++) {
+        const subscribersUrl = `https://api.manychat.com/fb/subscriber/getSubscribers?page=${page}&limit=${pageSize}`;
+        const subscribersResponse = await fetch(subscribersUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${manychatApiKey}`,
+          },
+        });
+        
+        if (subscribersResponse.ok) {
+          const subscribersData = await subscribersResponse.json();
+          const subscribers = subscribersData?.data || [];
+          
+          // Логуємо структуру першого subscriber для діагностики
+          if (page === 1 && subscribers.length > 0) {
+            const firstSub = subscribers[0];
+            console.log(`[test-manychat-api] Sample subscriber from getSubscribers:`, {
+              id: firstSub.id,
+              name: firstSub.name,
+              ig_username: firstSub.ig_username,
+              has_ig_username: !!firstSub.ig_username,
+              keys: Object.keys(firstSub).slice(0, 15),
+            });
+          }
+          
+          // Шукаємо subscriber з відповідним ig_username
+          const foundSubscriber = subscribers.find((sub: any) => {
+            const subIgUsername = sub.ig_username?.toLowerCase().trim();
+            return subIgUsername === cleanInstagram.toLowerCase().trim();
+          });
+          
+          if (foundSubscriber) {
+            foundViaGetSubscribers = true;
+            results.push({
+              method: `getSubscribers (page ${page})`,
+              status: subscribersResponse.status,
+              ok: true,
+              response: {
+                found: true,
+                subscriber: foundSubscriber,
+                totalOnPage: subscribers.length,
+              },
+              subscriberId: foundSubscriber.id || foundSubscriber.subscriber_id,
+            });
+            break;
+          }
+          
+          // Якщо на цій сторінці менше ніж pageSize, це остання сторінка
+          if (subscribers.length < pageSize) {
+            results.push({
+              method: `getSubscribers (page ${page})`,
+              status: subscribersResponse.status,
+              ok: true,
+              response: {
+                found: false,
+                totalOnPage: subscribers.length,
+                isLastPage: true,
+              },
+            });
+            break;
+          }
+        } else {
+          const errorText = await subscribersResponse.text();
+          results.push({
+            method: `getSubscribers (page ${page})`,
+            status: subscribersResponse.status,
+            ok: false,
+            error: errorText.substring(0, 200),
+          });
+          break;
+        }
+      }
+      
+      if (!foundViaGetSubscribers) {
+        results.push({
+          method: 'getSubscribers (summary)',
+          status: 200,
+          ok: true,
+          response: {
+            found: false,
+            message: `Checked up to ${maxPages} pages, subscriber not found`,
+          },
+        });
+      }
+    } catch (err) {
+      results.push({
+        method: 'getSubscribers',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     
     // Тест 4: Спробуємо знайти через Instagram handle напряму
     try {

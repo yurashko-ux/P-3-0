@@ -101,11 +101,13 @@ async function sendViaManyChat(
     console.log(`[test-send] ===== METHOD 1: getSubscribers with ig_username filter =====`);
     try {
       // ManyChat API: отримуємо subscribers з пагінацією та фільтруємо за ig_username
-      const maxPages = 5; // Обмежуємо кількість сторінок для продуктивності
+      const maxPages = 10; // Збільшуємо кількість сторінок
       const pageSize = 100;
       
       for (let page = 1; page <= maxPages; page++) {
         const subscribersUrl = `https://api.manychat.com/fb/subscriber/getSubscribers?page=${page}&limit=${pageSize}`;
+        console.log(`[test-send] Fetching page ${page} from getSubscribers...`);
+        
         const subscribersResponse = await fetch(subscribersUrl, {
           method: 'GET',
           headers: {
@@ -117,28 +119,54 @@ async function sendViaManyChat(
           const subscribersData = await subscribersResponse.json();
           const subscribers = subscribersData?.data || [];
           
+          console.log(`[test-send] Page ${page}: received ${subscribers.length} subscribers`);
+          
+          // Логуємо перші кілька subscribers для діагностики
+          if (page === 1 && subscribers.length > 0) {
+            const firstSub = subscribers[0];
+            console.log(`[test-send] Sample subscriber structure:`, JSON.stringify({
+              id: firstSub.id,
+              name: firstSub.name,
+              ig_username: firstSub.ig_username,
+              has_ig_username: !!firstSub.ig_username,
+              keys: Object.keys(firstSub).slice(0, 10),
+            }, null, 2));
+          }
+          
           // Шукаємо subscriber з відповідним ig_username
           const foundSubscriber = subscribers.find((sub: any) => {
             const subIgUsername = sub.ig_username?.toLowerCase().trim();
-            return subIgUsername === cleanInstagram.toLowerCase().trim();
+            const searchIgUsername = cleanInstagram.toLowerCase().trim();
+            const match = subIgUsername === searchIgUsername;
+            
+            if (subIgUsername) {
+              console.log(`[test-send] Checking subscriber ${sub.id}: ig_username="${subIgUsername}" vs search="${searchIgUsername}" -> ${match ? 'MATCH!' : 'no match'}`);
+            }
+            
+            return match;
           });
           
           if (foundSubscriber) {
             subscriberId = foundSubscriber.id || foundSubscriber.subscriber_id;
             searchData = foundSubscriber;
-            console.log(`[test-send] ✅ Found subscriber via getSubscribers: ${subscriberId}`, JSON.stringify(foundSubscriber, null, 2));
+            console.log(`[test-send] ✅ Found subscriber via getSubscribers on page ${page}: ${subscriberId}`, JSON.stringify(foundSubscriber, null, 2));
             break;
           }
           
           // Якщо на цій сторінці менше ніж pageSize, це остання сторінка
           if (subscribers.length < pageSize) {
+            console.log(`[test-send] Last page reached (${subscribers.length} < ${pageSize})`);
             break;
           }
         } else {
           const errorText = await subscribersResponse.text();
-          console.warn(`[test-send] getSubscribers failed: ${subscribersResponse.status} ${errorText}`);
+          console.warn(`[test-send] getSubscribers failed on page ${page}: ${subscribersResponse.status} ${errorText.substring(0, 200)}`);
           break;
         }
+      }
+      
+      if (!subscriberId) {
+        console.warn(`[test-send] ❌ Subscriber not found via getSubscribers after checking up to ${maxPages} pages`);
       }
     } catch (err) {
       console.error(`[test-send] getSubscribers error:`, err);
