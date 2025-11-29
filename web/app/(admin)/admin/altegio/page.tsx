@@ -1683,6 +1683,15 @@ export default function AltegioLanding() {
                 <ul style={{ margin: '4px 0', paddingLeft: 20, fontSize: '0.9em' }}>
                   <li>Всього подій: {remindersDebug.data.webhookEvents?.total || 0}</li>
                   <li>Подій по записах: {remindersDebug.data.webhookEvents?.recordEvents || 0}</li>
+                  {remindersDebug.data.webhookEvents?.eventsByResource &&
+                    remindersDebug.data.webhookEvents.eventsByResource.length > 0 && (
+                      <li>
+                        По ресурсах:{' '}
+                        {remindersDebug.data.webhookEvents.eventsByResource
+                          .map((e: any) => `${e.resource}: ${e.count}`)
+                          .join(', ')}
+                      </li>
+                    )}
                 </ul>
                 {remindersDebug.data.webhookEvents?.lastRecordEvents &&
                   remindersDebug.data.webhookEvents.lastRecordEvents.length > 0 && (
@@ -1739,6 +1748,104 @@ export default function AltegioLanding() {
                                   <span style={{ color: '#ef4444' }}>—</span>
                                 )}
                               </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </details>
+                  )}
+                {remindersDebug.data.webhookEvents?.lastAllEvents &&
+                  remindersDebug.data.webhookEvents.lastAllEvents.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
+                        Всі останні webhook події ({remindersDebug.data.webhookEvents.lastAllEvents.length})
+                      </summary>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: 8,
+                          background: '#fff',
+                          borderRadius: 4,
+                          fontSize: '0.85em',
+                          maxHeight: '400px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {remindersDebug.data.webhookEvents.lastAllEvents.map(
+                          (event: any, idx: number) => (
+                            <div
+                              key={idx}
+                              style={{
+                                marginBottom: 8,
+                                padding: 8,
+                                background: event.resource === 'record' ? '#dcfce7' : '#f8fafc',
+                                borderRadius: 4,
+                                border: `1px solid ${
+                                  event.resource === 'record' ? '#86efac' : '#e0e7ef'
+                                }`,
+                              }}
+                            >
+                              <div>
+                                <strong>Дата:</strong>{' '}
+                                {new Date(event.receivedAt).toLocaleString('uk-UA')}
+                              </div>
+                              <div>
+                                <strong>Resource:</strong>{' '}
+                                <span
+                                  style={{
+                                    color: event.resource === 'record' ? '#22c55e' : '#6b7280',
+                                    fontWeight: event.resource === 'record' ? 600 : 400,
+                                  }}
+                                >
+                                  {event.resource || '—'}
+                                </span>
+                              </div>
+                              <div>
+                                <strong>Resource ID:</strong> {event.resource_id || '—'}
+                              </div>
+                              <div>
+                                <strong>Status:</strong> {event.status || '—'}
+                              </div>
+                              {event.resource === 'record' && (
+                                <>
+                                  <div>
+                                    <strong>Дата візиту:</strong> {event.datetime || '—'}
+                                  </div>
+                                  <div>
+                                    <strong>Клієнт:</strong> {event.clientName || '—'}
+                                  </div>
+                                  <div>
+                                    <strong>Instagram:</strong>{' '}
+                                    {event.instagram ? (
+                                      <span style={{ color: '#22c55e', fontWeight: 600 }}>
+                                        @{event.instagram}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#ef4444' }}>—</span>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                              <details style={{ marginTop: 4 }}>
+                                <summary
+                                  style={{ cursor: 'pointer', fontSize: '0.8em', color: '#6b7280' }}
+                                >
+                                  Повна структура події
+                                </summary>
+                                <pre
+                                  style={{
+                                    marginTop: 4,
+                                    padding: 4,
+                                    background: '#1e293b',
+                                    color: '#e2e8f0',
+                                    borderRadius: 2,
+                                    fontSize: '0.75em',
+                                    overflowX: 'auto',
+                                  }}
+                                >
+                                  {JSON.stringify(event.fullBody || event, null, 2)}
+                                </pre>
+                              </details>
                             </div>
                           ),
                         )}

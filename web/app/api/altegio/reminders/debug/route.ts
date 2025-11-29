@@ -51,27 +51,41 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 4. Шукаємо останні події по record
-    const recordEvents = webhookEvents
-      .filter((e: any) => e.body?.resource === 'record')
-      .map((e: any) => ({
-        receivedAt: e.receivedAt,
-        status: e.body?.status,
-        visitId: e.body?.resource_id,
-        datetime: e.body?.data?.datetime,
-        clientId: e.body?.data?.client?.id,
-        clientName: e.body?.data?.client?.display_name || e.body?.data?.client?.name,
-        instagram: e.body?.data?.client?.custom_fields?.['instagram-user-name'],
-        fullBody: e.body,
-      }));
+    // 4. Аналізуємо всі webhook події
+    const allEventsAnalysis = webhookEvents.map((e: any) => ({
+      receivedAt: e.receivedAt,
+      resource: e.body?.resource,
+      resource_id: e.body?.resource_id,
+      status: e.body?.status,
+      event: e.body?.event,
+      type: e.body?.type,
+      bodyKeys: e.body ? Object.keys(e.body) : [],
+      // Для record подій
+      datetime: e.body?.data?.datetime,
+      clientId: e.body?.data?.client?.id,
+      clientName: e.body?.data?.client?.display_name || e.body?.data?.client?.name,
+      instagram: e.body?.data?.client?.custom_fields?.['instagram-user-name'],
+      // Повний body для діагностики
+      fullBody: e.body,
+    }));
 
-    // 5. Перевіряємо job'и по visitId
+    // 5. Шукаємо останні події по record
+    const recordEvents = allEventsAnalysis.filter((e: any) => e.resource === 'record');
+
+    // 6. Перевіряємо job'и по visitId
     const jobsByVisit = new Map<number, ReminderJob[]>();
     for (const job of jobs) {
       if (!jobsByVisit.has(job.visitId)) {
         jobsByVisit.set(job.visitId, []);
       }
       jobsByVisit.get(job.visitId)!.push(job);
+    }
+
+    // 7. Групуємо події по resource
+    const eventsByResource = new Map<string, number>();
+    for (const event of allEventsAnalysis) {
+      const resource = event.resource || 'unknown';
+      eventsByResource.set(resource, (eventsByResource.get(resource) || 0) + 1);
     }
 
     return NextResponse.json({
@@ -81,6 +95,11 @@ export async function GET(req: NextRequest) {
           total: webhookEvents.length,
           recordEvents: recordEvents.length,
           lastRecordEvents: recordEvents.slice(0, 5),
+          eventsByResource: Array.from(eventsByResource.entries()).map(([resource, count]) => ({
+            resource,
+            count,
+          })),
+          lastAllEvents: allEventsAnalysis.slice(0, 10), // Останні 10 подій для діагностики
         },
         jobs: {
           total: jobs.length,
