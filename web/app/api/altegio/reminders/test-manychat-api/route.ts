@@ -98,7 +98,48 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Тест 3: findByCustomField з різними field_id
+    // Тест 3: Спробуємо отримати subscriber через getSubscriberInfo (якщо знаємо ID)
+    // Але спочатку потрібно знайти ID через інші методи
+    
+    // Тест 4: Спробуємо знайти через Instagram handle напряму
+    try {
+      console.log(`[test-manychat-api] Trying to find by Instagram handle`);
+      // ManyChat може мати спеціальний endpoint для Instagram
+      const instagramSearchUrl = `https://api.manychat.com/fb/subscriber/findByInstagram`;
+      const instagramSearchResponse = await fetch(instagramSearchUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${manychatApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          instagram: cleanInstagram,
+        }),
+      });
+
+      const instagramResponseText = await instagramSearchResponse.text();
+      let instagramResponseData: any = null;
+      try {
+        instagramResponseData = JSON.parse(instagramResponseText);
+      } catch {
+        instagramResponseData = instagramResponseText;
+      }
+
+      results.push({
+        method: 'findByInstagram',
+        status: instagramSearchResponse.status,
+        ok: instagramSearchResponse.ok,
+        response: instagramResponseData,
+        subscriberId: instagramResponseData?.data?.subscriber_id || instagramResponseData?.subscriber_id || instagramResponseData?.subscriber?.id,
+      });
+    } catch (err) {
+      results.push({
+        method: 'findByInstagram',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Тест 5: findByCustomField з різними field_id
     const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username', 'Instagram Username', 'Instagram'];
     
     for (const fieldId of customFieldIds) {
@@ -143,18 +184,84 @@ export async function GET(req: NextRequest) {
     // Знаходимо успішні результати
     const successfulResults = results.filter((r) => r.ok && r.subscriberId);
     const found = successfulResults.length > 0;
+    
+    // Якщо знайшли через getCustomFields, спробуємо використати правильний field_id
+    const customFieldsResult = results.find((r) => r.method === 'getCustomFields' && r.ok && r.response);
+    if (customFieldsResult && customFieldsResult.response) {
+      const fields = customFieldsResult.response.data?.fields || customFieldsResult.response.fields || [];
+      console.log(`[test-manychat-api] Found ${fields.length} custom fields`);
+      
+      // Шукаємо поле, яке може містити Instagram username
+      const instagramFields = fields.filter((f: any) => 
+        f.name?.toLowerCase().includes('instagram') || 
+        f.field_id?.toLowerCase().includes('instagram') ||
+        f.label?.toLowerCase().includes('instagram')
+      );
+      
+      if (instagramFields.length > 0) {
+        console.log(`[test-manychat-api] Found Instagram-related fields:`, instagramFields);
+        
+        // Тестуємо кожне знайдене поле
+        for (const field of instagramFields) {
+          const fieldId = field.field_id || field.id || field.name;
+          try {
+            console.log(`[test-manychat-api] Testing custom field: ${fieldId}`);
+            const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
+            const customSearchResponse = await fetch(customSearchUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${manychatApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                field_id: fieldId,
+                field_value: cleanInstagram,
+              }),
+            });
+
+            const customResponseText = await customSearchResponse.text();
+            let customResponseData: any = null;
+            try {
+              customResponseData = JSON.parse(customResponseText);
+            } catch {
+              customResponseData = customResponseText;
+            }
+
+            results.push({
+              method: `findByCustomField (from getCustomFields: ${fieldId})`,
+              status: customSearchResponse.status,
+              ok: customSearchResponse.ok,
+              response: customResponseData,
+              subscriberId: customResponseData?.data?.subscriber_id || customResponseData?.subscriber_id || customResponseData?.subscriber?.id,
+            });
+          } catch (err) {
+            // Ігноруємо помилки
+          }
+        }
+      }
+    }
+
+    // Оновлюємо результати після додаткових тестів
+    const finalSuccessfulResults = results.filter((r) => r.ok && r.subscriberId);
+    const finalFound = finalSuccessfulResults.length > 0;
 
     return NextResponse.json({
       ok: true,
       instagram: cleanInstagram,
-      found,
-      successfulResults,
+      found: finalFound,
+      successfulResults: finalSuccessfulResults,
       allResults: results,
       summary: {
         totalTests: results.length,
-        successful: successfulResults.length,
+        successful: finalSuccessfulResults.length,
         failed: results.filter((r) => !r.ok || r.error).length,
       },
+      recommendations: finalFound ? [] : [
+        '1. Переконайся, що @' + cleanInstagram + ' взаємодіяв з ManyChat ботом (написав повідомлення)',
+        '2. Перевір в ManyChat Dashboard → Contacts, чи є там цей контакт',
+        '3. Якщо контакт є, перевір, чи правильно збережений Instagram username в custom fields',
+        '4. Можливо, потрібно використати числовий field_id замість назви поля',
+      ],
     });
   } catch (error) {
     console.error('[test-manychat-api] Error:', error);
