@@ -34,7 +34,13 @@ async function sendInstagramDM(
   });
 
   // Спробуємо ManyChat API спочатку (якщо налаштовано)
-  const manychatApiKey = process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY;
+  // Підтримуємо різні варіанти назв змінних
+  const manychatApiKey = 
+    process.env.MANYCHAT_API_KEY || 
+    process.env.ManyChat_API_Key ||
+    process.env.MANYCHAT_API_TOKEN || 
+    process.env.MC_API_KEY ||
+    process.env.MANYCHAT_APIKEY;
   if (manychatApiKey) {
     try {
       console.log(`[test-send] Attempting to send via ManyChat API`);
@@ -390,8 +396,19 @@ export async function POST(req: NextRequest) {
       },
       method,
       diagnostics: {
-        manychatApiKeyConfigured: !!(process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY),
+        manychatApiKeyConfigured: !!(
+          process.env.MANYCHAT_API_KEY || 
+          process.env.ManyChat_API_Key ||
+          process.env.MANYCHAT_API_TOKEN || 
+          process.env.MC_API_KEY ||
+          process.env.MANYCHAT_APIKEY
+        ),
         instagramTokenConfigured: !!process.env.INSTAGRAM_ACCESS_TOKEN,
+        manychatApiKeyName: process.env.MANYCHAT_API_KEY ? 'MANYCHAT_API_KEY' :
+                            process.env.ManyChat_API_Key ? 'ManyChat_API_Key' :
+                            process.env.MANYCHAT_API_TOKEN ? 'MANYCHAT_API_TOKEN' :
+                            process.env.MC_API_KEY ? 'MC_API_KEY' :
+                            process.env.MANYCHAT_APIKEY ? 'MANYCHAT_APIKEY' : 'not found',
       },
     });
   } catch (error) {

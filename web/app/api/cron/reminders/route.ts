@@ -51,7 +51,13 @@ async function sendInstagramDM(
   });
 
   // Спробуємо ManyChat API спочатку (якщо налаштовано)
-  const manychatApiKey = process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY;
+  // Підтримуємо різні варіанти назв змінних
+  const manychatApiKey = 
+    process.env.MANYCHAT_API_KEY || 
+    process.env.ManyChat_API_Key ||
+    process.env.MANYCHAT_API_TOKEN || 
+    process.env.MC_API_KEY ||
+    process.env.MANYCHAT_APIKEY;
   if (manychatApiKey) {
     try {
       console.log(`[reminders] Attempting to send via ManyChat API`);
