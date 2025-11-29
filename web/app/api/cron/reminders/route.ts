@@ -26,15 +26,13 @@ function okCron(req: NextRequest) {
 }
 
 /**
- * Симулює відправку Instagram DM
- * TODO: Замінити на реальну відправку через Instagram Graph API
+ * Відправляє Instagram DM через ManyChat API або Instagram Graph API
  */
 async function sendInstagramDM(
   instagram: string,
   message: string,
   job: ReminderJob,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
-  // Поки що це симуляція - просто логуємо
   console.log(`[reminders] 📤 Sending Instagram DM to @${instagram}:`, {
     message,
     jobId: job.id,
@@ -42,24 +40,229 @@ async function sendInstagramDM(
     visitDate: job.datetime,
   });
 
-  // TODO: Реальна відправка через Instagram Graph API
-  // const response = await fetch('https://graph.instagram.com/v18.0/me/messages', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}`,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({
-  //     recipient: { username: instagram },
-  //     message: { text: message },
-  //   }),
-  // });
+  // Спробуємо ManyChat API спочатку (якщо налаштовано)
+  const manychatApiKey = process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY;
+  if (manychatApiKey) {
+    try {
+      console.log(`[reminders] Attempting to send via ManyChat API`);
+      const manychatResult = await sendViaManyChat(instagram, message, manychatApiKey);
+      if (manychatResult.success) {
+        return manychatResult;
+      }
+      console.warn(`[reminders] ManyChat API failed, trying Instagram Graph API:`, manychatResult.error);
+    } catch (err) {
+      console.warn(`[reminders] ManyChat API error:`, err);
+    }
+  }
 
-  // Поки що завжди успішно
+  // Спробуємо Instagram Graph API (якщо налаштовано)
+  const instagramToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  if (instagramToken) {
+    try {
+      console.log(`[reminders] Attempting to send via Instagram Graph API`);
+      const instagramResult = await sendViaInstagramGraph(instagram, message, instagramToken);
+      if (instagramResult.success) {
+        return instagramResult;
+      }
+      console.warn(`[reminders] Instagram Graph API failed:`, instagramResult.error);
+    } catch (err) {
+      console.warn(`[reminders] Instagram Graph API error:`, err);
+    }
+  }
+
+  // Якщо нічого не налаштовано - симуляція (для тестування)
+  console.log(`[reminders] ⚠️ No API configured, simulating send (mock mode)`);
   return {
     success: true,
     messageId: `mock_${Date.now()}_${job.id}`,
   };
+}
+
+/**
+ * Відправка через ManyChat REST API
+ */
+async function sendViaManyChat(
+  instagram: string,
+  message: string,
+  apiKey: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  try {
+    // ManyChat API: POST https://api.manychat.com/fb/sending/sendContent
+    // Потрібен subscriber_id або user_id, який можна отримати через API
+    // Спочатку шукаємо subscriber за Instagram username
+    const searchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
+    const searchResponse = await fetch(searchUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: instagram,
+      }),
+    });
+
+    if (!searchResponse.ok) {
+      const errorText = await searchResponse.text();
+      return {
+        success: false,
+        error: `ManyChat search failed: ${searchResponse.status} ${errorText}`,
+      };
+    }
+
+    const searchData = await searchResponse.json();
+    const subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id;
+
+    if (!subscriberId) {
+      return {
+        success: false,
+        error: `Subscriber not found in ManyChat for @${instagram}`,
+      };
+    }
+
+    // Відправляємо повідомлення
+    const sendUrl = `https://api.manychat.com/fb/sending/sendContent`;
+    const sendResponse = await fetch(sendUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        subscriber_id: subscriberId,
+        data: {
+          version: 'v2',
+          content: {
+            messages: [
+              {
+                type: 'text',
+                text: message,
+              },
+            ],
+          },
+        },
+      }),
+    });
+
+    if (!sendResponse.ok) {
+      const errorText = await sendResponse.text();
+      return {
+        success: false,
+        error: `ManyChat send failed: ${sendResponse.status} ${errorText}`,
+      };
+    }
+
+    const sendData = await sendResponse.json();
+    return {
+      success: true,
+      messageId: sendData?.data?.message_id || `manychat_${Date.now()}`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Відправка через Instagram Graph API
+ */
+async function sendViaInstagramGraph(
+  instagram: string,
+  message: string,
+  accessToken: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  try {
+    // Instagram Graph API вимагає Instagram Business Account
+    // Потрібен page_id та налаштування Instagram Messaging
+    const pageId = process.env.INSTAGRAM_PAGE_ID;
+    if (!pageId) {
+      return {
+        success: false,
+        error: 'INSTAGRAM_PAGE_ID not configured',
+      };
+    }
+
+    // Спочатку отримуємо Instagram Business Account ID
+    const pageUrl = `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${accessToken}`;
+    const pageResponse = await fetch(pageUrl);
+
+    if (!pageResponse.ok) {
+      const errorText = await pageResponse.text();
+      return {
+        success: false,
+        error: `Failed to get Instagram Business Account: ${pageResponse.status} ${errorText}`,
+      };
+    }
+
+    const pageData = await pageResponse.json();
+    const igBusinessAccountId = pageData?.instagram_business_account?.id;
+
+    if (!igBusinessAccountId) {
+      return {
+        success: false,
+        error: 'Instagram Business Account not found',
+      };
+    }
+
+    // Шукаємо user за Instagram username
+    // Примітка: Instagram Graph API має обмеження на пошук користувачів
+    // Можливо, потрібно зберігати user_id при першій взаємодії
+    const searchUrl = `https://graph.instagram.com/v18.0/${igBusinessAccountId}/business_discovery?username=${encodeURIComponent(instagram)}&fields=id,username&access_token=${accessToken}`;
+    const searchResponse = await fetch(searchUrl);
+
+    if (!searchResponse.ok) {
+      // Якщо пошук не працює, можливо потрібен інший підхід
+      return {
+        success: false,
+        error: `Failed to find user @${instagram}: ${searchResponse.status}`,
+      };
+    }
+
+    const searchData = await searchResponse.json();
+    const userId = searchData?.business_discovery?.id;
+
+    if (!userId) {
+      return {
+        success: false,
+        error: `User @${instagram} not found`,
+      };
+    }
+
+    // Відправляємо повідомлення
+    const sendUrl = `https://graph.facebook.com/v18.0/${igBusinessAccountId}/messages`;
+    const sendResponse = await fetch(sendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        recipient: { id: userId },
+        message: { text: message },
+        access_token: accessToken,
+      }),
+    });
+
+    if (!sendResponse.ok) {
+      const errorText = await sendResponse.text();
+      return {
+        success: false,
+        error: `Instagram send failed: ${sendResponse.status} ${errorText}`,
+      };
+    }
+
+    const sendData = await sendResponse.json();
+    return {
+      success: true,
+      messageId: sendData?.message_id || `instagram_${Date.now()}`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**

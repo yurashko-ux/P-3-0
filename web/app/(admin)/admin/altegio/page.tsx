@@ -1968,6 +1968,9 @@ export default function AltegioLanding() {
                             <th style={{ padding: '8px', fontWeight: 600 }}>
                               Днів до візиту
                             </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Дії
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2041,6 +2044,47 @@ export default function AltegioLanding() {
                                   <span style={{ color: '#ef4444' }}>
                                     Сьогодні
                                   </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px' }}>
+                                {job.instagram ? (
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Відправити тестове повідомлення для @${job.instagram}?`)) {
+                                        return;
+                                      }
+                                      try {
+                                        const res = await fetch('/api/altegio/reminders/test-send', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ jobId: job.id }),
+                                        });
+                                        const data = await res.json();
+                                        if (data.ok) {
+                                          alert(`✅ Повідомлення відправлено!\n\nПовідомлення:\n${data.message}\n\nРезультат: ${data.result?.messageId || 'N/A'}\n\n${data.result?.error ? `Помилка: ${data.result.error}` : ''}`);
+                                          loadSentReminders();
+                                        } else {
+                                          alert(`❌ Помилка: ${data.error}`);
+                                        }
+                                      } catch (err) {
+                                        alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                                      }
+                                    }}
+                                    style={{
+                                      padding: '6px 12px',
+                                      background: '#8b5cf6',
+                                      color: '#fff',
+                                      border: 'none',
+                                      borderRadius: 6,
+                                      fontSize: '0.85em',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    📤 Тест
+                                  </button>
+                                ) : (
+                                  <span style={{ color: '#9ca3af', fontSize: '0.85em' }}>—</span>
                                 )}
                               </td>
                             </tr>
