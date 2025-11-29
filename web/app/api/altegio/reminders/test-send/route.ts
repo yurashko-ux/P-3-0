@@ -1,15 +1,16 @@
 // web/app/api/altegio/reminders/test-send/route.ts
-// Endpoint для тестування відправки повідомлень
+// Endpoint для тестової відправки нагадування
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
-import type { ReminderJob } from '@/lib/altegio/reminders';
-import { formatReminderMessage, getActiveReminderRules } from '@/lib/altegio/reminders';
+import { getActiveReminderRules, formatReminderMessage, type ReminderJob } from '@/lib/altegio/reminders';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Імпортуємо функції відправки з cron job
+/**
+ * Симулює відправку Instagram DM
+ */
 async function sendInstagramDM(
   instagram: string,
   message: string,
@@ -22,6 +23,7 @@ async function sendInstagramDM(
     visitDate: job.datetime,
   });
 
+  // Спробуємо ManyChat API спочатку (якщо налаштовано)
   const manychatApiKey = process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY;
   if (manychatApiKey) {
     try {
@@ -36,6 +38,7 @@ async function sendInstagramDM(
     }
   }
 
+  // Спробуємо Instagram Graph API (якщо налаштовано)
   const instagramToken = process.env.INSTAGRAM_ACCESS_TOKEN;
   if (instagramToken) {
     try {
@@ -50,6 +53,7 @@ async function sendInstagramDM(
     }
   }
 
+  // Якщо нічого не налаштовано - симуляція (для тестування)
   console.log(`[test-send] ⚠️ No API configured, simulating send (mock mode)`);
   return {
     success: true,
@@ -57,12 +61,17 @@ async function sendInstagramDM(
   };
 }
 
+/**
+ * Відправка через ManyChat REST API
+ */
 async function sendViaManyChat(
   instagram: string,
   message: string,
   apiKey: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
+    // ManyChat API: POST https://api.manychat.com/fb/sending/sendContent
+    // Спочатку шукаємо subscriber за Instagram username
     const searchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
     const searchResponse = await fetch(searchUrl, {
       method: 'POST',
@@ -93,6 +102,7 @@ async function sendViaManyChat(
       };
     }
 
+    // Відправляємо повідомлення
     const sendUrl = `https://api.manychat.com/fb/sending/sendContent`;
     const sendResponse = await fetch(sendUrl, {
       method: 'POST',
@@ -137,6 +147,9 @@ async function sendViaManyChat(
   }
 }
 
+/**
+ * Відправка через Instagram Graph API
+ */
 async function sendViaInstagramGraph(
   instagram: string,
   message: string,
@@ -151,6 +164,7 @@ async function sendViaInstagramGraph(
       };
     }
 
+    // Отримуємо Instagram Business Account ID
     const pageUrl = `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${accessToken}`;
     const pageResponse = await fetch(pageUrl);
 
@@ -163,60 +177,20 @@ async function sendViaInstagramGraph(
     }
 
     const pageData = await pageResponse.json();
-    const igBusinessAccountId = pageData?.instagram_business_account?.id;
+    const igAccountId = pageData?.instagram_business_account?.id;
 
-    if (!igBusinessAccountId) {
+    if (!igAccountId) {
       return {
         success: false,
         error: 'Instagram Business Account not found',
       };
     }
 
-    const searchUrl = `https://graph.instagram.com/v18.0/${igBusinessAccountId}/business_discovery?username=${encodeURIComponent(instagram)}&fields=id,username&access_token=${accessToken}`;
-    const searchResponse = await fetch(searchUrl);
-
-    if (!searchResponse.ok) {
-      return {
-        success: false,
-        error: `Failed to find user @${instagram}: ${searchResponse.status}`,
-      };
-    }
-
-    const searchData = await searchResponse.json();
-    const userId = searchData?.business_discovery?.id;
-
-    if (!userId) {
-      return {
-        success: false,
-        error: `User @${instagram} not found`,
-      };
-    }
-
-    const sendUrl = `https://graph.facebook.com/v18.0/${igBusinessAccountId}/messages`;
-    const sendResponse = await fetch(sendUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recipient: { id: userId },
-        message: { text: message },
-        access_token: accessToken,
-      }),
-    });
-
-    if (!sendResponse.ok) {
-      const errorText = await sendResponse.text();
-      return {
-        success: false,
-        error: `Instagram send failed: ${sendResponse.status} ${errorText}`,
-      };
-    }
-
-    const sendData = await sendResponse.json();
+    // TODO: Instagram Graph API вимагає отримати user_id за username
+    // Це складніше, потрібен додатковий крок для пошуку користувача
     return {
-      success: true,
-      messageId: sendData?.message_id || `instagram_${Date.now()}`,
+      success: false,
+      error: 'Instagram Graph API requires additional user lookup (not implemented yet)',
     };
   } catch (err) {
     return {
@@ -229,115 +203,137 @@ async function sendViaInstagramGraph(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { jobId } = body;
+    const { jobId, instagram, message } = body;
 
-    if (!jobId) {
+    if (!jobId && !instagram) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'jobId is required',
+          error: 'jobId or instagram required',
         },
         { status: 400 },
       );
     }
 
-    // Отримуємо job з KV
-    const jobKey = `altegio:reminder:job:${jobId}`;
-    const jobRaw = await kvRead.getRaw(jobKey);
+    let job: ReminderJob | null = null;
 
-    if (!jobRaw) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `Job ${jobId} not found`,
-        },
-        { status: 404 },
-      );
-    }
+    // Якщо передано jobId, завантажуємо job з KV
+    if (jobId) {
+      const jobKey = `altegio:reminder:job:${jobId}`;
+      const jobRaw = await kvRead.getRaw(jobKey);
 
-    // Парсимо job
-    let jobData: any;
-    if (typeof jobRaw === 'string') {
-      try {
-        jobData = JSON.parse(jobRaw);
-      } catch {
-        jobData = jobRaw;
-      }
-    } else {
-      jobData = jobRaw;
-    }
-
-    if (jobData && typeof jobData === 'object' && !Array.isArray(jobData)) {
-      const candidate = jobData.value ?? jobData.result ?? jobData.data;
-      if (candidate !== undefined) {
-        if (typeof candidate === 'string') {
+      if (jobRaw) {
+        let jobData: any;
+        if (typeof jobRaw === 'string') {
           try {
-            jobData = JSON.parse(candidate);
+            jobData = JSON.parse(jobRaw);
           } catch {
-            jobData = candidate;
+            jobData = jobRaw;
           }
         } else {
-          jobData = candidate;
+          jobData = jobRaw;
         }
+
+        if (jobData && typeof jobData === 'object' && !Array.isArray(jobData)) {
+          const candidate = jobData.value ?? jobData.result ?? jobData.data;
+          if (candidate !== undefined) {
+            if (typeof candidate === 'string') {
+              try {
+                jobData = JSON.parse(candidate);
+              } catch {
+                jobData = candidate;
+              }
+            } else {
+              jobData = candidate;
+            }
+          }
+        }
+
+        if (typeof jobData === 'string') {
+          try {
+            jobData = JSON.parse(jobData);
+          } catch (err) {
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `Failed to parse job: ${err instanceof Error ? err.message : String(err)}`,
+              },
+              { status: 400 },
+            );
+          }
+        }
+
+        job = jobData as ReminderJob;
       }
     }
 
-    if (typeof jobData === 'string') {
-      try {
-        jobData = JSON.parse(jobData);
-      } catch (err) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `Failed to parse job: ${err instanceof Error ? err.message : String(err)}`,
-          },
-          { status: 500 },
-        );
-      }
-    }
+    // Якщо job не знайдено, створюємо тестовий
+    if (!job) {
+      const rules = await getActiveReminderRules();
+      const rule = rules[0] || {
+        id: 'test',
+        daysBefore: 1,
+        active: true,
+        channel: 'instagram_dm',
+        template: message || 'Тестове повідомлення: {date} о {time}',
+      };
 
-    const job: ReminderJob = jobData;
+      const testDatetime = new Date();
+      testDatetime.setDate(testDatetime.getDate() + 1);
+      testDatetime.setHours(15, 0, 0, 0);
 
-    if (!job.instagram) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'Job has no Instagram username',
+      job = {
+        id: 'test_send',
+        ruleId: rule.id,
+        visitId: 999999,
+        companyId: 1169323,
+        clientId: 0,
+        instagram: instagram || 'mykolayyurashko',
+        datetime: testDatetime.toISOString(),
+        dueAt: Date.now(),
+        payload: {
+          clientName: 'Тестовий клієнт',
+          phone: null,
+          email: null,
+          serviceTitle: null,
+          staffName: null,
         },
-        { status: 400 },
-      );
+        status: 'pending',
+        attempts: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
     }
 
-    // Отримуємо правило та форматуємо повідомлення
+    // Форматуємо повідомлення
     const rules = await getActiveReminderRules();
-    const rule = rules.find((r) => r.id === job.ruleId);
-
+    const rule = rules.find((r) => r.id === job.ruleId) || rules[0];
+    
     if (!rule) {
       return NextResponse.json(
         {
           ok: false,
-          error: `Rule ${job.ruleId} not found`,
+          error: 'Rule not found',
         },
-        { status: 404 },
+        { status: 400 },
       );
     }
 
-    const message = formatReminderMessage(job, rule);
+    const formattedMessage = message || formatReminderMessage(job, rule);
 
-    // Відправляємо повідомлення
-    const result = await sendInstagramDM(job.instagram, message, job);
+    // Відправляємо
+    const result = await sendInstagramDM(job.instagram || instagram || '', formattedMessage, job);
 
     return NextResponse.json({
       ok: result.success,
-      message,
+      message: result.success ? 'Повідомлення відправлено!' : 'Помилка відправки',
       result,
       job: {
         id: job.id,
-        visitId: job.visitId,
         instagram: job.instagram,
-        clientName: job.payload.clientName,
-        visitDate: job.datetime,
+        message: formattedMessage,
       },
+      method: result.messageId?.startsWith('manychat_') ? 'ManyChat' : result.messageId?.startsWith('mock_') ? 'Mock (симуляція)' : 'Instagram Graph API',
     });
   } catch (error) {
     console.error('[test-send] Error:', error);
@@ -350,4 +346,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

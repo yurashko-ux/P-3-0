@@ -1808,6 +1808,89 @@ export default function AltegioLanding() {
               </button>
               <button
                 onClick={async () => {
+                  if (remindersQueue.jobs && remindersQueue.jobs.length > 0) {
+                    const firstJob = remindersQueue.jobs[0];
+                    const confirmSend = confirm(
+                      `Відправити тестове повідомлення для:\n\n` +
+                      `Клієнт: ${firstJob.clientName}\n` +
+                      `Instagram: ${firstJob.instagram || '—'}\n` +
+                      `Дата візиту: ${new Date(firstJob.visitDateTime).toLocaleString('uk-UA')}\n\n` +
+                      `Продовжити?`
+                    );
+                    
+                    if (!confirmSend) return;
+                    
+                    try {
+                      const res = await fetch('/api/altegio/reminders/test-send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          jobId: firstJob.id,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        alert(
+                          `✅ Повідомлення відправлено!\n\n` +
+                          `Метод: ${data.method}\n` +
+                          `Instagram: ${data.job.instagram}\n` +
+                          `Message ID: ${data.result.messageId || '—'}`
+                        );
+                        loadSentReminders();
+                      } else {
+                        alert(`❌ Помилка відправки:\n${data.error || 'Невідома помилка'}`);
+                      }
+                    } catch (err) {
+                      alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                    }
+                  } else {
+                    // Якщо немає job'ів, відправляємо тестове повідомлення
+                    const confirmSend = confirm(
+                      `Відправити тестове повідомлення для тестового клієнта @mykolayyurashko?\n\n` +
+                      `(Якщо ManyChat API не налаштовано, буде симуляція)`
+                    );
+                    
+                    if (!confirmSend) return;
+                    
+                    try {
+                      const res = await fetch('/api/altegio/reminders/test-send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          instagram: 'mykolayyurashko',
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        alert(
+                          `✅ Повідомлення відправлено!\n\n` +
+                          `Метод: ${data.method}\n` +
+                          `Instagram: ${data.job.instagram}\n` +
+                          `Message ID: ${data.result.messageId || '—'}`
+                        );
+                        loadSentReminders();
+                      } else {
+                        alert(`❌ Помилка відправки:\n${data.error || 'Невідома помилка'}`);
+                      }
+                    } catch (err) {
+                      alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                    }
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: '#8b5cf6',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                📤 Тест відправки
+              </button>
+              <button
+                onClick={async () => {
                   try {
                     const res = await fetch('/api/altegio/reminders/fix-index', {
                       method: 'POST',
