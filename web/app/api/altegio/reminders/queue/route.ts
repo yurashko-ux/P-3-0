@@ -61,7 +61,6 @@ export async function GET(req: NextRequest) {
     jobs.sort((a, b) => a.dueAt - b.dueAt);
 
     // Фільтруємо тільки pending для "черги"
-    const now = Date.now();
     const queue =
       statusParam === 'pending'
         ? jobs.filter((j) => {
