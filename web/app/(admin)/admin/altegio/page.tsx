@@ -358,9 +358,12 @@ export default function AltegioLanding() {
   }
 
   async function loadRemindersDebug() {
-    setRemindersDebug({ loading: true, ok: null });
+    setRemindersDebug({ loading: true, ok: null, data: undefined, error: undefined });
     try {
       const res = await fetch('/api/altegio/reminders/debug', { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
       const data = await res.json();
       setRemindersDebug({
         loading: false,
@@ -369,10 +372,12 @@ export default function AltegioLanding() {
         error: data.error,
       });
     } catch (err) {
+      console.error('[loadRemindersDebug] Error:', err);
       setRemindersDebug({
         loading: false,
         ok: false,
         error: err instanceof Error ? err.message : 'Невідома помилка',
+        data: undefined,
       });
     }
   }
@@ -1747,7 +1752,7 @@ export default function AltegioLanding() {
             </div>
           )}
 
-          {remindersDebug.ok !== null && remindersDebug.data && (
+          {remindersDebug.ok !== null && (
             <div
               style={{
                 marginTop: 16,
@@ -1776,7 +1781,7 @@ export default function AltegioLanding() {
                       </li>
                     )}
                 </ul>
-                {remindersDebug.data.webhookEvents?.lastRecordEvents &&
+                {remindersDebug.data?.webhookEvents?.lastRecordEvents &&
                   remindersDebug.data.webhookEvents.lastRecordEvents.length > 0 && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
@@ -1837,7 +1842,7 @@ export default function AltegioLanding() {
                       </div>
                     </details>
                   )}
-                {remindersDebug.data.webhookEvents?.lastAllEvents &&
+                {remindersDebug.data?.webhookEvents?.lastAllEvents &&
                   remindersDebug.data.webhookEvents.lastAllEvents.length > 0 && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
@@ -1940,13 +1945,13 @@ export default function AltegioLanding() {
               <div style={{ marginBottom: 12 }}>
                 <strong>Job'и нагадувань:</strong>
                 <ul style={{ margin: '4px 0', paddingLeft: 20, fontSize: '0.9em' }}>
-                  <li>Всього: {remindersDebug.data.jobs?.total || 0}</li>
-                  <li>Pending: {remindersDebug.data.jobs?.pending || 0}</li>
-                  <li>Sent: {remindersDebug.data.jobs?.sent || 0}</li>
-                  <li>Failed: {remindersDebug.data.jobs?.failed || 0}</li>
-                  <li>Canceled: {remindersDebug.data.jobs?.canceled || 0}</li>
+                  <li>Всього: {remindersDebug.data?.jobs?.total || 0}</li>
+                  <li>Pending: {remindersDebug.data?.jobs?.pending || 0}</li>
+                  <li>Sent: {remindersDebug.data?.jobs?.sent || 0}</li>
+                  <li>Failed: {remindersDebug.data?.jobs?.failed || 0}</li>
+                  <li>Canceled: {remindersDebug.data?.jobs?.canceled || 0}</li>
                 </ul>
-                {remindersDebug.data.jobs?.byVisit &&
+                {remindersDebug.data?.jobs?.byVisit &&
                   remindersDebug.data.jobs.byVisit.length > 0 && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
