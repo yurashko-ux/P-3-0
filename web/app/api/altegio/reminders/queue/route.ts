@@ -61,9 +61,24 @@ export async function GET(req: NextRequest) {
     jobs.sort((a, b) => a.dueAt - b.dueAt);
 
     // Фільтруємо тільки pending для "черги"
+    const now = Date.now();
     const queue =
       statusParam === 'pending'
-        ? jobs.filter((j) => j.status === 'pending' && j.dueAt > now)
+        ? jobs.filter((j) => {
+            const isPending = j.status === 'pending';
+            const isFuture = j.dueAt > now;
+            if (!isPending || !isFuture) {
+              console.log(`[queue] Filtering out job ${j.id}:`, {
+                status: j.status,
+                isPending,
+                dueAt: new Date(j.dueAt).toISOString(),
+                now: new Date(now).toISOString(),
+                isFuture,
+                diffMs: j.dueAt - now,
+              });
+            }
+            return isPending && isFuture;
+          })
         : jobs.slice(0, limit);
 
     // Форматуємо для UI
@@ -97,6 +112,12 @@ export async function GET(req: NextRequest) {
       ok: true,
       count: formatted.length,
       jobs: formatted,
+      debug: {
+        indexTotal: jobIds.length,
+        jobsBeforeFilter: jobs.length,
+        jobsAfterFilter: queue.length,
+        now: new Date(now).toISOString(),
+      },
     });
   } catch (error) {
     console.error('[altegio/reminders/queue] Error:', error);
