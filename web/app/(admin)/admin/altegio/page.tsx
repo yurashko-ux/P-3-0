@@ -86,6 +86,28 @@ export default function AltegioLanding() {
     data?: any;
     error?: string;
   }>({ loading: false, ok: null });
+
+  const [sentReminders, setSentReminders] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    logs?: Array<{
+      timestamp: number;
+      timestampFormatted: string;
+      jobId: string;
+      visitId: number;
+      instagram: string;
+      clientName: string;
+      message: string;
+      visitDateTime: string;
+      visitDateTimeFormatted: string;
+      ruleId: string;
+      success: boolean;
+      messageId?: string;
+      error?: string;
+    }>;
+    total?: number;
+    error?: string;
+  }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -378,6 +400,28 @@ export default function AltegioLanding() {
         ok: false,
         error: err instanceof Error ? err.message : 'Невідома помилка',
         data: undefined,
+      });
+    }
+  }
+
+  async function loadSentReminders() {
+    setSentReminders({ loading: true, ok: null, logs: undefined, error: undefined });
+    try {
+      const res = await fetch('/api/altegio/reminders/sent?limit=50', { cache: 'no-store' });
+      const data = await res.json();
+      setSentReminders({
+        loading: false,
+        ok: data.ok === true,
+        logs: data.logs || [],
+        total: data.total || 0,
+        error: data.error,
+      });
+    } catch (err) {
+      setSentReminders({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+        logs: undefined,
       });
     }
   }
@@ -2084,6 +2128,176 @@ export default function AltegioLanding() {
                     </details>
                   )}
               </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Відправлені нагадування" emoji="✅">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Історія відправлених нагадувань клієнтам через Instagram DM. Показує останні 50 записів.
+            </p>
+            <button
+              onClick={loadSentReminders}
+              disabled={sentReminders.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#22c55e',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: sentReminders.loading ? 'not-allowed' : 'pointer',
+                opacity: sentReminders.loading ? 0.6 : 1,
+              }}
+            >
+              {sentReminders.loading ? 'Завантаження...' : 'Оновити історію'}
+            </button>
+          </div>
+
+          {sentReminders.ok !== null && (
+            <div>
+              {sentReminders.ok ? (
+                <div>
+                  {sentReminders.total !== undefined && (
+                    <div
+                      style={{
+                        marginBottom: 12,
+                        padding: 12,
+                        background: '#f0fdf4',
+                        borderRadius: 8,
+                        border: '1px solid #86efac',
+                      }}
+                    >
+                      <strong>Знайдено відправлених повідомлень: {sentReminders.logs?.length || 0}</strong>
+                      {sentReminders.total !== undefined && sentReminders.total > (sentReminders.logs?.length || 0) && (
+                        <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                          (Всього в системі: {sentReminders.total})
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {!sentReminders.logs || sentReminders.logs.length === 0 ? (
+                    <p style={{ margin: 0, color: '#6b7280' }}>
+                      Немає відправлених повідомлень. Нагадування будуть відображатися тут після відправки через cron job.
+                    </p>
+                  ) : (
+                    <div
+                      style={{
+                        maxHeight: '500px',
+                        overflowY: 'auto',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: 6,
+                        padding: 8,
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: '100%',
+                          borderCollapse: 'collapse',
+                          fontSize: '0.9em',
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              borderBottom: '2px solid #86efac',
+                              textAlign: 'left',
+                            }}
+                          >
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Клієнт
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Instagram
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Дата візиту
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Відправлено
+                            </th>
+                            <th style={{ padding: '8px', fontWeight: 600 }}>
+                              Статус
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sentReminders.logs.map((log, idx) => (
+                            <tr
+                              key={log.jobId}
+                              style={{
+                                borderBottom: '1px solid #e0e7ef',
+                                backgroundColor:
+                                  idx % 2 === 0 ? '#fff' : '#fafafa',
+                              }}
+                            >
+                              <td
+                                style={{ padding: '8px', fontWeight: 500 }}
+                              >
+                                {log.clientName || '—'}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px',
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.85em',
+                                }}
+                              >
+                                {log.instagram ? (
+                                  <span
+                                    style={{
+                                      color: '#22c55e',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    @{log.instagram}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#ef4444' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px', fontSize: '0.85em' }}>
+                                {log.visitDateTimeFormatted}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px',
+                                  fontSize: '0.85em',
+                                  color: '#6b7280',
+                                }}
+                              >
+                                {log.timestampFormatted}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px',
+                                  fontSize: '0.85em',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {log.success ? (
+                                  <span style={{ color: '#22c55e' }}>✅ Відправлено</span>
+                                ) : (
+                                  <span style={{ color: '#ef4444' }}>
+                                    ❌ Помилка: {log.error || 'Невідома помилка'}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <strong>❌ Помилка:</strong>{' '}
+                  {sentReminders.error || 'Не вдалося завантажити історію'}
+                </div>
+              )}
             </div>
           )}
         </Card>
