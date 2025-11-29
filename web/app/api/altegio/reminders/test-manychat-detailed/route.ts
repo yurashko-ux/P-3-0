@@ -43,29 +43,24 @@ export async function GET(req: NextRequest) {
 
     const results: any[] = [];
 
-    // Тест 1: findByName - детальний лог
+    // Тест 1: findByName - спробуємо GET з query параметрами
     try {
-      console.log(`[test-detailed] ===== TEST 1: findByName =====`);
+      console.log(`[test-detailed] ===== TEST 1: findByName (GET) =====`);
       console.log(`[test-detailed] Instagram: ${cleanInstagram}`);
       console.log(`[test-detailed] API Key length: ${manychatApiKey.length}`);
       
-      const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
-      const requestBody = { name: cleanInstagram };
+      const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
       
       console.log(`[test-detailed] URL: ${nameSearchUrl}`);
-      console.log(`[test-detailed] Request body:`, JSON.stringify(requestBody, null, 2));
       console.log(`[test-detailed] Headers:`, {
         'Authorization': `Bearer ${manychatApiKey.substring(0, 10)}...`,
-        'Content-Type': 'application/json',
       });
 
       const nameSearchResponse = await fetch(nameSearchUrl, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${manychatApiKey}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
       });
 
       const nameResponseText = await nameSearchResponse.text();
@@ -101,7 +96,7 @@ export async function GET(req: NextRequest) {
         ok: nameSearchResponse.ok,
         request: {
           url: nameSearchUrl,
-          body: requestBody,
+          method: 'GET',
         },
         response: {
           raw: nameResponseText,
@@ -250,22 +245,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Тест 4: Спробуємо знайти за повним ім'ям (якщо є)
+    // Тест 4: Спробуємо знайти за повним ім'ям (якщо є) - GET метод
     try {
-      console.log(`[test-detailed] ===== TEST 4: findByName with full name =====`);
+      console.log(`[test-detailed] ===== TEST 4: findByName with full name (GET) =====`);
       // Можливо, ManyChat зберігає повне ім'я, спробуємо знайти за ним
-      const fullNameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
-      const fullNameRequestBody = { name: 'Микола Юрашко' }; // Повне ім'я з Altegio
+      const fullNameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent('Микола Юрашко')}`;
       
-      console.log(`[test-detailed] Request body:`, JSON.stringify(fullNameRequestBody, null, 2));
+      console.log(`[test-detailed] URL: ${fullNameSearchUrl}`);
 
       const fullNameSearchResponse = await fetch(fullNameSearchUrl, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${manychatApiKey}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(fullNameRequestBody),
       });
 
       const fullNameResponseText = await fullNameSearchResponse.text();
@@ -291,7 +283,7 @@ export async function GET(req: NextRequest) {
         ok: fullNameSearchResponse.ok,
         request: {
           url: fullNameSearchUrl,
-          body: fullNameRequestBody,
+          method: 'GET',
         },
         response: {
           raw: fullNameResponseText,
