@@ -48,6 +48,16 @@ export async function POST(req: NextRequest) {
       const status = body.status; // 'create', 'update', 'delete'
       const data = body.data || {};
 
+      console.log('[altegio/webhook] Processing record event:', {
+        visitId,
+        status,
+        hasData: !!data,
+        dataKeys: Object.keys(data),
+        datetime: data.datetime,
+        hasClient: !!data.client,
+        clientKeys: data.client ? Object.keys(data.client) : [],
+      });
+
       if (status === 'delete') {
         // Скасовуємо всі нагадування для видаленого запису
         try {
@@ -116,13 +126,31 @@ export async function POST(req: NextRequest) {
           const rules = getActiveReminderRules();
 
           const client = data.client || {};
-          const instagram =
-            client.custom_fields?.['instagram-user-name'] || null;
+          
+          // Детальне логування для діагностики
+          console.log('[altegio/webhook] Client data:', {
+            clientId: client.id,
+            clientName: client.display_name || client.name,
+            hasCustomFields: !!client.custom_fields,
+            customFieldsKeys: client.custom_fields ? Object.keys(client.custom_fields) : [],
+            customFields: client.custom_fields,
+          });
+
+          // Шукаємо Instagram username в різних місцях
+          let instagram =
+            client.custom_fields?.['instagram-user-name'] ||
+            client.custom_fields?.['instagram_username'] ||
+            client.custom_fields?.['instagram'] ||
+            null;
 
           // Якщо немає Instagram - не створюємо нагадування
           if (!instagram) {
             console.log(
               `[altegio/webhook] ⏭️ Skipping visit ${visitId} - no Instagram username`,
+              {
+                customFields: client.custom_fields,
+                allClientKeys: Object.keys(client),
+              },
             );
             return NextResponse.json({
               ok: true,

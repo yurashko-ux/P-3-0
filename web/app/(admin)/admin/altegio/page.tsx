@@ -73,6 +73,13 @@ export default function AltegioLanding() {
     }>;
     error?: string;
   }>({ loading: false, ok: null });
+
+  const [remindersDebug, setRemindersDebug] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    data?: any;
+    error?: string;
+  }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -336,6 +343,26 @@ export default function AltegioLanding() {
       });
     } catch (err) {
       setRemindersQueue({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
+  async function loadRemindersDebug() {
+    setRemindersDebug({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/altegio/reminders/debug', { cache: 'no-store' });
+      const data = await res.json();
+      setRemindersDebug({
+        loading: false,
+        ok: data.ok === true,
+        data: data.diagnostics,
+        error: data.error,
+      });
+    } catch (err) {
+      setRemindersDebug({
         loading: false,
         ok: false,
         error: err instanceof Error ? err.message : 'Невідома помилка',
@@ -1451,22 +1478,40 @@ export default function AltegioLanding() {
             <p style={{ marginBottom: 12 }}>
               Клієнти, які очікують на відправку нагадувань про майбутні візити. Нагадування створюються автоматично при створенні/оновленні записів у Altegio.
             </p>
-            <button
-              onClick={loadRemindersQueue}
-              disabled={remindersQueue.loading}
-              style={{
-                padding: '10px 20px',
-                background: '#2a6df5',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                fontWeight: 600,
-                cursor: remindersQueue.loading ? 'not-allowed' : 'pointer',
-                opacity: remindersQueue.loading ? 0.6 : 1,
-              }}
-            >
-              {remindersQueue.loading ? 'Завантаження...' : 'Оновити чергу'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={loadRemindersQueue}
+                disabled={remindersQueue.loading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#2a6df5',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: remindersQueue.loading ? 'not-allowed' : 'pointer',
+                  opacity: remindersQueue.loading ? 0.6 : 1,
+                }}
+              >
+                {remindersQueue.loading ? 'Завантаження...' : 'Оновити чергу'}
+              </button>
+              <button
+                onClick={loadRemindersDebug}
+                disabled={remindersDebug.loading}
+                style={{
+                  padding: '10px 20px',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: remindersDebug.loading ? 'not-allowed' : 'pointer',
+                  opacity: remindersDebug.loading ? 0.6 : 1,
+                }}
+              >
+                {remindersDebug.loading ? 'Завантаження...' : '🔍 Діагностика'}
+              </button>
+            </div>
           </div>
 
           {remindersQueue.ok !== null && (
@@ -1616,6 +1661,153 @@ export default function AltegioLanding() {
                   {remindersQueue.error || 'Не вдалося завантажити чергу'}
                 </div>
               )}
+            </div>
+          )}
+
+          {remindersDebug.ok !== null && remindersDebug.data && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: 12,
+                background: remindersDebug.ok ? '#f0f9ff' : '#fef2f2',
+                borderRadius: 8,
+                border: `1px solid ${remindersDebug.ok ? '#bae6fd' : '#fca5a5'}`,
+              }}
+            >
+              <strong style={{ display: 'block', marginBottom: 12 }}>
+                🔍 Діагностика нагадувань:
+              </strong>
+              
+              <div style={{ marginBottom: 12 }}>
+                <strong>Webhook події:</strong>
+                <ul style={{ margin: '4px 0', paddingLeft: 20, fontSize: '0.9em' }}>
+                  <li>Всього подій: {remindersDebug.data.webhookEvents?.total || 0}</li>
+                  <li>Подій по записах: {remindersDebug.data.webhookEvents?.recordEvents || 0}</li>
+                </ul>
+                {remindersDebug.data.webhookEvents?.lastRecordEvents &&
+                  remindersDebug.data.webhookEvents.lastRecordEvents.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
+                        Останні події по записах ({remindersDebug.data.webhookEvents.lastRecordEvents.length})
+                      </summary>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: 8,
+                          background: '#fff',
+                          borderRadius: 4,
+                          fontSize: '0.85em',
+                          maxHeight: '300px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {remindersDebug.data.webhookEvents.lastRecordEvents.map(
+                          (event: any, idx: number) => (
+                            <div
+                              key={idx}
+                              style={{
+                                marginBottom: 8,
+                                padding: 8,
+                                background: '#f8fafc',
+                                borderRadius: 4,
+                                border: '1px solid #e0e7ef',
+                              }}
+                            >
+                              <div>
+                                <strong>Дата:</strong>{' '}
+                                {new Date(event.receivedAt).toLocaleString('uk-UA')}
+                              </div>
+                              <div>
+                                <strong>Статус:</strong> {event.status}
+                              </div>
+                              <div>
+                                <strong>Visit ID:</strong> {event.visitId}
+                              </div>
+                              <div>
+                                <strong>Дата візиту:</strong> {event.datetime || '—'}
+                              </div>
+                              <div>
+                                <strong>Клієнт:</strong> {event.clientName || '—'}
+                              </div>
+                              <div>
+                                <strong>Instagram:</strong>{' '}
+                                {event.instagram ? (
+                                  <span style={{ color: '#22c55e', fontWeight: 600 }}>
+                                    @{event.instagram}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#ef4444' }}>—</span>
+                                )}
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </details>
+                  )}
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <strong>Job'и нагадувань:</strong>
+                <ul style={{ margin: '4px 0', paddingLeft: 20, fontSize: '0.9em' }}>
+                  <li>Всього: {remindersDebug.data.jobs?.total || 0}</li>
+                  <li>Pending: {remindersDebug.data.jobs?.pending || 0}</li>
+                  <li>Sent: {remindersDebug.data.jobs?.sent || 0}</li>
+                  <li>Failed: {remindersDebug.data.jobs?.failed || 0}</li>
+                  <li>Canceled: {remindersDebug.data.jobs?.canceled || 0}</li>
+                </ul>
+                {remindersDebug.data.jobs?.byVisit &&
+                  remindersDebug.data.jobs.byVisit.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
+                        Job'и по візитах ({remindersDebug.data.jobs.byVisit.length})
+                      </summary>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: 8,
+                          background: '#fff',
+                          borderRadius: 4,
+                          fontSize: '0.85em',
+                          maxHeight: '300px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {remindersDebug.data.jobs.byVisit.map((visit: any, idx: number) => (
+                          <div
+                            key={idx}
+                            style={{
+                              marginBottom: 8,
+                              padding: 8,
+                              background: '#f8fafc',
+                              borderRadius: 4,
+                              border: '1px solid #e0e7ef',
+                            }}
+                          >
+                            <div>
+                              <strong>Visit ID:</strong> {visit.visitId} ({visit.count} job'ів)
+                            </div>
+                            {visit.jobs.map((job: any, jIdx: number) => (
+                              <div
+                                key={jIdx}
+                                style={{
+                                  marginTop: 4,
+                                  padding: 4,
+                                  background: '#fff',
+                                  borderRadius: 2,
+                                  fontSize: '0.8em',
+                                }}
+                              >
+                                {job.ruleId} - {job.status} - Instagram: {job.instagram || '—'} -{' '}
+                                {job.dueAtFormatted}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+              </div>
             </div>
           )}
         </Card>
