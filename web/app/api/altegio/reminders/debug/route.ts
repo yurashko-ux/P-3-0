@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
 
     // 3. Завантажуємо всі job'и
     const jobs: ReminderJob[] = [];
+    const missingJobs: string[] = [];
     for (const jobId of jobIds) {
       const jobKey = `altegio:reminder:job:${jobId}`;
       const jobRaw = await kvRead.getRaw(jobKey);
@@ -57,6 +58,8 @@ export async function GET(req: NextRequest) {
         } catch (err) {
           console.warn(`[altegio/reminders/debug] Failed to parse job ${jobId}:`, err);
         }
+      } else {
+        missingJobs.push(jobId);
       }
     }
 
@@ -134,6 +137,9 @@ export async function GET(req: NextRequest) {
         },
         jobs: {
           total: jobs.length,
+          indexTotal: jobIds.length,
+          missingJobs: missingJobs.length,
+          missingJobIds: missingJobs.slice(0, 10), // Перші 10 для діагностики
           pending: jobs.filter((j) => j.status === 'pending').length,
           sent: jobs.filter((j) => j.status === 'sent').length,
           failed: jobs.filter((j) => j.status === 'failed').length,

@@ -71,6 +71,12 @@ export default function AltegioLanding() {
       serviceTitle: string | null;
       staffName: string | null;
     }>;
+    debug?: {
+      indexTotal: number;
+      jobsBeforeFilter: number;
+      jobsAfterFilter: number;
+      now: string;
+    };
     error?: string;
   }>({ loading: false, ok: null });
 
@@ -339,6 +345,7 @@ export default function AltegioLanding() {
         loading: false,
         ok: data.ok === true,
         jobs: data.jobs || [],
+        debug: data.debug,
         error: data.error,
       });
     } catch (err) {
@@ -1569,6 +1576,11 @@ export default function AltegioLanding() {
                 <div>
                   <div style={{ marginBottom: 12, fontWeight: 600 }}>
                     Знайдено нагадувань: <strong>{remindersQueue.jobs.length}</strong>
+                    {remindersQueue.debug && (
+                      <div style={{ fontSize: '0.85em', color: '#6b7280', marginTop: 4, fontWeight: 400 }}>
+                        (В індексі: {remindersQueue.debug.indexTotal}, Після фільтру: {remindersQueue.debug.jobsAfterFilter})
+                      </div>
+                    )}
                   </div>
 
                   {remindersQueue.jobs.length === 0 ? (
