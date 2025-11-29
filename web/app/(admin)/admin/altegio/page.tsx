@@ -1902,6 +1902,52 @@ export default function AltegioLanding() {
               <button
                 onClick={async () => {
                   try {
+                    const res = await fetch('/api/altegio/reminders/check-subscriber?instagram=mykolayyurashko', {
+                      method: 'GET',
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      if (data.found) {
+                        alert(
+                          `✅ Subscriber знайдено в ManyChat!\n\n` +
+                          `Instagram: @${data.instagram}\n` +
+                          `Subscriber ID: ${data.subscriberId}\n\n` +
+                          `Тепер можна відправляти повідомлення.`
+                        );
+                      } else {
+                        alert(
+                          `❌ Subscriber не знайдено в ManyChat\n\n` +
+                          `Instagram: @${data.instagram}\n\n` +
+                          `Що робити:\n` +
+                          `1. Відкрий Instagram на акаунті @${data.instagram}\n` +
+                          `2. Знайди ManyChat бот (або сторінку, яка використовує ManyChat)\n` +
+                          `3. Напиши будь-яке повідомлення боту\n` +
+                          `4. Або натисни на кнопку в автоматизації ManyChat\n` +
+                          `5. Після цього спробуй перевірити знову`
+                        );
+                      }
+                    } else {
+                      alert(`❌ Помилка перевірки:\n${data.error || 'Невідома помилка'}\n\n${data.diagnostics ? `Перевірені змінні: ${data.diagnostics.checkedVariables?.join(', ')}` : ''}`);
+                    }
+                  } catch (err) {
+                    alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: '#06b6d4',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🔍 Перевірити subscriber
+              </button>
+              <button
+                onClick={async () => {
+                  try {
                     const res = await fetch('/api/altegio/reminders/fix-index', {
                       method: 'POST',
                     });
