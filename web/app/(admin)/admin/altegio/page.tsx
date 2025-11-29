@@ -1830,11 +1830,16 @@ export default function AltegioLanding() {
                       });
                       const data = await res.json();
                       if (data.ok) {
+                        const methodInfo = data.method?.includes('симуляція') 
+                          ? `⚠️ ${data.method}\n\n💡 Для реальної відправки:\n1. Додай MANYCHAT_API_KEY в Vercel\n2. Переконайся, що @${data.job.instagram} взаємодіяв з ManyChat ботом`
+                          : `✅ ${data.method}`;
+                        
                         alert(
-                          `✅ Повідомлення відправлено!\n\n` +
-                          `Метод: ${data.method}\n` +
+                          `${data.method?.includes('симуляція') ? '⚠️' : '✅'} Повідомлення відправлено!\n\n` +
+                          `Метод: ${methodInfo}\n` +
                           `Instagram: ${data.job.instagram}\n` +
-                          `Message ID: ${data.result.messageId || '—'}`
+                          `Message ID: ${data.result.messageId || '—'}\n\n` +
+                          (data.diagnostics ? `Діагностика:\n- ManyChat API: ${data.diagnostics.manychatApiKeyConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}\n- Instagram API: ${data.diagnostics.instagramTokenConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}` : '')
                         );
                         loadSentReminders();
                       } else {
@@ -1862,11 +1867,16 @@ export default function AltegioLanding() {
                       });
                       const data = await res.json();
                       if (data.ok) {
+                        const methodInfo = data.method?.includes('симуляція') 
+                          ? `⚠️ ${data.method}\n\n💡 Для реальної відправки:\n1. Додай MANYCHAT_API_KEY в Vercel\n2. Переконайся, що @${data.job.instagram} взаємодіяв з ManyChat ботом`
+                          : `✅ ${data.method}`;
+                        
                         alert(
-                          `✅ Повідомлення відправлено!\n\n` +
-                          `Метод: ${data.method}\n` +
+                          `${data.method?.includes('симуляція') ? '⚠️' : '✅'} Повідомлення відправлено!\n\n` +
+                          `Метод: ${methodInfo}\n` +
                           `Instagram: ${data.job.instagram}\n` +
-                          `Message ID: ${data.result.messageId || '—'}`
+                          `Message ID: ${data.result.messageId || '—'}\n\n` +
+                          (data.diagnostics ? `Діагностика:\n- ManyChat API: ${data.diagnostics.manychatApiKeyConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}\n- Instagram API: ${data.diagnostics.instagramTokenConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}` : '')
                         );
                         loadSentReminders();
                       } else {
