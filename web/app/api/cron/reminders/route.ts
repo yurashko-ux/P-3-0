@@ -62,7 +62,7 @@ async function sendInstagramDM(
   if (manychatApiKey) {
     try {
       console.log(`[reminders] Attempting to send via ManyChat API`);
-      const manychatResult = await sendViaManyChat(instagram, message, manychatApiKey, job.payload?.clientName);
+      const manychatResult = await sendViaManyChat(instagram, message, manychatApiKey);
       if (manychatResult.success) {
         return manychatResult;
       }
@@ -102,7 +102,6 @@ async function sendViaManyChat(
   instagram: string,
   message: string,
   apiKey: string,
-  clientName?: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
     // ManyChat API: шукаємо subscriber за Instagram username
