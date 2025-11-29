@@ -100,7 +100,21 @@ export async function POST(req: NextRequest) {
       // Додаємо в індекс
       const indexKey = 'altegio:reminder:index';
       const indexRaw = await kvRead.getRaw(indexKey);
-      const index: string[] = indexRaw ? JSON.parse(indexRaw) : [];
+      let index: string[] = [];
+      
+      if (indexRaw) {
+        try {
+          const parsed = JSON.parse(indexRaw);
+          if (Array.isArray(parsed)) {
+            index = parsed;
+          } else {
+            console.warn('[test-create] Index is not an array, resetting:', typeof parsed);
+          }
+        } catch (err) {
+          console.warn('[test-create] Failed to parse index:', err);
+        }
+      }
+      
       if (!index.includes(jobId)) {
         index.push(jobId);
         await kvWrite.setRaw(indexKey, JSON.stringify(index));
