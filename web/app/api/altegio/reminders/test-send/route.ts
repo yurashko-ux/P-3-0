@@ -15,6 +15,7 @@ async function sendInstagramDM(
   instagram: string,
   message: string,
   job: ReminderJob,
+  manualSubscriberId?: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   // ⚠️ ТЕСТОВИЙ РЕЖИМ: відправляємо тільки на тестовий акаунт
   const TEST_INSTAGRAM = 'mykolayyurashko';
@@ -396,7 +397,7 @@ export async function POST(req: NextRequest) {
     const formattedMessage = message || formatReminderMessage(job, rule);
 
     // Відправляємо
-    const result = await sendInstagramDM(job.instagram || instagram || '', formattedMessage, job);
+    const result = await sendInstagramDM(job.instagram || instagram || '', formattedMessage, job, manualSubscriberId);
 
     const method = result.messageId?.startsWith('manychat_') 
       ? 'ManyChat API' 
