@@ -108,7 +108,13 @@ export async function GET(req: NextRequest) {
           parsed: nameResponseData,
           subscriberId: extractedSubscriberId,
         },
-        headers: Object.fromEntries(nameSearchResponse.headers.entries()),
+        headers: (() => {
+          const headersObj: Record<string, string> = {};
+          nameSearchResponse.headers.forEach((value, key) => {
+            headersObj[key] = value;
+          });
+          return headersObj;
+        })(),
       });
     } catch (err) {
       console.error(`[test-detailed] findByName error:`, err);
