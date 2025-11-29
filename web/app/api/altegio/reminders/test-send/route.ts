@@ -98,54 +98,106 @@ async function sendViaManyChat(
     console.log(`[test-send] Searching ManyChat subscriber for ${cleanInstagram} (original: ${instagram})`);
     
     // Метод 1: findByName (шукає за Instagram username без @)
+    console.log(`[test-send] ===== METHOD 1: findByName =====`);
+    console.log(`[test-send] Searching for: "${cleanInstagram}"`);
     const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
+    const nameSearchRequest = {
+      name: cleanInstagram,
+    };
+    console.log(`[test-send] Request URL: ${nameSearchUrl}`);
+    console.log(`[test-send] Request body:`, JSON.stringify(nameSearchRequest, null, 2));
+    
     const nameSearchResponse = await fetch(nameSearchUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: cleanInstagram,
-      }),
+      body: JSON.stringify(nameSearchRequest),
     });
 
+    const nameResponseText = await nameSearchResponse.text();
+    console.log(`[test-send] Response status: ${nameSearchResponse.status} ${nameSearchResponse.statusText}`);
+    console.log(`[test-send] Response headers:`, Object.fromEntries(nameSearchResponse.headers.entries()));
+    console.log(`[test-send] Response text (first 500 chars):`, nameResponseText.substring(0, 500));
+
     if (nameSearchResponse.ok) {
-      searchData = await nameSearchResponse.json();
-      subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
-      console.log(`[test-send] findByName result:`, searchData);
+      try {
+        searchData = JSON.parse(nameResponseText);
+        console.log(`[test-send] Response JSON:`, JSON.stringify(searchData, null, 2));
+        subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
+        console.log(`[test-send] Extracted subscriber_id: ${subscriberId || 'NOT FOUND'}`);
+        if (subscriberId) {
+          console.log(`[test-send] ✅ Found subscriber_id via findByName: ${subscriberId}`);
+        } else {
+          console.log(`[test-send] ⚠️ findByName returned OK but no subscriber_id in response`);
+        }
+      } catch (e) {
+        console.error(`[test-send] Failed to parse findByName response as JSON:`, e);
+        console.log(`[test-send] Raw response:`, nameResponseText);
+      }
     } else {
-      const errorText = await nameSearchResponse.text();
-      console.warn(`[test-send] ManyChat findByName failed: ${nameSearchResponse.status} ${errorText}`);
+      console.warn(`[test-send] ❌ ManyChat findByName failed: ${nameSearchResponse.status} ${nameResponseText}`);
+      try {
+        const errorData = JSON.parse(nameResponseText);
+        console.warn(`[test-send] Error details:`, JSON.stringify(errorData, null, 2));
+      } catch {
+        // Not JSON
+      }
     }
 
     // Метод 2: Якщо не знайшли, пробуємо findByCustomField (якщо є custom field для Instagram)
     if (!subscriberId) {
+      console.log(`[test-send] ===== METHOD 2: findByCustomField =====`);
       console.log(`[test-send] Trying findByCustomField for @${instagram}`);
       // ManyChat може мати custom field для Instagram username
       // Спробуємо різні варіанти field_id
       const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username'];
       
       for (const fieldId of customFieldIds) {
+        console.log(`[test-send] Trying field_id: "${fieldId}"`);
         const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
+        const customSearchRequest = {
+          field_id: fieldId,
+          field_value: cleanInstagram,
+        };
+        console.log(`[test-send] Request body:`, JSON.stringify(customSearchRequest, null, 2));
+        
         const customSearchResponse = await fetch(customSearchUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            field_id: fieldId,
-            field_value: cleanInstagram,
-          }),
+          body: JSON.stringify(customSearchRequest),
         });
 
+        const customResponseText = await customSearchResponse.text();
+        console.log(`[test-send] Response status: ${customSearchResponse.status} ${customSearchResponse.statusText}`);
+        console.log(`[test-send] Response text (first 500 chars):`, customResponseText.substring(0, 500));
+
         if (customSearchResponse.ok) {
-          searchData = await customSearchResponse.json();
-          subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
-          if (subscriberId) {
-            console.log(`[test-send] Found via findByCustomField with field_id: ${fieldId}`);
-            break;
+          try {
+            searchData = JSON.parse(customResponseText);
+            console.log(`[test-send] Response JSON:`, JSON.stringify(searchData, null, 2));
+            subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
+            if (subscriberId) {
+              console.log(`[test-send] ✅ Found via findByCustomField with field_id: ${fieldId}, subscriber_id: ${subscriberId}`);
+              break;
+            } else {
+              console.log(`[test-send] ⚠️ findByCustomField (${fieldId}) returned OK but no subscriber_id`);
+            }
+          } catch (e) {
+            console.error(`[test-send] Failed to parse findByCustomField response as JSON:`, e);
+            console.log(`[test-send] Raw response:`, customResponseText);
+          }
+        } else {
+          console.warn(`[test-send] ❌ findByCustomField (${fieldId}) failed: ${customSearchResponse.status} ${customResponseText}`);
+          try {
+            const errorData = JSON.parse(customResponseText);
+            console.warn(`[test-send] Error details:`, JSON.stringify(errorData, null, 2));
+          } catch {
+            // Not JSON
           }
         }
       }
