@@ -188,6 +188,13 @@ export async function POST(req: NextRequest) {
             if (dueAt <= now) {
               console.log(
                 `[altegio/webhook] ⏭️ Skipping rule ${rule.id} for visit ${visitId} - dueAt in past`,
+                {
+                  dueAt: new Date(dueAt).toISOString(),
+                  now: new Date(now).toISOString(),
+                  visitAt: new Date(visitAt).toISOString(),
+                  daysBefore: rule.daysBefore,
+                  diffMs: dueAt - now,
+                },
               );
               continue;
             }
