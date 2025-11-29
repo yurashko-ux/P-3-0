@@ -6,10 +6,10 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-async function findSubscriberInManyChat(instagram: string, apiKey: string) {
+async function findSubscriberInManyChat(instagram: string, apiKey: string, clientName?: string) {
   const results: any[] = [];
 
-  // Метод 1: findByName
+  // Метод 1: findByName за Instagram username
   try {
     const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
     const nameSearchResponse = await fetch(nameSearchUrl, {
@@ -98,6 +98,7 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
 export async function GET(req: NextRequest) {
   try {
     const instagram = req.nextUrl.searchParams.get('instagram') || 'mykolayyurashko';
+    const clientName = req.nextUrl.searchParams.get('clientName') || 'Микола Юрашко';
     
     // Отримуємо API Key
     const manychatApiKey = 
@@ -124,7 +125,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Шукаємо subscriber
-    const results = await findSubscriberInManyChat(instagram, manychatApiKey);
+    const results = await findSubscriberInManyChat(instagram, manychatApiKey, clientName);
     
     const found = results.some((r) => r.success && r.subscriberId);
     const subscriberId = results.find((r) => r.success && r.subscriberId)?.subscriberId;

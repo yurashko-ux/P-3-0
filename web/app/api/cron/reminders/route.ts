@@ -48,6 +48,7 @@ async function sendInstagramDM(
     jobId: job.id,
     visitId: job.visitId,
     visitDate: job.datetime,
+    clientName: job.payload.clientName,
   });
 
   // Спробуємо ManyChat API спочатку (якщо налаштовано)
@@ -101,15 +102,16 @@ async function sendViaManyChat(
   instagram: string,
   message: string,
   apiKey: string,
+  clientName?: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
     // ManyChat API: спочатку пробуємо findByName (найпростіший спосіб)
     let subscriberId: string | null = null;
     let searchData: any = null;
 
-    console.log(`[reminders] Searching ManyChat subscriber for @${instagram}`);
+    console.log(`[reminders] Searching ManyChat subscriber for @${instagram}${clientName ? ` (client: ${clientName})` : ''}`);
     
-    // Метод 1: findByName (шукає за ім'ям/username)
+    // Метод 1: findByName - спочатку за Instagram username
     const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
     const nameSearchResponse = await fetch(nameSearchUrl, {
       method: 'POST',
@@ -125,10 +127,36 @@ async function sendViaManyChat(
     if (nameSearchResponse.ok) {
       searchData = await nameSearchResponse.json();
       subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
-      console.log(`[reminders] findByName result:`, searchData);
+      console.log(`[reminders] findByName (by Instagram) result:`, searchData);
     } else {
       const errorText = await nameSearchResponse.text();
-      console.warn(`[reminders] ManyChat findByName failed: ${nameSearchResponse.status} ${errorText}`);
+      console.warn(`[reminders] ManyChat findByName (by Instagram) failed: ${nameSearchResponse.status} ${errorText}`);
+    }
+
+    // Метод 1.5: Якщо не знайшли за Instagram, пробуємо за ім'ям клієнта
+    if (!subscriberId && clientName) {
+      console.log(`[reminders] Trying findByName by client name: ${clientName}`);
+      const nameSearchByClientResponse = await fetch(nameSearchUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: clientName,
+        }),
+      });
+
+      if (nameSearchByClientResponse.ok) {
+        searchData = await nameSearchByClientResponse.json();
+        subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
+        if (subscriberId) {
+          console.log(`[reminders] ✅ Found subscriber by client name: ${clientName}`);
+        }
+      } else {
+        const errorText = await nameSearchByClientResponse.text();
+        console.warn(`[reminders] ManyChat findByName (by client name) failed: ${nameSearchByClientResponse.status} ${errorText}`);
+      }
     }
 
     // Метод 2: Якщо не знайшли, пробуємо findByCustomField (якщо є custom field для Instagram)
