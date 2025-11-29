@@ -98,7 +98,6 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string, clien
 export async function GET(req: NextRequest) {
   try {
     const instagram = req.nextUrl.searchParams.get('instagram') || 'mykolayyurashko';
-    const clientName = req.nextUrl.searchParams.get('clientName') || 'Микола Юрашко';
     
     // Отримуємо API Key
     const manychatApiKey = 
@@ -124,8 +123,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Шукаємо subscriber
-    const results = await findSubscriberInManyChat(instagram, manychatApiKey, clientName);
+    // Шукаємо subscriber за Instagram username
+    const results = await findSubscriberInManyChat(instagram, manychatApiKey);
     
     const found = results.some((r) => r.success && r.subscriberId);
     const subscriberId = results.find((r) => r.success && r.subscriberId)?.subscriberId;
