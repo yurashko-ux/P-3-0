@@ -33,6 +33,16 @@ async function sendInstagramDM(
   message: string,
   job: ReminderJob,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  // ⚠️ ТЕСТОВИЙ РЕЖИМ: відправляємо тільки на тестовий акаунт
+  const TEST_INSTAGRAM = 'mykolayyurashko';
+  if (instagram !== TEST_INSTAGRAM) {
+    console.log(`[reminders] ⏭️ Skipping @${instagram} - not test account (only ${TEST_INSTAGRAM} allowed)`);
+    return {
+      success: false,
+      error: `Test mode: only @${TEST_INSTAGRAM} allowed`,
+    };
+  }
+
   console.log(`[reminders] 📤 Sending Instagram DM to @${instagram}:`, {
     message,
     jobId: job.id,
@@ -87,11 +97,15 @@ async function sendViaManyChat(
   apiKey: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
-    // ManyChat API: POST https://api.manychat.com/fb/sending/sendContent
-    // Потрібен subscriber_id або user_id, який можна отримати через API
-    // Спочатку шукаємо subscriber за Instagram username
-    const searchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
-    const searchResponse = await fetch(searchUrl, {
+    // ManyChat API: спочатку пробуємо findByName (найпростіший спосіб)
+    let subscriberId: string | null = null;
+    let searchData: any = null;
+
+    console.log(`[reminders] Searching ManyChat subscriber for @${instagram}`);
+    
+    // Метод 1: findByName (шукає за ім'ям/username)
+    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
+    const nameSearchResponse = await fetch(nameSearchUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -102,23 +116,55 @@ async function sendViaManyChat(
       }),
     });
 
-    if (!searchResponse.ok) {
-      const errorText = await searchResponse.text();
-      return {
-        success: false,
-        error: `ManyChat search failed: ${searchResponse.status} ${errorText}`,
-      };
+    if (nameSearchResponse.ok) {
+      searchData = await nameSearchResponse.json();
+      subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
+      console.log(`[reminders] findByName result:`, searchData);
+    } else {
+      const errorText = await nameSearchResponse.text();
+      console.warn(`[reminders] ManyChat findByName failed: ${nameSearchResponse.status} ${errorText}`);
     }
 
-    const searchData = await searchResponse.json();
-    const subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id;
+    // Метод 2: Якщо не знайшли, пробуємо findByCustomField (якщо є custom field для Instagram)
+    if (!subscriberId) {
+      console.log(`[reminders] Trying findByCustomField for @${instagram}`);
+      // ManyChat може мати custom field для Instagram username
+      // Спробуємо різні варіанти field_id
+      const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username'];
+      
+      for (const fieldId of customFieldIds) {
+        const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
+        const customSearchResponse = await fetch(customSearchUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            field_id: fieldId,
+            field_value: instagram,
+          }),
+        });
+
+        if (customSearchResponse.ok) {
+          searchData = await customSearchResponse.json();
+          subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
+          if (subscriberId) {
+            console.log(`[reminders] Found via findByCustomField with field_id: ${fieldId}`);
+            break;
+          }
+        }
+      }
+    }
 
     if (!subscriberId) {
       return {
         success: false,
-        error: `Subscriber not found in ManyChat for @${instagram}`,
+        error: `Subscriber not found in ManyChat for @${instagram}. Make sure the user has interacted with your ManyChat bot.`,
       };
     }
+
+    console.log(`[reminders] Found subscriber_id: ${subscriberId} for @${instagram}`);
 
     // Відправляємо повідомлення
     const sendUrl = `https://api.manychat.com/fb/sending/sendContent`;
