@@ -26,10 +26,15 @@ export async function GET(req: NextRequest) {
         if (Array.isArray(parsed)) {
           jobIds = parsed;
         } else {
-          console.warn('[altegio/reminders/queue] Index is not an array:', typeof parsed);
+          console.warn('[altegio/reminders/queue] Index is not an array, resetting:', typeof parsed, parsed);
+          // Скидаємо до порожнього масиву, якщо не масив
+          jobIds = [];
+          // Зберігаємо виправлений індекс (але тільки читаємо, не пишемо тут, щоб не було race condition)
+          // await kvWrite.setRaw(indexKey, JSON.stringify(jobIds));
         }
       } catch (err) {
         console.warn('[altegio/reminders/queue] Failed to parse index:', err);
+        jobIds = [];
       }
     }
 
