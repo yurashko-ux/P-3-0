@@ -2144,7 +2144,18 @@ export default function AltegioLanding() {
                                         });
                                         const data = await res.json();
                                         if (data.ok) {
-                                          alert(`✅ Повідомлення відправлено!\n\nПовідомлення:\n${data.message}\n\nРезультат: ${data.result?.messageId || 'N/A'}\n\n${data.result?.error ? `Помилка: ${data.result.error}` : ''}`);
+                                          const methodInfo = data.method?.includes('симуляція') 
+                                            ? `⚠️ ${data.method}\n\n💡 Для реальної відправки:\n1. Додай MANYCHAT_API_KEY в Vercel\n2. Переконайся, що @${data.job.instagram} взаємодіяв з ManyChat ботом`
+                                            : `✅ ${data.method}`;
+                                          
+                                          alert(
+                                            `${data.method?.includes('симуляція') ? '⚠️' : '✅'} Повідомлення відправлено!\n\n` +
+                                            `Метод: ${methodInfo}\n` +
+                                            `Instagram: ${data.job.instagram}\n` +
+                                            `Message ID: ${data.result?.messageId || '—'}\n\n` +
+                                            (data.diagnostics ? `Діагностика:\n- ManyChat API: ${data.diagnostics.manychatApiKeyConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}\n- Instagram API: ${data.diagnostics.instagramTokenConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}` : '') +
+                                            (data.result?.error ? `\n\nПомилка: ${data.result.error}` : '')
+                                          );
                                           loadSentReminders();
                                         } else {
                                           alert(`❌ Помилка: ${data.error}`);

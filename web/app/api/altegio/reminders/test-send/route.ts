@@ -371,16 +371,28 @@ export async function POST(req: NextRequest) {
     // Відправляємо
     const result = await sendInstagramDM(job.instagram || instagram || '', formattedMessage, job);
 
+    const method = result.messageId?.startsWith('manychat_') 
+      ? 'ManyChat API' 
+      : result.messageId?.startsWith('mock_') 
+        ? 'Mock (симуляція - ManyChat API не налаштовано або subscriber не знайдено)' 
+        : 'Instagram Graph API';
+
     return NextResponse.json({
       ok: result.success,
-      message: result.success ? 'Повідомлення відправлено!' : 'Помилка відправки',
+      message: result.success 
+        ? `Повідомлення відправлено через ${method}!` 
+        : 'Помилка відправки',
       result,
       job: {
         id: job.id,
         instagram: job.instagram,
         message: formattedMessage,
       },
-      method: result.messageId?.startsWith('manychat_') ? 'ManyChat' : result.messageId?.startsWith('mock_') ? 'Mock (симуляція)' : 'Instagram Graph API',
+      method,
+      diagnostics: {
+        manychatApiKeyConfigured: !!(process.env.MANYCHAT_API_KEY || process.env.MANYCHAT_API_TOKEN || process.env.MC_API_KEY),
+        instagramTokenConfigured: !!process.env.INSTAGRAM_ACCESS_TOKEN,
+      },
     });
   } catch (error) {
     console.error('[test-send] Error:', error);
