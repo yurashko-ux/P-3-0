@@ -129,10 +129,23 @@ async function sendViaManyChat(
     if (nameSearchResponse.ok) {
       searchData = await nameSearchResponse.json();
       subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
-      console.log(`[reminders] findByName result:`, searchData);
+      console.log(`[reminders] findByName result:`, JSON.stringify(searchData, null, 2));
+      
+      // Якщо знайдено subscriber, але немає subscriber_id, логуємо структуру
+      if (!subscriberId && searchData) {
+        console.warn(`[reminders] findByName returned data but no subscriber_id. Full response:`, JSON.stringify(searchData, null, 2));
+      }
     } else {
       const errorText = await nameSearchResponse.text();
       console.warn(`[reminders] ManyChat findByName failed: ${nameSearchResponse.status} ${errorText}`);
+      
+      // Логуємо повну відповідь для діагностики
+      try {
+        const errorData = JSON.parse(errorText);
+        console.warn(`[reminders] findByName error details:`, JSON.stringify(errorData, null, 2));
+      } catch {
+        // Не JSON, просто текст
+      }
     }
 
     // Метод 2: Якщо не знайшли, пробуємо findByCustomField (якщо є custom field для Instagram)
@@ -160,9 +173,14 @@ async function sendViaManyChat(
           searchData = await customSearchResponse.json();
           subscriberId = searchData?.data?.subscriber_id || searchData?.subscriber_id || searchData?.subscriber?.id;
           if (subscriberId) {
-            console.log(`[reminders] Found via findByCustomField with field_id: ${fieldId}`);
+            console.log(`[reminders] ✅ Found via findByCustomField with field_id: ${fieldId}`, JSON.stringify(searchData, null, 2));
             break;
+          } else {
+            console.log(`[reminders] findByCustomField (${fieldId}) returned OK but no subscriber_id:`, JSON.stringify(searchData, null, 2));
           }
+        } else {
+          const errorText = await customSearchResponse.text();
+          console.log(`[reminders] findByCustomField (${fieldId}) failed: ${customSearchResponse.status} ${errorText}`);
         }
       }
     }
