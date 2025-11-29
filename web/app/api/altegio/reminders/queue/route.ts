@@ -21,7 +21,35 @@ export async function GET(req: NextRequest) {
     
     if (indexRaw) {
       try {
-        const parsed = JSON.parse(indexRaw);
+        // kvGetRaw може повернути об'єкт { value: '...' } або рядок
+        let parsed: any;
+        if (typeof indexRaw === 'string') {
+          try {
+            parsed = JSON.parse(indexRaw);
+          } catch {
+            // Якщо не JSON, спробуємо як рядок
+            parsed = indexRaw;
+          }
+        } else {
+          parsed = indexRaw;
+        }
+        
+        // Якщо це об'єкт з полем value, витягуємо значення
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const candidate = parsed.value ?? parsed.result ?? parsed.data;
+          if (candidate !== undefined) {
+            if (typeof candidate === 'string') {
+              try {
+                parsed = JSON.parse(candidate);
+              } catch {
+                parsed = candidate;
+              }
+            } else {
+              parsed = candidate;
+            }
+          }
+        }
+        
         // Перевіряємо, чи це масив
         if (Array.isArray(parsed)) {
           jobIds = parsed;
@@ -29,8 +57,6 @@ export async function GET(req: NextRequest) {
           console.warn('[altegio/reminders/queue] Index is not an array, resetting:', typeof parsed, parsed);
           // Скидаємо до порожнього масиву, якщо не масив
           jobIds = [];
-          // Зберігаємо виправлений індекс (але тільки читаємо, не пишемо тут, щоб не було race condition)
-          // await kvWrite.setRaw(indexKey, JSON.stringify(jobIds));
         }
       } catch (err) {
         console.warn('[altegio/reminders/queue] Failed to parse index:', err);

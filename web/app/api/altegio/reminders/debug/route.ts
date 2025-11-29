@@ -37,7 +37,34 @@ export async function GET(req: NextRequest) {
     let jobIds: string[] = [];
     if (indexRaw) {
       try {
-        const parsed = JSON.parse(indexRaw);
+        // kvGetRaw може повернути об'єкт { value: '...' } або рядок
+        let parsed: any;
+        if (typeof indexRaw === 'string') {
+          try {
+            parsed = JSON.parse(indexRaw);
+          } catch {
+            parsed = indexRaw;
+          }
+        } else {
+          parsed = indexRaw;
+        }
+        
+        // Якщо це об'єкт з полем value, витягуємо значення
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const candidate = parsed.value ?? parsed.result ?? parsed.data;
+          if (candidate !== undefined) {
+            if (typeof candidate === 'string') {
+              try {
+                parsed = JSON.parse(candidate);
+              } catch {
+                parsed = candidate;
+              }
+            } else {
+              parsed = candidate;
+            }
+          }
+        }
+        
         if (Array.isArray(parsed)) {
           jobIds = parsed;
         }
