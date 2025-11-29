@@ -118,7 +118,12 @@ async function sendViaManyChat(
 
     const nameResponseText = await nameSearchResponse.text();
     console.log(`[test-send] Response status: ${nameSearchResponse.status} ${nameSearchResponse.statusText}`);
-    console.log(`[test-send] Response headers:`, Object.fromEntries(nameSearchResponse.headers.entries()));
+    // Логуємо headers через forEach для сумісності з TypeScript
+    const headersObj: Record<string, string> = {};
+    nameSearchResponse.headers.forEach((value, key) => {
+      headersObj[key] = value;
+    });
+    console.log(`[test-send] Response headers:`, headersObj);
     console.log(`[test-send] Response text (first 500 chars):`, nameResponseText.substring(0, 500));
 
     if (nameSearchResponse.ok) {
