@@ -90,9 +90,12 @@ async function sendViaManyChat(
     let subscriberId: string | null = null;
     let searchData: any = null;
 
-    console.log(`[test-send] Searching ManyChat subscriber for @${instagram}`);
+    // Видаляємо @ з початку, якщо є
+    const cleanInstagram = instagram.startsWith('@') ? instagram.slice(1) : instagram;
     
-    // Метод 1: findByName (шукає за Instagram username)
+    console.log(`[test-send] Searching ManyChat subscriber for ${cleanInstagram} (original: ${instagram})`);
+    
+    // Метод 1: findByName (шукає за Instagram username без @)
     const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
     const nameSearchResponse = await fetch(nameSearchUrl, {
       method: 'POST',
@@ -101,7 +104,7 @@ async function sendViaManyChat(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: instagram,
+        name: cleanInstagram,
       }),
     });
 
@@ -131,7 +134,7 @@ async function sendViaManyChat(
           },
           body: JSON.stringify({
             field_id: fieldId,
-            field_value: instagram,
+            field_value: cleanInstagram,
           }),
         });
 
@@ -149,11 +152,11 @@ async function sendViaManyChat(
     if (!subscriberId) {
       return {
         success: false,
-        error: `Subscriber not found in ManyChat for @${instagram}. Make sure the user has interacted with your ManyChat bot.`,
+        error: `Subscriber not found in ManyChat for ${cleanInstagram}. Make sure the user has interacted with your ManyChat bot.`,
       };
     }
 
-    console.log(`[test-send] Found subscriber_id: ${subscriberId} for @${instagram}`);
+    console.log(`[test-send] Found subscriber_id: ${subscriberId} for ${cleanInstagram}`);
 
     // Відправляємо повідомлення
     const sendUrl = `https://api.manychat.com/fb/sending/sendContent`;

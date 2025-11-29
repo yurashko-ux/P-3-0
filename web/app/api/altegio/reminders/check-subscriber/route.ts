@@ -9,7 +9,10 @@ export const runtime = 'nodejs';
 async function findSubscriberInManyChat(instagram: string, apiKey: string, clientName?: string) {
   const results: any[] = [];
 
-  // Метод 1: findByName за Instagram username
+  // Видаляємо @ з початку, якщо є
+  const cleanInstagram = instagram.startsWith('@') ? instagram.slice(1) : instagram;
+
+  // Метод 1: findByName за Instagram username (без @)
   try {
     const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
     const nameSearchResponse = await fetch(nameSearchUrl, {
@@ -19,7 +22,7 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string, clien
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: instagram,
+        name: cleanInstagram,
       }),
     });
 
@@ -60,9 +63,9 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string, clien
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          field_id: fieldId,
-          field_value: instagram,
-        }),
+            field_id: fieldId,
+            field_value: cleanInstagram,
+          }),
       });
 
       if (customSearchResponse.ok) {
