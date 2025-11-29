@@ -108,16 +108,25 @@ export async function POST(req: NextRequest) {
           if (Array.isArray(parsed)) {
             index = parsed;
           } else {
-            console.warn('[test-create] Index is not an array, resetting:', typeof parsed);
+            console.warn('[test-create] Index is not an array, resetting:', typeof parsed, parsed);
+            // Скидаємо до порожнього масиву, якщо не масив
+            index = [];
+            await kvWrite.setRaw(indexKey, JSON.stringify(index));
           }
         } catch (err) {
           console.warn('[test-create] Failed to parse index:', err);
+          // Скидаємо до порожнього масиву при помилці парсингу
+          index = [];
+          await kvWrite.setRaw(indexKey, JSON.stringify(index));
         }
       }
       
       if (!index.includes(jobId)) {
         index.push(jobId);
         await kvWrite.setRaw(indexKey, JSON.stringify(index));
+        console.log(`[test-create] Added job ${jobId} to index, total: ${index.length}`);
+      } else {
+        console.log(`[test-create] Job ${jobId} already in index`);
       }
     }
 
