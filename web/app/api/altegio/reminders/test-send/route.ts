@@ -149,14 +149,31 @@ async function sendViaManyChat(
       }
     }
 
-    if (!subscriberId) {
+    // Якщо не знайшли через API, але передано вручну - використовуємо вручну
+    if (!subscriberId && !manualSubscriberId) {
       return {
         success: false,
-        error: `Subscriber not found in ManyChat for ${cleanInstagram}. Make sure the user has interacted with your ManyChat bot.`,
+        error: `Subscriber not found in ManyChat for ${cleanInstagram}. Make sure the user has interacted with your ManyChat bot. You can also provide subscriber_id manually for testing.`,
       };
     }
 
-    console.log(`[test-send] Found subscriber_id: ${subscriberId} for ${cleanInstagram}`);
+    if (subscriberId) {
+      console.log(`[test-send] Found subscriber_id: ${subscriberId} for ${cleanInstagram}`);
+    } else if (manualSubscriberId) {
+      console.log(`[test-send] Using manual subscriber_id: ${manualSubscriberId} for ${cleanInstagram}`);
+    }
+
+    // Якщо передано subscriber_id вручну, використовуємо його
+    const finalSubscriberId = manualSubscriberId || subscriberId;
+    
+    if (!finalSubscriberId) {
+      return {
+        success: false,
+        error: `Subscriber not found in ManyChat for ${cleanInstagram}. Make sure the user has interacted with your ManyChat bot. You can also provide subscriber_id manually for testing.`,
+      };
+    }
+
+    console.log(`[test-send] Using subscriber_id: ${finalSubscriberId}${manualSubscriberId ? ' (manual)' : ' (found via API)'}`);
 
     // Відправляємо повідомлення
     const sendUrl = `https://api.manychat.com/fb/sending/sendContent`;
@@ -167,7 +184,7 @@ async function sendViaManyChat(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        subscriber_id: subscriberId,
+        subscriber_id: finalSubscriberId,
         data: {
           version: 'v2',
           content: {
@@ -259,7 +276,7 @@ async function sendViaInstagramGraph(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { jobId, instagram, message } = body;
+    const { jobId, instagram, message, subscriberId: manualSubscriberId } = body;
 
     if (!jobId && !instagram) {
       return NextResponse.json(

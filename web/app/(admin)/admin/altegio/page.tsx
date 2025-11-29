@@ -1820,12 +1820,24 @@ export default function AltegioLanding() {
                     
                     if (!confirmSend) return;
                     
+                    // Питаємо, чи є subscriber_id для тестування
+                    const subscriberIdInput = prompt(
+                      `Відправити тестове повідомлення для:\n\n` +
+                      `Клієнт: ${firstJob.clientName}\n` +
+                      `Instagram: ${firstJob.instagram || '—'}\n` +
+                      `Дата візиту: ${new Date(firstJob.visitDateTime).toLocaleString('uk-UA')}\n\n` +
+                      `Якщо знаєш Subscriber ID з ManyChat Dashboard, введи його (або залиш порожнім для автоматичного пошуку):`
+                    );
+                    
+                    if (subscriberIdInput === null) return; // Користувач скасував
+                    
                     try {
                       const res = await fetch('/api/altegio/reminders/test-send', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           jobId: firstJob.id,
+                          subscriberId: subscriberIdInput?.trim() || undefined,
                         }),
                       });
                       const data = await res.json();
@@ -1983,6 +1995,13 @@ export default function AltegioLanding() {
                           }
                           message += `\n`;
                         });
+                        
+                        if (data.recommendations && data.recommendations.length > 0) {
+                          message += `\n💡 Рекомендації:\n`;
+                          data.recommendations.forEach((rec: string) => {
+                            message += `${rec}\n`;
+                          });
+                        }
                       }
                       
                       alert(message);
