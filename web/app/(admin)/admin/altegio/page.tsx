@@ -1559,6 +1559,36 @@ export default function AltegioLanding() {
               >
                 🧪 Тест створення job'ів
               </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/altegio/reminders/fix-index', {
+                      method: 'POST',
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      alert(`✅ ${data.message}\n${data.oldType ? `Старий тип: ${data.oldType}` : ''}\n${data.count ? `Кількість: ${data.count}` : ''}`);
+                      loadRemindersQueue();
+                      loadRemindersDebug();
+                    } else {
+                      alert(`❌ Помилка: ${data.error}`);
+                    }
+                  } catch (err) {
+                    alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: '#ef4444',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🔧 Виправити індекс
+              </button>
             </div>
           </div>
 
