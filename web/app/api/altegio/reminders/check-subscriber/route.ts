@@ -12,32 +12,85 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string, clien
   // Видаляємо @ з початку, якщо є
   const cleanInstagram = instagram.startsWith('@') ? instagram.slice(1) : instagram;
 
-  // Метод 1: findByName за Instagram username (без @)
+  // Метод 1: findByName за повним ім'ям (якщо є) - це працює!
+  if (clientName && clientName.trim()) {
+    try {
+      const fullNameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(clientName.trim())}`;
+      const fullNameSearchResponse = await fetch(fullNameSearchUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+
+      if (fullNameSearchResponse.ok) {
+        const data = await fullNameSearchResponse.json();
+        if (data?.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
+          // Перевіряємо, чи співпадає ig_username
+          for (const subscriber of data.data) {
+            const subscriberIgUsername = subscriber.ig_username || subscriber.instagram_username;
+            if (subscriberIgUsername && subscriberIgUsername.toLowerCase() === cleanInstagram.toLowerCase()) {
+              results.push({
+                method: 'findByName (full name)',
+                success: true,
+                data: subscriber,
+                subscriberId: subscriber.id || subscriber.subscriber_id,
+              });
+              break;
+            }
+          }
+          
+          // Якщо не знайшли за ig_username, але є тільки один результат, використовуємо його
+          if (results.length === 0 && data.data.length === 1) {
+            results.push({
+              method: 'findByName (full name)',
+              success: true,
+              data: data.data[0],
+              subscriberId: data.data[0].id || data.data[0].subscriber_id,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      results.push({
+        method: 'findByName (full name)',
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Метод 2: findByName за Instagram username (без @) - зазвичай не працює
   try {
-    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
+    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
     const nameSearchResponse = await fetch(nameSearchUrl, {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: cleanInstagram,
-      }),
     });
 
     if (nameSearchResponse.ok) {
       const data = await nameSearchResponse.json();
-      results.push({
-        method: 'findByName',
-        success: true,
-        data: data,
-        subscriberId: data?.data?.subscriber_id || data?.subscriber_id || data?.subscriber?.id,
-      });
+      if (data?.status === 'success' && Array.isArray(data.data) && data.data.length > 0) {
+        results.push({
+          method: 'findByName (Instagram username)',
+          success: true,
+          data: data,
+          subscriberId: data.data[0]?.id || data.data[0]?.subscriber_id,
+        });
+      } else {
+        results.push({
+          method: 'findByName (Instagram username)',
+          success: false,
+          data: data,
+          note: 'Empty result - findByName does not search by Instagram username',
+        });
+      }
     } else {
       const errorText = await nameSearchResponse.text();
       results.push({
-        method: 'findByName',
+        method: 'findByName (Instagram username)',
         success: false,
         error: `${nameSearchResponse.status}: ${errorText}`,
       });

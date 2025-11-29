@@ -102,6 +102,7 @@ async function sendViaManyChat(
   instagram: string,
   message: string,
   apiKey: string,
+  clientName?: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   try {
     // ManyChat API: шукаємо subscriber за Instagram username
