@@ -1907,19 +1907,22 @@ export default function AltegioLanding() {
                     });
                     const data = await res.json();
                     if (data.ok) {
+                      // Instagram username без @ (endpoint вже видаляє @)
+                      const instagramDisplay = data.instagram.startsWith('@') ? data.instagram : `@${data.instagram}`;
+                      
                       if (data.found) {
                         alert(
                           `✅ Subscriber знайдено в ManyChat!\n\n` +
-                          `Instagram: @${data.instagram}\n` +
+                          `Instagram: ${instagramDisplay}\n` +
                           `Subscriber ID: ${data.subscriberId}\n\n` +
                           `Тепер можна відправляти повідомлення.`
                         );
                       } else {
                         alert(
                           `❌ Subscriber не знайдено в ManyChat\n\n` +
-                          `Instagram: @${data.instagram}\n\n` +
+                          `Instagram: ${instagramDisplay}\n\n` +
                           `Що робити:\n` +
-                          `1. Відкрий Instagram на акаунті @${data.instagram}\n` +
+                          `1. Відкрий Instagram на акаунті ${instagramDisplay}\n` +
                           `2. Знайди ManyChat бот (або сторінку, яка використовує ManyChat)\n` +
                           `3. Напиши будь-яке повідомлення боту\n` +
                           `4. Або натисни на кнопку в автоматизації ManyChat\n` +
