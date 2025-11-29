@@ -2027,6 +2027,76 @@ export default function AltegioLanding() {
               <button
                 onClick={async () => {
                   try {
+                    const res = await fetch('/api/altegio/reminders/test-manychat-detailed?instagram=mykolayyurashko', {
+                      method: 'GET',
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      const successful = data.successfulResults || [];
+                      const allResults = data.allResults || [];
+                      
+                      let message = `🔍 ДЕТАЛЬНА ДІАГНОСТИКА ManyChat API\n\n`;
+                      message += `Instagram: ${data.instagram}\n`;
+                      message += `API Key: ${data.apiKeyInfo?.length || 'N/A'} символів\n`;
+                      message += `Знайдено: ${data.found ? '✅ Так' : '❌ Ні'}\n\n`;
+                      message += `Успішні тести: ${successful.length}\n`;
+                      message += `Всього тестів: ${allResults.length}\n\n`;
+                      
+                      if (successful.length > 0) {
+                        message += `✅ Знайдено через:\n`;
+                        successful.forEach((r: any) => {
+                          message += `- ${r.method}: Subscriber ID ${r.subscriberId}\n`;
+                        });
+                      } else {
+                        message += `❌ Не знайдено жодним методом\n\n`;
+                        message += `Детальні результати:\n`;
+                        allResults.forEach((r: any) => {
+                          message += `\n${r.method}:\n`;
+                          message += `  Status: ${r.status || 'N/A'} ${r.statusText || ''}\n`;
+                          if (r.error) {
+                            message += `  Error: ${r.error}\n`;
+                          } else if (r.response) {
+                            if (r.response.parsed) {
+                              message += `  Response: ${JSON.stringify(r.response.parsed).substring(0, 300)}...\n`;
+                            } else {
+                              message += `  Response: ${r.response.raw?.substring(0, 300) || 'N/A'}...\n`;
+                            }
+                          }
+                        });
+                        
+                        if (data.recommendations && data.recommendations.length > 0) {
+                          message += `\n\n💡 Рекомендації:\n`;
+                          data.recommendations.forEach((rec: string) => {
+                            message += `${rec}\n`;
+                          });
+                        }
+                      }
+                      
+                      // Показуємо в alert, але також копіюємо в консоль для детального аналізу
+                      console.log('[ManyChat Detailed Test]', data);
+                      alert(message);
+                    } else {
+                      alert(`❌ Помилка: ${data.error || 'Невідома помилка'}`);
+                    }
+                  } catch (err) {
+                    alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: '#8b5cf6',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🔬 Детальна діагностика ManyChat API
+              </button>
+              <button
+                onClick={async () => {
+                  try {
                     const res = await fetch('/api/altegio/reminders/fix-index', {
                       method: 'POST',
                     });
