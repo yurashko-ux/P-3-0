@@ -12,53 +12,63 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
   // Видаляємо @ з початку, якщо є
   const cleanInstagram = instagram.startsWith('@') ? instagram.slice(1) : instagram;
 
-  // Метод 1: findByInstagram - шукаємо виключно за Instagram username
+  // Метод 1: Спочатку отримуємо список custom fields, щоб знайти правильний field_id для Instagram username
+  let instagramFieldId: string | null = null;
   try {
-    const instagramSearchUrl = `https://api.manychat.com/fb/subscriber/findByInstagram`;
-    const instagramSearchResponse = await fetch(instagramSearchUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        username: cleanInstagram,
-      }),
-    });
-
-    if (instagramSearchResponse.ok) {
-      const data = await instagramSearchResponse.json();
-      if (data?.status === 'success' && data.data) {
-        const subscriberId = data.data.id || data.data.subscriber_id || data.data.subscriber?.id;
-        if (subscriberId) {
-          results.push({
-            method: 'findByInstagram',
-            success: true,
-            data: data.data,
-            subscriberId: subscriberId,
-          });
+    const fieldsEndpoints = [
+      'https://api.manychat.com/fb/subscriber/getFields',
+      'https://api.manychat.com/fb/subscriber/getCustomFields',
+      'https://api.manychat.com/fb/fields',
+    ];
+    
+    for (const fieldsUrl of fieldsEndpoints) {
+      try {
+        const fieldsResponse = await fetch(fieldsUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+          },
+        });
+        
+        if (fieldsResponse.ok) {
+          const fieldsData = await fieldsResponse.json();
+          const fields = fieldsData?.data?.fields || fieldsData?.fields || [];
+          
+          const instagramField = fields.find((f: any) => 
+            f.name?.toLowerCase().includes('instagram') || 
+            f.field_id?.toLowerCase().includes('instagram') ||
+            f.label?.toLowerCase().includes('instagram') ||
+            f.id?.toString().includes('instagram')
+          );
+          
+          if (instagramField) {
+            instagramFieldId = instagramField.field_id || instagramField.id || instagramField.name;
+            results.push({
+              method: 'getCustomFields',
+              success: true,
+              instagramFieldId: instagramFieldId,
+              fieldName: instagramField.name || instagramField.label,
+            });
+            break;
+          }
         }
+      } catch (err) {
+        // Продовжуємо до наступного endpoint
       }
-    } else {
-      const errorText = await instagramSearchResponse.text();
-      results.push({
-        method: 'findByInstagram',
-        success: false,
-        error: `${instagramSearchResponse.status}: ${errorText}`,
-      });
     }
   } catch (err) {
-    results.push({
-      method: 'findByInstagram',
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    // Ігноруємо помилки отримання custom fields
   }
 
-  // Метод 2: findByCustomField - якщо findByInstagram не спрацював
-  const customFieldIds = ['instagram_username', 'instagram', 'username', 'ig_username'];
+  // Метод 2: findByCustomField - використовуємо знайдений field_id або спробуємо стандартні варіанти
+  const customFieldIds = instagramFieldId 
+    ? [instagramFieldId, 'instagram_username', 'instagram', 'username', 'ig_username', 'Instagram Username', 'Instagram']
+    : ['instagram_username', 'instagram', 'username', 'ig_username', 'Instagram Username', 'Instagram'];
   
   for (const fieldId of customFieldIds) {
+    // Якщо вже знайшли subscriber, зупиняємося
+    if (results.some((r) => r.success && r.subscriberId)) break;
+    
     try {
       const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
       const customSearchResponse = await fetch(customSearchUrl, {
@@ -68,9 +78,9 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            field_id: fieldId,
-            field_value: cleanInstagram,
-          }),
+          field_id: fieldId,
+          field_value: cleanInstagram,
+        }),
       });
 
       if (customSearchResponse.ok) {
@@ -83,6 +93,7 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
             data: data,
             subscriberId: subscriberId,
           });
+          break; // Знайшли subscriber, зупиняємося
         }
       } else {
         const errorText = await customSearchResponse.text();
