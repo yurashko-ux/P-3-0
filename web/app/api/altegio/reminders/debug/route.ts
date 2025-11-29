@@ -98,42 +98,60 @@ export async function GET(req: NextRequest) {
 
     // 4. Аналізуємо всі webhook події
     const allEventsAnalysis = webhookEvents.map((e: any) => {
-      // Обробляємо різні формати: може бути напряму об'єкт або обгорнутий в value
-      let eventBody = e.body;
-      let receivedAt = e.receivedAt;
-      
-      // Якщо body немає, але є value (як в GET endpoint)
-      if (!eventBody && e.value) {
-        if (typeof e.value === 'string') {
-          try {
-            const parsed = JSON.parse(e.value);
-            eventBody = parsed.body;
-            receivedAt = parsed.receivedAt || receivedAt;
-          } catch {
-            // Якщо не вдалося розпарсити, залишаємо як є
+      try {
+        // Обробляємо різні формати: може бути напряму об'єкт або обгорнутий в value
+        let eventBody = e.body;
+        let receivedAt = e.receivedAt;
+        
+        // Якщо body немає, але є value (як в GET endpoint)
+        if (!eventBody && e.value) {
+          if (typeof e.value === 'string') {
+            try {
+              const parsed = JSON.parse(e.value);
+              eventBody = parsed.body;
+              receivedAt = parsed.receivedAt || receivedAt;
+            } catch {
+              // Якщо не вдалося розпарсити, залишаємо як є
+            }
+          } else if (typeof e.value === 'object' && e.value.body) {
+            eventBody = e.value.body;
+            receivedAt = e.value.receivedAt || receivedAt;
           }
-        } else if (typeof e.value === 'object' && e.value.body) {
-          eventBody = e.value.body;
-          receivedAt = e.value.receivedAt || receivedAt;
         }
+        
+        return {
+          receivedAt: receivedAt || new Date().toISOString(),
+          resource: eventBody?.resource,
+          resource_id: eventBody?.resource_id,
+          status: eventBody?.status,
+          event: eventBody?.event || e.event,
+          type: eventBody?.type || e.type,
+          bodyKeys: eventBody ? Object.keys(eventBody) : [],
+          // Для record подій
+          datetime: eventBody?.data?.datetime,
+          clientId: eventBody?.data?.client?.id,
+          clientName: eventBody?.data?.client?.display_name || eventBody?.data?.client?.name,
+          instagram: eventBody?.data?.client?.custom_fields?.['instagram-user-name'],
+          // Повний body для діагностики
+          fullBody: eventBody || e,
+        };
+      } catch (err) {
+        console.warn('[altegio/reminders/debug] Failed to analyze event:', err);
+        return {
+          receivedAt: new Date().toISOString(),
+          resource: null,
+          resource_id: null,
+          status: null,
+          event: null,
+          type: null,
+          bodyKeys: [],
+          datetime: null,
+          clientId: null,
+          clientName: null,
+          instagram: null,
+          fullBody: e,
+        };
       }
-      
-      return {
-        receivedAt: receivedAt,
-        resource: eventBody?.resource,
-        resource_id: eventBody?.resource_id,
-        status: eventBody?.status,
-        event: eventBody?.event || e.event,
-        type: eventBody?.type || e.type,
-        bodyKeys: eventBody ? Object.keys(eventBody) : [],
-        // Для record подій
-        datetime: eventBody?.data?.datetime,
-        clientId: eventBody?.data?.client?.id,
-        clientName: eventBody?.data?.client?.display_name || eventBody?.data?.client?.name,
-        instagram: eventBody?.data?.client?.custom_fields?.['instagram-user-name'],
-        // Повний body для діагностики
-        fullBody: eventBody || e,
-      };
     });
 
     // 5. Шукаємо останні події по record
