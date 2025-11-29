@@ -87,9 +87,51 @@ export function formatReminderMessage(job: ReminderJob, rule: ReminderRule): str
 }
 
 /**
- * Отримує активні правила нагадувань
+ * Отримує активні правила нагадувань з KV (або дефолтні)
  */
-export function getActiveReminderRules(): ReminderRule[] {
+export async function getActiveReminderRules(): Promise<ReminderRule[]> {
+  try {
+    const { kvRead } = await import('@/lib/kv');
+    const RULES_KEY = 'altegio:reminder:rules';
+    const rulesRaw = await kvRead.getRaw(RULES_KEY);
+    
+    if (!rulesRaw) {
+      return REMINDER_RULES.filter((rule) => rule.active);
+    }
+
+    let parsed: any;
+    if (typeof rulesRaw === 'string') {
+      try {
+        parsed = JSON.parse(rulesRaw);
+      } catch {
+        parsed = rulesRaw;
+      }
+    } else {
+      parsed = rulesRaw;
+    }
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const candidate = parsed.value ?? parsed.result ?? parsed.data;
+      if (candidate !== undefined) {
+        if (typeof candidate === 'string') {
+          try {
+            parsed = JSON.parse(candidate);
+          } catch {
+            parsed = candidate;
+          }
+        } else {
+          parsed = candidate;
+        }
+      }
+    }
+
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.filter((rule) => rule.active);
+    }
+  } catch (err) {
+    console.warn('[reminders] Failed to load rules from KV, using defaults:', err);
+  }
+
   return REMINDER_RULES.filter((rule) => rule.active);
 }
 

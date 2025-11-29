@@ -108,6 +108,19 @@ export default function AltegioLanding() {
     total?: number;
     error?: string;
   }>({ loading: false, ok: null });
+
+  const [reminderRules, setReminderRules] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    rules?: Array<{
+      id: string;
+      daysBefore: number;
+      active: boolean;
+      channel: string;
+      template: string;
+    }>;
+    error?: string;
+  }>({ loading: false, ok: null });
   
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -423,6 +436,66 @@ export default function AltegioLanding() {
         error: err instanceof Error ? err.message : 'Невідома помилка',
         logs: undefined,
       });
+    }
+  }
+
+  async function loadReminderRules() {
+    setReminderRules({ loading: true, ok: null, rules: undefined, error: undefined });
+    try {
+      const res = await fetch('/api/altegio/reminders/rules', { cache: 'no-store' });
+      const data = await res.json();
+      setReminderRules({
+        loading: false,
+        ok: data.ok === true,
+        rules: data.rules || [],
+        error: data.error,
+      });
+    } catch (err) {
+      setReminderRules({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+        rules: undefined,
+      });
+    }
+  }
+
+  async function saveReminderRules() {
+    if (!reminderRules.rules) return;
+    
+    setReminderRules({ ...reminderRules, loading: true });
+    try {
+      const res = await fetch('/api/altegio/reminders/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rules: reminderRules.rules }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setReminderRules({
+          loading: false,
+          ok: true,
+          rules: data.rules || reminderRules.rules,
+          error: undefined,
+        });
+        alert('✅ Шаблони повідомлень збережено!');
+      } else {
+        setReminderRules({
+          ...reminderRules,
+          loading: false,
+          ok: false,
+          error: data.error,
+        });
+        alert(`❌ Помилка: ${data.error}`);
+      }
+    } catch (err) {
+      setReminderRules({
+        ...reminderRules,
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+      alert(`❌ Помилка: ${err instanceof Error ? err.message : 'Невідома помилка'}`);
     }
   }
 
@@ -1523,6 +1596,115 @@ export default function AltegioLanding() {
                       </strong>
                     </li>
                   </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Шаблони повідомлень" emoji="✏️">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Налаштуйте шаблони повідомлень для нагадувань. Використовуйте плейсхолдери: {'{date}'}, {'{time}'}, {'{clientName}'}, {'{daysLeft}'}, {'{service}'}, {'{master}'}.
+            </p>
+            <button
+              onClick={loadReminderRules}
+              disabled={reminderRules.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#3b82f6',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: reminderRules.loading ? 'not-allowed' : 'pointer',
+                opacity: reminderRules.loading ? 0.6 : 1,
+                marginBottom: 12,
+              }}
+            >
+              {reminderRules.loading ? 'Завантаження...' : 'Завантажити шаблони'}
+            </button>
+          </div>
+
+          {reminderRules.ok !== null && (
+            <div>
+              {reminderRules.ok && reminderRules.rules ? (
+                <div>
+                  {reminderRules.rules.map((rule, idx) => (
+                    <div
+                      key={rule.id}
+                      style={{
+                        marginBottom: 20,
+                        padding: 16,
+                        background: '#f8fafc',
+                        borderRadius: 8,
+                        border: '1px solid #e2e8f0',
+                      }}
+                    >
+                      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <strong style={{ fontSize: '1.1em' }}>
+                          За {rule.daysBefore} {rule.daysBefore === 1 ? 'день' : rule.daysBefore < 5 ? 'дні' : 'днів'} до візиту
+                        </strong>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                          <input
+                            type="checkbox"
+                            checked={rule.active}
+                            onChange={(e) => {
+                              const newRules = [...reminderRules.rules!];
+                              newRules[idx].active = e.target.checked;
+                              setReminderRules({ ...reminderRules, rules: newRules });
+                            }}
+                            style={{ width: 18, height: 18 }}
+                          />
+                          <span style={{ fontSize: '0.9em' }}>Активне</span>
+                        </label>
+                      </div>
+                      <textarea
+                        value={rule.template}
+                        onChange={(e) => {
+                          const newRules = [...reminderRules.rules!];
+                          newRules[idx].template = e.target.value;
+                          setReminderRules({ ...reminderRules, rules: newRules });
+                        }}
+                        style={{
+                          width: '100%',
+                          minHeight: 80,
+                          padding: 12,
+                          border: '1px solid #cbd5e1',
+                          borderRadius: 6,
+                          fontSize: '0.95em',
+                          fontFamily: 'inherit',
+                          resize: 'vertical',
+                        }}
+                        placeholder="Введіть шаблон повідомлення..."
+                      />
+                      <div style={{ marginTop: 8, fontSize: '0.85em', color: '#64748b' }}>
+                        Доступні плейсхолдери: {'{date}'}, {'{time}'}, {'{clientName}'}, {'{daysLeft}'}, {'{service}'}, {'{master}'}, {'{instagram}'}
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    onClick={saveReminderRules}
+                    disabled={reminderRules.loading}
+                    style={{
+                      padding: '12px 24px',
+                      background: '#22c55e',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontWeight: 600,
+                      cursor: reminderRules.loading ? 'not-allowed' : 'pointer',
+                      opacity: reminderRules.loading ? 0.6 : 1,
+                      fontSize: '1em',
+                    }}
+                  >
+                    {reminderRules.loading ? 'Збереження...' : '💾 Зберегти шаблони'}
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <strong>❌ Помилка:</strong>{' '}
+                  {reminderRules.error || 'Не вдалося завантажити шаблони'}
                 </div>
               )}
             </div>
