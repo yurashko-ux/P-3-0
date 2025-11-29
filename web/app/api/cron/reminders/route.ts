@@ -113,17 +113,13 @@ async function sendViaManyChat(
     
     console.log(`[reminders] Searching ManyChat subscriber for ${cleanInstagram} (original: ${instagram})`);
     
-    // Метод 1: findByName (шукає за Instagram username без @)
-    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName`;
+    // Метод 1: findByName (шукає за Instagram username без @) - спробуємо GET
+    const nameSearchUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(cleanInstagram)}`;
     const nameSearchResponse = await fetch(nameSearchUrl, {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: cleanInstagram,
-      }),
     });
 
     if (nameSearchResponse.ok) {
