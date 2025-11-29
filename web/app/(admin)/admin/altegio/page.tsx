@@ -1771,11 +1771,11 @@ export default function AltegioLanding() {
                 <ul style={{ margin: '4px 0', paddingLeft: 20, fontSize: '0.9em' }}>
                   <li>Всього подій: {remindersDebug.data.webhookEvents?.total || 0}</li>
                   <li>Подій по записах: {remindersDebug.data.webhookEvents?.recordEvents || 0}</li>
-                  {remindersDebug.data.webhookEvents?.eventsByResource &&
-                    remindersDebug.data.webhookEvents.eventsByResource.length > 0 && (
+                  {remindersDebug.data?.webhookEvents?.eventsByResource &&
+                    remindersDebug.data?.webhookEvents?.eventsByResource.length > 0 && (
                       <li>
                         По ресурсах:{' '}
-                        {remindersDebug.data.webhookEvents.eventsByResource
+                        {remindersDebug.data?.webhookEvents?.eventsByResource
                           .map((e: any) => `${e.resource}: ${e.count}`)
                           .join(', ')}
                       </li>
