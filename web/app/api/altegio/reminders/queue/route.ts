@@ -17,7 +17,21 @@ export async function GET(req: NextRequest) {
     // Отримуємо всі job'и з індексу
     const indexKey = 'altegio:reminder:index';
     const indexRaw = await kvRead.getRaw(indexKey);
-    const jobIds: string[] = indexRaw ? JSON.parse(indexRaw) : [];
+    let jobIds: string[] = [];
+    
+    if (indexRaw) {
+      try {
+        const parsed = JSON.parse(indexRaw);
+        // Перевіряємо, чи це масив
+        if (Array.isArray(parsed)) {
+          jobIds = parsed;
+        } else {
+          console.warn('[altegio/reminders/queue] Index is not an array:', typeof parsed);
+        }
+      } catch (err) {
+        console.warn('[altegio/reminders/queue] Failed to parse index:', err);
+      }
+    }
 
     const jobs: ReminderJob[] = [];
     const now = Date.now();

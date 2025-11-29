@@ -131,6 +131,19 @@ export async function POST(req: NextRequest) {
             });
           }
 
+          // ТЕСТОВИЙ РЕЖИМ: тільки для тестового клієнта
+          const TEST_INSTAGRAM_USERNAME = 'mykolayyurashko';
+          if (instagram.toLowerCase() !== TEST_INSTAGRAM_USERNAME.toLowerCase()) {
+            console.log(
+              `[altegio/webhook] ⏭️ Skipping visit ${visitId} - not test client (instagram: ${instagram})`,
+            );
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              skipped: 'not_test_client',
+            });
+          }
+
           const visitJobsKey = `altegio:reminder:byVisit:${visitId}`;
           const existingJobIdsRaw = await kvRead.getRaw(visitJobsKey);
           const existingJobIds: string[] = existingJobIdsRaw
