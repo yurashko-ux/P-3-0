@@ -11,7 +11,13 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   try {
     // 1. Перевіряємо останні webhook події
-    const webhookLogRaw = await kvRead.lrange('altegio:webhook:log', 0, 9);
+    let webhookLogRaw: string[] = [];
+    try {
+      webhookLogRaw = await kvRead.lrange('altegio:webhook:log', 0, 9);
+    } catch (err) {
+      console.error('[altegio/reminders/debug] Failed to read webhook log:', err);
+      // Продовжуємо з порожнім масивом
+    }
     const webhookEvents = webhookLogRaw
       .map((raw) => {
         try {
