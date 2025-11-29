@@ -97,7 +97,9 @@ export async function GET(req: NextRequest) {
         ? jobs.filter((j) => {
             const isPending = j.status === 'pending';
             const isFuture = j.dueAt > now;
-            if (!isPending || !isFuture) {
+            const shouldInclude = isPending && isFuture;
+            
+            if (!shouldInclude) {
               console.log(`[queue] Filtering out job ${j.id}:`, {
                 status: j.status,
                 isPending,
@@ -105,11 +107,20 @@ export async function GET(req: NextRequest) {
                 now: new Date(now).toISOString(),
                 isFuture,
                 diffMs: j.dueAt - now,
+                diffHours: Math.round((j.dueAt - now) / (3600_000)),
               });
             }
-            return isPending && isFuture;
+            
+            return shouldInclude;
           })
         : jobs.slice(0, limit);
+    
+    console.log(`[queue] Filter results:`, {
+      totalJobs: jobs.length,
+      filteredQueue: queue.length,
+      statusParam,
+      now: new Date(now).toISOString(),
+    });
 
     // Форматуємо для UI
     const formatted = queue.map((job) => ({
