@@ -74,12 +74,12 @@ export async function GET(req: NextRequest) {
       10
     );
 
-    const now = new Date();
-    const pastDate = new Date(now);
+    const nowDate = new Date();
+    const pastDate = new Date(nowDate);
     pastDate.setDate(pastDate.getDate() - daysBack);
 
     const dateFrom = pastDate.toISOString().split("T")[0];
-    const dateTo = now.toISOString().split("T")[0];
+    const dateTo = nowDate.toISOString().split("T")[0];
 
     console.log(
       `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}`
