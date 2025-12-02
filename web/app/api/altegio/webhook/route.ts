@@ -95,6 +95,32 @@ export async function POST(req: NextRequest) {
           );
         }
       } else if (status === 'update' || status === 'create') {
+        // Зберігаємо record event для статистики (навіть якщо в минулому)
+        try {
+          const recordEvent = {
+            visitId,
+            status,
+            datetime: data.datetime,
+            serviceId: data.service?.id || data.service_id,
+            serviceName: data.service?.title || data.service?.name,
+            staffId: data.staff?.id || data.staff_id,
+            clientId: data.client?.id || data.client_id,
+            companyId: data.company_id,
+            receivedAt: new Date().toISOString(),
+            data: {
+              service: data.service,
+              staff: data.staff,
+              client: data.client,
+            },
+          };
+          const recordPayload = JSON.stringify(recordEvent);
+          await kvWrite.lpush('altegio:records:log', recordPayload);
+          // Зберігаємо останні 10000 записів для статистики
+          await kvWrite.ltrim('altegio:records:log', 0, 9999);
+        } catch (err) {
+          console.warn('[altegio/webhook] Failed to save record event for stats:', err);
+        }
+
         // Оновлення або створення запису
         try {
           const datetime = data.datetime; // ISO string, наприклад "2025-11-28T17:00:00+02:00"

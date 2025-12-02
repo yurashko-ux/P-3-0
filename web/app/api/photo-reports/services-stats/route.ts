@@ -8,6 +8,7 @@ import { getVisits } from "@/lib/altegio/visits"; // Спробуємо visits �
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { altegioFetch } from "@/lib/altegio/client";
 import { findMasterByAltegioStaffId } from "@/lib/photo-reports/service";
+import { kvRead } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -353,6 +354,47 @@ export async function GET(req: NextRequest) {
     console.log(
       `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio`
     );
+
+    // Якщо не отримали дані через API, спробуємо використати webhook дані
+    if (appointments.length === 0) {
+      console.log(
+        `[photo-reports/services-stats] No appointments from API, trying webhook data...`
+      );
+      try {
+        const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
+        const records = recordsLogRaw
+          .map((raw) => {
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return null;
+            }
+          })
+          .filter((r) => r && r.visitId && r.datetime);
+
+        console.log(
+          `[photo-reports/services-stats] Found ${records.length} records from webhook log`
+        );
+
+        // Конвертуємо webhook records в appointments формат
+        appointments = records.map((r: any) => ({
+          id: r.visitId,
+          datetime: r.datetime,
+          end_datetime: r.datetime,
+          service_id: r.serviceId,
+          service: r.data?.service || (r.serviceId ? { id: r.serviceId, title: r.serviceName } : null),
+          staff_id: r.staffId,
+          staff: r.data?.staff || (r.staffId ? { id: r.staffId } : null),
+          client_id: r.clientId,
+          client: r.data?.client || (r.clientId ? { id: r.clientId } : null),
+        }));
+      } catch (webhookError) {
+        console.warn(
+          `[photo-reports/services-stats] Failed to get webhook records:`,
+          webhookError instanceof Error ? webhookError.message : String(webhookError)
+        );
+      }
+    }
 
     // Фільтруємо тільки завершені appointments (дата в минулому)
     const now = new Date();
