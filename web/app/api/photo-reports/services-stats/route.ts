@@ -292,27 +292,28 @@ export async function GET(req: NextRequest) {
         console.log(
           `[photo-reports/services-stats] Trying to get visits (completed records) first...`
         );
-      const visits = await getVisits(companyId, {
-        dateFrom,
-        dateTo,
-        serviceIds: allowedServiceIds.length > 0 ? allowedServiceIds : undefined, // Фільтр за service_id з категорії
-        includeClient: true,
-        includeService: true,
-        includeStaff: true,
-      });
-      
-      if (visits.length > 0) {
-        console.log(
-          `[photo-reports/services-stats] ✅ Got ${visits.length} visits, using them as appointments`
+        const visits = await getVisits(companyId, {
+          dateFrom,
+          dateTo,
+          serviceIds: allowedServiceIds.length > 0 ? allowedServiceIds : undefined, // Фільтр за service_id з категорії
+          includeClient: true,
+          includeService: true,
+          includeStaff: true,
+        });
+        
+        if (visits.length > 0) {
+          console.log(
+            `[photo-reports/services-stats] ✅ Got ${visits.length} visits, using them as appointments`
+          );
+          // Visits мають схожу структуру з appointments
+          appointments = visits as any[];
+        }
+      } catch (visitsError) {
+        console.warn(
+          `[photo-reports/services-stats] Visits failed, trying appointments:`,
+          visitsError instanceof Error ? visitsError.message : String(visitsError)
         );
-        // Visits мають схожу структуру з appointments
-        appointments = visits as any[];
       }
-    } catch (visitsError) {
-      console.warn(
-        `[photo-reports/services-stats] Visits failed, trying appointments:`,
-        visitsError instanceof Error ? visitsError.message : String(visitsError)
-      );
     }
     
     // Якщо visits не спрацювало, пробуємо appointments
