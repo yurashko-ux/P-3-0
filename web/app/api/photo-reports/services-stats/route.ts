@@ -84,6 +84,7 @@ async function getServiceIdsFromCategory(
         if (services.length > 0) {
           // Якщо потрібно фільтрувати за category_id (отримали всі послуги)
           if (attempt.filterByCategory) {
+            const totalServices = services.length;
             services = services.filter((s) => {
               const serviceCategoryId =
                 s.category_id ||
@@ -93,7 +94,7 @@ async function getServiceIdsFromCategory(
               return serviceCategoryId === categoryId;
             });
             console.log(
-              `[photo-reports/services-stats] Filtered ${services.length} services from ${services.length} total by category_id ${categoryId}`
+              `[photo-reports/services-stats] Filtered ${services.length} services from ${totalServices} total by category_id ${categoryId}`
             );
           }
 
