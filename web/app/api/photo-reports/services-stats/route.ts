@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { assertAltegioEnv } from "@/lib/altegio/env";
-import { getVisits } from "@/lib/altegio/visits";
+import { getAppointments } from "@/lib/altegio/appointments";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { findMasterByAltegioStaffId } from "@/lib/photo-reports/service";
 
@@ -82,11 +82,11 @@ export async function GET(req: NextRequest) {
     const dateTo = now.toISOString().split("T")[0];
 
     console.log(
-      `[photo-reports/services-stats] Fetching visits from ${dateFrom} to ${dateTo} for company ${companyId}`
+      `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}`
     );
 
-    // Отримуємо візити з Altegio
-    const visits = await getVisits(companyId, {
+    // Отримуємо appointments з Altegio (використовуємо appointments замість visits, бо visits endpoint не працює)
+    const appointments = await getAppointments(companyId, {
       dateFrom,
       dateTo,
       includeClient: true,
@@ -95,16 +95,28 @@ export async function GET(req: NextRequest) {
     });
 
     console.log(
-      `[photo-reports/services-stats] Got ${visits.length} visits from Altegio`
+      `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio`
+    );
+
+    // Фільтруємо тільки завершені appointments (дата в минулому)
+    const now = new Date();
+    const completedAppointments = appointments.filter((apt) => {
+      const endDate = apt.end_datetime || apt.datetime || apt.date;
+      if (!endDate) return false;
+      return new Date(endDate) < now;
+    });
+
+    console.log(
+      `[photo-reports/services-stats] Found ${completedAppointments.length} completed appointments`
     );
 
     // Фільтруємо тільки послуги "Нарощування волосся"
-    const hairExtensionVisits = visits.filter((visit) =>
-      isHairExtensionService(visit.service)
+    const hairExtensionAppointments = completedAppointments.filter((apt) =>
+      isHairExtensionService(apt.service)
     );
 
     console.log(
-      `[photo-reports/services-stats] Found ${hairExtensionVisits.length} hair extension visits`
+      `[photo-reports/services-stats] Found ${hairExtensionAppointments.length} hair extension appointments`
     );
 
     // Підраховуємо по майстрах
@@ -113,8 +125,8 @@ export async function GET(req: NextRequest) {
       { masterId: string; masterName: string; count: number }
     > = {};
 
-    for (const visit of hairExtensionVisits) {
-      const staffId = visit.staff_id;
+    for (const appointment of hairExtensionAppointments) {
+      const staffId = appointment.staff_id;
       if (!staffId) continue;
 
       const master = findMasterByAltegioStaffId(staffId);
@@ -146,8 +158,9 @@ export async function GET(req: NextRequest) {
         dateTo,
         daysBack,
       },
-      totalVisits: visits.length,
-      hairExtensionVisits: hairExtensionVisits.length,
+      totalAppointments: appointments.length,
+      completedAppointments: completedAppointments.length,
+      hairExtensionAppointments: hairExtensionAppointments.length,
       statsByMaster: stats,
     });
   } catch (error) {

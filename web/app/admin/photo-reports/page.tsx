@@ -45,7 +45,9 @@ type ServicesStats = {
     masterName: string;
     count: number;
   }>;
-  hairExtensionVisits: number;
+  hairExtensionAppointments: number;
+  completedAppointments: number;
+  totalAppointments: number;
   period: {
     daysBack: number;
     dateFrom: string;
@@ -273,7 +275,12 @@ export default function PhotoReportsPage() {
                 <p className="mb-3 text-sm text-slate-600">
                   Період: останні {servicesStats.period.daysBack} днів (
                   {servicesStats.period.dateFrom} - {servicesStats.period.dateTo})
-                  • Всього послуг "Нарощування волосся": {servicesStats.hairExtensionVisits}
+                  • Всього послуг "Нарощування волосся": {servicesStats.hairExtensionAppointments}
+                  {servicesStats.completedAppointments > 0 && (
+                    <span className="ml-2 text-slate-400">
+                      (з {servicesStats.completedAppointments} завершених записів)
+                    </span>
+                  )}
                 </p>
               )}
               <div className="grid gap-4 md:grid-cols-2">

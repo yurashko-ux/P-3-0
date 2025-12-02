@@ -11,6 +11,8 @@ export type GetAppointmentsOptions = {
   clientId?: number; // Фільтр за клієнтом
   staffId?: number; // Фільтр за майстром
   includeClient?: boolean; // Включити інформацію про клієнта
+  includeService?: boolean; // Включити інформацію про послугу
+  includeStaff?: boolean; // Включити інформацію про майстра
 };
 
 /**
@@ -34,6 +36,12 @@ export async function getAppointments(
     const includeBlocks: string[] = [];
     if (options.includeClient) {
       includeBlocks.push('client');
+    }
+    if (options.includeService) {
+      includeBlocks.push('service');
+    }
+    if (options.includeStaff) {
+      includeBlocks.push('staff');
     }
 
     // Формуємо список різних варіантів endpoint'ів (як у clients.ts)
