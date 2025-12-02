@@ -86,13 +86,29 @@ export async function GET(req: NextRequest) {
     );
 
     // Отримуємо appointments з Altegio (використовуємо appointments замість visits, бо visits endpoint не працює)
-    const appointments = await getAppointments(companyId, {
+    // Спробуємо спочатку з фільтром за статусом "completed", якщо не спрацює - фільтруємо за датою
+    let appointments = await getAppointments(companyId, {
       dateFrom,
       dateTo,
+      status: "completed", // Спробуємо отримати тільки завершені
       includeClient: true,
       includeService: true,
       includeStaff: true,
     });
+
+    // Якщо з фільтром completed не спрацювало (порожній результат), спробуємо без фільтру
+    if (appointments.length === 0) {
+      console.log(
+        `[photo-reports/services-stats] No appointments with status=completed, trying without status filter`
+      );
+      appointments = await getAppointments(companyId, {
+        dateFrom,
+        dateTo,
+        includeClient: true,
+        includeService: true,
+        includeStaff: true,
+      });
+    }
 
     console.log(
       `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio`
