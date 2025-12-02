@@ -222,10 +222,9 @@ export async function GET(req: NextRequest) {
     const pastDate = new Date(nowDate);
     pastDate.setDate(pastDate.getDate() - daysBack);
 
-    // dateTo має бути сьогодні (включно) - використовуємо UTC для коректного форматування
+    // dateTo встановлюємо на 04.12.2025 (включно)
     const dateFrom = pastDate.toISOString().split("T")[0];
-    // Використовуємо сьогоднішню дату (включно) - це має бути 2025-12-03, якщо сьогодні 3 грудня
-    const dateTo = nowDate.toISOString().split("T")[0];
+    const dateTo = "2025-12-04"; // Фіксована кінцева дата періоду
 
     console.log(
       `[photo-reports/services-stats] 📅 Period calculation: nowDate=${nowDate.toISOString()}, dateFrom=${dateFrom}, dateTo=${dateTo}, daysBack=${daysBack}`
