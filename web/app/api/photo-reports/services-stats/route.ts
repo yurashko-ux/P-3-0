@@ -178,6 +178,12 @@ export async function GET(req: NextRequest) {
       10
     );
 
+    // Отримуємо category_id з параметрів або ENV (ID категорії "Нарощування волосся")
+    const categoryIdParam = req.nextUrl.searchParams.get("category_id");
+    const categoryId = categoryIdParam
+      ? parseInt(categoryIdParam, 10)
+      : parseInt(process.env.ALTEGIO_SERVICE_CATEGORY_ID || "11928106", 10);
+
     const nowDate = new Date();
     const pastDate = new Date(nowDate);
     pastDate.setDate(pastDate.getDate() - daysBack);
@@ -186,7 +192,13 @@ export async function GET(req: NextRequest) {
     const dateTo = nowDate.toISOString().split("T")[0];
 
     console.log(
-      `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}`
+      `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}, category ${categoryId}`
+    );
+
+    // Отримуємо список service_id з категорії
+    const allowedServiceIds = await getServiceIdsFromCategory(
+      companyId,
+      categoryId
     );
 
     // Отримуємо дані з Altegio
