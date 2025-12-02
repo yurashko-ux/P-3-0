@@ -35,6 +35,8 @@ export type GetVisitsOptions = {
   status?: string; // Фільтр за статусом
   clientId?: number; // Фільтр за клієнтом
   staffId?: number; // Фільтр за майстром
+  serviceId?: number; // Фільтр за послугою
+  serviceIds?: number[]; // Фільтр за списком послуг
   includeClient?: boolean; // Включити інформацію про клієнта
   includeService?: boolean; // Включити інформацію про послугу
   includeStaff?: boolean; // Включити інформацію про майстра
@@ -123,6 +125,15 @@ export async function getVisits(
     }
     if (options.staffId) {
       attempts.forEach(attempt => attempt.queryParams.append('staff_id', String(options.staffId!)));
+    }
+    if (options.serviceId) {
+      attempts.forEach(attempt => attempt.queryParams.append('service_id', String(options.serviceId!)));
+    }
+    if (options.serviceIds && options.serviceIds.length > 0) {
+      // Спробуємо додати service_id як масив або окремі параметри
+      options.serviceIds.forEach(serviceId => {
+        attempts.forEach(attempt => attempt.queryParams.append('service_id[]', String(serviceId)));
+      });
     }
     if (options.includeClient) {
       attempts.forEach(attempt => {

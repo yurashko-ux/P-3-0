@@ -234,18 +234,68 @@ export async function GET(req: NextRequest) {
       categoryId
     );
 
+    console.log(
+      `[photo-reports/services-stats] Will filter by ${allowedServiceIds.length} service IDs:`,
+      allowedServiceIds.slice(0, 5),
+      allowedServiceIds.length > 5 ? `... (${allowedServiceIds.length} total)` : ""
+    );
+
     // Отримуємо дані з Altegio
     // Спочатку пробуємо visits (завершені записи) - вони більше підходять для статистики
     // Якщо visits не працює, пробуємо appointments
+    // Спробуємо отримати дані для кожного service_id окремо, якщо загальні endpoint'и не працюють
     let appointments: any[] = [];
     
-    try {
+    // Якщо отримали список service_id, спробуємо отримати дані для кожного service_id окремо
+    if (allowedServiceIds.length > 0) {
       console.log(
-        `[photo-reports/services-stats] Trying to get visits (completed records) first...`
+        `[photo-reports/services-stats] Trying to get visits/appointments for each service_id separately...`
       );
+      
+      // Спробуємо отримати дані для перших 5 service_id (щоб не робити занадто багато запитів)
+      const serviceIdsToTry = allowedServiceIds.slice(0, 5);
+      
+      for (const serviceId of serviceIdsToTry) {
+        try {
+          // Спробуємо visits з фільтром за service_id
+          const visits = await getVisits(companyId, {
+            dateFrom,
+            dateTo,
+            includeClient: true,
+            includeService: true,
+            includeStaff: true,
+            // Додамо фільтр за service_id, якщо підтримується
+          });
+          
+          // Фільтруємо за service_id вручну
+          const filteredVisits = visits.filter((v: any) => {
+            const vServiceId = v.service_id || v.service?.id;
+            return vServiceId === serviceId;
+          });
+          
+          if (filteredVisits.length > 0) {
+            console.log(
+              `[photo-reports/services-stats] ✅ Got ${filteredVisits.length} visits for service_id ${serviceId}`
+            );
+            appointments.push(...filteredVisits);
+          }
+        } catch (err) {
+          // Продовжуємо з наступним service_id
+          continue;
+        }
+      }
+    }
+    
+    // Якщо не отримали дані через окремі запити, пробуємо загальні endpoint'и
+    if (appointments.length === 0) {
+      try {
+        console.log(
+          `[photo-reports/services-stats] Trying to get visits (completed records) first...`
+        );
       const visits = await getVisits(companyId, {
         dateFrom,
         dateTo,
+        serviceIds: allowedServiceIds.length > 0 ? allowedServiceIds : undefined, // Фільтр за service_id з категорії
         includeClient: true,
         includeService: true,
         includeStaff: true,
@@ -274,6 +324,7 @@ export async function GET(req: NextRequest) {
         appointments = await getAppointments(companyId, {
           dateFrom,
           dateTo,
+          serviceIds: allowedServiceIds.length > 0 ? allowedServiceIds : undefined, // Фільтр за service_id з категорії
           // Не використовуємо include параметри - спробуємо отримати базові appointments
         });
         
@@ -285,6 +336,7 @@ export async function GET(req: NextRequest) {
           appointments = await getAppointments(companyId, {
             dateFrom,
             dateTo,
+            serviceIds: allowedServiceIds.length > 0 ? allowedServiceIds : undefined,
             includeClient: true,
           });
         }
