@@ -372,12 +372,66 @@ export async function GET(req: NextRequest) {
       })
       .filter(Boolean);
 
+    // Шукаємо останні події по record
+    const recordEvents = events
+      .filter((e: any) => e.body?.resource === 'record')
+      .map((e: any) => ({
+        receivedAt: e.receivedAt,
+        status: e.body?.status,
+        visitId: e.body?.resource_id,
+        datetime: e.body?.data?.datetime,
+        serviceId: e.body?.data?.service?.id || e.body?.data?.service_id,
+        serviceName: e.body?.data?.service?.title || e.body?.data?.service?.name || 'Невідома послуга',
+        staffId: e.body?.data?.staff?.id || e.body?.data?.staff_id,
+        staffName: e.body?.data?.staff?.name || e.body?.data?.staff?.display_name || 'Невідомий майстер',
+        clientId: e.body?.data?.client?.id,
+        clientName: e.body?.data?.client?.display_name || e.body?.data?.client?.name,
+        fullBody: e.body,
+      }));
+
+    // Отримуємо record events з records log (які ми зберігаємо для статистики)
+    let savedRecords: any[] = [];
+    try {
+      const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, limit - 1);
+      savedRecords = recordsLogRaw
+        .map((raw) => {
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return null;
+          }
+        })
+        .filter((r) => r && r.visitId && r.datetime);
+    } catch (err) {
+      console.warn('[webhook GET] Failed to read records log:', err);
+    }
+
+    // Знаходимо останній record event
+    const lastRecordEvent = recordEvents.length > 0
+      ? recordEvents[0]
+      : savedRecords.length > 0
+        ? {
+            visitId: savedRecords[0].visitId,
+            datetime: savedRecords[0].datetime,
+            serviceId: savedRecords[0].serviceId,
+            serviceName: savedRecords[0].serviceName,
+            staffId: savedRecords[0].staffId,
+            receivedAt: savedRecords[0].receivedAt,
+            status: 'saved',
+          }
+        : null;
+
     return NextResponse.json({
       ok: true,
       message: 'Altegio webhook endpoint is active',
       timestamp: new Date().toISOString(),
       eventsCount: events.length,
-      events,
+      recordEventsCount: recordEvents.length,
+      savedRecordsCount: savedRecords.length,
+      lastRecordEvent: lastRecordEvent,
+      lastRecordEvents: recordEvents.slice(0, 10),
+      savedRecords: savedRecords.slice(0, 10),
+      allEvents: events.slice(0, 5), // Перші 5 для діагностики
     });
   } catch (error) {
     return NextResponse.json(
