@@ -45,6 +45,8 @@ export async function getAppointments(
     }
 
     // Формуємо список різних варіантів endpoint'ів (як у clients.ts)
+    // Згідно з документацією Altegio: https://developer.alteg.io/api#tag/Appointments
+    // Рекомендований endpoint: POST /company/{id}/appointments/search
     const attempts: Array<{
       name: string;
       method: 'GET' | 'POST';
@@ -52,19 +54,7 @@ export async function getAppointments(
       body?: any;
       useQuery?: boolean;
     }> = [
-      // 0. Schedule API — список запланованих записів та подій (з документації)
-      {
-        name: 'GET /location/{id}/timetable_event_schedules/days/events (Schedule Events API)',
-        method: 'GET',
-        path: `/location/${companyId}/timetable_event_schedules/days/events`,
-        useQuery: true,
-      },
-      {
-        name: 'GET /schedule/events (Schedule API, fallback)',
-        method: 'GET',
-        path: `/schedule/events`,
-        useQuery: true,
-      },
+      // 0. POST /company/{id}/appointments/search (recommended by Altegio docs)
       {
         name: 'POST /company/{id}/appointments/search (recommended)',
         method: 'POST',
@@ -73,52 +63,44 @@ export async function getAppointments(
           page: 1,
           page_size: 500,
           ...baseFilters,
-          ...(includeBlocks.length
-            ? {
-                include: includeBlocks,
-                with: includeBlocks,
-              }
-            : {}),
+          ...(includeBlocks.length ? { include: includeBlocks } : {}),
         },
       },
+      // 1. GET /company/{id}/appointments (згідно з документацією)
       {
-        name: 'POST /company/{id}/appointments',
-        method: 'POST',
-        path: `/company/${companyId}/appointments`,
-        body: {
-          ...baseFilters,
-          ...(includeBlocks.length
-            ? {
-                include: includeBlocks,
-                with: includeBlocks,
-              }
-            : {}),
-        },
-      },
-      {
-        name: 'GET /company/{id}/appointments with query',
+        name: 'GET /company/{id}/appointments',
         method: 'GET',
         path: `/company/${companyId}/appointments`,
         useQuery: true,
       },
+      // 2. Schedule API — список запланованих записів та подій (з документації)
+      {
+        name: 'GET /location/{id}/timetable_event_schedules/days/events (Schedule Events API)',
+        method: 'GET',
+        path: `/location/${companyId}/timetable_event_schedules/days/events`,
+        useQuery: true,
+      },
+      // 3. GET /schedule/events (Schedule API, fallback)
+      {
+        name: 'GET /schedule/events (Schedule API, fallback)',
+        method: 'GET',
+        path: `/schedule/events`,
+        useQuery: true,
+      },
+      // 4. POST /appointments/search (альтернативний формат)
       {
         name: 'POST /appointments/search',
         method: 'POST',
         path: `/appointments/search`,
         body: {
-          // у новій документації використовується location_id
           location_id: companyId,
           page: 1,
           page_size: 500,
           ...baseFilters,
-          ...(includeBlocks.length
-            ? {
-                include: includeBlocks,
-                with: includeBlocks,
-              }
-            : {}),
+          ...(includeBlocks.length ? { include: includeBlocks } : {}),
         },
       },
+      // 5. GET /appointments?location_id=... (fallback)
       {
         name: 'GET /appointments?location_id=...',
         method: 'GET',
@@ -144,23 +126,27 @@ export async function getAppointments(
             // Schedule API використовує staff_id або staff_ids[]
             queryParams.set('staff_id', String(baseFilters.staff_id));
           }
+          // Додаємо include параметри (без with[], бо це може викликати 404)
           if (includeBlocks.length) {
             includeBlocks.forEach((inc) => {
               queryParams.append('include[]', inc);
-              queryParams.append('with[]', inc);
             });
           }
+          
+          // Визначаємо правильний параметр для ідентифікатора локації/компанії
           if (attempt.path === '/appointments') {
-            queryParams.set('company_id', String(companyId));
-          }
-          if (attempt.path === '/schedule/events') {
+            // Для /appointments використовуємо location_id (згідно з документацією)
+            queryParams.set('location_id', String(companyId));
+          } else if (attempt.path === '/schedule/events') {
             // Schedule API очікує location_id
             queryParams.set('location_id', String(companyId));
+          } else if (attempt.path.includes('/timetable_event_schedules/days/events')) {
+            // Timetable Events API - додаємо location_id та дати
+            queryParams.set('location_id', String(companyId));
+            if (baseFilters.date_from) queryParams.set('date_from', baseFilters.date_from);
+            if (baseFilters.date_to) queryParams.set('date_to', baseFilters.date_to);
           }
-          if (attempt.path.includes('/timetable_event_schedules/days/events')) {
-            // Додаємо параметри для timetable events API
-            // Можливо потрібні додаткові параметри для фільтрації за датою
-          }
+          // Для /company/{id}/appointments company_id вже в URL, не потрібен в query
         }
 
         const fullPath =
