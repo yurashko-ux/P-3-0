@@ -1,5 +1,6 @@
 // web/app/admin/photo-reports/page.tsx
 // Сторінка для тестування та аналітики фото-звітів
+// Updated: 2025-12-02
 
 "use client";
 
