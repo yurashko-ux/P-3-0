@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAltegioEnv } from "@/lib/altegio/env";
 import { getAppointments } from "@/lib/altegio/appointments";
+import { getVisits } from "@/lib/altegio/visits"; // Спробуємо visits як альтернативу
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { findMasterByAltegioStaffId } from "@/lib/photo-reports/service";
 
