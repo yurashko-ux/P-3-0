@@ -222,6 +222,7 @@ export async function GET(req: NextRequest) {
     const pastDate = new Date(nowDate);
     pastDate.setDate(pastDate.getDate() - daysBack);
 
+    // dateTo має бути сьогодні (включно), а не вчора
     const dateFrom = pastDate.toISOString().split("T")[0];
     const dateTo = nowDate.toISOString().split("T")[0];
 
@@ -396,12 +397,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Фільтруємо тільки завершені appointments (дата в минулому)
+    // Фільтруємо тільки завершені appointments (дата в минулому або сьогодні)
+    // Для статистики включаємо також події, які вже відбулися сьогодні
     const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    
     const completedAppointments = appointments.filter((apt) => {
       const endDate = apt.end_datetime || apt.datetime || apt.date;
       if (!endDate) return false;
-      return new Date(endDate) < now;
+      const aptDate = new Date(endDate);
+      // Включаємо appointments, які вже відбулися (в минулому або сьогодні до поточного часу)
+      return aptDate < now;
     });
 
     console.log(
