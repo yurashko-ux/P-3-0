@@ -91,6 +91,25 @@ export default function AdminHome() {
             <SecondaryLink href="/admin/analytics">Переглянути дашборд</SecondaryLink>
           </CardFooter>
         </Card>
+
+        {/* Фото-звіти */}
+        <Card>
+          <CardHeader
+            emoji="📸"
+            title="Фото-звіти"
+            subtitle="Тестування та аналітика по майстрах"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Тестові нагадування в Telegram</li>
+              <li>Аналітика по майстрах</li>
+              <li>Останні фото-звіти</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/photo-reports">Відкрити модуль</PrimaryLink>
+          </CardFooter>
+        </Card>
       </section>
     </main>
   );

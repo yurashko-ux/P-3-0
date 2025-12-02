@@ -6,42 +6,49 @@ export const MOCK_MASTERS: MasterProfile[] = [
     name: "Тестовий майстер (Mykolay)",
     telegramUsername: "Mykolay007",
     role: "master",
+    // altegioStaffId: 123, // TODO: Додайте реальний staff_id з Altegio
   },
   {
     id: "master-olena",
     name: "Олена",
     telegramUsername: "o_sarbeeva",
     role: "master",
+    altegioStaffId: 2658785,
   },
   {
     id: "master-tester",
     name: "Mykolay (тест-режим)",
     telegramUsername: "Mykolay007",
     role: "master",
+    // altegioStaffId: 123, // TODO: Додайте реальний staff_id з Altegio
   },
   {
     id: "master-oleksandra",
     name: "Олександра",
     telegramUsername: "Alexandra_Z7",
     role: "master",
+    altegioStaffId: 2851361,
   },
   {
     id: "master-maryana",
     name: "Мар'яна",
     telegramUsername: "maryana24021989",
     role: "master",
+    altegioStaffId: 2860168,
   },
   {
     id: "master-halyna",
     name: "Галина",
     telegramUsername: "Halyna_Maxymiv",
     role: "master",
+    altegioStaffId: 2658783,
   },
   {
     id: "admin-viktoria",
     name: "Вікторія (адміністратор)",
     telegramUsername: "kolachnykv",
     role: "admin",
+    altegioStaffId: 2643393,
   },
 ];
 
