@@ -224,10 +224,8 @@ export async function GET(req: NextRequest) {
 
     // dateTo має бути сьогодні (включно) - використовуємо UTC для коректного форматування
     const dateFrom = pastDate.toISOString().split("T")[0];
-    // Додаємо 1 день до сьогоднішньої дати, щоб включити весь сьогоднішній день
-    const tomorrowDate = new Date(nowDate);
-    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-    const dateTo = tomorrowDate.toISOString().split("T")[0];
+    // Використовуємо сьогоднішню дату (включно) - це має бути 2025-12-03, якщо сьогодні 3 грудня
+    const dateTo = nowDate.toISOString().split("T")[0];
 
     console.log(
       `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}, category ${categoryId}`
