@@ -10,6 +10,8 @@ export type GetAppointmentsOptions = {
   status?: string; // Фільтр за статусом
   clientId?: number; // Фільтр за клієнтом
   staffId?: number; // Фільтр за майстром
+  serviceId?: number; // Фільтр за послугою
+  serviceIds?: number[]; // Фільтр за списком послуг
   includeClient?: boolean; // Включити інформацію про клієнта
   includeService?: boolean; // Включити інформацію про послугу
   includeStaff?: boolean; // Включити інформацію про майстра
@@ -32,6 +34,12 @@ export async function getAppointments(
     if (options.status) baseFilters.status = options.status;
     if (options.clientId) baseFilters.client_id = options.clientId;
     if (options.staffId) baseFilters.staff_id = options.staffId;
+    if (options.serviceId) baseFilters.service_id = options.serviceId;
+    if (options.serviceIds && options.serviceIds.length > 0) {
+      // Спробуємо додати service_ids як масив
+      baseFilters.service_ids = options.serviceIds;
+      baseFilters.service_id = options.serviceIds; // Також спробуємо як service_id
+    }
 
     const includeBlocks: string[] = [];
     if (options.includeClient) {
