@@ -85,25 +85,67 @@ export async function GET(req: NextRequest) {
       `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}`
     );
 
-    // Отримуємо appointments з Altegio (використовуємо appointments замість visits, бо visits endpoint не працює)
-    // Не використовуємо фільтр status=completed, бо він не підтримується API
-    // Спробуємо спочатку БЕЗ жодних include параметрів, бо вони можуть викликати 404
-    let appointments = await getAppointments(companyId, {
-      dateFrom,
-      dateTo,
-      // Не використовуємо include параметри - спробуємо отримати базові appointments
-    });
-
-    // Якщо не спрацювало, спробуємо з includeClient (найпростіший варіант)
-    if (appointments.length === 0) {
+    // Отримуємо дані з Altegio
+    // Спочатку пробуємо visits (завершені записи) - вони більше підходять для статистики
+    // Якщо visits не працює, пробуємо appointments
+    let appointments: any[] = [];
+    
+    try {
       console.log(
-        `[photo-reports/services-stats] No appointments without include, trying with includeClient only`
+        `[photo-reports/services-stats] Trying to get visits (completed records) first...`
       );
-      appointments = await getAppointments(companyId, {
+      const visits = await getVisits(companyId, {
         dateFrom,
         dateTo,
         includeClient: true,
+        includeService: true,
+        includeStaff: true,
       });
+      
+      if (visits.length > 0) {
+        console.log(
+          `[photo-reports/services-stats] ✅ Got ${visits.length} visits, using them as appointments`
+        );
+        // Visits мають схожу структуру з appointments
+        appointments = visits as any[];
+      }
+    } catch (visitsError) {
+      console.warn(
+        `[photo-reports/services-stats] Visits failed, trying appointments:`,
+        visitsError instanceof Error ? visitsError.message : String(visitsError)
+      );
+    }
+    
+    // Якщо visits не спрацювало, пробуємо appointments
+    if (appointments.length === 0) {
+      try {
+        console.log(
+          `[photo-reports/services-stats] Trying to get appointments...`
+        );
+        appointments = await getAppointments(companyId, {
+          dateFrom,
+          dateTo,
+          // Не використовуємо include параметри - спробуємо отримати базові appointments
+        });
+        
+        // Якщо не спрацювало, спробуємо з includeClient (найпростіший варіант)
+        if (appointments.length === 0) {
+          console.log(
+            `[photo-reports/services-stats] No appointments without include, trying with includeClient only`
+          );
+          appointments = await getAppointments(companyId, {
+            dateFrom,
+            dateTo,
+            includeClient: true,
+          });
+        }
+      } catch (appointmentsError) {
+        console.error(
+          `[photo-reports/services-stats] Appointments also failed:`,
+          appointmentsError instanceof Error ? appointmentsError.message : String(appointmentsError)
+        );
+        // Продовжуємо з порожнім масивом
+      }
     }
 
     console.log(
