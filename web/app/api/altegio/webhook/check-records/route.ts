@@ -1,5 +1,9 @@
 // web/app/api/altegio/webhook/check-records/route.ts
 // Endpoint для перевірки останніх record events з webhook
+//
+// Використання:
+// GET https://p-3-0.vercel.app/api/altegio/webhook/check-records
+// GET https://p-3-0.vercel.app/api/altegio/webhook/check-records?limit=50
 
 import { NextRequest, NextResponse } from "next/server";
 import { kvRead } from "@/lib/kv";
