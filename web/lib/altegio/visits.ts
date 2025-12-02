@@ -232,6 +232,34 @@ export async function getVisits(
 
 /**
  * Отримує деталі конкретного візиту
+ * @param companyId - ID компанії (salon_id)
+ * @param recordId - ID запису (record_id)
+ * @param visitId - ID візиту
+ */
+export async function getVisitDetails(
+  companyId: number,
+  recordId: number,
+  visitId: number
+): Promise<any> {
+  try {
+    const url = `/visit/details/${companyId}/${recordId}/${visitId}`;
+    console.log(`[altegio/visits] Getting visit details: ${url}`);
+    const response = await altegioFetch<any>(url);
+    
+    // Згідно з документацією, response має структуру:
+    // { success: true, data: { items: [...], payment_transactions: [...], ... } }
+    if (response && typeof response === 'object' && 'data' in response) {
+      return response.data;
+    }
+    return response;
+  } catch (err) {
+    console.error(`[altegio/visits] Failed to get visit details:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Отримує деталі конкретного візиту (старий метод для сумісності)
  * @param companyId - ID компанії
  * @param visitId - ID візиту
  */
