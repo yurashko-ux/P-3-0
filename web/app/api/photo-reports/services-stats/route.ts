@@ -26,23 +26,38 @@ async function getServiceIdsFromCategory(
       `[photo-reports/services-stats] Fetching services from category ${categoryId} for company ${companyId}`
     );
 
-    // Спробуємо різні endpoint'и для отримання послуг з категорії
+    // Спробуємо різні endpoint'и для отримання послуг
+    // Згідно з документацією: GET /company/{company_id}/services - отримує всі послуги, потім фільтруємо за category_id
     const attempts = [
+      {
+        name: "GET /company/{id}/services (then filter by category_id)",
+        url: `/company/${companyId}/services`,
+        filterByCategory: true,
+      },
+      {
+        name: "GET /services?company_id={id}",
+        url: `/services?company_id=${companyId}`,
+        filterByCategory: true,
+      },
       {
         name: "GET /company/{id}/service_category/{category_id}/services",
         url: `/company/${companyId}/service_category/${categoryId}/services`,
+        filterByCategory: false,
       },
       {
         name: "GET /service_category/{category_id}/services",
         url: `/service_category/${categoryId}/services?company_id=${companyId}`,
+        filterByCategory: false,
       },
       {
         name: "GET /company/{id}/services?category_id={id}",
         url: `/company/${companyId}/services?category_id=${categoryId}`,
+        filterByCategory: false,
       },
       {
         name: "GET /services?company_id={id}&category_id={id}",
         url: `/services?company_id=${companyId}&category_id=${categoryId}`,
+        filterByCategory: false,
       },
     ];
 
@@ -67,14 +82,31 @@ async function getServiceIdsFromCategory(
         }
 
         if (services.length > 0) {
+          // Якщо потрібно фільтрувати за category_id (отримали всі послуги)
+          if (attempt.filterByCategory) {
+            services = services.filter((s) => {
+              const serviceCategoryId =
+                s.category_id ||
+                s.service_category_id ||
+                s.category?.id ||
+                s.service_category?.id;
+              return serviceCategoryId === categoryId;
+            });
+            console.log(
+              `[photo-reports/services-stats] Filtered ${services.length} services from ${services.length} total by category_id ${categoryId}`
+            );
+          }
+
           const serviceIds = services
             .map((s) => s.id || s.service_id)
             .filter((id): id is number => typeof id === "number" && !isNaN(id));
 
-          console.log(
-            `[photo-reports/services-stats] ✅ Got ${serviceIds.length} service IDs from category ${categoryId} using ${attempt.name}`
-          );
-          return serviceIds;
+          if (serviceIds.length > 0) {
+            console.log(
+              `[photo-reports/services-stats] ✅ Got ${serviceIds.length} service IDs from category ${categoryId} using ${attempt.name}`
+            );
+            return serviceIds;
+          }
         }
       } catch (err) {
         console.warn(
