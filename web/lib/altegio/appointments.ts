@@ -52,9 +52,15 @@ export async function getAppointments(
       body?: any;
       useQuery?: boolean;
     }> = [
-      // 0. Schedule API — список запланованих записів та подій
+      // 0. Schedule API — список запланованих записів та подій (з документації)
       {
-        name: 'GET /schedule/events (Schedule API, recommended)',
+        name: 'GET /location/{id}/timetable_event_schedules/days/events (Schedule Events API)',
+        method: 'GET',
+        path: `/location/${companyId}/timetable_event_schedules/days/events`,
+        useQuery: true,
+      },
+      {
+        name: 'GET /schedule/events (Schedule API, fallback)',
         method: 'GET',
         path: `/schedule/events`,
         useQuery: true,
@@ -151,6 +157,10 @@ export async function getAppointments(
             // Schedule API очікує location_id
             queryParams.set('location_id', String(companyId));
           }
+          if (attempt.path.includes('/timetable_event_schedules/days/events')) {
+            // Додаємо параметри для timetable events API
+            // Можливо потрібні додаткові параметри для фільтрації за датою
+          }
         }
 
         const fullPath =
@@ -199,6 +209,15 @@ export async function getAppointments(
           // Schedule API: success/data, де data = events[]
           if (!appointments.length && obj.success === true && Array.isArray(obj.data?.events)) {
             appointments = obj.data.events;
+          }
+          
+          // Timetable Events API: можливо data містить масив events безпосередньо
+          if (!appointments.length && Array.isArray(obj.data) && obj.data.length > 0) {
+            // Перевіряємо, чи це events (мають поля типу datetime, service_id, тощо)
+            const firstItem = obj.data[0];
+            if (firstItem && (firstItem.datetime || firstItem.start_datetime || firstItem.service_id)) {
+              appointments = obj.data;
+            }
           }
         }
 
