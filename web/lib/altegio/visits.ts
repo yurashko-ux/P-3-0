@@ -54,9 +54,21 @@ export async function getVisits(
 ): Promise<Visit[]> {
   try {
     // Спробуємо різні варіанти endpoint для візитів
-    // Згідно з документацією: GET /company/{company_id}/visit/{visit_id} - для конкретного візиту
+    // Згідно з документації: GET /visit/details/{salon_id}/{record_id}/{visit_id} - для конкретного візиту
     // Для списку візитів спробуємо різні варіанти
     const attempts = [
+      {
+        name: 'GET /visit/details/{salon_id} (try to get list)',
+        method: 'GET' as const,
+        url: `/visit/details/${companyId}`,
+        queryParams: new URLSearchParams(),
+      },
+      {
+        name: 'GET /company/{id}/visit/details (list)',
+        method: 'GET' as const,
+        url: `/company/${companyId}/visit/details`,
+        queryParams: new URLSearchParams(),
+      },
       {
         name: 'GET /dashboard_records/{id} (from web interface)',
         method: 'GET' as const,
