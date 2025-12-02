@@ -222,9 +222,12 @@ export async function GET(req: NextRequest) {
     const pastDate = new Date(nowDate);
     pastDate.setDate(pastDate.getDate() - daysBack);
 
-    // dateTo має бути сьогодні (включно), а не вчора
+    // dateTo має бути сьогодні (включно) - використовуємо UTC для коректного форматування
     const dateFrom = pastDate.toISOString().split("T")[0];
-    const dateTo = nowDate.toISOString().split("T")[0];
+    // Додаємо 1 день до сьогоднішньої дати, щоб включити весь сьогоднішній день
+    const tomorrowDate = new Date(nowDate);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const dateTo = tomorrowDate.toISOString().split("T")[0];
 
     console.log(
       `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}, category ${categoryId}`
@@ -353,13 +356,13 @@ export async function GET(req: NextRequest) {
     }
 
     console.log(
-      `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio`
+      `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio API (after all attempts)`
     );
 
     // Якщо не отримали дані через API, спробуємо використати webhook дані
     if (appointments.length === 0) {
       console.log(
-        `[photo-reports/services-stats] No appointments from API, trying webhook data...`
+        `[photo-reports/services-stats] ⚠️ No appointments from API (all endpoints returned 404 or empty), trying webhook data fallback...`
       );
       try {
         const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
