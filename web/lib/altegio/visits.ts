@@ -94,11 +94,26 @@ export async function getVisits(
     ];
 
     // Додаємо параметри до query string
+    // Для dashboard_records використовуємо start_date та end_date (як у веб-інтерфейсі)
     if (options.dateFrom) {
-      attempts.forEach(attempt => attempt.queryParams.append('date_from', options.dateFrom!));
+      attempts.forEach(attempt => {
+        if (attempt.url.includes('dashboard_records')) {
+          // Для dashboard_records використовуємо start_date та end_date
+          attempt.queryParams.append('start_date', options.dateFrom!);
+        } else {
+          attempt.queryParams.append('date_from', options.dateFrom!);
+        }
+      });
     }
     if (options.dateTo) {
-      attempts.forEach(attempt => attempt.queryParams.append('date_to', options.dateTo!));
+      attempts.forEach(attempt => {
+        if (attempt.url.includes('dashboard_records')) {
+          // Для dashboard_records використовуємо start_date та end_date
+          attempt.queryParams.append('end_date', options.dateTo!);
+        } else {
+          attempt.queryParams.append('date_to', options.dateTo!);
+        }
+      });
     }
     if (options.status) {
       attempts.forEach(attempt => attempt.queryParams.append('status', options.status!));
