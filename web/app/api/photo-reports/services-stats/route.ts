@@ -371,7 +371,12 @@ export async function GET(req: NextRequest) {
               return null;
             }
           })
-          .filter((r) => r && r.visitId && r.datetime);
+          .filter((r) => {
+            if (!r || !r.visitId || !r.datetime) return false;
+            // Фільтруємо за періодом dateFrom - dateTo (включно)
+            const recordDate = new Date(r.datetime).toISOString().split("T")[0];
+            return recordDate >= dateFrom && recordDate <= dateTo;
+          });
 
         console.log(
           `[photo-reports/services-stats] Found ${records.length} records from webhook log`
