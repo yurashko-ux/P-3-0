@@ -259,11 +259,12 @@ export async function getVisitDetails(
 }
 
 /**
- * Отримує деталі конкретного візиту (старий метод для сумісності)
+ * Отримує деталі конкретного візиту (старий метод для сумісності, якщо немає recordId)
  * @param companyId - ID компанії
  * @param visitId - ID візиту
+ * @deprecated Використовуйте getVisitDetails(companyId, recordId, visitId) замість цього
  */
-export async function getVisitDetails(
+export async function getVisitDetailsLegacy(
   companyId: number,
   visitId: number
 ): Promise<Visit | null> {
