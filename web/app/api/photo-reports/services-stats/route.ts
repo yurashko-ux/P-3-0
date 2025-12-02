@@ -87,25 +87,22 @@ export async function GET(req: NextRequest) {
 
     // Отримуємо appointments з Altegio (використовуємо appointments замість visits, бо visits endpoint не працює)
     // Не використовуємо фільтр status=completed, бо він не підтримується API
-    // Спробуємо спочатку без includeService/includeStaff, бо вони можуть викликати 404
+    // Спробуємо спочатку БЕЗ жодних include параметрів, бо вони можуть викликати 404
     let appointments = await getAppointments(companyId, {
       dateFrom,
       dateTo,
-      includeClient: true,
-      includeService: true,
-      includeStaff: true,
+      // Не використовуємо include параметри - спробуємо отримати базові appointments
     });
 
-    // Якщо з includeService/includeStaff не спрацювало, спробуємо без них
+    // Якщо не спрацювало, спробуємо з includeClient (найпростіший варіант)
     if (appointments.length === 0) {
       console.log(
-        `[photo-reports/services-stats] No appointments with includeService/includeStaff, trying without them`
+        `[photo-reports/services-stats] No appointments without include, trying with includeClient only`
       );
       appointments = await getAppointments(companyId, {
         dateFrom,
         dateTo,
         includeClient: true,
-        // includeService та includeStaff можуть бути в appointment навіть без explicit include
       });
     }
 
@@ -132,11 +129,27 @@ export async function GET(req: NextRequest) {
       if (apt.service) {
         return isHairExtensionService(apt.service);
       }
-      // Якщо service не завантажено, але є service_id - пропускаємо (не можемо перевірити)
-      // Або можна спробувати отримати service окремо, але це складно
+      // Якщо service не завантажено, але є service_id - спробуємо використати service_id
+      // Але для цього потрібно знати ID послуги "Нарощування волосся"
       // Поки що пропускаємо appointments без service об'єкта
+      // TODO: Можна додати список service_id для "Нарощування волосся" для фільтрації
       return false;
     });
+    
+    // Логуємо приклад appointment для діагностики
+    if (completedAppointments.length > 0 && hairExtensionAppointments.length === 0) {
+      const sampleApt = completedAppointments[0];
+      console.log(
+        `[photo-reports/services-stats] Sample appointment structure:`,
+        {
+          id: sampleApt.id,
+          service_id: (sampleApt as any).service_id,
+          hasService: !!sampleApt.service,
+          serviceKeys: sampleApt.service ? Object.keys(sampleApt.service) : [],
+          allKeys: Object.keys(sampleApt),
+        }
+      );
+    }
 
     console.log(
       `[photo-reports/services-stats] Found ${hairExtensionAppointments.length} hair extension appointments`
