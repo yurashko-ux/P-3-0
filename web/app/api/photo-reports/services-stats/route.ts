@@ -228,6 +228,9 @@ export async function GET(req: NextRequest) {
     const dateTo = nowDate.toISOString().split("T")[0];
 
     console.log(
+      `[photo-reports/services-stats] 📅 Period calculation: nowDate=${nowDate.toISOString()}, dateFrom=${dateFrom}, dateTo=${dateTo}, daysBack=${daysBack}`
+    );
+    console.log(
       `[photo-reports/services-stats] Fetching appointments from ${dateFrom} to ${dateTo} for company ${companyId}, category ${categoryId}`
     );
 
