@@ -63,6 +63,7 @@ export default function PhotoReportsPage() {
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
   const [servicesStats, setServicesStats] = useState<ServicesStats | null>(null);
   const [isLoadingServicesStats, setIsLoadingServicesStats] = useState(false);
+  const [servicesStatsError, setServicesStatsError] = useState<string | null>(null);
   const [masters, setMasters] = useState<MasterProfile[]>([]);
 
   useEffect(() => {
@@ -133,14 +134,24 @@ export default function PhotoReportsPage() {
 
   const loadServicesStats = async () => {
     setIsLoadingServicesStats(true);
+    setServicesStatsError(null);
     try {
       const response = await fetch("/api/photo-reports/services-stats?daysBack=30");
       const data = await response.json();
 
+      console.log("[photo-reports] Services stats response:", data);
+
       if (data.ok && data.statsByMaster) {
         setServicesStats(data);
+        setServicesStatsError(null);
+      } else {
+        const errorMsg = data.error || "Невідома помилка";
+        setServicesStatsError(errorMsg);
+        console.error("Failed to load services stats:", data);
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setServicesStatsError(errorMsg);
       console.error("Failed to load services stats:", error);
     } finally {
       setIsLoadingServicesStats(false);
@@ -255,6 +266,16 @@ export default function PhotoReportsPage() {
             </button>
           </div>
         </div>
+
+        {servicesStatsError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+            <p className="font-semibold text-red-800">❌ Помилка завантаження послуг</p>
+            <p className="mt-1 text-sm text-red-700">{servicesStatsError}</p>
+            <p className="mt-2 text-xs text-red-600">
+              Перевір логи в консолі браузера (F12) або логи Vercel для деталей.
+            </p>
+          </div>
+        )}
 
         {analytics ? (
           <div className="space-y-6">
