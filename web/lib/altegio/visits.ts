@@ -56,6 +56,24 @@ export async function getVisits(
     // Для списку візитів спробуємо різні варіанти
     const attempts = [
       {
+        name: 'GET /dashboard_records/{id} (from web interface)',
+        method: 'GET' as const,
+        url: `/dashboard_records/${companyId}`,
+        queryParams: new URLSearchParams(),
+      },
+      {
+        name: 'GET /company/{id}/records',
+        method: 'GET' as const,
+        url: `/company/${companyId}/records`,
+        queryParams: new URLSearchParams(),
+      },
+      {
+        name: 'GET /records?company_id={id}',
+        method: 'GET' as const,
+        url: `/records`,
+        queryParams: new URLSearchParams(),
+      },
+      {
         name: 'GET /company/{id}/visits (list)',
         method: 'GET' as const,
         url: `/company/${companyId}/visits`,
@@ -116,10 +134,12 @@ export async function getVisits(
       });
     }
 
-    // Для другого варіанту додаємо company_id в query
-    if (attempts[1]) {
-      attempts[1].queryParams.append('company_id', String(companyId));
-    }
+    // Для endpoint'ів без company_id в URL додаємо company_id в query
+    attempts.forEach((attempt, index) => {
+      if (!attempt.url.includes(`/${companyId}/`) && !attempt.url.includes(`/${companyId}`)) {
+        attempt.queryParams.append('company_id', String(companyId));
+      }
+    });
 
     let lastError: Error | null = null;
 
