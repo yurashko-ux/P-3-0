@@ -97,18 +97,24 @@ export async function POST(req: NextRequest) {
       } else if (status === 'update' || status === 'create') {
         // Зберігаємо record event для статистики (навіть якщо в минулому)
         try {
+          // В webhook data.services - це масив, беремо перший service
+          const firstService = Array.isArray(data.services) && data.services.length > 0
+            ? data.services[0]
+            : data.service || null;
+
           const recordEvent = {
             visitId,
             status,
             datetime: data.datetime,
-            serviceId: data.service?.id || data.service_id,
-            serviceName: data.service?.title || data.service?.name,
+            serviceId: firstService?.id || data.service_id,
+            serviceName: firstService?.title || firstService?.name || data.service?.title || data.service?.name,
             staffId: data.staff?.id || data.staff_id,
             clientId: data.client?.id || data.client_id,
             companyId: data.company_id,
             receivedAt: new Date().toISOString(),
             data: {
-              service: data.service,
+              service: firstService || data.service,
+              services: data.services, // Зберігаємо весь масив services
               staff: data.staff,
               client: data.client,
             },
@@ -117,6 +123,7 @@ export async function POST(req: NextRequest) {
           await kvWrite.lpush('altegio:records:log', recordPayload);
           // Зберігаємо останні 10000 записів для статистики
           await kvWrite.ltrim('altegio:records:log', 0, 9999);
+          console.log(`[altegio/webhook] ✅ Saved record event for stats: visitId=${visitId}, serviceId=${recordEvent.serviceId}, serviceName=${recordEvent.serviceName}`);
         } catch (err) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }
