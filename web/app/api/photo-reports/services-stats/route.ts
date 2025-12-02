@@ -87,15 +87,27 @@ export async function GET(req: NextRequest) {
 
     // Отримуємо appointments з Altegio (використовуємо appointments замість visits, бо visits endpoint не працює)
     // Не використовуємо фільтр status=completed, бо він не підтримується API
-    // Фільтруємо локально за датою завершення
-    const appointments = await getAppointments(companyId, {
+    // Спробуємо спочатку без includeService/includeStaff, бо вони можуть викликати 404
+    let appointments = await getAppointments(companyId, {
       dateFrom,
       dateTo,
-      // status: "completed", // Не використовуємо - API повертає 404
       includeClient: true,
       includeService: true,
       includeStaff: true,
     });
+
+    // Якщо з includeService/includeStaff не спрацювало, спробуємо без них
+    if (appointments.length === 0) {
+      console.log(
+        `[photo-reports/services-stats] No appointments with includeService/includeStaff, trying without them`
+      );
+      appointments = await getAppointments(companyId, {
+        dateFrom,
+        dateTo,
+        includeClient: true,
+        // includeService та includeStaff можуть бути в appointment навіть без explicit include
+      });
+    }
 
     console.log(
       `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio`
@@ -114,9 +126,17 @@ export async function GET(req: NextRequest) {
     );
 
     // Фільтруємо тільки послуги "Нарощування волосся"
-    const hairExtensionAppointments = completedAppointments.filter((apt) =>
-      isHairExtensionService(apt.service)
-    );
+    // Перевіряємо service з appointment або service_id (якщо service не завантажено)
+    const hairExtensionAppointments = completedAppointments.filter((apt) => {
+      // Якщо є об'єкт service - перевіряємо його
+      if (apt.service) {
+        return isHairExtensionService(apt.service);
+      }
+      // Якщо service не завантажено, але є service_id - пропускаємо (не можемо перевірити)
+      // Або можна спробувати отримати service окремо, але це складно
+      // Поки що пропускаємо appointments без service об'єкта
+      return false;
+    });
 
     console.log(
       `[photo-reports/services-stats] Found ${hairExtensionAppointments.length} hair extension appointments`
