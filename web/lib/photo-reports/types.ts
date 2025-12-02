@@ -6,6 +6,8 @@ export type MasterProfile = {
   telegramUsername?: string;
   telegramChatId?: number;
   role: MasterRole;
+  // Маппінг з Altegio: staff_id з Altegio API
+  altegioStaffId?: number;
 };
 
 export type AppointmentReminder = {
