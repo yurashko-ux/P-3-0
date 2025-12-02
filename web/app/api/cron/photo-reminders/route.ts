@@ -43,10 +43,17 @@ function getCompanyId(req: NextRequest): number | null {
     if (!isNaN(parsed)) return parsed;
   }
 
-  // Спробуємо з ENV (може бути PARTNER_ID як company_id)
-  const envCompanyId = ALTEGIO_ENV.PARTNER_ID;
+  // Використовуємо ALTEGIO_COMPANY_ID (ID філії/салону), а не PARTNER_ID
+  const envCompanyId = process.env.ALTEGIO_COMPANY_ID;
   if (envCompanyId) {
     const parsed = parseInt(envCompanyId, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  // Fallback на PARTNER_ID, якщо ALTEGIO_COMPANY_ID не встановлено
+  const envPartnerId = ALTEGIO_ENV.PARTNER_ID;
+  if (envPartnerId) {
+    const parsed = parseInt(envPartnerId, 10);
     if (!isNaN(parsed)) return parsed;
   }
 
