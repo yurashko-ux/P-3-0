@@ -6,26 +6,121 @@ import { assertAltegioEnv } from "@/lib/altegio/env";
 import { getAppointments } from "@/lib/altegio/appointments";
 import { getVisits } from "@/lib/altegio/visits"; // Спробуємо visits як альтернативу
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
+import { altegioFetch } from "@/lib/altegio/client";
 import { findMasterByAltegioStaffId } from "@/lib/photo-reports/service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Перевіряє, чи назва послуги відповідає "Нарощування волосся"
+ * Отримує список service_id з категорії послуг
+ * @param companyId - ID компанії
+ * @param categoryId - ID категорії послуг (наприклад, 11928106)
  */
-function isHairExtensionService(service: any): boolean {
+async function getServiceIdsFromCategory(
+  companyId: number,
+  categoryId: number
+): Promise<number[]> {
+  try {
+    console.log(
+      `[photo-reports/services-stats] Fetching services from category ${categoryId} for company ${companyId}`
+    );
+
+    // Спробуємо різні endpoint'и для отримання послуг з категорії
+    const attempts = [
+      {
+        name: "GET /company/{id}/service_category/{category_id}/services",
+        url: `/company/${companyId}/service_category/${categoryId}/services`,
+      },
+      {
+        name: "GET /service_category/{category_id}/services",
+        url: `/service_category/${categoryId}/services?company_id=${companyId}`,
+      },
+      {
+        name: "GET /company/{id}/services?category_id={id}",
+        url: `/company/${companyId}/services?category_id=${categoryId}`,
+      },
+      {
+        name: "GET /services?company_id={id}&category_id={id}",
+        url: `/services?company_id=${companyId}&category_id=${categoryId}`,
+      },
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        console.log(
+          `[photo-reports/services-stats] Trying ${attempt.name}...`
+        );
+        const response = await altegioFetch<any>(attempt.url);
+
+        let services: any[] = [];
+        if (Array.isArray(response)) {
+          services = response;
+        } else if (response && typeof response === "object") {
+          if (Array.isArray(response.data)) {
+            services = response.data;
+          } else if (Array.isArray(response.services)) {
+            services = response.services;
+          } else if (Array.isArray(response.items)) {
+            services = response.items;
+          }
+        }
+
+        if (services.length > 0) {
+          const serviceIds = services
+            .map((s) => s.id || s.service_id)
+            .filter((id): id is number => typeof id === "number" && !isNaN(id));
+
+          console.log(
+            `[photo-reports/services-stats] ✅ Got ${serviceIds.length} service IDs from category ${categoryId} using ${attempt.name}`
+          );
+          return serviceIds;
+        }
+      } catch (err) {
+        console.warn(
+          `[photo-reports/services-stats] Failed with ${attempt.name}:`,
+          err instanceof Error ? err.message : String(err)
+        );
+        continue;
+      }
+    }
+
+    console.warn(
+      `[photo-reports/services-stats] Could not fetch services from category ${categoryId}, falling back to name-based filtering`
+    );
+    return [];
+  } catch (err) {
+    console.error(
+      `[photo-reports/services-stats] Error fetching services from category:`,
+      err
+    );
+    return [];
+  }
+}
+
+/**
+ * Перевіряє, чи послуга належить до потрібної категорії або відповідає назві "Нарощування волосся"
+ */
+function isHairExtensionService(
+  service: any,
+  allowedServiceIds: number[]
+): boolean {
   if (!service) return false;
 
+  // Якщо є список дозволених service_id, перевіряємо за ID
+  if (allowedServiceIds.length > 0) {
+    const serviceId = service.id || service.service_id;
+    if (serviceId && allowedServiceIds.includes(serviceId)) {
+      return true;
+    }
+  }
+
+  // Fallback: перевіряємо за назвою (якщо не вдалося отримати список з категорії)
   const serviceName =
-    service.title ||
-    service.name ||
-    service.service_name ||
-    "";
+    service.title || service.name || service.service_name || "";
 
   const normalized = serviceName.toLowerCase().trim();
 
-  // Перевіряємо різні варіанти назви
   return (
     normalized.includes("нарощування") ||
     normalized.includes("нарощення") ||
@@ -173,17 +268,18 @@ export async function GET(req: NextRequest) {
       `[photo-reports/services-stats] Found ${completedAppointments.length} completed appointments`
     );
 
-    // Фільтруємо тільки послуги "Нарощування волосся"
-    // Перевіряємо service з appointment або service_id (якщо service не завантажено)
+    // Фільтруємо тільки послуги з потрібної категорії
     const hairExtensionAppointments = completedAppointments.filter((apt) => {
       // Якщо є об'єкт service - перевіряємо його
       if (apt.service) {
-        return isHairExtensionService(apt.service);
+        return isHairExtensionService(apt.service, allowedServiceIds);
       }
-      // Якщо service не завантажено, але є service_id - спробуємо використати service_id
-      // Але для цього потрібно знати ID послуги "Нарощування волосся"
-      // Поки що пропускаємо appointments без service об'єкта
-      // TODO: Можна додати список service_id для "Нарощування волосся" для фільтрації
+      // Якщо service не завантажено, але є service_id - перевіряємо за ID
+      const serviceId = (apt as any).service_id;
+      if (serviceId && allowedServiceIds.length > 0) {
+        return allowedServiceIds.includes(serviceId);
+      }
+      // Якщо не вдалося отримати список service_id з категорії, пропускаємо
       return false;
     });
     
