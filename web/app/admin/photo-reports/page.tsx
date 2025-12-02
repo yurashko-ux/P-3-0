@@ -39,12 +39,28 @@ type Analytics = {
   recentReports: PhotoReport[];
 };
 
+type ServicesStats = {
+  statsByMaster: Array<{
+    masterId: string;
+    masterName: string;
+    count: number;
+  }>;
+  hairExtensionVisits: number;
+  period: {
+    daysBack: number;
+    dateFrom: string;
+    dateTo: string;
+  };
+};
+
 export default function PhotoReportsPage() {
   const [testResult, setTestResult] = useState<TestReminderResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [telegramUsername, setTelegramUsername] = useState("Mykolay007");
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [servicesStats, setServicesStats] = useState<ServicesStats | null>(null);
+  const [isLoadingServicesStats, setIsLoadingServicesStats] = useState(false);
   const [masters, setMasters] = useState<MasterProfile[]>([]);
 
   useEffect(() => {
@@ -110,6 +126,22 @@ export default function PhotoReportsPage() {
       console.error("Failed to load analytics:", error);
     } finally {
       setIsLoadingAnalytics(false);
+    }
+  };
+
+  const loadServicesStats = async () => {
+    setIsLoadingServicesStats(true);
+    try {
+      const response = await fetch("/api/photo-reports/services-stats?daysBack=30");
+      const data = await response.json();
+
+      if (data.ok && data.statsByMaster) {
+        setServicesStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to load services stats:", error);
+    } finally {
+      setIsLoadingServicesStats(false);
     }
   };
 
@@ -204,13 +236,22 @@ export default function PhotoReportsPage() {
           <h2 className="text-xl font-semibold text-slate-800">
             📊 Аналітика по майстрах
           </h2>
-          <button
-            onClick={loadAnalytics}
-            disabled={isLoadingAnalytics}
-            className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isLoadingAnalytics ? "Завантаження..." : "Оновити"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={loadServicesStats}
+              disabled={isLoadingServicesStats}
+              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoadingServicesStats ? "Завантаження..." : "Завантажити послуги"}
+            </button>
+            <button
+              onClick={loadAnalytics}
+              disabled={isLoadingAnalytics}
+              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoadingAnalytics ? "Завантаження..." : "Оновити звіти"}
+            </button>
+          </div>
         </div>
 
         {analytics ? (
@@ -228,33 +269,102 @@ export default function PhotoReportsPage() {
               <h3 className="mb-3 text-lg font-semibold text-slate-800">
                 По майстрах
               </h3>
+              {servicesStats && (
+                <p className="mb-3 text-sm text-slate-600">
+                  Період: останні {servicesStats.period.daysBack} днів (
+                  {servicesStats.period.dateFrom} - {servicesStats.period.dateTo})
+                  • Всього послуг "Нарощування волосся": {servicesStats.hairExtensionVisits}
+                </p>
+              )}
               <div className="grid gap-4 md:grid-cols-2">
                 {masters
                   .filter((m) => m.role === "master")
                   .map((master) => {
-                    const count =
+                    const reportsCount =
                       analytics.reportsByMaster[master.id] || 0;
+                    
+                    // Знаходимо статистику послуг для цього майстра
+                    const servicesCount =
+                      servicesStats?.statsByMaster.find(
+                        (s) => s.masterId === master.id
+                      )?.count || 0;
+
+                    // Обчислюємо відсоток покриття
+                    const coveragePercent =
+                      servicesCount > 0
+                        ? Math.round((reportsCount / servicesCount) * 100)
+                        : 0;
+
                     return (
                       <div
                         key={master.id}
                         className="rounded-lg border border-slate-200 bg-white p-4"
                       >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-semibold text-slate-800">
-                              {master.name}
+                        <div className="mb-3">
+                          <p className="font-semibold text-slate-800">
+                            {master.name}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {master.telegramUsername || "—"}
+                          </p>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* Фото-звіти */}
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-blue-600">
+                              {reportsCount}
+                            </p>
+                            <p className="text-xs text-slate-500">фото-звітів</p>
+                          </div>
+                          
+                          {/* Послуги надано */}
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-green-600">
+                              {servicesCount}
                             </p>
                             <p className="text-xs text-slate-500">
-                              {master.telegramUsername || "—"}
+                              послуг надано
                             </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-2xl font-bold text-blue-600">
-                              {count}
+                            <p className="mt-1 text-xs text-slate-400">
+                              (Нарощування)
                             </p>
-                            <p className="text-xs text-slate-500">звітів</p>
                           </div>
                         </div>
+
+                        {/* Покриття */}
+                        {servicesCount > 0 && (
+                          <div className="mt-3 border-t border-slate-200 pt-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-600">
+                                Покриття:
+                              </span>
+                              <span
+                                className={`text-sm font-semibold ${
+                                  coveragePercent >= 80
+                                    ? "text-green-600"
+                                    : coveragePercent >= 50
+                                    ? "text-yellow-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {coveragePercent}%
+                              </span>
+                            </div>
+                            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                              <div
+                                className={`h-full transition-all ${
+                                  coveragePercent >= 80
+                                    ? "bg-green-500"
+                                    : coveragePercent >= 50
+                                    ? "bg-yellow-500"
+                                    : "bg-red-500"
+                                }`}
+                                style={{ width: `${coveragePercent}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
