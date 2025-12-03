@@ -228,10 +228,13 @@ export async function GET(req: NextRequest) {
     const nowDate = new Date();
     const pastDate = new Date(nowDate);
     pastDate.setDate(pastDate.getDate() - daysBack);
+    
+    // Встановлюємо dateTo на поточну дату + 365 днів у майбутнє (щоб врахувати всі заплановані послуги)
+    const futureDate = new Date(nowDate);
+    futureDate.setDate(futureDate.getDate() + 365);
 
-    // dateTo встановлюємо на 04.12.2025 (включно)
     const dateFrom = pastDate.toISOString().split("T")[0];
-    const dateTo = "2025-12-04"; // Фіксована кінцева дата періоду
+    const dateTo = futureDate.toISOString().split("T")[0];
 
     console.log(
       `[photo-reports/services-stats] 📅 Period calculation: nowDate=${nowDate.toISOString()}, dateFrom=${dateFrom}, dateTo=${dateTo}, daysBack=${daysBack}`
@@ -314,10 +317,7 @@ export async function GET(req: NextRequest) {
           const datetime = data.datetime;
           if (!visitId || !datetime) continue;
 
-          // Фільтруємо за періодом dateFrom - dateTo (включно)
-          const recordDate = new Date(datetime).toISOString().split("T")[0];
-          const inPeriod = recordDate >= dateFrom && recordDate <= dateTo;
-          if (!inPeriod) continue;
+          // Прибрано фільтрацію за періодом - враховуємо всі записи
 
           if (body.status === "delete") {
             // Видалення з календаря — забираємо запис зі статистики
@@ -358,7 +358,7 @@ export async function GET(req: NextRequest) {
         const records = Object.values(recordMap);
 
         console.log(
-          `[photo-reports/services-stats] Built ${records.length} active records from webhook log (after applying create/update/delete, period ${dateFrom} - ${dateTo})`
+          `[photo-reports/services-stats] Built ${records.length} active records from webhook log (after applying create/update/delete, no date filter applied)`
         );
 
         // Конвертуємо webhook records в appointments формат
