@@ -270,12 +270,12 @@ export async function GET(req: NextRequest) {
         `[photo-reports/services-stats] ⚠️ No appointments from API (all endpoints returned 404 or empty), trying webhook data fallback...`
       );
       try {
-        const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
-        const records = recordsLogRaw
+        const webhookLogRaw = await kvRead.lrange("altegio:webhook:log", 0, 9999);
+        const records = webhookLogRaw
           .map((raw) => {
             try {
               const parsed = JSON.parse(raw);
-              // Upstash може повертати об'єкти виду { value: "..." }
+              // Upstash може повертати елементи як { value: "..." }
               if (
                 parsed &&
                 typeof parsed === "object" &&
@@ -293,16 +293,56 @@ export async function GET(req: NextRequest) {
               return null;
             }
           })
+          .map((e: any) => {
+            const body = e?.body || e;
+            if (!body || body.resource !== "record" || !body.data) return null;
+            const data = body.data;
+
+            const services = Array.isArray(data.services)
+              ? data.services
+              : data.service
+              ? [data.service]
+              : [];
+            const firstService = services[0] || null;
+
+            return {
+              visitId: data.visit_id || body.resource_id,
+              recordId: body.resource_id,
+              datetime: data.datetime,
+              serviceId: firstService?.id || data.service_id,
+              serviceName:
+                firstService?.title ||
+                firstService?.name ||
+                data.service?.title ||
+                data.service?.name,
+              staffId: data.staff?.id || data.staff_id,
+              clientId: data.client?.id || data.client_id,
+              companyId: data.company_id || body.company_id,
+              receivedAt: e.receivedAt || new Date().toISOString(),
+              data: {
+                service: firstService || data.service,
+                services,
+                staff: data.staff,
+                client: data.client,
+              },
+            };
+          })
           .filter((r) => {
             if (!r || !r.visitId || !r.datetime) {
-              console.log(`[photo-reports/services-stats] ⏭️ Skipping record: missing visitId or datetime`, { visitId: r?.visitId, datetime: r?.datetime });
+              console.log(
+                `[photo-reports/services-stats] ⏭️ Skipping record: missing visitId or datetime`,
+                { visitId: r?.visitId, datetime: r?.datetime }
+              );
               return false;
             }
             // Фільтруємо за періодом dateFrom - dateTo (включно)
             const recordDate = new Date(r.datetime).toISOString().split("T")[0];
             const inPeriod = recordDate >= dateFrom && recordDate <= dateTo;
             if (!inPeriod) {
-              console.log(`[photo-reports/services-stats] ⏭️ Skipping record: date ${recordDate} not in period ${dateFrom} - ${dateTo}`, { visitId: r.visitId, serviceId: r.serviceId });
+              console.log(
+                `[photo-reports/services-stats] ⏭️ Skipping record: date ${recordDate} not in period ${dateFrom} - ${dateTo}`,
+                { visitId: r.visitId, serviceId: r.serviceId }
+              );
             }
             return inPeriod;
           });
