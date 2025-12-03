@@ -345,7 +345,19 @@ export default function PhotoReportsPage() {
                   <div>
                     <p className="text-xs text-slate-500">Всього фото-звітів</p>
                     <p className="mt-1 text-xl font-bold text-blue-600">
-                      {analytics.totalReports}
+                      {(() => {
+                        // У робочому режимі рахуємо тільки фото-звіти для майстрів, які не є тестовими
+                        if (mode === "prod") {
+                          const filteredMasters = masters.filter(
+                            (m) => m.role === "master" && !isTestMaster(m)
+                          );
+                          return filteredMasters.reduce((sum, m) => {
+                            return sum + (analytics.reportsByMaster[m.id] || 0);
+                          }, 0);
+                        }
+                        // У тестовому режимі показуємо всі фото-звіти
+                        return analytics.totalReports;
+                      })()}
                     </p>
                   </div>
                   
