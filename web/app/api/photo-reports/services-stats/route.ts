@@ -361,6 +361,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Гарантуємо, що appointments - це масив (навіть якщо сталася помилка)
+    if (!Array.isArray(appointments)) {
+      console.warn(
+        `[photo-reports/services-stats] ⚠️ appointments is not an array, resetting to []`
+      );
+      appointments = [];
+    }
+
     console.log(
       `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio API (after all attempts)`
     );
