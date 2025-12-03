@@ -271,100 +271,95 @@ export async function GET(req: NextRequest) {
       );
       try {
         const webhookLogRaw = await kvRead.lrange("altegio:webhook:log", 0, 9999);
-        const records = webhookLogRaw
+
+        // 1) Парсимо log (з урахуванням формату { value: "..." })
+        const events = webhookLogRaw
           .map((raw) => {
             try {
               const parsed = JSON.parse(raw);
-              // Upstash може повертати елементи як { value: "..." }
               if (
                 parsed &&
                 typeof parsed === "object" &&
                 "value" in parsed &&
                 typeof parsed.value === "string"
               ) {
-                try {
-                  return JSON.parse(parsed.value);
-                } catch {
-                  return null;
-                }
+                return JSON.parse(parsed.value);
               }
               return parsed;
             } catch {
               return null;
             }
           })
-          .map((e: any) => {
-            const body = e?.body || e;
-            if (!body || body.resource !== "record" || !body.data) return null;
-            const data = body.data;
+          .filter(Boolean) as any[];
 
-            const services = Array.isArray(data.services)
-              ? data.services
-              : data.service
-              ? [data.service]
-              : [];
-            const firstService = services[0] || null;
+        // 2) Сортуємо за часом отримання (від старих до нових),
+        // щоб правильно врахувати каскад create/update/delete
+        events.sort((a, b) => {
+          const ta = new Date(a.receivedAt || 0).getTime();
+          const tb = new Date(b.receivedAt || 0).getTime();
+          return ta - tb;
+        });
 
-            return {
-              visitId: data.visit_id || body.resource_id,
-              recordId: body.resource_id,
-              datetime: data.datetime,
-              serviceId: firstService?.id || data.service_id,
-              serviceName:
-                firstService?.title ||
-                firstService?.name ||
-                data.service?.title ||
-                data.service?.name,
-              staffId: data.staff?.id || data.staff_id,
-              clientId: data.client?.id || data.client_id,
-              companyId: data.company_id || body.company_id,
-              receivedAt: e.receivedAt || new Date().toISOString(),
-              data: {
-                service: firstService || data.service,
-                services,
-                staff: data.staff,
-                client: data.client,
-              },
-            };
-          })
-          .filter((r) => {
-            if (!r || !r.visitId || !r.datetime) {
-              console.log(
-                `[photo-reports/services-stats] ⏭️ Skipping record: missing visitId or datetime`,
-                { visitId: r?.visitId, datetime: r?.datetime }
-              );
-              return false;
-            }
-            // Фільтруємо за періодом dateFrom - dateTo (включно)
-            const recordDate = new Date(r.datetime).toISOString().split("T")[0];
-            const inPeriod = recordDate >= dateFrom && recordDate <= dateTo;
-            if (!inPeriod) {
-              console.log(
-                `[photo-reports/services-stats] ⏭️ Skipping record: date ${recordDate} not in period ${dateFrom} - ${dateTo}`,
-                { visitId: r.visitId, serviceId: r.serviceId }
-              );
-            }
-            return inPeriod;
-          });
+        // 3) Будуємо фінальний стан записів:
+        // - create/update -> додаємо/оновлюємо запис
+        // - delete -> видаляємо його зі статистики
+        const recordMap: Record<string, any> = {};
+
+        for (const e of events) {
+          const body = e?.body || e;
+          if (!body || body.resource !== "record" || !body.data) continue;
+
+          const data = body.data;
+          const visitId = data.visit_id || body.resource_id;
+          const datetime = data.datetime;
+          if (!visitId || !datetime) continue;
+
+          // Фільтруємо за періодом dateFrom - dateTo (включно)
+          const recordDate = new Date(datetime).toISOString().split("T")[0];
+          const inPeriod = recordDate >= dateFrom && recordDate <= dateTo;
+          if (!inPeriod) continue;
+
+          if (body.status === "delete") {
+            // Видалення з календаря — забираємо запис зі статистики
+            delete recordMap[visitId];
+            continue;
+          }
+
+          const services = Array.isArray(data.services)
+            ? data.services
+            : data.service
+            ? [data.service]
+            : [];
+          const firstService = services[0] || null;
+
+          recordMap[visitId] = {
+            visitId,
+            recordId: body.resource_id,
+            datetime,
+            serviceId: firstService?.id || data.service_id,
+            serviceName:
+              firstService?.title ||
+              firstService?.name ||
+              data.service?.title ||
+              data.service?.name,
+            staffId: data.staff?.id || data.staff_id,
+            clientId: data.client?.id || data.client_id,
+            companyId: data.company_id || body.company_id,
+            receivedAt: e.receivedAt || new Date().toISOString(),
+            data: {
+              service: firstService || data.service,
+              services,
+              staff: data.staff,
+              client: data.client,
+            },
+          };
+        }
+
+        const records = Object.values(recordMap);
 
         console.log(
-          `[photo-reports/services-stats] Found ${records.length} records from webhook log (after filtering by period ${dateFrom} - ${dateTo})`
+          `[photo-reports/services-stats] Built ${records.length} active records from webhook log (after applying create/update/delete, period ${dateFrom} - ${dateTo})`
         );
-        
-        // Логуємо приклад records для діагностики
-        if (records.length > 0) {
-          const sampleRecord = records[0];
-          console.log(
-            `[photo-reports/services-stats] Sample record:`,
-            {
-              visitId: sampleRecord.visitId,
-              serviceId: sampleRecord.serviceId,
-              serviceName: sampleRecord.serviceName,
-              datetime: sampleRecord.datetime,
-              staffId: sampleRecord.staffId,
-            }
-          );
-        }
 
         // Конвертуємо webhook records в appointments формат
         appointments = records.map((r: any) => ({
