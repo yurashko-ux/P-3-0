@@ -325,19 +325,19 @@ export default function PhotoReportsPage() {
             <div className="rounded-lg bg-slate-50 p-4">
               {servicesStats && (
                 <div className="grid grid-cols-4 gap-4">
-                  {/* Всього фото-звітів */}
-                  <div>
-                    <p className="text-xs text-slate-500">Всього фото-звітів</p>
-                    <p className="mt-1 text-xl font-bold text-blue-600">
-                      {analytics.totalReports}
-                    </p>
-                  </div>
-                  
                   {/* Виконані послуги */}
                   <div>
                     <p className="text-xs text-slate-500">Виконані послуги</p>
                     <p className="mt-1 text-xl font-bold text-green-600">
                       {servicesStats.statsByMaster.reduce((sum, s) => sum + (s.count || 0), 0)}
+                    </p>
+                  </div>
+                  
+                  {/* Всього фото-звітів */}
+                  <div>
+                    <p className="text-xs text-slate-500">Всього фото-звітів</p>
+                    <p className="mt-1 text-xl font-bold text-blue-600">
+                      {analytics.totalReports}
                     </p>
                   </div>
                   
