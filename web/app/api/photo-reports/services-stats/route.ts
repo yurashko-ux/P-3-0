@@ -383,32 +383,28 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Визначаємо, які appointments вважаємо "завершеними"
-    let completedAppointments: any[];
+    // Розділяємо всі записи на "завершені" та "заплановані" відносно поточного часу
+    const now = new Date();
+    const completedAppointments = appointments.filter((apt) => {
+      const endDate = apt.end_datetime || apt.datetime || apt.date;
+      if (!endDate) return false;
+      const aptDate = new Date(endDate);
+      return aptDate < now;
+    });
 
-    if (includeFuture) {
-      // Для тестів/аналітики: включаємо ВСІ події у періоді (минулі + майбутні)
-      completedAppointments = appointments;
-      console.log(
-        `[photo-reports/services-stats] includeFuture=true, using all ${completedAppointments.length} appointments in period`
-      );
-    } else {
-      // У бойовому режимі: тільки ті, що вже відбулись
-      const now = new Date();
-      completedAppointments = appointments.filter((apt) => {
-        const endDate = apt.end_datetime || apt.datetime || apt.date;
-        if (!endDate) return false;
-        const aptDate = new Date(endDate);
-        return aptDate < now;
-      });
+    const plannedAppointments = appointments.filter((apt) => {
+      const endDate = apt.end_datetime || apt.datetime || apt.date;
+      if (!endDate) return false;
+      const aptDate = new Date(endDate);
+      return aptDate >= now;
+    });
 
-      console.log(
-        `[photo-reports/services-stats] includeFuture=false, found ${completedAppointments.length} completed appointments`
-      );
-    }
+    console.log(
+      `[photo-reports/services-stats] Completed appointments=${completedAppointments.length}, planned=${plannedAppointments.length}`
+    );
 
     // Фільтруємо тільки послуги з потрібної категорії
-    const hairExtensionAppointments = completedAppointments.filter((apt) => {
+    const hairExtensionAll = appointments.filter((apt) => {
       // Якщо є об'єкт service - перевіряємо його
       if (apt.service) {
         return isHairExtensionService(apt.service, allowedServiceIds);
@@ -422,9 +418,16 @@ export async function GET(req: NextRequest) {
       return false;
     });
     
+    const hairExtensionCompleted = completedAppointments.filter((apt) =>
+      hairExtensionAll.includes(apt)
+    );
+    const hairExtensionPlanned = plannedAppointments.filter((apt) =>
+      hairExtensionAll.includes(apt)
+    );
+
     // Логуємо приклад appointment для діагностики
-    if (completedAppointments.length > 0 && hairExtensionAppointments.length === 0) {
-      const sampleApt = completedAppointments[0];
+    if (hairExtensionAll.length > 0 && hairExtensionCompleted.length === 0) {
+      const sampleApt = hairExtensionAll[0];
       console.log(
         `[photo-reports/services-stats] Sample appointment structure:`,
         {
@@ -438,16 +441,17 @@ export async function GET(req: NextRequest) {
     }
 
     console.log(
-      `[photo-reports/services-stats] Found ${hairExtensionAppointments.length} hair extension appointments`
+      `[photo-reports/services-stats] Hair extensions: total=${hairExtensionAll.length}, completed=${hairExtensionCompleted.length}, planned=${hairExtensionPlanned.length}`
     );
 
     // Підраховуємо по майстрах
     const statsByMaster: Record<
       string,
-      { masterId: string; masterName: string; count: number }
+      { masterId: string; masterName: string; count: number; plannedCount: number }
     > = {};
 
-    for (const appointment of hairExtensionAppointments) {
+    // Завершені послуги
+    for (const appointment of hairExtensionCompleted) {
       const staffId = appointment.staff_id;
       if (!staffId) continue;
 
@@ -464,10 +468,36 @@ export async function GET(req: NextRequest) {
           masterId: master.id,
           masterName: master.name,
           count: 0,
+          plannedCount: 0,
         };
       }
 
       statsByMaster[master.id].count++;
+    }
+
+    // Заплановані послуги
+    for (const appointment of hairExtensionPlanned) {
+      const staffId = appointment.staff_id;
+      if (!staffId) continue;
+
+      const master = findMasterByAltegioStaffId(staffId);
+      if (!master) {
+        console.warn(
+          `[photo-reports/services-stats] Master not found for staff_id ${staffId}`
+        );
+        continue;
+      }
+
+      if (!statsByMaster[master.id]) {
+        statsByMaster[master.id] = {
+          masterId: master.id,
+          masterName: master.name,
+          count: 0,
+          plannedCount: 0,
+        };
+      }
+
+      statsByMaster[master.id].plannedCount++;
     }
 
     // Конвертуємо в масив
@@ -482,7 +512,7 @@ export async function GET(req: NextRequest) {
       },
       totalAppointments: appointments.length,
       completedAppointments: completedAppointments.length,
-      hairExtensionAppointments: hairExtensionAppointments.length,
+      hairExtensionAppointments: hairExtensionCompleted.length,
       statsByMaster: stats,
     });
   } catch (error) {

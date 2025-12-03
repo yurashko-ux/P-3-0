@@ -44,6 +44,7 @@ type ServicesStats = {
     masterId: string;
     masterName: string;
     count: number;
+    plannedCount?: number;
   }>;
   hairExtensionAppointments: number;
   completedAppointments: number;
@@ -355,10 +356,11 @@ export default function PhotoReportsPage() {
                       analytics.reportsByMaster[master.id] || 0;
                     
                     // Знаходимо статистику послуг для цього майстра
-                    const servicesCount =
-                      servicesStats?.statsByMaster.find(
-                        (s) => s.masterId === master.id
-                      )?.count || 0;
+                    const servicesEntry = servicesStats?.statsByMaster.find(
+                      (s) => s.masterId === master.id
+                    );
+                    const servicesCount = servicesEntry?.count || 0; // надано
+                    const plannedServicesCount = servicesEntry?.plannedCount || 0; // заплановано
 
                     // Обчислюємо відсоток покриття
                     const coveragePercent =
@@ -385,9 +387,12 @@ export default function PhotoReportsPage() {
                           <div className="text-center">
                             <p className="text-2xl font-bold text-green-600">
                               {servicesCount}
+                              <span className="text-base font-normal text-slate-400">
+                                {" / "}{plannedServicesCount}
+                              </span>
                             </p>
                             <p className="text-xs text-slate-500">
-                              послуг надано
+                              послуг надано / заплановано
                             </p>
                             <p className="mt-1 text-xs text-slate-400">
                               (Нарощування)
