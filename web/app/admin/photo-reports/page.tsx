@@ -329,6 +329,48 @@ export default function PhotoReportsPage() {
               <p className="mt-1 text-3xl font-bold text-slate-900">
                 {analytics.totalReports}
               </p>
+              
+              {servicesStats && (
+                <div className="mt-4 grid grid-cols-3 gap-4 border-t border-slate-200 pt-4">
+                  {/* Виконані послуги */}
+                  <div>
+                    <p className="text-xs text-slate-500">Виконані послуги</p>
+                    <p className="mt-1 text-xl font-bold text-green-600">
+                      {servicesStats.statsByMaster.reduce((sum, s) => sum + (s.count || 0), 0)}
+                    </p>
+                  </div>
+                  
+                  {/* Планові послуги */}
+                  <div>
+                    <p className="text-xs text-slate-500">Планові послуги</p>
+                    <p className="mt-1 text-xl font-bold text-slate-600">
+                      {servicesStats.statsByMaster.reduce((sum, s) => sum + (s.plannedCount || 0), 0)}
+                    </p>
+                  </div>
+                  
+                  {/* Загальне покриття */}
+                  <div>
+                    <p className="text-xs text-slate-500">Загальне покриття</p>
+                    {(() => {
+                      const totalCompletedServices = servicesStats.statsByMaster.reduce((sum, s) => sum + (s.count || 0), 0);
+                      const totalCoveragePercent = totalCompletedServices > 0
+                        ? Math.round((analytics.totalReports / totalCompletedServices) * 100)
+                        : 0;
+                      return (
+                        <p className={`mt-1 text-xl font-bold ${
+                          totalCoveragePercent >= 80
+                            ? "text-green-600"
+                            : totalCoveragePercent >= 50
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                        }`}>
+                          {totalCoveragePercent}%
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
