@@ -351,7 +351,8 @@ export async function GET(req: NextRequest) {
           `[photo-reports/services-stats] Appointments also failed:`,
           appointmentsError instanceof Error ? appointmentsError.message : String(appointmentsError)
         );
-        // Продовжуємо з порожнім масивом
+        // Встановлюємо appointments в порожній масив після помилки
+        appointments = [];
       }
     }
 
@@ -361,6 +362,9 @@ export async function GET(req: NextRequest) {
 
     // Якщо не отримали дані через API, спробуємо використати webhook дані
     if (appointments.length === 0) {
+      console.log(
+        `[photo-reports/services-stats] 🔍 Checking if fallback to webhook data is needed...`
+      );
       console.log(
         `[photo-reports/services-stats] ⚠️ No appointments from API (all endpoints returned 404 or empty), trying webhook data fallback...`
       );
