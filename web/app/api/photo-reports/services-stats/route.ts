@@ -294,18 +294,17 @@ export async function GET(req: NextRequest) {
             continue;
           }
         }
+        
+        console.log(
+          `[photo-reports/services-stats] After service_id loop: appointments.length=${appointments.length}`
+        );
       }
       
+      // Якщо не отримали дані через окремі запити, пробуємо загальні endpoint'и
       console.log(
-        `[photo-reports/services-stats] After service_id loop: appointments.length=${appointments.length}`
+        `[photo-reports/services-stats] Before general endpoints: appointments.length=${appointments.length}`
       );
-    }
-    
-    // Якщо не отримали дані через окремі запити, пробуємо загальні endpoint'и
-    console.log(
-      `[photo-reports/services-stats] Before general endpoints: appointments.length=${appointments.length}`
-    );
-    if (appointments.length === 0) {
+      if (appointments.length === 0) {
       try {
         console.log(
           `[photo-reports/services-stats] Trying to get visits (completed records) first...`
