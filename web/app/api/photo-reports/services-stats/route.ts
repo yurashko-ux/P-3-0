@@ -318,11 +318,16 @@ export async function GET(req: NextRequest) {
           `[photo-reports/services-stats] Visits failed, trying appointments:`,
           visitsError instanceof Error ? visitsError.message : String(visitsError)
         );
+        // Встановлюємо appointments в порожній масив після помилки visits
+        appointments = [];
       }
     }
     
     // Якщо visits не спрацювало, пробуємо appointments
     if (appointments.length === 0) {
+      console.log(
+        `[photo-reports/services-stats] appointments.length === 0, trying getAppointments...`
+      );
       try {
         console.log(
           `[photo-reports/services-stats] Trying to get appointments...`
