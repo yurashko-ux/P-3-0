@@ -295,8 +295,16 @@ export async function GET(req: NextRequest) {
           }
         }
       }
+      
+      console.log(
+        `[photo-reports/services-stats] After service_id loop: appointments.length=${appointments.length}`
+      );
+    }
     
     // Якщо не отримали дані через окремі запити, пробуємо загальні endpoint'и
+    console.log(
+      `[photo-reports/services-stats] Before general endpoints: appointments.length=${appointments.length}`
+    );
     if (appointments.length === 0) {
       try {
         console.log(
