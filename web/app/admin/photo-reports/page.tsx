@@ -340,14 +340,6 @@ export default function PhotoReportsPage() {
                         </div>
                         
                         <div className="grid grid-cols-2 gap-4">
-                          {/* Фото-звіти */}
-                          <div className="text-center">
-                            <p className="text-2xl font-bold text-blue-600">
-                              {reportsCount}
-                            </p>
-                            <p className="text-xs text-slate-500">фото-звітів</p>
-                          </div>
-                          
                           {/* Послуги надано */}
                           <div className="text-center">
                             <p className="text-2xl font-bold text-green-600">
@@ -359,6 +351,14 @@ export default function PhotoReportsPage() {
                             <p className="mt-1 text-xs text-slate-400">
                               (Нарощування)
                             </p>
+                          </div>
+
+                          {/* Фото-звіти */}
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-blue-600">
+                              {reportsCount}
+                            </p>
+                            <p className="text-xs text-slate-500">фото-звітів</p>
                           </div>
                         </div>
 
