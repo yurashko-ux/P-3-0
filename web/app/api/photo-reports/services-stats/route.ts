@@ -375,15 +375,37 @@ export async function GET(req: NextRequest) {
             }
           })
           .filter((r) => {
-            if (!r || !r.visitId || !r.datetime) return false;
+            if (!r || !r.visitId || !r.datetime) {
+              console.log(`[photo-reports/services-stats] ⏭️ Skipping record: missing visitId or datetime`, { visitId: r?.visitId, datetime: r?.datetime });
+              return false;
+            }
             // Фільтруємо за періодом dateFrom - dateTo (включно)
             const recordDate = new Date(r.datetime).toISOString().split("T")[0];
-            return recordDate >= dateFrom && recordDate <= dateTo;
+            const inPeriod = recordDate >= dateFrom && recordDate <= dateTo;
+            if (!inPeriod) {
+              console.log(`[photo-reports/services-stats] ⏭️ Skipping record: date ${recordDate} not in period ${dateFrom} - ${dateTo}`, { visitId: r.visitId, serviceId: r.serviceId });
+            }
+            return inPeriod;
           });
 
         console.log(
-          `[photo-reports/services-stats] Found ${records.length} records from webhook log`
+          `[photo-reports/services-stats] Found ${records.length} records from webhook log (after filtering by period ${dateFrom} - ${dateTo})`
         );
+        
+        // Логуємо приклад records для діагностики
+        if (records.length > 0) {
+          const sampleRecord = records[0];
+          console.log(
+            `[photo-reports/services-stats] Sample record:`,
+            {
+              visitId: sampleRecord.visitId,
+              serviceId: sampleRecord.serviceId,
+              serviceName: sampleRecord.serviceName,
+              datetime: sampleRecord.datetime,
+              staffId: sampleRecord.staffId,
+            }
+          );
+        }
 
         // Конвертуємо webhook records в appointments формат
         appointments = records.map((r: any) => ({
