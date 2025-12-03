@@ -55,6 +55,8 @@ type ServicesStats = {
   };
 };
 
+type AnalyticsMode = "prod" | "test";
+
 export default function PhotoReportsPage() {
   const [testResult, setTestResult] = useState<TestReminderResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -65,6 +67,7 @@ export default function PhotoReportsPage() {
   const [isLoadingServicesStats, setIsLoadingServicesStats] = useState(false);
   const [servicesStatsError, setServicesStatsError] = useState<string | null>(null);
   const [masters, setMasters] = useState<MasterProfile[]>([]);
+  const [mode, setMode] = useState<AnalyticsMode>("prod");
 
   useEffect(() => {
     // Завантажуємо майстрів при завантаженні сторінки
@@ -136,8 +139,9 @@ export default function PhotoReportsPage() {
     setIsLoadingServicesStats(true);
     setServicesStatsError(null);
     try {
+      const includeFuture = mode === "test";
       const response = await fetch(
-        "/api/photo-reports/services-stats?daysBack=30&includeFuture=true"
+        `/api/photo-reports/services-stats?daysBack=30&includeFuture=${includeFuture ? "true" : "false"}`
       );
       const data = await response.json();
 
@@ -158,6 +162,18 @@ export default function PhotoReportsPage() {
     } finally {
       setIsLoadingServicesStats(false);
     }
+  };
+
+  const isTestMaster = (master: MasterProfile) => {
+    const id = master.id.toLowerCase();
+    const name = master.name.toLowerCase();
+    const username = (master.telegramUsername || "").toLowerCase();
+    return (
+      id.includes("test") ||
+      name.includes("тест") ||
+      username.includes("test") ||
+      username.includes("mykolay007")
+    );
   };
 
   return (
@@ -251,21 +267,45 @@ export default function PhotoReportsPage() {
           <h2 className="text-xl font-semibold text-slate-800">
             📊 Аналітика по майстрах
           </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={loadServicesStats}
-              disabled={isLoadingServicesStats}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isLoadingServicesStats ? "Завантаження..." : "Завантажити послуги"}
-            </button>
-            <button
-              onClick={loadAnalytics}
-              disabled={isLoadingAnalytics}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isLoadingAnalytics ? "Завантаження..." : "Оновити звіти"}
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs">
+              <button
+                onClick={() => setMode("prod")}
+                className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                  mode === "prod"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Робочий режим
+              </button>
+              <button
+                onClick={() => setMode("test")}
+                className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                  mode === "test"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Тестовий
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={loadServicesStats}
+                disabled={isLoadingServicesStats}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isLoadingServicesStats ? "Завантаження..." : "Завантажити послуги"}
+              </button>
+              <button
+                onClick={loadAnalytics}
+                disabled={isLoadingAnalytics}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isLoadingAnalytics ? "Завантаження..." : "Оновити звіти"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -306,9 +346,10 @@ export default function PhotoReportsPage() {
                   )}
                 </p>
               )}
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
                 {masters
                   .filter((m) => m.role === "master")
+                  .filter((m) => (mode === "prod" ? !isTestMaster(m) : true))
                   .map((master) => {
                     const reportsCount =
                       analytics.reportsByMaster[master.id] || 0;
@@ -328,7 +369,7 @@ export default function PhotoReportsPage() {
                     return (
                       <div
                         key={master.id}
-                        className="rounded-lg border border-slate-200 bg-white p-4"
+                        className="rounded-lg border border-slate-200 bg-white p-3"
                       >
                         <div className="mb-3">
                           <p className="font-semibold text-slate-800">
@@ -339,7 +380,7 @@ export default function PhotoReportsPage() {
                           </p>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-3">
                           {/* Послуги надано */}
                           <div className="text-center">
                             <p className="text-2xl font-bold text-green-600">
