@@ -323,15 +323,16 @@ export default function PhotoReportsPage() {
         {analytics ? (
           <div className="space-y-6">
             <div className="rounded-lg bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-600">
-                Всього фото-звітів
-              </p>
-              <p className="mt-1 text-3xl font-bold text-slate-900">
-                {analytics.totalReports}
-              </p>
-              
               {servicesStats && (
-                <div className="mt-4 grid grid-cols-3 gap-4 border-t border-slate-200 pt-4">
+                <div className="grid grid-cols-4 gap-4">
+                  {/* Всього фото-звітів */}
+                  <div>
+                    <p className="text-xs text-slate-500">Всього фото-звітів</p>
+                    <p className="mt-1 text-xl font-bold text-blue-600">
+                      {analytics.totalReports}
+                    </p>
+                  </div>
+                  
                   {/* Виконані послуги */}
                   <div>
                     <p className="text-xs text-slate-500">Виконані послуги</p>
@@ -348,13 +349,18 @@ export default function PhotoReportsPage() {
                     </p>
                   </div>
                   
-                  {/* Загальне покриття */}
+                  {/* % фото-звітів */}
                   <div>
-                    <p className="text-xs text-slate-500">Загальне покриття</p>
+                    <p className="text-xs text-slate-500">% фото-звітів</p>
                     {(() => {
                       const totalCompletedServices = servicesStats.statsByMaster.reduce((sum, s) => sum + (s.count || 0), 0);
+                      // Рахуємо тільки фото-звіти по майстрах, які мають виконані послуги нарощування
+                      const totalReportsForHairExtension = servicesStats.statsByMaster.reduce((sum, s) => {
+                        const masterReports = analytics.reportsByMaster[s.masterId] || 0;
+                        return sum + masterReports;
+                      }, 0);
                       const totalCoveragePercent = totalCompletedServices > 0
-                        ? Math.round((analytics.totalReports / totalCompletedServices) * 100)
+                        ? Math.round((totalReportsForHairExtension / totalCompletedServices) * 100)
                         : 0;
                       return (
                         <p className={`mt-1 text-xl font-bold ${
