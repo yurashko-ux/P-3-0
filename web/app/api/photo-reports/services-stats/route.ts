@@ -369,7 +369,6 @@ export async function GET(req: NextRequest) {
         // Конвертуємо webhook records в appointments формат
         appointments = records.map((r: any) => ({
           id: r.visitId,
-          record_id: r.recordId,
           datetime: r.datetime,
           end_datetime: r.datetime,
           service_id: r.serviceId,
@@ -414,7 +413,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Фільтруємо тільки послуги з потрібної категорії
-    const hairExtensionAppointmentsRaw = completedAppointments.filter((apt) => {
+    const hairExtensionAppointments = completedAppointments.filter((apt) => {
       // Якщо є об'єкт service - перевіряємо його
       if (apt.service) {
         return isHairExtensionService(apt.service, allowedServiceIds);
@@ -427,34 +426,6 @@ export async function GET(req: NextRequest) {
       // Якщо не вдалося отримати список service_id з категорії, пропускаємо
       return false;
     });
-
-    // Якщо один і той самий клієнт у той самий час має декілька записів
-    // на нарощування (2 майстри на одного клієнта) – вважаємо це однією
-    // послугою та закріплюємо її за тим майстром, у кого запис створено раніше
-    // (менший record_id).
-    const dedupeMap: Record<string, any> = {};
-    for (const apt of hairExtensionAppointmentsRaw) {
-      const clientId = (apt as any).client_id || "unknown";
-      const serviceId = (apt as any).service_id || "unknown";
-      const datetime =
-        (apt as any).datetime ||
-        (apt as any).end_datetime ||
-        (apt as any).date ||
-        "unknown";
-      const key = `${clientId}|${serviceId}|${datetime}`;
-
-      const existing = dedupeMap[key];
-      if (
-        !existing ||
-        ((apt as any).record_id &&
-          (!(existing as any).record_id ||
-            (apt as any).record_id < (existing as any).record_id))
-      ) {
-        dedupeMap[key] = apt;
-      }
-    }
-
-    const hairExtensionAppointments = Object.values(dedupeMap);
     
     // Логуємо приклад appointment для діагностики
     if (completedAppointments.length > 0 && hairExtensionAppointments.length === 0) {
@@ -472,7 +443,7 @@ export async function GET(req: NextRequest) {
     }
 
     console.log(
-      `[photo-reports/services-stats] Found ${hairExtensionAppointmentsRaw.length} raw hair extension appointments, ${hairExtensionAppointments.length} after dedupe`
+      `[photo-reports/services-stats] Found ${hairExtensionAppointments.length} hair extension appointments`
     );
 
     // Підраховуємо по майстрах
