@@ -212,6 +212,11 @@ export async function GET(req: NextRequest) {
       10
     );
 
+    // Прапорець: включати майбутні послуги чи тільки завершені
+    const includeFutureParam = req.nextUrl.searchParams.get("includeFuture");
+    const includeFuture =
+      includeFutureParam === "true" || includeFutureParam === "1";
+
     // Отримуємо category_id з параметрів або ENV (ID категорії "Нарощування волосся")
     const categoryIdParam = req.nextUrl.searchParams.get("category_id");
     const categoryId = categoryIdParam
@@ -325,23 +330,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Фільтруємо тільки завершені appointments (дата в минулому або сьогодні)
-    // Для статистики включаємо також події, які вже відбулися сьогодні
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const completedAppointments = appointments.filter((apt) => {
-      const endDate = apt.end_datetime || apt.datetime || apt.date;
-      if (!endDate) return false;
-      const aptDate = new Date(endDate);
-      // Включаємо appointments, які вже відбулися (в минулому або сьогодні до поточного часу)
-      return aptDate < now;
-    });
+    // Визначаємо, які appointments вважаємо "завершеними"
+    let completedAppointments: any[];
 
-    console.log(
-      `[photo-reports/services-stats] Found ${completedAppointments.length} completed appointments`
-    );
+    if (includeFuture) {
+      // Для тестів/аналітики: включаємо ВСІ події у періоді (минулі + майбутні)
+      completedAppointments = appointments;
+      console.log(
+        `[photo-reports/services-stats] includeFuture=true, using all ${completedAppointments.length} appointments in period`
+      );
+    } else {
+      // У бойовому режимі: тільки ті, що вже відбулись
+      const now = new Date();
+      completedAppointments = appointments.filter((apt) => {
+        const endDate = apt.end_datetime || apt.datetime || apt.date;
+        if (!endDate) return false;
+        const aptDate = new Date(endDate);
+        return aptDate < now;
+      });
+
+      console.log(
+        `[photo-reports/services-stats] includeFuture=false, found ${completedAppointments.length} completed appointments`
+      );
+    }
 
     // Фільтруємо тільки послуги з потрібної категорії
     const hairExtensionAppointments = completedAppointments.filter((apt) => {

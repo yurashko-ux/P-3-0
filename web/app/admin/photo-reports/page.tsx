@@ -136,7 +136,9 @@ export default function PhotoReportsPage() {
     setIsLoadingServicesStats(true);
     setServicesStatsError(null);
     try {
-      const response = await fetch("/api/photo-reports/services-stats?daysBack=30");
+      const response = await fetch(
+        "/api/photo-reports/services-stats?daysBack=30&includeFuture=true"
+      );
       const data = await response.json();
 
       console.log("[photo-reports] Services stats response:", data);
