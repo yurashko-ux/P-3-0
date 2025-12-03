@@ -251,8 +251,9 @@ export async function GET(req: NextRequest) {
     // Спробуємо отримати дані для кожного service_id окремо, якщо загальні endpoint'и не працюють
     let appointments: any[] = [];
     
-    // Якщо отримали список service_id, спробуємо отримати дані для кожного service_id окремо
-    if (allowedServiceIds.length > 0) {
+    try {
+      // Якщо отримали список service_id, спробуємо отримати дані для кожного service_id окремо
+      if (allowedServiceIds.length > 0) {
       console.log(
         `[photo-reports/services-stats] Trying to get visits/appointments for each service_id separately...`
       );
@@ -361,17 +362,27 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Гарантуємо, що appointments - це масив (навіть якщо сталася помилка)
-    if (!Array.isArray(appointments)) {
-      console.warn(
-        `[photo-reports/services-stats] ⚠️ appointments is not an array, resetting to []`
+      // Гарантуємо, що appointments - це масив (навіть якщо сталася помилка)
+      if (!Array.isArray(appointments)) {
+        console.warn(
+          `[photo-reports/services-stats] ⚠️ appointments is not an array, resetting to []`
+        );
+        appointments = [];
+      }
+
+      console.log(
+        `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio API (after all attempts)`
+      );
+    } catch (allApiErrors) {
+      console.error(
+        `[photo-reports/services-stats] ⚠️ All API attempts failed, resetting appointments to []:`,
+        allApiErrors instanceof Error ? allApiErrors.message : String(allApiErrors)
       );
       appointments = [];
+      console.log(
+        `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio API (after all attempts - all failed)`
+      );
     }
-
-    console.log(
-      `[photo-reports/services-stats] Got ${appointments.length} appointments from Altegio API (after all attempts)`
-    );
 
     // Якщо не отримали дані через API, спробуємо використати webhook дані
     if (appointments.length === 0) {
