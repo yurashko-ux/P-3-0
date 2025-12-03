@@ -332,22 +332,22 @@ export default function PhotoReportsPage() {
             </div>
 
             <div>
-              <h3 className="mb-3 text-lg font-semibold text-slate-800">
+              <h3 className="mb-2 text-base font-semibold text-slate-800">
                 По майстрах
               </h3>
               {servicesStats && (
-                <p className="mb-3 text-sm text-slate-600">
+                <p className="mb-2 text-xs text-slate-600">
                   Період: останні {servicesStats.period.daysBack} днів (
                   {servicesStats.period.dateFrom} - {servicesStats.period.dateTo})
                   • Всього послуг "Нарощування волосся": {servicesStats.hairExtensionAppointments}
                   {servicesStats.completedAppointments > 0 && (
-                    <span className="ml-2 text-slate-400">
-                      (з {servicesStats.completedAppointments} завершених записів)
+                    <span className="ml-1 text-slate-400">
+                      (з {servicesStats.completedAppointments} завершених)
                     </span>
                   )}
                 </p>
               )}
-              <div className="space-y-3">
+              <div className="space-y-1.5">
                 {masters
                   .filter((m) => m.role === "master")
                   .filter((m) => (mode === "prod" ? !isTestMaster(m) : true))
@@ -371,55 +371,46 @@ export default function PhotoReportsPage() {
                     return (
                       <div
                         key={master.id}
-                        className="rounded-lg border border-slate-200 bg-white p-3"
+                        className="rounded border border-slate-200 bg-white p-2"
                       >
-                        <div className="mb-3">
-                          <p className="font-semibold text-slate-800">
-                            {master.name}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {master.telegramUsername || "—"}
-                          </p>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {master.name}
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              {master.telegramUsername || "—"}
+                            </p>
+                          </div>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-3 gap-2">
                           {/* Послуги надано / заплановано */}
                           <div className="text-center">
-                            <p className="text-2xl font-bold text-green-600">
+                            <p className="text-lg font-bold text-green-600">
                               {servicesCount}
-                              <span className="text-lg font-semibold text-slate-500">
-                                {" / "}
-                              </span>
-                              <span className="text-xl font-bold text-slate-600">
-                                {plannedServicesCount}
+                              <span className="text-sm font-normal text-slate-400">
+                                /{plannedServicesCount}
                               </span>
                             </p>
-                            <p className="text-xs text-slate-500">
-                              послуг надано / заплановано
-                            </p>
-                            <p className="mt-1 text-xs text-slate-400">
-                              (Нарощування)
+                            <p className="text-[10px] text-slate-500">
+                              послуг
                             </p>
                           </div>
 
                           {/* Фото-звіти */}
                           <div className="text-center">
-                            <p className="text-2xl font-bold text-blue-600">
+                            <p className="text-lg font-bold text-blue-600">
                               {reportsCount}
                             </p>
-                            <p className="text-xs text-slate-500">фото-звітів</p>
+                            <p className="text-[10px] text-slate-500">фото</p>
                           </div>
-                        </div>
 
-                        {/* Покриття */}
-                        {servicesCount > 0 && (
-                          <div className="mt-3 border-t border-slate-200 pt-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-slate-600">
-                                Покриття:
-                              </span>
-                              <span
-                                className={`text-sm font-semibold ${
+                          {/* Покриття */}
+                          {servicesCount > 0 ? (
+                            <div className="text-center">
+                              <p
+                                className={`text-sm font-bold ${
                                   coveragePercent >= 80
                                     ? "text-green-600"
                                     : coveragePercent >= 50
@@ -428,22 +419,28 @@ export default function PhotoReportsPage() {
                                 }`}
                               >
                                 {coveragePercent}%
-                              </span>
+                              </p>
+                              <p className="text-[10px] text-slate-500">покриття</p>
+                              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className={`h-full transition-all ${
+                                    coveragePercent >= 80
+                                      ? "bg-green-500"
+                                      : coveragePercent >= 50
+                                      ? "bg-yellow-500"
+                                      : "bg-red-500"
+                                  }`}
+                                  style={{ width: `${coveragePercent}%` }}
+                                />
+                              </div>
                             </div>
-                            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                              <div
-                                className={`h-full transition-all ${
-                                  coveragePercent >= 80
-                                    ? "bg-green-500"
-                                    : coveragePercent >= 50
-                                    ? "bg-yellow-500"
-                                    : "bg-red-500"
-                                }`}
-                                style={{ width: `${coveragePercent}%` }}
-                              />
+                          ) : (
+                            <div className="text-center">
+                              <p className="text-sm font-bold text-slate-400">—</p>
+                              <p className="text-[10px] text-slate-400">покриття</p>
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     );
                   })}
