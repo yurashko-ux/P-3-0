@@ -404,44 +404,45 @@ export async function GET(req: NextRequest) {
     );
 
     // Фільтруємо тільки послуги з потрібної категорії
-    const hairExtensionAll = appointments.filter((apt) => {
+    const isHairExtension = (apt: any) => {
       // Якщо є об'єкт service - перевіряємо його
       if (apt.service) {
         return isHairExtensionService(apt.service, allowedServiceIds);
       }
       // Якщо service не завантажено, але є service_id - перевіряємо за ID
-      const serviceId = (apt as any).service_id;
+      const serviceId = apt.service_id;
       if (serviceId && allowedServiceIds.length > 0) {
         return allowedServiceIds.includes(serviceId);
       }
       // Якщо не вдалося отримати список service_id з категорії, пропускаємо
       return false;
-    });
+    };
+
+    // Спочатку фільтруємо по типу послуги, потім розділяємо на завершені/заплановані
+    const hairExtensionCompleted = completedAppointments.filter(isHairExtension);
+    const hairExtensionPlanned = plannedAppointments.filter(isHairExtension);
     
-    const hairExtensionCompleted = completedAppointments.filter((apt) =>
-      hairExtensionAll.includes(apt)
-    );
-    const hairExtensionPlanned = plannedAppointments.filter((apt) =>
-      hairExtensionAll.includes(apt)
-    );
+    const hairExtensionAll = hairExtensionCompleted.length + hairExtensionPlanned.length;
 
     // Логуємо приклад appointment для діагностики
-    if (hairExtensionAll.length > 0 && hairExtensionCompleted.length === 0) {
-      const sampleApt = hairExtensionAll[0];
-      console.log(
-        `[photo-reports/services-stats] Sample appointment structure:`,
-        {
-          id: sampleApt.id,
-          service_id: (sampleApt as any).service_id,
-          hasService: !!sampleApt.service,
-          serviceKeys: sampleApt.service ? Object.keys(sampleApt.service) : [],
-          allKeys: Object.keys(sampleApt),
-        }
-      );
+    if (hairExtensionAll > 0 && hairExtensionCompleted.length === 0 && hairExtensionPlanned.length === 0) {
+      const sampleApt = completedAppointments[0] || plannedAppointments[0];
+      if (sampleApt) {
+        console.log(
+          `[photo-reports/services-stats] Sample appointment structure:`,
+          {
+            id: sampleApt.id,
+            service_id: (sampleApt as any).service_id,
+            hasService: !!sampleApt.service,
+            serviceKeys: sampleApt.service ? Object.keys(sampleApt.service) : [],
+            allKeys: Object.keys(sampleApt),
+          }
+        );
+      }
     }
 
     console.log(
-      `[photo-reports/services-stats] Hair extensions: total=${hairExtensionAll.length}, completed=${hairExtensionCompleted.length}, planned=${hairExtensionPlanned.length}`
+      `[photo-reports/services-stats] Hair extensions: total=${hairExtensionAll}, completed=${hairExtensionCompleted.length}, planned=${hairExtensionPlanned.length}`
     );
 
     // Підраховуємо по майстрах
