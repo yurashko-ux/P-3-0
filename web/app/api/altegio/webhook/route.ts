@@ -408,7 +408,21 @@ export async function GET(req: NextRequest) {
       savedRecords = recordsLogRaw
         .map((raw) => {
           try {
-            return JSON.parse(raw);
+            const parsed = JSON.parse(raw);
+            // Upstash може повертати елементи як { value: "..." }
+            if (
+              parsed &&
+              typeof parsed === 'object' &&
+              'value' in parsed &&
+              typeof parsed.value === 'string'
+            ) {
+              try {
+                return JSON.parse(parsed.value);
+              } catch {
+                return null;
+              }
+            }
+            return parsed;
           } catch {
             return null;
           }
