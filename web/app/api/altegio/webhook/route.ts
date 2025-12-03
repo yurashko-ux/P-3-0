@@ -44,11 +44,13 @@ export async function POST(req: NextRequest) {
 
     // Обробка подій по записах (record)
     if (body.resource === 'record') {
-      const visitId = body.resource_id;
+      const recordId = body.resource_id; // Це record_id, а не visit_id
+      const visitId = body.data?.visit_id || body.resource_id; // Використовуємо data.visit_id якщо є
       const status = body.status; // 'create', 'update', 'delete'
       const data = body.data || {};
 
       console.log('[altegio/webhook] Processing record event:', {
+        recordId,
         visitId,
         status,
         hasData: !!data,
@@ -56,6 +58,8 @@ export async function POST(req: NextRequest) {
         datetime: data.datetime,
         hasClient: !!data.client,
         clientKeys: data.client ? Object.keys(data.client) : [],
+        hasServices: Array.isArray(data.services) && data.services.length > 0,
+        servicesCount: Array.isArray(data.services) ? data.services.length : 0,
       });
 
       if (status === 'delete') {
@@ -103,7 +107,8 @@ export async function POST(req: NextRequest) {
             : data.service || null;
 
           const recordEvent = {
-            visitId,
+            visitId: visitId, // Використовуємо правильний visit_id
+            recordId: recordId, // Також зберігаємо record_id для діагностики
             status,
             datetime: data.datetime,
             serviceId: firstService?.id || data.service_id,
@@ -123,7 +128,7 @@ export async function POST(req: NextRequest) {
           await kvWrite.lpush('altegio:records:log', recordPayload);
           // Зберігаємо останні 10000 записів для статистики
           await kvWrite.ltrim('altegio:records:log', 0, 9999);
-          console.log(`[altegio/webhook] ✅ Saved record event for stats: visitId=${visitId}, serviceId=${recordEvent.serviceId}, serviceName=${recordEvent.serviceName}`);
+          console.log(`[altegio/webhook] ✅ Saved record event for stats: visitId=${visitId}, recordId=${recordId}, serviceId=${recordEvent.serviceId}, serviceName=${recordEvent.serviceName}, datetime=${data.datetime}`);
         } catch (err) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }
