@@ -10,7 +10,10 @@ import {
   convertAltegioAppointmentToReminder,
 } from "@/lib/photo-reports/service";
 import { getChatIdForMaster } from "@/lib/photo-reports/master-registry";
-import { sendReminderMessage } from "@/lib/photo-reports/reminders";
+import {
+  sendReminderMessage,
+  notifyAdminsPlaceholder,
+} from "@/lib/photo-reports/reminders";
 import { getPhotoReportByAppointmentId } from "@/lib/photo-reports/store";
 
 export const runtime = "nodejs";
@@ -114,14 +117,40 @@ export async function POST(req: NextRequest) {
       `[cron/photo-reminders] Fetching appointments from ${dateFrom} to ${dateTo}`
     );
 
-    const appointments = await getAppointments(companyId, {
+    const rawAppointments = await getAppointments(companyId, {
       dateFrom,
       dateTo,
       includeClient: true,
     });
 
     console.log(
-      `[cron/photo-reminders] Got ${appointments.length} appointments from Altegio`
+      `[cron/photo-reminders] Got ${rawAppointments.length} appointments from Altegio (before dedupe)`
+    );
+
+    // Дедуплікуємо випадки, коли одного й того ж клієнта на ту ж послугу/час
+    // записали до кількох майстрів. Залишаємо той запис, у якого менший id
+    // (вважаємо, що він створений раніше).
+    const dedupeMap: Record<string, any> = {};
+    for (const apt of rawAppointments) {
+      const clientId = (apt as any).client_id || "unknown";
+      const serviceId = (apt as any).service_id || "unknown";
+      const datetime =
+        (apt as any).datetime ||
+        (apt as any).start_datetime ||
+        (apt as any).date ||
+        "unknown";
+
+      const key = `${clientId}|${serviceId}|${datetime}`;
+      const existing = dedupeMap[key];
+      if (!existing || (apt.id && apt.id < existing.id)) {
+        dedupeMap[key] = apt;
+      }
+    }
+
+    const appointments = Object.values(dedupeMap);
+
+    console.log(
+      `[cron/photo-reminders] Using ${appointments.length} appointments after dedupe`
     );
 
     const results = {
@@ -213,12 +242,29 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Відправляємо нагадування
+        // Відправляємо нагадування майстру
         console.log(
           `[cron/photo-reminders] Sending reminder for appointment ${appointment.id} to master ${master.name} (chatId: ${chatId})`
         );
 
         await sendReminderMessage(chatId, reminder);
+
+        // Паралельно сповіщаємо адміністратора(ів) тим самим контекстом
+        await notifyAdminsPlaceholder(
+          [
+            "📸 <b>Нове нагадування про фото-звіт</b>",
+            "",
+            `<b>Майстер:</b> ${master.name}`,
+            `<b>Клієнт:</b> ${reminder.clientName}`,
+            `<b>Послуга:</b> ${reminder.serviceName}`,
+            `<b>Закінчується о:</b> ${new Date(
+              reminder.endAt
+            ).toLocaleTimeString("uk-UA", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}`,
+          ].join("\n")
+        );
 
         results.sent++;
         console.log(
