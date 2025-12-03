@@ -141,7 +141,7 @@ function isHairExtensionService(
 ): boolean {
   if (!service) return false;
 
-  // Якщо є список дозволених service_id, перевіряємо за ID
+  // Якщо є список дозволених service_id, намагаємось спочатку перевірити за ID
   if (allowedServiceIds.length > 0) {
     const serviceId = service.id || service.service_id;
     if (serviceId && allowedServiceIds.includes(serviceId)) {
@@ -149,7 +149,9 @@ function isHairExtensionService(
     }
   }
 
-  // Fallback: перевіряємо за назвою (якщо не вдалося отримати список з категорії)
+  // Fallback: у будь‑якому разі перевіряємо за назвою.
+  // Це дозволяє підхопити нові послуги з "нарощуванням", навіть якщо їх service_id
+  // ще не потрапив у категорію або категорія змінилась.
   const serviceName =
     service.title || service.name || service.service_name || "";
 
