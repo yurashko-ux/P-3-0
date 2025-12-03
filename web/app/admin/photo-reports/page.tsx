@@ -379,9 +379,7 @@ export default function PhotoReportsPage() {
               </h3>
               {servicesStats && (
                 <p className="mb-2 text-xs text-slate-600">
-                  Період: останні {servicesStats.period.daysBack} днів (
-                  {servicesStats.period.dateFrom} - {servicesStats.period.dateTo})
-                  • Всього послуг "Нарощування волосся": {servicesStats.hairExtensionAppointments}
+                  Всього послуг "Нарощування волосся": {servicesStats.hairExtensionAppointments}
                   {servicesStats.completedAppointments > 0 && (
                     <span className="ml-1 text-slate-400">
                       (з {servicesStats.completedAppointments} завершених)
