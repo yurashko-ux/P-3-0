@@ -277,11 +277,14 @@ export async function fetchGoodsSalesSummary(params: {
   if (calculatedCost === null && sales.length > 0) {
     // Перевіряємо, чи є в транзакціях продажу поля, що можуть містити собівартість
     const sampleSale = sales[0];
-    const possibleCostFields = Object.keys(sampleSale).filter(key => 
+    const allKeys = Object.keys(sampleSale);
+    console.log(`[altegio/inventory] All keys in sales transaction:`, allKeys);
+    
+    const possibleCostFields = allKeys.filter(key => 
       key.toLowerCase().includes('wholesale') || 
       key.toLowerCase().includes('purchase') ||
       key.toLowerCase().includes('buy') ||
-      (key.toLowerCase().includes('cost') && !key.toLowerCase().includes('per'))
+      (key.toLowerCase().includes('cost') && !key.toLowerCase().includes('per') && !key.toLowerCase().includes('total'))
     );
     
     if (possibleCostFields.length > 0) {
@@ -291,6 +294,12 @@ export async function fetchGoodsSalesSummary(params: {
         for (const field of possibleCostFields) {
           const value = Number((t as any)[field]) || 0;
           if (value > 0) {
+            // Якщо це поле на одиницю, множимо на amount
+            const amount = Math.abs(Number(t.amount) || 0);
+            if (field.toLowerCase().includes('per') || field.toLowerCase().includes('unit')) {
+              return sum + (value * amount);
+            }
+            // Інакше це загальна сума
             return sum + Math.abs(value);
           }
         }
@@ -303,8 +312,65 @@ export async function fetchGoodsSalesSummary(params: {
       }
     }
     
-    // Якщо не знайшли окремі поля, спробуємо використати cost_per_unit як собівартість
-    // (якщо в налаштуваннях API cost_per_unit тепер містить оптову ціну)
+    // Варіант 2.1: Спробуємо знайти собівартість через зв'язок з транзакціями закупки
+    // Для кожного проданого товару шукаємо останню ціну закупки
+    if (calculatedCost === null && purchases.length > 0) {
+      console.log(`[altegio/inventory] 🔍 Trying to match sales with purchases by good_id...`);
+      
+      // Створюємо мапу good_id -> остання ціна закупки
+      const purchasePriceMap = new Map<number, number>();
+      
+      // Сортуємо закупки за датою (від новіших до старіших)
+      const sortedPurchases = [...purchases].sort((a, b) => {
+        const dateA = new Date(a.create_date || 0).getTime();
+        const dateB = new Date(b.create_date || 0).getTime();
+        return dateB - dateA; // Новіші спочатку
+      });
+      
+      for (const purchase of sortedPurchases) {
+        const goodId = purchase.good_id || purchase.good?.id;
+        if (goodId && !purchasePriceMap.has(goodId)) {
+          const costPerUnit = Number(purchase.cost_per_unit) || 0;
+          const totalCost = Math.abs(Number(purchase.cost) || 0);
+          const amount = Math.abs(Number(purchase.amount) || 0);
+          
+          // Визначаємо ціну за одиницю
+          let pricePerUnit = 0;
+          if (costPerUnit > 0) {
+            pricePerUnit = costPerUnit;
+          } else if (totalCost > 0 && amount > 0) {
+            pricePerUnit = totalCost / amount;
+          }
+          
+          if (pricePerUnit > 0) {
+            purchasePriceMap.set(goodId, pricePerUnit);
+            console.log(`[altegio/inventory] Mapped good_id ${goodId} to purchase price: ${pricePerUnit}`);
+          }
+        }
+      }
+      
+      // Обчислюємо собівартість для проданих товарів
+      if (purchasePriceMap.size > 0) {
+        const costFromMatchedPurchases = sales.reduce((sum, sale) => {
+          const goodId = sale.good_id || sale.good?.id;
+          const amount = Math.abs(Number(sale.amount) || 0);
+          
+          if (goodId && purchasePriceMap.has(goodId) && amount > 0) {
+            const purchasePrice = purchasePriceMap.get(goodId)!;
+            return sum + (purchasePrice * amount);
+          }
+          return sum;
+        }, 0);
+        
+        if (costFromMatchedPurchases > 0) {
+          calculatedCost = costFromMatchedPurchases;
+          console.log(`[altegio/inventory] ✅ Calculated cost by matching sales with purchases: ${calculatedCost} (matched ${purchasePriceMap.size} goods)`);
+        }
+      }
+    }
+    
+    // Варіант 2.2: Якщо в налаштуваннях API cost_per_unit тепер містить оптову ціну (собівартість)
+    // Тільки якщо не знайшли інші способи
     if (calculatedCost === null) {
       const costFromCostPerUnit = sales.reduce((sum, t) => {
         const costPerUnit = Number(t.cost_per_unit) || 0;
