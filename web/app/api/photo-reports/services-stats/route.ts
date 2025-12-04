@@ -383,13 +383,20 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Розділяємо всі записи на "завершені" та "заплановані" відносно поточного часу
+    // Встановлюємо дату початку відліку - сьогоднішня дата (початок дня)
+    // Виконані послуги рахуються тільки з сьогоднішньої дати для коректного розрахунку %
     const now = new Date();
+    const startTrackingDate = new Date(now);
+    startTrackingDate.setHours(0, 0, 0, 0); // Початок сьогоднішнього дня
+
+    // Розділяємо всі записи на "завершені" та "заплановані"
+    // Виконані послуги - тільки з сьогоднішньої дати (для коректного відліку)
     const completedAppointments = appointments.filter((apt) => {
       const endDate = apt.end_datetime || apt.datetime || apt.date;
       if (!endDate) return false;
       const aptDate = new Date(endDate);
-      return aptDate < now;
+      // Послуга вважається виконаною, якщо вона завершилась після початку сьогоднішнього дня
+      return aptDate >= startTrackingDate && aptDate < now;
     });
 
     const plannedAppointments = appointments.filter((apt) => {
