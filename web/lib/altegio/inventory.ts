@@ -3,7 +3,6 @@
 
 import { ALTEGIO_ENV } from "./env";
 import { altegioFetch } from "./client";
-import { kvRead } from "@/lib/kv";
 
 // Тип транзакції складу з API
 export type AltegioStorageTransaction = {
@@ -70,6 +69,7 @@ export async function fetchGoodsSalesSummary(params: {
   const companyId = resolveCompanyId();
 
   // Перевіряємо, чи є збережене значення собівартості для цього періоду
+  // Використовуємо динамічний імпорт, щоб уникнути проблем з server components
   let manualCost: number | null = null;
   try {
     const dateFrom = new Date(date_from);
@@ -78,9 +78,12 @@ export async function fetchGoodsSalesSummary(params: {
 
     const costKey = `finance:goods:cost:${year}:${month}`;
     
-    // Безпечний виклик kvRead.getRaw з перевіркою
-    if (kvRead && typeof kvRead.getRaw === "function") {
-      const rawValue = await kvRead.getRaw(costKey);
+    // Динамічний імпорт для уникнення проблем з server components
+    const kvModule = await import("@/lib/kv");
+    const kvReadModule = kvModule.kvRead;
+    
+    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+      const rawValue = await kvReadModule.getRaw(costKey);
       if (rawValue !== null && typeof rawValue === "string") {
         // Парсимо JSON, якщо це JSON, інакше пробуємо як число
         let costValue: number | null = null;
@@ -102,6 +105,7 @@ export async function fetchGoodsSalesSummary(params: {
     }
   } catch (err: any) {
     // Ігноруємо помилки читання KV - просто не використовуємо ручну собівартість
+    // Це не критична помилка, тому продовжуємо роботу
     console.warn(
       `[altegio/inventory] Failed to check manual cost (non-critical):`,
       err?.message || String(err),
