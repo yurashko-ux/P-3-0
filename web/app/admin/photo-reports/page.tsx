@@ -166,6 +166,37 @@ export default function PhotoReportsPage() {
     }
   };
 
+  const handleClearReports = async () => {
+    if (!confirm("Ви впевнені, що хочете очистити всі фото-звіти? Цю дію неможливо скасувати.")) {
+      return;
+    }
+
+    const secret = prompt("Введіть секретний ключ для підтвердження:");
+    if (!secret) {
+      return;
+    }
+
+    setIsClearing(true);
+    try {
+      const response = await fetch(`/api/photo-reports/clear?secret=${encodeURIComponent(secret)}`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (data.ok) {
+        alert(`✅ Очищено ${data.deletedCount} фото-звітів`);
+        // Оновлюємо аналітику після очищення
+        await loadAnalytics();
+      } else {
+        alert(`❌ Помилка: ${data.error}`);
+      }
+    } catch (error) {
+      alert(`❌ Помилка: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   const isTestMaster = (master: MasterProfile) => {
     const id = master.id.toLowerCase();
     const name = master.name.toLowerCase();
