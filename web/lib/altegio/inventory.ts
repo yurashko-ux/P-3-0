@@ -83,6 +83,25 @@ export async function fetchGoodsSalesSummary(params: {
     (t) => Number(t.type_id) === 1 && Number(t.amount) > 0,
   );
 
+  // Логуємо структуру перших транзакцій для діагностики
+  if (sales.length > 0) {
+    console.log(
+      `[altegio/inventory] Sample transaction fields:`,
+      JSON.stringify(
+        {
+          id: sales[0].id,
+          type_id: sales[0].type_id,
+          amount: sales[0].amount,
+          cost_per_unit: sales[0].cost_per_unit,
+          cost: sales[0].cost,
+          allKeys: Object.keys(sales[0]),
+        },
+        null,
+        2,
+      ),
+    );
+  }
+
   const revenue = sales.reduce(
     (sum, t) => sum + (Number(t.cost) || 0),
     0,
