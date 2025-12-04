@@ -84,3 +84,4 @@ https://xxxxx@xxxxx.ingest.sentry.io/xxxxx
 1. Створіть акаунт Sentry та отримайте DSN
 2. Надайте мені DSN, і я налаштую інтеграцію
 3. Або використовуйте debug endpoint для діагностики зараз
+

@@ -237,6 +237,34 @@ export async function fetchExpensesSummary(params: {
     params?: URLSearchParams;
     body?: any;
   }> = [
+    // Варіант 0 (найперспективніший): GET /transactions/{location_id} з Payments API
+    // Згідно з документацією Payments: https://developer.alteg.io/api#tag/Payments
+    // Цей endpoint повертає транзакції з expense об'єктом (id, title), що ідеально для витрат
+    {
+      name: "GET /transactions/{location_id} (Payments API)",
+      method: "GET",
+      path: `/transactions/${companyId}`,
+      params: new URLSearchParams({
+        start_date: date_from,
+        end_date: date_to,
+        real_money: "1", // Тільки реальні грошові транзакції
+        deleted: "0", // Не видалені транзакції
+        count: "1000", // Максимальна кількість для отримання всіх транзакцій
+      }),
+    },
+    // Варіант 0.1: GET /transactions/{location_id} з date_from/date_to
+    {
+      name: "GET /transactions/{location_id} (date_from/date_to)",
+      method: "GET",
+      path: `/transactions/${companyId}`,
+      params: new URLSearchParams({
+        date_from: date_from,
+        date_to: date_to,
+        real_money: "1",
+        deleted: "0",
+        count: "1000",
+      }),
+    },
     // Варіант 1: /company/{id}/analytics/expenses (можливо є в analytics)
     {
       name: "GET /company/{id}/analytics/expenses",
@@ -372,8 +400,35 @@ export async function fetchExpensesSummary(params: {
       console.log(`[altegio/expenses] Response is array:`, Array.isArray(raw));
       if (raw && typeof raw === "object") {
         console.log(`[altegio/expenses] Response keys:`, Object.keys(raw));
+        // Для Payments API (/transactions) логуємо детальніше структуру
+        if (attempt.path.includes("/transactions/")) {
+          const data = (raw as any).data || raw;
+          console.log(`[altegio/expenses] Payments API response structure:`, {
+            hasSuccess: !!(raw as any).success,
+            hasData: Array.isArray((raw as any).data),
+            dataLength: Array.isArray((raw as any).data) ? (raw as any).data.length : 0,
+            hasMeta: !!(raw as any).meta,
+            sampleTransaction: Array.isArray((raw as any).data) && (raw as any).data.length > 0 
+              ? JSON.stringify((raw as any).data[0], null, 2).substring(0, 1000)
+              : null,
+          });
+          // Логуємо перші кілька транзакцій для діагностики
+          if (Array.isArray((raw as any).data) && (raw as any).data.length > 0) {
+            const sample = (raw as any).data[0];
+            console.log(`[altegio/expenses] Sample Payments transaction:`, {
+              id: sample.id,
+              expense_id: sample.expense_id,
+              expense: sample.expense,
+              amount: sample.amount,
+              type: sample.type,
+              type_id: sample.type_id,
+              date: sample.date,
+              comment: sample.comment,
+            });
+          }
+        }
         // Для analytics/overall логуємо детальніше структуру
-        if (attempt.path.includes("analytics/overall")) {
+        else if (attempt.path.includes("analytics/overall")) {
           const data = (raw as any).data || raw;
           console.log(`[altegio/expenses] Analytics overall data keys:`, data && typeof data === "object" ? Object.keys(data) : "not an object");
           // Шукаємо поля, що можуть містити витрати
@@ -509,14 +564,16 @@ export async function fetchExpensesSummary(params: {
       t.type === "expense" ||
       t.type === "outcome" ||
       (t.type && String(t.type).toLowerCase().includes("expense"));
+    const typeId = (t as any).type_id;
     
     // Логуємо перші кілька транзакцій для діагностики
     if (transactions.indexOf(t) < 3) {
       console.log(`[altegio/expenses] Transaction ${t.id}:`, {
         expense_id: t.expense_id,
         expense: t.expense,
+        expense_title: t.expense?.title,
         type: t.type,
-        type_id: (t as any).type_id,
+        type_id: typeId,
         amount: t.amount,
         hasExpenseId,
         hasExpenseObject,
@@ -524,21 +581,47 @@ export async function fetchExpensesSummary(params: {
       });
     }
     
-    // Витрата - це транзакція з expense_id або expense об'єктом
-    // АБО з type="expense"/"outcome"
-    // АБО з від'ємним amount (для деяких систем)
-    // НЕ включаємо доходи (type="income" або позитивний amount без expense)
+    // Виключаємо доходи (income transactions)
+    // Згідно з Payments API та документацією:
+    // - type="income" або type="incoming" - дохід
+    // - type_id=5 - "Provision of services" (дохід)
+    // - expense_id=5 - "Provision of services" (дохід) - найпоширеніший дохід
+    const expenseId = t.expense_id || t.expense?.id;
+    const expenseTitle = t.expense?.title || t.expense?.name || "";
     const isIncome = 
       t.type === "income" || 
       t.type === "incoming" ||
-      ((t as any).type_id && String((t as any).type_id) === "5"); // type_id=5 - "Provision of services" (дохід)
+      (typeId && String(typeId) === "5") || // type_id=5 - "Provision of services" (дохід)
+      (expenseId && String(expenseId) === "5") || // expense_id=5 - "Provision of services" (дохід)
+      (expenseTitle && String(expenseTitle).toLowerCase().includes("provision of services"));
     
     if (isIncome) {
+      if (transactions.indexOf(t) < 3) {
+        console.log(`[altegio/expenses] ⚠️ Excluding income transaction ${t.id}:`, {
+          expense_id: expenseId,
+          expense_title: expenseTitle,
+          type: t.type,
+          type_id: typeId,
+        });
+      }
       return false;
     }
     
-    // Включаємо якщо є expense_id або expense об'єкт
-    return hasExpenseId || hasExpenseObject || isExpenseType || amount < 0;
+    // Включаємо витрати:
+    // 1. Транзакції з expense_id або expense об'єктом (які не є доходами)
+    // 2. Транзакції з type="expense"/"outcome"
+    // 3. Транзакції з від'ємним amount (для деяких систем)
+    // 4. Для Payments API: транзакції з expense об'єктом, які не є доходами
+    const isExpense = hasExpenseId || hasExpenseObject || isExpenseType || amount < 0;
+    
+    if (isExpense && transactions.indexOf(t) < 3) {
+      console.log(`[altegio/expenses] ✅ Including expense transaction ${t.id}:`, {
+        expense_title: t.expense?.title,
+        amount: t.amount,
+      });
+    }
+    
+    return isExpense;
   });
 
   console.log(
@@ -608,3 +691,4 @@ export async function fetchExpensesSummary(params: {
     categories,
   };
 }
+
