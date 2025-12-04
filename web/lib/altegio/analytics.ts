@@ -58,6 +58,35 @@ export async function fetchFinanceSummary(params: {
       ? (overallRaw as any).data
       : overallRaw) ?? {};
 
+  // Логуємо структуру аналітики для пошуку націнки (markup/margin/profit)
+  console.log(
+    `[altegio/analytics] Overall analytics structure:`,
+    JSON.stringify(
+      {
+        allKeys: Object.keys(overall),
+        incomeGoodsStats: overall?.income_goods_stats
+          ? {
+              allKeys: Object.keys(overall.income_goods_stats),
+              markupFields: Object.entries(overall.income_goods_stats)
+                .filter(([k]) =>
+                  k.toLowerCase().includes("markup") ||
+                  k.toLowerCase().includes("margin") ||
+                  k.toLowerCase().includes("profit") ||
+                  k.toLowerCase().includes("націнка") ||
+                  k.toLowerCase().includes("прибуток"),
+                )
+                .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+            }
+          : null,
+        numericFields: Object.entries(overall)
+          .filter(([_, v]) => typeof v === "number")
+          .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+      },
+      null,
+      2,
+    ).substring(0, 2000),
+  );
+
   const currency =
     overall?.income_total_stats?.currency?.symbol ||
     overall?.income_services_stats?.currency?.symbol ||
