@@ -35,42 +35,31 @@ export async function GET(req: NextRequest) {
 
     console.log(`[expenses/route] GET key=${key}, hasValue=${!!raw}`);
 
-    if (!raw) {
+    if (raw === null) {
       return NextResponse.json({ expenses: null });
     }
 
-    // Парсимо JSON (kvRead може повертати рядок або об'єкт)
-    let parsed: any;
-    try {
-      if (typeof raw === "string") {
-        parsed = JSON.parse(raw);
-      } else {
-        parsed = raw;
-      }
-    } catch (e) {
-      console.error(`[expenses/route] Failed to parse raw value:`, e);
-      return NextResponse.json({ expenses: null });
-    }
-
-    // Обробляємо різні формати: {value: "..."} або прямий об'єкт
+    // kvGetRaw повертає string | null, парсимо JSON
     let expensesValue: number | null = null;
-    if (typeof parsed === "object" && parsed !== null) {
-      if ("value" in parsed) {
-        const v = parsed.value;
-        if (typeof v === "string") {
-          expensesValue = parseFloat(v);
-        } else if (typeof v === "number") {
-          expensesValue = v;
-        }
-      } else if ("expenses" in parsed) {
-        expensesValue = typeof parsed.expenses === "number" ? parsed.expenses : parseFloat(String(parsed.expenses));
-      } else if (typeof parsed === "number") {
+    try {
+      // Спробуємо розпарсити як JSON
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "number") {
         expensesValue = parsed;
+      } else if (typeof parsed === "object" && parsed !== null) {
+        // Якщо це об'єкт, шукаємо value всередині
+        const value = (parsed as any).value ?? parsed;
+        if (typeof value === "number") {
+          expensesValue = value;
+        } else if (typeof value === "string") {
+          expensesValue = parseFloat(value);
+        }
+      } else if (typeof parsed === "string") {
+        expensesValue = parseFloat(parsed);
       }
-    } else if (typeof parsed === "string") {
-      expensesValue = parseFloat(parsed);
-    } else if (typeof parsed === "number") {
-      expensesValue = parsed;
+    } catch {
+      // Якщо не JSON, пробуємо як число
+      expensesValue = parseFloat(raw);
     }
 
     if (expensesValue === null || !Number.isFinite(expensesValue) || expensesValue < 0) {
