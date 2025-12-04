@@ -257,7 +257,9 @@ export default async function FinanceReportPage({
                     Націнка (дохід по товарах)
                   </p>
                   <p className="text-lg font-semibold md:text-xl">
-                    {goods ? `${formatMoney(goods.profit)} грн.` : "— грн."}
+                    {summary && goods
+                      ? `${formatMoney(summary.totals.goods - goods.cost)} грн.`
+                      : "— грн."}
                   </p>
                 </div>
               </div>
