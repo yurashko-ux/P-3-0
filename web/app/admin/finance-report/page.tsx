@@ -129,12 +129,13 @@ async function getSummaryForMonth(
         date_to: to,
       }),
     ]);
-    return { summary, goods, expenses, error: null };
+    return { summary, goods, expenses, manualExpenses, error: null };
   } catch (e: any) {
     return {
       summary: null,
       goods: null,
       expenses: null,
+      manualExpenses: null,
       error: String(e?.message || e),
     };
   }
