@@ -11,7 +11,9 @@ export type AltegioFinanceTransaction = {
   expense?: {
     id: number;
     name?: string;
+    title?: string;
     category?: string;
+    [key: string]: any;
   };
   account_id?: number;
   account?: {
