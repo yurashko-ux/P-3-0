@@ -1,0 +1,117 @@
+// web/app/api/admin/finance-report/cost/route.ts
+// API для збереження/отримання ручно введеної собівартості товарів за місяць/рік
+// Захищено CRON_SECRET
+
+import { NextRequest, NextResponse } from "next/server";
+import { kvWrite, kvRead } from "@/lib/kv";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Перевіряє, чи запит дозволений (тільки з CRON_SECRET)
+ */
+function isAuthorized(req: NextRequest): boolean {
+  const secret = req.nextUrl.searchParams.get("secret");
+  const envSecret = process.env.CRON_SECRET || "";
+  return envSecret && secret && envSecret === secret;
+}
+
+/**
+ * Створює ключ для збереження собівартості за місяць/рік
+ */
+function getCostKey(year: number, month: number): string {
+  return `finance:goods:cost:${year}:${month}`;
+}
+
+/**
+ * GET: Отримати собівартість за місяць/рік
+ */
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const year = parseInt(req.nextUrl.searchParams.get("year") || "0", 10);
+    const month = parseInt(req.nextUrl.searchParams.get("month") || "0", 10);
+
+    if (!year || !month || month < 1 || month > 12) {
+      return NextResponse.json(
+        { error: "Invalid year or month" },
+        { status: 400 },
+      );
+    }
+
+    const key = getCostKey(year, month);
+    const value = await kvRead(key);
+
+    if (value === null) {
+      return NextResponse.json({ cost: null });
+    }
+
+    const cost = typeof value === "number" ? value : parseFloat(String(value));
+
+    return NextResponse.json({
+      cost: Number.isFinite(cost) ? cost : null,
+    });
+  } catch (error: any) {
+    console.error("[admin/finance-report/cost] GET error:", error);
+    return NextResponse.json(
+      { error: String(error?.message || error) },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * POST: Зберегти собівартість за місяць/рік
+ */
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const { year, month, cost } = body;
+
+    if (!year || !month || month < 1 || month > 12) {
+      return NextResponse.json(
+        { error: "Invalid year or month" },
+        { status: 400 },
+      );
+    }
+
+    if (cost === undefined || cost === null) {
+      return NextResponse.json(
+        { error: "Cost is required" },
+        { status: 400 },
+      );
+    }
+
+    const costValue = typeof cost === "number" ? cost : parseFloat(String(cost));
+
+    if (!Number.isFinite(costValue) || costValue < 0) {
+      return NextResponse.json(
+        { error: "Cost must be a non-negative number" },
+        { status: 400 },
+      );
+    }
+
+    const key = getCostKey(year, month);
+    await kvWrite(key, costValue);
+
+    return NextResponse.json({
+      success: true,
+      year,
+      month,
+      cost: costValue,
+    });
+  } catch (error: any) {
+    console.error("[admin/finance-report/cost] POST error:", error);
+    return NextResponse.json(
+      { error: String(error?.message || error) },
+      { status: 500 },
+    );
+  }
+}
