@@ -158,53 +158,38 @@ export async function fetchExpensesSummary(params: {
     categoryMap.set(cat.id, name);
   }
 
-  // Спробуємо різні варіанти endpoint'ів та параметрів для finance_transactions
+  // Згідно з Payments API: GET /finance_transactions/{location_id}
+  // Параметри: start_date, end_date, page, count, type, real_money, deleted, etc.
   const attempts = [
+    {
+      name: "GET /finance_transactions/{id} with start_date/end_date (standard)",
+      path: `/finance_transactions/${companyId}`,
+      params: new URLSearchParams({
+        start_date: date_from,
+        end_date: date_to,
+        real_money: "1",
+        deleted: "0",
+        count: "1000", // Отримати максимум транзакцій
+      }),
+    },
     {
       name: "GET /finance_transactions/{id} with date_from/date_to",
       path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
         date_from: date_from,
         date_to: date_to,
-        real_money: "true",
-        deleted: "false",
+        real_money: "1",
+        deleted: "0",
+        count: "1000",
       }),
     },
     {
-      name: "GET /finance_transactions/{id} with start_date/end_date",
+      name: "GET /finance_transactions/{id} basic (no filters)",
       path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
-        real_money: "true",
-        deleted: "false",
-      }),
-    },
-    {
-      name: "GET /finance_transactions/{id} with type=expense",
-      path: `/finance_transactions/${companyId}`,
-      params: new URLSearchParams({
-        start_date: date_from,
-        end_date: date_to,
-        type: "expense",
-        real_money: "true",
-        deleted: "false",
-      }),
-    },
-    {
-      name: "GET /company/{id}/finance_transactions",
-      path: `/company/${companyId}/finance_transactions`,
-      params: new URLSearchParams({
-        start_date: date_from,
-        end_date: date_to,
-      }),
-    },
-    {
-      name: "GET /finance_transactions/{id} basic",
-      path: `/finance_transactions/${companyId}`,
-      params: new URLSearchParams({
-        start_date: date_from,
-        end_date: date_to,
+        count: "1000",
       }),
     },
   ];
@@ -225,14 +210,21 @@ export async function fetchExpensesSummary(params: {
         console.log(`[altegio/expenses] Response keys:`, Object.keys(raw));
       }
 
-      // Розпаковуємо дані (може бути масив або об'єкт з data)
-      const fetched: AltegioFinanceTransaction[] = Array.isArray(raw)
-        ? raw
-        : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-          ? (raw as any).data
-          : raw && typeof raw === "object" && Array.isArray((raw as any).transactions)
-            ? (raw as any).transactions
-            : [];
+      // Згідно з Payments API, відповідь має формат: { success: true, data: [...], meta: [...] }
+      let fetched: AltegioFinanceTransaction[] = [];
+      
+      if (Array.isArray(raw)) {
+        fetched = raw;
+      } else if (raw && typeof raw === "object") {
+        // Стандартний формат Altegio API
+        if (Array.isArray((raw as any).data)) {
+          fetched = (raw as any).data;
+        } else if (Array.isArray((raw as any).transactions)) {
+          fetched = (raw as any).transactions;
+        } else if ((raw as any).success && Array.isArray((raw as any).data)) {
+          fetched = (raw as any).data;
+        }
+      }
 
       if (fetched.length > 0) {
         transactions = fetched;
@@ -278,15 +270,16 @@ export async function fetchExpensesSummary(params: {
   );
 
   // Фільтруємо тільки витрати (expenses)
-  // Витрати мають type="expense" або від'ємний amount, або expense_id
-  // Але спочатку логуємо всі транзакції для діагностики
+  // Згідно з Payments API, витрати мають expense_id або expense об'єкт
+  // Також можуть мати type_id, який вказує на тип транзакції
   if (transactions.length > 0) {
-    console.log(`[altegio/expenses] Sample transaction:`, transactions[0]);
+    console.log(`[altegio/expenses] Sample transaction:`, JSON.stringify(transactions[0], null, 2));
   }
   
   const expenses = transactions.filter((t) => {
     const amount = toNumber(t.amount);
     const hasExpenseId = !!t.expense_id;
+    const hasExpenseObject = !!t.expense;
     const isExpenseType =
       t.type === "expense" ||
       t.type === "outcome" ||
@@ -296,19 +289,31 @@ export async function fetchExpensesSummary(params: {
     if (transactions.indexOf(t) < 3) {
       console.log(`[altegio/expenses] Transaction ${t.id}:`, {
         expense_id: t.expense_id,
+        expense: t.expense,
         type: t.type,
+        type_id: (t as any).type_id,
         amount: t.amount,
         hasExpenseId,
+        hasExpenseObject,
         isExpenseType,
-        willInclude: hasExpenseId || isExpenseType || amount < 0,
       });
     }
     
-    // Якщо є expense_id або type=expense, це витрата
-    // Або якщо amount від'ємний (для деяких систем)
-    // АБО якщо немає явного type="income" - спробуємо включити
-    const isIncome = t.type === "income" || t.type === "incoming";
-    return !isIncome && (hasExpenseId || isExpenseType || amount < 0 || (!t.type && hasExpenseId));
+    // Витрата - це транзакція з expense_id або expense об'єктом
+    // АБО з type="expense"/"outcome"
+    // АБО з від'ємним amount (для деяких систем)
+    // НЕ включаємо доходи (type="income" або позитивний amount без expense)
+    const isIncome = 
+      t.type === "income" || 
+      t.type === "incoming" ||
+      ((t as any).type_id && String((t as any).type_id) === "5"); // type_id=5 - "Provision of services" (дохід)
+    
+    if (isIncome) {
+      return false;
+    }
+    
+    // Включаємо якщо є expense_id або expense об'єкт
+    return hasExpenseId || hasExpenseObject || isExpenseType || amount < 0;
   });
 
   console.log(
@@ -323,19 +328,28 @@ export async function fetchExpensesSummary(params: {
     const amount = Math.abs(toNumber(expense.amount)); // Беремо абсолютне значення
     total += amount;
 
-    // Визначаємо категорію
-    // Спочатку шукаємо в мапі категорій за expense_id
+    // Визначаємо категорію витрати
+    // Згідно з Payments API, expense об'єкт має id та title
     let categoryName = "Інші витрати";
     
-    if (expense.expense_id && categoryMap.has(expense.expense_id)) {
-      categoryName = categoryMap.get(expense.expense_id)!;
-    } else if (expense.expense?.name) {
-      categoryName = expense.expense.name;
-    } else if (expense.expense?.category) {
-      categoryName = expense.expense.category;
-    } else if (expense.expense?.title) {
+    // Пріоритет 1: expense.title (найточніше)
+    if (expense.expense?.title) {
       categoryName = expense.expense.title;
-    } else if (expense.comment) {
+    }
+    // Пріоритет 2: expense.name
+    else if (expense.expense?.name) {
+      categoryName = expense.expense.name;
+    }
+    // Пріоритет 3: мапа категорій за expense_id
+    else if (expense.expense_id && categoryMap.has(expense.expense_id)) {
+      categoryName = categoryMap.get(expense.expense_id)!;
+    }
+    // Пріоритет 4: expense.category
+    else if (expense.expense?.category) {
+      categoryName = expense.expense.category;
+    }
+    // Пріоритет 5: comment як fallback
+    else if (expense.comment) {
       categoryName = expense.comment;
     }
 
