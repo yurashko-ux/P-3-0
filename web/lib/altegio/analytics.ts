@@ -45,12 +45,18 @@ export async function fetchFinanceSummary(params: {
   const basePath = `/company/${companyId}/analytics/overall`;
   const query = `?${qs.toString()}`;
 
-  const [overall, incomeDailyRaw] = await Promise.all([
-    altegioFetch<AltegioOverallAnalytics>(`${basePath}${query}`),
+  const [overallRaw, incomeDailyRaw] = await Promise.all([
+    altegioFetch<any>(`${basePath}${query}`),
     altegioFetch<AltegioIncomeDailySeries[]>(
       `${basePath}/charts/income_daily${query}`,
     ),
   ]);
+
+  // /company/{id}/analytics/overall повертає об’єкт виду { success, data, meta }
+  const overall: AltegioOverallAnalytics =
+    (overallRaw && typeof overallRaw === "object" && "data" in overallRaw
+      ? (overallRaw as any).data
+      : overallRaw) ?? {};
 
   const currency =
     overall?.income_total_stats?.currency?.symbol ||
