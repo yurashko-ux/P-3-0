@@ -108,7 +108,13 @@ export async function POST(req: NextRequest) {
 
     const key = getCostKey(year, month);
     // Зберігаємо як JSON рядок
+    console.log(`[admin/finance-report/cost] Saving cost: key=${key}, value=${costValue}`);
     await kvWrite.setRaw(key, JSON.stringify(costValue));
+    console.log(`[admin/finance-report/cost] Cost saved successfully`);
+
+    // Перевіряємо, що дані збереглися
+    const verifyValue = await kvRead.getRaw(key);
+    console.log(`[admin/finance-report/cost] Verification read: ${verifyValue}`);
 
     return NextResponse.json({
       success: true,

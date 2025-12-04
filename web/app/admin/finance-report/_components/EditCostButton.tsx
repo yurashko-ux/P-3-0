@@ -23,6 +23,7 @@ export function EditCostButton({
   const [cost, setCost] = useState(String(currentCost));
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Оновлюємо значення, коли currentCost змінюється
   useEffect(() => {
@@ -79,11 +80,29 @@ export function EditCostButton({
           throw new Error(data.error || "Помилка збереження");
         }
 
-        // Оновлюємо сторінку для відображення нових даних
-        router.refresh();
+        const data = await res.json();
+        console.log("[EditCostButton] Saved cost:", data);
+
+        // Показуємо повідомлення про успіх
+        setSuccessMessage(`Збережено: ${costValue.toLocaleString("uk-UA")} грн.`);
+        setError(null);
+
+        // Оновлюємо локальний стан перед оновленням сторінки
+        setCost(String(costValue));
+        
+        // Блокуємо поле після збереження
         setIsAuthorized(false);
         setSecret("");
+
+        // Оновлюємо сторінку для відображення нових даних
+        router.refresh();
+
+        // Прибираємо повідомлення через 3 секунди
+        setTimeout(() => {
+          setSuccessMessage(null);
+        }, 3000);
       } catch (err: any) {
+        console.error("[EditCostButton] Save error:", err);
         setError(err.message || "Помилка збереження");
       }
     });
@@ -141,6 +160,11 @@ export function EditCostButton({
       {error && (
         <div className="text-xs text-error bg-error/10 p-2 rounded">
           {error}
+        </div>
+      )}
+      {successMessage && (
+        <div className="text-xs text-success bg-success/10 p-2 rounded">
+          {successMessage}
         </div>
       )}
     </div>
