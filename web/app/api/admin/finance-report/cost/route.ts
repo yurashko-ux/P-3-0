@@ -3,6 +3,7 @@
 // Захищено CRON_SECRET
 
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { kvWrite, kvRead } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +116,9 @@ export async function POST(req: NextRequest) {
     // Перевіряємо, що дані збереглися
     const verifyValue = await kvRead.getRaw(key);
     console.log(`[admin/finance-report/cost] Verification read: ${verifyValue}`);
+
+    // Оновлюємо кеш сторінки фінансового звіту
+    revalidatePath("/admin/finance-report");
 
     return NextResponse.json({
       success: true,
