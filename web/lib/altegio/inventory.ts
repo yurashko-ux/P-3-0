@@ -185,6 +185,17 @@ async function fetchGoodDetails(
                 k.toLowerCase().includes("собіварт"),
               )
               .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+            // Логуємо всі поля, що містять "markup", "margin", "profit" в назві
+            markupFields: Object.entries(good)
+              .filter(([k]) =>
+                k.toLowerCase().includes("markup") ||
+                k.toLowerCase().includes("margin") ||
+                k.toLowerCase().includes("profit") ||
+                k.toLowerCase().includes("націнка") ||
+                k.toLowerCase().includes("прибуток") ||
+                k.toLowerCase().includes("дохід"),
+              )
+              .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
           },
           null,
           2,
@@ -235,6 +246,46 @@ export async function fetchGoodsSalesSummary(params: {
     start_date: date_from,
     end_date: date_to,
   });
+
+  // Спочатку спробуємо отримати дані з Sales Analysis endpoint, який може містити націнку
+  const salesAnalysisPaths = [
+    `/company/${companyId}/analytics/sales?${qs.toString()}`,
+    `/company/${companyId}/analytics/sales_analysis?${qs.toString()}`,
+    `/storages/sales_analysis/${companyId}?${qs.toString()}`,
+  ];
+
+  let salesAnalysisData: any = null;
+  for (const path of salesAnalysisPaths) {
+    try {
+      const response = await altegioFetch<any>(path);
+      if (response) {
+        console.log(
+          `[altegio/inventory] Sales Analysis response from ${path}:`,
+          JSON.stringify(
+            {
+              allKeys: Object.keys(response),
+              hasMarkup: JSON.stringify(response).toLowerCase().includes("markup"),
+              hasMargin: JSON.stringify(response).toLowerCase().includes("margin"),
+              hasProfit: JSON.stringify(response).toLowerCase().includes("profit"),
+              sample: JSON.stringify(response).substring(0, 1000),
+            },
+            null,
+            2,
+          ),
+        );
+        salesAnalysisData = response;
+        break; // Використовуємо перший успішний endpoint
+      }
+    } catch (err: any) {
+      if (err.status !== 404) {
+        console.warn(
+          `[altegio/inventory] Sales Analysis endpoint ${path} returned error:`,
+          err.status,
+        );
+      }
+      // Продовжуємо спробувати інші endpoint'и
+    }
+  }
 
   const path = `/storages/transactions/${companyId}?${qs.toString()}`;
 
@@ -313,6 +364,17 @@ export async function fetchGoodsSalesSummary(params: {
                   k.toLowerCase().includes("incoming"),
                 )
                 .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+              // Логуємо поля, що можуть містити націнку (markup/margin/profit)
+              markupFields: Object.entries(sampleTx)
+                .filter(([k]) =>
+                  k.toLowerCase().includes("markup") ||
+                  k.toLowerCase().includes("margin") ||
+                  k.toLowerCase().includes("profit") ||
+                  k.toLowerCase().includes("націнка") ||
+                  k.toLowerCase().includes("прибуток") ||
+                  k.toLowerCase().includes("дохід"),
+                )
+                .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
             }
           : null,
         transactionsWithDocumentId: tx.filter((t) => t.document_id).length,
@@ -361,7 +423,12 @@ export async function fetchGoodsSalesSummary(params: {
             k.toLowerCase().includes("wholesale") ||
             k.toLowerCase().includes("закуп") ||
             k.toLowerCase().includes("собіварт") ||
-            k.toLowerCase().includes("cost"))
+            k.toLowerCase().includes("cost") ||
+            k.toLowerCase().includes("markup") ||
+            k.toLowerCase().includes("margin") ||
+            k.toLowerCase().includes("profit") ||
+            k.toLowerCase().includes("націнка") ||
+            k.toLowerCase().includes("прибуток"))
         ) {
           purchaseFields[`good.${k}`] = v;
         }
@@ -431,6 +498,9 @@ export async function fetchGoodsSalesSummary(params: {
 
   // Створюємо мапу: good_id -> actual_cost (або інше поле з собівартістю)
   const goodCostMap = new Map<number, number>();
+  
+  // Створюємо мапу: good_id -> markup (націнка), якщо вона є в API
+  const goodMarkupMap = new Map<number, number>();
 
   // Спочатку спробуємо отримати ціни закупки з документів операцій (якщо є document_id)
   const uniqueDocumentIds = [
@@ -478,6 +548,32 @@ export async function fetchGoodsSalesSummary(params: {
             `[altegio/inventory] Good ${goodId}: failed to fetch details`,
           );
           return;
+        }
+
+        // Спочатку шукаємо націнку (markup/margin/profit) - це пріоритет
+        let markupValue: number | undefined = undefined;
+        const markupFields = Object.entries(good).filter(([k]) =>
+          k.toLowerCase().includes("markup") ||
+          k.toLowerCase().includes("margin") ||
+          k.toLowerCase().includes("profit") ||
+          k.toLowerCase().includes("націнка") ||
+          k.toLowerCase().includes("прибуток"),
+        );
+        
+        if (markupFields.length > 0) {
+          for (const [k, v] of markupFields) {
+            if (typeof v === "number" && v > 0) {
+              markupValue = v;
+              console.log(
+                `[altegio/inventory] Good ${goodId}: found markup field ${k} = ${v}`,
+              );
+              break;
+            }
+          }
+        }
+        
+        if (markupValue !== undefined && markupValue > 0) {
+          goodMarkupMap.set(goodId, markupValue);
         }
 
         // Спробуємо знайти собівартість в різних полях
@@ -531,13 +627,68 @@ export async function fetchGoodsSalesSummary(params: {
   }
 
   console.log(
-    `[altegio/inventory] Fetched costs for ${goodCostMap.size} products`,
+    `[altegio/inventory] Fetched costs for ${goodCostMap.size} products, markups for ${goodMarkupMap.size} products`,
   );
+
+  // Спочатку перевіряємо, чи є націнка безпосередньо в транзакціях
+  let totalMarkupFromTransactions = 0;
+  let markupFromTransactionsCount = 0;
+  
+  for (const t of sales) {
+    const goodId = extractGoodId(t);
+    if (!goodId) continue;
+    
+    // Шукаємо поля з націнкою в самій транзакції
+    const transactionMarkupFields = Object.entries(t).filter(([k]) =>
+      k.toLowerCase().includes("markup") ||
+      k.toLowerCase().includes("margin") ||
+      k.toLowerCase().includes("profit") ||
+      k.toLowerCase().includes("націнка") ||
+      k.toLowerCase().includes("прибуток"),
+    );
+    
+    for (const [k, v] of transactionMarkupFields) {
+      if (typeof v === "number" && v > 0) {
+        const amount = Math.abs(Number(t.amount) || 0);
+        totalMarkupFromTransactions += v * amount;
+        markupFromTransactionsCount++;
+        console.log(
+          `[altegio/inventory] Transaction ${t.id}: found markup field ${k} = ${v}, amount = ${amount}`,
+        );
+        break; // Беремо перше знайдене поле
+      }
+    }
+    
+    // Також перевіряємо об'єкт good в транзакції
+    if (t.good && typeof t.good === "object") {
+      const goodMarkupFields = Object.entries(t.good).filter(([k]) =>
+        k.toLowerCase().includes("markup") ||
+        k.toLowerCase().includes("margin") ||
+        k.toLowerCase().includes("profit"),
+      );
+      
+      for (const [k, v] of goodMarkupFields) {
+        if (typeof v === "number" && v > 0) {
+          const amount = Math.abs(Number(t.amount) || 0);
+          totalMarkupFromTransactions += v * amount;
+          markupFromTransactionsCount++;
+          console.log(
+            `[altegio/inventory] Transaction ${t.id}: found markup in good.${k} = ${v}, amount = ${amount}`,
+          );
+          break;
+        }
+      }
+    }
+  }
 
   // Розраховуємо собівартість: для кожної транзакції множимо actual_cost на кількість
   let cost = 0;
   let costCalculatedCount = 0;
   let costMissingCount = 0;
+  
+  // Також розраховуємо націнку з goodMarkupMap, якщо вона є
+  let totalMarkupFromGoods = 0;
+  let markupFromGoodsCount = 0;
 
   for (const t of sales) {
     const goodId = extractGoodId(t);
@@ -555,6 +706,14 @@ export async function fetchGoodsSalesSummary(params: {
       console.warn(
         `[altegio/inventory] Missing actual_cost for good_id ${goodId} in transaction ${t.id}`,
       );
+    }
+    
+    // Перевіряємо націнку з goodMarkupMap
+    const markup = goodMarkupMap.get(goodId);
+    if (markup !== undefined) {
+      const amount = Math.abs(Number(t.amount) || 0);
+      totalMarkupFromGoods += markup * amount;
+      markupFromGoodsCount++;
     }
   }
 
@@ -576,7 +735,7 @@ export async function fetchGoodsSalesSummary(params: {
   }
 
   console.log(
-    `[altegio/inventory] Cost calculation details:`,
+    `[altegio/inventory] Cost and markup calculation details:`,
     JSON.stringify(
       {
         costCalculatedCount,
@@ -584,6 +743,14 @@ export async function fetchGoodsSalesSummary(params: {
         totalCost: cost,
         revenue,
         calculatedProfit: revenue - cost,
+        markupFromTransactions: {
+          total: totalMarkupFromTransactions,
+          count: markupFromTransactionsCount,
+        },
+        markupFromGoods: {
+          total: totalMarkupFromGoods,
+          count: markupFromGoodsCount,
+        },
         goodsWithCost: costByGoodId.size,
         topGoodsByCost: Array.from(costByGoodId.entries())
           .sort((a, b) => b[1].totalCost - a[1].totalCost)
@@ -593,6 +760,7 @@ export async function fetchGoodsSalesSummary(params: {
             transactions: data.count,
             cost: data.totalCost,
             costPerUnit: goodCostMap.get(goodId),
+            markupPerUnit: goodMarkupMap.get(goodId),
           })),
       },
       null,
@@ -600,7 +768,24 @@ export async function fetchGoodsSalesSummary(params: {
     ),
   );
 
-  const profit = revenue - cost;
+  // Використовуємо націнку з транзакцій, якщо вона є, інакше з товарів, інакше розраховуємо
+  let profit: number;
+  if (totalMarkupFromTransactions > 0) {
+    profit = totalMarkupFromTransactions;
+    console.log(
+      `[altegio/inventory] Using markup from transactions: ${profit}`,
+    );
+  } else if (totalMarkupFromGoods > 0) {
+    profit = totalMarkupFromGoods;
+    console.log(
+      `[altegio/inventory] Using markup from goods: ${profit}`,
+    );
+  } else {
+    profit = revenue - cost;
+    console.log(
+      `[altegio/inventory] Calculating profit as revenue - cost: ${profit}`,
+    );
+  }
 
   return {
     range: { date_from, date_to },
