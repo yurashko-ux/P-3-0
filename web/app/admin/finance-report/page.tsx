@@ -233,7 +233,7 @@ export default async function FinanceReportPage({
                         <tr key={row.date}>
                           <td>{formatDateHuman(row.date)}</td>
                           <td className="text-right">
-                            {formatMoney(row.value)}
+                            {formatMoney(row.value)} грн
                           </td>
                         </tr>
                       ))}
