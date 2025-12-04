@@ -7,11 +7,21 @@ function formatDateISO(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function formatDateHuman(value: string | Date): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  return d.toLocaleDateString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function formatMoney(value: number): string {
+  const rounded = Math.round(value);
   return new Intl.NumberFormat("uk-UA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(rounded);
 }
 
 type MonthOption = { year: number; month: number; label: string };
@@ -105,7 +115,9 @@ export default async function FinanceReportPage({
           <h1 className="text-2xl font-semibold">Фінансовий звіт (Altegio)</h1>
           {summary && (
             <p className="text-sm text-gray-500">
-              Період: {summary.range.date_from} — {summary.range.date_to}
+              Період:{" "}
+              {formatDateHuman(summary.range.date_from)} —{" "}
+              {formatDateHuman(summary.range.date_to)}
             </p>
           )}
         </div>
@@ -218,7 +230,7 @@ export default async function FinanceReportPage({
                     <tbody>
                       {summary.incomeDaily.map((row) => (
                         <tr key={row.date}>
-                          <td>{new Date(row.date).toLocaleDateString()}</td>
+                          <td>{formatDateHuman(row.date)}</td>
                           <td className="text-right">
                             {formatMoney(row.value)}
                           </td>
