@@ -50,11 +50,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ cost: null });
     }
 
-    // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+    // kvGetRaw може повертати {"value":"..."} або просто "..."
+    // Потрібно витягти значення з об'єкта, якщо воно там є
     let cost: number | null = null;
     try {
+      // Спробуємо розпарсити як JSON
       const parsed = JSON.parse(rawValue);
-      cost = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+      if (typeof parsed === "number") {
+        cost = parsed;
+      } else if (typeof parsed === "object" && parsed !== null) {
+        // Якщо це об'єкт, шукаємо value всередині
+        const value = (parsed as any).value ?? parsed;
+        if (typeof value === "number") {
+          cost = value;
+        } else if (typeof value === "string") {
+          cost = parseFloat(value);
+        }
+      } else if (typeof parsed === "string") {
+        cost = parseFloat(parsed);
+      }
     } catch {
       // Якщо не JSON, пробуємо як число
       cost = parseFloat(rawValue);
