@@ -148,33 +148,48 @@ export async function fetchExpensesSummary(params: {
   const { date_from, date_to } = params;
   const companyId = resolveCompanyId();
 
-  // Спочатку отримуємо список категорій витрат
-  const categories = await fetchExpenseCategories();
-
-  // Створюємо мапу category_id -> category_name для швидкого пошуку
+  // Спробуємо отримати список категорій витрат (опціонально, якщо endpoint доступний)
+  // Якщо не вдається - використаємо дані з транзакцій
+  let categories: AltegioExpenseCategory[] = [];
   const categoryMap = new Map<number, string>();
-  for (const cat of categories) {
-    const name = cat.name || cat.title || cat.category || `Категорія ${cat.id}`;
-    categoryMap.set(cat.id, name);
+  
+  try {
+    categories = await fetchExpenseCategories();
+    // Створюємо мапу category_id -> category_name для швидкого пошуку
+    for (const cat of categories) {
+      const name = cat.name || cat.title || cat.category || `Категорія ${cat.id}`;
+      categoryMap.set(cat.id, name);
+    }
+  } catch (err) {
+    console.log(`[altegio/expenses] ⚠️ Could not fetch categories, will extract from transactions`);
   }
 
-  // Згідно з Payments API: GET /finance_transactions/{location_id}
-  // Параметри: start_date, end_date, page, count, type, real_money, deleted, etc.
-  const attempts = [
+  // Згідно з Payments API та структурою інших endpoint'ів (як /company/{id}/analytics)
+  // Спробуємо різні варіанти endpoint'ів
+  const attempts: Array<{
+    name: string;
+    method: "GET" | "POST";
+    path: string;
+    params?: URLSearchParams;
+    body?: any;
+  }> = [
+    // Варіант 1: /company/{id}/finance_transactions (найбільш ймовірний, як у /company/{id}/analytics)
     {
-      name: "GET /finance_transactions/{id} with start_date/end_date (standard)",
-      path: `/finance_transactions/${companyId}`,
+      name: "GET /company/{id}/finance_transactions with start_date/end_date",
+      method: "GET",
+      path: `/company/${companyId}/finance_transactions`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
         real_money: "1",
         deleted: "0",
-        count: "1000", // Отримати максимум транзакцій
+        count: "1000",
       }),
     },
     {
-      name: "GET /finance_transactions/{id} with date_from/date_to",
-      path: `/finance_transactions/${companyId}`,
+      name: "GET /company/{id}/finance_transactions with date_from/date_to",
+      method: "GET",
+      path: `/company/${companyId}/finance_transactions`,
       params: new URLSearchParams({
         date_from: date_from,
         date_to: date_to,
@@ -183,12 +198,38 @@ export async function fetchExpensesSummary(params: {
         count: "1000",
       }),
     },
+    // Варіант 2: POST /company/{id}/finance_transactions (як у appointments)
     {
-      name: "GET /finance_transactions/{id} basic (no filters)",
-      path: `/finance_transactions/${companyId}`,
+      name: "POST /company/{id}/finance_transactions/search",
+      method: "POST",
+      path: `/company/${companyId}/finance_transactions/search`,
+      body: {
+        start_date: date_from,
+        end_date: date_to,
+        real_money: true,
+        deleted: false,
+        count: 1000,
+      },
+    },
+    // Варіант 3: /company/{id}/payments
+    {
+      name: "GET /company/{id}/payments",
+      method: "GET",
+      path: `/company/${companyId}/payments`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
+        count: "1000",
+      }),
+    },
+    // Варіант 4: /finance_transactions/{id} (оригінальний, але з іншими параметрами)
+    {
+      name: "GET /finance_transactions/{id} (fallback)",
+      method: "GET",
+      path: `/finance_transactions/${companyId}`,
+      params: new URLSearchParams({
+        date_from: date_from,
+        date_to: date_to,
         count: "1000",
       }),
     },
@@ -199,10 +240,22 @@ export async function fetchExpensesSummary(params: {
 
   for (const attempt of attempts) {
     try {
-      const fullPath = `${attempt.path}?${attempt.params.toString()}`;
-      console.log(`[altegio/expenses] 🔍 Trying ${attempt.name}: ${fullPath}`);
+      let fullPath = attempt.path;
+      if (attempt.params) {
+        fullPath = `${attempt.path}?${attempt.params.toString()}`;
+      }
+      console.log(`[altegio/expenses] 🔍 Trying ${attempt.name}: ${fullPath} (${attempt.method})`);
 
-      const raw = await altegioFetch<any>(fullPath);
+      const raw = await altegioFetch<any>(
+        attempt.method === "POST" ? attempt.path : fullPath,
+        attempt.method === "POST"
+          ? {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(attempt.body || {}),
+            }
+          : {}
+      );
       
       console.log(`[altegio/expenses] Response type:`, typeof raw);
       console.log(`[altegio/expenses] Response is array:`, Array.isArray(raw));
