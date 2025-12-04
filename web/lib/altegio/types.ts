@@ -44,3 +44,50 @@ export type Appointment = {
   [key: string]: any; // Дозволяємо додаткові поля
 };
 
+// ---- Finance / Analytics ----
+
+export type AltegioOverallAnalytics = {
+  income_total_stats?: {
+    current_sum?: string | number;
+    previous_sum?: string | number;
+    change_percent?: number;
+    currency?: { symbol?: string };
+  };
+  income_services_stats?: {
+    current_sum?: string | number;
+    previous_sum?: string | number;
+    change_percent?: number;
+    currency?: { symbol?: string };
+  };
+  income_goods_stats?: {
+    current_sum?: string | number;
+    previous_sum?: string | number;
+    change_percent?: number;
+    currency?: { symbol?: string };
+  };
+  income_average_stats?: {
+    current_sum?: string | number;
+    previous_sum?: string | number;
+    change_percent?: number;
+    currency?: { symbol?: string };
+  };
+};
+
+export type AltegioIncomeDailySeries = {
+  label?: string;
+  data?: [string, number][];
+};
+
+export type FinanceSummary = {
+  range: { date_from: string; date_to: string };
+  currency: string;
+  totals: {
+    total: number;
+    services: number;
+    goods: number;
+    avgCheck: number | null;
+  };
+  incomeDaily: { date: string; value: number }[];
+};
+
+
