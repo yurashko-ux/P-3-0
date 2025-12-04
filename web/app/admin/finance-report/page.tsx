@@ -30,7 +30,7 @@ function formatMoney(value: number): string {
   }).format(rounded);
 }
 
-type MonthOption = { year: number; month: number; label: string };
+type MonthOption = { month: number; label: string };
 
 function getLastCompleteMonth(today: Date): { year: number; month: number } {
   const d = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -38,26 +38,20 @@ function getLastCompleteMonth(today: Date): { year: number; month: number } {
   return { year: d.getFullYear(), month: d.getMonth() + 1 };
 }
 
-function buildMonthOptions(
-  today: Date,
-  count: number = 18,
-): MonthOption[] {
+function buildMonthOptions(today: Date): MonthOption[] {
   const options: MonthOption[] = [];
-  const base = new Date(today.getFullYear(), today.getMonth(), 1);
+  const baseYear = today.getFullYear();
 
-  for (let i = 1; i <= count; i++) {
-    const d = new Date(base);
-    d.setMonth(base.getMonth() - i);
-    const year = d.getFullYear();
-    const month = d.getMonth() + 1;
+  const formatter = new Intl.DateTimeFormat("uk-UA", {
+    month: "long",
+  });
 
-    const formatter = new Intl.DateTimeFormat("uk-UA", {
-      month: "long",
-      year: "numeric",
-    });
-    const label = formatter.format(d);
-
-    options.push({ year, month, label });
+  for (let month = 1; month <= 12; month++) {
+    const d = new Date(baseYear, month - 1, 1);
+    const rawLabel = formatter.format(d);
+    const label =
+      rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+    options.push({ month, label });
   }
 
   return options;
@@ -122,6 +116,8 @@ export default async function FinanceReportPage({
     : lastComplete.month;
 
   const monthOptions = buildMonthOptions(today);
+  const currentYear = today.getFullYear();
+  const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
   const { summary, goods, error } = await getSummaryForMonth(
     selectedYear,
@@ -155,10 +151,7 @@ export default async function FinanceReportPage({
               className="select select-bordered select-sm"
             >
               {monthOptions.map((opt) => (
-                <option
-                  key={`${opt.year}-${opt.month}`}
-                  value={opt.month}
-                >
+                <option key={opt.month} value={opt.month}>
                   {opt.label}
                 </option>
               ))}
@@ -171,9 +164,7 @@ export default async function FinanceReportPage({
               defaultValue={String(selectedYear)}
               className="select select-bordered select-sm"
             >
-              {Array.from(
-                new Set(monthOptions.map((m) => m.year)),
-              ).map((year) => (
+              {yearOptions.map((year) => (
                 <option key={year} value={year}>
                   {year}
                 </option>
