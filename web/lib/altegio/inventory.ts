@@ -176,13 +176,54 @@ export async function fetchGoodsSalesSummary(params: {
     `[altegio/inventory] Fetched ${tx.length} transactions`,
   );
 
+  // Детальне логування структури транзакцій для діагностики собівартості
+  if (tx.length > 0) {
+    const sampleTx = tx[0];
+    console.log(`[altegio/inventory] Sample transaction structure:`, {
+      id: sampleTx.id,
+      type_id: sampleTx.type_id,
+      amount: sampleTx.amount,
+      cost: sampleTx.cost,
+      cost_per_unit: sampleTx.cost_per_unit,
+      allKeys: Object.keys(sampleTx),
+      // Шукаємо поля, що можуть містити собівартість
+      possibleCostFields: Object.keys(sampleTx).filter(key => 
+        key.toLowerCase().includes('cost') || 
+        key.toLowerCase().includes('price') ||
+        key.toLowerCase().includes('purchase') ||
+        key.toLowerCase().includes('wholesale') ||
+        key.toLowerCase().includes('buy')
+      ),
+    });
+    
+    // Логуємо всі поля першої транзакції для повного розуміння структури
+    console.log(`[altegio/inventory] Full sample transaction:`, JSON.stringify(sampleTx, null, 2).substring(0, 2000));
+  }
+
   // type_id = 1 — продаж товарів (Sale of goods)
+  // type_id = 2 — закупівля товарів (Purchase of goods) - можливо тут є собівартість
   // Беремо всі транзакції типу 1 (продажі), включаючи повернення
   const sales = tx.filter((t) => Number(t.type_id) === 1);
+  
+  // Також перевіряємо транзакції закупки (type_id = 2), можливо там є інформація про собівартість
+  const purchases = tx.filter((t) => Number(t.type_id) === 2);
 
   console.log(
-    `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items`,
+    `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items, purchases (type_id=2): ${purchases.length} items`,
   );
+  
+  // Логуємо структуру транзакції закупки, якщо вона є
+  if (purchases.length > 0) {
+    const samplePurchase = purchases[0];
+    console.log(`[altegio/inventory] Sample purchase transaction (type_id=2):`, {
+      id: samplePurchase.id,
+      type_id: samplePurchase.type_id,
+      amount: samplePurchase.amount,
+      cost: samplePurchase.cost,
+      cost_per_unit: samplePurchase.cost_per_unit,
+      allKeys: Object.keys(samplePurchase),
+    });
+  }
 
   // Розраховуємо виручку: використовуємо cost (загальна сума транзакції), якщо він є
   // Якщо cost = 0, тоді використовуємо cost_per_unit * amount
@@ -203,8 +244,137 @@ export async function fetchGoodsSalesSummary(params: {
     0,
   );
 
-  // Використовуємо ручно введену собівартість, якщо вона є, інакше 0
-  const finalCost = manualCost !== null ? manualCost : 0;
+  // Спробуємо обчислити собівартість з різних джерел
+  let calculatedCost: number | null = null;
+  
+  // Варіант 1: З транзакцій закупки (type_id=2)
+  // Можливо, cost_per_unit або cost в транзакціях закупки містить собівартість
+  if (purchases.length > 0) {
+    const purchaseCost = purchases.reduce((sum, t) => {
+      // Для закупки cost_per_unit може бути оптовою ціною (собівартістю)
+      const costPerUnit = Number(t.cost_per_unit) || 0;
+      const amount = Math.abs(Number(t.amount) || 0);
+      if (costPerUnit > 0 && amount > 0) {
+        return sum + (costPerUnit * amount);
+      }
+      // Або cost може містити загальну суму закупки
+      const totalCost = Math.abs(Number(t.cost) || 0);
+      if (totalCost > 0) {
+        return sum + totalCost;
+      }
+      return sum;
+    }, 0);
+    
+    if (purchaseCost > 0) {
+      calculatedCost = purchaseCost;
+      console.log(`[altegio/inventory] ✅ Calculated cost from purchase transactions: ${calculatedCost}`);
+    }
+  }
+  
+  // Варіант 2: З транзакцій продажу (type_id=1)
+  // Можливо, cost_per_unit в транзакціях продажу містить оптову ціну (собівартість)
+  // Або є окреме поле для оптової ціни
+  if (calculatedCost === null && sales.length > 0) {
+    // Перевіряємо, чи є в транзакціях продажу поля, що можуть містити собівартість
+    const sampleSale = sales[0];
+    const possibleCostFields = Object.keys(sampleSale).filter(key => 
+      key.toLowerCase().includes('wholesale') || 
+      key.toLowerCase().includes('purchase') ||
+      key.toLowerCase().includes('buy') ||
+      (key.toLowerCase().includes('cost') && !key.toLowerCase().includes('per'))
+    );
+    
+    if (possibleCostFields.length > 0) {
+      console.log(`[altegio/inventory] Found possible cost fields in sales:`, possibleCostFields);
+      // Спробуємо обчислити собівартість з цих полів
+      const costFromSales = sales.reduce((sum, t) => {
+        for (const field of possibleCostFields) {
+          const value = Number((t as any)[field]) || 0;
+          if (value > 0) {
+            return sum + Math.abs(value);
+          }
+        }
+        return sum;
+      }, 0);
+      
+      if (costFromSales > 0) {
+        calculatedCost = costFromSales;
+        console.log(`[altegio/inventory] ✅ Calculated cost from sales transactions (fields: ${possibleCostFields.join(', ')}): ${calculatedCost}`);
+      }
+    }
+    
+    // Якщо не знайшли окремі поля, спробуємо використати cost_per_unit як собівартість
+    // (якщо в налаштуваннях API cost_per_unit тепер містить оптову ціну)
+    if (calculatedCost === null) {
+      const costFromCostPerUnit = sales.reduce((sum, t) => {
+        const costPerUnit = Number(t.cost_per_unit) || 0;
+        const amount = Math.abs(Number(t.amount) || 0);
+        if (costPerUnit > 0 && amount > 0) {
+          return sum + (costPerUnit * amount);
+        }
+        return sum;
+      }, 0);
+      
+      if (costFromCostPerUnit > 0) {
+        calculatedCost = costFromCostPerUnit;
+        console.log(`[altegio/inventory] ⚠️ Using cost_per_unit as cost (may be incorrect if it's sale price): ${calculatedCost}`);
+      }
+    }
+  }
+
+  // Варіант 3: Спробуємо отримати собівартість з Payments API
+  // Можливо, там є транзакції закупки товарів
+  if (calculatedCost === null) {
+    try {
+      console.log(`[altegio/inventory] 🔍 Trying Payments API for cost data...`);
+      const paymentsPath = `/transactions/${companyId}?start_date=${date_from}&end_date=${date_to}&real_money=1&deleted=0&count=1000`;
+      const paymentsRaw = await altegioFetch<any>(paymentsPath);
+      
+      const paymentsTx: any[] = Array.isArray(paymentsRaw)
+        ? paymentsRaw
+        : paymentsRaw && typeof paymentsRaw === "object" && Array.isArray((paymentsRaw as any).data)
+          ? (paymentsRaw as any).data
+          : [];
+      
+      // Шукаємо транзакції, пов'язані з закупкою товарів
+      // Можливо, вони мають type="purchase" або expense з назвою "Product purchase"
+      const purchasePayments = paymentsTx.filter((t: any) => {
+        const expenseTitle = t.expense?.title || t.expense?.name || "";
+        return expenseTitle.toLowerCase().includes("purchase") ||
+               expenseTitle.toLowerCase().includes("product purchase") ||
+               expenseTitle.toLowerCase().includes("закупка") ||
+               t.type === "purchase";
+      });
+      
+      if (purchasePayments.length > 0) {
+        console.log(`[altegio/inventory] Found ${purchasePayments.length} purchase transactions in Payments API`);
+        const costFromPayments = purchasePayments.reduce((sum: number, t: any) => {
+          const amount = Math.abs(Number(t.amount) || 0);
+          return sum + amount;
+        }, 0);
+        
+        if (costFromPayments > 0) {
+          calculatedCost = costFromPayments;
+          console.log(`[altegio/inventory] ✅ Calculated cost from Payments API purchase transactions: ${calculatedCost}`);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[altegio/inventory] ⚠️ Failed to fetch cost from Payments API:`, err?.message || String(err));
+    }
+  }
+
+  // Використовуємо обчислену собівартість, якщо вона є, інакше ручно введену, інакше 0
+  const finalCost = calculatedCost !== null 
+    ? calculatedCost 
+    : (manualCost !== null ? manualCost : 0);
+  
+  if (calculatedCost !== null) {
+    console.log(`[altegio/inventory] ✅ Using calculated cost from API: ${calculatedCost}`);
+  } else if (manualCost !== null) {
+    console.log(`[altegio/inventory] Using manual cost: ${manualCost}`);
+  } else {
+    console.log(`[altegio/inventory] ⚠️ No cost found (calculated or manual), using 0. Please set cost manually or check API settings.`);
+  }
   
   if (manualCost !== null) {
     console.log(
