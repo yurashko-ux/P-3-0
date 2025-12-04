@@ -156,10 +156,21 @@ export async function fetchExpensesSummary(params: {
     categoryMap.set(cat.id, name);
   }
 
-  // Спробуємо різні варіанти параметрів для finance_transactions
+  // Спробуємо різні варіанти endpoint'ів та параметрів для finance_transactions
   const attempts = [
     {
-      name: "with expense_id filter",
+      name: "GET /finance_transactions/{id} with date_from/date_to",
+      path: `/finance_transactions/${companyId}`,
+      params: new URLSearchParams({
+        date_from: date_from,
+        date_to: date_to,
+        real_money: "true",
+        deleted: "false",
+      }),
+    },
+    {
+      name: "GET /finance_transactions/{id} with start_date/end_date",
+      path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
@@ -168,7 +179,8 @@ export async function fetchExpensesSummary(params: {
       }),
     },
     {
-      name: "with type=expense",
+      name: "GET /finance_transactions/{id} with type=expense",
+      path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
@@ -178,7 +190,16 @@ export async function fetchExpensesSummary(params: {
       }),
     },
     {
-      name: "basic date filter",
+      name: "GET /company/{id}/finance_transactions",
+      path: `/company/${companyId}/finance_transactions`,
+      params: new URLSearchParams({
+        start_date: date_from,
+        end_date: date_to,
+      }),
+    },
+    {
+      name: "GET /finance_transactions/{id} basic",
+      path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
@@ -191,10 +212,16 @@ export async function fetchExpensesSummary(params: {
 
   for (const attempt of attempts) {
     try {
-      const path = `/finance_transactions/${companyId}?${attempt.params.toString()}`;
-      console.log(`[altegio/expenses] Trying ${attempt.name}: ${path}`);
+      const fullPath = `${attempt.path}?${attempt.params.toString()}`;
+      console.log(`[altegio/expenses] 🔍 Trying ${attempt.name}: ${fullPath}`);
 
-      const raw = await altegioFetch<any>(path);
+      const raw = await altegioFetch<any>(fullPath);
+      
+      console.log(`[altegio/expenses] Response type:`, typeof raw);
+      console.log(`[altegio/expenses] Response is array:`, Array.isArray(raw));
+      if (raw && typeof raw === "object") {
+        console.log(`[altegio/expenses] Response keys:`, Object.keys(raw));
+      }
 
       // Розпаковуємо дані (може бути масив або об'єкт з data)
       const fetched: AltegioFinanceTransaction[] = Array.isArray(raw)
