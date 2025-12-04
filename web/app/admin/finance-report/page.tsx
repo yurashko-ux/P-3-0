@@ -5,6 +5,7 @@ import {
   type FinanceSummary,
   type GoodsSalesSummary,
 } from "@/lib/altegio";
+import { EditCostButton } from "./_components/EditCostButton";
 
 export const dynamic = "force-dynamic";
 
@@ -238,12 +239,27 @@ export default async function FinanceReportPage({
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Собівартість товарів
-                  </p>
-                  <p className="text-lg font-semibold md:text-xl">
-                    {goods ? `${formatMoney(goods.cost)} грн.` : "— грн."}
-                  </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">
+                        Собівартість товарів
+                      </p>
+                      <p className="text-lg font-semibold md:text-xl">
+                        {goods ? `${formatMoney(goods.cost)} грн.` : "— грн."}
+                      </p>
+                    </div>
+                    {goods && (
+                      <EditCostButton
+                        year={selectedYear}
+                        month={selectedMonth}
+                        currentCost={goods.cost}
+                        onUpdate={(newCost) => {
+                          // onUpdate викликається після успішного збереження
+                          // router.refresh() вже викликається в компоненті
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs uppercase text-gray-500">

@@ -242,6 +242,37 @@ export async function fetchGoodsSalesSummary(params: {
   const { date_from, date_to } = params;
   const companyId = resolveCompanyId();
 
+  // Перевіряємо, чи є збережене значення собівартості для цього періоду
+  let manualCost: number | null = null;
+  try {
+    const dateFrom = new Date(date_from);
+    const year = dateFrom.getFullYear();
+    const month = dateFrom.getMonth() + 1;
+
+    // Імпортуємо kvRead тільки якщо потрібно
+    const { kvRead } = await import("@/lib/kv");
+    const costKey = `finance:goods:cost:${year}:${month}`;
+    const savedCost = await kvRead(costKey);
+    if (savedCost !== null) {
+      const costValue =
+        typeof savedCost === "number"
+          ? savedCost
+          : parseFloat(String(savedCost));
+      if (Number.isFinite(costValue) && costValue >= 0) {
+        manualCost = costValue;
+        console.log(
+          `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[altegio/inventory] Failed to check manual cost:`,
+      err,
+    );
+    // Продовжуємо з автоматичним розрахунком
+  }
+
   const qs = new URLSearchParams({
     start_date: date_from,
     end_date: date_to,
@@ -774,6 +805,15 @@ export async function fetchGoodsSalesSummary(params: {
     ),
   );
 
+  // Використовуємо ручно введену собівартість, якщо вона є
+  const finalCost = manualCost !== null ? manualCost : cost;
+  
+  if (manualCost !== null) {
+    console.log(
+      `[altegio/inventory] Using manual cost: ${manualCost} (instead of calculated: ${cost})`,
+    );
+  }
+
   // Використовуємо націнку з транзакцій, якщо вона є, інакше з товарів, інакше розраховуємо
   let profit: number;
   if (totalMarkupFromTransactions > 0) {
@@ -787,16 +827,18 @@ export async function fetchGoodsSalesSummary(params: {
       `[altegio/inventory] Using markup from goods: ${profit}`,
     );
   } else {
-    profit = revenue - cost;
+    // Якщо використовуємо ручну собівартість, розраховуємо націнку від виручки з аналітики
+    // Але якщо виручка з транзакцій, використовуємо її
+    profit = revenue - finalCost;
     console.log(
-      `[altegio/inventory] Calculating profit as revenue - cost: ${profit}`,
+      `[altegio/inventory] Calculating profit as revenue - cost: ${profit} (revenue: ${revenue}, cost: ${finalCost})`,
     );
   }
 
   return {
     range: { date_from, date_to },
     revenue,
-    cost,
+    cost: finalCost,
     profit,
     itemsCount: sales.length,
   };
