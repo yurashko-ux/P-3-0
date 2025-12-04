@@ -76,25 +76,28 @@ export async function fetchGoodsSalesSummary(params: {
     const month = dateFrom.getMonth() + 1;
 
     // Імпортуємо kvRead тільки якщо потрібно
-    const { kvRead } = await import("@/lib/kv");
-    const costKey = `finance:goods:cost:${year}:${month}`;
-    const rawValue = await kvRead.getRaw(costKey);
-    if (rawValue !== null) {
-      // Парсимо JSON, якщо це JSON, інакше пробуємо як число
-      let costValue: number | null = null;
-      try {
-        const parsed = JSON.parse(rawValue);
-        costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
-      } catch {
-        // Якщо не JSON, пробуємо як число
-        costValue = parseFloat(rawValue);
-      }
-      
-      if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
-        manualCost = costValue;
-        console.log(
-          `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
-        );
+    const kvModule = await import("@/lib/kv");
+    const kvRead = kvModule.kvRead;
+    if (kvRead && typeof kvRead.getRaw === "function") {
+      const costKey = `finance:goods:cost:${year}:${month}`;
+      const rawValue = await kvRead.getRaw(costKey);
+      if (rawValue !== null) {
+        // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+        let costValue: number | null = null;
+        try {
+          const parsed = JSON.parse(rawValue);
+          costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+        } catch {
+          // Якщо не JSON, пробуємо як число
+          costValue = parseFloat(rawValue);
+        }
+        
+        if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
+          manualCost = costValue;
+          console.log(
+            `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
+          );
+        }
       }
     }
   } catch (err) {
@@ -102,7 +105,7 @@ export async function fetchGoodsSalesSummary(params: {
       `[altegio/inventory] Failed to check manual cost:`,
       err,
     );
-    // Продовжуємо з автоматичним розрахунком
+    // Продовжуємо без ручної собівартості
   }
 
   const qs = new URLSearchParams({
@@ -151,9 +154,6 @@ export async function fetchGoodsSalesSummary(params: {
     },
     0,
   );
-
-  // Не розраховуємо собівартість автоматично - використовуємо тільки ручно введене значення
-  const cost = 0;
 
   // Використовуємо ручно введену собівартість, якщо вона є, інакше 0
   const finalCost = manualCost !== null ? manualCost : 0;
