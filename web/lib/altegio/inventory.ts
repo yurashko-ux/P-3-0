@@ -13,6 +13,7 @@ export type AltegioStorageTransaction = {
   cost: number;
   create_date: string;
   good_id?: number;
+  document_id?: number; // ID документа операції (може містити ціну закупки)
   good?: {
     id: number;
     title: string;
@@ -49,6 +50,84 @@ function resolveCompanyId(): string {
     );
   }
   return companyId;
+}
+
+/**
+ * Отримати деталі документа операції складу за ID
+ * Може містити інформацію про ціну закупки товарів
+ */
+async function fetchDocumentDetails(
+  locationId: string,
+  documentId: number,
+): Promise<any | null> {
+  try {
+    // Спробуємо різні варіанти endpoint'ів для документів
+    const paths = [
+      `/storage_operations/documents/${locationId}/${documentId}`,
+      `/storages/documents/${locationId}/${documentId}`,
+      `/storage_operations/${locationId}/documents/${documentId}`,
+    ];
+
+    for (const path of paths) {
+      try {
+        const response = await altegioFetch<any>(path);
+        if (response) {
+          console.log(
+            `[altegio/inventory] Document ${documentId} structure:`,
+            JSON.stringify(
+              {
+                path,
+                allKeys: Object.keys(response),
+                numericFields: Object.entries(response)
+                  .filter(([_, v]) => typeof v === "number")
+                  .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+                costFields: Object.entries(response)
+                  .filter(([k]) => k.toLowerCase().includes("cost"))
+                  .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+                purchaseFields: Object.entries(response)
+                  .filter(([k]) =>
+                    k.toLowerCase().includes("purchase") ||
+                    k.toLowerCase().includes("wholesale") ||
+                    k.toLowerCase().includes("закуп") ||
+                    k.toLowerCase().includes("собіварт") ||
+                    k.toLowerCase().includes("arrival") ||
+                    k.toLowerCase().includes("incoming"),
+                  )
+                  .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+                goods: Array.isArray(response.goods)
+                  ? response.goods.slice(0, 2).map((g: any) => ({
+                      id: g.id,
+                      good_id: g.good_id,
+                      cost: g.cost,
+                      cost_per_unit: g.cost_per_unit,
+                      purchase_price: g.purchase_price,
+                      wholesale_cost: g.wholesale_cost,
+                      allKeys: Object.keys(g),
+                    }))
+                  : response.goods,
+              },
+              null,
+              2,
+            ).substring(0, 2000),
+          );
+          return response;
+        }
+      } catch (err: any) {
+        if (err.status === 404) {
+          continue; // Спробуємо наступний варіант
+        }
+        throw err;
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error(
+      `[altegio/inventory] Failed to fetch document ${documentId} from location ${locationId}:`,
+      err,
+    );
+    return null;
+  }
 }
 
 /**
@@ -206,6 +285,7 @@ export async function fetchGoodsSalesSummary(params: {
               type_id: sampleTx.type_id,
               amount: sampleTx.amount,
               good_id: sampleTx.good_id,
+              document_id: sampleTx.document_id, // Перевіряємо наявність document_id
               good: sampleTx.good, // Логуємо об'єкт good
               cost_per_unit: sampleTx.cost_per_unit,
               cost: sampleTx.cost,
@@ -222,8 +302,20 @@ export async function fetchGoodsSalesSummary(params: {
               priceFields: Object.entries(sampleTx)
                 .filter(([k]) => k.toLowerCase().includes("price"))
                 .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+              // Логуємо поля, що можуть містити ціну закупки
+              purchaseFields: Object.entries(sampleTx)
+                .filter(([k]) =>
+                  k.toLowerCase().includes("purchase") ||
+                  k.toLowerCase().includes("wholesale") ||
+                  k.toLowerCase().includes("закуп") ||
+                  k.toLowerCase().includes("собіварт") ||
+                  k.toLowerCase().includes("arrival") ||
+                  k.toLowerCase().includes("incoming"),
+                )
+                .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
             }
           : null,
+        transactionsWithDocumentId: tx.filter((t) => t.document_id).length,
       },
       null,
       2,
@@ -242,30 +334,85 @@ export async function fetchGoodsSalesSummary(params: {
     return null;
   };
 
+  // Перевіряємо, чи є в транзакціях поля з ціною закупки
+  const sampleSales = sales.slice(0, 3);
+  const transactionPurchasePriceFields = sampleSales.map((t) => {
+    const purchaseFields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(t)) {
+      if (
+        typeof k === "string" &&
+        (k.toLowerCase().includes("purchase") ||
+          k.toLowerCase().includes("wholesale") ||
+          k.toLowerCase().includes("закуп") ||
+          k.toLowerCase().includes("собіварт") ||
+          k.toLowerCase().includes("arrival") ||
+          k.toLowerCase().includes("incoming") ||
+          k.toLowerCase().includes("buy"))
+      ) {
+        purchaseFields[k] = v;
+      }
+    }
+    // Також перевіряємо об'єкт good, якщо він є
+    if (t.good && typeof t.good === "object") {
+      for (const [k, v] of Object.entries(t.good)) {
+        if (
+          typeof k === "string" &&
+          (k.toLowerCase().includes("purchase") ||
+            k.toLowerCase().includes("wholesale") ||
+            k.toLowerCase().includes("закуп") ||
+            k.toLowerCase().includes("собіварт") ||
+            k.toLowerCase().includes("cost"))
+        ) {
+          purchaseFields[`good.${k}`] = v;
+        }
+      }
+    }
+    return {
+      transactionId: t.id,
+      goodId: extractGoodId(t),
+      purchaseFields,
+      allNumericFields: Object.entries(t)
+        .filter(([_, v]) => typeof v === "number")
+        .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+    };
+  });
+
   console.log(
     `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items`,
-    JSON.stringify({
-      amounts: sales.map((t) => Number(t.amount)),
-      positiveAmounts: sales.filter((t) => Number(t.amount) > 0).length,
-      negativeAmounts: sales.filter((t) => Number(t.amount) < 0).length,
-      uniqueGoodIds: [
-        ...new Set(
-          sales.map(extractGoodId).filter((id): id is number => id !== null),
-        ),
-      ],
-      sampleGoodIds: sales
-        .slice(0, 5)
-        .map((t) => ({
-          good_id: t.good_id,
-          good: t.good,
-          extracted: extractGoodId(t),
-        })),
-    }),
+    JSON.stringify(
+      {
+        amounts: sales.map((t) => Number(t.amount)),
+        positiveAmounts: sales.filter((t) => Number(t.amount) > 0).length,
+        negativeAmounts: sales.filter((t) => Number(t.amount) < 0).length,
+        uniqueGoodIds: [
+          ...new Set(
+            sales.map(extractGoodId).filter((id): id is number => id !== null),
+          ),
+        ],
+        sampleGoodIds: sales
+          .slice(0, 5)
+          .map((t) => ({
+            good_id: t.good_id,
+            good: t.good,
+            extracted: extractGoodId(t),
+          })),
+        transactionPurchasePriceFields,
+      },
+      null,
+      2,
+    ),
   );
 
-  // Розраховуємо виручку (сума всіх cost, використовуючи абсолютне значення)
+  // Розраховуємо виручку: використовуємо cost_per_unit * amount (бо t.cost часто = 0)
+  // Для продажів amount зазвичай від'ємний (зменшення складу), тому беремо абсолютне значення
   const revenue = sales.reduce(
-    (sum, t) => sum + Math.abs(Number(t.cost) || 0),
+    (sum, t) => {
+      const amount = Math.abs(Number(t.amount) || 0);
+      const costPerUnit = Number(t.cost_per_unit) || 0;
+      // Якщо cost_per_unit = 0, спробуємо використати cost (якщо він не 0)
+      const unitPrice = costPerUnit > 0 ? costPerUnit : Math.abs(Number(t.cost) || 0);
+      return sum + amount * unitPrice;
+    },
     0,
   );
 
@@ -284,6 +431,40 @@ export async function fetchGoodsSalesSummary(params: {
 
   // Створюємо мапу: good_id -> actual_cost (або інше поле з собівартістю)
   const goodCostMap = new Map<number, number>();
+
+  // Спочатку спробуємо отримати ціни закупки з документів операцій (якщо є document_id)
+  const uniqueDocumentIds = [
+    ...new Set(
+      sales
+        .map((t) => t.document_id)
+        .filter((id): id is number => id !== null && id !== undefined && id > 0),
+    ),
+  ];
+
+  if (uniqueDocumentIds.length > 0) {
+    console.log(
+      `[altegio/inventory] Found ${uniqueDocumentIds.length} unique document IDs, fetching document details...`,
+    );
+
+    // Отримуємо деталі документів (обмежуємо кількість для діагностики)
+    const documentSampleSize = Math.min(5, uniqueDocumentIds.length);
+    for (let i = 0; i < documentSampleSize; i++) {
+      const docId = uniqueDocumentIds[i];
+      const doc = await fetchDocumentDetails(companyId, docId);
+      if (doc) {
+        // Якщо документ містить товари з цінами закупки, логуємо це
+        if (Array.isArray(doc.goods)) {
+          console.log(
+            `[altegio/inventory] Document ${docId} contains ${doc.goods.length} goods`,
+          );
+        }
+      }
+      // Невелика затримка між запитами
+      if (i < documentSampleSize - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  }
 
   // Отримуємо деталі кожного товару для отримання actual_cost
   // Обмежуємо кількість одночасних запитів, щоб не перевищити rate limit
