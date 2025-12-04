@@ -74,6 +74,50 @@ async function fetchGoodDetails(
       }
     }
 
+    // Детальне логування структури товару для діагностики
+    if (good) {
+      console.log(
+        `[altegio/inventory] Good ${productId} structure:`,
+        JSON.stringify(
+          {
+            id: good.id,
+            title: good.title,
+            actual_cost: good.actual_cost,
+            cost: good.cost,
+            allKeys: Object.keys(good),
+            // Логуємо всі числові поля, які можуть бути собівартістю
+            numericFields: Object.entries(good)
+              .filter(([_, v]) => typeof v === "number")
+              .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+            // Логуємо всі поля, що містять "cost" в назві
+            costFields: Object.entries(good)
+              .filter(([k]) => k.toLowerCase().includes("cost"))
+              .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+            // Логуємо всі поля, що містять "price" в назві
+            priceFields: Object.entries(good)
+              .filter(([k]) => k.toLowerCase().includes("price"))
+              .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+            // Логуємо всі поля, що містять "purchase" або "wholesale" в назві
+            purchaseFields: Object.entries(good)
+              .filter(([k]) =>
+                k.toLowerCase().includes("purchase") ||
+                k.toLowerCase().includes("wholesale") ||
+                k.toLowerCase().includes("закуп") ||
+                k.toLowerCase().includes("собіварт"),
+              )
+              .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.warn(
+        `[altegio/inventory] Good ${productId} response structure:`,
+        JSON.stringify(response, null, 2).substring(0, 500),
+      );
+    }
+
     return good;
   } catch (err) {
     console.error(
@@ -125,24 +169,36 @@ export async function fetchGoodsSalesSummary(params: {
       : [];
 
   // Логуємо структуру для діагностики
+  const sampleTx = tx.length > 0 ? tx[0] : null;
   console.log(
     `[altegio/inventory] transactions response:`,
     JSON.stringify(
       {
         totalTransactions: tx.length,
         typeIds: [...new Set(tx.map((t) => t.type_id))].sort(),
-        sampleTransaction:
-          tx.length > 0
-            ? {
-                id: tx[0].id,
-                type_id: tx[0].type_id,
-                amount: tx[0].amount,
-                good_id: tx[0].good_id,
-                cost_per_unit: tx[0].cost_per_unit,
-                cost: tx[0].cost,
-                allKeys: Object.keys(tx[0]),
-              }
-            : null,
+        sampleTransaction: sampleTx
+          ? {
+              id: sampleTx.id,
+              type_id: sampleTx.type_id,
+              amount: sampleTx.amount,
+              good_id: sampleTx.good_id,
+              cost_per_unit: sampleTx.cost_per_unit,
+              cost: sampleTx.cost,
+              allKeys: Object.keys(sampleTx),
+              // Логуємо всі числові поля
+              numericFields: Object.entries(sampleTx)
+                .filter(([_, v]) => typeof v === "number")
+                .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+              // Логуємо всі поля з "cost" в назві
+              costFields: Object.entries(sampleTx)
+                .filter(([k]) => k.toLowerCase().includes("cost"))
+                .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+              // Логуємо всі поля з "price" в назві
+              priceFields: Object.entries(sampleTx)
+                .filter(([k]) => k.toLowerCase().includes("price"))
+                .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {}),
+            }
+          : null,
       },
       null,
       2,
@@ -182,7 +238,7 @@ export async function fetchGoodsSalesSummary(params: {
     `[altegio/inventory] Fetching details for ${uniqueGoodIds.length} unique products...`,
   );
 
-  // Створюємо мапу: good_id -> actual_cost
+  // Створюємо мапу: good_id -> actual_cost (або інше поле з собівартістю)
   const goodCostMap = new Map<number, number>();
 
   // Отримуємо деталі кожного товару для отримання actual_cost
@@ -192,15 +248,50 @@ export async function fetchGoodsSalesSummary(params: {
     const batch = uniqueGoodIds.slice(i, i + BATCH_SIZE);
     const batchPromises = batch.map((goodId) =>
       fetchGoodDetails(companyId, goodId).then((good) => {
-        if (good && good.actual_cost !== undefined) {
-          goodCostMap.set(goodId, Number(good.actual_cost) || 0);
+        if (!good) {
+          console.warn(
+            `[altegio/inventory] Good ${goodId}: failed to fetch details`,
+          );
+          return;
+        }
+
+        // Спробуємо знайти собівартість в різних полях
+        // Пріоритет: actual_cost > cost > інші поля з "cost" в назві
+        let costValue: number | undefined = undefined;
+
+        if (good.actual_cost !== undefined && good.actual_cost !== null) {
+          costValue = Number(good.actual_cost);
+        } else if (good.cost !== undefined && good.cost !== null) {
+          // Може бути, що cost - це собівартість, а не ціна продажу
+          costValue = Number(good.cost);
+        } else {
+          // Шукаємо інші поля з "cost" в назві
+          const costFields = Object.entries(good).filter(([k]) =>
+            k.toLowerCase().includes("cost"),
+          );
+          if (costFields.length > 0) {
+            console.log(
+              `[altegio/inventory] Good ${goodId}: found cost fields:`,
+              costFields.map(([k, v]) => `${k}=${v}`).join(", "),
+            );
+            // Спробуємо взяти перше числове значення
+            for (const [_, v] of costFields) {
+              if (typeof v === "number" && v > 0) {
+                costValue = v;
+                break;
+              }
+            }
+          }
+        }
+
+        if (costValue !== undefined && costValue > 0) {
+          goodCostMap.set(goodId, costValue);
           console.log(
-            `[altegio/inventory] Good ${goodId}: actual_cost = ${good.actual_cost}`,
+            `[altegio/inventory] Good ${goodId}: using cost = ${costValue}`,
           );
         } else {
           console.warn(
-            `[altegio/inventory] Good ${goodId}: actual_cost not found`,
-            good ? Object.keys(good) : "good is null",
+            `[altegio/inventory] Good ${goodId}: no valid cost found. actual_cost=${good.actual_cost}, cost=${good.cost}`,
           );
         }
       }),
@@ -242,13 +333,46 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
+  // Логуємо детальну статистику по розрахунку собівартості
+  const costByGoodId = new Map<number, { count: number; totalCost: number }>();
+  for (const t of sales) {
+    const goodId = t.good_id || t.good?.id;
+    if (!goodId) continue;
+    const actualCost = goodCostMap.get(goodId);
+    if (actualCost !== undefined) {
+      const amount = Math.abs(Number(t.amount) || 0);
+      const transactionCost = actualCost * amount;
+      const existing = costByGoodId.get(goodId) || { count: 0, totalCost: 0 };
+      costByGoodId.set(goodId, {
+        count: existing.count + 1,
+        totalCost: existing.totalCost + transactionCost,
+      });
+    }
+  }
+
   console.log(
-    `[altegio/inventory] Cost calculation:`,
-    JSON.stringify({
-      costCalculatedCount,
-      costMissingCount,
-      totalCost: cost,
-    }),
+    `[altegio/inventory] Cost calculation details:`,
+    JSON.stringify(
+      {
+        costCalculatedCount,
+        costMissingCount,
+        totalCost: cost,
+        revenue,
+        calculatedProfit: revenue - cost,
+        goodsWithCost: costByGoodId.size,
+        topGoodsByCost: Array.from(costByGoodId.entries())
+          .sort((a, b) => b[1].totalCost - a[1].totalCost)
+          .slice(0, 10)
+          .map(([goodId, data]) => ({
+            goodId,
+            transactions: data.count,
+            cost: data.totalCost,
+            costPerUnit: goodCostMap.get(goodId),
+          })),
+      },
+      null,
+      2,
+    ),
   );
 
   const profit = revenue - cost;
