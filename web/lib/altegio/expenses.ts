@@ -70,46 +70,68 @@ function toNumber(v: unknown): number {
 
 /**
  * Отримати список категорій витрат з Altegio API
- * Використовує endpoint: GET /expenses/{company_id}
+ * Спробуємо різні endpoint'и згідно з документацією
  */
 export async function fetchExpenseCategories(): Promise<AltegioExpenseCategory[]> {
   const companyId = resolveCompanyId();
 
   const attempts = [
+    `/expenses`, // Згідно з документацією: GET /expenses
     `/expenses/${companyId}`,
     `/company/${companyId}/expenses`,
     `/expenses?company_id=${companyId}`,
+    `/company/${companyId}/expense_categories`,
+    `/expense_categories/${companyId}`,
+    `/expense_categories?company_id=${companyId}`,
   ];
 
   for (const path of attempts) {
     try {
-      console.log(`[altegio/expenses] Fetching categories: ${path}`);
+      console.log(`[altegio/expenses] 🔍 Fetching categories: ${path}`);
       const raw = await altegioFetch<any>(path);
 
-      const categories: AltegioExpenseCategory[] = Array.isArray(raw)
-        ? raw
-        : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-          ? (raw as any).data
-          : raw && typeof raw === "object" && Array.isArray((raw as any).expenses)
-            ? (raw as any).expenses
-            : [];
+      console.log(`[altegio/expenses] Raw response type:`, typeof raw);
+      console.log(`[altegio/expenses] Raw response keys:`, raw && typeof raw === "object" ? Object.keys(raw) : "not an object");
+
+      // Різні формати відповіді
+      let categories: AltegioExpenseCategory[] = [];
+      
+      if (Array.isArray(raw)) {
+        categories = raw;
+      } else if (raw && typeof raw === "object") {
+        // Спробуємо різні поля
+        if (Array.isArray((raw as any).data)) {
+          categories = (raw as any).data;
+        } else if (Array.isArray((raw as any).expenses)) {
+          categories = (raw as any).expenses;
+        } else if (Array.isArray((raw as any).categories)) {
+          categories = (raw as any).categories;
+        } else if (Array.isArray((raw as any).items)) {
+          categories = (raw as any).items;
+        } else if ((raw as any).success && Array.isArray((raw as any).data)) {
+          categories = (raw as any).data;
+        }
+      }
 
       if (categories.length > 0) {
         console.log(
           `[altegio/expenses] ✅ Got ${categories.length} expense categories using ${path}`,
         );
+        console.log(`[altegio/expenses] Sample category:`, categories[0]);
         return categories;
+      } else {
+        console.log(`[altegio/expenses] ⚠️ No categories found in response from ${path}`);
       }
     } catch (err: any) {
       console.warn(
-        `[altegio/expenses] Failed to fetch categories from ${path}:`,
+        `[altegio/expenses] ❌ Failed to fetch categories from ${path}:`,
         err?.message || String(err),
       );
       continue;
     }
   }
 
-  console.warn(`[altegio/expenses] ⚠️ No expense categories found`);
+  console.warn(`[altegio/expenses] ⚠️ No expense categories found from any endpoint`);
   return [];
 }
 
@@ -200,30 +222,37 @@ export async function fetchExpensesSummary(params: {
     }
   }
 
-  if (transactions.length === 0 && lastError) {
-    console.error(
-      `[altegio/expenses] ❌ All attempts failed, last error:`,
-      lastError,
-    );
+  if (transactions.length === 0) {
+    if (lastError) {
+      console.error(
+        `[altegio/expenses] ❌ All attempts failed, last error:`,
+        lastError,
+      );
+    } else {
+      console.warn(
+        `[altegio/expenses] ⚠️ No transactions found, but no errors occurred`,
+      );
+    }
+    
+    // Повертаємо порожній результат, але з категоріями (якщо вони є)
+    return {
+      range: { date_from, date_to },
+      total: 0,
+      byCategory: {},
+      transactions: [],
+      categories,
+    };
   }
 
-  try {
-
-    // Розпаковуємо дані (може бути масив або об'єкт з data)
-    const transactions: AltegioFinanceTransaction[] = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-        ? (raw as any).data
-        : raw && typeof raw === "object" && Array.isArray((raw as any).transactions)
-          ? (raw as any).transactions
-          : [];
-
-    console.log(
-      `[altegio/expenses] Processing ${transactions.length} finance transactions`,
-    );
+  console.log(
+    `[altegio/expenses] Processing ${transactions.length} finance transactions`,
+  );
 
     // Фільтруємо тільки витрати (expenses)
     // Витрати мають type="expense" або від'ємний amount, або expense_id
+    // Але спочатку логуємо всі транзакції для діагностики
+    console.log(`[altegio/expenses] Sample transaction:`, transactions[0]);
+    
     const expenses = transactions.filter((t) => {
       const amount = toNumber(t.amount);
       const hasExpenseId = !!t.expense_id;
@@ -231,9 +260,24 @@ export async function fetchExpensesSummary(params: {
         t.type === "expense" ||
         t.type === "outcome" ||
         (t.type && String(t.type).toLowerCase().includes("expense"));
+      
+      // Логуємо перші кілька транзакцій для діагностики
+      if (transactions.indexOf(t) < 3) {
+        console.log(`[altegio/expenses] Transaction ${t.id}:`, {
+          expense_id: t.expense_id,
+          type: t.type,
+          amount: t.amount,
+          hasExpenseId,
+          isExpenseType,
+          willInclude: hasExpenseId || isExpenseType || amount < 0,
+        });
+      }
+      
       // Якщо є expense_id або type=expense, це витрата
       // Або якщо amount від'ємний (для деяких систем)
-      return hasExpenseId || isExpenseType || amount < 0;
+      // АБО якщо немає явного type="income" - спробуємо включити
+      const isIncome = t.type === "income" || t.type === "incoming";
+      return !isIncome && (hasExpenseId || isExpenseType || amount < 0 || (!t.type && hasExpenseId));
     });
 
     console.log(
@@ -279,14 +323,14 @@ export async function fetchExpensesSummary(params: {
       categories,
     };
   } catch (error: any) {
-    console.error(`[altegio/expenses] Failed to fetch expenses:`, error);
-    // Повертаємо порожній результат замість помилки
+    console.error(`[altegio/expenses] ❌ Failed to process expenses:`, error);
+    // Повертаємо порожній результат замість помилки, але з категоріями (якщо вони є)
     return {
       range: { date_from, date_to },
       total: 0,
       byCategory: {},
       transactions: [],
-      categories: [],
+      categories,
     };
   }
 }
