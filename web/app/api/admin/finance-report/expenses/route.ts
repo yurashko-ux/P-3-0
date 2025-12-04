@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     }
 
     const key = getExpensesKey(year, month);
-    const raw = await kvRead(key);
+    const raw = await kvRead.getRaw(key);
 
     console.log(`[expenses/route] GET key=${key}, hasValue=${!!raw}`);
 
