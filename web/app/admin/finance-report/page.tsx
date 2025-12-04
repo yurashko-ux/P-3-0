@@ -1,5 +1,10 @@
 // web/app/admin/finance-report/page.tsx
-import { fetchFinanceSummary, type FinanceSummary } from "@/lib/altegio";
+import {
+  fetchFinanceSummary,
+  fetchGoodsSalesSummary,
+  type FinanceSummary,
+  type GoodsSalesSummary,
+} from "@/lib/altegio";
 
 export const dynamic = "force-dynamic";
 
@@ -73,17 +78,31 @@ function monthRange(year: number, month: number): {
 async function getSummaryForMonth(
   year: number,
   month: number,
-): Promise<{ summary: FinanceSummary | null; error: string | null }> {
+): Promise<{
+  summary: FinanceSummary | null;
+  goods: GoodsSalesSummary | null;
+  error: string | null;
+}> {
   const { from, to } = monthRange(year, month);
 
   try {
-    const summary = await fetchFinanceSummary({
-      date_from: from,
-      date_to: to,
-    });
-    return { summary, error: null };
+    const [summary, goods] = await Promise.all([
+      fetchFinanceSummary({
+        date_from: from,
+        date_to: to,
+      }),
+      fetchGoodsSalesSummary({
+        date_from: from,
+        date_to: to,
+      }),
+    ]);
+    return { summary, goods, error: null };
   } catch (e: any) {
-    return { summary: null, error: String(e?.message || e) };
+    return {
+      summary: null,
+      goods: null,
+      error: String(e?.message || e),
+    };
   }
 }
 
@@ -104,7 +123,7 @@ export default async function FinanceReportPage({
 
   const monthOptions = buildMonthOptions(today);
 
-  const { summary, error } = await getSummaryForMonth(
+  const { summary, goods, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -224,7 +243,7 @@ export default async function FinanceReportPage({
                     Виручка по товарах
                   </p>
                   <p className="text-lg font-semibold md:text-xl">
-                    {formatMoney(summary.totals.goods)} грн.
+                    {formatMoney(goods?.revenue ?? summary.totals.goods)} грн.
                   </p>
                 </div>
                 <div>
