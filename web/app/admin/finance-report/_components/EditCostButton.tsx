@@ -10,14 +10,12 @@ interface EditCostButtonProps {
   year: number;
   month: number;
   currentCost: number;
-  onUpdate: (newCost: number) => void;
 }
 
 export function EditCostButton({
   year,
   month,
   currentCost,
-  onUpdate,
 }: EditCostButtonProps) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
@@ -79,7 +77,6 @@ export function EditCostButton({
         }
 
         const data = await res.json();
-        onUpdate(data.cost);
         setIsEditing(false);
         setSecret("");
         // Оновлюємо сторінку для відображення нових даних

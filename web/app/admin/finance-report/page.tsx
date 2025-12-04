@@ -253,10 +253,6 @@ export default async function FinanceReportPage({
                         year={selectedYear}
                         month={selectedMonth}
                         currentCost={goods.cost}
-                        onUpdate={(newCost) => {
-                          // onUpdate викликається після успішного збереження
-                          // router.refresh() вже викликається в компоненті
-                        }}
                       />
                     )}
                   </div>
