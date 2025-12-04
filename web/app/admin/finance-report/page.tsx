@@ -7,8 +7,9 @@ function formatDateISO(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function formatDateHuman(value: string | Date): string {
-  const d = typeof value === "string" ? new Date(value) : value;
+function formatDateHuman(value: string | Date | number): string {
+  // Завжди нормалізуємо в Date, навіть якщо вхід може бути number або іншим типом
+  const d = new Date(value as any);
   return d.toLocaleDateString("uk-UA", {
     day: "2-digit",
     month: "2-digit",
