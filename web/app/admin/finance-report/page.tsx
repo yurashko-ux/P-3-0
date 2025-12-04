@@ -2,8 +2,10 @@
 import {
   fetchFinanceSummary,
   fetchGoodsSalesSummary,
+  fetchExpensesSummary,
   type FinanceSummary,
   type GoodsSalesSummary,
+  type ExpensesSummary,
 } from "@/lib/altegio";
 import { EditCostButton } from "./_components/EditCostButton";
 import { unstable_noStore as noStore } from "next/cache";
@@ -77,12 +79,13 @@ async function getSummaryForMonth(
 ): Promise<{
   summary: FinanceSummary | null;
   goods: GoodsSalesSummary | null;
+  expenses: ExpensesSummary | null;
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
 
   try {
-    const [summary, goods] = await Promise.all([
+    const [summary, goods, expenses] = await Promise.all([
       fetchFinanceSummary({
         date_from: from,
         date_to: to,
@@ -91,12 +94,17 @@ async function getSummaryForMonth(
         date_from: from,
         date_to: to,
       }),
+      fetchExpensesSummary({
+        date_from: from,
+        date_to: to,
+      }),
     ]);
-    return { summary, goods, error: null };
+    return { summary, goods, expenses, error: null };
   } catch (e: any) {
     return {
       summary: null,
       goods: null,
+      expenses: null,
       error: String(e?.message || e),
     };
   }
@@ -124,7 +132,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -266,6 +274,73 @@ export default async function FinanceReportPage({
                       : "— грн."}
                   </p>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Розходи за місяць */}
+          <section className="card bg-base-100 shadow-sm">
+            <div className="card-body p-4 space-y-3">
+              <h2 className="card-title text-base md:text-lg">
+                Розходи за місяць
+              </h2>
+              
+              {expenses && expenses.transactions.length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <p className="text-xs uppercase text-gray-500">
+                      Всього розходів (з Altegio API)
+                    </p>
+                    <p className="text-xl font-semibold">
+                      {formatMoney(expenses.total)} грн.
+                    </p>
+                  </div>
+
+                  {/* Витрати по категоріях */}
+                  {Object.keys(expenses.byCategory).length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">
+                        Розбивка по категоріях:
+                      </p>
+                      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                        {Object.entries(expenses.byCategory)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([category, amount]) => (
+                            <div
+                              key={category}
+                              className="flex justify-between items-center p-2 bg-gray-50 rounded"
+                            >
+                              <span className="text-sm text-gray-600">
+                                {category}
+                              </span>
+                              <span className="text-sm font-semibold">
+                                {formatMoney(amount)} грн.
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-gray-500">
+                  <p>
+                    Витрати з Altegio API не знайдені або не налаштовані.
+                  </p>
+                  <p className="mt-2">
+                    Використовуйте P&L звіт для введення витрат вручну.
+                  </p>
+                </div>
+              )}
+
+              {/* Примітка про ручне введення */}
+              <div className="mt-4 p-3 bg-blue-50 rounded text-xs text-gray-600">
+                <p className="font-medium mb-1">Примітка:</p>
+                <p>
+                  Деякі категорії витрат (ЗП, Оренда, Бухгалтерія, Реклама,
+                  Податки тощо) можуть бути недоступні через API і потребують
+                  ручного введення з P&L звіту.
+                </p>
               </div>
             </div>
           </section>
