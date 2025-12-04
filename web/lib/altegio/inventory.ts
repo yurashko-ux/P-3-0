@@ -59,12 +59,17 @@ export async function fetchGoodsSalesSummary(params: {
 
   const path = `/storages/transactions/${companyId}?${qs.toString()}`;
 
-  const tx = await altegioFetch<AltegioStorageTransaction[]>(path);
+  const raw = await altegioFetch<any>(path);
+
+  // /storages/transactions повертає { success, data: Transaction[], meta: {...} }
+  const tx: AltegioStorageTransaction[] = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === "object" && Array.isArray((raw as any).data)
+        ? (raw as any).data
+        : []);
 
   // type_id = 1 — продаж товарів (Sale of goods)
-  const sales = Array.isArray(tx)
-    ? tx.filter((t) => Number(t.type_id) === 1)
-    : [];
+  const sales = tx.filter((t) => Number(t.type_id) === 1);
 
   const revenue = sales.reduce(
     (sum, t) => sum + (Number(t.cost) || 0),
