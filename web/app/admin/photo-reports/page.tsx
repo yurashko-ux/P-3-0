@@ -69,6 +69,7 @@ export default function PhotoReportsPage() {
   const [servicesStatsError, setServicesStatsError] = useState<string | null>(null);
   const [masters, setMasters] = useState<MasterProfile[]>([]);
   const [mode, setMode] = useState<AnalyticsMode>("prod");
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     // Завантажуємо майстрів при завантаженні сторінки
@@ -305,6 +306,13 @@ export default function PhotoReportsPage() {
                 className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isLoadingAnalytics ? "Завантаження..." : "Оновити звіти"}
+              </button>
+              <button
+                onClick={handleClearReports}
+                disabled={isClearing}
+                className="rounded-lg bg-red-100 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isClearing ? "Очищення..." : "Очистити фото-звіти"}
               </button>
             </div>
           </div>
