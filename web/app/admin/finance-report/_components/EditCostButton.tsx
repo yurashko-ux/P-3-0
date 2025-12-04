@@ -3,7 +3,7 @@
 // web/app/admin/finance-report/_components/EditCostButton.tsx
 // Компонент для редагування собівартості товарів (захищений CRON_SECRET)
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 interface EditCostButtonProps {
@@ -18,14 +18,18 @@ export function EditCostButton({
   currentCost,
 }: EditCostButtonProps) {
   const router = useRouter();
-  const [isEditing, setIsEditing] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
   const [secret, setSecret] = useState("");
   const [cost, setCost] = useState(String(currentCost));
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [isAuthorized, setIsAuthorized] = useState(false);
 
-  const handleStartEdit = () => {
+  // Оновлюємо значення, коли currentCost змінюється
+  useEffect(() => {
+    setCost(String(currentCost));
+  }, [currentCost]);
+
+  const handleUnlock = () => {
     const enteredSecret = prompt(
       "Введіть CRON_SECRET для редагування собівартості:",
     );
@@ -40,7 +44,6 @@ export function EditCostButton({
       .then((res) => {
         if (res.ok) {
           setIsAuthorized(true);
-          setIsEditing(true);
           setSecret(enteredSecret);
         } else {
           alert("Невірний CRON_SECRET");
@@ -76,11 +79,10 @@ export function EditCostButton({
           throw new Error(data.error || "Помилка збереження");
         }
 
-        const data = await res.json();
-        setIsEditing(false);
-        setSecret("");
         // Оновлюємо сторінку для відображення нових даних
         router.refresh();
+        setIsAuthorized(false);
+        setSecret("");
       } catch (err: any) {
         setError(err.message || "Помилка збереження");
       }
@@ -88,24 +90,11 @@ export function EditCostButton({
   };
 
   const handleCancel = () => {
-    setIsEditing(false);
-    setSecret("");
     setCost(String(currentCost));
-    setError(null);
     setIsAuthorized(false);
+    setSecret("");
+    setError(null);
   };
-
-  if (!isEditing) {
-    return (
-      <button
-        onClick={handleStartEdit}
-        className="btn btn-sm btn-ghost text-xs"
-        title="Редагувати собівартість (потрібен CRON_SECRET)"
-      >
-        ✏️ Редагувати
-      </button>
-    );
-  }
 
   return (
     <div className="space-y-2">
@@ -118,23 +107,36 @@ export function EditCostButton({
           className="input input-bordered input-sm w-32"
           min="0"
           step="0.01"
-          disabled={isPending}
+          disabled={!isAuthorized || isPending}
+          readOnly={!isAuthorized}
         />
         <span className="text-sm text-gray-600">грн.</span>
-        <button
-          onClick={handleSave}
-          className="btn btn-sm btn-primary"
-          disabled={isPending}
-        >
-          {isPending ? "Збереження..." : "💾 Зберегти"}
-        </button>
-        <button
-          onClick={handleCancel}
-          className="btn btn-sm btn-ghost"
-          disabled={isPending}
-        >
-          Скасувати
-        </button>
+        {!isAuthorized ? (
+          <button
+            onClick={handleUnlock}
+            className="btn btn-sm btn-ghost text-xs"
+            title="Розблокувати для редагування (потрібен CRON_SECRET)"
+          >
+            ✏️
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={handleSave}
+              className="btn btn-sm btn-primary"
+              disabled={isPending}
+            >
+              {isPending ? "..." : "💾"}
+            </button>
+            <button
+              onClick={handleCancel}
+              className="btn btn-sm btn-ghost"
+              disabled={isPending}
+            >
+              ✕
+            </button>
+          </>
+        )}
       </div>
       {error && (
         <div className="text-xs text-error bg-error/10 p-2 rounded">

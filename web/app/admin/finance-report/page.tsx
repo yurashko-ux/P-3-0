@@ -239,23 +239,18 @@ export default async function FinanceReportPage({
                   </p>
                 </div>
                 <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs uppercase text-gray-500">
-                        Собівартість товарів
-                      </p>
-                      <p className="text-lg font-semibold md:text-xl">
-                        {goods ? `${formatMoney(goods.cost)} грн.` : "— грн."}
-                      </p>
-                    </div>
-                    {goods && (
-                      <EditCostButton
-                        year={selectedYear}
-                        month={selectedMonth}
-                        currentCost={goods.cost}
-                      />
-                    )}
-                  </div>
+                  <p className="text-xs uppercase text-gray-500">
+                    Собівартість товарів
+                  </p>
+                  {goods ? (
+                    <EditCostButton
+                      year={selectedYear}
+                      month={selectedMonth}
+                      currentCost={goods.cost}
+                    />
+                  ) : (
+                    <p className="text-lg font-semibold md:text-xl">— грн.</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs uppercase text-gray-500">
