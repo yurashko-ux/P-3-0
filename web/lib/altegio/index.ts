@@ -9,4 +9,5 @@ export * from "./clients";
 export * from "./appointments";
 export * from "./visits";
 export * from "./analytics";
+export * from "./inventory";
 
