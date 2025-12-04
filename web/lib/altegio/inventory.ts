@@ -78,7 +78,10 @@ export async function fetchGoodsSalesSummary(params: {
         : []);
 
   // type_id = 1 — продаж товарів (Sale of goods)
-  const sales = tx.filter((t) => Number(t.type_id) === 1);
+  // amount > 0 — ігноруємо повернення / сторнування з від’ємною кількістю
+  const sales = tx.filter(
+    (t) => Number(t.type_id) === 1 && Number(t.amount) > 0,
+  );
 
   const revenue = sales.reduce(
     (sum, t) => sum + (Number(t.cost) || 0),
