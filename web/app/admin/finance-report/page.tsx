@@ -241,14 +241,16 @@ export default async function FinanceReportPage({
                   <p className="text-xs uppercase text-gray-500">
                     Собівартість товарів
                   </p>
-                  <p className="text-lg font-semibold md:text-xl">— грн.</p>
+                  <p className="text-lg font-semibold md:text-xl">
+                    {goods ? `${formatMoney(goods.cost)} грн.` : "— грн."}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs uppercase text-gray-500">
                     Націнка (дохід по товарах)
                   </p>
                   <p className="text-lg font-semibold md:text-xl">
-                    {goods ? `${formatMoney(goods.revenue)} грн.` : "— грн."}
+                    {goods ? `${formatMoney(goods.profit)} грн.` : "— грн."}
                   </p>
                 </div>
               </div>
