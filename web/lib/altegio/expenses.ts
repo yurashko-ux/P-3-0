@@ -308,6 +308,24 @@ export async function fetchExpensesSummary(params: {
       console.log(`[altegio/expenses] Response is array:`, Array.isArray(raw));
       if (raw && typeof raw === "object") {
         console.log(`[altegio/expenses] Response keys:`, Object.keys(raw));
+        // Для analytics/overall логуємо детальніше структуру
+        if (attempt.path.includes("analytics/overall")) {
+          const data = (raw as any).data || raw;
+          console.log(`[altegio/expenses] Analytics overall data keys:`, data && typeof data === "object" ? Object.keys(data) : "not an object");
+          // Шукаємо поля, що можуть містити витрати
+          const possibleExpenseKeys = Object.keys(data || {}).filter(key => 
+            key.toLowerCase().includes("expense") || 
+            key.toLowerCase().includes("outcome") ||
+            key.toLowerCase().includes("cost") ||
+            key.toLowerCase().includes("spending")
+          );
+          if (possibleExpenseKeys.length > 0) {
+            console.log(`[altegio/expenses] Found possible expense keys:`, possibleExpenseKeys);
+            possibleExpenseKeys.forEach(key => {
+              console.log(`[altegio/expenses] ${key}:`, JSON.stringify(data[key], null, 2).substring(0, 500));
+            });
+          }
+        }
       }
 
       // Згідно з Payments API, відповідь має формат: { success: true, data: [...], meta: [...] }
@@ -336,6 +354,24 @@ export async function fetchExpensesSummary(params: {
         // Або це об'єкт з expenses полем
         else if ((raw as any).expenses_data && Array.isArray((raw as any).expenses_data)) {
           fetched = (raw as any).expenses_data;
+        }
+        // Для analytics/overall: перевіряємо data.expenses або data.expense_stats
+        else if (attempt.path.includes("analytics/overall")) {
+          const analyticsData = (raw as any).data || raw;
+          if (analyticsData && typeof analyticsData === "object") {
+            // Шукаємо масиви транзакцій витрат
+            if (Array.isArray(analyticsData.expenses)) {
+              fetched = analyticsData.expenses;
+            } else if (Array.isArray(analyticsData.expense_transactions)) {
+              fetched = analyticsData.expense_transactions;
+            } else if (analyticsData.expense_stats && Array.isArray(analyticsData.expense_stats.items)) {
+              fetched = analyticsData.expense_stats.items;
+            }
+            // Якщо знайшли щось, логуємо
+            if (fetched.length > 0) {
+              console.log(`[altegio/expenses] ✅ Found ${fetched.length} expenses in analytics/overall`);
+            }
+          }
         }
       }
 
