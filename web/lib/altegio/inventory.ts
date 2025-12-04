@@ -33,9 +33,9 @@ export type AltegioGood = {
 /** Агрегована інформація по продажах товарів за період */
 export type GoodsSalesSummary = {
   range: { date_from: string; date_to: string };
-  revenue: number;
-  cost: number;
-  profit: number;
+  revenue: number; // Виручка з транзакцій (може бути нижча за реальну)
+  cost: number; // Собівартість (actual_cost * amount)
+  profit: number; // Націнка (revenue - cost)
   itemsCount: number;
 };
 
@@ -470,15 +470,21 @@ export async function fetchGoodsSalesSummary(params: {
     ),
   );
 
-  // Розраховуємо виручку: використовуємо cost_per_unit * amount (бо t.cost часто = 0)
+  // Розраховуємо виручку: використовуємо cost (загальна сума транзакції), якщо він є
+  // Якщо cost = 0, тоді використовуємо cost_per_unit * amount
   // Для продажів amount зазвичай від'ємний (зменшення складу), тому беремо абсолютне значення
   const revenue = sales.reduce(
     (sum, t) => {
-      const amount = Math.abs(Number(t.amount) || 0);
-      const costPerUnit = Number(t.cost_per_unit) || 0;
-      // Якщо cost_per_unit = 0, спробуємо використати cost (якщо він не 0)
-      const unitPrice = costPerUnit > 0 ? costPerUnit : Math.abs(Number(t.cost) || 0);
-      return sum + amount * unitPrice;
+      const transactionCost = Math.abs(Number(t.cost) || 0);
+      if (transactionCost > 0) {
+        // Використовуємо cost (загальна сума), якщо він є
+        return sum + transactionCost;
+      } else {
+        // Fallback: cost_per_unit * amount
+        const amount = Math.abs(Number(t.amount) || 0);
+        const costPerUnit = Number(t.cost_per_unit) || 0;
+        return sum + amount * costPerUnit;
+      }
     },
     0,
   );
