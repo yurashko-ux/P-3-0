@@ -88,3 +88,28 @@ export async function addReportToIndex(appointmentId: string) {
   await kv.ltrim(indexKey, 0, 99); // тримаємо останні 100
 }
 
+/**
+ * Очищає всі фото-звіти (використовується для скидання статистики)
+ */
+export async function clearAllPhotoReports(): Promise<number> {
+  const indexKey = `${REPORT_KEY_PREFIX}:index`;
+  const appointmentIds = await kv.lrange<string>(indexKey, 0, -1);
+  
+  let deletedCount = 0;
+  
+  // Видаляємо всі фото-звіти
+  for (const appointmentId of appointmentIds) {
+    try {
+      await kv.del(reportKey(appointmentId));
+      deletedCount++;
+    } catch (err) {
+      console.warn(`[photo-reports/store] Failed to delete report ${appointmentId}:`, err);
+    }
+  }
+  
+  // Очищаємо індекс
+  await kv.del(indexKey);
+  
+  return deletedCount;
+}
+
