@@ -230,6 +230,7 @@ export async function fetchExpensesSummary(params: {
 
   // Згідно з Payments API та структурою інших endpoint'ів
   // Спробуємо різні варіанти endpoint'ів, включаючи location_id (як у appointments)
+  // ПРІОРИТЕТ: POST /company/{id}/finance_transactions/search - може повертати ВСІ фінансові операції
   const attempts: Array<{
     name: string;
     method: "GET" | "POST";
@@ -237,9 +238,37 @@ export async function fetchExpensesSummary(params: {
     params?: URLSearchParams;
     body?: any;
   }> = [
-    // Варіант 0 (найперспективніший): GET /transactions/{location_id} з Payments API
+    // Варіант 0 (найперспективніший): POST /company/{id}/finance_transactions/search
+    // Це може бути найповніший endpoint для фінансових операцій
+    {
+      name: "POST /company/{id}/finance_transactions/search (Financial Operations Search)",
+      method: "POST",
+      path: `/company/${companyId}/finance_transactions/search`,
+      body: {
+        start_date: date_from,
+        end_date: date_to,
+        real_money: true,
+        deleted: false,
+        count: 10000,
+        page: 1,
+      },
+    },
+    // Варіант 0.1: POST /company/{id}/finance_transactions/search БЕЗ фільтра real_money
+    // Можливо, деякі транзакції не мають real_money=1
+    {
+      name: "POST /company/{id}/finance_transactions/search (without real_money filter)",
+      method: "POST",
+      path: `/company/${companyId}/finance_transactions/search`,
+      body: {
+        start_date: date_from,
+        end_date: date_to,
+        deleted: false,
+        count: 10000,
+        page: 1,
+      },
+    },
+    // Варіант 0.2: GET /transactions/{location_id} з Payments API
     // Згідно з документацією Payments: https://developer.alteg.io/api#tag/Payments
-    // Цей endpoint повертає транзакції з expense об'єктом (id, title), що ідеально для витрат
     {
       name: "GET /transactions/{location_id} (Payments API)",
       method: "GET",
@@ -247,12 +276,24 @@ export async function fetchExpensesSummary(params: {
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
-        real_money: "1", // Тільки реальні грошові транзакції
-        deleted: "0", // Не видалені транзакції
-        count: "10000", // Збільшуємо ліміт для отримання всіх транзакцій
+        real_money: "1",
+        deleted: "0",
+        count: "10000",
       }),
     },
-    // Варіант 0.0: GET /finance_transactions/{location_id} - прямий endpoint для фінансових операцій
+    // Варіант 0.3: GET /transactions/{location_id} БЕЗ фільтра real_money
+    {
+      name: "GET /transactions/{location_id} (without real_money filter)",
+      method: "GET",
+      path: `/transactions/${companyId}`,
+      params: new URLSearchParams({
+        start_date: date_from,
+        end_date: date_to,
+        deleted: "0",
+        count: "10000",
+      }),
+    },
+    // Варіант 0.4: GET /finance_transactions/{location_id} - прямий endpoint для фінансових операцій
     {
       name: "GET /finance_transactions/{location_id} (Financial Operations API)",
       method: "GET",
@@ -261,6 +302,18 @@ export async function fetchExpensesSummary(params: {
         start_date: date_from,
         end_date: date_to,
         real_money: "1",
+        deleted: "0",
+        count: "10000",
+      }),
+    },
+    // Варіант 0.5: GET /finance_transactions/{location_id} БЕЗ фільтра real_money
+    {
+      name: "GET /finance_transactions/{location_id} (without real_money filter)",
+      method: "GET",
+      path: `/finance_transactions/${companyId}`,
+      params: new URLSearchParams({
+        start_date: date_from,
+        end_date: date_to,
         deleted: "0",
         count: "10000",
       }),
@@ -513,6 +566,40 @@ export async function fetchExpensesSummary(params: {
         console.log(
           `[altegio/expenses] ✅ Got ${transactions.length} transactions using ${attempt.name}`,
         );
+        
+        // Перевіряємо, чи є серед транзакцій "Податки та збори"
+        const taxesTransactions = transactions.filter((t: any) => {
+          const expenseTitle = t.expense?.title || t.expense?.name || "";
+          const comment = t.comment || "";
+          return expenseTitle.toLowerCase().includes("подат") ||
+                 expenseTitle.toLowerCase().includes("tax") ||
+                 comment.toLowerCase().includes("подат") ||
+                 comment.toLowerCase().includes("налмн");
+        });
+        
+        if (taxesTransactions.length > 0) {
+          console.log(`[altegio/expenses] ✅ Found ${taxesTransactions.length} tax-related transactions:`, 
+            taxesTransactions.map((t: any) => ({
+              id: t.id,
+              amount: t.amount,
+              expense_title: t.expense?.title,
+              comment: t.comment,
+            }))
+          );
+        } else {
+          console.log(`[altegio/expenses] ⚠️ No tax-related transactions found in ${transactions.length} transactions`);
+        }
+        
+        // Логуємо всі унікальні категорії витрат для діагностики
+        const uniqueCategories = new Set<string>();
+        transactions.forEach((t: any) => {
+          const category = t.expense?.title || t.expense?.name || t.comment || "Unknown";
+          uniqueCategories.add(category);
+        });
+        console.log(`[altegio/expenses] Unique expense categories found (${uniqueCategories.size}):`, 
+          Array.from(uniqueCategories).slice(0, 20)
+        );
+        
         break;
       }
     } catch (err: any) {
