@@ -77,31 +77,35 @@ export async function fetchGoodsSalesSummary(params: {
     const month = dateFrom.getMonth() + 1;
 
     const costKey = `finance:goods:cost:${year}:${month}`;
-    const rawValue = await kvRead.getRaw(costKey);
-    if (rawValue !== null) {
-      // Парсимо JSON, якщо це JSON, інакше пробуємо як число
-      let costValue: number | null = null;
-      try {
-        const parsed = JSON.parse(rawValue);
-        costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
-      } catch {
-        // Якщо не JSON, пробуємо як число
-        costValue = parseFloat(rawValue);
-      }
-      
-      if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
-        manualCost = costValue;
-        console.log(
-          `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
-        );
+    
+    // Безпечний виклик kvRead.getRaw з перевіркою
+    if (kvRead && typeof kvRead.getRaw === "function") {
+      const rawValue = await kvRead.getRaw(costKey);
+      if (rawValue !== null && typeof rawValue === "string") {
+        // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+        let costValue: number | null = null;
+        try {
+          const parsed = JSON.parse(rawValue);
+          costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+        } catch {
+          // Якщо не JSON, пробуємо як число
+          costValue = parseFloat(rawValue);
+        }
+        
+        if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
+          manualCost = costValue;
+          console.log(
+            `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
+          );
+        }
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    // Ігноруємо помилки читання KV - просто не використовуємо ручну собівартість
     console.warn(
-      `[altegio/inventory] Failed to check manual cost:`,
-      err,
+      `[altegio/inventory] Failed to check manual cost (non-critical):`,
+      err?.message || String(err),
     );
-    // Продовжуємо без ручної собівартості
   }
 
   const qs = new URLSearchParams({
