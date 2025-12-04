@@ -6,6 +6,7 @@ import {
   type GoodsSalesSummary,
 } from "@/lib/altegio";
 import { EditCostButton } from "./_components/EditCostButton";
+import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,9 @@ export default async function FinanceReportPage({
 }: {
   searchParams?: { year?: string; month?: string };
 }) {
+  // Вимкнути кешування для завжди свіжих даних
+  noStore();
+  
   const today = new Date();
   const lastComplete = getLastCompleteMonth(today);
 
