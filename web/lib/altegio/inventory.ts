@@ -105,25 +105,30 @@ export async function fetchGoodsSalesSummary(params: {
   );
 
   // type_id = 1 — продаж товарів (Sale of goods)
-  // amount > 0 — ігноруємо повернення / сторнування з від'ємною кількістю
-  const sales = tx.filter(
-    (t) => Number(t.type_id) === 1 && Number(t.amount) > 0,
-  );
+  // Беремо всі транзакції типу 1 (продажі), включаючи повернення
+  const sales = tx.filter((t) => Number(t.type_id) === 1);
 
   console.log(
-    `[altegio/inventory] filtered sales (type_id=1, amount>0): ${sales.length} items`,
+    `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items`,
+    JSON.stringify({
+      amounts: sales.map((t) => Number(t.amount)),
+      positiveAmounts: sales.filter((t) => Number(t.amount) > 0).length,
+      negativeAmounts: sales.filter((t) => Number(t.amount) < 0).length,
+    }),
   );
 
   // Агрегуємо дані
+  // Використовуємо абсолютне значення amount для розрахунків собівартості
+  // cost може бути від'ємним для повернень, тому беремо абсолютне значення
   const revenue = sales.reduce(
-    (sum, t) => sum + (Number(t.cost) || 0),
+    (sum, t) => sum + Math.abs(Number(t.cost) || 0),
     0,
   );
 
   const cost = sales.reduce(
     (sum, t) =>
       sum +
-      (Number(t.cost_per_unit) || 0) * (Number(t.amount) || 0),
+      Math.abs(Number(t.cost_per_unit) || 0) * Math.abs(Number(t.amount) || 0),
     0,
   );
 
