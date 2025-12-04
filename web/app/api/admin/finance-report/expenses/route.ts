@@ -2,7 +2,7 @@
 // API route для збереження/читання ручних витрат (захищений CRON_SECRET)
 
 import { NextRequest, NextResponse } from "next/server";
-import { kvSetRaw, kvRead } from "@/lib/kv";
+import { kvWrite, kvRead } from "@/lib/kv";
 
 const CRON_SECRET = process.env.CRON_SECRET?.trim();
 
@@ -113,11 +113,11 @@ export async function POST(req: NextRequest) {
     }
 
     const key = getExpensesKey(year, month);
-    const valueToStore = JSON.stringify({ value: String(expenses) });
+    const valueToStore = JSON.stringify(expenses);
 
     console.log(`[expenses/route] POST saving: key=${key}, expenses=${expenses}`);
 
-    await kvSetRaw(key, valueToStore);
+    await kvWrite.setRaw(key, valueToStore);
 
     // Перевіряємо, що збереглося
     const verify = await kvRead(key);
