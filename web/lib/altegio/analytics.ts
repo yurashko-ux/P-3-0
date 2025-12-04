@@ -30,10 +30,15 @@ export async function fetchFinanceSummary(params: {
     date_to,
   });
 
-  const companyId = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.APPLICATION_ID;
+  // Для фінансової аналітики Altegio очікує ID локації/компанії,
+  // який ми задаємо через окрему змінну ALTEGIO_COMPANY_ID.
+  const companyIdFromEnv = process.env.ALTEGIO_COMPANY_ID?.trim();
+  const companyId =
+    companyIdFromEnv || ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.APPLICATION_ID;
+
   if (!companyId) {
     throw new Error(
-      "ALTEGIO_PARTNER_ID or ALTEGIO_APPLICATION_ID is required for finance analytics",
+      "ALTEGIO_COMPANY_ID is required (optionally can fall back to ALTEGIO_PARTNER_ID / ALTEGIO_APPLICATION_ID)",
     );
   }
 
