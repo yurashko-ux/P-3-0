@@ -109,16 +109,26 @@ export async function POST(req: NextRequest) {
 
     const key = getCostKey(year, month);
     // Зберігаємо як JSON рядок
-    console.log(`[admin/finance-report/cost] Saving cost: key=${key}, value=${costValue}`);
-    await kvWrite.setRaw(key, JSON.stringify(costValue));
-    console.log(`[admin/finance-report/cost] Cost saved successfully`);
+    console.log(`[admin/finance-report/cost] 💾 Saving cost: key=${key}, value=${costValue}, year=${year}, month=${month}`);
+    
+    const valueToStore = JSON.stringify(costValue);
+    console.log(`[admin/finance-report/cost] Value to store (JSON): ${valueToStore}`);
+    
+    await kvWrite.setRaw(key, valueToStore);
+    console.log(`[admin/finance-report/cost] ✅ Cost saved successfully to KV`);
 
-    // Перевіряємо, що дані збереглися
+    // Перевіряємо, що дані збереглися (читаємо одразу після запису)
     const verifyValue = await kvRead.getRaw(key);
-    console.log(`[admin/finance-report/cost] Verification read: ${verifyValue}`);
+    console.log(`[admin/finance-report/cost] 🔍 Verification read after save:`, {
+      hasValue: verifyValue !== null,
+      valueType: typeof verifyValue,
+      value: verifyValue,
+      valuePreview: verifyValue ? String(verifyValue).slice(0, 100) : null,
+    });
 
     // Оновлюємо кеш сторінки фінансового звіту
     revalidatePath("/admin/finance-report");
+    console.log(`[admin/finance-report/cost] 🔄 Cache invalidated for /admin/finance-report`);
 
     return NextResponse.json({
       success: true,

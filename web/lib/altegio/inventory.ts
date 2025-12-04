@@ -77,6 +77,7 @@ export async function fetchGoodsSalesSummary(params: {
     const month = dateFrom.getMonth() + 1;
 
     const costKey = `finance:goods:cost:${year}:${month}`;
+    console.log(`[altegio/inventory] Checking for manual cost: key=${costKey}, year=${year}, month=${month}`);
     
     // Динамічний імпорт для уникнення проблем з server components
     const kvModule = await import("@/lib/kv");
@@ -84,31 +85,55 @@ export async function fetchGoodsSalesSummary(params: {
     
     if (kvReadModule && typeof kvReadModule.getRaw === "function") {
       const rawValue = await kvReadModule.getRaw(costKey);
+      console.log(`[altegio/inventory] KV read result for ${costKey}:`, {
+        hasValue: rawValue !== null,
+        valueType: typeof rawValue,
+        valuePreview: rawValue ? String(rawValue).slice(0, 100) : null,
+      });
+      
       if (rawValue !== null && typeof rawValue === "string") {
         // Парсимо JSON, якщо це JSON, інакше пробуємо як число
         let costValue: number | null = null;
         try {
           const parsed = JSON.parse(rawValue);
+          console.log(`[altegio/inventory] Parsed JSON:`, { parsed, type: typeof parsed });
           costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
         } catch {
           // Якщо не JSON, пробуємо як число
+          console.log(`[altegio/inventory] Not JSON, trying parseFloat:`, rawValue);
           costValue = parseFloat(rawValue);
         }
+        
+        console.log(`[altegio/inventory] Parsed cost value:`, {
+          costValue,
+          isFinite: Number.isFinite(costValue),
+          isNonNegative: costValue !== null && costValue >= 0,
+        });
         
         if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
           manualCost = costValue;
           console.log(
-            `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
+            `[altegio/inventory] ✅ Using manual cost for ${year}-${month}: ${manualCost}`,
+          );
+        } else {
+          console.log(
+            `[altegio/inventory] ⚠️ Invalid cost value: ${costValue} (not finite or negative)`,
           );
         }
+      } else {
+        console.log(
+          `[altegio/inventory] ⚠️ No raw value found or wrong type for ${costKey}`,
+        );
       }
+    } else {
+      console.warn(`[altegio/inventory] ⚠️ kvReadModule.getRaw is not a function`);
     }
   } catch (err: any) {
-    // Ігноруємо помилки читання KV - просто не використовуємо ручну собівартість
-    // Це не критична помилка, тому продовжуємо роботу
-    console.warn(
-      `[altegio/inventory] Failed to check manual cost (non-critical):`,
+    // Логуємо помилки для діагностики
+    console.error(
+      `[altegio/inventory] ❌ Failed to check manual cost:`,
       err?.message || String(err),
+      err?.stack,
     );
   }
 
