@@ -214,7 +214,21 @@ export default async function FinanceReportPage({
 
           <section className="card bg-base-100 shadow-sm">
             <div className="card-body">
-              <h2 className="card-title mb-2">Динаміка виручки по днях</h2>
+              <div className="mb-2 flex items-baseline justify-between gap-4">
+                <h2 className="card-title">Динаміка виручки по днях</h2>
+                <p className="text-sm text-gray-600">
+                  Разом за місяць:{" "}
+                  <span className="font-semibold">
+                    {formatMoney(
+                      summary.incomeDaily.reduce(
+                        (sum, row) => sum + (row.value || 0),
+                        0,
+                      ),
+                    )}{" "}
+                    грн.
+                  </span>
+                </p>
+              </div>
               {summary.incomeDaily.length === 0 ? (
                 <p className="text-sm text-gray-500">
                   Немає даних про виручку по днях за вибраний період.
