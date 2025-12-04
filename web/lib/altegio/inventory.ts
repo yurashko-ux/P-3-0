@@ -23,6 +23,8 @@ export type AltegioStorageTransaction = {
 export type GoodsSalesSummary = {
   range: { date_from: string; date_to: string };
   revenue: number;
+  cost: number;
+  profit: number;
   itemsCount: number;
 };
 
@@ -40,10 +42,17 @@ function resolveCompanyId(): string {
 }
 
 /**
- * Отримати агреговану виручку по товарах із inventory за період.
+ * Отримати агреговану виручку / собівартість / націнку по товарах із inventory за період.
  *
- * Примітка: зараз ми рахуємо тільки виручку (сума `cost` для type_id = 1, тобто продаж товарів).
- * Собівартість та націнку будемо рахувати окремо, коли стане зрозумілою модель COGS.
+ * Припущення (перевірене на Product sales report):
+ * - `cost` у транзакції продажу = виручка по товару (Total cost у звіті)
+ * - `cost_per_unit` = закупівельна ціна за одиницю (Unit cost (Wholesale))
+ * - `amount` = кількість проданих одиниць
+ *
+ * Тоді:
+ *   revenue = Σ cost
+ *   cost    = Σ (cost_per_unit * amount)
+ *   profit  = revenue - cost
  */
 export async function fetchGoodsSalesSummary(params: {
   date_from: string;
@@ -76,9 +85,20 @@ export async function fetchGoodsSalesSummary(params: {
     0,
   );
 
+  const cost = sales.reduce(
+    (sum, t) =>
+      sum +
+      (Number(t.cost_per_unit) || 0) * (Number(t.amount) || 0),
+    0,
+  );
+
+  const profit = revenue - cost;
+
   return {
     range: { date_from, date_to },
     revenue,
+    cost,
+    profit,
     itemsCount: sales.length,
   };
 }
