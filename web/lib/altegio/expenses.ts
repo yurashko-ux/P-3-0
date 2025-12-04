@@ -164,8 +164,8 @@ export async function fetchExpensesSummary(params: {
     console.log(`[altegio/expenses] ⚠️ Could not fetch categories, will extract from transactions`);
   }
 
-  // Згідно з Payments API та структурою інших endpoint'ів (як /company/{id}/analytics)
-  // Спробуємо різні варіанти endpoint'ів
+  // Згідно з Payments API та структурою інших endpoint'ів
+  // Спробуємо різні варіанти endpoint'ів, включаючи location_id (як у appointments)
   const attempts: Array<{
     name: string;
     method: "GET" | "POST";
@@ -173,7 +173,54 @@ export async function fetchExpensesSummary(params: {
     params?: URLSearchParams;
     body?: any;
   }> = [
-    // Варіант 1: /company/{id}/finance_transactions (найбільш ймовірний, як у /company/{id}/analytics)
+    // Варіант 1: /company/{id}/analytics/expenses (можливо є в analytics)
+    {
+      name: "GET /company/{id}/analytics/expenses",
+      method: "GET",
+      path: `/company/${companyId}/analytics/expenses`,
+      params: new URLSearchParams({
+        date_from: date_from,
+        date_to: date_to,
+      }),
+    },
+    // Варіант 2: /company/{id}/analytics/overall (можливо містить витрати)
+    {
+      name: "GET /company/{id}/analytics/overall (check for expenses)",
+      method: "GET",
+      path: `/company/${companyId}/analytics/overall`,
+      params: new URLSearchParams({
+        date_from: date_from,
+        date_to: date_to,
+      }),
+    },
+    // Варіант 3: /finance_transactions з location_id (як у appointments)
+    {
+      name: "GET /finance_transactions with location_id",
+      method: "GET",
+      path: `/finance_transactions`,
+      params: new URLSearchParams({
+        location_id: companyId,
+        start_date: date_from,
+        end_date: date_to,
+        real_money: "1",
+        deleted: "0",
+        count: "1000",
+      }),
+    },
+    {
+      name: "GET /finance_transactions with location_id (date_from/date_to)",
+      method: "GET",
+      path: `/finance_transactions`,
+      params: new URLSearchParams({
+        location_id: companyId,
+        date_from: date_from,
+        date_to: date_to,
+        real_money: "1",
+        deleted: "0",
+        count: "1000",
+      }),
+    },
+    // Варіант 4: /company/{id}/finance_transactions
     {
       name: "GET /company/{id}/finance_transactions with start_date/end_date",
       method: "GET",
@@ -198,7 +245,7 @@ export async function fetchExpensesSummary(params: {
         count: "1000",
       }),
     },
-    // Варіант 2: POST /company/{id}/finance_transactions (як у appointments)
+    // Варіант 5: POST /company/{id}/finance_transactions/search
     {
       name: "POST /company/{id}/finance_transactions/search",
       method: "POST",
@@ -211,7 +258,7 @@ export async function fetchExpensesSummary(params: {
         count: 1000,
       },
     },
-    // Варіант 3: /company/{id}/payments
+    // Варіант 6: /company/{id}/payments
     {
       name: "GET /company/{id}/payments",
       method: "GET",
@@ -222,7 +269,7 @@ export async function fetchExpensesSummary(params: {
         count: "1000",
       }),
     },
-    // Варіант 4: /finance_transactions/{id} (оригінальний, але з іншими параметрами)
+    // Варіант 7: /finance_transactions/{id} (fallback)
     {
       name: "GET /finance_transactions/{id} (fallback)",
       method: "GET",
@@ -264,6 +311,7 @@ export async function fetchExpensesSummary(params: {
       }
 
       // Згідно з Payments API, відповідь має формат: { success: true, data: [...], meta: [...] }
+      // Але також можуть бути analytics дані з expenses полем
       let fetched: AltegioFinanceTransaction[] = [];
       
       if (Array.isArray(raw)) {
@@ -276,6 +324,18 @@ export async function fetchExpensesSummary(params: {
           fetched = (raw as any).transactions;
         } else if ((raw as any).success && Array.isArray((raw as any).data)) {
           fetched = (raw as any).data;
+        }
+        // Можливо, це analytics response з expenses
+        else if ((raw as any).expenses && Array.isArray((raw as any).expenses)) {
+          fetched = (raw as any).expenses;
+        }
+        // Або expenses в totals
+        else if ((raw as any).totals && (raw as any).totals.expenses && Array.isArray((raw as any).totals.expenses)) {
+          fetched = (raw as any).totals.expenses;
+        }
+        // Або це об'єкт з expenses полем
+        else if ((raw as any).expenses_data && Array.isArray((raw as any).expenses_data)) {
+          fetched = (raw as any).expenses_data;
         }
       }
 
