@@ -43,16 +43,24 @@ export async function GET(req: NextRequest) {
     }
 
     const key = getCostKey(year, month);
-    const value = await kvRead(key);
+    const rawValue = await kvRead.getRaw(key);
 
-    if (value === null) {
+    if (rawValue === null) {
       return NextResponse.json({ cost: null });
     }
 
-    const cost = typeof value === "number" ? value : parseFloat(String(value));
+    // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+    let cost: number | null = null;
+    try {
+      const parsed = JSON.parse(rawValue);
+      cost = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+    } catch {
+      // Якщо не JSON, пробуємо як число
+      cost = parseFloat(rawValue);
+    }
 
     return NextResponse.json({
-      cost: Number.isFinite(cost) ? cost : null,
+      cost: Number.isFinite(cost) && cost >= 0 ? cost : null,
     });
   } catch (error: any) {
     console.error("[admin/finance-report/cost] GET error:", error);
@@ -99,7 +107,8 @@ export async function POST(req: NextRequest) {
     }
 
     const key = getCostKey(year, month);
-    await kvWrite(key, costValue);
+    // Зберігаємо як JSON рядок
+    await kvWrite.setRaw(key, JSON.stringify(costValue));
 
     return NextResponse.json({
       success: true,

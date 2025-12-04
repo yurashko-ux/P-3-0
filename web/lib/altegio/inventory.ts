@@ -252,13 +252,19 @@ export async function fetchGoodsSalesSummary(params: {
     // Імпортуємо kvRead тільки якщо потрібно
     const { kvRead } = await import("@/lib/kv");
     const costKey = `finance:goods:cost:${year}:${month}`;
-    const savedCost = await kvRead(costKey);
-    if (savedCost !== null) {
-      const costValue =
-        typeof savedCost === "number"
-          ? savedCost
-          : parseFloat(String(savedCost));
-      if (Number.isFinite(costValue) && costValue >= 0) {
+    const rawValue = await kvRead.getRaw(costKey);
+    if (rawValue !== null) {
+      // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+      let costValue: number | null = null;
+      try {
+        const parsed = JSON.parse(rawValue);
+        costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+      } catch {
+        // Якщо не JSON, пробуємо як число
+        costValue = parseFloat(rawValue);
+      }
+      
+      if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
         manualCost = costValue;
         console.log(
           `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
