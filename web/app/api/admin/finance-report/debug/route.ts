@@ -57,11 +57,29 @@ export async function GET(req: NextRequest) {
       const key = getCostKey(year, month);
       const rawValue = await kvRead.getRaw(key);
 
+      // kvGetRaw може повертати {"value":"..."} або просто "..."
+      // Потрібно витягти значення з об'єкта, якщо воно там є
       let cost: number | null = null;
       if (rawValue !== null && typeof rawValue === "string") {
         try {
           const parsed = JSON.parse(rawValue);
-          cost = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+          if (typeof parsed === "number") {
+            cost = parsed;
+          } else if (typeof parsed === "object" && parsed !== null) {
+            // Якщо це об'єкт, шукаємо value всередині
+            const value = (parsed as any).value ?? parsed;
+            if (typeof value === "number") {
+              cost = value;
+            } else if (typeof value === "string") {
+              cost = parseFloat(value);
+            } else {
+              cost = parseFloat(String(value));
+            }
+          } else if (typeof parsed === "string") {
+            cost = parseFloat(parsed);
+          } else {
+            cost = parseFloat(String(parsed));
+          }
         } catch {
           cost = parseFloat(rawValue);
         }
@@ -96,11 +114,29 @@ export async function GET(req: NextRequest) {
       const key = getCostKey(year, month);
       const rawValue = await kvRead.getRaw(key);
 
+      // kvGetRaw може повертати {"value":"..."} або просто "..."
+      // Потрібно витягти значення з об'єкта, якщо воно там є
       let cost: number | null = null;
       if (rawValue !== null && typeof rawValue === "string") {
         try {
           const parsed = JSON.parse(rawValue);
-          cost = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+          if (typeof parsed === "number") {
+            cost = parsed;
+          } else if (typeof parsed === "object" && parsed !== null) {
+            // Якщо це об'єкт, шукаємо value всередині
+            const value = (parsed as any).value ?? parsed;
+            if (typeof value === "number") {
+              cost = value;
+            } else if (typeof value === "string") {
+              cost = parseFloat(value);
+            } else {
+              cost = parseFloat(String(value));
+            }
+          } else if (typeof parsed === "string") {
+            cost = parseFloat(parsed);
+          } else {
+            cost = parseFloat(String(parsed));
+          }
         } catch {
           cost = parseFloat(rawValue);
         }

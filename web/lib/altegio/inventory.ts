@@ -92,12 +92,31 @@ export async function fetchGoodsSalesSummary(params: {
       });
       
       if (rawValue !== null && typeof rawValue === "string") {
-        // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+        // kvGetRaw може повертати {"value":"..."} або просто "..."
+        // Потрібно витягти значення з об'єкта, якщо воно там є
         let costValue: number | null = null;
         try {
+          // Спробуємо розпарсити як JSON
           const parsed = JSON.parse(rawValue);
           console.log(`[altegio/inventory] Parsed JSON:`, { parsed, type: typeof parsed });
-          costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+          
+          if (typeof parsed === "number") {
+            costValue = parsed;
+          } else if (typeof parsed === "object" && parsed !== null) {
+            // Якщо це об'єкт, шукаємо value всередині
+            const value = (parsed as any).value ?? parsed;
+            if (typeof value === "number") {
+              costValue = value;
+            } else if (typeof value === "string") {
+              costValue = parseFloat(value);
+            } else {
+              costValue = parseFloat(String(value));
+            }
+          } else if (typeof parsed === "string") {
+            costValue = parseFloat(parsed);
+          } else {
+            costValue = parseFloat(String(parsed));
+          }
         } catch {
           // Якщо не JSON, пробуємо як число
           console.log(`[altegio/inventory] Not JSON, trying parseFloat:`, rawValue);
