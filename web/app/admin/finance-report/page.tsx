@@ -180,7 +180,7 @@ export default async function FinanceReportPage({
               <div className="card-body p-4">
                 <p className="text-xs uppercase text-gray-500">Всього виручка</p>
                 <p className="text-xl font-semibold">
-                  {formatMoney(summary.totals.total)} грн
+                  {formatMoney(summary.totals.total)} грн.
                 </p>
               </div>
             </div>
@@ -188,7 +188,7 @@ export default async function FinanceReportPage({
               <div className="card-body p-4">
                 <p className="text-xs uppercase text-gray-500">Послуги</p>
                 <p className="text-xl font-semibold">
-                  {formatMoney(summary.totals.services)} грн
+                  {formatMoney(summary.totals.services)} грн.
                 </p>
               </div>
             </div>
@@ -196,7 +196,7 @@ export default async function FinanceReportPage({
               <div className="card-body p-4">
                 <p className="text-xs uppercase text-gray-500">Товари</p>
                 <p className="text-xl font-semibold">
-                  {formatMoney(summary.totals.goods)} грн
+                  {formatMoney(summary.totals.goods)} грн.
                 </p>
               </div>
             </div>
@@ -205,7 +205,7 @@ export default async function FinanceReportPage({
                 <p className="text-xs uppercase text-gray-500">Середній чек</p>
                 <p className="text-xl font-semibold">
                   {summary.totals.avgCheck != null
-                    ? `${formatMoney(summary.totals.avgCheck)} грн`
+                    ? `${formatMoney(summary.totals.avgCheck)} грн.`
                     : "—"}
                 </p>
               </div>
@@ -225,7 +225,7 @@ export default async function FinanceReportPage({
                     <thead>
                       <tr>
                         <th>Дата</th>
-                        <th className="text-right">Виручка, грн</th>
+                        <th className="text-right">Виручка, грн.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -233,7 +233,7 @@ export default async function FinanceReportPage({
                         <tr key={row.date}>
                           <td>{formatDateHuman(row.date)}</td>
                           <td className="text-right">
-                            {formatMoney(row.value)} грн
+                            {formatMoney(row.value)} грн.
                           </td>
                         </tr>
                       ))}
