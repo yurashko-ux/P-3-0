@@ -275,89 +275,80 @@ export async function fetchExpensesSummary(params: {
     `[altegio/expenses] Processing ${transactions.length} finance transactions`,
   );
 
-    // Фільтруємо тільки витрати (expenses)
-    // Витрати мають type="expense" або від'ємний amount, або expense_id
-    // Але спочатку логуємо всі транзакції для діагностики
+  // Фільтруємо тільки витрати (expenses)
+  // Витрати мають type="expense" або від'ємний amount, або expense_id
+  // Але спочатку логуємо всі транзакції для діагностики
+  if (transactions.length > 0) {
     console.log(`[altegio/expenses] Sample transaction:`, transactions[0]);
+  }
+  
+  const expenses = transactions.filter((t) => {
+    const amount = toNumber(t.amount);
+    const hasExpenseId = !!t.expense_id;
+    const isExpenseType =
+      t.type === "expense" ||
+      t.type === "outcome" ||
+      (t.type && String(t.type).toLowerCase().includes("expense"));
     
-    const expenses = transactions.filter((t) => {
-      const amount = toNumber(t.amount);
-      const hasExpenseId = !!t.expense_id;
-      const isExpenseType =
-        t.type === "expense" ||
-        t.type === "outcome" ||
-        (t.type && String(t.type).toLowerCase().includes("expense"));
-      
-      // Логуємо перші кілька транзакцій для діагностики
-      if (transactions.indexOf(t) < 3) {
-        console.log(`[altegio/expenses] Transaction ${t.id}:`, {
-          expense_id: t.expense_id,
-          type: t.type,
-          amount: t.amount,
-          hasExpenseId,
-          isExpenseType,
-          willInclude: hasExpenseId || isExpenseType || amount < 0,
-        });
-      }
-      
-      // Якщо є expense_id або type=expense, це витрата
-      // Або якщо amount від'ємний (для деяких систем)
-      // АБО якщо немає явного type="income" - спробуємо включити
-      const isIncome = t.type === "income" || t.type === "incoming";
-      return !isIncome && (hasExpenseId || isExpenseType || amount < 0 || (!t.type && hasExpenseId));
-    });
+    // Логуємо перші кілька транзакцій для діагностики
+    if (transactions.indexOf(t) < 3) {
+      console.log(`[altegio/expenses] Transaction ${t.id}:`, {
+        expense_id: t.expense_id,
+        type: t.type,
+        amount: t.amount,
+        hasExpenseId,
+        isExpenseType,
+        willInclude: hasExpenseId || isExpenseType || amount < 0,
+      });
+    }
+    
+    // Якщо є expense_id або type=expense, це витрата
+    // Або якщо amount від'ємний (для деяких систем)
+    // АБО якщо немає явного type="income" - спробуємо включити
+    const isIncome = t.type === "income" || t.type === "incoming";
+    return !isIncome && (hasExpenseId || isExpenseType || amount < 0 || (!t.type && hasExpenseId));
+  });
 
-    console.log(
-      `[altegio/expenses] Filtered expenses: ${expenses.length} items`,
-    );
+  console.log(
+    `[altegio/expenses] Filtered expenses: ${expenses.length} items`,
+  );
 
-    // Групуємо по категоріях (expense.name або expense.category)
-    const byCategory: Record<string, number> = {};
-    let total = 0;
+  // Групуємо по категоріях (expense.name або expense.category)
+  const byCategory: Record<string, number> = {};
+  let total = 0;
 
-    for (const expense of expenses) {
-      const amount = Math.abs(toNumber(expense.amount)); // Беремо абсолютне значення
-      total += amount;
+  for (const expense of expenses) {
+    const amount = Math.abs(toNumber(expense.amount)); // Беремо абсолютне значення
+    total += amount;
 
-      // Визначаємо категорію
-      // Спочатку шукаємо в мапі категорій за expense_id
-      let categoryName = "Інші витрати";
-      
-      if (expense.expense_id && categoryMap.has(expense.expense_id)) {
-        categoryName = categoryMap.get(expense.expense_id)!;
-      } else if (expense.expense?.name) {
-        categoryName = expense.expense.name;
-      } else if (expense.expense?.category) {
-        categoryName = expense.expense.category;
-      } else if (expense.expense?.title) {
-        categoryName = expense.expense.title;
-      } else if (expense.comment) {
-        categoryName = expense.comment;
-      }
-
-      byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
+    // Визначаємо категорію
+    // Спочатку шукаємо в мапі категорій за expense_id
+    let categoryName = "Інші витрати";
+    
+    if (expense.expense_id && categoryMap.has(expense.expense_id)) {
+      categoryName = categoryMap.get(expense.expense_id)!;
+    } else if (expense.expense?.name) {
+      categoryName = expense.expense.name;
+    } else if (expense.expense?.category) {
+      categoryName = expense.expense.category;
+    } else if (expense.expense?.title) {
+      categoryName = expense.expense.title;
+    } else if (expense.comment) {
+      categoryName = expense.comment;
     }
 
-    console.log(
-      `[altegio/expenses] Total expenses: ${total}, Categories: ${Object.keys(byCategory).length}`,
-    );
-
-    return {
-      range: { date_from, date_to },
-      total,
-      byCategory,
-      transactions: expenses,
-      categories,
-    };
-  } catch (error: any) {
-    console.error(`[altegio/expenses] ❌ Failed to process expenses:`, error);
-    // Повертаємо порожній результат замість помилки, але з категоріями (якщо вони є)
-    return {
-      range: { date_from, date_to },
-      total: 0,
-      byCategory: {},
-      transactions: [],
-      categories,
-    };
+    byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
   }
+
+  console.log(
+    `[altegio/expenses] Total expenses: ${total}, Categories: ${Object.keys(byCategory).length}`,
+  );
+
+  return {
+    range: { date_from, date_to },
+    total,
+    byCategory,
+    transactions: expenses,
+    categories,
+  };
 }
