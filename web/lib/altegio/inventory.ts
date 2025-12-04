@@ -3,6 +3,7 @@
 
 import { ALTEGIO_ENV } from "./env";
 import { altegioFetch } from "./client";
+import { kvRead } from "@/lib/kv";
 
 // Тип транзакції складу з API
 export type AltegioStorageTransaction = {
@@ -75,29 +76,24 @@ export async function fetchGoodsSalesSummary(params: {
     const year = dateFrom.getFullYear();
     const month = dateFrom.getMonth() + 1;
 
-    // Імпортуємо kvRead тільки якщо потрібно
-    const kvModule = await import("@/lib/kv");
-    const kvRead = kvModule.kvRead;
-    if (kvRead && typeof kvRead.getRaw === "function") {
-      const costKey = `finance:goods:cost:${year}:${month}`;
-      const rawValue = await kvRead.getRaw(costKey);
-      if (rawValue !== null) {
-        // Парсимо JSON, якщо це JSON, інакше пробуємо як число
-        let costValue: number | null = null;
-        try {
-          const parsed = JSON.parse(rawValue);
-          costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
-        } catch {
-          // Якщо не JSON, пробуємо як число
-          costValue = parseFloat(rawValue);
-        }
-        
-        if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
-          manualCost = costValue;
-          console.log(
-            `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
-          );
-        }
+    const costKey = `finance:goods:cost:${year}:${month}`;
+    const rawValue = await kvRead.getRaw(costKey);
+    if (rawValue !== null) {
+      // Парсимо JSON, якщо це JSON, інакше пробуємо як число
+      let costValue: number | null = null;
+      try {
+        const parsed = JSON.parse(rawValue);
+        costValue = typeof parsed === "number" ? parsed : parseFloat(String(parsed));
+      } catch {
+        // Якщо не JSON, пробуємо як число
+        costValue = parseFloat(rawValue);
+      }
+      
+      if (costValue !== null && Number.isFinite(costValue) && costValue >= 0) {
+        manualCost = costValue;
+        console.log(
+          `[altegio/inventory] Using manual cost for ${year}-${month}: ${manualCost}`,
+        );
       }
     }
   } catch (err) {
