@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     await kvWrite.setRaw(key, valueToStore);
 
     // Перевіряємо, що збереглося
-    const verify = await kvRead(key);
+    const verify = await kvRead.getRaw(key);
     console.log(`[expenses/route] POST verify read:`, verify);
 
     return NextResponse.json({
