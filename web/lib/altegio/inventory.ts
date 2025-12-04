@@ -161,6 +161,30 @@ export async function fetchGoodsSalesSummary(params: {
 
   const raw = await altegioFetch<any>(path);
 
+  // Логуємо структуру відповіді для діагностики
+  console.log(
+    `[altegio/inventory] Raw transactions response structure:`,
+    JSON.stringify(
+      {
+        isArray: Array.isArray(raw),
+        hasData: raw && typeof raw === "object" && "data" in raw,
+        dataIsArray:
+          raw && typeof raw === "object" && Array.isArray((raw as any).data),
+        keys: raw && typeof raw === "object" ? Object.keys(raw) : [],
+        totalInResponse:
+          raw && typeof raw === "object" && "total" in raw
+            ? (raw as any).total
+            : Array.isArray(raw)
+              ? raw.length
+              : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+                ? (raw as any).data.length
+                : "unknown",
+      },
+      null,
+      2,
+    ),
+  );
+
   // Розпаковуємо дані (може бути масив або об'єкт з data)
   const tx: any[] = Array.isArray(raw)
     ? raw
@@ -182,6 +206,7 @@ export async function fetchGoodsSalesSummary(params: {
               type_id: sampleTx.type_id,
               amount: sampleTx.amount,
               good_id: sampleTx.good_id,
+              good: sampleTx.good, // Логуємо об'єкт good
               cost_per_unit: sampleTx.cost_per_unit,
               cost: sampleTx.cost,
               allKeys: Object.keys(sampleTx),
@@ -209,13 +234,32 @@ export async function fetchGoodsSalesSummary(params: {
   // Беремо всі транзакції типу 1 (продажі), включаючи повернення
   const sales = tx.filter((t) => Number(t.type_id) === 1);
 
+  // Витягуємо good_id з транзакцій (може бути в good_id або в good.id або good.good_id)
+  const extractGoodId = (t: any): number | null => {
+    if (t.good_id) return Number(t.good_id);
+    if (t.good?.id) return Number(t.good.id);
+    if (t.good?.good_id) return Number(t.good.good_id);
+    return null;
+  };
+
   console.log(
     `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items`,
     JSON.stringify({
       amounts: sales.map((t) => Number(t.amount)),
       positiveAmounts: sales.filter((t) => Number(t.amount) > 0).length,
       negativeAmounts: sales.filter((t) => Number(t.amount) < 0).length,
-      uniqueGoodIds: [...new Set(sales.map((t) => t.good_id).filter(Boolean))],
+      uniqueGoodIds: [
+        ...new Set(
+          sales.map(extractGoodId).filter((id): id is number => id !== null),
+        ),
+      ],
+      sampleGoodIds: sales
+        .slice(0, 5)
+        .map((t) => ({
+          good_id: t.good_id,
+          good: t.good,
+          extracted: extractGoodId(t),
+        })),
     }),
   );
 
@@ -229,8 +273,8 @@ export async function fetchGoodsSalesSummary(params: {
   const uniqueGoodIds = [
     ...new Set(
       sales
-        .map((t) => t.good_id || t.good?.id)
-        .filter((id): id is number => typeof id === "number" && id > 0),
+        .map(extractGoodId)
+        .filter((id): id is number => id !== null && id > 0),
     ),
   ];
 
@@ -315,7 +359,7 @@ export async function fetchGoodsSalesSummary(params: {
   let costMissingCount = 0;
 
   for (const t of sales) {
-    const goodId = t.good_id || t.good?.id;
+    const goodId = extractGoodId(t);
     if (!goodId) {
       continue;
     }
@@ -336,7 +380,7 @@ export async function fetchGoodsSalesSummary(params: {
   // Логуємо детальну статистику по розрахунку собівартості
   const costByGoodId = new Map<number, { count: number; totalCost: number }>();
   for (const t of sales) {
-    const goodId = t.good_id || t.good?.id;
+    const goodId = extractGoodId(t);
     if (!goodId) continue;
     const actualCost = goodCostMap.get(goodId);
     if (actualCost !== undefined) {
