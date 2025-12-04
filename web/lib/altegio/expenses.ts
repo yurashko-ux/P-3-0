@@ -141,12 +141,76 @@ export async function fetchExpenseCategories(): Promise<AltegioExpenseCategory[]
  * Отримати витрати за період з Altegio API
  * Використовує endpoint: GET /finance_transactions/{company_id}
  */
+/**
+ * Отримати ручні витрати з KV (якщо API не працює)
+ */
+async function getManualExpenses(year: number, month: number): Promise<number | null> {
+  try {
+    const expensesKey = `finance:expenses:${year}:${month}`;
+    console.log(`[altegio/expenses] Checking for manual expenses: key=${expensesKey}, year=${year}, month=${month}`);
+    
+    // Динамічний імпорт для уникнення проблем з server components
+    const kvModule = await import("@/lib/kv");
+    const kvReadModule = kvModule.kvRead;
+    
+    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+      const rawValue = await kvReadModule.getRaw(expensesKey);
+      console.log(`[altegio/expenses] KV read result for ${expensesKey}:`, {
+        hasValue: rawValue !== null,
+        valueType: typeof rawValue,
+        valuePreview: rawValue ? String(rawValue).slice(0, 100) : null,
+      });
+      
+      if (rawValue !== null && typeof rawValue === "string") {
+        let expensesValue: number | null = null;
+        try {
+          const parsed = JSON.parse(rawValue);
+          console.log(`[altegio/expenses] Parsed JSON:`, { parsed, type: typeof parsed });
+          
+          if (typeof parsed === "number") {
+            expensesValue = parsed;
+          } else if (typeof parsed === "object" && parsed !== null) {
+            const value = (parsed as any).value ?? parsed;
+            if (typeof value === "number") {
+              expensesValue = value;
+            } else if (typeof value === "string") {
+              expensesValue = parseFloat(value);
+            } else {
+              expensesValue = parseFloat(String(value));
+            }
+          } else if (typeof parsed === "string") {
+            expensesValue = parseFloat(parsed);
+          } else {
+            expensesValue = parseFloat(String(parsed));
+          }
+        } catch {
+          expensesValue = parseFloat(rawValue);
+        }
+        
+        if (expensesValue !== null && Number.isFinite(expensesValue) && expensesValue >= 0) {
+          console.log(`[altegio/expenses] ✅ Using manual expenses for ${year}-${month}: ${expensesValue}`);
+          return expensesValue;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error(`[altegio/expenses] ❌ Failed to check manual expenses:`, err?.message || String(err));
+  }
+  return null;
+}
+
 export async function fetchExpensesSummary(params: {
   date_from: string;
   date_to: string;
 }): Promise<ExpensesSummary> {
   const { date_from, date_to } = params;
   const companyId = resolveCompanyId();
+
+  // Перевіряємо ручні витрати
+  const dateFrom = new Date(date_from);
+  const year = dateFrom.getFullYear();
+  const month = dateFrom.getMonth() + 1;
+  const manualExpenses = await getManualExpenses(year, month);
 
   // Спробуємо отримати список категорій витрат (опціонально, якщо endpoint доступний)
   // Якщо не вдається - використаємо дані з транзакцій
@@ -404,6 +468,18 @@ export async function fetchExpensesSummary(params: {
       );
     }
     
+    // Якщо є ручні витрати, використовуємо їх
+    if (manualExpenses !== null && manualExpenses > 0) {
+      console.log(`[altegio/expenses] ✅ Using manual expenses: ${manualExpenses}`);
+      return {
+        range: { date_from, date_to },
+        total: manualExpenses,
+        byCategory: { "Ручні витрати": manualExpenses },
+        transactions: [],
+        categories,
+      };
+    }
+    
     // Повертаємо порожній результат, але з категоріями (якщо вони є)
     return {
       range: { date_from, date_to },
@@ -505,13 +581,28 @@ export async function fetchExpensesSummary(params: {
     byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
   }
 
+  // Якщо є ручні витрати, додаємо їх до загальної суми
+  let finalTotal = total;
+  if (manualExpenses !== null && manualExpenses > 0) {
+    // Якщо є транзакції з API, додаємо ручні витрати окремою категорією
+    if (total > 0) {
+      byCategory["Ручні витрати"] = (byCategory["Ручні витрати"] || 0) + manualExpenses;
+      finalTotal = total + manualExpenses;
+    } else {
+      // Якщо немає транзакцій з API, використовуємо тільки ручні витрати
+      finalTotal = manualExpenses;
+      byCategory["Ручні витрати"] = manualExpenses;
+    }
+    console.log(`[altegio/expenses] Added manual expenses: ${manualExpenses}, final total: ${finalTotal}`);
+  }
+
   console.log(
-    `[altegio/expenses] Total expenses: ${total}, Categories: ${Object.keys(byCategory).length}`,
+    `[altegio/expenses] Total expenses: ${finalTotal}, Categories: ${Object.keys(byCategory).length}`,
   );
 
   return {
     range: { date_from, date_to },
-    total,
+    total: finalTotal,
     byCategory,
     transactions: expenses,
     categories,

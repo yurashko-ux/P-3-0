@@ -8,6 +8,7 @@ import {
   type ExpensesSummary,
 } from "@/lib/altegio";
 import { EditCostButton } from "./_components/EditCostButton";
+import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -80,9 +81,38 @@ async function getSummaryForMonth(
   summary: FinanceSummary | null;
   goods: GoodsSalesSummary | null;
   expenses: ExpensesSummary | null;
+  manualExpenses: number | null;
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
+
+  // Отримуємо ручні витрати з KV
+  let manualExpenses: number | null = null;
+  try {
+    const kvModule = await import("@/lib/kv");
+    const kvReadModule = kvModule.kvRead;
+    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+      const expensesKey = `finance:expenses:${year}:${month}`;
+      const rawValue = await kvReadModule.getRaw(expensesKey);
+      if (rawValue !== null && typeof rawValue === "string") {
+        try {
+          const parsed = JSON.parse(rawValue);
+          const value = (parsed as any)?.value ?? parsed;
+          const numValue = typeof value === "number" ? value : parseFloat(String(value));
+          if (Number.isFinite(numValue) && numValue >= 0) {
+            manualExpenses = numValue;
+          }
+        } catch {
+          const numValue = parseFloat(rawValue);
+          if (Number.isFinite(numValue) && numValue >= 0) {
+            manualExpenses = numValue;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[finance-report] Failed to read manual expenses:", err);
+  }
 
   try {
     const [summary, goods, expenses] = await Promise.all([
@@ -132,7 +162,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -285,16 +315,34 @@ export default async function FinanceReportPage({
                 Розходи за місяць
               </h2>
               
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs uppercase text-gray-500">
+                    Всього розходів
+                  </p>
+                  <EditExpensesButton
+                    year={selectedYear}
+                    month={selectedMonth}
+                    currentExpenses={manualExpenses || 0}
+                  />
+                </div>
+                <p className="text-xl font-semibold">
+                  {formatMoney(expenses?.total || manualExpenses || 0)} грн.
+                </p>
+                {expenses && expenses.total > 0 && manualExpenses && manualExpenses > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    (з API: {formatMoney(expenses.total - manualExpenses)} грн. + ручні: {formatMoney(manualExpenses)} грн.)
+                  </p>
+                )}
+                {!expenses || expenses.total === 0 ? (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Використовуйте кнопку ✏️ для введення витрат вручну
+                  </p>
+                ) : null}
+              </div>
+
               {expenses && expenses.transactions.length > 0 ? (
                 <>
-                  <div className="mb-4">
-                    <p className="text-xs uppercase text-gray-500">
-                      Всього розходів (з Altegio API)
-                    </p>
-                    <p className="text-xl font-semibold">
-                      {formatMoney(expenses.total)} грн.
-                    </p>
-                  </div>
 
                   {/* Витрати по категоріях */}
                   {Object.keys(expenses.byCategory).length > 0 && (
