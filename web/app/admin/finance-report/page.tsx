@@ -478,7 +478,10 @@ export default async function FinanceReportPage({
                 const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
                 const taxesExtraManual = manualFields.taxes_extra || 0;
                 const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
-                const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 0;
+                const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
+                                       expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
+                                       expenses?.byCategory["Доставка товарів"] ||
+                                       0;
                 const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
                 const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
                 const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
