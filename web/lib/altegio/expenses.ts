@@ -731,6 +731,11 @@ export async function fetchExpensesSummary(params: {
       return "Реклама, Бюджет, ФБ";
     }
     
+    // Нормалізуємо "Дірект" / "Direct"
+    if (lower.includes("дірект") || lower.includes("direct")) {
+      return "Дірект";
+    }
+    
     // Виключаємо доходи, які не повинні бути в витратах
     if (lower.includes("service payments") || 
         lower.includes("product sales") ||

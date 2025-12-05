@@ -472,7 +472,9 @@ export default async function FinanceReportPage({
                 const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
                 const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
                 const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
-                const directManual = manualFields.direct || 0;
+                const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
+                const directManual = manualFields.direct || 0; // Fallback, якщо немає в API
+                const direct = directFromAPI > 0 ? directFromAPI : directManual; // Використовуємо API, якщо є
                 const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
                 const taxesExtraManual = manualFields.taxes_extra || 0;
                 const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
@@ -486,7 +488,7 @@ export default async function FinanceReportPage({
                 // Обчислюємо суми
                 const salary = salaryFromAPI; // Тільки з API, без ручного введення
                 const rent = rentManual;
-                const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + directManual; // Без бухгалтерії
+                const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
                 const taxes = taxesFromAPI + taxesExtraManual;
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiringManual + utilitiesFromAPI;
                 
@@ -582,21 +584,36 @@ export default async function FinanceReportPage({
                             </span>
                           </div>
                         )}
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Дірект</span>
-                          <div className="flex items-center gap-1">
-                            <EditExpenseField
-                              year={selectedYear}
-                              month={selectedMonth}
-                              fieldKey="direct"
-                              label="Дірект"
-                              currentValue={directManual}
-                            />
+                        {direct > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Дірект</span>
                             <span className="text-xs font-semibold">
-                              {formatMoney(directManual)} грн.
+                              {formatMoney(direct)} грн.
+                              {directFromAPI > 0 ? (
+                                <span className="text-xs text-gray-400 ml-1">(з API)</span>
+                              ) : (
+                                <span className="text-xs text-gray-400 ml-1">(ручне)</span>
+                              )}
                             </span>
                           </div>
-                        </div>
+                        )}
+                        {direct === 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Дірект</span>
+                            <div className="flex items-center gap-1">
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="direct"
+                                label="Дірект"
+                                currentValue={directManual}
+                              />
+                              <span className="text-xs font-semibold">
+                                {formatMoney(directManual)} грн.
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
