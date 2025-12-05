@@ -433,46 +433,61 @@ export default async function FinanceReportPage({
                 <>
 
                   {/* Витрати по категоріях (виключаємо небажані категорії) */}
-                  {Object.keys(expenses.byCategory).length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-gray-700">
-                        Розбивка по категоріях:
-                      </p>
-                      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                        {Object.entries(expenses.byCategory)
-                          .filter(([category]) => {
-                            // Виключаємо небажані категорії
-                            const lower = category.toLowerCase();
-                            return !lower.includes("service payments") &&
-                                   !lower.includes("product sales") &&
-                                   !category.includes("Зняття з ФОП") &&
-                                   !category.includes("Фоп саша") &&
-                                   !category.includes("ФОП саша") &&
-                                   category !== "Інкасація" &&
-                                   category !== "Инкасація" &&
-                                   category !== "Управління" &&
-                                   category !== "Управление" &&
-                                   category !== "Product purchase" &&
-                                   category !== "Інвестиції в салон" &&
-                                   category !== "Инвестиции в салон";
-                          })
-                          .sort(([, a], [, b]) => b - a)
-                          .map(([category, amount], index) => (
-                            <div
-                              key={category}
-                              className="flex justify-between items-center p-2 bg-gray-50 rounded"
-                            >
-                              <span className="text-sm text-gray-600">
-                                {index + 1}. {category}
-                              </span>
-                              <span className="text-sm font-semibold">
-                                {formatMoney(amount)} грн.
-                              </span>
-                            </div>
-                          ))}
+                  {Object.keys(expenses.byCategory).length > 0 && (() => {
+                    // Фільтруємо категорії та обчислюємо загальну суму
+                    const filteredCategories = Object.entries(expenses.byCategory)
+                      .filter(([category]) => {
+                        // Виключаємо небажані категорії
+                        const lower = category.toLowerCase();
+                        return !lower.includes("service payments") &&
+                               !lower.includes("product sales") &&
+                               !category.includes("Зняття з ФОП") &&
+                               !category.includes("Фоп саша") &&
+                               !category.includes("ФОП саша") &&
+                               category !== "Інкасація" &&
+                               category !== "Инкасація" &&
+                               category !== "Управління" &&
+                               category !== "Управление" &&
+                               category !== "Product purchase" &&
+                               category !== "Інвестиції в салон" &&
+                               category !== "Инвестиции в салон";
+                      });
+                    
+                    // Обчислюємо загальну суму всіх категорій
+                    const categoriesTotal = filteredCategories.reduce((sum, [, amount]) => sum + amount, 0);
+                    
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium text-gray-700">
+                            Розбивка по категоріях:
+                          </p>
+                          <div className="px-3 py-1 bg-red-50 border-2 border-red-300 rounded">
+                            <span className="text-sm font-bold text-red-700">
+                              {formatMoney(categoriesTotal)} грн.
+                            </span>
+                          </div>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                          {filteredCategories
+                            .sort(([, a], [, b]) => b - a)
+                            .map(([category, amount], index) => (
+                              <div
+                                key={category}
+                                className="flex justify-between items-center p-2 bg-gray-50 rounded"
+                              >
+                                <span className="text-sm text-gray-600">
+                                  {index + 1}. {category}
+                                </span>
+                                <span className="text-sm font-semibold">
+                                  {formatMoney(amount)} грн.
+                                </span>
+                              </div>
+                            ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </>
               ) : (
                 <div className="text-sm text-gray-500">
