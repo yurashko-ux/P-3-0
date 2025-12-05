@@ -450,7 +450,9 @@ export default async function FinanceReportPage({
                                category !== "Управление" &&
                                category !== "Product purchase" &&
                                category !== "Інвестиції в салон" &&
-                               category !== "Инвестиции в салон";
+                               category !== "Инвестиции в салон" &&
+                               category !== "Переміщення" &&
+                               !lower.includes("переміщення");
                       });
                     
                     // Обчислюємо загальну суму всіх категорій
