@@ -482,7 +482,9 @@ export default async function FinanceReportPage({
                 const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
                 const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
                 const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-                const acquiringManual = manualFields.acquiring || 0;
+                const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+                const acquiringManual = manualFields.acquiring || 0; // Fallback, якщо немає в API
+                const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual; // Використовуємо API, якщо є
                 const utilitiesFromAPI = expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] || 0;
 
                 // Обчислюємо суми
@@ -490,7 +492,7 @@ export default async function FinanceReportPage({
                 const rent = rentManual;
                 const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
                 const taxes = taxesFromAPI + taxesExtraManual;
-                const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiringManual + utilitiesFromAPI;
+                const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
                 
                 // Розхід без ЗП (постійні витрати) - виключаємо інвестиції та закуплений товар (вони в Інкасації)
                 const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accountingManual;
@@ -668,21 +670,36 @@ export default async function FinanceReportPage({
                             </span>
                           </div>
                         )}
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Еквайринг</span>
-                          <div className="flex items-center gap-1">
-                            <EditExpenseField
-                              year={selectedYear}
-                              month={selectedMonth}
-                              fieldKey="acquiring"
-                              label="Еквайринг"
-                              currentValue={acquiringManual}
-                            />
+                        {acquiring > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Еквайринг</span>
                             <span className="text-xs font-semibold">
-                              {formatMoney(acquiringManual)} грн.
+                              {formatMoney(acquiring)} грн.
+                              {acquiringFromAPI > 0 ? (
+                                <span className="text-xs text-gray-400 ml-1">(з API)</span>
+                              ) : (
+                                <span className="text-xs text-gray-400 ml-1">(ручне)</span>
+                              )}
                             </span>
                           </div>
-                        </div>
+                        )}
+                        {acquiring === 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Еквайринг</span>
+                            <div className="flex items-center gap-1">
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="acquiring"
+                                label="Еквайринг"
+                                currentValue={acquiringManual}
+                              />
+                              <span className="text-xs font-semibold">
+                                {formatMoney(acquiringManual)} грн.
+                              </span>
+                            </div>
+                          </div>
+                        )}
                         {utilitiesFromAPI > 0 && (
                           <div className="flex justify-between items-center">
                             <span className="text-xs text-gray-600">Інтернет, CRM і т д.</span>
