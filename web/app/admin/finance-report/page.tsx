@@ -316,6 +316,54 @@ export default async function FinanceReportPage({
                 Розходи за місяць
               </h2>
               
+              {/* Окрема група: Інкасація (не враховується в сумі розходів) */}
+              {expenses && expenses.transactions.length > 0 && (() => {
+                const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
+                const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
+                const encashmentTotal = encashment + management;
+                
+                if (encashmentTotal > 0) {
+                  return (
+                    <div className="mb-4 p-4 bg-blue-50 rounded border border-blue-200">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                        Інкасація
+                      </h3>
+                      <div className="space-y-2">
+                        {encashment > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">
+                              Інкасація
+                            </span>
+                            <span className="text-sm font-semibold">
+                              {formatMoney(encashment)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {management > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">
+                              Управління
+                            </span>
+                            <span className="text-sm font-semibold">
+                              {formatMoney(management)} грн.
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-2 border-t border-blue-300">
+                          <span className="text-sm font-medium text-gray-700">
+                            Всього інкасації
+                          </span>
+                          <span className="text-sm font-semibold">
+                            {formatMoney(encashmentTotal)} грн.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs uppercase text-gray-500">
@@ -328,11 +376,24 @@ export default async function FinanceReportPage({
                   />
                 </div>
                 <p className="text-xl font-semibold">
-                  {formatMoney(expenses?.total || manualExpenses || 0)} грн.
+                  {(() => {
+                    // Віднімаємо інкасацію та управління від загальної суми
+                    const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
+                    const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
+                    const encashmentTotal = encashment + management;
+                    const expensesTotal = expenses?.total || 0;
+                    const totalWithoutEncashment = expensesTotal - encashmentTotal;
+                    return formatMoney(Math.max(0, totalWithoutEncashment) + (manualExpenses || 0));
+                  })()} грн.
                 </p>
                 {expenses && expenses.total > 0 && manualExpenses && manualExpenses > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
-                    (з API: {formatMoney(expenses.total - manualExpenses)} грн. + ручні: {formatMoney(manualExpenses)} грн.)
+                    (з API: {(() => {
+                      const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
+                      const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
+                      const encashmentTotal = encashment + management;
+                      return formatMoney(Math.max(0, expenses.total - encashmentTotal - manualExpenses));
+                    })()} грн. + ручні: {formatMoney(manualExpenses)} грн.)
                   </p>
                 )}
                 {!expenses || expenses.total === 0 ? (
@@ -344,39 +405,6 @@ export default async function FinanceReportPage({
 
               {expenses && expenses.transactions.length > 0 ? (
                 <>
-                  {/* Окремі поля для Інкасація та Управління */}
-                  {(() => {
-                    const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
-                    const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
-                    
-                    if (encashment > 0 || management > 0) {
-                      return (
-                        <div className="space-y-2 mb-4">
-                          {encashment > 0 && (
-                            <div className="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-200">
-                              <span className="text-sm font-medium text-gray-700">
-                                Інкасація
-                              </span>
-                              <span className="text-sm font-semibold">
-                                {formatMoney(encashment)} грн.
-                              </span>
-                            </div>
-                          )}
-                          {management > 0 && (
-                            <div className="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-200">
-                              <span className="text-sm font-medium text-gray-700">
-                                Управління
-                              </span>
-                              <span className="text-sm font-semibold">
-                                {formatMoney(management)} грн.
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
 
                   {/* Витрати по категоріях (виключаємо небажані категорії) */}
                   {Object.keys(expenses.byCategory).length > 0 && (
