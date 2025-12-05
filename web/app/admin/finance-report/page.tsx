@@ -373,14 +373,16 @@ export default async function FinanceReportPage({
               </h2>
               
               {/* Окрема група: Інкасація (не враховується в сумі розходів) */}
-              {expenses && expenses.transactions.length > 0 && (() => {
-                const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
-                const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
-                const productPurchase = expenses.byCategory["Product purchase"] || 0;
-                const investments = expenses.byCategory["Інвестиції в салон"] || expenses.byCategory["Инвестиции в салон"] || 0;
-                const encashmentTotal = encashment + management + productPurchase + investments;
+              {(() => {
+                const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
+                const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
+                const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+                const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+                const purchasedGoodsManual = manualFields.purchased_goods || 0;
+                const encashmentTotal = encashment + management + productPurchase + investments + purchasedGoodsManual;
                 
-                if (encashmentTotal > 0) {
+                // Показуємо блок, якщо є хоча б одне значення
+                if (encashmentTotal > 0 || purchasedGoodsManual > 0) {
                   return (
                     <div className="mb-4 p-4 bg-blue-50 rounded border border-blue-200">
                       <h3 className="text-sm font-semibold text-gray-700 mb-3">
@@ -427,6 +429,25 @@ export default async function FinanceReportPage({
                             </span>
                           </div>
                         )}
+                        {purchasedGoodsManual > 0 && (
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-600">
+                                закуплений товар
+                              </span>
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="purchased_goods"
+                                label="закуплений товар"
+                                currentValue={purchasedGoodsManual}
+                              />
+                            </div>
+                            <span className="text-sm font-semibold">
+                              {formatMoney(purchasedGoodsManual)} грн.
+                            </span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-center pt-2 border-t border-blue-300">
                           <span className="text-sm font-medium text-gray-700">
                             Всього інкасації
@@ -461,18 +482,16 @@ export default async function FinanceReportPage({
                 const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
                 const acquiringManual = manualFields.acquiring || 0;
                 const utilitiesFromAPI = expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] || 0;
-                const investmentsManual = manualFields.investments || 0;
-                const purchasedGoodsManual = manualFields.purchased_goods || 0;
 
                 // Обчислюємо суми
-                const salary = salaryFromAPI + (manualFields.salary || 0);
+                const salary = salaryFromAPI; // Тільки з API, без ручного введення
                 const rent = rentManual;
                 const marketingTotal = accountingManual + cmmFromAPI + targetFromAPI + advertisingFromAPI + directManual;
                 const taxes = taxesFromAPI + taxesExtraManual;
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiringManual + utilitiesFromAPI;
                 
-                // Розхід без ЗП (постійні витрати)
-                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + investmentsManual + purchasedGoodsManual;
+                // Розхід без ЗП (постійні витрати) - виключаємо інвестиції та закуплений товар (вони в Інкасації)
+                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal;
                 
                 // Загальний розхід
                 const totalExpenses = salary + expensesWithoutSalary;
@@ -501,18 +520,9 @@ export default async function FinanceReportPage({
 
                     {/* ЗП */}
                     <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
-                          ЗП
-                        </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="salary"
-                          label="ЗП"
-                          currentValue={salaryFromAPI}
-                        />
-                      </div>
+                      <span className="text-sm font-medium text-gray-700">
+                        ЗП
+                      </span>
                       <span className="text-sm font-semibold">
                         {formatMoney(salary)} грн.
                       </span>
@@ -704,44 +714,6 @@ export default async function FinanceReportPage({
                           </div>
                         )}
                       </div>
-                    </div>
-
-                    {/* Інвестиції */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
-                          Інвестиції
-                        </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="investments"
-                          label="Інвестиції"
-                          currentValue={investmentsManual}
-                        />
-                      </div>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(investmentsManual)} грн.
-                      </span>
-                    </div>
-
-                    {/* закуплений товар */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
-                          закуплений товар
-                        </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="purchased_goods"
-                          label="закуплений товар"
-                          currentValue={purchasedGoodsManual}
-                        />
-                      </div>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(purchasedGoodsManual)} грн.
-                      </span>
                     </div>
                   </div>
                 );
