@@ -736,6 +736,11 @@ export async function fetchExpensesSummary(params: {
       return "Дірект";
     }
     
+    // Нормалізуємо "Еквайринг" / "Acquiring"
+    if (lower.includes("еквайринг") || lower.includes("acquiring")) {
+      return "Еквайринг";
+    }
+    
     // Виключаємо доходи, які не повинні бути в витратах
     if (lower.includes("service payments") || 
         lower.includes("product sales") ||
