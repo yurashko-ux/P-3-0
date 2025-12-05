@@ -9,6 +9,7 @@ import {
 } from "@/lib/altegio";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
+import { EditExpenseField } from "./_components/EditExpenseField";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,42 @@ function monthRange(year: number, month: number): {
   };
 }
 
+/**
+ * Отримати значення ручного поля витрат з KV
+ */
+async function getManualExpenseField(
+  year: number,
+  month: number,
+  fieldKey: string,
+): Promise<number> {
+  try {
+    const kvModule = await import("@/lib/kv");
+    const kvReadModule = kvModule.kvRead;
+    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+      const key = `finance:expenses:${fieldKey}:${year}:${month}`;
+      const rawValue = await kvReadModule.getRaw(key);
+      if (rawValue !== null && typeof rawValue === "string") {
+        try {
+          const parsed = JSON.parse(rawValue);
+          const value = (parsed as any)?.value ?? parsed;
+          const numValue = typeof value === "number" ? value : parseFloat(String(value));
+          if (Number.isFinite(numValue) && numValue >= 0) {
+            return numValue;
+          }
+        } catch {
+          const numValue = parseFloat(rawValue);
+          if (Number.isFinite(numValue) && numValue >= 0) {
+            return numValue;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[finance-report] Failed to read manual expense field ${fieldKey}:`, err);
+  }
+  return 0;
+}
+
 async function getSummaryForMonth(
   year: number,
   month: number,
@@ -82,11 +119,12 @@ async function getSummaryForMonth(
   goods: GoodsSalesSummary | null;
   expenses: ExpensesSummary | null;
   manualExpenses: number | null;
+  manualFields: Record<string, number>; // Ручні поля витрат
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
 
-  // Отримуємо ручні витрати з KV
+  // Отримуємо ручні витрати з KV (старе поле для сумісності)
   let manualExpenses: number | null = null;
   try {
     const kvModule = await import("@/lib/kv");
@@ -114,6 +152,23 @@ async function getSummaryForMonth(
     console.error("[finance-report] Failed to read manual expenses:", err);
   }
 
+  // Отримуємо всі ручні поля витрат
+  const manualFields: Record<string, number> = {};
+  const fieldKeys = [
+    "salary", // ЗП
+    "rent", // Оренда
+    "accounting", // Бухгалтерія
+    "direct", // Дірект
+    "taxes_extra", // Додаткові податки (якщо API не покриває всю суму)
+    "acquiring", // Еквайринг
+    "investments", // Інвестиції
+    "purchased_goods", // закуплений товар
+  ];
+  
+  for (const fieldKey of fieldKeys) {
+    manualFields[fieldKey] = await getManualExpenseField(year, month, fieldKey);
+  }
+
   try {
     const [summary, goods, expenses] = await Promise.all([
       fetchFinanceSummary({
@@ -129,13 +184,14 @@ async function getSummaryForMonth(
         date_to: to,
       }),
     ]);
-    return { summary, goods, expenses, manualExpenses, error: null };
+    return { summary, goods, expenses, manualExpenses, manualFields, error: null };
   } catch (e: any) {
     return {
       summary: null,
       goods: null,
       expenses: null,
       manualExpenses: null,
+      manualFields: {},
       error: String(e?.message || e),
     };
   }
@@ -163,7 +219,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -311,7 +367,7 @@ export default async function FinanceReportPage({
 
           {/* Розходи за місяць */}
           <section className="card bg-base-100 shadow-sm">
-            <div className="card-body p-4 space-y-3">
+            <div className="card-body p-4 space-y-4">
               <h2 className="card-title text-base md:text-lg">
                 Розходи за місяць
               </h2>
@@ -386,108 +442,310 @@ export default async function FinanceReportPage({
                 return null;
               })()}
 
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs uppercase text-gray-500">
-                    Всього розходів
-                  </p>
-                  <EditExpensesButton
-                    year={selectedYear}
-                    month={selectedMonth}
-                    currentExpenses={manualExpenses || 0}
-                  />
-                </div>
-                {!expenses || expenses.total === 0 ? (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Використовуйте кнопку ✏️ для введення витрат вручну
-                  </p>
-                ) : null}
-              </div>
+              {/* Структура згідно з Excel */}
+              {(() => {
+                // Отримуємо дані з API
+                const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
+                const rentManual = manualFields.rent || 0;
+                const accountingManual = manualFields.accounting || 0;
+                const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+                const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+                const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
+                const directManual = manualFields.direct || 0;
+                const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
+                const taxesExtraManual = manualFields.taxes_extra || 0;
+                const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+                const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 0;
+                const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
+                const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
+                const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
+                const acquiringManual = manualFields.acquiring || 0;
+                const utilitiesFromAPI = expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] || 0;
+                const investmentsManual = manualFields.investments || 0;
+                const purchasedGoodsManual = manualFields.purchased_goods || 0;
 
-              {expenses && expenses.transactions.length > 0 ? (
-                <>
+                // Обчислюємо суми
+                const salary = salaryFromAPI + (manualFields.salary || 0);
+                const rent = rentManual;
+                const marketingTotal = accountingManual + cmmFromAPI + targetFromAPI + advertisingFromAPI + directManual;
+                const taxes = taxesFromAPI + taxesExtraManual;
+                const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiringManual + utilitiesFromAPI;
+                
+                // Розхід без ЗП (постійні витрати)
+                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + investmentsManual + purchasedGoodsManual;
+                
+                // Загальний розхід
+                const totalExpenses = salary + expensesWithoutSalary;
 
-                  {/* Витрати по категоріях (виключаємо небажані категорії) */}
-                  {Object.keys(expenses.byCategory).length > 0 && (() => {
-                    // Фільтруємо категорії та обчислюємо загальну суму
-                    const filteredCategories = Object.entries(expenses.byCategory)
-                      .filter(([category]) => {
-                        // Виключаємо небажані категорії
-                        const lower = category.toLowerCase();
-                        return !lower.includes("service payments") &&
-                               !lower.includes("product sales") &&
-                               !category.includes("Зняття з ФОП") &&
-                               !category.includes("Фоп саша") &&
-                               !category.includes("ФОП саша") &&
-                               category !== "Інкасація" &&
-                               category !== "Инкасація" &&
-                               category !== "Управління" &&
-                               category !== "Управление" &&
-                               category !== "Product purchase" &&
-                               category !== "Інвестиції в салон" &&
-                               category !== "Инвестиции в салон" &&
-                               category !== "Переміщення" &&
-                               !lower.includes("переміщення") &&
-                               !category.includes("на карту за відправку накладки") &&
-                               !lower.includes("накладки");
-                      });
-                    
-                    // Обчислюємо загальну суму всіх категорій
-                    const categoriesTotal = filteredCategories.reduce((sum, [, amount]) => sum + amount, 0);
-                    
-                    return (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm font-medium text-gray-700">
-                            Розбивка по категоріях:
-                          </p>
-                          <div className="px-3 py-1 bg-red-50 border-2 border-red-300 rounded">
-                            <span className="text-sm font-bold text-red-700">
-                              {formatMoney(categoriesTotal)} грн.
+                return (
+                  <div className="space-y-4">
+                    {/* Розхід без ЗП (постійні) */}
+                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                      <span className="text-sm font-medium text-gray-700">
+                        Розхід без ЗП (постійні)
+                      </span>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(expensesWithoutSalary)} грн.
+                      </span>
+                    </div>
+
+                    {/* Загальний розхід (червоний фон) */}
+                    <div className="flex justify-between items-center p-4 bg-red-100 border-2 border-red-300 rounded">
+                      <span className="text-lg font-bold text-red-800">
+                        Розхід
+                      </span>
+                      <span className="text-lg font-bold text-red-800">
+                        {formatMoney(totalExpenses)} грн.
+                      </span>
+                    </div>
+
+                    {/* ЗП */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          ЗП
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="salary"
+                          label="ЗП"
+                          currentValue={salaryFromAPI}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(salary)} грн.
+                      </span>
+                    </div>
+
+                    {/* Оренда */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          Оренда
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="rent"
+                          label="Оренда"
+                          currentValue={rentManual}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(rent)} грн.
+                      </span>
+                    </div>
+
+                    {/* Marketing/Advertising Group */}
+                    <div className="p-3 bg-gray-50 rounded border">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          Marketing/Advertising
+                        </span>
+                        <span className="text-sm font-semibold">
+                          {formatMoney(marketingTotal)} грн.
+                        </span>
+                      </div>
+                      <div className="space-y-2 ml-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Бухгалтерія</span>
+                          <div className="flex items-center gap-1">
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="accounting"
+                              label="Бухгалтерія"
+                              currentValue={accountingManual}
+                            />
+                            <span className="text-xs font-semibold">
+                              {formatMoney(accountingManual)} грн.
                             </span>
                           </div>
                         </div>
-                        <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                          {filteredCategories
-                            .sort(([, a], [, b]) => b - a)
-                            .map(([category, amount], index) => (
-                              <div
-                                key={category}
-                                className="flex justify-between items-center p-2 bg-gray-50 rounded"
-                              >
-                                <span className="text-sm text-gray-600">
-                                  {index + 1}. {category}
-                                </span>
-                                <span className="text-sm font-semibold">
-                                  {formatMoney(amount)} грн.
-                                </span>
-                              </div>
-                            ))}
+                        {cmmFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">CMM</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(cmmFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {targetFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Таргет (ведення)</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(targetFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {advertisingFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Реклама бюджет ФБ</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(advertisingFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Дірект</span>
+                          <div className="flex items-center gap-1">
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="direct"
+                              label="Дірект"
+                              currentValue={directManual}
+                            />
+                            <span className="text-xs font-semibold">
+                              {formatMoney(directManual)} грн.
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    );
-                  })()}
-                </>
-              ) : (
-                <div className="text-sm text-gray-500">
-                  <p>
-                    Витрати з Altegio API не знайдені або не налаштовані.
-                  </p>
-                  <p className="mt-2">
-                    Використовуйте P&L звіт для введення витрат вручну.
-                  </p>
-                </div>
-              )}
+                    </div>
 
-              {/* Примітка про ручне введення */}
-              <div className="mt-4 p-3 bg-blue-50 rounded text-xs text-gray-600">
-                <p className="font-medium mb-1">Примітка:</p>
-                <p>
-                  Деякі категорії витрат (ЗП, Оренда, Бухгалтерія, Реклама,
-                  Податки тощо) можуть бути недоступні через API і потребують
-                  ручного введення з P&L звіту.
-                </p>
-              </div>
+                    {/* Податки */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          Податки
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="taxes_extra"
+                          label="Податки (додатково)"
+                          currentValue={taxesExtraManual}
+                        />
+                        {taxesFromAPI > 0 && (
+                          <span className="text-xs text-gray-500">
+                            (з API: {formatMoney(taxesFromAPI)})
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(taxes)} грн.
+                      </span>
+                    </div>
+
+                    {/* Other Expenses Group */}
+                    <div className="p-3 bg-gray-50 rounded border">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          Інші витрати
+                        </span>
+                        <span className="text-sm font-semibold">
+                          {formatMoney(otherExpensesTotal)} грн.
+                        </span>
+                      </div>
+                      <div className="space-y-2 ml-4">
+                        {miscExpensesFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Інші витрати</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(miscExpensesFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {deliveryFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Доставка товарів</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(deliveryFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {consumablesFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Закупівля матеріалів</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(consumablesFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {stationeryFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Канцелярські, миючі т</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(stationeryFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {productsForGuestsFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Продукти для гостей</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(productsForGuestsFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Еквайринг</span>
+                          <div className="flex items-center gap-1">
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="acquiring"
+                              label="Еквайринг"
+                              currentValue={acquiringManual}
+                            />
+                            <span className="text-xs font-semibold">
+                              {formatMoney(acquiringManual)} грн.
+                            </span>
+                          </div>
+                        </div>
+                        {utilitiesFromAPI > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Інтернет, CRM і т д.</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(utilitiesFromAPI)} грн.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Інвестиції */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          Інвестиції
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="investments"
+                          label="Інвестиції"
+                          currentValue={investmentsManual}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(investmentsManual)} грн.
+                      </span>
+                    </div>
+
+                    {/* закуплений товар */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          закуплений товар
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="purchased_goods"
+                          label="закуплений товар"
+                          currentValue={purchasedGoodsManual}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(purchasedGoodsManual)} грн.
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </section>
 
