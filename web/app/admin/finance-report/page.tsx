@@ -320,7 +320,9 @@ export default async function FinanceReportPage({
               {expenses && expenses.transactions.length > 0 && (() => {
                 const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
                 const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
-                const encashmentTotal = encashment + management;
+                const productPurchase = expenses.byCategory["Product purchase"] || 0;
+                const investments = expenses.byCategory["Інвестиції в салон"] || expenses.byCategory["Инвестиции в салон"] || 0;
+                const encashmentTotal = encashment + management + productPurchase + investments;
                 
                 if (encashmentTotal > 0) {
                   return (
@@ -346,6 +348,26 @@ export default async function FinanceReportPage({
                             </span>
                             <span className="text-sm font-semibold">
                               {formatMoney(management)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {productPurchase > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">
+                              Product purchase
+                            </span>
+                            <span className="text-sm font-semibold">
+                              {formatMoney(productPurchase)} грн.
+                            </span>
+                          </div>
+                        )}
+                        {investments > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">
+                              Інвестиції в салон
+                            </span>
+                            <span className="text-sm font-semibold">
+                              {formatMoney(investments)} грн.
                             </span>
                           </div>
                         )}
@@ -377,10 +399,12 @@ export default async function FinanceReportPage({
                 </div>
                 <p className="text-xl font-semibold">
                   {(() => {
-                    // Віднімаємо інкасацію та управління від загальної суми
+                    // Віднімаємо інкасацію, управління, product purchase та інвестиції від загальної суми
                     const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
                     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
-                    const encashmentTotal = encashment + management;
+                    const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+                    const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+                    const encashmentTotal = encashment + management + productPurchase + investments;
                     const expensesTotal = expenses?.total || 0;
                     const totalWithoutEncashment = expensesTotal - encashmentTotal;
                     return formatMoney(Math.max(0, totalWithoutEncashment) + (manualExpenses || 0));
@@ -391,7 +415,9 @@ export default async function FinanceReportPage({
                     (з API: {(() => {
                       const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
                       const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
-                      const encashmentTotal = encashment + management;
+                      const productPurchase = expenses.byCategory["Product purchase"] || 0;
+                      const investments = expenses.byCategory["Інвестиції в салон"] || expenses.byCategory["Инвестиции в салон"] || 0;
+                      const encashmentTotal = encashment + management + productPurchase + investments;
                       return formatMoney(Math.max(0, expenses.total - encashmentTotal - manualExpenses));
                     })()} грн. + ручні: {formatMoney(manualExpenses)} грн.)
                   </p>
@@ -425,7 +451,10 @@ export default async function FinanceReportPage({
                                    category !== "Інкасація" &&
                                    category !== "Инкасація" &&
                                    category !== "Управління" &&
-                                   category !== "Управление";
+                                   category !== "Управление" &&
+                                   category !== "Product purchase" &&
+                                   category !== "Інвестиції в салон" &&
+                                   category !== "Инвестиции в салон";
                           })
                           .sort(([, a], [, b]) => b - a)
                           .map(([category, amount], index) => (
