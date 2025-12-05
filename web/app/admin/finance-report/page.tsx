@@ -486,12 +486,12 @@ export default async function FinanceReportPage({
                 // Обчислюємо суми
                 const salary = salaryFromAPI; // Тільки з API, без ручного введення
                 const rent = rentManual;
-                const marketingTotal = accountingManual + cmmFromAPI + targetFromAPI + advertisingFromAPI + directManual;
+                const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + directManual; // Без бухгалтерії
                 const taxes = taxesFromAPI + taxesExtraManual;
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiringManual + utilitiesFromAPI;
                 
                 // Розхід без ЗП (постійні витрати) - виключаємо інвестиції та закуплений товар (вони в Інкасації)
-                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal;
+                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accountingManual;
                 
                 // Загальний розхід
                 const totalExpenses = salary + expensesWithoutSalary;
@@ -558,21 +558,6 @@ export default async function FinanceReportPage({
                         </span>
                       </div>
                       <div className="space-y-2 ml-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Бухгалтерія</span>
-                          <div className="flex items-center gap-1">
-                            <EditExpenseField
-                              year={selectedYear}
-                              month={selectedMonth}
-                              fieldKey="accounting"
-                              label="Бухгалтерія"
-                              currentValue={accountingManual}
-                            />
-                            <span className="text-xs font-semibold">
-                              {formatMoney(accountingManual)} грн.
-                            </span>
-                          </div>
-                        </div>
                         {cmmFromAPI > 0 && (
                           <div className="flex justify-between items-center">
                             <span className="text-xs text-gray-600">CMM</span>
@@ -613,30 +598,6 @@ export default async function FinanceReportPage({
                           </div>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Податки */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
-                          Податки
-                        </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="taxes_extra"
-                          label="Податки (додатково)"
-                          currentValue={taxesExtraManual}
-                        />
-                        {taxesFromAPI > 0 && (
-                          <span className="text-xs text-gray-500">
-                            (з API: {formatMoney(taxesFromAPI)})
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(taxes)} грн.
-                      </span>
                     </div>
 
                     {/* Other Expenses Group */}
@@ -714,6 +675,49 @@ export default async function FinanceReportPage({
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* Бухгалтерія */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          Бухгалтерія
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="accounting"
+                          label="Бухгалтерія"
+                          currentValue={accountingManual}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(accountingManual)} грн.
+                      </span>
+                    </div>
+
+                    {/* Податки */}
+                    <div className="flex justify-between items-center p-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          Податки
+                        </span>
+                        <EditExpenseField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="taxes_extra"
+                          label="Податки (додатково)"
+                          currentValue={taxesExtraManual}
+                        />
+                        {taxesFromAPI > 0 && (
+                          <span className="text-xs text-gray-500">
+                            (з API: {formatMoney(taxesFromAPI)})
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-sm font-semibold">
+                        {formatMoney(taxes)} грн.
+                      </span>
                     </div>
                   </div>
                 );
