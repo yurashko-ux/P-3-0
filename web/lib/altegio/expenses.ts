@@ -661,19 +661,36 @@ export async function fetchExpensesSummary(params: {
   
   console.log(`[altegio/expenses] ✅ Including ALL ${expenses.length} transactions (NO FILTERING)`);
   
+  // Логуємо ВСІ унікальні категорії для порівняння з UI
+  const allRawCategories = new Set<string>();
+  expenses.forEach((t) => {
+    const category = t.expense?.title || 
+                    t.expense?.name || 
+                    t.comment || 
+                    t.type || 
+                    "Unknown";
+    allRawCategories.add(category);
+  });
+  
+  console.log(`[altegio/expenses] 📊 ALL RAW CATEGORIES FROM API (${allRawCategories.size} total):`, 
+    Array.from(allRawCategories).sort()
+  );
+  
   // Логуємо перші кілька транзакцій для діагностики
-  expenses.slice(0, 10).forEach((t, index) => {
+  expenses.slice(0, 20).forEach((t, index) => {
     const expenseId = t.expense_id || t.expense?.id;
     const expenseTitle = t.expense?.title || t.expense?.name || "";
     const comment = t.comment || "";
     console.log(`[altegio/expenses] Transaction ${index + 1}/${expenses.length} (ID: ${t.id}):`, {
       expense_id: expenseId,
       expense_title: expenseTitle,
+      expense_name: t.expense?.name,
       type: t.type,
       type_id: (t as any).type_id,
       amount: t.amount,
-      comment: comment.substring(0, 50),
+      comment: comment.substring(0, 100),
       hasExpense: !!(t.expense_id || t.expense),
+      date: t.date,
     });
   });
 
