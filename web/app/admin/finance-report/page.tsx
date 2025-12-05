@@ -344,8 +344,41 @@ export default async function FinanceReportPage({
 
               {expenses && expenses.transactions.length > 0 ? (
                 <>
+                  {/* Окремі поля для Інкасація та Управління */}
+                  {(() => {
+                    const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
+                    const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
+                    
+                    if (encashment > 0 || management > 0) {
+                      return (
+                        <div className="space-y-2 mb-4">
+                          {encashment > 0 && (
+                            <div className="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-200">
+                              <span className="text-sm font-medium text-gray-700">
+                                Інкасація
+                              </span>
+                              <span className="text-sm font-semibold">
+                                {formatMoney(encashment)} грн.
+                              </span>
+                            </div>
+                          )}
+                          {management > 0 && (
+                            <div className="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-200">
+                              <span className="text-sm font-medium text-gray-700">
+                                Управління
+                              </span>
+                              <span className="text-sm font-semibold">
+                                {formatMoney(management)} грн.
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
 
-                  {/* Витрати по категоріях */}
+                  {/* Витрати по категоріях (виключаємо небажані категорії) */}
                   {Object.keys(expenses.byCategory).length > 0 && (
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-gray-700">
@@ -353,14 +386,27 @@ export default async function FinanceReportPage({
                       </p>
                       <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
                         {Object.entries(expenses.byCategory)
+                          .filter(([category]) => {
+                            // Виключаємо небажані категорії
+                            const lower = category.toLowerCase();
+                            return !lower.includes("service payments") &&
+                                   !lower.includes("product sales") &&
+                                   !category.includes("Зняття з ФОП") &&
+                                   !category.includes("Фоп саша") &&
+                                   !category.includes("ФОП саша") &&
+                                   category !== "Інкасація" &&
+                                   category !== "Инкасація" &&
+                                   category !== "Управління" &&
+                                   category !== "Управление";
+                          })
                           .sort(([, a], [, b]) => b - a)
-                          .map(([category, amount]) => (
+                          .map(([category, amount], index) => (
                             <div
                               key={category}
                               className="flex justify-between items-center p-2 bg-gray-50 rounded"
                             >
                               <span className="text-sm text-gray-600">
-                                {category}
+                                {index + 1}. {category}
                               </span>
                               <span className="text-sm font-semibold">
                                 {formatMoney(amount)} грн.

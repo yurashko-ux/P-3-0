@@ -731,6 +731,14 @@ export async function fetchExpensesSummary(params: {
       return "Реклама, Бюджет, ФБ";
     }
     
+    // Виключаємо доходи, які не повинні бути в витратах
+    if (lower.includes("service payments") || 
+        lower.includes("product sales") ||
+        lower.includes("продаж послуг") ||
+        lower.includes("надання послуг")) {
+      return "Service payments"; // Помічаємо для подальшого виключення
+    }
+    
     // Повертаємо оригінальну назву, якщо не знайшли нормалізацію
     return name;
   }
