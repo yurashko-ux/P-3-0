@@ -677,13 +677,46 @@ export async function fetchExpensesSummary(params: {
     });
   });
 
-  console.log(
-    `[altegio/expenses] Filtered expenses: ${expenses.length} items`,
-  );
-
   // Групуємо по категоріях (expense.name або expense.category)
   const byCategory: Record<string, number> = {};
   let total = 0;
+
+  // Функція для нормалізації назви категорії
+  // Об'єднуємо схожі назви в одну категорію
+  function normalizeCategoryName(rawName: string): string {
+    const name = rawName.trim();
+    if (!name) return "Інші витрати";
+    
+    const lower = name.toLowerCase();
+    
+    // Нормалізуємо "Податки та збори" / "Taxes and fees" / "Податки" / "Taxes"
+    if (lower.includes("подат") || lower.includes("tax") || lower.includes("збор") || lower.includes("fee")) {
+      return "Податки та збори";
+    }
+    
+    // Нормалізуємо "Зарплата" / "Team salaries" / "ЗП"
+    if (lower.includes("зарплат") || lower.includes("salary") || lower === "зп" || lower.includes("team salaries")) {
+      return "Зарплата співробітникам";
+    }
+    
+    // Нормалізуємо "Оренда" / "Rent"
+    if (lower.includes("оренд") || lower.includes("rent")) {
+      return "Оренда";
+    }
+    
+    // Нормалізуємо "Маркетинг" / "Marketing"
+    if (lower.includes("маркетинг") || lower.includes("marketing")) {
+      return "Маркетинг";
+    }
+    
+    // Нормалізуємо "Реклама" / "Advertising"
+    if (lower.includes("реклам") || lower.includes("advertising") || lower.includes("реклама, бюджет")) {
+      return "Реклама, Бюджет, ФБ";
+    }
+    
+    // Повертаємо оригінальну назву, якщо не знайшли нормалізацію
+    return name;
+  }
 
   for (const expense of expenses) {
     const amount = Math.abs(toNumber(expense.amount)); // Беремо абсолютне значення
@@ -696,26 +729,32 @@ export async function fetchExpensesSummary(params: {
     
     // Пріоритет 1: expense.title (найточніше)
     if (expense.expense?.title) {
-      categoryName = expense.expense.title;
+      categoryName = normalizeCategoryName(expense.expense.title);
     }
     // Пріоритет 2: expense.name
     else if (expense.expense?.name) {
-      categoryName = expense.expense.name;
+      categoryName = normalizeCategoryName(expense.expense.name);
     }
     // Пріоритет 3: мапа категорій за expense_id
     else if (expense.expense_id && categoryMap.has(expense.expense_id)) {
-      categoryName = categoryMap.get(expense.expense_id)!;
+      categoryName = normalizeCategoryName(categoryMap.get(expense.expense_id)!);
     }
     // Пріоритет 4: expense.category
     else if (expense.expense?.category) {
-      categoryName = expense.expense.category;
+      categoryName = normalizeCategoryName(expense.expense.category);
     }
     // Пріоритет 5: comment як fallback (якщо є осмислений коментар)
     else if (expense.comment && expense.comment.trim().length > 0) {
-      // Використовуємо comment, але обмежуємо довжину для читабельності
-      categoryName = expense.comment.length > 50 
-        ? expense.comment.substring(0, 50) + "..."
-        : expense.comment;
+      // Перевіряємо, чи коментар містить ключові слова для категорій
+      const commentLower = expense.comment.toLowerCase();
+      if (commentLower.includes("подат") || commentLower.includes("tax") || commentLower.includes("налмн")) {
+        categoryName = "Податки та збори";
+      } else {
+        // Використовуємо comment, але обмежуємо довжину для читабельності
+        categoryName = expense.comment.length > 50 
+          ? expense.comment.substring(0, 50) + "..."
+          : expense.comment;
+      }
     }
     // Пріоритет 6: type як fallback
     else if (expense.type) {
@@ -725,6 +764,14 @@ export async function fetchExpensesSummary(params: {
     // (це вже встановлено вище)
 
     byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
+  }
+  
+  // Логуємо статистику по категоріях
+  console.log(`[altegio/expenses] Categories found:`, Object.keys(byCategory));
+  if (byCategory["Податки та збори"]) {
+    console.log(`[altegio/expenses] ✅ Found "Податки та збори": ${byCategory["Податки та збори"]} грн.`);
+  } else {
+    console.log(`[altegio/expenses] ⚠️ "Податки та збори" category NOT found in ${Object.keys(byCategory).length} categories`);
   }
 
   // Якщо є ручні витрати, додаємо їх до загальної суми
