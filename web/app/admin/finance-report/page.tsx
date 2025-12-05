@@ -397,31 +397,6 @@ export default async function FinanceReportPage({
                     currentExpenses={manualExpenses || 0}
                   />
                 </div>
-                <p className="text-xl font-semibold">
-                  {(() => {
-                    // Віднімаємо інкасацію, управління, product purchase та інвестиції від загальної суми
-                    const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
-                    const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
-                    const productPurchase = expenses?.byCategory["Product purchase"] || 0;
-                    const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
-                    const encashmentTotal = encashment + management + productPurchase + investments;
-                    const expensesTotal = expenses?.total || 0;
-                    const totalWithoutEncashment = expensesTotal - encashmentTotal;
-                    return formatMoney(Math.max(0, totalWithoutEncashment) + (manualExpenses || 0));
-                  })()} грн.
-                </p>
-                {expenses && expenses.total > 0 && manualExpenses && manualExpenses > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    (з API: {(() => {
-                      const encashment = expenses.byCategory["Інкасація"] || expenses.byCategory["Инкасація"] || 0;
-                      const management = expenses.byCategory["Управління"] || expenses.byCategory["Управление"] || 0;
-                      const productPurchase = expenses.byCategory["Product purchase"] || 0;
-                      const investments = expenses.byCategory["Інвестиції в салон"] || expenses.byCategory["Инвестиции в салон"] || 0;
-                      const encashmentTotal = encashment + management + productPurchase + investments;
-                      return formatMoney(Math.max(0, expenses.total - encashmentTotal - manualExpenses));
-                    })()} грн. + ручні: {formatMoney(manualExpenses)} грн.)
-                  </p>
-                )}
                 {!expenses || expenses.total === 0 ? (
                   <p className="text-xs text-gray-500 mt-1">
                     Використовуйте кнопку ✏️ для введення витрат вручну
@@ -452,7 +427,9 @@ export default async function FinanceReportPage({
                                category !== "Інвестиції в салон" &&
                                category !== "Инвестиции в салон" &&
                                category !== "Переміщення" &&
-                               !lower.includes("переміщення");
+                               !lower.includes("переміщення") &&
+                               !category.includes("на карту за відправку накладки") &&
+                               !lower.includes("накладки");
                       });
                     
                     // Обчислюємо загальну суму всіх категорій
