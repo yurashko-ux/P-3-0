@@ -238,25 +238,22 @@ export async function fetchExpensesSummary(params: {
     params?: URLSearchParams;
     body?: any;
   }> = [
-    // Варіант 0 (найперспективніший): POST /company/{id}/finance_transactions/search
-    // Це може бути найповніший endpoint для фінансових операцій
+    // Варіант 0 (найперспективніший): POST /company/{id}/finance_transactions/search БЕЗ ЖОДНИХ ФІЛЬТРІВ
+    // Витягуємо ВСІ транзакції як є, без фільтрів
     {
-      name: "POST /company/{id}/finance_transactions/search (Financial Operations Search)",
+      name: "POST /company/{id}/finance_transactions/search (NO FILTERS)",
       method: "POST",
       path: `/company/${companyId}/finance_transactions/search`,
       body: {
         start_date: date_from,
         end_date: date_to,
-        real_money: true,
-        deleted: false,
         count: 10000,
         page: 1,
       },
     },
-    // Варіант 0.1: POST /company/{id}/finance_transactions/search БЕЗ фільтра real_money
-    // Можливо, деякі транзакції не мають real_money=1
+    // Варіант 0.1: POST /company/{id}/finance_transactions/search з мінімальними фільтрами
     {
-      name: "POST /company/{id}/finance_transactions/search (without real_money filter)",
+      name: "POST /company/{id}/finance_transactions/search (minimal filters)",
       method: "POST",
       path: `/company/${companyId}/finance_transactions/search`,
       body: {
@@ -267,23 +264,20 @@ export async function fetchExpensesSummary(params: {
         page: 1,
       },
     },
-    // Варіант 0.2: GET /transactions/{location_id} з Payments API
-    // Згідно з документацією Payments: https://developer.alteg.io/api#tag/Payments
+    // Варіант 0.2: GET /transactions/{location_id} БЕЗ ЖОДНИХ ФІЛЬТРІВ
     {
-      name: "GET /transactions/{location_id} (Payments API)",
+      name: "GET /transactions/{location_id} (NO FILTERS)",
       method: "GET",
       path: `/transactions/${companyId}`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
-        real_money: "1",
-        deleted: "0",
         count: "10000",
       }),
     },
-    // Варіант 0.3: GET /transactions/{location_id} БЕЗ фільтра real_money
+    // Варіант 0.3: GET /transactions/{location_id} з мінімальними фільтрами
     {
-      name: "GET /transactions/{location_id} (without real_money filter)",
+      name: "GET /transactions/{location_id} (minimal filters)",
       method: "GET",
       path: `/transactions/${companyId}`,
       params: new URLSearchParams({
@@ -293,22 +287,20 @@ export async function fetchExpensesSummary(params: {
         count: "10000",
       }),
     },
-    // Варіант 0.4: GET /finance_transactions/{location_id} - прямий endpoint для фінансових операцій
+    // Варіант 0.4: GET /finance_transactions/{location_id} БЕЗ ЖОДНИХ ФІЛЬТРІВ
     {
-      name: "GET /finance_transactions/{location_id} (Financial Operations API)",
+      name: "GET /finance_transactions/{location_id} (NO FILTERS)",
       method: "GET",
       path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
         start_date: date_from,
         end_date: date_to,
-        real_money: "1",
-        deleted: "0",
         count: "10000",
       }),
     },
-    // Варіант 0.5: GET /finance_transactions/{location_id} БЕЗ фільтра real_money
+    // Варіант 0.5: GET /finance_transactions/{location_id} з мінімальними фільтрами
     {
-      name: "GET /finance_transactions/{location_id} (without real_money filter)",
+      name: "GET /finance_transactions/{location_id} (minimal filters)",
       method: "GET",
       path: `/finance_transactions/${companyId}`,
       params: new URLSearchParams({
@@ -650,90 +642,39 @@ export async function fetchExpensesSummary(params: {
     `[altegio/expenses] Processing ${transactions.length} finance transactions`,
   );
 
-  // ВИТЯГУЄМО ВСІ ФІНАНСОВІ ОПЕРАЦІЇ (витрати)
-  // Згідно з запитом користувача: витягувати ВСІ фінансові операції, не тільки ті, що мають expense об'єкт
-  // Виключаємо тільки явні доходи
+  // ВИТЯГУЄМО ВСІ ФІНАНСОВІ ОПЕРАЦІЇ БЕЗ ЖОДНИХ ФІЛЬТРІВ
+  // Згідно з запитом користувача: витягувати ВСІ транзакції як є, без фільтрації
+  // Відфільтруємо потім, але зараз витягуємо ВСЕ
   if (transactions.length > 0) {
     console.log(`[altegio/expenses] Sample transaction:`, JSON.stringify(transactions[0], null, 2));
-    console.log(`[altegio/expenses] Total transactions before filtering: ${transactions.length}`);
+    console.log(`[altegio/expenses] Total transactions: ${transactions.length} (NO FILTERING)`);
   }
   
-  // Логуємо статистику транзакцій перед фільтрацією
+  // Логуємо статистику транзакцій
   const transactionsWithExpense = transactions.filter(t => t.expense_id || t.expense).length;
   const transactionsWithoutExpense = transactions.length - transactionsWithExpense;
   console.log(`[altegio/expenses] Transactions with expense: ${transactionsWithExpense}, without expense: ${transactionsWithoutExpense}`);
   
-  const expenses = transactions.filter((t) => {
-    const amount = toNumber(t.amount);
-    const typeId = (t as any).type_id;
+  // НЕ ФІЛЬТРУЄМО НІЧОГО - ВКЛЮЧАЄМО ВСІ ТРАНЗАКЦІЇ
+  // Користувач просив витягувати все як є, відфільтруємо потім
+  const expenses = transactions; // Включаємо ВСІ транзакції без винятку
+  
+  console.log(`[altegio/expenses] ✅ Including ALL ${expenses.length} transactions (NO FILTERING)`);
+  
+  // Логуємо перші кілька транзакцій для діагностики
+  expenses.slice(0, 10).forEach((t, index) => {
     const expenseId = t.expense_id || t.expense?.id;
     const expenseTitle = t.expense?.title || t.expense?.name || "";
     const comment = t.comment || "";
-    
-    // Логуємо перші кілька транзакцій для діагностики
-    if (transactions.indexOf(t) < 5) {
-      console.log(`[altegio/expenses] Transaction ${t.id}:`, {
-        expense_id: expenseId,
-        expense_title: expenseTitle,
-        type: t.type,
-        type_id: typeId,
-        amount: t.amount,
-        comment: comment.substring(0, 50),
-        hasExpense: !!(t.expense_id || t.expense),
-      });
-    }
-    
-    // Виключаємо ТІЛЬКИ явні доходи (income transactions)
-    // Згідно з Payments API та документацією:
-    // - type="income" або type="incoming" - дохід
-    // - type_id=5 - "Provision of services" (дохід)
-    // - expense_id=5 - "Provision of services" (дохід)
-    // - expense_title містить "Provision of services"
-    // - expense_title містить "Продаж" (Sale) - але це може бути і витрата, тому перевіряємо контекст
-    const isIncome = 
-      t.type === "income" || 
-      t.type === "incoming" ||
-      (typeId && String(typeId) === "5") || // type_id=5 - "Provision of services" (дохід)
-      (expenseId && String(expenseId) === "5") || // expense_id=5 - "Provision of services" (дохід)
-      (expenseTitle && (
-        String(expenseTitle).toLowerCase().includes("provision of services") ||
-        (String(expenseTitle).toLowerCase().includes("продаж") && 
-         !String(expenseTitle).toLowerCase().includes("товарів") && // "Продаж товарів" - це дохід, але ми його вже виключили вище
-         !String(expenseTitle).toLowerCase().includes("сертифікатів") &&
-         !String(expenseTitle).toLowerCase().includes("абонементів"))
-      ));
-    
-    if (isIncome) {
-      if (transactions.indexOf(t) < 5) {
-        console.log(`[altegio/expenses] ⚠️ Excluding income transaction ${t.id}:`, {
-          expense_id: expenseId,
-          expense_title: expenseTitle,
-          type: t.type,
-          type_id: typeId,
-        });
-      }
-      return false;
-    }
-    
-    // ВКЛЮЧАЄМО ВСІ ІНШІ ТРАНЗАКЦІЇ (які не є доходами)
-    // Це означає, що ми включаємо:
-    // 1. Всі транзакції з expense_id або expense об'єктом (які не є доходами)
-    // 2. Всі транзакції з type="expense"/"outcome"
-    // 3. Всі транзакції з від'ємним amount
-    // 4. ВСІ ІНШІ транзакції, які не є доходами (навіть якщо вони не мають expense об'єкт)
-    // Це дозволить витягнути всі фінансові операції, включаючи ті, що можуть не мати expense об'єкт
-    
-    const isExpense = true; // Включаємо всі транзакції, крім явних доходів
-    
-    if (transactions.indexOf(t) < 5) {
-      console.log(`[altegio/expenses] ✅ Including transaction ${t.id} as expense:`, {
-        expense_title: expenseTitle || comment.substring(0, 30) || "No title",
-        amount: t.amount,
-        hasExpense: !!(t.expense_id || t.expense),
-      });
-    }
-    
-    return isExpense;
+    console.log(`[altegio/expenses] Transaction ${index + 1}/${expenses.length} (ID: ${t.id}):`, {
+      expense_id: expenseId,
+      expense_title: expenseTitle,
+      type: t.type,
+      type_id: (t as any).type_id,
+      amount: t.amount,
+      comment: comment.substring(0, 50),
+      hasExpense: !!(t.expense_id || t.expense),
+    });
   });
 
   console.log(
