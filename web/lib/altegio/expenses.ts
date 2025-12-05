@@ -741,6 +741,12 @@ export async function fetchExpensesSummary(params: {
       return "Еквайринг";
     }
     
+    // Нормалізуємо "Доставка товарів" / "Delivery" / різні варіанти
+    if ((lower.includes("доставка товарів") || lower.includes("доставка")) && 
+        (lower.includes("нова пошта") || lower.includes("nova poshta") || lower.includes("нп") || lower.includes("каса нова пошта"))) {
+      return "Доставка товарів (Нова Пошта)";
+    }
+    
     // Виключаємо доходи, які не повинні бути в витратах
     if (lower.includes("service payments") || 
         lower.includes("product sales") ||
