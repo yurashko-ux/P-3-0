@@ -323,23 +323,57 @@ export async function fetchGoodsSalesSummary(params: {
             
             // Перевіряємо масив items
             if (Array.isArray(saleDocument.items)) {
+              // Логуємо структуру items для діагностики (тільки для першого документа)
+              if (successfulFetches === 0) {
+                console.log(`[altegio/inventory] 📋 Sample sale document items structure:`, JSON.stringify(saleDocument.items.slice(0, 3), null, 2));
+                console.log(`[altegio/inventory] 📋 Full sale document keys:`, Object.keys(saleDocument));
+              }
+              
+              // Рахуємо суму amount/quantity з кожного item
               itemsCountInDocument = saleDocument.items.reduce((sum: number, item: any) => {
-                const itemAmount = Math.abs(Number(item.amount) || Number(item.quantity) || Number(item.count) || 0);
+                // Спробуємо різні поля для кількості
+                const itemAmount = Math.abs(
+                  Number(item.amount) || 
+                  Number(item.quantity) || 
+                  Number(item.count) || 
+                  Number(item.qty) ||
+                  Number(item.amount_sold) ||
+                  0
+                );
+                
+                // Логуємо структуру першого item для діагностики
+                if (successfulFetches === 0 && sum === 0) {
+                  console.log(`[altegio/inventory] 📋 Sample item structure:`, JSON.stringify(item, null, 2));
+                }
+                
                 return sum + itemAmount;
               }, 0);
               
-              // Логуємо структуру items для діагностики (тільки для першого документа)
-              if (successfulFetches === 0 && itemsCountInDocument > 0) {
-                console.log(`[altegio/inventory] 📋 Sample sale document items structure:`, JSON.stringify(saleDocument.items.slice(0, 3), null, 2));
+              // Якщо сума = 0, але є items, можливо потрібно рахувати кількість items
+              if (itemsCountInDocument === 0 && saleDocument.items.length > 0) {
+                // Можливо, кожен item = 1 одиниця товару
+                itemsCountInDocument = saleDocument.items.length;
+                console.log(`[altegio/inventory] ⚠️ Items array has no amount/quantity, using items.length: ${itemsCountInDocument}`);
               }
             }
             
             // Перевіряємо масив goods (альтернативна структура)
             if (itemsCountInDocument === 0 && Array.isArray(saleDocument.goods)) {
               itemsCountInDocument = saleDocument.goods.reduce((sum: number, good: any) => {
-                const goodAmount = Math.abs(Number(good.amount) || Number(good.quantity) || Number(good.count) || 0);
+                const goodAmount = Math.abs(
+                  Number(good.amount) || 
+                  Number(good.quantity) || 
+                  Number(good.count) || 
+                  Number(good.qty) ||
+                  0
+                );
                 return sum + goodAmount;
               }, 0);
+              
+              // Якщо сума = 0, але є goods, можливо потрібно рахувати кількість goods
+              if (itemsCountInDocument === 0 && saleDocument.goods.length > 0) {
+                itemsCountInDocument = saleDocument.goods.length;
+              }
             }
             
             // Перевіряємо інші можливі поля
@@ -429,6 +463,7 @@ export async function fetchGoodsSalesSummary(params: {
         );
         
         // Зберігаємо всі результати для підрахунку загальної кількості товарів
+        // ВАЖЛИВО: зберігаємо навіть ті, де cost = 0, бо нам потрібна кількість товарів
         allSaleDocumentResults.push(...validResults);
         
         // Рахуємо собівартість тільки з результатів, де є cost > 0
@@ -436,6 +471,18 @@ export async function fetchGoodsSalesSummary(params: {
         costFromSaleDocuments += resultsWithCost.reduce((sum, result) => sum + result.cost, 0);
         costItemsCount += resultsWithCost.reduce((sum, result) => sum + result.amount, 0);
         costTransactionsCount += resultsWithCost.length;
+        
+        // Для транзакцій, де не вдалося отримати документ, додаємо кількість з транзакції складу
+        const failedDocuments = batch.filter((sale, idx) => batchResults[idx] === null);
+        const itemsFromFailedDocuments = failedDocuments.reduce((sum, sale) => {
+          const amount = Math.abs(Number(sale.amount) || 0);
+          return sum + amount;
+        }, 0);
+        
+        // Додаємо кількість товарів з невдалих документів до загальної суми
+        if (itemsFromFailedDocuments > 0) {
+          allSaleDocumentResults.push({ cost: 0, amount: itemsFromFailedDocuments, itemsCount: itemsFromFailedDocuments });
+        }
         
         successfulFetches += validResults.length;
         failedFetches += batchResults.length - validResults.length;
@@ -449,7 +496,9 @@ export async function fetchGoodsSalesSummary(params: {
       // Рахуємо загальну кількість проданих одиниць товару з усіх документів (навіть без собівартості)
       if (allSaleDocumentResults.length > 0) {
         totalItemsSold = allSaleDocumentResults.reduce((sum, result) => sum + result.itemsCount, 0);
-        console.log(`[altegio/inventory] 📦 Total items sold from sale documents: ${totalItemsSold} (from ${allSaleDocumentResults.length} documents)`);
+        console.log(`[altegio/inventory] 📦 Total items sold from sale documents: ${totalItemsSold} (from ${allSaleDocumentResults.length} documents, fallback was ${totalItemsSoldFromTransactions})`);
+      } else {
+        console.log(`[altegio/inventory] ⚠️ No sale documents retrieved, using fallback: ${totalItemsSoldFromTransactions} items from transactions`);
       }
       
       if (costFromSaleDocuments > 0) {
