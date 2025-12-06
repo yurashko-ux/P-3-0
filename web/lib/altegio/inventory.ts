@@ -409,14 +409,14 @@ export async function fetchGoodsSalesSummary(params: {
           result !== null && typeof result === 'object' && 'itemsCount' in result
         );
         
+        // Зберігаємо всі результати для підрахунку загальної кількості товарів
+        allSaleDocumentResults.push(...validResults);
+        
         // Рахуємо собівартість тільки з результатів, де є cost > 0
         const resultsWithCost = validResults.filter(r => r.cost > 0);
         costFromSaleDocuments += resultsWithCost.reduce((sum, result) => sum + result.cost, 0);
         costItemsCount += resultsWithCost.reduce((sum, result) => sum + result.amount, 0);
         costTransactionsCount += resultsWithCost.length;
-        
-        // Рахуємо загальну кількість проданих одиниць товару з усіх документів (навіть без собівартості)
-        totalItemsSold = validResults.reduce((sum, result) => sum + result.itemsCount, 0);
         
         successfulFetches += validResults.length;
         failedFetches += batchResults.length - validResults.length;
@@ -427,14 +427,18 @@ export async function fetchGoodsSalesSummary(params: {
         }
       }
       
+      // Рахуємо загальну кількість проданих одиниць товару з усіх документів (навіть без собівартості)
+      if (allSaleDocumentResults.length > 0) {
+        totalItemsSold = allSaleDocumentResults.reduce((sum, result) => sum + result.itemsCount, 0);
+        console.log(`[altegio/inventory] 📦 Total items sold from sale documents: ${totalItemsSold} (from ${allSaleDocumentResults.length} documents)`);
+      }
+      
       if (costFromSaleDocuments > 0) {
         calculatedCost = costFromSaleDocuments;
         console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_per_unit): ${calculatedCost} (transactions: ${costTransactionsCount}/${sales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
       } else {
         console.log(`[altegio/inventory] ⚠️ No cost found from sale documents (successful: ${successfulFetches}, failed: ${failedFetches})`);
       }
-      
-      console.log(`[altegio/inventory] 📦 Total items sold from sale documents: ${totalItemsSold} (from ${validResults.length} documents)`);
     } catch (err: any) {
       console.warn(`[altegio/inventory] ⚠️ Failed to fetch cost from sale documents:`, err?.message || String(err));
     }
