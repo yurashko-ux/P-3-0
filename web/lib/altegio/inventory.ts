@@ -247,10 +247,9 @@ export async function fetchGoodsSalesSummary(params: {
     0,
   );
 
-  // Розраховуємо загальну кількість проданих одиниць товару
-  // Увага: amount може бути від'ємним для повернень, тому беремо абсолютне значення
-  // Але також потрібно враховувати, що одна транзакція може містити кілька товарів
-  const totalItemsSold = sales.reduce(
+  // Спочатку рахуємо загальну кількість проданих одиниць товару з транзакцій складу
+  // (це буде fallback, якщо не вдасться отримати дані з документів продажу)
+  const totalItemsSoldFromTransactions = sales.reduce(
     (sum, t) => {
       const amount = Math.abs(Number(t.amount) || 0);
       return sum + amount;
@@ -261,7 +260,7 @@ export async function fetchGoodsSalesSummary(params: {
   // Детальне логування для діагностики
   console.log(`[altegio/inventory] 📊 Sales transactions analysis:`);
   console.log(`  - Total sales transactions: ${sales.length}`);
-  console.log(`  - Total items sold (sum of amounts): ${totalItemsSold}`);
+  console.log(`  - Total items sold (sum of amounts from transactions): ${totalItemsSoldFromTransactions}`);
   
   // Логуємо деталі перших кількох транзакцій
   if (sales.length > 0) {
@@ -274,6 +273,10 @@ export async function fetchGoodsSalesSummary(params: {
     }));
     console.log(`[altegio/inventory] Sample sales transactions:`, JSON.stringify(sampleSales, null, 2));
   }
+  
+  // Загальна кількість проданих одиниць товару
+  // Буде оновлено при отриманні документів продажу
+  let totalItemsSold = totalItemsSoldFromTransactions;
 
   // Спробуємо обчислити собівартість з різних джерел
   let calculatedCost: number | null = null;
@@ -282,6 +285,9 @@ export async function fetchGoodsSalesSummary(params: {
   
   // Варіант 0: З API Sales Transaction (default_cost_per_unit) - ПРІОРИТЕТНИЙ МЕТОД
   // Використовуємо GET /company/{location_id}/sale/{document_id} для отримання default_cost_per_unit
+  // Також рахуємо загальну кількість проданих одиниць товару з документів продажу
+  let allSaleDocumentResults: Array<{ cost: number; amount: number; itemsCount: number }> = [];
+  
   if (sales.length > 0) {
     try {
       console.log(`[altegio/inventory] 🔍 Fetching sale documents to get default_cost_per_unit...`);
@@ -298,12 +304,12 @@ export async function fetchGoodsSalesSummary(params: {
         const batch = sales.slice(i, i + batchSize);
         
         // Обробляємо пакет паралельно
-        const batchPromises = batch.map(async (sale): Promise<{ cost: number; amount: number } | null> => {
+        const batchPromises = batch.map(async (sale): Promise<{ cost: number; amount: number; itemsCount: number } | null> => {
           // Перевіряємо, чи є document_id в транзакції, інакше використовуємо id
           const documentId = (sale as any).document_id || sale.id;
           const amount = Math.abs(Number(sale.amount) || 0);
           
-          if (!documentId || amount <= 0) {
+          if (!documentId) {
             return null;
           }
           
@@ -311,6 +317,30 @@ export async function fetchGoodsSalesSummary(params: {
             // Використовуємо document_id (або transaction id) для sale endpoint
             const saleDocumentPath = `/company/${companyId}/sale/${documentId}`;
             const saleDocument = await altegioFetch<any>(saleDocumentPath);
+            
+            // Рахуємо загальну кількість позицій у документі продажу
+            let itemsCountInDocument = 0;
+            
+            // Перевіряємо масив items
+            if (Array.isArray(saleDocument.items)) {
+              itemsCountInDocument = saleDocument.items.reduce((sum: number, item: any) => {
+                const itemAmount = Math.abs(Number(item.amount) || Number(item.quantity) || 0);
+                return sum + itemAmount;
+              }, 0);
+            }
+            
+            // Перевіряємо масив goods (альтернативна структура)
+            if (itemsCountInDocument === 0 && Array.isArray(saleDocument.goods)) {
+              itemsCountInDocument = saleDocument.goods.reduce((sum: number, good: any) => {
+                const goodAmount = Math.abs(Number(good.amount) || Number(good.quantity) || 0);
+                return sum + goodAmount;
+              }, 0);
+            }
+            
+            // Якщо не знайшли в items/goods, використовуємо amount з транзакції
+            if (itemsCountInDocument === 0 && amount > 0) {
+              itemsCountInDocument = amount;
+            }
             
             // Шукаємо default_cost_per_unit в документі
             // Може бути на рівні документа або в масиві items/goods
@@ -349,10 +379,16 @@ export async function fetchGoodsSalesSummary(params: {
             }
             
             if (defaultCostPerUnit !== null && defaultCostPerUnit > 0) {
-              const costForThisSale = defaultCostPerUnit * amount;
-              console.log(`[altegio/inventory] ✅ Sale document ${documentId}: default_cost_per_unit=${defaultCostPerUnit}, amount=${amount}, cost=${costForThisSale}`);
-              return { cost: costForThisSale, amount: amount };
+              // Використовуємо itemsCountInDocument для розрахунку собівартості
+              const costForThisSale = defaultCostPerUnit * itemsCountInDocument;
+              console.log(`[altegio/inventory] ✅ Sale document ${documentId}: default_cost_per_unit=${defaultCostPerUnit}, items=${itemsCountInDocument}, cost=${costForThisSale}`);
+              return { cost: costForThisSale, amount: itemsCountInDocument, itemsCount: itemsCountInDocument };
             } else {
+              // Навіть якщо не знайшли собівартість, повертаємо кількість позицій
+              if (itemsCountInDocument > 0) {
+                return { cost: 0, amount: itemsCountInDocument, itemsCount: itemsCountInDocument };
+              }
+              
               // Логуємо структуру документа для діагностики (тільки один раз для всього процесу)
               if (!hasLoggedDocumentStructure) {
                 hasLoggedDocumentStructure = true;
@@ -369,13 +405,19 @@ export async function fetchGoodsSalesSummary(params: {
         });
         
         const batchResults = await Promise.all(batchPromises);
-        const validResults = batchResults.filter((result): result is { cost: number; amount: number } => 
-          result !== null && typeof result === 'object' && 'cost' in result && result.cost > 0
+        const validResults = batchResults.filter((result): result is { cost: number; amount: number; itemsCount: number } => 
+          result !== null && typeof result === 'object' && 'itemsCount' in result
         );
         
-        costFromSaleDocuments += validResults.reduce((sum, result) => sum + result.cost, 0);
-        costItemsCount += validResults.reduce((sum, result) => sum + result.amount, 0);
-        costTransactionsCount += validResults.length;
+        // Рахуємо собівартість тільки з результатів, де є cost > 0
+        const resultsWithCost = validResults.filter(r => r.cost > 0);
+        costFromSaleDocuments += resultsWithCost.reduce((sum, result) => sum + result.cost, 0);
+        costItemsCount += resultsWithCost.reduce((sum, result) => sum + result.amount, 0);
+        costTransactionsCount += resultsWithCost.length;
+        
+        // Рахуємо загальну кількість проданих одиниць товару з усіх документів (навіть без собівартості)
+        totalItemsSold = validResults.reduce((sum, result) => sum + result.itemsCount, 0);
+        
         successfulFetches += validResults.length;
         failedFetches += batchResults.length - validResults.length;
         
@@ -391,6 +433,8 @@ export async function fetchGoodsSalesSummary(params: {
       } else {
         console.log(`[altegio/inventory] ⚠️ No cost found from sale documents (successful: ${successfulFetches}, failed: ${failedFetches})`);
       }
+      
+      console.log(`[altegio/inventory] 📦 Total items sold from sale documents: ${totalItemsSold} (from ${validResults.length} documents)`);
     } catch (err: any) {
       console.warn(`[altegio/inventory] ⚠️ Failed to fetch cost from sale documents:`, err?.message || String(err));
     }
