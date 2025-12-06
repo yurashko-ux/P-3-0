@@ -404,7 +404,11 @@ export default async function FinanceReportPage({
                 const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
                 const acquiringManual = manualFields.acquiring || 0; // Fallback, якщо немає в API
                 const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual; // Використовуємо API, якщо є
-                const utilitiesFromAPI = expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] || 0;
+                const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
+                                       expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
+                                       expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
+                                       expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
+                                       0;
 
                 // Обчислюємо суми
                 const salary = salaryFromAPI; // Тільки з API, без ручного введення

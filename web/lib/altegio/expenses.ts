@@ -752,6 +752,16 @@ export async function fetchExpensesSummary(params: {
       return "Доставка товарів (Нова Пошта)";
     }
     
+    // Нормалізуємо "Інтернет" / "Internet" / "CRM" / різні варіанти
+    if ((lower.includes("інтернет") || lower.includes("internet") || lower.includes("інтеренет")) && 
+        (lower.includes("crm") || lower.includes("ip") || lower.includes("ір") || lower.includes("комунальні"))) {
+      return "Інтернет, CRM і т д.";
+    }
+    // Також нормалізуємо просто "Інтернет" / "Internet"
+    if (lower.includes("інтернет") || lower.includes("internet") || lower.includes("інтеренет")) {
+      return "Інтернет, CRM і т д.";
+    }
+    
     // Виключаємо доходи, які не повинні бути в витратах
     if (lower.includes("service payments") || 
         lower.includes("product sales") ||
