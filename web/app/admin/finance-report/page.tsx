@@ -462,11 +462,6 @@ export default async function FinanceReportPage({
                         </span>
                         <span className="text-sm font-semibold">
                           {formatMoney(rent)} грн.
-                          {rentFromAPI > 0 ? (
-                            <span className="text-xs text-gray-400 ml-1">(з API)</span>
-                          ) : (
-                            <span className="text-xs text-gray-400 ml-1">(ручне)</span>
-                          )}
                         </span>
                       </div>
                     )}
@@ -530,11 +525,6 @@ export default async function FinanceReportPage({
                             <span className="text-xs text-gray-600">Дірект</span>
                             <span className="text-xs font-semibold">
                               {formatMoney(direct)} грн.
-                              {directFromAPI > 0 ? (
-                                <span className="text-xs text-gray-400 ml-1">(з API)</span>
-                              ) : (
-                                <span className="text-xs text-gray-400 ml-1">(ручне)</span>
-                              )}
                             </span>
                           </div>
                         )}
@@ -614,11 +604,6 @@ export default async function FinanceReportPage({
                             <span className="text-xs text-gray-600">Еквайринг</span>
                             <span className="text-xs font-semibold">
                               {formatMoney(acquiring)} грн.
-                              {acquiringFromAPI > 0 ? (
-                                <span className="text-xs text-gray-400 ml-1">(з API)</span>
-                              ) : (
-                                <span className="text-xs text-gray-400 ml-1">(ручне)</span>
-                              )}
                             </span>
                           </div>
                         )}
@@ -658,11 +643,6 @@ export default async function FinanceReportPage({
                         </span>
                         <span className="text-sm font-semibold">
                           {formatMoney(accounting)} грн.
-                          {accountingFromAPI > 0 ? (
-                            <span className="text-xs text-gray-400 ml-1">(з API)</span>
-                          ) : (
-                            <span className="text-xs text-gray-400 ml-1">(ручне)</span>
-                          )}
                         </span>
                       </div>
                     )}
@@ -738,23 +718,13 @@ export default async function FinanceReportPage({
                           />
                         )}
                         {taxesFromAPI > 0 && taxesExtraManual > 0 && (
-                          <>
-                            <span className="text-xs text-gray-500">
-                              (з API: {formatMoney(taxesFromAPI)})
-                            </span>
-                            <EditExpenseField
-                              year={selectedYear}
-                              month={selectedMonth}
-                              fieldKey="taxes_extra"
-                              label="Податки (додатково)"
-                              currentValue={taxesExtraManual}
-                            />
-                          </>
-                        )}
-                        {taxesFromAPI > 0 && taxesExtraManual === 0 && (
-                          <span className="text-xs text-gray-500">
-                            (з API)
-                          </span>
+                          <EditExpenseField
+                            year={selectedYear}
+                            month={selectedMonth}
+                            fieldKey="taxes_extra"
+                            label="Податки (додатково)"
+                            currentValue={taxesExtraManual}
+                          />
                         )}
                       </div>
                       <span className="text-sm font-semibold">
