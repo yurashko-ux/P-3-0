@@ -7,7 +7,7 @@ import {
   type GoodsSalesSummary,
   type ExpensesSummary,
 } from "@/lib/altegio";
-import { EditCostButton } from "./_components/EditCostButton";
+// EditCostButton більше не використовується - собівартість тепер береться з API автоматично
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
 import { unstable_noStore as noStore } from "next/cache";
@@ -340,11 +340,9 @@ export default async function FinanceReportPage({
                     Собівартість товарів
                   </p>
                   {goods ? (
-                    <EditCostButton
-                      year={selectedYear}
-                      month={selectedMonth}
-                      currentCost={goods.cost}
-                    />
+                    <p className="text-lg font-semibold md:text-xl">
+                      {formatMoney(goods.cost)} грн.
+                    </p>
                   ) : (
                     <p className="text-lg font-semibold md:text-xl">— грн.</p>
                   )}

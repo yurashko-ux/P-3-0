@@ -541,7 +541,7 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // Використовуємо обчислену собівартість, якщо вона є, інакше ручно введену, інакше 0
+  // Використовуємо обчислену собівартість з API (пріоритет), інакше ручно введену, інакше 0
   const finalCost = calculatedCost !== null 
     ? calculatedCost 
     : (manualCost !== null ? manualCost : 0);
@@ -549,19 +549,9 @@ export async function fetchGoodsSalesSummary(params: {
   if (calculatedCost !== null) {
     console.log(`[altegio/inventory] ✅ Using calculated cost from API: ${calculatedCost}`);
   } else if (manualCost !== null) {
-    console.log(`[altegio/inventory] Using manual cost: ${manualCost}`);
+    console.log(`[altegio/inventory] ⚠️ Using manual cost (fallback): ${manualCost}`);
   } else {
-    console.log(`[altegio/inventory] ⚠️ No cost found (calculated or manual), using 0. Please set cost manually or check API settings.`);
-  }
-  
-  if (manualCost !== null) {
-    console.log(
-      `[altegio/inventory] Using manual cost: ${manualCost}`,
-    );
-  } else {
-    console.log(
-      `[altegio/inventory] No manual cost set, using 0. Please set cost manually.`,
-    );
+    console.log(`[altegio/inventory] ⚠️ No cost found (calculated or manual), using 0. Please check API settings.`);
   }
 
   // Розраховуємо націнку як revenue - cost
