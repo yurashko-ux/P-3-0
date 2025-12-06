@@ -248,6 +248,8 @@ export async function fetchGoodsSalesSummary(params: {
   );
 
   // Розраховуємо загальну кількість проданих одиниць товару
+  // Увага: amount може бути від'ємним для повернень, тому беремо абсолютне значення
+  // Але також потрібно враховувати, що одна транзакція може містити кілька товарів
   const totalItemsSold = sales.reduce(
     (sum, t) => {
       const amount = Math.abs(Number(t.amount) || 0);
@@ -255,6 +257,23 @@ export async function fetchGoodsSalesSummary(params: {
     },
     0,
   );
+  
+  // Детальне логування для діагностики
+  console.log(`[altegio/inventory] 📊 Sales transactions analysis:`);
+  console.log(`  - Total sales transactions: ${sales.length}`);
+  console.log(`  - Total items sold (sum of amounts): ${totalItemsSold}`);
+  
+  // Логуємо деталі перших кількох транзакцій
+  if (sales.length > 0) {
+    const sampleSales = sales.slice(0, 5).map(t => ({
+      id: t.id,
+      amount: t.amount,
+      amount_abs: Math.abs(Number(t.amount) || 0),
+      good_id: t.good_id,
+      good_title: t.good?.title || 'N/A',
+    }));
+    console.log(`[altegio/inventory] Sample sales transactions:`, JSON.stringify(sampleSales, null, 2));
+  }
 
   // Спробуємо обчислити собівартість з різних джерел
   let calculatedCost: number | null = null;
