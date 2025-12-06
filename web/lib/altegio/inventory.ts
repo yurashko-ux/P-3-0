@@ -324,22 +324,41 @@ export async function fetchGoodsSalesSummary(params: {
             // Перевіряємо масив items
             if (Array.isArray(saleDocument.items)) {
               itemsCountInDocument = saleDocument.items.reduce((sum: number, item: any) => {
-                const itemAmount = Math.abs(Number(item.amount) || Number(item.quantity) || 0);
+                const itemAmount = Math.abs(Number(item.amount) || Number(item.quantity) || Number(item.count) || 0);
                 return sum + itemAmount;
               }, 0);
+              
+              // Логуємо структуру items для діагностики (тільки для першого документа)
+              if (successfulFetches === 0 && itemsCountInDocument > 0) {
+                console.log(`[altegio/inventory] 📋 Sample sale document items structure:`, JSON.stringify(saleDocument.items.slice(0, 3), null, 2));
+              }
             }
             
             // Перевіряємо масив goods (альтернативна структура)
             if (itemsCountInDocument === 0 && Array.isArray(saleDocument.goods)) {
               itemsCountInDocument = saleDocument.goods.reduce((sum: number, good: any) => {
-                const goodAmount = Math.abs(Number(good.amount) || Number(good.quantity) || 0);
+                const goodAmount = Math.abs(Number(good.amount) || Number(good.quantity) || Number(good.count) || 0);
                 return sum + goodAmount;
               }, 0);
+            }
+            
+            // Перевіряємо інші можливі поля
+            if (itemsCountInDocument === 0) {
+              // Можливо, кількість на рівні документа
+              const docQuantity = Math.abs(Number(saleDocument.quantity) || Number(saleDocument.total_quantity) || 0);
+              if (docQuantity > 0) {
+                itemsCountInDocument = docQuantity;
+              }
             }
             
             // Якщо не знайшли в items/goods, використовуємо amount з транзакції
             if (itemsCountInDocument === 0 && amount > 0) {
               itemsCountInDocument = amount;
+            }
+            
+            // Логуємо для діагностики (тільки для перших кількох документів)
+            if (successfulFetches < 3) {
+              console.log(`[altegio/inventory] 📄 Sale document ${documentId}: itemsCount=${itemsCountInDocument}, hasItems=${Array.isArray(saleDocument.items)}, hasGoods=${Array.isArray(saleDocument.goods)}, docKeys=${Object.keys(saleDocument).slice(0, 10).join(', ')}`);
             }
             
             // Шукаємо default_cost_per_unit в документі
