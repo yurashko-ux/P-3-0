@@ -344,22 +344,20 @@ export default async function FinanceReportPage({
                       <p className="text-lg font-semibold md:text-xl">
                         {formatMoney(goods.cost)} грн.
                       </p>
-                      {(goods.costItemsCount !== undefined || goods.costTransactionsCount !== undefined) && (
-                        <p className="text-xs text-gray-400 mt-1">
-                          {goods.costItemsCount !== undefined && goods.costItemsCount > 0
-                            ? `Розраховано по ${goods.costItemsCount.toLocaleString("uk-UA")} шт. товару`
-                            : ""}
-                          {goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 && (
-                            <>
-                              {goods.costItemsCount !== undefined && goods.costItemsCount > 0 ? " " : ""}
-                              ({goods.costTransactionsCount} транзакцій)
-                            </>
-                          )}
-                          {goods.costItemsCount === undefined && goods.costTransactionsCount === undefined && (
-                            <>Всього транзакцій: {goods.itemsCount}</>
-                          )}
-                        </p>
-                      )}
+                      <p className="text-xs text-gray-400 mt-1">
+                        {goods.costItemsCount !== undefined && goods.costItemsCount > 0 ? (
+                          <>
+                            Розраховано по {goods.costItemsCount.toLocaleString("uk-UA")} шт. товару
+                            {goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 && (
+                              <> ({goods.costTransactionsCount} транзакцій)</>
+                            )}
+                          </>
+                        ) : goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 ? (
+                          <>Розраховано по {goods.costTransactionsCount} транзакцій</>
+                        ) : (
+                          <>Всього транзакцій продажу: {goods.itemsCount}</>
+                        )}
+                      </p>
                     </>
                   ) : (
                     <p className="text-lg font-semibold md:text-xl">— грн.</p>
