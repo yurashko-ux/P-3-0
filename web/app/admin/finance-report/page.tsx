@@ -384,6 +384,39 @@ export default async function FinanceReportPage({
                   </p>
                 </div>
               </div>
+              
+              {/* Список проданих товарів з собівартістю */}
+              {goods?.goodsList && goods.goodsList.length > 0 && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                    Список проданих товарів
+                  </h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-gray-500 pb-2 border-b border-gray-100">
+                      <div className="col-span-6">Товар</div>
+                      <div className="col-span-2 text-right">Кількість</div>
+                      <div className="col-span-2 text-right">Собівартість/од.</div>
+                      <div className="col-span-2 text-right">Всього собівартість</div>
+                    </div>
+                    {goods.goodsList.map((good, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-2 text-sm py-1 hover:bg-gray-50 rounded">
+                        <div className="col-span-6 truncate" title={good.title}>
+                          {good.title}
+                        </div>
+                        <div className="col-span-2 text-right">
+                          {good.quantity.toLocaleString("uk-UA")} шт.
+                        </div>
+                        <div className="col-span-2 text-right">
+                          {good.costPerUnit > 0 ? `${formatMoney(good.costPerUnit)} грн.` : "—"}
+                        </div>
+                        <div className="col-span-2 text-right font-medium">
+                          {good.totalCost > 0 ? `${formatMoney(good.totalCost)} грн.` : "—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 

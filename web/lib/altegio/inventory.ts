@@ -21,6 +21,15 @@ export type AltegioStorageTransaction = {
 };
 
 
+/** Інформація про проданий товар */
+export type SoldGoodItem = {
+  goodId?: number;
+  title: string; // Назва товару
+  quantity: number; // Кількість проданих одиниць
+  costPerUnit: number; // Собівартість за одиницю
+  totalCost: number; // Загальна собівартість (costPerUnit * quantity)
+};
+
 /** Агрегована інформація по продажах товарів за період */
 export type GoodsSalesSummary = {
   range: { date_from: string; date_to: string };
@@ -31,6 +40,7 @@ export type GoodsSalesSummary = {
   totalItemsSold: number; // Загальна кількість проданих одиниць товару
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
   costTransactionsCount?: number; // Кількість транзакцій, по яких успішно розраховано собівартість
+  goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
 };
 
 function resolveCompanyId(): string {
@@ -287,6 +297,7 @@ export async function fetchGoodsSalesSummary(params: {
   // Використовуємо GET /company/{location_id}/sale/{document_id} для отримання default_cost_per_unit
   // Також рахуємо загальну кількість проданих одиниць товару з документів продажу
   let allSaleDocumentResults: Array<{ cost: number; amount: number; itemsCount: number }> = [];
+  const goodsMap = new Map<number | string, SoldGoodItem>(); // good_id або title -> товар
   
   if (sales.length > 0) {
     try {
@@ -402,6 +413,52 @@ export async function fetchGoodsSalesSummary(params: {
             // Перевіряємо прямий доступ до поля
             if (typeof saleDocument.default_cost_per_unit === 'number') {
               defaultCostPerUnit = saleDocument.default_cost_per_unit;
+            }
+            
+            // Збираємо інформацію про товари з документа продажу
+            // Обробляємо масив items (якщо є кілька товарів у документі)
+            if (Array.isArray(saleDocument.items)) {
+              for (const item of saleDocument.items) {
+                const goodId = item.good_id || item.good?.id || item.id;
+                const title = item.good?.title || item.good?.name || item.title || item.name || `Товар #${goodId || 'N/A'}`;
+                const quantity = Math.abs(
+                  Number(item.amount) || 
+                  Number(item.quantity) || 
+                  Number(item.count) || 
+                  Number(item.qty) ||
+                  1
+                );
+                const itemCostPerUnit = item.default_cost_per_unit || defaultCostPerUnit || 0;
+                
+                if (quantity > 0) {
+                  const key = goodId || title;
+                  const existing = goodsMap.get(key);
+                  
+                  if (existing) {
+                    // Агрегуємо дані для існуючого товару
+                    existing.quantity += quantity;
+                    if (itemCostPerUnit > 0) {
+                      // Оновлюємо собівартість, якщо знайшли
+                      if (existing.costPerUnit === 0) {
+                        existing.costPerUnit = itemCostPerUnit;
+                      } else {
+                        // Середнє значення собівартості (якщо різні ціни)
+                        existing.costPerUnit = (existing.costPerUnit * (existing.quantity - quantity) + itemCostPerUnit * quantity) / existing.quantity;
+                      }
+                      existing.totalCost = existing.costPerUnit * existing.quantity;
+                    }
+                  } else {
+                    // Створюємо новий запис
+                    goodsMap.set(key, {
+                      goodId: goodId,
+                      title: title,
+                      quantity: quantity,
+                      costPerUnit: itemCostPerUnit,
+                      totalCost: itemCostPerUnit * quantity,
+                    });
+                  }
+                }
+              }
             }
             
             // Перевіряємо в масиві items/goods (якщо є кілька товарів)
@@ -713,6 +770,12 @@ export async function fetchGoodsSalesSummary(params: {
     `[altegio/inventory] Profit = revenue - cost: ${profit} (revenue: ${revenue}, cost: ${finalCost})`,
   );
 
+  // Конвертуємо мапу товарів у масив та сортуємо за назвою
+  const goodsList = Array.from(goodsMap.values())
+    .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
+  
+  console.log(`[altegio/inventory] 📦 Collected ${goodsList.length} unique goods from sale documents`);
+  
   return {
     range: { date_from, date_to },
     revenue,
@@ -722,6 +785,7 @@ export async function fetchGoodsSalesSummary(params: {
     totalItemsSold,
     costItemsCount: costItemsCount > 0 ? costItemsCount : undefined,
     costTransactionsCount: costTransactionsCount > 0 ? costTransactionsCount : undefined,
+    goodsList: goodsList.length > 0 ? goodsList : undefined,
   };
 }
 
