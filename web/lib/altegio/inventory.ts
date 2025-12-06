@@ -417,7 +417,7 @@ export async function fetchGoodsSalesSummary(params: {
             
             // Збираємо інформацію про товари з документа продажу
             // Обробляємо масив items (якщо є кілька товарів у документі)
-            if (Array.isArray(saleDocument.items)) {
+            if (Array.isArray(saleDocument.items) && saleDocument.items.length > 0) {
               for (const item of saleDocument.items) {
                 const goodId = item.good_id || item.good?.id || item.id;
                 const title = item.good?.title || item.good?.name || item.title || item.name || `Товар #${goodId || 'N/A'}`;
@@ -459,6 +459,32 @@ export async function fetchGoodsSalesSummary(params: {
                   }
                 }
               }
+            } else if (itemsCountInDocument > 0) {
+              // Якщо немає масиву items, але є кількість, використовуємо дані з транзакції
+              const goodId = sale.good_id;
+              const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+              const key = goodId || title;
+              const existing = goodsMap.get(key);
+              
+              if (existing) {
+                existing.quantity += itemsCountInDocument;
+                if (defaultCostPerUnit && defaultCostPerUnit > 0) {
+                  if (existing.costPerUnit === 0) {
+                    existing.costPerUnit = defaultCostPerUnit;
+                  } else {
+                    existing.costPerUnit = (existing.costPerUnit * (existing.quantity - itemsCountInDocument) + defaultCostPerUnit * itemsCountInDocument) / existing.quantity;
+                  }
+                  existing.totalCost = existing.costPerUnit * existing.quantity;
+                }
+              } else {
+                goodsMap.set(key, {
+                  goodId: goodId,
+                  title: title,
+                  quantity: itemsCountInDocument,
+                  costPerUnit: defaultCostPerUnit || 0,
+                  totalCost: (defaultCostPerUnit || 0) * itemsCountInDocument,
+                });
+              }
             }
             
             // Перевіряємо в масиві items/goods (якщо є кілька товарів)
@@ -485,6 +511,23 @@ export async function fetchGoodsSalesSummary(params: {
               
               if (good && typeof good.default_cost_per_unit === 'number') {
                 defaultCostPerUnit = good.default_cost_per_unit;
+              }
+            }
+            
+            // Якщо не зібрали товари з items, але є кількість, додаємо товар з транзакції
+            if (goodsMap.size === 0 && itemsCountInDocument > 0) {
+              const goodId = sale.good_id;
+              const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+              const key = goodId || title;
+              
+              if (!goodsMap.has(key)) {
+                goodsMap.set(key, {
+                  goodId: goodId,
+                  title: title,
+                  quantity: itemsCountInDocument,
+                  costPerUnit: defaultCostPerUnit || 0,
+                  totalCost: (defaultCostPerUnit || 0) * itemsCountInDocument,
+                });
               }
             }
             
