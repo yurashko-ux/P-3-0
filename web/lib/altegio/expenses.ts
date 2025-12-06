@@ -721,6 +721,11 @@ export async function fetchExpensesSummary(params: {
       return "Оренда";
     }
     
+    // Нормалізуємо "Бухгалтерія" / "Accounting"
+    if (lower.includes("бухгалтер") || lower.includes("accounting")) {
+      return "Бухгалтерія";
+    }
+    
     // Нормалізуємо "Маркетинг" / "Marketing"
     if (lower.includes("маркетинг") || lower.includes("marketing")) {
       return "Маркетинг";

@@ -379,8 +379,12 @@ export default async function FinanceReportPage({
                 const productPurchase = expenses?.byCategory["Product purchase"] || 0;
                 const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
                 const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
-                const rentManual = manualFields.rent || 0;
-                const accountingManual = manualFields.accounting || 0;
+                const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
+                const rentManual = manualFields.rent || 0; // Fallback, якщо немає в API
+                const rent = rentFromAPI > 0 ? rentFromAPI : rentManual; // Використовуємо API, якщо є
+                const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+                const accountingManual = manualFields.accounting || 0; // Fallback, якщо немає в API
+                const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual; // Використовуємо API, якщо є
                 const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
                 const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
                 const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
@@ -404,13 +408,12 @@ export default async function FinanceReportPage({
 
                 // Обчислюємо суми
                 const salary = salaryFromAPI; // Тільки з API, без ручного введення
-                const rent = rentManual;
                 const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
-                const taxes = taxesFromAPI + taxesExtraManual;
+                const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
                 
                 // Розхід без ЗП (постійні витрати) - виключаємо інвестиції та закуплений товар (вони в Інкасації)
-                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accountingManual;
+                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
                 
                 // Загальний розхід
                 const totalExpenses = salary + expensesWithoutSalary;
@@ -448,23 +451,40 @@ export default async function FinanceReportPage({
                     </div>
 
                     {/* Оренда */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
+                    {rent > 0 && (
+                      <div className="flex justify-between items-center p-2 border-b">
                         <span className="text-sm font-medium text-gray-700">
                           Оренда
                         </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="rent"
-                          label="Оренда"
-                          currentValue={rentManual}
-                        />
+                        <span className="text-sm font-semibold">
+                          {formatMoney(rent)} грн.
+                          {rentFromAPI > 0 ? (
+                            <span className="text-xs text-gray-400 ml-1">(з API)</span>
+                          ) : (
+                            <span className="text-xs text-gray-400 ml-1">(ручне)</span>
+                          )}
+                        </span>
                       </div>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(rent)} грн.
-                      </span>
-                    </div>
+                    )}
+                    {rent === 0 && (
+                      <div className="flex justify-between items-center p-2 border-b">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">
+                            Оренда
+                          </span>
+                          <EditExpenseField
+                            year={selectedYear}
+                            month={selectedMonth}
+                            fieldKey="rent"
+                            label="Оренда"
+                            currentValue={rentManual}
+                          />
+                        </div>
+                        <span className="text-sm font-semibold">
+                          {formatMoney(rentManual)} грн.
+                        </span>
+                      </div>
+                    )}
 
                     {/* Marketing/Advertising Group */}
                     <div className="p-3 bg-gray-50 rounded border">
@@ -627,23 +647,40 @@ export default async function FinanceReportPage({
                     </div>
 
                     {/* Бухгалтерія */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
+                    {accounting > 0 && (
+                      <div className="flex justify-between items-center p-2 border-b">
                         <span className="text-sm font-medium text-gray-700">
                           Бухгалтерія
                         </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="accounting"
-                          label="Бухгалтерія"
-                          currentValue={accountingManual}
-                        />
+                        <span className="text-sm font-semibold">
+                          {formatMoney(accounting)} грн.
+                          {accountingFromAPI > 0 ? (
+                            <span className="text-xs text-gray-400 ml-1">(з API)</span>
+                          ) : (
+                            <span className="text-xs text-gray-400 ml-1">(ручне)</span>
+                          )}
+                        </span>
                       </div>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(accountingManual)} грн.
-                      </span>
-                    </div>
+                    )}
+                    {accounting === 0 && (
+                      <div className="flex justify-between items-center p-2 border-b">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">
+                            Бухгалтерія
+                          </span>
+                          <EditExpenseField
+                            year={selectedYear}
+                            month={selectedMonth}
+                            fieldKey="accounting"
+                            label="Бухгалтерія"
+                            currentValue={accountingManual}
+                          />
+                        </div>
+                        <span className="text-sm font-semibold">
+                          {formatMoney(accountingManual)} грн.
+                        </span>
+                      </div>
+                    )}
 
                     {/* Управління */}
                     {management > 0 && (
@@ -687,16 +724,32 @@ export default async function FinanceReportPage({
                         <span className="text-sm font-medium text-gray-700">
                           Податки
                         </span>
-                        <EditExpenseField
-                          year={selectedYear}
-                          month={selectedMonth}
-                          fieldKey="taxes_extra"
-                          label="Податки (додатково)"
-                          currentValue={taxesExtraManual}
-                        />
-                        {taxesFromAPI > 0 && (
+                        {taxesFromAPI === 0 && (
+                          <EditExpenseField
+                            year={selectedYear}
+                            month={selectedMonth}
+                            fieldKey="taxes_extra"
+                            label="Податки (додатково)"
+                            currentValue={taxesExtraManual}
+                          />
+                        )}
+                        {taxesFromAPI > 0 && taxesExtraManual > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">
+                              (з API: {formatMoney(taxesFromAPI)})
+                            </span>
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="taxes_extra"
+                              label="Податки (додатково)"
+                              currentValue={taxesExtraManual}
+                            />
+                          </>
+                        )}
+                        {taxesFromAPI > 0 && taxesExtraManual === 0 && (
                           <span className="text-xs text-gray-500">
-                            (з API: {formatMoney(taxesFromAPI)})
+                            (з API)
                           </span>
                         )}
                       </div>
