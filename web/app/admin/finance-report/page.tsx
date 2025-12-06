@@ -351,9 +351,19 @@ export default async function FinanceReportPage({
                             {goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 && (
                               <> ({goods.costTransactionsCount} транзакцій)</>
                             )}
+                            {goods.totalItemsSold > 0 && (
+                              <> • Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт.</>
+                            )}
                           </>
                         ) : goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 ? (
-                          <>Розраховано по {goods.costTransactionsCount} транзакцій</>
+                          <>
+                            Розраховано по {goods.costTransactionsCount} транзакцій
+                            {goods.totalItemsSold > 0 && (
+                              <> • Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт.</>
+                            )}
+                          </>
+                        ) : goods.totalItemsSold > 0 ? (
+                          <>Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт. ({goods.itemsCount} транзакцій)</>
                         ) : (
                           <>Всього транзакцій продажу: {goods.itemsCount}</>
                         )}

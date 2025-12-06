@@ -28,6 +28,7 @@ export type GoodsSalesSummary = {
   cost: number; // Собівартість (ручно введене значення з KV або 0)
   profit: number; // Націнка (revenue - cost)
   itemsCount: number; // Загальна кількість транзакцій продажу
+  totalItemsSold: number; // Загальна кількість проданих одиниць товару
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
   costTransactionsCount?: number; // Кількість транзакцій, по яких успішно розраховано собівартість
 };
@@ -242,6 +243,15 @@ export async function fetchGoodsSalesSummary(params: {
         const costPerUnit = Number(t.cost_per_unit) || 0;
         return sum + amount * costPerUnit;
       }
+    },
+    0,
+  );
+
+  // Розраховуємо загальну кількість проданих одиниць товару
+  const totalItemsSold = sales.reduce(
+    (sum, t) => {
+      const amount = Math.abs(Number(t.amount) || 0);
+      return sum + amount;
     },
     0,
   );
@@ -574,6 +584,7 @@ export async function fetchGoodsSalesSummary(params: {
     cost: finalCost,
     profit,
     itemsCount: sales.length,
+    totalItemsSold,
     costItemsCount: costItemsCount > 0 ? costItemsCount : undefined,
     costTransactionsCount: costTransactionsCount > 0 ? costTransactionsCount : undefined,
   };
