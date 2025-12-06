@@ -27,7 +27,9 @@ export type GoodsSalesSummary = {
   revenue: number; // Виручка з транзакцій (може бути нижча за реальну)
   cost: number; // Собівартість (ручно введене значення з KV або 0)
   profit: number; // Націнка (revenue - cost)
-  itemsCount: number;
+  itemsCount: number; // Загальна кількість транзакцій продажу
+  costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
+  costTransactionsCount?: number; // Кількість транзакцій, по яких успішно розраховано собівартість
 };
 
 function resolveCompanyId(): string {
@@ -246,6 +248,8 @@ export async function fetchGoodsSalesSummary(params: {
 
   // Спробуємо обчислити собівартість з різних джерел
   let calculatedCost: number | null = null;
+  let costItemsCount: number = 0; // Загальна кількість одиниць товару, по яких розраховано собівартість
+  let costTransactionsCount: number = 0; // Кількість транзакцій, по яких успішно розраховано собівартість
   
   // Варіант 0: З API Sales Transaction (default_cost_per_unit) - ПРІОРИТЕТНИЙ МЕТОД
   // Використовуємо GET /company/{location_id}/sale/{document_id} для отримання default_cost_per_unit
@@ -265,7 +269,7 @@ export async function fetchGoodsSalesSummary(params: {
         const batch = sales.slice(i, i + batchSize);
         
         // Обробляємо пакет паралельно
-        const batchPromises = batch.map(async (sale): Promise<number | null> => {
+        const batchPromises = batch.map(async (sale): Promise<{ cost: number; amount: number } | null> => {
           // Перевіряємо, чи є document_id в транзакції, інакше використовуємо id
           const documentId = (sale as any).document_id || sale.id;
           const amount = Math.abs(Number(sale.amount) || 0);
@@ -318,7 +322,7 @@ export async function fetchGoodsSalesSummary(params: {
             if (defaultCostPerUnit !== null && defaultCostPerUnit > 0) {
               const costForThisSale = defaultCostPerUnit * amount;
               console.log(`[altegio/inventory] ✅ Sale document ${documentId}: default_cost_per_unit=${defaultCostPerUnit}, amount=${amount}, cost=${costForThisSale}`);
-              return costForThisSale;
+              return { cost: costForThisSale, amount: amount };
             } else {
               // Логуємо структуру документа для діагностики (тільки один раз для всього процесу)
               if (!hasLoggedDocumentStructure) {
@@ -336,11 +340,15 @@ export async function fetchGoodsSalesSummary(params: {
         });
         
         const batchResults = await Promise.all(batchPromises);
-        const validCosts = batchResults.filter((cost): cost is number => cost !== null && cost > 0);
+        const validResults = batchResults.filter((result): result is { cost: number; amount: number } => 
+          result !== null && typeof result === 'object' && 'cost' in result && result.cost > 0
+        );
         
-        costFromSaleDocuments += validCosts.reduce((sum, cost) => sum + cost, 0);
-        successfulFetches += validCosts.length;
-        failedFetches += batchResults.length - validCosts.length;
+        costFromSaleDocuments += validResults.reduce((sum, result) => sum + result.cost, 0);
+        costItemsCount += validResults.reduce((sum, result) => sum + result.amount, 0);
+        costTransactionsCount += validResults.length;
+        successfulFetches += validResults.length;
+        failedFetches += batchResults.length - validResults.length;
         
         // Невелика затримка між пакетами для уникнення rate limiting
         if (i + batchSize < sales.length) {
@@ -350,7 +358,7 @@ export async function fetchGoodsSalesSummary(params: {
       
       if (costFromSaleDocuments > 0) {
         calculatedCost = costFromSaleDocuments;
-        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_per_unit): ${calculatedCost} (successful: ${successfulFetches}, failed: ${failedFetches})`);
+        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_per_unit): ${calculatedCost} (transactions: ${costTransactionsCount}/${sales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
       } else {
         console.log(`[altegio/inventory] ⚠️ No cost found from sale documents (successful: ${successfulFetches}, failed: ${failedFetches})`);
       }
@@ -361,7 +369,7 @@ export async function fetchGoodsSalesSummary(params: {
   
   // Варіант 1: З транзакцій закупки (type_id=2) - FALLBACK
   // Можливо, cost_per_unit або cost в транзакціях закупки містить собівартість
-  if (purchases.length > 0) {
+  if (calculatedCost === null && purchases.length > 0) {
     const purchaseCost = purchases.reduce((sum, t) => {
       // Для закупки cost_per_unit може бути оптовою ціною (собівартістю)
       const costPerUnit = Number(t.cost_per_unit) || 0;
@@ -566,7 +574,8 @@ export async function fetchGoodsSalesSummary(params: {
     cost: finalCost,
     profit,
     itemsCount: sales.length,
+    costItemsCount: costItemsCount > 0 ? costItemsCount : undefined,
+    costTransactionsCount: costTransactionsCount > 0 ? costTransactionsCount : undefined,
   };
 }
-
 
