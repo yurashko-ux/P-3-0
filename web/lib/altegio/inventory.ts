@@ -572,16 +572,31 @@ export async function fetchGoodsSalesSummary(params: {
         costItemsCount += resultsWithCost.reduce((sum, result) => sum + result.amount, 0);
         costTransactionsCount += resultsWithCost.length;
         
-        // Для транзакцій, де не вдалося отримати документ, додаємо кількість з транзакції складу
+        // Для транзакцій, де не вдалося отримати документ, додаємо товари з транзакцій складу
         const failedDocuments = batch.filter((sale, idx) => batchResults[idx] === null);
-        const itemsFromFailedDocuments = failedDocuments.reduce((sum, sale) => {
+        for (const sale of failedDocuments) {
           const amount = Math.abs(Number(sale.amount) || 0);
-          return sum + amount;
-        }, 0);
-        
-        // Додаємо кількість товарів з невдалих документів до загальної суми
-        if (itemsFromFailedDocuments > 0) {
-          allSaleDocumentResults.push({ cost: 0, amount: itemsFromFailedDocuments, itemsCount: itemsFromFailedDocuments });
+          if (amount > 0) {
+            const goodId = sale.good_id;
+            const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+            const key = goodId || title;
+            const existing = goodsMap.get(key);
+            
+            if (existing) {
+              existing.quantity += amount;
+              existing.totalCost = existing.costPerUnit * existing.quantity;
+            } else {
+              goodsMap.set(key, {
+                goodId: goodId,
+                title: title,
+                quantity: amount,
+                costPerUnit: 0, // Не знаємо собівартість, бо документ не отримано
+                totalCost: 0,
+              });
+            }
+            
+            allSaleDocumentResults.push({ cost: 0, amount: amount, itemsCount: amount });
+          }
         }
         
         successfulFetches += validResults.length;
@@ -599,6 +614,34 @@ export async function fetchGoodsSalesSummary(params: {
         console.log(`[altegio/inventory] 📦 Total items sold from sale documents: ${totalItemsSold} (from ${allSaleDocumentResults.length} documents, fallback was ${totalItemsSoldFromTransactions})`);
       } else {
         console.log(`[altegio/inventory] ⚠️ No sale documents retrieved, using fallback: ${totalItemsSoldFromTransactions} items from transactions`);
+      }
+      
+      // Якщо не зібрали товари з документів, збираємо з транзакцій складу
+      if (goodsMap.size === 0 && sales.length > 0) {
+        console.log(`[altegio/inventory] ⚠️ No goods collected from sale documents, collecting from storage transactions...`);
+        for (const sale of sales) {
+          const amount = Math.abs(Number(sale.amount) || 0);
+          if (amount > 0) {
+            const goodId = sale.good_id;
+            const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+            const key = goodId || title;
+            const existing = goodsMap.get(key);
+            
+            if (existing) {
+              existing.quantity += amount;
+              existing.totalCost = existing.costPerUnit * existing.quantity;
+            } else {
+              goodsMap.set(key, {
+                goodId: goodId,
+                title: title,
+                quantity: amount,
+                costPerUnit: 0, // Не знаємо собівартість з транзакцій складу
+                totalCost: 0,
+              });
+            }
+          }
+        }
+        console.log(`[altegio/inventory] 📦 Collected ${goodsMap.size} goods from storage transactions`);
       }
       
       if (costFromSaleDocuments > 0) {
