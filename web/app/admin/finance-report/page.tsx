@@ -340,9 +340,17 @@ export default async function FinanceReportPage({
                     Собівартість товарів
                   </p>
                   {goods ? (
-                    <p className="text-lg font-semibold md:text-xl">
-                      {formatMoney(goods.cost)} грн.
-                    </p>
+                    <>
+                      <p className="text-lg font-semibold md:text-xl">
+                        {formatMoney(goods.cost)} грн.
+                      </p>
+                      {goods.costItemsCount !== undefined && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Розраховано по {goods.costItemsCount.toLocaleString("uk-UA")} шт. товару
+                          {goods.costTransactionsCount !== undefined && ` (${goods.costTransactionsCount} транзакцій)`}
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <p className="text-lg font-semibold md:text-xl">— грн.</p>
                   )}
