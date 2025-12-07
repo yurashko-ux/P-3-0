@@ -370,6 +370,45 @@ export default async function FinanceReportPage({
             </div>
           </section>
 
+          {/* Доходи */}
+          <section className="card bg-base-100 shadow-sm">
+            <div className="card-body p-4 space-y-3">
+              <h2 className="card-title text-base md:text-lg">
+                Доходи
+              </h2>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase text-gray-500">
+                    Послуги
+                  </p>
+                  <p className="text-lg font-semibold md:text-xl">
+                    {summary ? formatMoney(summary.totals.services) : "—"} грн.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500">
+                    Націнка (дохід по товарах)
+                  </p>
+                  <p className="text-lg font-semibold md:text-xl">
+                    {summary && goods
+                      ? formatMoney(summary.totals.goods - goods.cost)
+                      : "—"} грн.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500">
+                    Всього доходів
+                  </p>
+                  <p className="text-lg font-semibold md:text-xl">
+                    {summary && goods
+                      ? formatMoney(summary.totals.services + (summary.totals.goods - goods.cost))
+                      : "—"} грн.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Розходи за місяць */}
           <section className="card bg-base-100 shadow-sm">
             <div className="card-body p-4 space-y-4">
