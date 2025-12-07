@@ -11,6 +11,7 @@ import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
 import { EditExchangeRateField } from "./_components/EditExchangeRateField";
+import { EditWarehouseBalanceButton } from "./_components/EditWarehouseBalanceButton";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 
@@ -201,12 +202,49 @@ async function getSummaryForMonth(
 
   // Отримуємо баланс складу на останній день місяця
   // Користувач хоче бачити баланс на конкретну дату (30.10.2025 для жовтня)
+  // Спочатку перевіряємо, чи є ручно введене значення
   let warehouseBalance = 0;
+  let manualWarehouseBalance: number | null = null;
+  
   try {
-    // Використовуємо останній день вибраного місяця
-    warehouseBalance = await getWarehouseBalance({ date: to });
+    const kvModule = await import("@/lib/kv");
+    const kvReadModule = kvModule.kvRead;
+    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+      const balanceKey = `finance:warehouse:balance:${year}:${month}`;
+      const rawValue = await kvReadModule.getRaw(balanceKey);
+      if (rawValue !== null && typeof rawValue === "string") {
+        try {
+          const parsed = JSON.parse(rawValue);
+          const value = (parsed as any)?.value ?? parsed;
+          const numValue = typeof value === "number" ? value : parseFloat(String(value));
+          if (Number.isFinite(numValue) && numValue >= 0) {
+            manualWarehouseBalance = numValue;
+            console.log(`[finance-report] ✅ Using manual warehouse balance: ${manualWarehouseBalance}`);
+          }
+        } catch {
+          const numValue = parseFloat(rawValue);
+          if (Number.isFinite(numValue) && numValue >= 0) {
+            manualWarehouseBalance = numValue;
+            console.log(`[finance-report] ✅ Using manual warehouse balance: ${manualWarehouseBalance}`);
+          }
+        }
+      }
+    }
   } catch (err) {
-    console.error("[finance-report] Failed to get warehouse balance:", err);
+    console.error("[finance-report] Failed to read manual warehouse balance:", err);
+  }
+  
+  // Якщо є ручне значення, використовуємо його, інакше отримуємо з API
+  if (manualWarehouseBalance !== null) {
+    warehouseBalance = manualWarehouseBalance;
+  } else {
+    try {
+      // Використовуємо останній день вибраного місяця
+      warehouseBalance = await getWarehouseBalance({ date: to });
+      console.log(`[finance-report] ✅ Using API warehouse balance: ${warehouseBalance}`);
+    } catch (err) {
+      console.error("[finance-report] Failed to get warehouse balance:", err);
+    }
   }
 
   try {
@@ -1001,7 +1039,7 @@ export default async function FinanceReportPage({
                   
                   {/* Баланс складу */}
                   <div className="pt-3 border-t">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-start">
                       <div>
                         <p className="text-xs uppercase text-gray-500">
                           Баланс складу
@@ -1020,6 +1058,13 @@ export default async function FinanceReportPage({
                           </p>
                         )}
                       </div>
+                    </div>
+                    <div className="mt-2">
+                      <EditWarehouseBalanceButton
+                        year={selectedYear}
+                        month={selectedMonth}
+                        currentBalance={warehouseBalance}
+                      />
                     </div>
                   </div>
                 </div>
