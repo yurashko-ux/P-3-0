@@ -870,17 +870,17 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // Використовуємо обчислену собівартість з API (пріоритет), інакше ручно введену, інакше 0
-  const finalCost = calculatedCost !== null 
-    ? calculatedCost 
-    : (manualCost !== null ? manualCost : 0);
+  // РУЧНИЙ РЕЖИМ: Використовуємо тільки ручно введену собівартість
+  // Автоматичний розрахунок з API не використовується
+  const finalCost = manualCost !== null ? manualCost : 0;
   
-  if (calculatedCost !== null) {
-    console.log(`[altegio/inventory] ✅ Using calculated cost from API: ${calculatedCost}`);
-  } else if (manualCost !== null) {
-    console.log(`[altegio/inventory] ⚠️ Using manual cost (fallback): ${manualCost}`);
+  if (manualCost !== null) {
+    console.log(`[altegio/inventory] ✅ Using manual cost: ${manualCost}`);
   } else {
-    console.log(`[altegio/inventory] ⚠️ No cost found (calculated or manual), using 0. Please check API settings.`);
+    console.log(`[altegio/inventory] ⚠️ No manual cost found, using 0. Please enter cost manually.`);
+    if (calculatedCost !== null) {
+      console.log(`[altegio/inventory] ℹ️ Calculated cost from API (not used): ${calculatedCost}`);
+    }
   }
 
   // Розраховуємо націнку як revenue - cost
