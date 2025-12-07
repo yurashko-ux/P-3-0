@@ -126,6 +126,7 @@ async function getSummaryForMonth(
   exchangeRate: number; // Курс долара
   warehouseBalance: number; // Баланс складу на останній день місяця
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
+  hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
@@ -274,6 +275,12 @@ async function getSummaryForMonth(
         date_to: to,
       }),
     ]);
+    
+    // Розраховуємо суму для закупівлі волосся: собівартість округлена до більшого до 10000
+    const hairPurchaseAmount = goods && goods.cost > 0 
+      ? Math.ceil(goods.cost / 10000) * 10000 
+      : 0;
+    
     return { 
       summary, 
       goods, 
@@ -283,6 +290,7 @@ async function getSummaryForMonth(
       exchangeRate,
       warehouseBalance,
       warehouseBalanceDiff,
+      hairPurchaseAmount,
       error: null 
     };
   } catch (e: any) {
@@ -295,6 +303,7 @@ async function getSummaryForMonth(
       exchangeRate: 0,
       warehouseBalance: 0,
       warehouseBalanceDiff: 0,
+      hairPurchaseAmount: 0,
       error: String(e?.message || e),
     };
   }
@@ -322,7 +331,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1091,6 +1100,22 @@ export default async function FinanceReportPage({
                       <div className="text-right">
                         <p className={`text-lg font-semibold md:text-xl ${warehouseBalanceDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {warehouseBalanceDiff >= 0 ? '+' : ''}{formatMoney(warehouseBalanceDiff)} грн.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Потрібно закупити волосся */}
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs uppercase text-gray-500">
+                          Потрібно закупити волосся на суму
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold md:text-xl">
+                          {formatMoney(hairPurchaseAmount)} грн.
                         </p>
                       </div>
                     </div>
