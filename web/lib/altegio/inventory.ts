@@ -56,6 +56,60 @@ function resolveCompanyId(): string {
   return companyId;
 }
 
+/**
+ * Отримати баланс складу на конкретну дату
+ * Розраховується як сума всіх транзакцій до цієї дати включно
+ */
+export async function getWarehouseBalance(
+  params: { date: string }
+): Promise<number> {
+  const { date } = params;
+  const companyId = resolveCompanyId();
+
+  const qs = new URLSearchParams({
+    start_date: "2000-01-01", // Починаємо з давньої дати, щоб отримати всі транзакції
+    end_date: date,
+  });
+
+  const path = `/storages/transactions/${companyId}?${qs.toString()}`;
+
+  try {
+    const raw = await altegioFetch<any>(path);
+    const tx: any[] = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+        ? (raw as any).data
+        : [];
+
+    // Рахуємо баланс: сума всіх транзакцій
+    // type_id = 1 - продаж (від'ємне значення для балансу)
+    // type_id = 2 - закупівля (додатне значення для балансу)
+    // Використовуємо cost (загальна вартість) або cost_per_unit * amount
+    const balance = tx.reduce((sum, t) => {
+      const transactionCost = Math.abs(Number(t.cost) || 0);
+      if (transactionCost > 0) {
+        // type_id = 1 (продаж) - зменшує баланс
+        // type_id = 2 (закупівля) - збільшує баланс
+        const amount = Number(t.type_id) === 1 ? -transactionCost : transactionCost;
+        return sum + amount;
+      } else {
+        // Fallback: cost_per_unit * amount
+        const amount = Math.abs(Number(t.amount) || 0);
+        const costPerUnit = Number(t.cost_per_unit) || 0;
+        const transactionValue = amount * costPerUnit;
+        const signedValue = Number(t.type_id) === 1 ? -transactionValue : transactionValue;
+        return sum + signedValue;
+      }
+    }, 0);
+
+    console.log(`[altegio/inventory] Warehouse balance on ${date}: ${balance} (from ${tx.length} transactions)`);
+    return balance;
+  } catch (error: any) {
+    console.error(`[altegio/inventory] Failed to get warehouse balance:`, error);
+    return 0;
+  }
+}
+
 
 /**
  * Отримати агреговану виручку / собівартість / націнку по товарах із inventory transactions за період.
