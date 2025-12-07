@@ -125,6 +125,7 @@ async function getSummaryForMonth(
   manualFields: Record<string, number>; // Ручні поля витрат
   exchangeRate: number; // Курс долара
   warehouseBalance: number; // Баланс складу на останній день місяця
+  warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
@@ -200,52 +201,63 @@ async function getSummaryForMonth(
     console.error("[finance-report] Failed to read exchange rate:", err);
   }
 
-  // Отримуємо баланс складу на останній день місяця
-  // Користувач хоче бачити баланс на конкретну дату (30.10.2025 для жовтня)
-  // Спочатку перевіряємо, чи є ручно введене значення
-  let warehouseBalance = 0;
-  let manualWarehouseBalance: number | null = null;
-  
-  try {
-    const kvModule = await import("@/lib/kv");
-    const kvReadModule = kvModule.kvRead;
-    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
-      const balanceKey = `finance:warehouse:balance:${year}:${month}`;
-      const rawValue = await kvReadModule.getRaw(balanceKey);
-      if (rawValue !== null && typeof rawValue === "string") {
-        try {
-          const parsed = JSON.parse(rawValue);
-          const value = (parsed as any)?.value ?? parsed;
-          const numValue = typeof value === "number" ? value : parseFloat(String(value));
-          if (Number.isFinite(numValue) && numValue >= 0) {
-            manualWarehouseBalance = numValue;
-            console.log(`[finance-report] ✅ Using manual warehouse balance: ${manualWarehouseBalance}`);
-          }
-        } catch {
-          const numValue = parseFloat(rawValue);
-          if (Number.isFinite(numValue) && numValue >= 0) {
-            manualWarehouseBalance = numValue;
-            console.log(`[finance-report] ✅ Using manual warehouse balance: ${manualWarehouseBalance}`);
+  // Функція для отримання балансу складу для конкретного місяця/року
+  async function getWarehouseBalanceForMonth(year: number, month: number): Promise<number> {
+    let balance = 0;
+    let manualBalance: number | null = null;
+    
+    try {
+      const kvModule = await import("@/lib/kv");
+      const kvReadModule = kvModule.kvRead;
+      if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+        const balanceKey = `finance:warehouse:balance:${year}:${month}`;
+        const rawValue = await kvReadModule.getRaw(balanceKey);
+        if (rawValue !== null && typeof rawValue === "string") {
+          try {
+            const parsed = JSON.parse(rawValue);
+            const value = (parsed as any)?.value ?? parsed;
+            const numValue = typeof value === "number" ? value : parseFloat(String(value));
+            if (Number.isFinite(numValue) && numValue >= 0) {
+              manualBalance = numValue;
+            }
+          } catch {
+            const numValue = parseFloat(rawValue);
+            if (Number.isFinite(numValue) && numValue >= 0) {
+              manualBalance = numValue;
+            }
           }
         }
       }
-    }
-  } catch (err) {
-    console.error("[finance-report] Failed to read manual warehouse balance:", err);
-  }
-  
-  // Якщо є ручне значення, використовуємо його, інакше отримуємо з API
-  if (manualWarehouseBalance !== null) {
-    warehouseBalance = manualWarehouseBalance;
-  } else {
-    try {
-      // Використовуємо останній день вибраного місяця
-      warehouseBalance = await getWarehouseBalance({ date: to });
-      console.log(`[finance-report] ✅ Using API warehouse balance: ${warehouseBalance}`);
     } catch (err) {
-      console.error("[finance-report] Failed to get warehouse balance:", err);
+      console.error(`[finance-report] Failed to read manual warehouse balance for ${year}-${month}:`, err);
     }
+    
+    // Якщо є ручне значення, використовуємо його, інакше отримуємо з API
+    if (manualBalance !== null) {
+      balance = manualBalance;
+    } else {
+      try {
+        const monthRangeForBalance = monthRange(year, month);
+        balance = await getWarehouseBalance({ date: monthRangeForBalance.to });
+      } catch (err) {
+        console.error(`[finance-report] Failed to get warehouse balance for ${year}-${month}:`, err);
+      }
+    }
+    
+    return balance;
   }
+
+  // Отримуємо баланс складу на останній день поточного місяця
+  const warehouseBalance = await getWarehouseBalanceForMonth(year, month);
+  
+  // Отримуємо баланс складу попереднього місяця для розрахунку різниці
+  let previousMonthBalance = 0;
+  const previousMonth = month === 1 ? 12 : month - 1;
+  const previousYear = month === 1 ? year - 1 : year;
+  previousMonthBalance = await getWarehouseBalanceForMonth(previousYear, previousMonth);
+  
+  // Розраховуємо різницю
+  const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
 
   try {
     const [summary, goods, expenses] = await Promise.all([
@@ -270,6 +282,7 @@ async function getSummaryForMonth(
       manualFields, 
       exchangeRate,
       warehouseBalance,
+      warehouseBalanceDiff,
       error: null 
     };
   } catch (e: any) {
@@ -281,6 +294,7 @@ async function getSummaryForMonth(
       manualFields: {},
       exchangeRate: 0,
       warehouseBalance: 0,
+      warehouseBalanceDiff: 0,
       error: String(e?.message || e),
     };
   }
@@ -308,7 +322,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1052,11 +1066,6 @@ export default async function FinanceReportPage({
                         <p className="text-lg font-semibold md:text-xl">
                           {formatMoney(warehouseBalance)} грн.
                         </p>
-                        {exchangeRate > 0 && warehouseBalance > 0 && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            ≈ ${(warehouseBalance / exchangeRate).toFixed(2)} USD
-                          </p>
-                        )}
                       </div>
                     </div>
                     <div className="mt-2">
@@ -1065,6 +1074,25 @@ export default async function FinanceReportPage({
                         month={selectedMonth}
                         currentBalance={warehouseBalance}
                       />
+                    </div>
+                  </div>
+                  
+                  {/* Різниця балансу складу */}
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs uppercase text-gray-500">
+                          Різниця
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          {warehouseBalanceDiff >= 0 ? "Склад збільшився" : "Склад зменшився"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-lg font-semibold md:text-xl ${warehouseBalanceDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {warehouseBalanceDiff >= 0 ? '+' : ''}{formatMoney(warehouseBalanceDiff)} грн.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
