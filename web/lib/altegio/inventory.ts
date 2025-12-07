@@ -58,7 +58,7 @@ function resolveCompanyId(): string {
 
 /**
  * Отримати баланс складу на конкретну дату
- * Розраховується як сума всіх транзакцій до цієї дати включно
+ * Використовуємо endpoint для отримання списку товарів на складі з їх кількістю та собівартістю
  */
 export async function getWarehouseBalance(
   params: { date: string }
@@ -66,43 +66,112 @@ export async function getWarehouseBalance(
   const { date } = params;
   const companyId = resolveCompanyId();
 
-  const qs = new URLSearchParams({
-    start_date: "2000-01-01", // Починаємо з давньої дати, щоб отримати всі транзакції
-    end_date: date,
-  });
-
-  const path = `/storages/transactions/${companyId}?${qs.toString()}`;
-
   try {
-    const raw = await altegioFetch<any>(path);
-    const tx: any[] = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-        ? (raw as any).data
-        : [];
+    // Спробуємо отримати список товарів на складі
+    // Використовуємо endpoint /storages/{location_id}/goods або /storages/{location_id}
+    let path = `/storages/${companyId}/goods`;
+    let goods: any[] = [];
+    
+    try {
+      const raw = await altegioFetch<any>(path);
+      goods = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+          ? (raw as any).data
+          : raw && typeof raw === "object" && Array.isArray((raw as any).goods)
+            ? (raw as any).goods
+            : [];
+      
+      console.log(`[altegio/inventory] Fetched ${goods.length} goods from /storages/${companyId}/goods`);
+    } catch (err: any) {
+      console.log(`[altegio/inventory] Failed to fetch from /storages/${companyId}/goods, trying /storages/${companyId}:`, err?.message);
+      
+      // Fallback: спробуємо інший endpoint
+      try {
+        path = `/storages/${companyId}`;
+        const raw = await altegioFetch<any>(path);
+        const storageData = raw && typeof raw === "object" ? raw : {};
+        
+        // Можливо, дані в полі goods або items
+        goods = Array.isArray(storageData.goods)
+          ? storageData.goods
+          : Array.isArray(storageData.items)
+            ? storageData.items
+            : Array.isArray(storageData.data)
+              ? storageData.data
+              : [];
+        
+        console.log(`[altegio/inventory] Fetched ${goods.length} goods from /storages/${companyId}`);
+      } catch (err2: any) {
+        console.error(`[altegio/inventory] Failed to fetch from /storages/${companyId}:`, err2?.message);
+      }
+    }
 
-    // Рахуємо баланс: сума всіх транзакцій
-    // type_id = 1 - продаж (від'ємне значення для балансу)
-    // type_id = 2 - закупівля (додатне значення для балансу)
-    // Використовуємо cost (загальна вартість) або cost_per_unit * amount
-    const balance = tx.reduce((sum, t) => {
-      const transactionCost = Math.abs(Number(t.cost) || 0);
-      if (transactionCost > 0) {
-        // type_id = 1 (продаж) - зменшує баланс
-        // type_id = 2 (закупівля) - збільшує баланс
-        const amount = Number(t.type_id) === 1 ? -transactionCost : transactionCost;
-        return sum + amount;
-      } else {
-        // Fallback: cost_per_unit * amount
+    // Якщо не вдалося отримати список товарів, спробуємо розрахувати через транзакції
+    if (goods.length === 0) {
+      console.log(`[altegio/inventory] No goods found, calculating balance from transactions...`);
+      
+      const qs = new URLSearchParams({
+        start_date: "2000-01-01",
+        end_date: date,
+      });
+
+      const txPath = `/storages/transactions/${companyId}?${qs.toString()}`;
+      const raw = await altegioFetch<any>(txPath);
+      const tx: any[] = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+          ? (raw as any).data
+          : [];
+
+      // Рахуємо баланс як суму закупок (type_id = 2) мінус продажі (type_id = 1)
+      // Використовуємо собівартість (cost_per_unit), а не ціну продажу
+      const balance = tx.reduce((sum, t) => {
+        const typeId = Number(t.type_id);
         const amount = Math.abs(Number(t.amount) || 0);
         const costPerUnit = Number(t.cost_per_unit) || 0;
-        const transactionValue = amount * costPerUnit;
-        const signedValue = Number(t.type_id) === 1 ? -transactionValue : transactionValue;
-        return sum + signedValue;
+        
+        if (amount > 0 && costPerUnit > 0) {
+          const value = amount * costPerUnit;
+          // type_id = 1 (продаж) - зменшує баланс
+          // type_id = 2 (закупівля) - збільшує баланс
+          return sum + (typeId === 1 ? -value : value);
+        }
+        return sum;
+      }, 0);
+
+      console.log(`[altegio/inventory] Warehouse balance on ${date} (calculated from transactions): ${balance} (from ${tx.length} transactions)`);
+      return balance;
+    }
+
+    // Рахуємо баланс як суму (кількість * собівартість) для всіх товарів на складі
+    const balance = goods.reduce((sum, good: any) => {
+      // Можливі поля для кількості: amount, quantity, count, qty, balance, stock
+      const quantity = Math.abs(
+        Number(good.amount) ||
+        Number(good.quantity) ||
+        Number(good.count) ||
+        Number(good.qty) ||
+        Number(good.balance) ||
+        Number(good.stock) ||
+        0
+      );
+      
+      // Можливі поля для собівартості: cost_per_unit, cost, purchase_price, wholesale_price, default_cost_per_unit
+      const costPerUnit = Number(good.cost_per_unit) ||
+        Number(good.cost) ||
+        Number(good.purchase_price) ||
+        Number(good.wholesale_price) ||
+        Number(good.default_cost_per_unit) ||
+        0;
+      
+      if (quantity > 0 && costPerUnit > 0) {
+        return sum + (quantity * costPerUnit);
       }
+      return sum;
     }, 0);
 
-    console.log(`[altegio/inventory] Warehouse balance on ${date}: ${balance} (from ${tx.length} transactions)`);
+    console.log(`[altegio/inventory] Warehouse balance on ${date}: ${balance} (from ${goods.length} goods on stock)`);
     return balance;
   } catch (error: any) {
     console.error(`[altegio/inventory] Failed to get warehouse balance:`, error);
