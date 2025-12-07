@@ -10,6 +10,8 @@ import {
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
+import { EditExchangeRateField } from "./_components/EditExchangeRateField";
+import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -120,6 +122,8 @@ async function getSummaryForMonth(
   expenses: ExpensesSummary | null;
   manualExpenses: number | null;
   manualFields: Record<string, number>; // Ручні поля витрат
+  exchangeRate: number; // Курс долара
+  warehouseBalance: number; // Баланс складу на останній день місяця
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
@@ -167,6 +171,42 @@ async function getSummaryForMonth(
     manualFields[fieldKey] = await getManualExpenseField(year, month, fieldKey);
   }
 
+  // Отримуємо курс долара з KV
+  let exchangeRate = 0;
+  try {
+    const kvModule = await import("@/lib/kv");
+    const kvReadModule = kvModule.kvRead;
+    if (kvReadModule && typeof kvReadModule.getRaw === "function") {
+      const rateKey = `finance:exchange-rate:usd:${year}:${month}`;
+      const rawValue = await kvReadModule.getRaw(rateKey);
+      if (rawValue !== null && typeof rawValue === "string") {
+        try {
+          const parsed = JSON.parse(rawValue);
+          const value = (parsed as any)?.value ?? parsed;
+          const numValue = typeof value === "number" ? value : parseFloat(String(value));
+          if (Number.isFinite(numValue) && numValue > 0) {
+            exchangeRate = numValue;
+          }
+        } catch {
+          const numValue = parseFloat(rawValue);
+          if (Number.isFinite(numValue) && numValue > 0) {
+            exchangeRate = numValue;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[finance-report] Failed to read exchange rate:", err);
+  }
+
+  // Отримуємо баланс складу на останній день місяця
+  let warehouseBalance = 0;
+  try {
+    warehouseBalance = await getWarehouseBalance({ date: to });
+  } catch (err) {
+    console.error("[finance-report] Failed to get warehouse balance:", err);
+  }
+
   try {
     const [summary, goods, expenses] = await Promise.all([
       fetchFinanceSummary({
@@ -182,7 +222,16 @@ async function getSummaryForMonth(
         date_to: to,
       }),
     ]);
-    return { summary, goods, expenses, manualExpenses, manualFields, error: null };
+    return { 
+      summary, 
+      goods, 
+      expenses, 
+      manualExpenses, 
+      manualFields, 
+      exchangeRate,
+      warehouseBalance,
+      error: null 
+    };
   } catch (e: any) {
     return {
       summary: null,
@@ -190,6 +239,8 @@ async function getSummaryForMonth(
       expenses: null,
       manualExpenses: null,
       manualFields: {},
+      exchangeRate: 0,
+      warehouseBalance: 0,
       error: String(e?.message || e),
     };
   }
@@ -217,7 +268,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -863,13 +914,33 @@ export default async function FinanceReportPage({
 
             // Розраховуємо Прибуток
             const profit = totalIncome - totalExpenses;
+            
+            // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
+            const ownerProfit = profit - management;
+            
+            // Розраховуємо в доларах (якщо курс встановлено)
+            const profitUSD = exchangeRate > 0 ? profit / exchangeRate : 0;
+            const ownerProfitUSD = exchangeRate > 0 ? ownerProfit / exchangeRate : 0;
 
             return (
               <section className="card bg-base-100 shadow-sm">
-                <div className="card-body p-4 space-y-3">
+                <div className="card-body p-4 space-y-4">
                   <h2 className="card-title text-base md:text-lg">
                     Прибуток
                   </h2>
+                  
+                  {/* Курс долара */}
+                  <div className="flex items-center gap-2 pb-3 border-b">
+                    <span className="text-sm font-medium text-gray-700">
+                      Курс долара:
+                    </span>
+                    <EditExchangeRateField
+                      year={selectedYear}
+                      month={selectedMonth}
+                      currentRate={exchangeRate || 0}
+                    />
+                  </div>
+                  
                   <div className="grid gap-4 md:grid-cols-3">
                     <div>
                       <p className="text-xs uppercase text-gray-500">
@@ -894,6 +965,59 @@ export default async function FinanceReportPage({
                       <p className={`text-lg font-semibold md:text-xl ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {formatMoney(profit)} грн.
                       </p>
+                      {exchangeRate > 0 && (
+                        <p className="text-sm text-gray-500 mt-1">
+                          ≈ ${profitUSD.toFixed(2)} USD
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Чистий прибуток власника */}
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs uppercase text-gray-500">
+                          Чистий прибуток власника
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          (Прибуток - Управління)
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-lg font-semibold md:text-xl ${ownerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatMoney(ownerProfit)} грн.
+                        </p>
+                        {exchangeRate > 0 && (
+                          <p className="text-sm text-gray-500 mt-1">
+                            ≈ ${ownerProfitUSD.toFixed(2)} USD
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Баланс складу */}
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs uppercase text-gray-500">
+                          Баланс складу
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          (на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)})
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold md:text-xl">
+                          {formatMoney(warehouseBalance)} грн.
+                        </p>
+                        {exchangeRate > 0 && warehouseBalance > 0 && (
+                          <p className="text-sm text-gray-500 mt-1">
+                            ≈ ${(warehouseBalance / exchangeRate).toFixed(2)} USD
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
