@@ -200,8 +200,10 @@ async function getSummaryForMonth(
   }
 
   // Отримуємо баланс складу на останній день місяця
+  // Користувач хоче бачити баланс на конкретну дату (30.10.2025 для жовтня)
   let warehouseBalance = 0;
   try {
+    // Використовуємо останній день вибраного місяця
     warehouseBalance = await getWarehouseBalance({ date: to });
   } catch (err) {
     console.error("[finance-report] Failed to get warehouse balance:", err);
