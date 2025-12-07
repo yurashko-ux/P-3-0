@@ -128,6 +128,7 @@ async function getSummaryForMonth(
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
+  fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
