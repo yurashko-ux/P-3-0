@@ -1185,6 +1185,22 @@ export default async function FinanceReportPage({
                     </div>
                   </div>
                   
+                  {/* Платежі з ФОП Ореховська */}
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs uppercase text-gray-500">
+                          Платежі з ФОП Ореховська
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold md:text-xl">
+                          {formatMoney(fopOrekhovskaPayments)} грн.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
                   {/* Інкасація */}
                   <div className="pt-3 border-t">
                     <div className="flex justify-between items-center">
@@ -1193,12 +1209,12 @@ export default async function FinanceReportPage({
                           Інкасація
                         </p>
                         <p className="text-sm text-gray-400">
-                          Платежі з ФОП Ореховська
+                          (Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська)
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-semibold md:text-xl">
-                          {formatMoney(fopOrekhovskaPayments)} грн.
+                        <p className={`text-lg font-semibold md:text-xl ${encashment >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatMoney(encashment)} грн.
                         </p>
                       </div>
                     </div>
