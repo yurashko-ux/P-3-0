@@ -361,10 +361,29 @@ export async function fetchGoodsSalesSummary(params: {
               }, 0);
               
               // Якщо сума = 0, але є items, можливо потрібно рахувати кількість items
+              // АБО рахувати суму quantity з кожного item окремо
               if (itemsCountInDocument === 0 && saleDocument.items.length > 0) {
-                // Можливо, кожен item = 1 одиниця товару
-                itemsCountInDocument = saleDocument.items.length;
-                console.log(`[altegio/inventory] ⚠️ Items array has no amount/quantity, using items.length: ${itemsCountInDocument}`);
+                // Спробуємо рахувати суму quantity з кожного item
+                const sumFromItems = saleDocument.items.reduce((sum: number, item: any) => {
+                  // Перевіряємо різні поля для кількості
+                  const qty = Math.abs(
+                    Number(item.quantity) || 
+                    Number(item.qty) || 
+                    Number(item.count) ||
+                    Number(item.amount) ||
+                    1 // Якщо немає поля, вважаємо що 1 одиниця
+                  );
+                  return sum + qty;
+                }, 0);
+                
+                if (sumFromItems > 0) {
+                  itemsCountInDocument = sumFromItems;
+                  console.log(`[altegio/inventory] ✅ Calculated itemsCount from items array: ${itemsCountInDocument}`);
+                } else {
+                  // Якщо все ще 0, використовуємо кількість items (кожен item = 1 одиниця)
+                  itemsCountInDocument = saleDocument.items.length;
+                  console.log(`[altegio/inventory] ⚠️ Items array has no amount/quantity, using items.length: ${itemsCountInDocument}`);
+                }
               }
             }
             
@@ -514,20 +533,34 @@ export async function fetchGoodsSalesSummary(params: {
               }
             }
             
-            // Якщо не зібрали товари з items, але є кількість, додаємо товар з транзакції
-            if (goodsMap.size === 0 && itemsCountInDocument > 0) {
-              const goodId = sale.good_id;
-              const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
-              const key = goodId || title;
-              
-              if (!goodsMap.has(key)) {
-                goodsMap.set(key, {
-                  goodId: goodId,
-                  title: title,
-                  quantity: itemsCountInDocument,
-                  costPerUnit: defaultCostPerUnit || 0,
-                  totalCost: (defaultCostPerUnit || 0) * itemsCountInDocument,
-                });
+            // Якщо не зібрали товари з масиву items (або масив порожній), але є кількість, додаємо товар з транзакції
+            // Це потрібно для випадків, коли документ не містить масиву items, але містить інформацію про товар
+            if (!Array.isArray(saleDocument.items) || saleDocument.items.length === 0) {
+              if (itemsCountInDocument > 0) {
+                const goodId = sale.good_id;
+                const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+                const key = goodId || title;
+                const existing = goodsMap.get(key);
+                
+                if (existing) {
+                  existing.quantity += itemsCountInDocument;
+                  if (defaultCostPerUnit && defaultCostPerUnit > 0) {
+                    if (existing.costPerUnit === 0) {
+                      existing.costPerUnit = defaultCostPerUnit;
+                    } else {
+                      existing.costPerUnit = (existing.costPerUnit * (existing.quantity - itemsCountInDocument) + defaultCostPerUnit * itemsCountInDocument) / existing.quantity;
+                    }
+                    existing.totalCost = existing.costPerUnit * existing.quantity;
+                  }
+                } else {
+                  goodsMap.set(key, {
+                    goodId: goodId,
+                    title: title,
+                    quantity: itemsCountInDocument,
+                    costPerUnit: defaultCostPerUnit || 0,
+                    totalCost: (defaultCostPerUnit || 0) * itemsCountInDocument,
+                  });
+                }
               }
             }
             
