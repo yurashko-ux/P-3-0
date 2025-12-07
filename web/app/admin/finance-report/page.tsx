@@ -7,7 +7,7 @@ import {
   type GoodsSalesSummary,
   type ExpensesSummary,
 } from "@/lib/altegio";
-// EditCostButton більше не використовується - собівартість тепер береться з API автоматично
+import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
 import { unstable_noStore as noStore } from "next/cache";
@@ -341,33 +341,16 @@ export default async function FinanceReportPage({
                   </p>
                   {goods ? (
                     <>
-                      <p className="text-lg font-semibold md:text-xl">
-                        {formatMoney(goods.cost)} грн.
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {goods.costItemsCount !== undefined && goods.costItemsCount > 0 ? (
-                          <>
-                            Розраховано по {goods.costItemsCount.toLocaleString("uk-UA")} шт. товару
-                            {goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 && (
-                              <> ({goods.costTransactionsCount} транзакцій)</>
-                            )}
-                            {goods.totalItemsSold > 0 && (
-                              <> • Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт.</>
-                            )}
-                          </>
-                        ) : goods.costTransactionsCount !== undefined && goods.costTransactionsCount > 0 ? (
-                          <>
-                            Розраховано по {goods.costTransactionsCount} транзакцій
-                            {goods.totalItemsSold > 0 && (
-                              <> • Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт.</>
-                            )}
-                          </>
-                        ) : goods.totalItemsSold > 0 ? (
-                          <>Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт. ({goods.itemsCount} транзакцій)</>
-                        ) : (
-                          <>Всього транзакцій продажу: {goods.itemsCount}</>
-                        )}
-                      </p>
+                      <EditCostButton
+                        year={selectedYear}
+                        month={selectedMonth}
+                        currentCost={goods.cost}
+                      />
+                      {goods.totalItemsSold > 0 && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт. ({goods.itemsCount} транзакцій)
+                        </p>
+                      )}
                     </>
                   ) : (
                     <p className="text-lg font-semibold md:text-xl">— грн.</p>
