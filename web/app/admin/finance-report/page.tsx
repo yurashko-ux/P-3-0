@@ -329,6 +329,7 @@ async function getSummaryForMonth(
       warehouseBalanceDiff,
       hairPurchaseAmount,
       encashment,
+      fopOrekhovskaPayments,
       error: null 
     };
   } catch (e: any) {
@@ -343,6 +344,7 @@ async function getSummaryForMonth(
       warehouseBalanceDiff: 0,
       hairPurchaseAmount: 0,
       encashment: 0,
+      fopOrekhovskaPayments: 0,
       error: String(e?.message || e),
     };
   }
@@ -370,7 +372,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, fopOrekhovskaPayments, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1168,12 +1170,12 @@ export default async function FinanceReportPage({
                           Інкасація
                         </p>
                         <p className="text-sm text-gray-400">
-                          (Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська)
+                          Платежі з ФОП Ореховська
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className={`text-lg font-semibold md:text-xl ${encashment >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatMoney(encashment)} грн.
+                        <p className="text-lg font-semibold md:text-xl">
+                          {formatMoney(fopOrekhovskaPayments)} грн.
                         </p>
                       </div>
                     </div>
