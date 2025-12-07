@@ -810,6 +810,97 @@ export default async function FinanceReportPage({
             </div>
           </section>
 
+          {/* Прибуток */}
+          {(() => {
+            // Розраховуємо Доходи
+            const services = summary?.totals.services || 0;
+            const markup = summary && goods ? (summary.totals.goods - goods.cost) : 0;
+            const totalIncome = services + markup;
+
+            // Розраховуємо Розходи (використовуємо ту саму логіку, що й в блоці "Розходи")
+            const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
+            const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
+            const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+            const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+            const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
+            const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
+            const rentManual = manualFields.rent || 0;
+            const rent = rentFromAPI > 0 ? rentFromAPI : rentManual;
+            const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+            const accountingManual = manualFields.accounting || 0;
+            const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual;
+            const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+            const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+            const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
+            const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
+            const directManual = manualFields.direct || 0;
+            const direct = directFromAPI > 0 ? directFromAPI : directManual;
+            const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
+            const taxesExtraManual = manualFields.taxes_extra || 0;
+            const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+            const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
+                                   expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
+                                   expenses?.byCategory["Доставка товарів"] ||
+                                   0;
+            const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
+            const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
+            const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
+            const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+            const acquiringManual = manualFields.acquiring || 0;
+            const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
+            const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
+                                   expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
+                                   expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
+                                   expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
+                                   0;
+
+            const salary = salaryFromAPI;
+            const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+            const taxes = taxesFromAPI + taxesExtraManual;
+            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
+            const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+            const totalExpenses = salary + expensesWithoutSalary;
+
+            // Розраховуємо Прибуток
+            const profit = totalIncome - totalExpenses;
+
+            return (
+              <section className="card bg-base-100 shadow-sm">
+                <div className="card-body p-4 space-y-3">
+                  <h2 className="card-title text-base md:text-lg">
+                    Прибуток
+                  </h2>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">
+                        Доходи
+                      </p>
+                      <p className="text-lg font-semibold md:text-xl">
+                        {formatMoney(totalIncome)} грн.
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">
+                        Розходи
+                      </p>
+                      <p className="text-lg font-semibold md:text-xl">
+                        {formatMoney(totalExpenses)} грн.
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">
+                        Прибуток
+                      </p>
+                      <p className={`text-lg font-semibold md:text-xl ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatMoney(profit)} грн.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
+
           <section className="card bg-base-100 shadow-sm">
             <div className="card-body">
               <div className="mb-2 flex items-baseline justify-between gap-4">
