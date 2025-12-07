@@ -127,6 +127,7 @@ async function getSummaryForMonth(
   warehouseBalance: number; // Баланс складу на останній день місяця
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
+  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
@@ -281,6 +282,41 @@ async function getSummaryForMonth(
       ? Math.ceil(goods.cost / 10000) * 10000 
       : 0;
     
+    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
+    // Спочатку отримуємо дані для розрахунку
+    const cost = goods?.cost || 0;
+    const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+    const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+    const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
+    
+    // Розраховуємо прибуток та чистий прибуток власника
+    const services = summary?.totals.services || 0;
+    const markup = summary && goods ? (summary.totals.goods - goods.cost) : 0;
+    const totalIncome = services + markup;
+    const totalExpenses = expenses?.total || 0;
+    const profit = totalIncome - totalExpenses;
+    const ownerProfit = profit - management;
+    
+    // Знаходимо всі платежі з ФОП Ореховська
+    let fopOrekhovskaPayments = 0;
+    if (expenses?.transactions && Array.isArray(expenses.transactions)) {
+      fopOrekhovskaPayments = expenses.transactions
+        .filter((t: any) => {
+          const accountName = t.account?.name || "";
+          const comment = t.comment || "";
+          const expenseTitle = t.expense?.title || t.expense?.name || "";
+          const searchText = (accountName + " " + comment + " " + expenseTitle).toLowerCase();
+          return searchText.includes("ореховська") || searchText.includes("ореховская") || searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
+        })
+        .reduce((sum: number, t: any) => {
+          const amount = Math.abs(Number(t.amount) || 0);
+          return sum + amount;
+        }, 0);
+    }
+    
+    // Розраховуємо інкасацію
+    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments;
+    
     return { 
       summary, 
       goods, 
@@ -291,6 +327,7 @@ async function getSummaryForMonth(
       warehouseBalance,
       warehouseBalanceDiff,
       hairPurchaseAmount,
+      encashment,
       error: null 
     };
   } catch (e: any) {
@@ -304,6 +341,7 @@ async function getSummaryForMonth(
       warehouseBalance: 0,
       warehouseBalanceDiff: 0,
       hairPurchaseAmount: 0,
+      encashment: 0,
       error: String(e?.message || e),
     };
   }
@@ -331,7 +369,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1116,6 +1154,25 @@ export default async function FinanceReportPage({
                       <div className="text-right">
                         <p className="text-lg font-semibold md:text-xl">
                           {formatMoney(hairPurchaseAmount)} грн.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Інкасація */}
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs uppercase text-gray-500">
+                          Інкасація
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          (Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська)
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-lg font-semibold md:text-xl ${encashment >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatMoney(encashment)} грн.
                         </p>
                       </div>
                     </div>
