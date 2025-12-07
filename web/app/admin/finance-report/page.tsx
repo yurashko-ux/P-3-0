@@ -299,20 +299,43 @@ async function getSummaryForMonth(
     const ownerProfit = profit - management;
     
     // Знаходимо всі платежі з ФОП Ореховська
+    // Фільтруємо по account.title (як показано в API response)
     let fopOrekhovskaPayments = 0;
     if (expenses?.transactions && Array.isArray(expenses.transactions)) {
       fopOrekhovskaPayments = expenses.transactions
         .filter((t: any) => {
-          const accountName = t.account?.name || "";
-          const comment = t.comment || "";
-          const expenseTitle = t.expense?.title || t.expense?.name || "";
-          const searchText = (accountName + " " + comment + " " + expenseTitle).toLowerCase();
-          return searchText.includes("ореховська") || searchText.includes("ореховская") || searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
+          // Перевіряємо account.title (основний спосіб згідно з API)
+          const accountTitle = (t.account?.title || "").toLowerCase();
+          // Також перевіряємо account.name для сумісності
+          const accountName = (t.account?.name || "").toLowerCase();
+          // Додатково перевіряємо comment та expense.title на випадок, якщо account не вказано
+          const comment = (t.comment || "").toLowerCase();
+          const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
+          
+          // Шукаємо "фоп ореховська" або "ореховська" в account.title (пріоритет)
+          if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
+              accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
+            return true;
+          }
+          
+          // Fallback: перевіряємо інші поля
+          const searchText = (accountName + " " + comment + " " + expenseTitle);
+          return searchText.includes("ореховська") || searchText.includes("ореховская") || 
+                 searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
         })
         .reduce((sum: number, t: any) => {
           const amount = Math.abs(Number(t.amount) || 0);
           return sum + amount;
         }, 0);
+      
+      // Логуємо для діагностики
+      if (fopOrekhovskaPayments > 0) {
+        const matchingTransactions = expenses.transactions.filter((t: any) => {
+          const accountTitle = (t.account?.title || "").toLowerCase();
+          return accountTitle.includes("ореховська") || accountTitle.includes("ореховская");
+        });
+        console.log(`[finance-report] ✅ Found ${matchingTransactions.length} transactions with ФОП Ореховська account, total: ${fopOrekhovskaPayments} грн.`);
+      }
     }
     
     // Розраховуємо інкасацію
