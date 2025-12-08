@@ -530,7 +530,7 @@ export default async function FinanceReportPage({
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 space-y-6">
+    <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Фінансовий звіт (Altegio)</h1>
@@ -590,35 +590,35 @@ export default async function FinanceReportPage({
 
       {summary && (
         <>
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-2 grid-cols-4">
             <div className="card bg-base-100 shadow-sm">
-              <div className="card-body p-4">
+              <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Всього виручка</p>
-                <p className="text-xl font-semibold">
+                <p className="text-base font-semibold">
                   {formatMoney(summary.totals.total)} грн.
                 </p>
               </div>
             </div>
             <div className="card bg-base-100 shadow-sm">
-              <div className="card-body p-4">
+              <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Послуги</p>
-                <p className="text-xl font-semibold">
+                <p className="text-base font-semibold">
                   {formatMoney(summary.totals.services)} грн.
                 </p>
               </div>
             </div>
             <div className="card bg-base-100 shadow-sm">
-              <div className="card-body p-4">
+              <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Товари</p>
-                <p className="text-xl font-semibold">
+                <p className="text-base font-semibold">
                   {formatMoney(summary.totals.goods)} грн.
                 </p>
               </div>
             </div>
             <div className="card bg-base-100 shadow-sm">
-              <div className="card-body p-4">
+              <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Середній чек</p>
-                <p className="text-xl font-semibold">
+                <p className="text-base font-semibold">
                   {summary.totals.avgCheck != null
                     ? `${formatMoney(summary.totals.avgCheck)} грн.`
                     : "—"}
@@ -1439,48 +1439,52 @@ export default async function FinanceReportPage({
           })()}
 
           <section className="card bg-base-100 shadow-sm">
-            <div className="card-body">
-              <div className="mb-2 flex items-baseline justify-between gap-4">
-                <h2 className="card-title">Динаміка виручки по днях</h2>
-                <p className="text-sm text-gray-600">
-                  Разом за місяць:{" "}
-                  <span className="font-semibold">
-                    {formatMoney(
-                      summary.incomeDaily.reduce(
-                        (sum, row) => sum + (row.value || 0),
-                        0,
-                      ),
-                    )}{" "}
-                    грн.
-                  </span>
-                </p>
-              </div>
-              {summary.incomeDaily.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  Немає даних про виручку по днях за вибраний період.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="table table-sm">
-                    <thead>
-                      <tr>
-                        <th>Дата</th>
-                        <th className="text-right">Виручка, грн.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.incomeDaily.map((row) => (
-                        <tr key={row.date}>
-                          <td>{formatDateHuman(row.date)}</td>
-                          <td className="text-right">
-                            {formatMoney(row.value)} грн.
-                          </td>
+            <div className="card-body p-4">
+              <CollapsibleSection
+                title="Динаміка виручки по днях"
+                summary={
+                  <p className="text-xs text-gray-600">
+                    Разом:{" "}
+                    <span className="font-semibold">
+                      {formatMoney(
+                        summary.incomeDaily.reduce(
+                          (sum, row) => sum + (row.value || 0),
+                          0,
+                        ),
+                      )}{" "}
+                      грн.
+                    </span>
+                  </p>
+                }
+                defaultCollapsed={true}
+              >
+                {summary.incomeDaily.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    Немає даних про виручку по днях за вибраний період.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto mt-2">
+                    <table className="table table-xs">
+                      <thead>
+                        <tr>
+                          <th className="text-xs">Дата</th>
+                          <th className="text-right text-xs">Виручка, грн.</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {summary.incomeDaily.map((row) => (
+                          <tr key={row.date}>
+                            <td className="text-xs">{formatDateHuman(row.date)}</td>
+                            <td className="text-right text-xs">
+                              {formatMoney(row.value)} грн.
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CollapsibleSection>
             </div>
           </section>
         </>
