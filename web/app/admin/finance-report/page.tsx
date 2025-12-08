@@ -388,6 +388,9 @@ async function getSummaryForMonth(
       calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments}`,
       expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments,
       actual: encashment,
+      // Додаткова діагностика для перевірки, що ownerProfit правильний
+      ownerProfitCalculation: `${profit} - ${management} = ${ownerProfit}`,
+      profitCalculation: `${totalIncome} - ${totalExpenses} = ${profit}`,
       allCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).sort() : [],
       productPurchaseCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).filter(k => 
         k.toLowerCase().includes("product") || k.toLowerCase().includes("закуп") || k.toLowerCase().includes("purchase")
