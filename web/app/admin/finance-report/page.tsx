@@ -312,10 +312,12 @@ async function getSummaryForMonth(
     
     // Розраховуємо totalExpenses так само, як в UI компоненті, щоб ownerProfit збігався
     const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
-    const rent = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
-    const cmmFromAPI = expenses?.byCategory["CMM"] || expenses?.byCategory["SMM"] || 0;
-    const targetFromAPI = expenses?.byCategory["Target"] || expenses?.byCategory["Таргет"] || 0;
-    const advertisingFromAPI = expenses?.byCategory["Реклама"] || expenses?.byCategory["Advertising"] || 0;
+    const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
+    const rentManual = manualFields.rent || 0;
+    const rent = rentFromAPI > 0 ? rentFromAPI : rentManual;
+    const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+    const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+    const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
     const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
     const directManual = manualFields.direct || 0;
     const direct = directFromAPI > 0 ? directFromAPI : directManual;
@@ -337,7 +339,9 @@ async function getSummaryForMonth(
                            expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
                            expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
                            0;
-    const accounting = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+    const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+    const accountingManual = manualFields.accounting || 0;
+    const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual;
     
     const salary = salaryFromAPI;
     const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
@@ -1166,6 +1170,9 @@ export default async function FinanceReportPage({
             // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
             const ownerProfitLocal = profit - management;
             
+            // Перераховуємо інкасацію використовуючи ownerProfitLocal, щоб значення збігалися
+            const encashmentLocal = encashmentComponents.cost + ownerProfitLocal - encashmentComponents.productPurchase - encashmentComponents.investments + encashmentComponents.fopPayments;
+            
             // Розраховуємо в доларах (якщо курс встановлено)
             const profitUSD = exchangeRate > 0 ? profit / exchangeRate : 0;
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
@@ -1331,7 +1338,7 @@ export default async function FinanceReportPage({
                         </p>
                         <div className="text-sm text-gray-400 mt-1 space-y-0.5">
                           <p>Собівартість {formatMoney(encashmentComponents.cost)} грн.</p>
-                          <p>+ Чистий прибуток власника {formatMoney(encashmentComponents.ownerProfit)} грн.</p>
+                          <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(encashmentComponents.productPurchase)} грн.</p>
                           <p>- Інвестиції {formatMoney(encashmentComponents.investments)} грн.</p>
                           <p>+ Платежі з ФОП Ореховська {formatMoney(encashmentComponents.fopPayments)} грн.</p>
