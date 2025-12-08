@@ -373,20 +373,19 @@ async function getSummaryForMonth(
     
     console.log(`[finance-report] 📊 Інкасація розрахунок:`, {
       cost,
-      ownerProfitOriginal: ownerProfit,
-      ownerProfitCorrected,
+      ownerProfit,
       productPurchase,
       productPurchaseValue,
       investments,
       investmentsValue,
       fopOrekhovskaPayments,
       totalExpenses,
-      expensesWithoutProductAndInvestments,
-      profitWithoutProductAndInvestments,
       totalIncome,
+      profit,
+      management,
       encashment,
-      calculation: `${cost} + ${ownerProfitCorrected} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments}`,
-      expected: cost + ownerProfitCorrected - productPurchase - investments + fopOrekhovskaPayments,
+      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments}`,
+      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments,
       actual: encashment,
       allCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).sort() : [],
       productPurchaseCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).filter(k => 
@@ -421,7 +420,7 @@ async function getSummaryForMonth(
       fopOrekhovskaPayments,
       encashmentComponents: {
         cost,
-        ownerProfit: ownerProfitCorrected,
+        ownerProfit: ownerProfit, // Використовуємо той самий ownerProfit, що показується в UI
         productPurchase,
         investments,
         fopPayments: fopOrekhovskaPayments,
