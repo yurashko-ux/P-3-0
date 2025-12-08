@@ -1125,7 +1125,8 @@ export default async function FinanceReportPage({
             const profit = totalIncome - totalExpenses;
             
             // Використовуємо ownerProfit з getSummaryForMonth (той самий, що в формулі інкасації)
-            // const ownerProfit = profit - management; // ЗАМІНЕНО: використовуємо з getSummaryForMonth
+            // Це гарантує, що значення в UI збігається зі значенням у формулі інкасації
+            // ownerProfit вже розрахований в getSummaryForMonth як profit - management
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const profitUSD = exchangeRate > 0 ? profit / exchangeRate : 0;
