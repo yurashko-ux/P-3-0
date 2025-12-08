@@ -355,14 +355,25 @@ async function getSummaryForMonth(
     // Логуємо для діагностики
     console.log(`[finance-report] 📊 Інкасація розрахунок:`, {
       cost,
-      ownerProfit,
+      ownerProfitOriginal: ownerProfit,
+      ownerProfitCorrected,
       productPurchase,
       investments,
       fopOrekhovskaPayments,
+      totalExpenses,
+      expensesWithoutProductAndInvestments,
+      profitWithoutProductAndInvestments,
       encashment,
-      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments}`,
-      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments,
+      calculation: `${cost} + ${ownerProfitCorrected} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments}`,
+      expected: cost + ownerProfitCorrected - productPurchase - investments + fopOrekhovskaPayments,
       actual: encashment,
+      allCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).sort() : [],
+      productPurchaseCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).filter(k => 
+        k.toLowerCase().includes("product") || k.toLowerCase().includes("закуп") || k.toLowerCase().includes("purchase")
+      ) : [],
+      investmentCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).filter(k => 
+        k.toLowerCase().includes("інвест") || k.toLowerCase().includes("инвест") || k.toLowerCase().includes("investment")
+      ) : [],
     });
     
     return { 
