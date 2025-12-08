@@ -179,6 +179,8 @@ async function getSummaryForMonth(
     "direct", // Дірект
     "taxes_extra", // Додаткові податки (якщо API не покриває всю суму)
     "acquiring", // Еквайринг
+    "consultations_count", // Кількість Консультацій
+    "new_paid_clients", // Нових платних клієнтів
   ];
   
   for (const fieldKey of fieldKeys) {
@@ -1399,6 +1401,84 @@ export default async function FinanceReportPage({
                         </p>
                       </div>
                     </div>
+                  </div>
+                  
+                  {/* Ручні поля */}
+                  <div className="pt-3 border-t space-y-3">
+                    <h3 className="text-xs uppercase text-gray-500 font-semibold mb-2">
+                      Ручні поля
+                    </h3>
+                    
+                    {/* Кількість Консультацій */}
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-700">Кількість Консультацій</span>
+                        <EditNumberField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="consultations_count"
+                          label="Кількість Консультацій"
+                          currentValue={manualFields.consultations_count || 0}
+                          unit="шт."
+                        />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">
+                          {formatMoney(manualFields.consultations_count || 0)} шт.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Нових платних клієнтів */}
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-700">Нових платних клієнтів</span>
+                        <EditNumberField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          fieldKey="new_paid_clients"
+                          label="Нових платних клієнтів"
+                          currentValue={manualFields.new_paid_clients || 0}
+                          unit="шт."
+                        />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">
+                          {formatMoney(manualFields.new_paid_clients || 0)} шт.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Вартість 1-го нового клієнта (автоматичне поле) */}
+                    {(() => {
+                      // Розраховуємо суму всіх розходів на маркетинг (та сама логіка, що використовується в розрахунку витрат)
+                      const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+                      const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+                      const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
+                      const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
+                      const directManual = manualFields.direct || 0;
+                      const direct = directFromAPI > 0 ? directFromAPI : directManual;
+                      const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+                      
+                      const newPaidClients = manualFields.new_paid_clients || 0;
+                      const costPerClient = newPaidClients > 0 ? marketingTotal / newPaidClients : 0;
+                      
+                      return (
+                        <div className="flex justify-between items-center pt-2 border-t">
+                          <div>
+                            <p className="text-sm text-gray-700">Вартість 1-го нового клієнта</p>
+                            <p className="text-xs text-gray-400">
+                              (Маркетинг {formatMoney(marketingTotal)} грн. / {newPaidClients} шт.)
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold">
+                              {formatMoney(costPerClient)} грн.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </section>
