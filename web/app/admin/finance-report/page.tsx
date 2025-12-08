@@ -363,16 +363,28 @@ async function getSummaryForMonth(
     const encashment = cost + ownerProfitCorrected - productPurchase - investments + fopOrekhovskaPayments;
     
     // Логуємо для діагностики
+    const productPurchaseValue = expenses?.byCategory["Product purchase"] || 
+                                 expenses?.byCategory["Закуплено товару"] || 
+                                 expenses?.byCategory["Закуплений товар"] || 
+                                 0;
+    const investmentsValue = expenses?.byCategory["Інвестиції в салон"] || 
+                            expenses?.byCategory["Инвестиции в салон"] || 
+                            expenses?.byCategory["Інвестиції"] ||
+                            0;
+    
     console.log(`[finance-report] 📊 Інкасація розрахунок:`, {
       cost,
       ownerProfitOriginal: ownerProfit,
       ownerProfitCorrected,
       productPurchase,
+      productPurchaseValue,
       investments,
+      investmentsValue,
       fopOrekhovskaPayments,
       totalExpenses,
       expensesWithoutProductAndInvestments,
       profitWithoutProductAndInvestments,
+      totalIncome,
       encashment,
       calculation: `${cost} + ${ownerProfitCorrected} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments}`,
       expected: cost + ownerProfitCorrected - productPurchase - investments + fopOrekhovskaPayments,
@@ -384,6 +396,16 @@ async function getSummaryForMonth(
       investmentCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).filter(k => 
         k.toLowerCase().includes("інвест") || k.toLowerCase().includes("инвест") || k.toLowerCase().includes("investment")
       ) : [],
+      productPurchaseFromCategory: expenses?.byCategory ? {
+        "Product purchase": expenses.byCategory["Product purchase"],
+        "Закуплено товару": expenses.byCategory["Закуплено товару"],
+        "Закуплений товар": expenses.byCategory["Закуплений товар"],
+      } : {},
+      investmentsFromCategory: expenses?.byCategory ? {
+        "Інвестиції в салон": expenses.byCategory["Інвестиції в салон"],
+        "Инвестиции в салон": expenses.byCategory["Инвестиции в салон"],
+        "Інвестиції": expenses.byCategory["Інвестиції"],
+      } : {},
     });
     
     return { 
