@@ -347,9 +347,14 @@ async function getSummaryForMonth(
     
     // Розраховуємо інкасацію за формулою:
     // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
-    // ВАЖЛИВО: ownerProfit вже розрахований як (profit - management), де profit = totalIncome - totalExpenses
-    // totalExpenses вже включає productPurchase та investments, тому вони вже віднімаються в ownerProfit
-    // Щоб уникнути подвійного віднімання, рахуємо ownerProfit БЕЗ productPurchase та investments:
+    // ВАЖЛИВО: ownerProfit = profit - management, де profit = totalIncome - totalExpenses
+    // totalExpenses включає ВСІ витрати, включаючи productPurchase та investments
+    // Тому ownerProfit вже має відняті productPurchase та investments
+    // Але за формулою потрібно відняти їх ще раз, тому додаємо їх назад до ownerProfit:
+    // encashment = cost + (ownerProfit + productPurchase + investments) - productPurchase - investments + fopOrekhovskaPayments
+    // Спрощуємо: encashment = cost + ownerProfit + fopOrekhovskaPayments
+    // АЛЕ за формулою користувача потрібно відняти їх, тому:
+    // Рахуємо ownerProfit БЕЗ productPurchase та investments:
     const expensesWithoutProductAndInvestments = totalExpenses - productPurchase - investments;
     const profitWithoutProductAndInvestments = totalIncome - expensesWithoutProductAndInvestments;
     const ownerProfitCorrected = profitWithoutProductAndInvestments - management;
