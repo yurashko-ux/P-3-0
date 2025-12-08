@@ -338,8 +338,22 @@ async function getSummaryForMonth(
       }
     }
     
-    // Розраховуємо інкасацію
+    // Розраховуємо інкасацію за формулою:
+    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
+    // ВАЖЛИВО: totalExpenses вже включає productPurchase та investments, тому вони вже віднімаються в profit
+    // Але за формулою потрібно відняти їх ще раз, тому формула правильна
     const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments;
+    
+    // Логуємо для діагностики
+    console.log(`[finance-report] 📊 Інкасація розрахунок:`, {
+      cost,
+      ownerProfit,
+      productPurchase,
+      investments,
+      fopOrekhovskaPayments,
+      encashment,
+      formula: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} = ${encashment}`,
+    });
     
     return { 
       summary, 
