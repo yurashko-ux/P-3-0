@@ -311,7 +311,7 @@ async function getSummaryForMonth(
     const totalIncome = services + markup;
     
     // Розраховуємо totalExpenses так само, як в UI компоненті, щоб ownerProfit збігався
-    const salaryFromAPI = expenses?.byCategory["Заробітна плата"] || expenses?.byCategory["Salary"] || 0;
+    const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
     const rent = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
     const cmmFromAPI = expenses?.byCategory["CMM"] || expenses?.byCategory["SMM"] || 0;
     const targetFromAPI = expenses?.byCategory["Target"] || expenses?.byCategory["Таргет"] || 0;
