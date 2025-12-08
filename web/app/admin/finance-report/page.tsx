@@ -1170,18 +1170,54 @@ export default async function FinanceReportPage({
             // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
             const ownerProfitLocal = profit - management;
             
-            // Перераховуємо інкасацію використовуючи ownerProfitLocal, щоб значення збігалися
-            const encashmentLocal = encashmentComponents.cost + ownerProfitLocal - encashmentComponents.productPurchase - encashmentComponents.investments + encashmentComponents.fopPayments;
+            // Отримуємо компоненти для інкасації локально (щоб використовувати ті самі значення, що в формулі)
+            const costLocal = goods?.cost || 0;
+            const productPurchaseLocal = expenses?.byCategory["Product purchase"] || 
+                                       expenses?.byCategory["Закуплено товару"] || 
+                                       expenses?.byCategory["Закуплений товар"] || 
+                                       0;
+            const investmentsLocal = expenses?.byCategory["Інвестиції в салон"] || 
+                                   expenses?.byCategory["Инвестиции в салон"] || 
+                                   expenses?.byCategory["Інвестиції"] ||
+                                   0;
+            
+            // Знаходимо всі платежі з ФОП Ореховська локально
+            let fopOrekhovskaPaymentsLocal = 0;
+            if (expenses?.transactions && Array.isArray(expenses.transactions)) {
+              fopOrekhovskaPaymentsLocal = expenses.transactions
+                .filter((t: any) => {
+                  const accountTitle = (t.account?.title || "").toLowerCase();
+                  const accountName = (t.account?.name || "").toLowerCase();
+                  const comment = (t.comment || "").toLowerCase();
+                  const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
+                  
+                  if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
+                      accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
+                    return true;
+                  }
+                  
+                  const searchText = (accountName + " " + comment + " " + expenseTitle);
+                  return searchText.includes("ореховська") || searchText.includes("ореховская") || 
+                         searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
+                })
+                .reduce((sum: number, t: any) => {
+                  const amount = Math.abs(Number(t.amount) || 0);
+                  return sum + amount;
+                }, 0);
+            }
+            
+            // Перераховуємо інкасацію використовуючи локальні значення
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal;
             
             // Логуємо для діагностики
             console.log(`[finance-report] 📊 Інкасація локальний розрахунок:`, {
-              cost: encashmentComponents.cost,
+              costLocal,
               ownerProfitLocal,
-              productPurchase: encashmentComponents.productPurchase,
-              investments: encashmentComponents.investments,
-              fopPayments: encashmentComponents.fopPayments,
-              calculation: `${encashmentComponents.cost} + ${ownerProfitLocal} - ${encashmentComponents.productPurchase} - ${encashmentComponents.investments} + ${encashmentComponents.fopPayments}`,
-              expected: encashmentComponents.cost + ownerProfitLocal - encashmentComponents.productPurchase - encashmentComponents.investments + encashmentComponents.fopPayments,
+              productPurchaseLocal,
+              investmentsLocal,
+              fopOrekhovskaPaymentsLocal,
+              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal}`,
+              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal,
               actual: encashmentLocal,
             });
             
