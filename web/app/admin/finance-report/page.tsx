@@ -129,6 +129,13 @@ async function getSummaryForMonth(
   hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
+  encashmentComponents: {
+    cost: number; // Собівартість
+    ownerProfit: number; // Чистий прибуток власника
+    productPurchase: number; // Закуплений товар
+    investments: number; // Інвестиції
+    fopPayments: number; // Платежі з ФОП Ореховська
+  };
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
