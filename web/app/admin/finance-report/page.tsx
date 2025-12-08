@@ -419,6 +419,7 @@ async function getSummaryForMonth(
       hairPurchaseAmount,
       encashment,
       fopOrekhovskaPayments,
+      ownerProfit,
       encashmentComponents: {
         cost,
         ownerProfit: ownerProfit, // Використовуємо той самий ownerProfit, що показується в UI
@@ -441,6 +442,7 @@ async function getSummaryForMonth(
       hairPurchaseAmount: 0,
       encashment: 0,
       fopOrekhovskaPayments: 0,
+      ownerProfit: 0,
       encashmentComponents: {
         cost: 0,
         ownerProfit: 0,
@@ -475,7 +477,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, fopOrekhovskaPayments, encashmentComponents, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1122,8 +1124,8 @@ export default async function FinanceReportPage({
             // Розраховуємо Прибуток
             const profit = totalIncome - totalExpenses;
             
-            // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
-            const ownerProfit = profit - management;
+            // Використовуємо ownerProfit з getSummaryForMonth (той самий, що в формулі інкасації)
+            // const ownerProfit = profit - management; // ЗАМІНЕНО: використовуємо з getSummaryForMonth
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const profitUSD = exchangeRate > 0 ? profit / exchangeRate : 0;
