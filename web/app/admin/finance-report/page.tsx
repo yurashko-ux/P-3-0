@@ -1173,6 +1173,18 @@ export default async function FinanceReportPage({
             // Перераховуємо інкасацію використовуючи ownerProfitLocal, щоб значення збігалися
             const encashmentLocal = encashmentComponents.cost + ownerProfitLocal - encashmentComponents.productPurchase - encashmentComponents.investments + encashmentComponents.fopPayments;
             
+            // Логуємо для діагностики
+            console.log(`[finance-report] 📊 Інкасація локальний розрахунок:`, {
+              cost: encashmentComponents.cost,
+              ownerProfitLocal,
+              productPurchase: encashmentComponents.productPurchase,
+              investments: encashmentComponents.investments,
+              fopPayments: encashmentComponents.fopPayments,
+              calculation: `${encashmentComponents.cost} + ${ownerProfitLocal} - ${encashmentComponents.productPurchase} - ${encashmentComponents.investments} + ${encashmentComponents.fopPayments}`,
+              expected: encashmentComponents.cost + ownerProfitLocal - encashmentComponents.productPurchase - encashmentComponents.investments + encashmentComponents.fopPayments,
+              actual: encashmentLocal,
+            });
+            
             // Розраховуємо в доларах (якщо курс встановлено)
             const profitUSD = exchangeRate > 0 ? profit / exchangeRate : 0;
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
@@ -1345,8 +1357,8 @@ export default async function FinanceReportPage({
                         </div>
                       </div>
                       <div className="text-right ml-4">
-                        <p className={`text-lg font-semibold md:text-xl ${encashment >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatMoney(encashment)} грн.
+                        <p className={`text-lg font-semibold md:text-xl ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatMoney(encashmentLocal)} грн.
                         </p>
                       </div>
                     </div>
