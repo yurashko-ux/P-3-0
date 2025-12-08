@@ -354,20 +354,12 @@ async function getSummaryForMonth(
     
     // Розраховуємо інкасацію за формулою:
     // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
-    // ВАЖЛИВО: ownerProfit = profit - management, де profit = totalIncome - totalExpenses
-    // totalExpenses включає ВСІ витрати, включаючи productPurchase та investments
-    // Тому ownerProfit вже має відняті productPurchase та investments
-    // Але за формулою потрібно відняти їх ще раз, тому додаємо їх назад до ownerProfit:
-    // encashment = cost + (ownerProfit + productPurchase + investments) - productPurchase - investments + fopOrekhovskaPayments
-    // Спрощуємо: encashment = cost + ownerProfit + fopOrekhovskaPayments
-    // АЛЕ за формулою користувача потрібно відняти їх, тому:
-    // Рахуємо ownerProfit БЕЗ productPurchase та investments:
-    const expensesWithoutProductAndInvestments = totalExpenses - productPurchase - investments;
-    const profitWithoutProductAndInvestments = totalIncome - expensesWithoutProductAndInvestments;
-    const ownerProfitCorrected = profitWithoutProductAndInvestments - management;
-    
-    // Тепер формула правильна (віднімаємо productPurchase та investments тільки один раз):
-    const encashment = cost + ownerProfitCorrected - productPurchase - investments + fopOrekhovskaPayments;
+    // ВАЖЛИВО: Використовуємо той самий ownerProfit, який показується в UI (profit - management)
+    // За формулою користувача потрібно відняти productPurchase та investments,
+    // навіть якщо вони вже включені в totalExpenses (і таким чином в ownerProfit).
+    // Це означає, що ми віднімаємо їх додатково, що може бути навмисним для користувача.
+    // Використовуємо звичайний ownerProfit (той самий, що в UI):
+    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments;
     
     // Логуємо для діагностики
     const productPurchaseValue = expenses?.byCategory["Product purchase"] || 
