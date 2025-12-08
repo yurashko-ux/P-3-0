@@ -129,6 +129,7 @@ async function getSummaryForMonth(
   hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
+  ownerProfit: number; // Чистий прибуток власника (profit - management)
   encashmentComponents: {
     cost: number; // Собівартість
     ownerProfit: number; // Чистий прибуток власника
