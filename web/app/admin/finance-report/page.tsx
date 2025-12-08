@@ -1127,13 +1127,12 @@ export default async function FinanceReportPage({
             // Розраховуємо Прибуток
             const profit = totalIncome - totalExpenses;
             
-            // Використовуємо ownerProfit з getSummaryForMonth (той самий, що в формулі інкасації)
-            // Це гарантує, що значення в UI збігається зі значенням у формулі інкасації
-            // ownerProfit вже розрахований в getSummaryForMonth як profit - management
+            // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
+            const ownerProfitLocal = profit - management;
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const profitUSD = exchangeRate > 0 ? profit / exchangeRate : 0;
-            const ownerProfitUSD = exchangeRate > 0 ? ownerProfit / exchangeRate : 0;
+            const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
 
             return (
               <section className="card bg-base-100 shadow-sm">
@@ -1198,8 +1197,8 @@ export default async function FinanceReportPage({
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className={`text-lg font-semibold md:text-xl ${ownerProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatMoney(ownerProfit)} грн.
+                        <p className={`text-lg font-semibold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatMoney(ownerProfitLocal)} грн.
                         </p>
                         {exchangeRate > 0 && (
                           <p className="text-sm text-gray-500 mt-1">
