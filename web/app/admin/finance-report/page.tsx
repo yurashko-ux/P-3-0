@@ -531,11 +531,11 @@ export default async function FinanceReportPage({
 
   return (
     <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Фінансовий звіт (Altegio)</h1>
+          <h1 className="text-lg font-semibold">Фінансовий звіт (Altegio)</h1>
           {summary && (
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-gray-500">
               Період:{" "}
               {formatDateHuman(summary.range.date_from)} —{" "}
               {formatDateHuman(summary.range.date_to)}
@@ -629,16 +629,14 @@ export default async function FinanceReportPage({
 
           {/* Товари: виручка / собівартість / націнка за місяць */}
           <section className="card bg-base-100 shadow-sm">
-            <div className="card-body p-4 space-y-3">
-              <h2 className="card-title text-base md:text-lg">
-                Товари за місяць
-              </h2>
-              <div className="grid gap-4 md:grid-cols-3">
+            <div className="card-body p-2 space-y-1">
+              <h2 className="card-title text-sm">Товари за місяць</h2>
+              <div className="grid gap-2 grid-cols-3">
                 <div>
                   <p className="text-xs uppercase text-gray-500">
                     Виручка по товарах
                   </p>
-                  <p className="text-lg font-semibold md:text-xl">
+                  <p className="text-sm font-semibold">
                     {formatMoney(summary.totals.goods)} грн.
                   </p>
                 </div>
@@ -654,20 +652,20 @@ export default async function FinanceReportPage({
                         currentCost={goods.cost}
                       />
                       {goods.totalItemsSold > 0 && (
-                        <p className="text-xs text-gray-400 mt-1">
+                        <p className="text-xs text-gray-400 mt-0.5">
                           Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт. ({goods.itemsCount} транзакцій)
                         </p>
                       )}
                     </>
                   ) : (
-                    <p className="text-lg font-semibold md:text-xl">— грн.</p>
+                    <p className="text-sm font-semibold">— грн.</p>
                   )}
                 </div>
                 <div>
                   <p className="text-xs uppercase text-gray-500">
                     Націнка (дохід по товарах)
                   </p>
-                  <p className="text-lg font-semibold md:text-xl">
+                  <p className="text-sm font-semibold">
                     {summary && goods
                       ? `${formatMoney(summary.totals.goods - goods.cost)} грн.`
                       : "— грн."}
@@ -679,34 +677,26 @@ export default async function FinanceReportPage({
 
           {/* Доходи */}
           <section className="card bg-base-100 shadow-sm">
-            <div className="card-body p-4 space-y-3">
-              <h2 className="card-title text-base md:text-lg">
-                Доходи
-              </h2>
-              <div className="grid gap-4 md:grid-cols-3">
+            <div className="card-body p-2 space-y-1">
+              <h2 className="card-title text-sm">Доходи</h2>
+              <div className="grid gap-2 grid-cols-3">
                 <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Послуги
-                  </p>
-                  <p className="text-lg font-semibold md:text-xl">
+                  <p className="text-xs uppercase text-gray-500">Послуги</p>
+                  <p className="text-sm font-semibold">
                     {summary ? formatMoney(summary.totals.services) : "—"} грн.
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Націнка (дохід по товарах)
-                  </p>
-                  <p className="text-lg font-semibold md:text-xl">
+                  <p className="text-xs uppercase text-gray-500">Націнка (дохід по товарах)</p>
+                  <p className="text-sm font-semibold">
                     {summary && goods
                       ? formatMoney(summary.totals.goods - goods.cost)
                       : "—"} грн.
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Всього доходів
-                  </p>
-                  <p className="text-lg font-semibold md:text-xl">
+                  <p className="text-xs uppercase text-gray-500">Всього доходів</p>
+                  <p className="text-sm font-semibold">
                     {summary && goods
                       ? formatMoney(summary.totals.services + (summary.totals.goods - goods.cost))
                       : "—"} грн.
@@ -718,10 +708,8 @@ export default async function FinanceReportPage({
 
           {/* Розходи за місяць */}
           <section className="card bg-base-100 shadow-sm">
-            <div className="card-body p-4 space-y-4">
-              <h2 className="card-title text-base md:text-lg">
-                Розходи за місяць
-              </h2>
+            <div className="card-body p-2 space-y-2">
+              <h2 className="card-title text-sm">Розходи за місяць</h2>
               
 
               {/* Структура згідно з Excel */}
@@ -776,9 +764,9 @@ export default async function FinanceReportPage({
                 const totalExpenses = salary + expensesWithoutSalary;
 
                 return (
-                  <div className="space-y-4">
+                  <div className="space-y-1">
                     {/* Розхід без ЗП (постійні) */}
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                    <div className="flex justify-between items-center p-1 bg-gray-50 rounded text-xs">
                       <span className="text-sm font-medium text-gray-700">
                         Розхід без ЗП (постійні)
                       </span>
@@ -788,8 +776,8 @@ export default async function FinanceReportPage({
                     </div>
 
                     {/* Загальний розхід (червоний фон) */}
-                    <div className="flex justify-between items-center p-4 bg-red-100 border-2 border-red-300 rounded">
-                      <span className="text-lg font-bold text-red-800">
+                    <div className="flex justify-between items-center p-2 bg-red-100 border-2 border-red-300 rounded">
+                      <span className="text-base font-bold text-red-800">
                         Розхід
                       </span>
                       <span className="text-lg font-bold text-red-800">
@@ -848,7 +836,7 @@ export default async function FinanceReportPage({
                           {formatMoney(marketingTotal)} грн.
                         </span>
                       </div>
-                      <div className="space-y-2 ml-4">
+                      <div className="space-y-1 ml-2">
                         {cmmFromAPI > 0 && (
                           <div className="flex justify-between items-center">
                             <span className="text-xs text-gray-600">CMM</span>
@@ -911,7 +899,7 @@ export default async function FinanceReportPage({
                           {formatMoney(otherExpensesTotal)} грн.
                         </span>
                       </div>
-                      <div className="space-y-2 ml-4">
+                      <div className="space-y-1 ml-2">
                         {miscExpensesFromAPI > 0 && (
                           <div className="flex justify-between items-center">
                             <span className="text-xs text-gray-600">Інші витрати</span>
@@ -1231,10 +1219,8 @@ export default async function FinanceReportPage({
 
             return (
               <section className="card bg-base-100 shadow-sm">
-                <div className="card-body p-4 space-y-4">
-                  <h2 className="card-title text-base md:text-lg">
-                    Прибуток
-                  </h2>
+                <div className="card-body p-2 space-y-2">
+                  <h2 className="card-title text-sm">Прибуток</h2>
                   
                   {/* Курс долара */}
                   <div className="flex items-center gap-2 pb-3 border-b">
@@ -1248,7 +1234,7 @@ export default async function FinanceReportPage({
                     />
                   </div>
                   
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-2 grid-cols-3">
                     <div>
                       <p className="text-xs uppercase text-gray-500">
                         Доходи
@@ -1439,7 +1425,7 @@ export default async function FinanceReportPage({
           })()}
 
           <section className="card bg-base-100 shadow-sm">
-            <div className="card-body p-4">
+            <div className="card-body p-2">
               <CollapsibleSection
                 title="Динаміка виручки по днях"
                 summary={
