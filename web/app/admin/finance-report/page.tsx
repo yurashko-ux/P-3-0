@@ -427,6 +427,13 @@ async function getSummaryForMonth(
       hairPurchaseAmount,
       encashment,
       fopOrekhovskaPayments,
+      encashmentComponents: {
+        cost,
+        ownerProfit: ownerProfitCorrected,
+        productPurchase,
+        investments,
+        fopPayments: fopOrekhovskaPayments,
+      },
       error: null 
     };
   } catch (e: any) {
@@ -442,6 +449,13 @@ async function getSummaryForMonth(
       hairPurchaseAmount: 0,
       encashment: 0,
       fopOrekhovskaPayments: 0,
+      encashmentComponents: {
+        cost: 0,
+        ownerProfit: 0,
+        productPurchase: 0,
+        investments: 0,
+        fopPayments: 0,
+      },
       error: String(e?.message || e),
     };
   }
@@ -469,7 +483,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, fopOrekhovskaPayments, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, fopOrekhovskaPayments, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1277,16 +1291,20 @@ export default async function FinanceReportPage({
                   
                   {/* Інкасація */}
                   <div className="pt-3 border-t">
-                    <div className="flex justify-between items-center">
-                      <div>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
                         <p className="text-xs uppercase text-gray-500">
                           Інкасація
                         </p>
-                        <p className="text-sm text-gray-400">
-                          (Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська)
-                        </p>
+                        <div className="text-sm text-gray-400 mt-1 space-y-0.5">
+                          <p>Собівартість {formatMoney(encashmentComponents.cost)} грн.</p>
+                          <p>+ Чистий прибуток власника {formatMoney(encashmentComponents.ownerProfit)} грн.</p>
+                          <p>- Закуплений товар {formatMoney(encashmentComponents.productPurchase)} грн.</p>
+                          <p>- Інвестиції {formatMoney(encashmentComponents.investments)} грн.</p>
+                          <p>+ Платежі з ФОП Ореховська {formatMoney(encashmentComponents.fopPayments)} грн.</p>
+                        </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right ml-4">
                         <p className={`text-lg font-semibold md:text-xl ${encashment >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatMoney(encashment)} грн.
                         </p>
