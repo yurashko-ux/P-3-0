@@ -12,6 +12,7 @@ import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
 import { EditExchangeRateField } from "./_components/EditExchangeRateField";
 import { EditWarehouseBalanceButton } from "./_components/EditWarehouseBalanceButton";
+import { EditNumberField } from "./_components/EditNumberField";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 
@@ -1385,11 +1386,11 @@ export default async function FinanceReportPage({
                           Інкасація
                         </p>
                         <div className="text-sm text-gray-400 mt-1 space-y-0.5">
-                          <p>Собівартість {formatMoney(encashmentComponents.cost)} грн.</p>
+                          <p>Собівартість {formatMoney(costLocal)} грн.</p>
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
-                          <p>- Закуплений товар {formatMoney(encashmentComponents.productPurchase)} грн.</p>
-                          <p>- Інвестиції {formatMoney(encashmentComponents.investments)} грн.</p>
-                          <p>+ Платежі з ФОП Ореховська {formatMoney(encashmentComponents.fopPayments)} грн.</p>
+                          <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
+                          <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
+                          <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
                         </div>
                       </div>
                       <div className="text-right ml-4">
