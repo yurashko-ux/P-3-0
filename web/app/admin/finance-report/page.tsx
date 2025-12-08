@@ -286,8 +286,15 @@ async function getSummaryForMonth(
     // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
     // Спочатку отримуємо дані для розрахунку
     const cost = goods?.cost || 0;
-    const productPurchase = expenses?.byCategory["Product purchase"] || 0;
-    const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+    // Шукаємо "Закуплений товар" в різних варіантах назв
+    const productPurchase = expenses?.byCategory["Product purchase"] || 
+                            expenses?.byCategory["Закуплено товару"] || 
+                            expenses?.byCategory["Закуплений товар"] || 
+                            0;
+    const investments = expenses?.byCategory["Інвестиції в салон"] || 
+                       expenses?.byCategory["Инвестиции в салон"] || 
+                       expenses?.byCategory["Інвестиції"] ||
+                       0;
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
