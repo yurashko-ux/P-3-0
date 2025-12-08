@@ -13,6 +13,7 @@ import { EditExpenseField } from "./_components/EditExpenseField";
 import { EditExchangeRateField } from "./_components/EditExchangeRateField";
 import { EditWarehouseBalanceButton } from "./_components/EditWarehouseBalanceButton";
 import { EditNumberField } from "./_components/EditNumberField";
+import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 
@@ -1304,44 +1305,32 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Баланс складу */}
-                  <div className="pt-3 border-t">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-xs uppercase text-gray-500">
-                          Баланс складу
-                        </p>
-                        <p className="text-sm text-gray-400">
-                          (на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)})
-                        </p>
+                  <div className="pt-2 border-t">
+                    <div className="flex justify-between items-center">
+                      <div className="flex-1">
+                        <p className="text-xs uppercase text-gray-500">Баланс складу</p>
+                        <p className="text-xs text-gray-400">(на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)})</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-semibold md:text-xl">
-                          {formatMoney(warehouseBalance)} грн.
-                        </p>
+                        <p className="text-base font-semibold">{formatMoney(warehouseBalance)} грн.</p>
+                        <EditWarehouseBalanceButton
+                          year={selectedYear}
+                          month={selectedMonth}
+                          currentBalance={warehouseBalance}
+                        />
                       </div>
-                    </div>
-                    <div className="mt-2">
-                      <EditWarehouseBalanceButton
-                        year={selectedYear}
-                        month={selectedMonth}
-                        currentBalance={warehouseBalance}
-                      />
                     </div>
                   </div>
                   
                   {/* Різниця балансу складу */}
-                  <div className="pt-3 border-t">
+                  <div className="pt-2 border-t">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-xs uppercase text-gray-500">
-                          Різниця
-                        </p>
-                        <p className="text-sm text-gray-400">
-                          {warehouseBalanceDiff >= 0 ? "Склад збільшився" : "Склад зменшився"}
-                        </p>
+                        <p className="text-xs uppercase text-gray-500">Різниця</p>
+                        <p className="text-xs text-gray-400">{warehouseBalanceDiff >= 0 ? "Склад збільшився" : "Склад зменшився"}</p>
                       </div>
                       <div className="text-right">
-                        <p className={`text-lg font-semibold md:text-xl ${warehouseBalanceDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <p className={`text-base font-semibold ${warehouseBalanceDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {warehouseBalanceDiff >= 0 ? '+' : ''}{formatMoney(warehouseBalanceDiff)} грн.
                         </p>
                       </div>
@@ -1349,45 +1338,27 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Потрібно закупити волосся */}
-                  <div className="pt-3 border-t">
+                  <div className="pt-2 border-t">
                     <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-xs uppercase text-gray-500">
-                          Потрібно закупити волосся на суму
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-semibold md:text-xl">
-                          {formatMoney(hairPurchaseAmount)} грн.
-                        </p>
-                      </div>
+                      <p className="text-xs uppercase text-gray-500">Потрібно закупити волосся на суму</p>
+                      <p className="text-base font-semibold">{formatMoney(hairPurchaseAmount)} грн.</p>
                     </div>
                   </div>
                   
                   {/* Платежі з ФОП Ореховська */}
-                  <div className="pt-3 border-t">
+                  <div className="pt-2 border-t">
                     <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-xs uppercase text-gray-500">
-                          Платежі з ФОП Ореховська
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-semibold md:text-xl">
-                          {formatMoney(fopOrekhovskaPayments)} грн.
-                        </p>
-                      </div>
+                      <p className="text-xs uppercase text-gray-500">Платежі з ФОП Ореховська</p>
+                      <p className="text-base font-semibold">{formatMoney(fopOrekhovskaPayments)} грн.</p>
                     </div>
                   </div>
                   
                   {/* Інкасація */}
-                  <div className="pt-3 border-t">
+                  <div className="pt-2 border-t">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <p className="text-xs uppercase text-gray-500">
-                          Інкасація
-                        </p>
-                        <div className="text-sm text-gray-400 mt-1 space-y-0.5">
+                        <p className="text-xs uppercase text-gray-500">Інкасація</p>
+                        <div className="text-xs text-gray-400 mt-0.5 space-y-0.5">
                           <p>Собівартість {formatMoney(costLocal)} грн.</p>
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
@@ -1396,7 +1367,7 @@ export default async function FinanceReportPage({
                         </div>
                       </div>
                       <div className="text-right ml-4">
-                        <p className={`text-lg font-semibold md:text-xl ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <p className={`text-base font-semibold ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatMoney(encashmentLocal)} грн.
                         </p>
                       </div>
@@ -1404,15 +1375,13 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Ручні поля */}
-                  <div className="pt-3 border-t space-y-3">
-                    <h3 className="text-xs uppercase text-gray-500 font-semibold mb-2">
-                      Ручні поля
-                    </h3>
+                  <div className="pt-2 border-t space-y-2">
+                    <h3 className="text-xs uppercase text-gray-500 font-semibold">Ручні поля</h3>
                     
                     {/* Кількість Консультацій */}
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-700">Кількість Консультацій</span>
+                        <span className="text-xs text-gray-700">Кількість Консультацій</span>
                         <EditNumberField
                           year={selectedYear}
                           month={selectedMonth}
@@ -1422,17 +1391,13 @@ export default async function FinanceReportPage({
                           unit="шт."
                         />
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">
-                          {formatMoney(manualFields.consultations_count || 0)} шт.
-                        </p>
-                      </div>
+                      <p className="text-xs font-semibold">{formatMoney(manualFields.consultations_count || 0)} шт.</p>
                     </div>
                     
                     {/* Нових платних клієнтів */}
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-700">Нових платних клієнтів</span>
+                        <span className="text-xs text-gray-700">Нових платних клієнтів</span>
                         <EditNumberField
                           year={selectedYear}
                           month={selectedMonth}
@@ -1442,16 +1407,11 @@ export default async function FinanceReportPage({
                           unit="шт."
                         />
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">
-                          {formatMoney(manualFields.new_paid_clients || 0)} шт.
-                        </p>
-                      </div>
+                      <p className="text-xs font-semibold">{formatMoney(manualFields.new_paid_clients || 0)} шт.</p>
                     </div>
                     
                     {/* Вартість 1-го нового клієнта (автоматичне поле) */}
                     {(() => {
-                      // Розраховуємо суму всіх розходів на маркетинг (та сама логіка, що використовується в розрахунку витрат)
                       const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
                       const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
                       const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
@@ -1459,23 +1419,16 @@ export default async function FinanceReportPage({
                       const directManual = manualFields.direct || 0;
                       const direct = directFromAPI > 0 ? directFromAPI : directManual;
                       const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
-                      
                       const newPaidClients = manualFields.new_paid_clients || 0;
                       const costPerClient = newPaidClients > 0 ? marketingTotal / newPaidClients : 0;
                       
                       return (
-                        <div className="flex justify-between items-center pt-2 border-t">
+                        <div className="flex justify-between items-center pt-1 border-t">
                           <div>
-                            <p className="text-sm text-gray-700">Вартість 1-го нового клієнта</p>
-                            <p className="text-xs text-gray-400">
-                              (Маркетинг {formatMoney(marketingTotal)} грн. / {newPaidClients} шт.)
-                            </p>
+                            <p className="text-xs text-gray-700">Вартість 1-го нового клієнта</p>
+                            <p className="text-xs text-gray-400">(Маркетинг {formatMoney(marketingTotal)} грн. / {newPaidClients} шт.)</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-semibold">
-                              {formatMoney(costPerClient)} грн.
-                            </p>
-                          </div>
+                          <p className="text-xs font-semibold">{formatMoney(costPerClient)} грн.</p>
                         </div>
                       );
                     })()}
