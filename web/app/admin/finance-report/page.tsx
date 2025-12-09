@@ -707,131 +707,10 @@ export default async function FinanceReportPage({
             </div>
           </section>
 
-          <section className="grid gap-2 grid-cols-4">
-            <div className="card bg-base-100 shadow-sm relative">
-              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
-              <div className="card-body p-2">
-                <p className="text-xs uppercase text-gray-500">Всього виручка</p>
-                <p className="text-base font-semibold">
-                  {formatMoney(summary.totals.total)} грн.
-                </p>
-              </div>
-            </div>
-            <div className="card bg-base-100 shadow-sm relative">
-              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
-              <div className="card-body p-2">
-                <p className="text-xs uppercase text-gray-500">Послуги</p>
-                <p className="text-base font-semibold">
-                  {formatMoney(summary.totals.services)} грн.
-                </p>
-              </div>
-            </div>
-            <div className="card bg-base-100 shadow-sm relative">
-              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
-              <div className="card-body p-2">
-                <p className="text-xs uppercase text-gray-500">Товари</p>
-                <p className="text-base font-semibold">
-                  {formatMoney(summary.totals.goods)} грн.
-                </p>
-              </div>
-            </div>
-            <div className="card bg-base-100 shadow-sm relative">
-              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">5</div>
-              <div className="card-body p-2">
-                <p className="text-xs uppercase text-gray-500">Середній чек</p>
-                <p className="text-base font-semibold">
-                  {summary.totals.avgCheck != null
-                    ? `${formatMoney(summary.totals.avgCheck)} грн.`
-                    : "—"}
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Товари: виручка / собівартість / націнка за місяць */}
-          <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">6</div>
-            <div className="card-body p-2 space-y-1">
-              <h2 className="card-title text-sm">Товари за місяць</h2>
-              <div className="grid gap-2 grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Виручка по товарах
-                  </p>
-                  <p className="text-sm font-semibold">
-                    {formatMoney(summary.totals.goods)} грн.
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Собівартість товарів
-                  </p>
-                  {goods ? (
-                    <>
-                      <EditCostButton
-                        year={selectedYear}
-                        month={selectedMonth}
-                        currentCost={goods.cost}
-                      />
-                      {goods.totalItemsSold > 0 && (
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          Всього продано: {goods.totalItemsSold.toLocaleString("uk-UA")} шт. ({goods.itemsCount} транзакцій)
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm font-semibold">— грн.</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500">
-                    Націнка (дохід по товарах)
-                  </p>
-                  <p className="text-sm font-semibold">
-                    {summary && goods
-                      ? `${formatMoney(summary.totals.goods - goods.cost)} грн.`
-                      : "— грн."}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Доходи */}
-          <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">7</div>
-            <div className="card-body p-2 space-y-1">
-              <h2 className="card-title text-sm">Доходи</h2>
-              <div className="grid gap-2 grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase text-gray-500">Послуги</p>
-                  <p className="text-sm font-semibold">
-                    {summary ? formatMoney(summary.totals.services) : "—"} грн.
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500">Націнка (дохід по товарах)</p>
-                  <p className="text-sm font-semibold">
-                    {summary && goods
-                      ? formatMoney(summary.totals.goods - goods.cost)
-                      : "—"} грн.
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-gray-500">Всього доходів</p>
-                  <p className="text-sm font-semibold">
-                    {summary && goods
-                      ? formatMoney(summary.totals.services + (summary.totals.goods - goods.cost))
-                      : "—"} грн.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
 
           {/* Розходи за місяць */}
           <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">8</div>
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
             <div className="card-body p-2 space-y-2">
               <h2 className="card-title text-sm">Розходи за місяць</h2>
               
@@ -1343,7 +1222,7 @@ export default async function FinanceReportPage({
 
             return (
               <section className="card bg-base-100 shadow-sm relative">
-                <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">9</div>
+                <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
                 <div className="card-body p-2 space-y-2">
                   <h2 className="card-title text-sm">Прибуток</h2>
                   
@@ -1550,7 +1429,7 @@ export default async function FinanceReportPage({
           })()}
 
           <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">10</div>
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
             <div className="card-body p-2">
               <CollapsibleSection
                 title="Динаміка виручки по днях"
