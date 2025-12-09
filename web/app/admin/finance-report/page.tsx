@@ -675,12 +675,14 @@ export default async function FinanceReportPage({
                         </tr>
                         <tr className="bg-rose-100">
                           <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Собівартість товару</td>
-                          <EditableCostCell
-                            year={selectedYear}
-                            month={selectedMonth}
-                            currentCost={goodsCostDashboard}
-                            onPercentChange={calculatePercent}
-                          />
+                          <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">
+                            <EditableCostCell
+                              year={selectedYear}
+                              month={selectedMonth}
+                              currentCost={goodsCostDashboard}
+                              onPercentChange={calculatePercent}
+                            />
+                          </td>
                           <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(goodsCostDashboard)}%</td>
                         </tr>
                         <tr className="bg-blue-200">
