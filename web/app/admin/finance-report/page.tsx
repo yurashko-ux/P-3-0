@@ -645,40 +645,56 @@ export default async function FinanceReportPage({
               <table className="table table-xs w-auto border-collapse">
                 <thead>
                   <tr className="bg-yellow-300">
-                    <th className="text-center text-sm font-semibold px-2 py-1" colSpan={2}>
+                    <th className="text-center text-sm font-semibold px-2 py-1" colSpan={3}>
                       {displayMonthLabel} {selectedYear}
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="bg-cyan-200">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Оборот (Виручка)</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.total)} грн.</td>
-                  </tr>
-                  <tr className="bg-blue-100">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Послуги</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.services)} грн.</td>
-                  </tr>
-                  <tr className="bg-green-100">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Товари</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.goods)} грн.</td>
-                  </tr>
-                  <tr className="bg-rose-100">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Собівартість товару</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(goodsCostDashboard)} грн.</td>
-                  </tr>
-                  <tr className="bg-blue-200">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Дохід (послуги+товар)</td>
-                    <td className="text-right text-base font-bold text-blue-900 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(totalIncomeDashboard)} грн.</td>
-                  </tr>
-                  <tr className="bg-red-200">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Розхід</td>
-                    <td className="text-right text-base font-bold text-red-800 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(totalExpensesDashboard)} грн.</td>
-                  </tr>
-                  <tr className="bg-green-200">
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Прибуток салону</td>
-                    <td className="text-right text-base font-bold text-green-900 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(profitDashboard)} грн.</td>
-                  </tr>
+                  {(() => {
+                    const turnover = summary.totals.total || 1; // За 100% беремо Оборот
+                    const calculatePercent = (value: number) => turnover > 0 ? (value / turnover * 100).toFixed(1) : "0.0";
+                    
+                    return (
+                      <>
+                        <tr className="bg-cyan-200">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Оборот (Виручка)</td>
+                          <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.total)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">100.0%</td>
+                        </tr>
+                        <tr className="bg-blue-100">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Послуги</td>
+                          <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.services)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(summary.totals.services)}%</td>
+                        </tr>
+                        <tr className="bg-green-100">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Товари</td>
+                          <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.goods)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(summary.totals.goods)}%</td>
+                        </tr>
+                        <tr className="bg-rose-100">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Собівартість товару</td>
+                          <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(goodsCostDashboard)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(goodsCostDashboard)}%</td>
+                        </tr>
+                        <tr className="bg-blue-200">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Дохід (послуги+товар)</td>
+                          <td className="text-right text-base font-bold text-blue-900 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(totalIncomeDashboard)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(totalIncomeDashboard)}%</td>
+                        </tr>
+                        <tr className="bg-red-200">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Розхід</td>
+                          <td className="text-right text-base font-bold text-red-800 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(totalExpensesDashboard)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(totalExpensesDashboard)}%</td>
+                        </tr>
+                        <tr className="bg-green-200">
+                          <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Прибуток салону</td>
+                          <td className="text-right text-base font-bold text-green-900 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(profitDashboard)} грн.</td>
+                          <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(profitDashboard)}%</td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
