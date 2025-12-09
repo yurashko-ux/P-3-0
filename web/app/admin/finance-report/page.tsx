@@ -677,7 +677,8 @@ export default async function FinanceReportPage({
           </section>
 
           <section className="grid gap-2 grid-cols-4">
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card bg-base-100 shadow-sm relative">
+              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
               <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Всього виручка</p>
                 <p className="text-base font-semibold">
@@ -685,7 +686,8 @@ export default async function FinanceReportPage({
                 </p>
               </div>
             </div>
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card bg-base-100 shadow-sm relative">
+              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
               <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Послуги</p>
                 <p className="text-base font-semibold">
@@ -693,7 +695,8 @@ export default async function FinanceReportPage({
                 </p>
               </div>
             </div>
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card bg-base-100 shadow-sm relative">
+              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
               <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Товари</p>
                 <p className="text-base font-semibold">
@@ -701,7 +704,8 @@ export default async function FinanceReportPage({
                 </p>
               </div>
             </div>
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card bg-base-100 shadow-sm relative">
+              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">5</div>
               <div className="card-body p-2">
                 <p className="text-xs uppercase text-gray-500">Середній чек</p>
                 <p className="text-base font-semibold">
@@ -714,7 +718,8 @@ export default async function FinanceReportPage({
           </section>
 
           {/* Товари: виручка / собівартість / націнка за місяць */}
-          <section className="card bg-base-100 shadow-sm">
+          <section className="card bg-base-100 shadow-sm relative">
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">6</div>
             <div className="card-body p-2 space-y-1">
               <h2 className="card-title text-sm">Товари за місяць</h2>
               <div className="grid gap-2 grid-cols-3">
@@ -762,7 +767,8 @@ export default async function FinanceReportPage({
           </section>
 
           {/* Доходи */}
-          <section className="card bg-base-100 shadow-sm">
+          <section className="card bg-base-100 shadow-sm relative">
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">7</div>
             <div className="card-body p-2 space-y-1">
               <h2 className="card-title text-sm">Доходи</h2>
               <div className="grid gap-2 grid-cols-3">
@@ -793,7 +799,8 @@ export default async function FinanceReportPage({
           </section>
 
           {/* Розходи за місяць */}
-          <section className="card bg-base-100 shadow-sm">
+          <section className="card bg-base-100 shadow-sm relative">
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">8</div>
             <div className="card-body p-2 space-y-2">
               <h2 className="card-title text-sm">Розходи за місяць</h2>
               
@@ -1304,7 +1311,8 @@ export default async function FinanceReportPage({
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
 
             return (
-              <section className="card bg-base-100 shadow-sm">
+              <section className="card bg-base-100 shadow-sm relative">
+                <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">9</div>
                 <div className="card-body p-2 space-y-2">
                   <h2 className="card-title text-sm">Прибуток</h2>
                   
@@ -1510,7 +1518,8 @@ export default async function FinanceReportPage({
             );
           })()}
 
-          <section className="card bg-base-100 shadow-sm">
+          <section className="card bg-base-100 shadow-sm relative">
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">10</div>
             <div className="card-body p-2">
               <CollapsibleSection
                 title="Динаміка виручки по днях"
