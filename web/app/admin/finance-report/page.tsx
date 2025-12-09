@@ -639,7 +639,8 @@ export default async function FinanceReportPage({
       {summary && (
         <>
           {/* Компактний дашборд (як на прикладі) */}
-          <section className="card bg-base-100 shadow-sm">
+          <section className="card bg-base-100 shadow-sm relative">
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">1</div>
             <div className="card-body p-2">
               <table className="table table-xs w-auto border-collapse">
                 <thead>
