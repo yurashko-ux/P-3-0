@@ -642,34 +642,44 @@ export default async function FinanceReportPage({
           <section className="card bg-base-100 shadow-sm">
             <div className="card-body p-2">
               <div className="overflow-x-auto">
-                <table className="table table-xs">
+                <table className="table table-xs w-full">
                   <thead>
                     <tr className="bg-yellow-300">
-                      <th className="text-center text-sm font-semibold" colSpan={2}>
+                      <th className="text-center text-sm font-semibold">
                         {displayMonthLabel} {selectedYear}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="bg-cyan-200">
-                      <td className="font-medium">Оборот (Виручка)</td>
-                      <td className="text-right text-base font-bold">{formatMoney(summary.totals.total)} грн.</td>
+                      <td className="flex justify-between items-center">
+                        <span className="font-medium">Оборот (Виручка)</span>
+                        <span className="text-base font-bold">{formatMoney(summary.totals.total)} грн.</span>
+                      </td>
                     </tr>
                     <tr className="bg-rose-100">
-                      <td className="font-medium">Собівартість товару</td>
-                      <td className="text-right text-base font-bold">{formatMoney(goodsCostDashboard)} грн.</td>
+                      <td className="flex justify-between items-center">
+                        <span className="font-medium">Собівартість товару</span>
+                        <span className="text-base font-bold">{formatMoney(goodsCostDashboard)} грн.</span>
+                      </td>
                     </tr>
                     <tr className="bg-blue-200">
-                      <td className="font-medium">Дохід (послуги+товар)</td>
-                      <td className="text-right text-base font-bold text-blue-900">{formatMoney(totalIncomeDashboard)} грн.</td>
+                      <td className="flex justify-between items-center">
+                        <span className="font-medium">Дохід (послуги+товар)</span>
+                        <span className="text-base font-bold text-blue-900">{formatMoney(totalIncomeDashboard)} грн.</span>
+                      </td>
                     </tr>
                     <tr className="bg-red-200">
-                      <td className="font-medium">Розхід</td>
-                      <td className="text-right text-base font-bold text-red-800">{formatMoney(totalExpensesDashboard)} грн.</td>
+                      <td className="flex justify-between items-center">
+                        <span className="font-medium">Розхід</span>
+                        <span className="text-base font-bold text-red-800">{formatMoney(totalExpensesDashboard)} грн.</span>
+                      </td>
                     </tr>
                     <tr className="bg-green-200">
-                      <td className="font-medium">Прибуток салону</td>
-                      <td className="text-right text-base font-bold text-green-900">{formatMoney(profitDashboard)} грн.</td>
+                      <td className="flex justify-between items-center">
+                        <span className="font-medium">Прибуток салону</span>
+                        <span className="text-base font-bold text-green-900">{formatMoney(profitDashboard)} грн.</span>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
