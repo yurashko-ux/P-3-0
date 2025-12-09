@@ -529,6 +529,54 @@ export default async function FinanceReportPage({
     selectedMonth,
   );
 
+  // Дані для компактного дашборду (використовуємо ті ж формули, що й у секції "Прибуток")
+  const servicesDashboard = summary?.totals.services || 0;
+  const goodsRevenueDashboard = summary?.totals.goods || 0;
+  const goodsCostDashboard = goods?.cost || 0;
+  const markupDashboard = summary && goods ? goodsRevenueDashboard - goodsCostDashboard : 0;
+  const totalIncomeDashboard = servicesDashboard + markupDashboard;
+  // Витрати (ідентично блоку "Прибуток")
+  const salaryFromAPI_dashboard = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
+  const rentFromAPI_dashboard = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
+  const rentManual_dashboard = manualFields.rent || 0;
+  const rent_dashboard = rentFromAPI_dashboard > 0 ? rentFromAPI_dashboard : rentManual_dashboard;
+  const accountingFromAPI_dashboard = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+  const accountingManual_dashboard = manualFields.accounting || 0;
+  const accounting_dashboard = accountingFromAPI_dashboard > 0 ? accountingFromAPI_dashboard : accountingManual_dashboard;
+  const cmmFromAPI_dashboard = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+  const targetFromAPI_dashboard = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+  const advertisingFromAPI_dashboard = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
+  const directFromAPI_dashboard = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
+  const directManual_dashboard = manualFields.direct || 0;
+  const direct_dashboard = directFromAPI_dashboard > 0 ? directFromAPI_dashboard : directManual_dashboard;
+  const taxesFromAPI_dashboard = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
+  const taxesExtraManual_dashboard = manualFields.taxes_extra || 0;
+  const miscExpensesFromAPI_dashboard = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+  const deliveryFromAPI_dashboard = expenses?.byCategory["Доставка товарів (Нова Пошта)"] ||
+                                   expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
+                                   expenses?.byCategory["Доставка товарів"] ||
+                                   0;
+  const consumablesFromAPI_dashboard = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
+  const stationeryFromAPI_dashboard = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
+  const productsForGuestsFromAPI_dashboard = expenses?.byCategory["Продукти для гостей"] || 0;
+  const acquiringFromAPI_dashboard = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+  const acquiringManual_dashboard = manualFields.acquiring || 0;
+  const acquiring_dashboard = acquiringFromAPI_dashboard > 0 ? acquiringFromAPI_dashboard : acquiringManual_dashboard;
+  const utilitiesFromAPI_dashboard = expenses?.byCategory["Інтернет, CRM і т д."] ||
+                                   expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
+                                   expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] ||
+                                   expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
+                                   0;
+  const salary_dashboard = salaryFromAPI_dashboard;
+  const marketingTotal_dashboard = cmmFromAPI_dashboard + targetFromAPI_dashboard + advertisingFromAPI_dashboard + direct_dashboard;
+  const taxes_dashboard = taxesFromAPI_dashboard + taxesExtraManual_dashboard;
+  const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + productsForGuestsFromAPI_dashboard + acquiring_dashboard + utilitiesFromAPI_dashboard;
+  const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + taxes_dashboard + otherExpensesTotal_dashboard + accounting_dashboard;
+  const totalExpensesDashboard = salary_dashboard + expensesWithoutSalary_dashboard;
+  const profitDashboard = totalIncomeDashboard - totalExpensesDashboard;
+
+  const displayMonthLabel = monthOptions.find((m) => m.month === selectedMonth)?.label || "";
+
   return (
     <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
       <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
@@ -590,6 +638,45 @@ export default async function FinanceReportPage({
 
       {summary && (
         <>
+          {/* Компактний дашборд (як на прикладі) */}
+          <section className="card bg-base-100 shadow-sm">
+            <div className="card-body p-2">
+              <div className="overflow-x-auto">
+                <table className="table table-xs">
+                  <thead>
+                    <tr className="bg-yellow-300">
+                      <th className="text-center text-sm font-semibold" colSpan={2}>
+                        {displayMonthLabel} {selectedYear}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="bg-cyan-200">
+                      <td className="font-medium">Оборот (Виручка)</td>
+                      <td className="text-right text-base font-bold">{formatMoney(summary.totals.total)} грн.</td>
+                    </tr>
+                    <tr className="bg-rose-100">
+                      <td className="font-medium">Собівартість товару</td>
+                      <td className="text-right text-base font-bold">{formatMoney(goodsCostDashboard)} грн.</td>
+                    </tr>
+                    <tr className="bg-blue-200">
+                      <td className="font-medium">Дохід (послуги+товар)</td>
+                      <td className="text-right text-base font-bold text-blue-900">{formatMoney(totalIncomeDashboard)} грн.</td>
+                    </tr>
+                    <tr className="bg-red-200">
+                      <td className="font-medium">Розхід</td>
+                      <td className="text-right text-base font-bold text-red-800">{formatMoney(totalExpensesDashboard)} грн.</td>
+                    </tr>
+                    <tr className="bg-green-200">
+                      <td className="font-medium">Прибуток салону</td>
+                      <td className="text-right text-base font-bold text-green-900">{formatMoney(profitDashboard)} грн.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
           <section className="grid gap-2 grid-cols-4">
             <div className="card bg-base-100 shadow-sm">
               <div className="card-body p-2">
