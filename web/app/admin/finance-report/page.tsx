@@ -655,6 +655,14 @@ export default async function FinanceReportPage({
                     <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Оборот (Виручка)</td>
                     <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.total)} грн.</td>
                   </tr>
+                  <tr className="bg-blue-100">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Послуги</td>
+                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.services)} грн.</td>
+                  </tr>
+                  <tr className="bg-green-100">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Товари</td>
+                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.goods)} грн.</td>
+                  </tr>
                   <tr className="bg-rose-100">
                     <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Собівартість товару</td>
                     <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(goodsCostDashboard)} грн.</td>
