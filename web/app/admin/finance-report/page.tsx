@@ -680,7 +680,6 @@ export default async function FinanceReportPage({
                               year={selectedYear}
                               month={selectedMonth}
                               currentCost={goodsCostDashboard}
-                              onPercentChange={calculatePercent}
                             />
                           </td>
                           <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1 pl-0">{calculatePercent(goodsCostDashboard)}%</td>

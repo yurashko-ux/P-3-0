@@ -11,14 +11,12 @@ interface EditableCostCellProps {
   year: number;
   month: number;
   currentCost: number;
-  onPercentChange?: (cost: number) => string; // Функція для розрахунку відсотка
 }
 
 export function EditableCostCell({
   year,
   month,
   currentCost,
-  onPercentChange,
 }: EditableCostCellProps) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
