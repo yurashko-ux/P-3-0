@@ -642,26 +642,33 @@ export default async function FinanceReportPage({
           <section className="card bg-base-100 shadow-sm">
             <div className="card-body p-2">
               <table className="table table-xs w-auto border-collapse">
+                <thead>
+                  <tr className="bg-yellow-300">
+                    <th className="text-center text-sm font-semibold px-2 py-1" colSpan={2}>
+                      {displayMonthLabel} {selectedYear}
+                    </th>
+                  </tr>
+                </thead>
                 <tbody>
-                  <tr style={{ backgroundColor: '#00FFFF' }}>
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2 text-black">Оборот (Виручка)</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0 text-white">{formatMoney(summary.totals.total)}</td>
+                  <tr className="bg-cyan-200">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Оборот (Виручка)</td>
+                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(summary.totals.total)} грн.</td>
                   </tr>
-                  <tr style={{ backgroundColor: '#FFDDEE' }}>
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2 text-black">Собівартість товару</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0 text-black">{formatMoney(goodsCostDashboard)}</td>
+                  <tr className="bg-rose-100">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Собівартість товару</td>
+                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">{formatMoney(goodsCostDashboard)} грн.</td>
                   </tr>
-                  <tr style={{ backgroundColor: '#4080FF' }}>
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2 text-black">Дохід (послуги+товар)</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0 text-white">{formatMoney(totalIncomeDashboard)}</td>
+                  <tr className="bg-blue-200">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Дохід (послуги+товар)</td>
+                    <td className="text-right text-base font-bold text-blue-900 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(totalIncomeDashboard)} грн.</td>
                   </tr>
-                  <tr style={{ backgroundColor: '#FF0000' }}>
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2 text-black">Розхід</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0 text-white">{formatMoney(totalExpensesDashboard)}</td>
+                  <tr className="bg-red-200">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Розхід</td>
+                    <td className="text-right text-base font-bold text-red-800 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(totalExpensesDashboard)} грн.</td>
                   </tr>
-                  <tr style={{ backgroundColor: '#AACB88' }}>
-                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2 text-black">Прибуток салону</td>
-                    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0 text-black">{formatMoney(profitDashboard)}</td>
+                  <tr className="bg-green-200">
+                    <td className="font-medium whitespace-nowrap px-2 py-1 pr-2">Прибуток салону</td>
+                    <td className="text-right text-base font-bold text-green-900 whitespace-nowrap px-2 py-1 pl-0">{formatMoney(profitDashboard)} грн.</td>
                   </tr>
                 </tbody>
               </table>
