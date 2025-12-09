@@ -1076,32 +1076,6 @@ export default async function FinanceReportPage({
                       </span>
                     </div>
 
-                    {/* Інкасація */}
-                    {encashment > 0 && (
-                      <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-200">
-                        <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                          Інкасація
-                        </h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">
-                              Інкасація
-                            </span>
-                            <span className="text-sm font-semibold">
-                              {formatMoney(encashment)} грн.
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center pt-2 border-t border-blue-300">
-                            <span className="text-sm font-medium text-gray-700">
-                              Всього інкасації
-                            </span>
-                            <span className="text-sm font-semibold">
-                              {formatMoney(encashment)} грн.
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })()}
