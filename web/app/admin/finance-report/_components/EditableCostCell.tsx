@@ -139,69 +139,65 @@ export function EditableCostCell({
   // Якщо редагуємо, показуємо поле вводу
   if (isEditing) {
     return (
-      <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center justify-end gap-1">
-            <input
-              type="number"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              placeholder="Собівартість"
-              className="input input-bordered input-xs w-24 text-right"
-              min="0"
-              step="0.01"
-              disabled={isPending}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSave();
-                } else if (e.key === "Escape") {
-                  handleCancel();
-                }
-              }}
-            />
-            <span className="text-xs text-gray-600">грн.</span>
-            <button
-              onClick={handleSave}
-              className="btn btn-xs btn-primary"
-              disabled={isPending}
-              title="Зберегти"
-            >
-              {isPending ? "..." : "💾"}
-            </button>
-            <button
-              onClick={handleCancel}
-              className="btn btn-xs btn-ghost"
-              disabled={isPending}
-              title="Скасувати"
-            >
-              ✕
-            </button>
-          </div>
-          {error && (
-            <div className="text-xs text-error">{error}</div>
-          )}
-          {successMessage && (
-            <div className="text-xs text-success">{successMessage}</div>
-          )}
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center justify-end gap-1">
+          <input
+            type="number"
+            value={cost}
+            onChange={(e) => setCost(e.target.value)}
+            placeholder="Собівартість"
+            className="input input-bordered input-xs w-24 text-right"
+            min="0"
+            step="0.01"
+            disabled={isPending}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleSave();
+              } else if (e.key === "Escape") {
+                handleCancel();
+              }
+            }}
+          />
+          <span className="text-xs text-gray-600">грн.</span>
+          <button
+            onClick={handleSave}
+            className="btn btn-xs btn-primary"
+            disabled={isPending}
+            title="Зберегти"
+          >
+            {isPending ? "..." : "💾"}
+          </button>
+          <button
+            onClick={handleCancel}
+            className="btn btn-xs btn-ghost"
+            disabled={isPending}
+            title="Скасувати"
+          >
+            ✕
+          </button>
         </div>
-      </td>
+        {error && (
+          <div className="text-xs text-error">{error}</div>
+        )}
+        {successMessage && (
+          <div className="text-xs text-success">{successMessage}</div>
+        )}
+      </div>
     );
   }
 
   // За замовчуванням показуємо значення + олівець
   return (
-    <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1 pl-0">
-      <div className="flex items-center justify-end gap-1">
-        <span>{formatMoney(currentCost)} грн.</span>
-        <button
-          onClick={handleEditClick}
-          className="btn btn-xs btn-ghost p-0.5 opacity-60 hover:opacity-100"
-          title="Редагувати собівартість (потрібен CRON_SECRET)"
-        >
-          ✏️
-        </button>
-      </div>
-    </td>
+    <div className="flex items-center justify-end gap-1">
+      <span>{formatMoney(currentCost)} грн.</span>
+      <button
+        onClick={handleEditClick}
+        className="btn btn-xs btn-ghost p-0.5 opacity-60 hover:opacity-100"
+        title="Редагувати собівартість (потрібен CRON_SECRET)"
+      >
+        ✏️
+      </button>
+    </div>
   );
 }
