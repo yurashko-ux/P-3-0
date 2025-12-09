@@ -641,39 +641,37 @@ export default async function FinanceReportPage({
           {/* Компактний дашборд (як на прикладі) */}
           <section className="card bg-base-100 shadow-sm">
             <div className="card-body p-2">
-              <div className="overflow-x-auto">
-                <table className="table table-xs table-auto inline-table">
-                  <thead>
-                    <tr className="bg-yellow-300">
-                      <th className="text-center text-sm font-semibold" colSpan={2}>
-                        {displayMonthLabel} {selectedYear}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="bg-cyan-200">
-                      <td className="font-medium whitespace-nowrap">Оборот (Виручка)</td>
-                      <td className="text-right text-base font-bold whitespace-nowrap pl-4">{formatMoney(summary.totals.total)} грн.</td>
-                    </tr>
-                    <tr className="bg-rose-100">
-                      <td className="font-medium whitespace-nowrap">Собівартість товару</td>
-                      <td className="text-right text-base font-bold whitespace-nowrap pl-4">{formatMoney(goodsCostDashboard)} грн.</td>
-                    </tr>
-                    <tr className="bg-blue-200">
-                      <td className="font-medium whitespace-nowrap">Дохід (послуги+товар)</td>
-                      <td className="text-right text-base font-bold text-blue-900 whitespace-nowrap pl-4">{formatMoney(totalIncomeDashboard)} грн.</td>
-                    </tr>
-                    <tr className="bg-red-200">
-                      <td className="font-medium whitespace-nowrap">Розхід</td>
-                      <td className="text-right text-base font-bold text-red-800 whitespace-nowrap pl-4">{formatMoney(totalExpensesDashboard)} грн.</td>
-                    </tr>
-                    <tr className="bg-green-200">
-                      <td className="font-medium whitespace-nowrap">Прибуток салону</td>
-                      <td className="text-right text-base font-bold text-green-900 whitespace-nowrap pl-4">{formatMoney(profitDashboard)} грн.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <table className="table table-xs w-auto">
+                <thead>
+                  <tr className="bg-yellow-300">
+                    <th className="text-center text-sm font-semibold" colSpan={2}>
+                      {displayMonthLabel} {selectedYear}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="bg-cyan-200">
+                    <td className="font-medium whitespace-nowrap pr-8">Оборот (Виручка)</td>
+                    <td className="text-right text-base font-bold whitespace-nowrap">{formatMoney(summary.totals.total)} грн.</td>
+                  </tr>
+                  <tr className="bg-rose-100">
+                    <td className="font-medium whitespace-nowrap pr-8">Собівартість товару</td>
+                    <td className="text-right text-base font-bold whitespace-nowrap">{formatMoney(goodsCostDashboard)} грн.</td>
+                  </tr>
+                  <tr className="bg-blue-200">
+                    <td className="font-medium whitespace-nowrap pr-8">Дохід (послуги+товар)</td>
+                    <td className="text-right text-base font-bold text-blue-900 whitespace-nowrap">{formatMoney(totalIncomeDashboard)} грн.</td>
+                  </tr>
+                  <tr className="bg-red-200">
+                    <td className="font-medium whitespace-nowrap pr-8">Розхід</td>
+                    <td className="text-right text-base font-bold text-red-800 whitespace-nowrap">{formatMoney(totalExpensesDashboard)} грн.</td>
+                  </tr>
+                  <tr className="bg-green-200">
+                    <td className="font-medium whitespace-nowrap pr-8">Прибуток салону</td>
+                    <td className="text-right text-base font-bold text-green-900 whitespace-nowrap">{formatMoney(profitDashboard)} грн.</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </section>
 
