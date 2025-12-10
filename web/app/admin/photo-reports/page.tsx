@@ -276,13 +276,7 @@ export default function PhotoReportsPage() {
         className="layout"
         layout={layout}
         onLayoutChange={handleLayoutChange}
-        cols={12}
-        rowHeight={30}
-        width={containerWidth}
-        isDraggable={true}
-        isResizable={true}
-        draggableHandle=".drag-handle"
-        margin={[16, 16]}
+        {...({ cols: 12, rowHeight: 30, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16] } as any)}
       >
         {/* Тестова секція */}
         <div key="test-section" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
