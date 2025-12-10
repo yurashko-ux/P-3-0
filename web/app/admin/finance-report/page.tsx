@@ -802,8 +802,7 @@ export default async function FinanceReportPage({
                     {/* ЗП та Оренда */}
                     <CollapsibleGroup
                       title="ЗП та Оренда"
-                      total={salary + rent}
-                      formatMoney={formatMoney}
+                      totalFormatted={formatMoney(salary + rent)}
                       defaultCollapsed={true}
                     >
                       {/* ЗП */}
@@ -844,8 +843,7 @@ export default async function FinanceReportPage({
                     {/* Marketing/Advertising Group */}
                     <CollapsibleGroup
                       title="Marketing/Advertising"
-                      total={marketingTotal}
-                      formatMoney={formatMoney}
+                      totalFormatted={formatMoney(marketingTotal)}
                       defaultCollapsed={true}
                     >
                       {cmmFromAPI > 0 && (
@@ -902,8 +900,7 @@ export default async function FinanceReportPage({
                     {/* Other Expenses Group */}
                     <CollapsibleGroup
                       title="Інші витрати"
-                      total={otherExpensesTotal}
-                      formatMoney={formatMoney}
+                      totalFormatted={formatMoney(otherExpensesTotal)}
                       defaultCollapsed={true}
                     >
                       {miscExpensesFromAPI > 0 && (
@@ -984,8 +981,7 @@ export default async function FinanceReportPage({
                     {/* Бухгалтерія та податки */}
                     <CollapsibleGroup
                       title="Бухгалтерія та податки"
-                      total={accountingTaxesGroupTotal}
-                      formatMoney={formatMoney}
+                      totalFormatted={formatMoney(accountingTaxesGroupTotal)}
                       defaultCollapsed={true}
                     >
                       {/* Бухгалтерія */}
