@@ -1035,10 +1035,10 @@ export default async function FinanceReportPage({
                 </>
               );
             })()}
-          </div>
+            </div>
 
-          {/* Управління та інвестиції та Прибуток */}
-          <div className="flex flex-col md:flex-row gap-2">
+            {/* Управління та інвестиції та Прибуток */}
+            <div className="flex flex-col md:flex-row gap-2">
           {/* Управління та інвестиції */}
           {(() => {
             // Отримуємо дані з API для Управління та інвестицій
@@ -1150,7 +1150,7 @@ export default async function FinanceReportPage({
 
             return (
               <>
-                <section className="card bg-base-100 shadow-sm relative">
+                <section className="card bg-base-100 shadow-sm relative flex-1">
                   <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
                   <div className="card-body p-2 space-y-2">
                     <h2 className="card-title text-sm">Управління та інвестиції</h2>
@@ -1370,26 +1370,29 @@ export default async function FinanceReportPage({
                   <h2 className="card-title text-sm">Прибуток</h2>
                   
                   {/* Курс долара */}
-                  <div className="flex items-center gap-2 pb-3 border-b">
-                    <span className="text-sm font-medium text-gray-700">
-                      Курс долара:
+                  <div className="flex justify-between items-center pb-3 border-b">
+                    <span className="text-xs text-gray-700">
+                      Курс долара
                     </span>
-                    <EditExchangeRateField
-                      year={selectedYear}
-                      month={selectedMonth}
-                      currentRate={exchangeRate || 0}
-                    />
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold">{exchangeRate > 0 ? `${exchangeRate.toFixed(2)} грн./USD` : 'Не встановлено'}</p>
+                      <EditExchangeRateField
+                        year={selectedYear}
+                        month={selectedMonth}
+                        currentRate={exchangeRate || 0}
+                      />
+                    </div>
                   </div>
                   
                   {/* Баланс складу */}
                   <div className="pt-2 border-t">
                     <div className="flex justify-between items-center">
-                      <div className="flex-1">
+                      <div>
                         <p className="text-xs uppercase text-gray-500">Баланс складу</p>
                         <p className="text-xs text-gray-400">(на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)})</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-base font-semibold">{formatMoney(warehouseBalance)} грн.</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-semibold">{formatMoney(warehouseBalance)} грн.</p>
                         <EditWarehouseBalanceButton
                           year={selectedYear}
                           month={selectedMonth}
@@ -1477,6 +1480,7 @@ export default async function FinanceReportPage({
               </section>
             );
           })()}
+            </div>
           </div>
 
           <section className="card bg-base-100 shadow-sm relative">
