@@ -187,7 +187,7 @@ export function EditableCostCell({
 
   // За замовчуванням показуємо значення + олівець
   return (
-    <span className="text-base font-bold whitespace-nowrap">
+    <span className="text-xs font-bold whitespace-nowrap">
       {formatMoney(currentCost)} грн.
       <button
         onClick={handleEditClick}
