@@ -9,7 +9,7 @@ type FinanceReportPageClientProps = {
   summaryContent: ReactNode | null;
 };
 
-export function FinanceReportPageClient({ children, summaryContent }: FinanceReportPageClientProps) {
+export default function FinanceReportPageClient({ children, summaryContent }: FinanceReportPageClientProps) {
   return (
     <LayoutEditProvider>
       <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
