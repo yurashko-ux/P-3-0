@@ -67,18 +67,16 @@ type LayoutItem = {
   y: number;
   w: number;
   h: number;
-  minW?: number;
-  minH?: number;
 };
 
 const STORAGE_KEY = "photo-reports-dashboard-layout";
 
 // Дефолтні позиції блоків
 const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 8, minW: 6, minH: 6 },
-  { i: "analytics", x: 0, y: 8, w: 12, h: 20, minW: 8, minH: 10 },
-  { i: "financial", x: 0, y: 28, w: 12, h: 12, minW: 6, minH: 8 },
-  { i: "masters", x: 0, y: 40, w: 12, h: 10, minW: 6, minH: 6 },
+  { i: "test-section", x: 0, y: 0, w: 12, h: 8 },
+  { i: "analytics", x: 0, y: 8, w: 12, h: 20 },
+  { i: "financial", x: 0, y: 28, w: 12, h: 12 },
+  { i: "masters", x: 0, y: 40, w: 12, h: 10 },
 ];
 
 export default function PhotoReportsPage() {
