@@ -5,9 +5,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import GridLayout from "react-grid-layout";
-import "react-grid-layout/css/styles.css";
-import "react-resizable/css/styles.css";
+import { CustomGridLayout } from "./CustomGridLayout";
 
 type MasterProfile = {
   id: string;
@@ -61,26 +59,6 @@ type ServicesStats = {
 
 type AnalyticsMode = "prod" | "test";
 
-type LayoutItem = {
-  i: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
-
-const STORAGE_KEY = "photo-reports-dashboard-layout";
-const LAYOUT_VERSION = "5"; // Збільшуємо версію для скидання старих layout
-
-// Дефолтні позиції блоків (h тепер в одиницях по 2px - мінімальні висоти)
-// Висоти встановлені мінімальними для компактного відображення
-// h=40 означає 40*2px = 80px висоти
-const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 40 },   // 80px
-  { i: "analytics", x: 0, y: 40, w: 12, h: 60 },     // 120px
-  { i: "financial", x: 0, y: 100, w: 12, h: 40 },     // 80px
-  { i: "masters", x: 0, y: 140, w: 12, h: 30 },       // 60px
-];
 
 export default function PhotoReportsPage() {
   const [testResult, setTestResult] = useState<TestReminderResult | null>(null);
@@ -94,8 +72,6 @@ export default function PhotoReportsPage() {
   const [masters, setMasters] = useState<MasterProfile[]>([]);
   const [mode, setMode] = useState<AnalyticsMode>("prod");
   const [isClearing, setIsClearing] = useState(false);
-  const [layout, setLayout] = useState<LayoutItem[]>(defaultLayout);
-  const [containerWidth, setContainerWidth] = useState(1200);
 
   useEffect(() => {
     // Завантажуємо майстрів при завантаженні сторінки
@@ -107,67 +83,7 @@ export default function PhotoReportsPage() {
         }
       })
       .catch((err) => console.error("Failed to load masters:", err));
-
-    // Перевіряємо версію layout і очищаємо якщо стара
-    const savedVersion = localStorage.getItem(`${STORAGE_KEY}-version`);
-    if (savedVersion !== LAYOUT_VERSION) {
-      // Очищаємо всі старі дані
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.setItem(`${STORAGE_KEY}-version`, LAYOUT_VERSION);
-      console.log('[PhotoReports] Layout version changed, resetting to defaults');
-      setLayout(defaultLayout);
-      return;
-    }
-
-    // Завантажуємо збережені позиції блоків
-    const savedLayout = localStorage.getItem(STORAGE_KEY);
-    if (savedLayout) {
-      try {
-        const parsed = JSON.parse(savedLayout);
-        // Перевіряємо чи layout має правильну структуру
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setLayout(parsed);
-        } else {
-          console.log('[PhotoReports] Invalid layout structure, using defaults');
-          setLayout(defaultLayout);
-        }
-      } catch (e) {
-        console.error("Failed to parse saved layout:", e);
-        setLayout(defaultLayout);
-      }
-    } else {
-      setLayout(defaultLayout);
-    }
-
-    // Встановлюємо ширину контейнера
-    const updateWidth = () => {
-      const container = document.querySelector('main');
-      if (container) {
-        setContainerWidth(container.clientWidth - 48); // віднімаємо padding
-      }
-    };
-
-    updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
   }, []);
-
-  const handleLayoutChange = (newLayout: LayoutItem[]) => {
-    setLayout(newLayout);
-    // Зберігаємо позиції в localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayout));
-  };
-
-  const handleResize = (layout: LayoutItem[]) => {
-    // Під час зміни розміру оновлюємо layout для плавного пересування
-    setLayout(layout);
-  };
-
-  const handleResizeStop = (layout: LayoutItem[]) => {
-    // Після завершення зміни розміру зберігаємо точні значення
-    setLayout(layout);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
-  };
 
   const handleTestReminder = async () => {
     setIsLoading(true);
@@ -304,28 +220,10 @@ export default function PhotoReportsPage() {
         </p>
       </header>
 
-      <GridLayout
-        className="layout"
-        layout={layout}
-        onLayoutChange={handleLayoutChange}
-        onResize={handleResize}
-        onResizeStop={handleResizeStop}
-        {...({ 
-          cols: 12, 
-          rowHeight: 2, // Мінімальний крок 2px для плавного пересування 
-          width: containerWidth, 
-          isDraggable: true, 
-          isResizable: true, 
-          draggableHandle: ".drag-handle", 
-          margin: [16, 16], 
-          compactType: null, 
-          preventCollision: false,
-          resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne'],
-          transformScale: 1
-        } as any)}
-      >
-        {/* Тестова секція */}
-        <div key="test-section" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <CustomGridLayout>
+        {{
+          'test-section': (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
           <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-800">
               🧪 Тестове нагадування
@@ -402,9 +300,9 @@ export default function PhotoReportsPage() {
           </div>
         )}
         </div>
-
-        {/* Аналітика */}
-        <div key="analytics" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          ),
+          'analytics': (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
           <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-800">
               📊 Аналітика по майстрах
@@ -695,9 +593,9 @@ export default function PhotoReportsPage() {
           </div>
         )}
         </div>
-
-        {/* Інформація про майстрів */}
-        <div key="masters" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          ),
+          'masters': (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
           <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-800">
               👥 Зареєстровані майстри
@@ -723,7 +621,9 @@ export default function PhotoReportsPage() {
           ))}
         </div>
         </div>
-      </GridLayout>
+          ),
+        }}
+      </CustomGridLayout>
     </main>
   );
 }
