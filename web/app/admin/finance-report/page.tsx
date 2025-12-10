@@ -19,8 +19,7 @@ import { EditableCostCell } from "./_components/EditableCostCell";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 import { FinanceReportClient } from "./FinanceReportClient";
-import { EditLayoutButtonWrapper } from "./EditLayoutButtonWrapper";
-import { LayoutEditProvider } from "./LayoutEditContext";
+import { FinanceReportPageClient } from "./FinanceReportPageClient";
 
 export const dynamic = "force-dynamic";
 
@@ -583,7 +582,208 @@ export default async function FinanceReportPage({
   const displayMonthLabel = monthOptions.find((m) => m.month === selectedMonth)?.label || "";
 
   return (
-    <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
+    <FinanceReportPageClient
+      summaryContent={
+        summary ? (
+          <FinanceReportClient>
+            {{
+              block1: (
+            <section className="card bg-base-100 shadow-sm relative h-full">
+              <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">1</div>
+              <div className="card-body p-1.5">
+                <table className="table table-xs w-full border-collapse">
+                  <colgroup>
+                    <col className="w-auto" />
+                    <col className="w-40" />
+                    <col className="w-20" />
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-yellow-300">
+                      <th className="text-center text-xs font-semibold px-2 py-1" colSpan={3}>
+                        Листопад 2025
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-2 py-1 text-xs bg-blue-50">Оборот (Виручка)</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatCurrency(summary.totalRevenue)}</td>
+                      <td className="px-2 py-1 text-xs text-right">100.0%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-xs pl-4">Послуги</td>
+                      <td className="px-2 py-1 text-xs text-right">{formatCurrency(summary.servicesRevenue)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((summary.servicesRevenue / summary.totalRevenue) * 100).toFixed(1)}%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-xs pl-4">Товари</td>
+                      <td className="px-2 py-1 text-xs text-right">{formatCurrency(summary.goodsRevenue)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((summary.goodsRevenue / summary.totalRevenue) * 100).toFixed(1)}%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-xs bg-red-50">
+                        <EditableCostCell
+                          label="Собівартість товару"
+                          value={costOfGoodsSold}
+                          onSave={handleCostSave}
+                        />
+                      </td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatCurrency(costOfGoodsSold)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((costOfGoodsSold / summary.totalRevenue) * 100).toFixed(1)}%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-xs bg-blue-50">Дохід (послуги+товар)</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatCurrency(totalIncome)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((totalIncome / summary.totalRevenue) * 100).toFixed(1)}%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-xs bg-red-50">Розхід</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatCurrency(totalExpenses)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((totalExpenses / summary.totalRevenue) * 100).toFixed(1)}%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1 text-xs bg-green-50 font-semibold">Прибуток салону</td>
+                      <td className="px-2 py-1 text-xs text-right font-bold">{formatCurrency(profit)}</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{((profit / summary.totalRevenue) * 100).toFixed(1)}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+              ),
+              block2: (
+            <section className="card bg-base-100 shadow-sm relative h-full">
+              <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">2</div>
+              <div className="card-body p-1.5">
+                <h3 className="text-xs font-semibold mb-2">Прибуток</h3>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between items-center bg-blue-50 p-1 rounded">
+                    <span>Курс долара</span>
+                    <EditExchangeRateField
+                      value={exchangeRate}
+                      onSave={handleExchangeRateSave}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center p-1">
+                    <span>Баланс складу</span>
+                    <EditWarehouseBalanceButton
+                      value={warehouseBalance}
+                      date={summary.range.date_to}
+                      onSave={handleWarehouseBalanceSave}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center bg-green-50 p-1 rounded">
+                    <span>Різниця</span>
+                    <span className="font-semibold">{formatCurrency(warehouseDifference)}</span>
+                  </div>
+                  <div className="mt-2 pt-2 border-t">
+                    <div className="text-xs font-semibold mb-1">РУЧНІ ПОЛЯ</div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center p-1">
+                        <span>Кількість Консультацій</span>
+                        <EditNumberField
+                          value={manualFields.consultations}
+                          onSave={(v) => handleManualFieldSave("consultations", v)}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center p-1">
+                        <span>Нових платних клієнтів</span>
+                        <EditNumberField
+                          value={manualFields.newClients}
+                          onSave={(v) => handleManualFieldSave("newClients", v)}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center p-1">
+                        <span>Вартість 1-го нового клієнта</span>
+                        <span className="font-semibold">{formatCurrency(manualFields.newClients > 0 ? marketingTotal / manualFields.newClients : 0)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+              ),
+              block3: (
+            <section className="card bg-base-100 shadow-sm relative h-full">
+              <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">3</div>
+              <div className="card-body p-1.5">
+                <h3 className="text-xs font-semibold mb-2">Розходи за місяць</h3>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between items-center bg-red-50 p-1 rounded">
+                    <span className="font-semibold">Розхід</span>
+                    <span className="font-bold">{formatCurrency(totalExpenses)}</span>
+                  </div>
+                  <CollapsibleSection title="ЗП та Оренда" amount={salaryAndRent} />
+                  <CollapsibleSection title="Marketing/Advertising" amount={marketingTotal} />
+                  <CollapsibleSection title="Інші витрати" amount={otherExpensesTotal} />
+                  <CollapsibleSection title="Бухгалтерія та податки" amount={taxesTotal} />
+                </div>
+              </div>
+            </section>
+              ),
+              block4: (
+            <section className="card bg-base-100 shadow-sm relative h-full">
+              <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">4</div>
+              <div className="card-body p-1.5">
+                <h3 className="text-xs font-semibold mb-2">Управління та інвестиції</h3>
+                <div className="space-y-1 text-xs">
+                  <CollapsibleSection title="Управління та інвестиції" amount={managementAndInvestments} />
+                  <div className="flex justify-between items-center bg-green-50 p-1 rounded mt-2">
+                    <span className="font-semibold">Чистий прибуток власника</span>
+                    <span className="font-bold">{formatCurrency(ownerNetProfit)} ({formatCurrencyUSD(ownerNetProfitUSD)})</span>
+                  </div>
+                  <div className="flex justify-between items-center p-1 mt-2">
+                    <span>Потрібно закупити волосся на суму</span>
+                    <span className="font-semibold">{formatCurrency(hairPurchaseNeeded)}</span>
+                  </div>
+                  <CollapsibleSection title="Інкасація" amount={collection} />
+                </div>
+              </div>
+            </section>
+              ),
+              block5: (
+            <section className="card bg-base-100 shadow-sm relative h-full">
+              <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">5</div>
+              <div className="card-body p-1.5">
+                <h3 className="text-xs font-semibold mb-2">Деталізація розходів</h3>
+                <div className="space-y-1 text-xs">
+                  <CollapsibleGroup title="ЗП та Оренда" amount={salaryAndRent}>
+                    <CollapsibleSection title="ЗП" amount={salary} />
+                    <CollapsibleSection title="Оренда" amount={rent} />
+                  </CollapsibleGroup>
+                  <CollapsibleGroup title="Marketing/Advertising" amount={marketingTotal}>
+                    <CollapsibleSection title="CMM" amount={cmm} />
+                    <CollapsibleSection title="Target" amount={target} />
+                    <CollapsibleSection title="Advertising" amount={advertising} />
+                    <CollapsibleSection title="Direct" amount={direct} />
+                  </CollapsibleGroup>
+                  <CollapsibleGroup title="Інші витрати" amount={otherExpensesTotal}>
+                    <CollapsibleSection title="Misc Expenses" amount={miscExpenses} />
+                    <CollapsibleSection title="Delivery" amount={delivery} />
+                    <CollapsibleSection title="Consumables" amount={consumables} />
+                    <CollapsibleSection title="Stationery" amount={stationery} />
+                    <CollapsibleSection title="Products for Guests" amount={productsForGuests} />
+                    <CollapsibleSection title="Acquiring" amount={acquiring} />
+                    <CollapsibleSection title="Utilities" amount={utilities} />
+                  </CollapsibleGroup>
+                  <CollapsibleGroup title="Бухгалтерія та податки" amount={taxesTotal}>
+                    <CollapsibleSection title="Taxes" amount={taxes} />
+                    <CollapsibleSection title="Taxes Extra Manual" amount={taxesExtraManual} />
+                  </CollapsibleGroup>
+                  <CollapsibleGroup title="Управління та інвестиції" amount={managementAndInvestments}>
+                    <CollapsibleSection title="Management" amount={management} />
+                    <CollapsibleSection title="Investments" amount={investments} />
+                  </CollapsibleGroup>
+                  <CollapsibleSection title="Інкасація" amount={collection} />
+                </div>
+              </div>
+            </section>
+              ),
+            }}
+          </FinanceReportClient>
+        ) : null
+      }
+    >
       <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-lg font-semibold">Фінансовий звіт (Altegio)</h1>
@@ -595,9 +795,6 @@ export default async function FinanceReportPage({
             </p>
           )}
         </div>
-        
-        {/* Кнопка редагування layout */}
-        <EditLayoutButtonWrapper />
 
         {/* Вибір місяця / року через GET-параметри */}
         <form
