@@ -19,7 +19,7 @@ import { EditableCostCell } from "./_components/EditableCostCell";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 import { FinanceReportClient } from "./FinanceReportClient";
-import FinanceReportPageClient from "./FinanceReportPageClient";
+import { FinanceReportPageClient } from "./FinanceReportPageClient";
 
 export const dynamic = "force-dynamic";
 
