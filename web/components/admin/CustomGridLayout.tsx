@@ -53,6 +53,10 @@ type CustomGridLayoutProps = {
   minHeight?: number;
   /** Padding контейнера в пікселях (за замовчуванням 48) */
   containerPadding?: number;
+  /** Режим редагування (за замовчуванням false - блоки не можна переміщувати) */
+  editMode?: boolean;
+  /** Callback для збереження layout на сервері */
+  onSave?: (layout: LayoutItem[]) => void;
 };
 
 export function CustomGridLayout({
@@ -63,6 +67,8 @@ export function CustomGridLayout({
   cols = 12,
   minHeight = 20,
   containerPadding = 48,
+  editMode = false,
+  onSave,
 }: CustomGridLayoutProps) {
   const [layout, setLayout] = useState<LayoutItem[]>(defaultLayout);
   const [containerWidth, setContainerWidth] = useState(1200);
@@ -146,8 +152,15 @@ export function CustomGridLayout({
 
   const saveLayout = useCallback((newLayout: LayoutItem[]) => {
     setLayout(newLayout);
-    localStorage.setItem(storageKey, JSON.stringify(newLayout));
-  }, [storageKey]);
+    // Зберігаємо в localStorage тільки якщо editMode активний
+    if (editMode) {
+      localStorage.setItem(storageKey, JSON.stringify(newLayout));
+      // Викликаємо callback для збереження на сервері (якщо є)
+      if (onSave) {
+        onSave(newLayout);
+      }
+    }
+  }, [storageKey, editMode, onSave]);
 
   const layoutRef = useRef(layout);
   useEffect(() => {
@@ -337,46 +350,52 @@ export function CustomGridLayout({
               zIndex: isDragging === block.i || isResizing === block.i ? 1000 : 1,
             }}
           >
-            {/* Drag handle */}
-            <div
-              className="drag-handle absolute top-0 left-0 right-0 h-6 bg-blue-500 bg-opacity-10 cursor-move flex items-center justify-center text-xs text-gray-500 hover:bg-opacity-20 z-10"
-              onMouseDown={(e) => handleMouseDown(e, block.i, 'drag')}
-            >
-              ⋮⋮ Перетягніть
-            </div>
+            {/* Drag handle - тільки в режимі редагування */}
+            {editMode && (
+              <div
+                className="drag-handle absolute top-0 left-0 right-0 h-6 bg-blue-500 bg-opacity-10 cursor-move flex items-center justify-center text-xs text-gray-500 hover:bg-opacity-20 z-10"
+                onMouseDown={(e) => handleMouseDown(e, block.i, 'drag')}
+              >
+                ⋮⋮ Перетягніть
+              </div>
+            )}
 
-            {/* Resize handles */}
-            {/* Bottom-right (both) */}
-            <div
-              className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-10"
-              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-both')}
-              style={{
-                background: 'linear-gradient(-45deg, transparent 30%, rgba(59, 130, 246, 0.3) 30%, rgba(59, 130, 246, 0.3) 50%, transparent 50%)',
-              }}
-            />
-            {/* Bottom (height only) */}
-            <div
-              className="absolute bottom-0 left-0 right-0 h-3 cursor-s-resize z-10"
-              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-height')}
-              style={{
-                background: 'linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.2))',
-              }}
-            />
-            {/* Right (width only) */}
-            <div
-              className="absolute top-0 bottom-0 right-0 w-3 cursor-e-resize z-10"
-              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-width')}
-              style={{
-                background: 'linear-gradient(to right, transparent, rgba(59, 130, 246, 0.2))',
-              }}
-            />
+            {/* Resize handles - тільки в режимі редагування */}
+            {editMode && (
+              <>
+                {/* Bottom-right (both) */}
+                <div
+                  className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-10"
+                  onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-both')}
+                  style={{
+                    background: 'linear-gradient(-45deg, transparent 30%, rgba(59, 130, 246, 0.3) 30%, rgba(59, 130, 246, 0.3) 50%, transparent 50%)',
+                  }}
+                />
+                {/* Bottom (height only) */}
+                <div
+                  className="absolute bottom-0 left-0 right-0 h-3 cursor-s-resize z-10"
+                  onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-height')}
+                  style={{
+                    background: 'linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.2))',
+                  }}
+                />
+                {/* Right (width only) */}
+                <div
+                  className="absolute top-0 bottom-0 right-0 w-3 cursor-e-resize z-10"
+                  onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-width')}
+                  style={{
+                    background: 'linear-gradient(to right, transparent, rgba(59, 130, 246, 0.2))',
+                  }}
+                />
+              </>
+            )}
 
             {/* Content */}
             <div 
               ref={(el) => {
                 if (el) blockRefs.current[block.i] = el;
               }}
-              className="h-full pt-6 overflow-auto"
+              className={`h-full overflow-auto ${editMode ? 'pt-6' : ''}`}
               style={{ minHeight: '100%' }}
             >
               {child}
