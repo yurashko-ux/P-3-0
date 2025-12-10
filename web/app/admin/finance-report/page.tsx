@@ -18,6 +18,7 @@ import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
+import { FinanceReportGrid } from "./FinanceReportGrid";
 
 export const dynamic = "force-dynamic";
 
@@ -641,10 +642,11 @@ export default async function FinanceReportPage({
       {summary && (
         <>
           {/* Компактний дашборд (як на прикладі) */}
-          <div className="space-y-2">
-            <div className="flex flex-col md:flex-row gap-2">
-            <section className="card bg-base-100 shadow-sm relative flex-1">
-              <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">1</div>
+          <FinanceReportGrid>
+            {{
+              block1: (
+            <section className="card bg-base-100 shadow-sm relative h-full">
+              <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">1</div>
               <div className="card-body p-1.5">
                 <table className="table table-xs w-full border-collapse">
                   <colgroup>
@@ -714,13 +716,15 @@ export default async function FinanceReportPage({
                 </table>
               </div>
             </section>
-
+              ),
+              block2: (
+            <>
             {/* Розходи за місяць */}
             {(() => {
               return (
                 <>
-                  <section className="card bg-base-100 shadow-sm relative flex-1">
-                    <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
+                  <section className="card bg-base-100 shadow-sm relative h-full">
+                    <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">2</div>
                     <div className="card-body p-1.5 space-y-1">
                       <h2 className="card-title text-xs font-semibold mb-1">Розходи за місяць</h2>
                     
@@ -1036,12 +1040,12 @@ export default async function FinanceReportPage({
                 </>
               );
             })()}
-            </div>
-
+            </>
+              ),
+              block3: (
+            <>
             {/* Управління та інвестиції та Прибуток */}
-            <div className="flex flex-col md:flex-row gap-2">
-              {/* Управління та інвестиції */}
-          {(() => {
+            {(() => {
             // Отримуємо дані з API для Управління та інвестицій
             const productPurchase = expenses?.byCategory["Product purchase"] || 0;
             const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
@@ -1151,8 +1155,8 @@ export default async function FinanceReportPage({
 
             return (
               <>
-                <section className="card bg-base-100 shadow-sm relative flex-1">
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
+                <section className="card bg-base-100 shadow-sm relative h-full">
+                  <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">3</div>
                   <div className="card-body p-1.5 space-y-1">
                     <h2 className="card-title text-xs font-semibold mb-1">Управління та інвестиції</h2>
                     
@@ -1257,8 +1261,11 @@ export default async function FinanceReportPage({
               </>
             );
           })()}
-
-          {/* Прибуток */}
+            </>
+              ),
+              block4: (
+            <>
+              {/* Прибуток */}
           {(() => {
             // Розраховуємо Доходи
             const services = summary?.totals.services || 0;
@@ -1371,8 +1378,8 @@ export default async function FinanceReportPage({
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
 
             return (
-              <section className="card bg-base-100 shadow-sm relative flex-1">
-                <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
+              <section className="card bg-base-100 shadow-sm relative h-full">
+                <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">4</div>
                 <div className="card-body p-1.5 space-y-1">
                   <h2 className="card-title text-xs font-semibold mb-1">Прибуток</h2>
                   
@@ -1487,11 +1494,11 @@ export default async function FinanceReportPage({
               </section>
             );
           })()}
-            </div>
-          </div>
-
-          <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">5</div>
+            </>
+              ),
+              block5: (
+          <section className="card bg-base-100 shadow-sm relative h-full">
+            <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">5</div>
             <div className="card-body p-1.5">
               <CollapsibleSection
                 title="Динаміка виручки по днях"
@@ -1540,6 +1547,9 @@ export default async function FinanceReportPage({
               </CollapsibleSection>
             </div>
           </section>
+            )
+          }}
+        </FinanceReportGrid>
         </>
       )}
     </div>

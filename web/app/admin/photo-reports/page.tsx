@@ -5,6 +5,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import GridLayout from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 
 type MasterProfile = {
   id: string;
@@ -58,6 +61,26 @@ type ServicesStats = {
 
 type AnalyticsMode = "prod" | "test";
 
+type LayoutItem = {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  minH?: number;
+};
+
+const STORAGE_KEY = "photo-reports-dashboard-layout";
+
+// Дефолтні позиції блоків
+const defaultLayout: LayoutItem[] = [
+  { i: "test-section", x: 0, y: 0, w: 12, h: 8, minW: 6, minH: 6 },
+  { i: "analytics", x: 0, y: 8, w: 12, h: 20, minW: 8, minH: 10 },
+  { i: "financial", x: 0, y: 28, w: 12, h: 12, minW: 6, minH: 8 },
+  { i: "masters", x: 0, y: 40, w: 12, h: 10, minW: 6, minH: 6 },
+];
+
 export default function PhotoReportsPage() {
   const [testResult, setTestResult] = useState<TestReminderResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,6 +93,8 @@ export default function PhotoReportsPage() {
   const [masters, setMasters] = useState<MasterProfile[]>([]);
   const [mode, setMode] = useState<AnalyticsMode>("prod");
   const [isClearing, setIsClearing] = useState(false);
+  const [layout, setLayout] = useState<LayoutItem[]>(defaultLayout);
+  const [containerWidth, setContainerWidth] = useState(1200);
 
   useEffect(() => {
     // Завантажуємо майстрів при завантаженні сторінки
@@ -81,7 +106,36 @@ export default function PhotoReportsPage() {
         }
       })
       .catch((err) => console.error("Failed to load masters:", err));
+
+    // Завантажуємо збережені позиції блоків
+    const savedLayout = localStorage.getItem(STORAGE_KEY);
+    if (savedLayout) {
+      try {
+        const parsed = JSON.parse(savedLayout);
+        setLayout(parsed);
+      } catch (e) {
+        console.error("Failed to parse saved layout:", e);
+      }
+    }
+
+    // Встановлюємо ширину контейнера
+    const updateWidth = () => {
+      const container = document.querySelector('main');
+      if (container) {
+        setContainerWidth(container.clientWidth - 48); // віднімаємо padding
+      }
+    };
+
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
   }, []);
+
+  const handleLayoutChange = (newLayout: LayoutItem[]) => {
+    setLayout(newLayout);
+    // Зберігаємо позиції в localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayout));
+  };
 
   const handleTestReminder = async () => {
     setIsLoading(true);
@@ -210,20 +264,35 @@ export default function PhotoReportsPage() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <main className="mx-auto max-w-7xl px-6 py-8">
       <header className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Фото-звіти</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Тестування нагадувань та аналітика по майстрах
+          Тестування нагадувань та аналітика по майстрах. Перетягуйте блоки для зміни їх розташування.
         </p>
       </header>
 
-      {/* Тестова секція */}
-      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold text-slate-800">
-          🧪 Тестове нагадування
-        </h2>
-        <p className="mb-4 text-sm text-slate-600">
+      <GridLayout
+        className="layout"
+        layout={layout}
+        onLayoutChange={handleLayoutChange}
+        cols={12}
+        rowHeight={30}
+        width={containerWidth}
+        isDraggable={true}
+        isResizable={true}
+        draggableHandle=".drag-handle"
+        margin={[16, 16]}
+      >
+        {/* Тестова секція */}
+        <div key="test-section" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-800">
+              🧪 Тестове нагадування
+            </h2>
+            <span className="text-xs text-slate-400">Перетягніть за заголовок</span>
+          </div>
+          <p className="mb-4 text-sm text-slate-600">
           Відправ тестове нагадування про фото-звіт в Telegram. Користувач має
           бути зареєстрований (надіслати /start боту).
         </p>
@@ -292,15 +361,18 @@ export default function PhotoReportsPage() {
             )}
           </div>
         )}
-      </section>
+        </div>
 
-      {/* Аналітика */}
-      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-slate-800">
-            📊 Аналітика по майстрах
-          </h2>
-          <div className="flex items-center gap-3">
+        {/* Аналітика */}
+        <div key="analytics" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-800">
+              📊 Аналітика по майстрах
+            </h2>
+            <span className="text-xs text-slate-400">Перетягніть за заголовок</span>
+          </div>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
             <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs">
               <button
                 onClick={() => setMode("prod")}
@@ -582,13 +654,16 @@ export default function PhotoReportsPage() {
             </p>
           </div>
         )}
-      </section>
+        </div>
 
-      {/* Інформація про майстрів */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold text-slate-800">
-          👥 Зареєстровані майстри
-        </h2>
+        {/* Інформація про майстрів */}
+        <div key="masters" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-800">
+              👥 Зареєстровані майстри
+            </h2>
+            <span className="text-xs text-slate-400">Перетягніть за заголовок</span>
+          </div>
         <div className="space-y-2">
           {masters.map((master) => (
             <div
@@ -607,7 +682,8 @@ export default function PhotoReportsPage() {
             </div>
           ))}
         </div>
-      </section>
+        </div>
+      </GridLayout>
     </main>
   );
 }
