@@ -15,13 +15,13 @@ type LayoutItem = {
 
 const STORAGE_KEY = "finance-report-dashboard-layout";
 
-// Дефолтні позиції блоків (h тепер в одиницях по 5px замість 30px, тому множимо на 6)
+// Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
 const defaultLayout: LayoutItem[] = [
-  { i: "block-1", x: 0, y: 0, w: 6, h: 90 },
-  { i: "block-2", x: 6, y: 0, w: 6, h: 90 },
-  { i: "block-3", x: 0, y: 90, w: 6, h: 72 },
-  { i: "block-4", x: 6, y: 90, w: 6, h: 72 },
-  { i: "block-5", x: 0, y: 162, w: 12, h: 48 },
+  { i: "block-1", x: 0, y: 0, w: 6, h: 200 },
+  { i: "block-2", x: 6, y: 0, w: 6, h: 200 },
+  { i: "block-3", x: 0, y: 200, w: 6, h: 150 },
+  { i: "block-4", x: 6, y: 200, w: 6, h: 150 },
+  { i: "block-5", x: 0, y: 350, w: 12, h: 100 },
 ];
 
 type FinanceReportGridProps = {
@@ -74,7 +74,7 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
       className="layout"
       layout={layout}
       onLayoutChange={handleLayoutChange}
-      {...({ cols: 12, rowHeight: 5, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16], compactType: null } as any)}
+      {...({ cols: 12, rowHeight: 1, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16], compactType: null, preventCollision: false } as any)}
     >
       <div key="block-1">{children.block1}</div>
       <div key="block-2">{children.block2}</div>

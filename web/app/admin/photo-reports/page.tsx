@@ -71,12 +71,12 @@ type LayoutItem = {
 
 const STORAGE_KEY = "photo-reports-dashboard-layout";
 
-// Дефолтні позиції блоків (h тепер в одиницях по 5px замість 30px, тому множимо на 6)
+// Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
 const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 48 },
-  { i: "analytics", x: 0, y: 48, w: 12, h: 120 },
-  { i: "financial", x: 0, y: 168, w: 12, h: 72 },
-  { i: "masters", x: 0, y: 240, w: 12, h: 60 },
+  { i: "test-section", x: 0, y: 0, w: 12, h: 150 },
+  { i: "analytics", x: 0, y: 150, w: 12, h: 300 },
+  { i: "financial", x: 0, y: 450, w: 12, h: 200 },
+  { i: "masters", x: 0, y: 650, w: 12, h: 150 },
 ];
 
 export default function PhotoReportsPage() {
@@ -274,7 +274,7 @@ export default function PhotoReportsPage() {
         className="layout"
         layout={layout}
         onLayoutChange={handleLayoutChange}
-        {...({ cols: 12, rowHeight: 5, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16], compactType: null } as any)}
+        {...({ cols: 12, rowHeight: 1, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16], compactType: null, preventCollision: false } as any)}
       >
         {/* Тестова секція */}
         <div key="test-section" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
