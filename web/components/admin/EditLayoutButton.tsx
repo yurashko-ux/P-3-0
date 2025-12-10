@@ -50,8 +50,8 @@ export function EditLayoutButton({
       });
   };
 
-  const handleSave = (layout: any[]) => {
-    if (!onSave) return;
+  const handleSaveLayout = useCallback((layout: any[]) => {
+    if (!secret) return;
 
     setError(null);
     startTransition(async () => {
@@ -77,7 +77,9 @@ export function EditLayoutButton({
         setError(null);
         
         // Викликаємо callback для збереження
-        onSave(layout);
+        if (onSave) {
+          onSave(layout);
+        }
 
         router.refresh();
 
@@ -89,7 +91,7 @@ export function EditLayoutButton({
         setError(err.message || "Помилка збереження");
       }
     });
-  };
+  }, [secret, storageKey, onSave, router]);
 
   const handleLock = () => {
     setIsAuthorized(false);
