@@ -1027,6 +1027,9 @@ export default async function FinanceReportPage({
                         </span>
                       </div>
                     </CollapsibleGroup>
+                  </div>
+                );
+              })()}
                     </div>
                   </section>
                 </>
