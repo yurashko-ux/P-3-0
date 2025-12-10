@@ -604,7 +604,7 @@ export default async function FinanceReportPage({
                   <tbody>
                     <tr>
                       <td className="px-2 py-1 text-xs bg-blue-50">Оборот (Виручка)</td>
-                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(summary.totalRevenue)}</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(summary.totals.total)}</td>
                       <td className="px-2 py-1 text-xs text-right">100.0%</td>
                     </tr>
                     <tr>
@@ -614,7 +614,7 @@ export default async function FinanceReportPage({
                     </tr>
                     <tr>
                       <td className="px-2 py-1 text-xs pl-4">Товари</td>
-                      <td className="px-2 py-1 text-xs text-right">{formatMoney(summary.goodsRevenue)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{formatMoney(summary.totals.goods)}</td>
                       <td className="px-2 py-1 text-xs text-right">{((summary.goodsRevenue / summary.totalRevenue) * 100).toFixed(1)}%</td>
                     </tr>
                     <tr>
@@ -793,51 +793,13 @@ export default async function FinanceReportPage({
             </p>
           )}
         </div>
-
-        {/* Вибір місяця / року через GET-параметри */}
-        <form
-          className="flex flex-wrap items-center gap-2 text-sm"
-          method="GET"
-        >
-          <label className="flex items-center gap-2">
-            <span className="text-gray-600">Місяць:</span>
-            <select
-              name="month"
-              defaultValue={String(selectedMonth)}
-              className="select select-bordered select-sm"
-            >
-              {monthOptions.map((opt) => (
-                <option key={opt.month} value={opt.month}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-gray-600">Рік:</span>
-            <select
-              name="year"
-              defaultValue={String(selectedYear)}
-              className="select select-bordered select-sm"
-            >
-              {yearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" className="btn btn-sm btn-primary">
-            Показати
-          </button>
+        <form className="flex flex-wrap items-center gap-2 text-sm" method="GET">
+          <label className="flex items-center gap-2"><span className="text-gray-600">Місяць:</span><select name="month" defaultValue={String(selectedMonth)} className="select select-bordered select-sm">{monthOptions.map((opt) => (<option key={opt.month} value={opt.month}>{opt.label}</option>))}</select></label>
+          <label className="flex items-center gap-2"><span className="text-gray-600">Рік:</span><select name="year" defaultValue={String(selectedYear)} className="select select-bordered select-sm">{yearOptions.map((year) => (<option key={year} value={year}>{year}</option>))}</select></label>
+          <button type="submit" className="btn btn-sm btn-primary">Показати</button>
         </form>
       </div>
-
-      {error && (
-        <div className="alert alert-error max-w-xl">
-          <span>Помилка при зверненні до Altegio: {error}</span>
-        </div>
-      )}
+      {error && (<div className="alert alert-error max-w-xl"><span>Помилка при зверненні до Altegio: {error}</span></div>)}
     </FinanceReportPageClient>
   );
 }
