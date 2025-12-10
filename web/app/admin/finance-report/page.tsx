@@ -765,31 +765,20 @@ export default async function FinanceReportPage({
                 const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
                 
-                // Розраховуємо інші розходи (без Управління)
-                const otherExpensesForProfit = rent + marketingTotal + taxes + otherExpensesTotal + accounting + productPurchase + investments;
-                const totalExpensesWithoutManagement = salary + otherExpensesForProfit;
+                // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
+                const managementCalculated = Math.round(profitDashboard * 0.15);
                 
-                // Розраховуємо Доходи (послуги + націнка)
-                const services = summary?.totals.services || 0;
-                const markup = summary && goods ? (summary.totals.goods - goods.cost) : 0;
-                const totalIncome = services + markup;
+                // Розраховуємо розходи БЕЗ Закуплено товару та Інвестицій (вони винесені в окрему підгрупу)
+                const expensesWithoutPurchaseAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting + managementCalculated;
                 
-                // Управління розраховується як Прибуток салону * 15%
-                // Прибуток = Дохід - Розхід
-                // Розхід = Інші розходи + Управління
-                // Управління = Прибуток * 0.15
-                // Прибуток = Дохід - Інші розходи - Прибуток * 0.15
-                // Прибуток * 1.15 = Дохід - Інші розходи
-                // Прибуток = (Дохід - Інші розходи) / 1.15
-                const profitBeforeManagement = totalIncome - totalExpensesWithoutManagement;
-                const profitCalculated = profitBeforeManagement / 1.15;
-                const managementCalculated = Math.round(profitCalculated * 0.15);
-                
-                // Загальний розхід (з урахуванням Управління)
-                const totalExpenses = totalExpensesWithoutManagement + managementCalculated;
+                // Загальний розхід (БЕЗ Закуплено товару та Інвестицій)
+                const totalExpenses = salary + expensesWithoutPurchaseAndInvestments;
 
-                // Сума для підгрупи "Управління, інвестиції, податки"
-                const managementGroupTotal = accounting + managementCalculated + productPurchase + investments + taxes;
+                // Сума для підгрупи "Управління, інвестиції, податки" (БЕЗ Закуплено товару та Інвестицій)
+                const managementGroupTotal = accounting + managementCalculated + taxes;
+                
+                // Сума для підгрупи "Закуплено товару, Інвестиції"
+                const purchaseInvestmentsTotal = productPurchase + investments;
 
                 return (
                   <div className="space-y-1">
