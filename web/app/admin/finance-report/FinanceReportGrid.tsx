@@ -15,13 +15,13 @@ type LayoutItem = {
 
 const STORAGE_KEY = "finance-report-dashboard-layout";
 
-// Дефолтні позиції блоків
+// Дефолтні позиції блоків (h тепер в одиницях по 5px замість 30px, тому множимо на 6)
 const defaultLayout: LayoutItem[] = [
-  { i: "block-1", x: 0, y: 0, w: 6, h: 15 },
-  { i: "block-2", x: 6, y: 0, w: 6, h: 15 },
-  { i: "block-3", x: 0, y: 15, w: 6, h: 12 },
-  { i: "block-4", x: 6, y: 15, w: 6, h: 12 },
-  { i: "block-5", x: 0, y: 27, w: 12, h: 8 },
+  { i: "block-1", x: 0, y: 0, w: 6, h: 90 },
+  { i: "block-2", x: 6, y: 0, w: 6, h: 90 },
+  { i: "block-3", x: 0, y: 90, w: 6, h: 72 },
+  { i: "block-4", x: 6, y: 90, w: 6, h: 72 },
+  { i: "block-5", x: 0, y: 162, w: 12, h: 48 },
 ];
 
 type FinanceReportGridProps = {
