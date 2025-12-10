@@ -73,10 +73,10 @@ const STORAGE_KEY = "photo-reports-dashboard-layout";
 
 // Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
 const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 150 },
-  { i: "analytics", x: 0, y: 150, w: 12, h: 300 },
-  { i: "financial", x: 0, y: 450, w: 12, h: 200 },
-  { i: "masters", x: 0, y: 650, w: 12, h: 150 },
+  { i: "test-section", x: 0, y: 0, w: 12, h: 50 },
+  { i: "analytics", x: 0, y: 50, w: 12, h: 50 },
+  { i: "financial", x: 0, y: 100, w: 12, h: 50 },
+  { i: "masters", x: 0, y: 150, w: 12, h: 50 },
 ];
 
 export default function PhotoReportsPage() {
