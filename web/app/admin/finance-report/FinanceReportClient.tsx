@@ -36,7 +36,7 @@ export function FinanceReportClient({ children }: FinanceReportClientProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end items-center gap-4 mb-4 p-2 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="flex justify-end items-center gap-4 mb-4 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg shadow-md">
         <EditLayoutButton
           storageKey={STORAGE_KEY}
           onEditModeChange={setEditMode}
