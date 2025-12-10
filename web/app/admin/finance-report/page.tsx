@@ -20,6 +20,7 @@ import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 import { FinanceReportClient } from "./FinanceReportClient";
 import { EditLayoutButtonWrapper } from "./EditLayoutButtonWrapper";
+import { LayoutEditProvider } from "./LayoutEditContext";
 
 export const dynamic = "force-dynamic";
 
