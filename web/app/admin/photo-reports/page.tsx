@@ -70,7 +70,7 @@ type LayoutItem = {
 };
 
 const STORAGE_KEY = "photo-reports-dashboard-layout";
-const LAYOUT_VERSION = "2"; // Збільшуємо версію для скидання старих layout
+const LAYOUT_VERSION = "3"; // Збільшуємо версію для скидання старих layout
 
 // Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
 const defaultLayout: LayoutItem[] = [
@@ -109,8 +109,10 @@ export default function PhotoReportsPage() {
     // Перевіряємо версію layout і очищаємо якщо стара
     const savedVersion = localStorage.getItem(`${STORAGE_KEY}-version`);
     if (savedVersion !== LAYOUT_VERSION) {
+      // Очищаємо всі старі дані
       localStorage.removeItem(STORAGE_KEY);
       localStorage.setItem(`${STORAGE_KEY}-version`, LAYOUT_VERSION);
+      console.log('[PhotoReports] Layout version changed, resetting to defaults');
       setLayout(defaultLayout);
       return;
     }
@@ -120,7 +122,13 @@ export default function PhotoReportsPage() {
     if (savedLayout) {
       try {
         const parsed = JSON.parse(savedLayout);
-        setLayout(parsed);
+        // Перевіряємо чи layout має правильну структуру
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setLayout(parsed);
+        } else {
+          console.log('[PhotoReports] Invalid layout structure, using defaults');
+          setLayout(defaultLayout);
+        }
       } catch (e) {
         console.error("Failed to parse saved layout:", e);
         setLayout(defaultLayout);
