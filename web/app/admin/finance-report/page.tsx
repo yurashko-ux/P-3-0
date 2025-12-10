@@ -793,46 +793,52 @@ export default async function FinanceReportPage({
                       </span>
                     </div>
 
-                    {/* ЗП */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <span className="text-sm font-medium text-gray-700">
-                        ЗП
-                      </span>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(salary)} грн.
-                      </span>
-                    </div>
-
-                    {/* Оренда */}
-                    {rent > 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <span className="text-sm font-medium text-gray-700">
-                          Оренда
+                    {/* ЗП та Оренда */}
+                    <div className="p-3 bg-gray-50 rounded border">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          ЗП та Оренда
                         </span>
                         <span className="text-sm font-semibold">
-                          {formatMoney(rent)} грн.
+                          {formatMoney(salary + rent)} грн.
                         </span>
                       </div>
-                    )}
-                    {rent === 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-700">
-                            Оренда
+                      <div className="space-y-1 ml-2">
+                        {/* ЗП */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">ЗП</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(salary)} грн.
                           </span>
-                          <EditExpenseField
-                            year={selectedYear}
-                            month={selectedMonth}
-                            fieldKey="rent"
-                            label="Оренда"
-                            currentValue={rentManual}
-                          />
                         </div>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(rentManual)} грн.
-                        </span>
+
+                        {/* Оренда */}
+                        {rent > 0 ? (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Оренда</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(rent)} грн.
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-600">Оренда</span>
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="rent"
+                                label="Оренда"
+                                currentValue={rentManual}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(rentManual)} грн.
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
 
                     {/* Marketing/Advertising Group */}
                     <div className="p-3 bg-gray-50 rounded border">
