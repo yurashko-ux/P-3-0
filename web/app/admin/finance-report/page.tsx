@@ -1048,47 +1048,41 @@ export default async function FinanceReportPage({
                   <section className="card bg-base-100 shadow-sm relative">
                     <div className="card-body p-2 space-y-2">
                       <h2 className="card-title text-sm">Управління та інвестиції</h2>
-                      <div className="p-3 bg-gray-50 rounded border">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-semibold text-gray-700">
-                            Управління та інвестиції
-                          </span>
-                          <span className="text-sm font-semibold">
-                            {formatMoney(managementInvestmentsTotal)} грн.
-                          </span>
-                        </div>
-                        <div className="space-y-1 ml-2">
-                          {/* Управління */}
-                          {managementCalculated > 0 && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-600">Управління</span>
-                              <span className="text-xs font-semibold">
-                                {formatMoney(managementCalculated)} грн.
-                              </span>
-                            </div>
-                          )}
+                      <CollapsibleGroup
+                        title="Управління та інвестиції"
+                        totalFormatted={formatMoney(managementInvestmentsTotal)}
+                        defaultCollapsed={true}
+                      >
+                        {/* Управління */}
+                        {managementCalculated > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Управління</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(managementCalculated)} грн.
+                            </span>
+                          </div>
+                        )}
 
-                          {/* Закуплено товару */}
-                          {productPurchase > 0 && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-600">Закуплено товару</span>
-                              <span className="text-xs font-semibold">
-                                {formatMoney(productPurchase)} грн.
-                              </span>
-                            </div>
-                          )}
+                        {/* Закуплено товару */}
+                        {productPurchase > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Закуплено товару</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(productPurchase)} грн.
+                            </span>
+                          </div>
+                        )}
 
-                          {/* Інвестиції в салон */}
-                          {investments > 0 && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-600">Інвестиції в салон</span>
-                              <span className="text-xs font-semibold">
-                                {formatMoney(investments)} грн.
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                        {/* Інвестиції в салон */}
+                        {investments > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Інвестиції в салон</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(investments)} грн.
+                            </span>
+                          </div>
+                        )}
+                      </CollapsibleGroup>
                     </div>
                   </section>
                 )}
