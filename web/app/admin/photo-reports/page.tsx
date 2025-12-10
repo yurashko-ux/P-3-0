@@ -73,11 +73,12 @@ const STORAGE_KEY = "photo-reports-dashboard-layout";
 const LAYOUT_VERSION = "3"; // Збільшуємо версію для скидання старих layout
 
 // Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
+// Висоти встановлені мінімальними для компактного відображення
 const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 50 },
-  { i: "analytics", x: 0, y: 50, w: 12, h: 50 },
-  { i: "financial", x: 0, y: 100, w: 12, h: 50 },
-  { i: "masters", x: 0, y: 150, w: 12, h: 50 },
+  { i: "test-section", x: 0, y: 0, w: 12, h: 80 },
+  { i: "analytics", x: 0, y: 80, w: 12, h: 120 },
+  { i: "financial", x: 0, y: 200, w: 12, h: 80 },
+  { i: "masters", x: 0, y: 280, w: 12, h: 60 },
 ];
 
 export default function PhotoReportsPage() {
@@ -305,7 +306,8 @@ export default function PhotoReportsPage() {
           margin: [16, 16], 
           compactType: null, 
           preventCollision: false,
-          resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne']
+          resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne'],
+          transformScale: 1
         } as any)}
       >
         {/* Тестова секція */}

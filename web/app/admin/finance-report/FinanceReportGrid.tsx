@@ -17,12 +17,13 @@ const STORAGE_KEY = "finance-report-dashboard-layout";
 const LAYOUT_VERSION = "3"; // Збільшуємо версію для скидання старих layout
 
 // Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
+// Висоти встановлені мінімальними для компактного відображення
 const defaultLayout: LayoutItem[] = [
-  { i: "block-1", x: 0, y: 0, w: 6, h: 50 },
-  { i: "block-2", x: 6, y: 0, w: 6, h: 50 },
-  { i: "block-3", x: 0, y: 50, w: 6, h: 50 },
-  { i: "block-4", x: 6, y: 50, w: 6, h: 50 },
-  { i: "block-5", x: 0, y: 100, w: 12, h: 50 },
+  { i: "block-1", x: 0, y: 0, w: 6, h: 100 },
+  { i: "block-2", x: 6, y: 0, w: 6, h: 100 },
+  { i: "block-3", x: 0, y: 100, w: 6, h: 80 },
+  { i: "block-4", x: 6, y: 100, w: 6, h: 80 },
+  { i: "block-5", x: 0, y: 180, w: 12, h: 60 },
 ];
 
 type FinanceReportGridProps = {
@@ -105,7 +106,8 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
         margin: [16, 16], 
         compactType: null, 
         preventCollision: false,
-        resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne']
+        resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne'],
+        transformScale: 1
       } as any)}
     >
       <div key="block-1">{children.block1}</div>
