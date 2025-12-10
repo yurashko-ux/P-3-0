@@ -774,11 +774,11 @@ export default async function FinanceReportPage({
                 // Загальний розхід (БЕЗ Закуплено товару та Інвестицій)
                 const totalExpenses = salary + expensesWithoutPurchaseAndInvestments;
 
-                // Сума для підгрупи "Управління, інвестиції, податки" (БЕЗ Закуплено товару та Інвестицій)
-                const managementGroupTotal = accounting + managementCalculated + taxes;
+                // Сума для підгрупи "Бухгалтерія та податки" (БЕЗ Управління, Закуплено товару та Інвестицій)
+                const accountingTaxesGroupTotal = accounting + taxes;
                 
-                // Сума для підгрупи "Закуплено товару, Інвестиції"
-                const purchaseInvestmentsTotal = productPurchase + investments;
+                // Сума для підгрупи "Управління та інвестиції" (включає Управління, Закуплено товару та Інвестиції)
+                const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
 
                 return (
                   <div className="space-y-1">
