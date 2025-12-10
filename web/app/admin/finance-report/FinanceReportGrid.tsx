@@ -65,10 +65,10 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
     return () => window.removeEventListener('resize', updateWidth);
   }, []);
 
-  const handleLayoutChange = (newLayout: LayoutItem[]) => {
-    setLayout(newLayout);
+  const handleLayoutChange = (layout: any) => {
+    setLayout(layout);
     // Зберігаємо позиції в localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayout));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
   };
 
   return (
