@@ -1207,7 +1207,7 @@ export default async function FinanceReportPage({
 
             return (
               <section className="card bg-base-100 shadow-sm relative">
-                <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
+                <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
                 <div className="card-body p-2 space-y-2">
                   <h2 className="card-title text-sm">Прибуток</h2>
                   
@@ -1414,7 +1414,7 @@ export default async function FinanceReportPage({
           })()}
 
           <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
+            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">5</div>
             <div className="card-body p-2">
               <CollapsibleSection
                 title="Динаміка виручки по днях"
