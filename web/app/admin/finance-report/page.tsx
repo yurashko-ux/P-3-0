@@ -645,7 +645,7 @@ export default async function FinanceReportPage({
             <div className="flex flex-col md:flex-row gap-2">
             <section className="card bg-base-100 shadow-sm relative flex-1">
               <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">1</div>
-              <div className="card-body p-2">
+              <div className="card-body p-1.5">
                 <table className="table table-xs w-full border-collapse">
                   <colgroup>
                     <col className="w-auto" />
@@ -721,8 +721,8 @@ export default async function FinanceReportPage({
                 <>
                   <section className="card bg-base-100 shadow-sm relative flex-1">
                     <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
-                    <div className="card-body p-2 space-y-2">
-                      <h2 className="card-title text-sm">Розходи за місяць</h2>
+                    <div className="card-body p-1.5 space-y-1">
+                      <h2 className="card-title text-xs font-semibold mb-1">Розходи за місяць</h2>
                     
 
                     {/* Структура згідно з Excel */}
@@ -781,11 +781,11 @@ export default async function FinanceReportPage({
                   <div className="space-y-1">
 
                     {/* Загальний розхід (червоний фон) */}
-                    <div className="flex justify-between items-center p-2 bg-red-100 border-2 border-red-300 rounded">
-                      <span className="text-base font-bold text-red-800">
+                    <div className="flex justify-between items-center p-1 bg-red-100 border-2 border-red-300 rounded">
+                      <span className="text-xs font-bold text-red-800">
                         Розхід
                       </span>
-                      <span className="text-lg font-bold text-red-800">
+                      <span className="text-xs font-bold text-red-800">
                         {formatMoney(totalExpenses)} грн.
                       </span>
                     </div>
@@ -1040,7 +1040,7 @@ export default async function FinanceReportPage({
 
             {/* Управління та інвестиції та Прибуток */}
             <div className="flex flex-col md:flex-row gap-2">
-          {/* Управління та інвестиції */}
+              {/* Управління та інвестиції */}
           {(() => {
             // Отримуємо дані з API для Управління та інвестицій
             const productPurchase = expenses?.byCategory["Product purchase"] || 0;
@@ -1153,8 +1153,8 @@ export default async function FinanceReportPage({
               <>
                 <section className="card bg-base-100 shadow-sm relative flex-1">
                   <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
-                  <div className="card-body p-2 space-y-2">
-                    <h2 className="card-title text-sm">Управління та інвестиції</h2>
+                  <div className="card-body p-1.5 space-y-1">
+                    <h2 className="card-title text-xs font-semibold mb-1">Управління та інвестиції</h2>
                     
                     {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
                       <CollapsibleGroup
@@ -1195,23 +1195,29 @@ export default async function FinanceReportPage({
                     )}
 
                     {/* Чистий прибуток власника */}
-                    <div className="pt-2 border-t">
+                    <div className="pt-1 border-t">
                       <div className="flex justify-between items-center">
                         <div>
                           <p className="text-xs uppercase text-gray-500">
                             Чистий прибуток власника
                           </p>
-                          <p className="text-sm text-gray-400">
+                          <p className="text-xs text-gray-400">
                             (Прибуток - Управління)
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-lg font-semibold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatMoney(ownerProfitLocal)} грн.
-                          </p>
-                          {exchangeRate > 0 && (
-                            <p className="text-sm text-gray-500 mt-1">
-                              ≈ ${ownerProfitUSD.toFixed(2)} USD
+                          {exchangeRate > 0 ? (
+                            <>
+                              <p className={`text-lg font-semibold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ${ownerProfitUSD.toFixed(2)} USD
+                              </p>
+                              <p className="text-xs text-gray-700 mt-0.5">
+                                {formatMoney(ownerProfitLocal)} грн.
+                              </p>
+                            </>
+                          ) : (
+                            <p className={`text-lg font-semibold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatMoney(ownerProfitLocal)} грн.
                             </p>
                           )}
                         </div>
@@ -1219,25 +1225,25 @@ export default async function FinanceReportPage({
                     </div>
 
                     {/* Потрібно закупити волосся */}
-                    <div className="pt-2 border-t">
+                    <div className="pt-1 border-t">
                       <div className="flex justify-between items-center">
                         <p className="text-xs uppercase text-gray-500">Потрібно закупити волосся на суму</p>
-                        <p className="text-base font-semibold">{formatMoney(hairPurchaseAmount)} грн.</p>
+                        <p className="text-xs font-semibold">{formatMoney(hairPurchaseAmount)} грн.</p>
                       </div>
                     </div>
 
                     {/* Інкасація */}
-                    <div className="pt-2 border-t">
+                    <div className="pt-1 border-t">
                       <CollapsibleSection
                         title="Інкасація"
                         summary={
-                          <p className={`text-base font-semibold ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          <p className={`text-xs font-semibold ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {formatMoney(encashmentLocal)} грн.
                           </p>
                         }
                         defaultCollapsed={true}
                       >
-                        <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                        <div className="text-xs text-gray-400 mt-1 space-y-0.5">
                           <p>Собівартість {formatMoney(costLocal)} грн.</p>
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
@@ -1367,11 +1373,11 @@ export default async function FinanceReportPage({
             return (
               <section className="card bg-base-100 shadow-sm relative flex-1">
                 <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
-                <div className="card-body p-2 space-y-2">
-                  <h2 className="card-title text-sm">Прибуток</h2>
+                <div className="card-body p-1.5 space-y-1">
+                  <h2 className="card-title text-xs font-semibold mb-1">Прибуток</h2>
                   
                   {/* Курс долара */}
-                  <div className="flex justify-between items-center pb-3 border-b">
+                  <div className="flex justify-between items-center pb-1 border-b">
                     <span className="text-xs text-gray-700">
                       Курс долара
                     </span>
@@ -1386,7 +1392,7 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Баланс складу */}
-                  <div className="pt-2 border-t">
+                  <div className="pt-1 border-t">
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-xs uppercase text-gray-500">Баланс складу</p>
@@ -1404,14 +1410,14 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Різниця балансу складу */}
-                  <div className="pt-2 border-t">
+                  <div className="pt-1 border-t">
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-xs uppercase text-gray-500">Різниця</p>
                         <p className="text-xs text-gray-400">{warehouseBalanceDiff >= 0 ? "Склад збільшився" : "Склад зменшився"}</p>
                       </div>
                       <div className="text-right">
-                        <p className={`text-base font-semibold ${warehouseBalanceDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <p className={`text-xs font-semibold ${warehouseBalanceDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {warehouseBalanceDiff >= 0 ? '+' : ''}{formatMoney(warehouseBalanceDiff)} грн.
                         </p>
                       </div>
@@ -1419,7 +1425,7 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Ручні поля */}
-                  <div className="pt-2 border-t space-y-2">
+                  <div className="pt-1 border-t space-y-1">
                     <h3 className="text-xs uppercase text-gray-500 font-semibold">Ручні поля</h3>
                     
                     {/* Кількість Консультацій */}
@@ -1486,7 +1492,7 @@ export default async function FinanceReportPage({
 
           <section className="card bg-base-100 shadow-sm relative">
             <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">5</div>
-            <div className="card-body p-2">
+            <div className="card-body p-1.5">
               <CollapsibleSection
                 title="Динаміка виручки по днях"
                 summary={
