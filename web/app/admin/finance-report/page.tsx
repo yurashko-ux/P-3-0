@@ -765,14 +765,28 @@ export default async function FinanceReportPage({
                 const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
                 
+                // Розраховуємо інші розходи (без Управління)
+                const otherExpensesForProfit = rent + marketingTotal + taxes + otherExpensesTotal + accounting + productPurchase + investments;
+                const totalExpensesWithoutManagement = salary + otherExpensesForProfit;
+                
+                // Розраховуємо Доходи (послуги + націнка)
+                const services = summary?.totals.services || 0;
+                const markup = summary && goods ? (summary.totals.goods - goods.cost) : 0;
+                const totalIncome = services + markup;
+                
                 // Управління розраховується як Прибуток салону * 15%
-                const managementCalculated = Math.round(profitDashboard * 0.15);
+                // Прибуток = Дохід - Розхід
+                // Розхід = Інші розходи + Управління
+                // Управління = Прибуток * 0.15
+                // Прибуток = Дохід - Інші розходи - Прибуток * 0.15
+                // Прибуток * 1.15 = Дохід - Інші розходи
+                // Прибуток = (Дохід - Інші розходи) / 1.15
+                const profitBeforeManagement = totalIncome - totalExpensesWithoutManagement;
+                const profitCalculated = profitBeforeManagement / 1.15;
+                const managementCalculated = Math.round(profitCalculated * 0.15);
                 
-                // Розхід без ЗП (постійні витрати) - виключаємо інвестиції та закуплений товар (вони в Інкасації)
-                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting + managementCalculated + productPurchase + investments;
-                
-                // Загальний розхід
-                const totalExpenses = salary + expensesWithoutSalary;
+                // Загальний розхід (з урахуванням Управління)
+                const totalExpenses = totalExpensesWithoutManagement + managementCalculated;
 
                 // Сума для підгрупи "Управління, інвестиції, податки"
                 const managementGroupTotal = accounting + managementCalculated + productPurchase + investments + taxes;
@@ -981,101 +995,98 @@ export default async function FinanceReportPage({
                       </div>
                     </div>
 
-                    {/* Бухгалтерія */}
-                    {accounting > 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <span className="text-sm font-medium text-gray-700">
-                          Бухгалтерія
+                    {/* Управління, інвестиції, податки */}
+                    <div className="p-3 bg-gray-50 rounded border">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-semibold text-gray-700">
+                          Управління, інвестиції, податки
                         </span>
                         <span className="text-sm font-semibold">
-                          {formatMoney(accounting)} грн.
+                          {formatMoney(managementGroupTotal)} грн.
                         </span>
                       </div>
-                    )}
-                    {accounting === 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-700">
-                            Бухгалтерія
+                      <div className="space-y-1 ml-2">
+                        {/* Бухгалтерія */}
+                        {(accounting > 0 || accountingManual > 0) && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Бухгалтерія</span>
+                            {accounting > 0 ? (
+                              <span className="text-xs font-semibold">
+                                {formatMoney(accounting)} грн.
+                              </span>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <EditExpenseField
+                                  year={selectedYear}
+                                  month={selectedMonth}
+                                  fieldKey="accounting"
+                                  label="Бухгалтерія"
+                                  currentValue={accountingManual}
+                                />
+                                <span className="text-xs font-semibold">
+                                  {formatMoney(accountingManual)} грн.
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Управління */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Управління</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(managementCalculated)} грн.
                           </span>
-                          <EditExpenseField
-                            year={selectedYear}
-                            month={selectedMonth}
-                            fieldKey="accounting"
-                            label="Бухгалтерія"
-                            currentValue={accountingManual}
-                          />
                         </div>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(accountingManual)} грн.
-                        </span>
-                      </div>
-                    )}
 
-                    {/* Управління */}
-                    {management > 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <span className="text-sm font-medium text-gray-700">
-                          Управління
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(management)} грн.
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Закуплено товару */}
-                    {productPurchase > 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <span className="text-sm font-medium text-gray-700">
-                          Закуплено товару
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(productPurchase)} грн.
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Інвестиції в салон */}
-                    {investments > 0 && (
-                      <div className="flex justify-between items-center p-2 border-b">
-                        <span className="text-sm font-medium text-gray-700">
-                          Інвестиції в салон
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(investments)} грн.
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Податки */}
-                    <div className="flex justify-between items-center p-2 border-b">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">
-                          Податки
-                        </span>
-                        {taxesFromAPI === 0 && (
-                          <EditExpenseField
-                            year={selectedYear}
-                            month={selectedMonth}
-                            fieldKey="taxes_extra"
-                            label="Податки (додатково)"
-                            currentValue={taxesExtraManual}
-                          />
+                        {/* Закуплено товару */}
+                        {productPurchase > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Закуплено товару</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(productPurchase)} грн.
+                            </span>
+                          </div>
                         )}
-                        {taxesFromAPI > 0 && taxesExtraManual > 0 && (
-                          <EditExpenseField
-                            year={selectedYear}
-                            month={selectedMonth}
-                            fieldKey="taxes_extra"
-                            label="Податки (додатково)"
-                            currentValue={taxesExtraManual}
-                          />
+
+                        {/* Інвестиції в салон */}
+                        {investments > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">Інвестиції в салон</span>
+                            <span className="text-xs font-semibold">
+                              {formatMoney(investments)} грн.
+                            </span>
+                          </div>
                         )}
+
+                        {/* Податки */}
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-600">Податки</span>
+                            {taxesFromAPI === 0 && (
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="taxes_extra"
+                                label="Податки (додатково)"
+                                currentValue={taxesExtraManual}
+                              />
+                            )}
+                            {taxesFromAPI > 0 && taxesExtraManual > 0 && (
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="taxes_extra"
+                                label="Податки (додатково)"
+                                currentValue={taxesExtraManual}
+                              />
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(taxes)} грн.
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(taxes)} грн.
-                      </span>
                     </div>
 
                   </div>
