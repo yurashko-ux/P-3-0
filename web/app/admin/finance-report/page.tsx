@@ -19,6 +19,7 @@ import { EditableCostCell } from "./_components/EditableCostCell";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 import { FinanceReportClient } from "./FinanceReportClient";
+import { EditLayoutButtonWrapper } from "./EditLayoutButtonWrapper";
 
 export const dynamic = "force-dynamic";
 
@@ -593,6 +594,9 @@ export default async function FinanceReportPage({
             </p>
           )}
         </div>
+        
+        {/* Кнопка редагування layout */}
+        <EditLayoutButtonWrapper />
 
         {/* Вибір місяця / року через GET-параметри */}
         <form
