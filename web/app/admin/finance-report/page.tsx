@@ -768,11 +768,11 @@ export default async function FinanceReportPage({
                 // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
                 const managementCalculated = Math.round(profitDashboard * 0.15);
                 
-                // Розраховуємо розходи БЕЗ Закуплено товару та Інвестицій (вони винесені в окрему підгрупу)
-                const expensesWithoutPurchaseAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting + managementCalculated;
+                // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
+                const expensesWithoutManagementAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
                 
-                // Загальний розхід (БЕЗ Закуплено товару та Інвестицій)
-                const totalExpenses = salary + expensesWithoutPurchaseAndInvestments;
+                // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
+                const totalExpenses = salary + expensesWithoutManagementAndInvestments;
 
                 // Сума для підгрупи "Бухгалтерія та податки" (БЕЗ Управління, Закуплено товару та Інвестицій)
                 const accountingTaxesGroupTotal = accounting + taxes;
