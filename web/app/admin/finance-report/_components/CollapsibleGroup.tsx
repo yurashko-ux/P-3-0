@@ -5,16 +5,14 @@ import { useState } from "react";
 
 interface CollapsibleGroupProps {
   title: string;
-  total: number;
-  formatMoney: (value: number) => string;
+  totalFormatted: string; // Вже відформатована сума (без "грн.")
   children: React.ReactNode;
   defaultCollapsed?: boolean;
 }
 
 export function CollapsibleGroup({
   title,
-  total,
-  formatMoney,
+  totalFormatted,
   children,
   defaultCollapsed = true,
 }: CollapsibleGroupProps) {
@@ -28,7 +26,7 @@ export function CollapsibleGroup({
       >
         <span className="text-sm font-semibold text-gray-700">{title}</span>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{formatMoney(total)} грн.</span>
+          <span className="text-sm font-semibold">{totalFormatted} грн.</span>
           <span className="text-xs text-gray-500">{isCollapsed ? "▼" : "▲"}</span>
         </div>
       </div>
