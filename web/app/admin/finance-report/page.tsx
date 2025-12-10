@@ -782,9 +782,7 @@ export default async function FinanceReportPage({
               ),
             }}
           </FinanceReportClient>
-      }
-      }
-    >
+        ) : null
       <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-lg font-semibold">Фінансовий звіт (Altegio)</h1>
