@@ -118,28 +118,19 @@ export function EditWarehouseBalanceButton({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <input
-          type="number"
-          value={balance}
-          onChange={(e) => setBalance(e.target.value)}
-          placeholder="Баланс складу"
-          className="input input-bordered input-sm w-32"
-          min="0"
-          step="0.01"
-          disabled={!isAuthorized || isPending}
-          readOnly={!isAuthorized}
-        />
-        <span className="text-sm text-gray-600">грн.</span>
-        {!isAuthorized ? (
-          <button
-            onClick={handleUnlock}
-            className="btn btn-sm btn-ghost text-xs"
-            title="Розблокувати для редагування (потрібен CRON_SECRET)"
-          >
-            ✏️
-          </button>
-        ) : (
+        {isAuthorized ? (
           <>
+            <input
+              type="number"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              placeholder="Баланс складу"
+              className="input input-bordered input-sm w-32"
+              min="0"
+              step="0.01"
+              disabled={isPending}
+            />
+            <span className="text-sm text-gray-600">грн.</span>
             <button
               onClick={handleSave}
               className="btn btn-sm btn-primary"
@@ -155,6 +146,14 @@ export function EditWarehouseBalanceButton({
               ✕
             </button>
           </>
+        ) : (
+          <button
+            onClick={handleUnlock}
+            className="btn btn-sm btn-ghost text-xs p-1"
+            title="Розблокувати для редагування (потрібен CRON_SECRET)"
+          >
+            ✏️
+          </button>
         )}
       </div>
       {error && (
