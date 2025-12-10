@@ -582,8 +582,8 @@ export default async function FinanceReportPage({
 
   const displayMonthLabel = monthOptions.find((m) => m.month === selectedMonth)?.label || "";
 
-  return  (
-<FinanceReportPageClient
+  return (
+    <FinanceReportPageClient
       summaryContent={
         summary ? (
           <FinanceReportClient>
