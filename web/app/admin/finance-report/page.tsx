@@ -779,7 +779,6 @@ export default async function FinanceReportPage({
             }}
           </FinanceReportClient>
         ) : null;
-            <section className="card bg-base-100 shadow-sm relative h-full">
               <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">1</div>
               <div className="card-body p-1.5">
                 <table className="table table-xs w-full border-collapse">
