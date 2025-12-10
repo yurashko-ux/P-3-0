@@ -712,7 +712,6 @@ export default async function FinanceReportPage({
             </div>
           </section>
 
-
           {/* Розраховуємо змінні для Управління та інвестицій (використовуються в окремому блоці) */}
           {(() => {
             // Отримуємо дані з API для Управління та інвестицій
@@ -727,18 +726,18 @@ export default async function FinanceReportPage({
 
             return (
               <>
-          {/* Розходи за місяць */}
-          <section className="card bg-base-100 shadow-sm relative">
-            <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
-            <div className="card-body p-2 space-y-2">
-              <h2 className="card-title text-sm">Розходи за місяць</h2>
-              
+                      {/* Розходи за місяць */}
+                <section className="card bg-base-100 shadow-sm relative">
+                  <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
+                  <div className="card-body p-2 space-y-2">
+                    <h2 className="card-title text-sm">Розходи за місяць</h2>
+                    
 
-              {/* Структура згідно з Excel */}
-              {(() => {
-                // Отримуємо дані з API
-                const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
-                const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
+                    {/* Структура згідно з Excel */}
+                    {(() => {
+                      // Отримуємо дані з API
+                      const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
+                      const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
                 const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
                 const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
                 const rentManual = manualFields.rent || 0; // Fallback, якщо немає в API
@@ -777,9 +776,6 @@ export default async function FinanceReportPage({
                 const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
                 
-                // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
-                const managementCalculated = Math.round(profitDashboard * 0.15);
-                
                 // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
                 const expensesWithoutManagementAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
                 
@@ -788,9 +784,6 @@ export default async function FinanceReportPage({
 
                 // Сума для підгрупи "Бухгалтерія та податки" (БЕЗ Управління, Закуплено товару та Інвестицій)
                 const accountingTaxesGroupTotal = accounting + taxes;
-                
-                // Сума для підгрупи "Управління та інвестиції" (включає Управління, Закуплено товару та Інвестиції)
-                const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
 
                 return (
                   <div className="space-y-1">
@@ -1067,62 +1060,64 @@ export default async function FinanceReportPage({
                         </div>
                       </div>
                     </div>
-
                   </div>
                 );
               })()}
             </div>
           </section>
 
-          {/* Управління та інвестиції */}
-          {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
-            <section className="card bg-base-100 shadow-sm relative">
-              <div className="card-body p-2 space-y-2">
-                <h2 className="card-title text-sm">Управління та інвестиції</h2>
-                <div className="p-3 bg-gray-50 rounded border">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-semibold text-gray-700">
-                      Управління та інвестиції
-                    </span>
-                    <span className="text-sm font-semibold">
-                      {formatMoney(managementInvestmentsTotal)} грн.
-                    </span>
-                  </div>
-                  <div className="space-y-1 ml-2">
-                    {/* Управління */}
-                    {managementCalculated > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-600">Управління</span>
-                        <span className="text-xs font-semibold">
-                          {formatMoney(managementCalculated)} грн.
-                        </span>
-                      </div>
-                    )}
+                {/* Управління та інвестиції */}
+                {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
+                  <section className="card bg-base-100 shadow-sm relative">
+                    <div className="card-body p-2 space-y-2">
+                      <h2 className="card-title text-sm">Управління та інвестиції</h2>
+                      <div className="p-3 bg-gray-50 rounded border">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-semibold text-gray-700">
+                            Управління та інвестиції
+                          </span>
+                          <span className="text-sm font-semibold">
+                            {formatMoney(managementInvestmentsTotal)} грн.
+                          </span>
+                        </div>
+                        <div className="space-y-1 ml-2">
+                          {/* Управління */}
+                          {managementCalculated > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">Управління</span>
+                              <span className="text-xs font-semibold">
+                                {formatMoney(managementCalculated)} грн.
+                              </span>
+                            </div>
+                          )}
 
-                    {/* Закуплено товару */}
-                    {productPurchase > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-600">Закуплено товару</span>
-                        <span className="text-xs font-semibold">
-                          {formatMoney(productPurchase)} грн.
-                        </span>
-                      </div>
-                    )}
+                          {/* Закуплено товару */}
+                          {productPurchase > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">Закуплено товару</span>
+                              <span className="text-xs font-semibold">
+                                {formatMoney(productPurchase)} грн.
+                              </span>
+                            </div>
+                          )}
 
-                    {/* Інвестиції в салон */}
-                    {investments > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-600">Інвестиції в салон</span>
-                        <span className="text-xs font-semibold">
-                          {formatMoney(investments)} грн.
-                        </span>
+                          {/* Інвестиції в салон */}
+                          {investments > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">Інвестиції в салон</span>
+                              <span className="text-xs font-semibold">
+                                {formatMoney(investments)} грн.
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
+                    </div>
+                  </section>
+                )}
+              </>
+            );
+          })()}
 
           {/* Прибуток */}
           {(() => {
