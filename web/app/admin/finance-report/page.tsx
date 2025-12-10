@@ -765,23 +765,20 @@ export default async function FinanceReportPage({
                 const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                 const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
                 
+                // Управління розраховується як Прибуток салону * 15%
+                const managementCalculated = Math.round(profitDashboard * 0.15);
+                
                 // Розхід без ЗП (постійні витрати) - виключаємо інвестиції та закуплений товар (вони в Інкасації)
-                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+                const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting + managementCalculated + productPurchase + investments;
                 
                 // Загальний розхід
                 const totalExpenses = salary + expensesWithoutSalary;
 
+                // Сума для підгрупи "Управління, інвестиції, податки"
+                const managementGroupTotal = accounting + managementCalculated + productPurchase + investments + taxes;
+
                 return (
                   <div className="space-y-1">
-                    {/* Розхід без ЗП (постійні) */}
-                    <div className="flex justify-between items-center p-1 bg-gray-50 rounded text-xs">
-                      <span className="text-sm font-medium text-gray-700">
-                        Розхід без ЗП (постійні)
-                      </span>
-                      <span className="text-sm font-semibold">
-                        {formatMoney(expensesWithoutSalary)} грн.
-                      </span>
-                    </div>
 
                     {/* Загальний розхід (червоний фон) */}
                     <div className="flex justify-between items-center p-2 bg-red-100 border-2 border-red-300 rounded">
