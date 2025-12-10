@@ -87,7 +87,18 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
       className="layout"
       layout={layout}
       onLayoutChange={handleLayoutChange}
-      {...({ cols: 12, rowHeight: 1, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16], compactType: null, preventCollision: false } as any)}
+      {...({ 
+        cols: 12, 
+        rowHeight: 1, 
+        width: containerWidth, 
+        isDraggable: true, 
+        isResizable: true, 
+        draggableHandle: ".drag-handle", 
+        margin: [16, 16], 
+        compactType: null, 
+        preventCollision: false,
+        resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne']
+      } as any)}
     >
       <div key="block-1">{children.block1}</div>
       <div key="block-2">{children.block2}</div>

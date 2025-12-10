@@ -287,7 +287,18 @@ export default function PhotoReportsPage() {
         className="layout"
         layout={layout}
         onLayoutChange={handleLayoutChange}
-        {...({ cols: 12, rowHeight: 1, width: containerWidth, isDraggable: true, isResizable: true, draggableHandle: ".drag-handle", margin: [16, 16], compactType: null, preventCollision: false } as any)}
+        {...({ 
+          cols: 12, 
+          rowHeight: 1, 
+          width: containerWidth, 
+          isDraggable: true, 
+          isResizable: true, 
+          draggableHandle: ".drag-handle", 
+          margin: [16, 16], 
+          compactType: null, 
+          preventCollision: false,
+          resizeHandles: ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne']
+        } as any)}
       >
         {/* Тестова секція */}
         <div key="test-section" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
