@@ -797,25 +797,25 @@ export default async function FinanceReportPage({
                       defaultCollapsed={true}
                     >
                       {/* ЗП */}
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-600">ЗП</span>
-                        <span className="text-xs font-semibold">
+                      <div className="flex justify-between items-center bg-blue-100 px-1 py-0.5 rounded">
+                        <span className="text-xs font-medium">ЗП</span>
+                        <span className="text-xs font-bold">
                           {formatMoney(salary)} грн.
                         </span>
                       </div>
 
                       {/* Оренда */}
                       {rent > 0 ? (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Оренда</span>
-                          <span className="text-xs font-semibold">
+                        <div className="flex justify-between items-center bg-blue-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Оренда</span>
+                          <span className="text-xs font-bold">
                             {formatMoney(rent)} грн.
                           </span>
                         </div>
                       ) : (
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center bg-blue-100 px-1 py-0.5 rounded">
                           <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Оренда</span>
+                            <span className="text-xs font-medium">Оренда</span>
                             <EditExpenseField
                               year={selectedYear}
                               month={selectedMonth}
@@ -824,7 +824,7 @@ export default async function FinanceReportPage({
                               currentValue={rentManual}
                             />
                           </div>
-                          <span className="text-xs font-semibold">
+                          <span className="text-xs font-bold">
                             {formatMoney(rentManual)} грн.
                           </span>
                         </div>
@@ -838,41 +838,41 @@ export default async function FinanceReportPage({
                       defaultCollapsed={true}
                     >
                       {cmmFromAPI > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">CMM</span>
-                          <span className="text-xs font-semibold">
+                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">CMM</span>
+                          <span className="text-xs font-bold">
                             {formatMoney(cmmFromAPI)} грн.
                           </span>
                         </div>
                       )}
                       {targetFromAPI > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Таргет (ведення)</span>
-                          <span className="text-xs font-semibold">
+                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Таргет (ведення)</span>
+                          <span className="text-xs font-bold">
                             {formatMoney(targetFromAPI)} грн.
                           </span>
                         </div>
                       )}
                       {advertisingFromAPI > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Реклама бюджет ФБ</span>
-                          <span className="text-xs font-semibold">
+                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Реклама бюджет ФБ</span>
+                          <span className="text-xs font-bold">
                             {formatMoney(advertisingFromAPI)} грн.
                           </span>
                         </div>
                       )}
                       {direct > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Дірект</span>
-                          <span className="text-xs font-semibold">
+                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Дірект</span>
+                          <span className="text-xs font-bold">
                             {formatMoney(direct)} грн.
                           </span>
                         </div>
                       )}
                       {direct === 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Дірект</span>
+                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
                           <div className="flex items-center gap-1">
+                            <span className="text-xs font-medium">Дірект</span>
                             <EditExpenseField
                               year={selectedYear}
                               month={selectedMonth}
@@ -880,10 +880,10 @@ export default async function FinanceReportPage({
                               label="Дірект"
                               currentValue={directManual}
                             />
-                            <span className="text-xs font-semibold">
-                              {formatMoney(directManual)} грн.
-                            </span>
                           </div>
+                          <span className="text-xs font-bold">
+                            {formatMoney(directManual)} грн.
+                          </span>
                         </div>
                       )}
                     </CollapsibleGroup>
@@ -1164,9 +1164,9 @@ export default async function FinanceReportPage({
                       >
                         {/* Управління */}
                         {managementCalculated > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Управління</span>
-                            <span className="text-xs font-semibold">
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Управління</span>
+                            <span className="text-xs font-bold">
                               {formatMoney(managementCalculated)} грн.
                             </span>
                           </div>
@@ -1174,9 +1174,9 @@ export default async function FinanceReportPage({
 
                         {/* Закуплено товару */}
                         {productPurchase > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Закуплено товару</span>
-                            <span className="text-xs font-semibold">
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Закуплено товару</span>
+                            <span className="text-xs font-bold">
                               {formatMoney(productPurchase)} грн.
                             </span>
                           </div>
@@ -1184,9 +1184,9 @@ export default async function FinanceReportPage({
 
                         {/* Інвестиції в салон */}
                         {investments > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Інвестиції в салон</span>
-                            <span className="text-xs font-semibold">
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Інвестиції в салон</span>
+                            <span className="text-xs font-bold">
                               {formatMoney(investments)} грн.
                             </span>
                           </div>

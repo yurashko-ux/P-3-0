@@ -187,15 +187,15 @@ export function EditableCostCell({
 
   // За замовчуванням показуємо значення + олівець
   return (
-    <div className="flex items-center justify-end gap-1 w-full">
-      <span className="text-right">{formatMoney(currentCost)} грн.</span>
+    <span className="text-base font-bold whitespace-nowrap">
+      {formatMoney(currentCost)} грн.
       <button
         onClick={handleEditClick}
-        className="btn btn-xs btn-ghost p-0.5 opacity-60 hover:opacity-100 flex-shrink-0"
+        className="btn btn-xs btn-ghost p-0.5 opacity-60 hover:opacity-100 ml-1 inline-flex items-center"
         title="Редагувати собівартість (потрібен CRON_SECRET)"
       >
         ✏️
       </button>
-    </div>
+    </span>
   );
 }
