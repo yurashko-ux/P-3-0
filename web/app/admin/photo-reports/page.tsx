@@ -70,16 +70,16 @@ type LayoutItem = {
 };
 
 const STORAGE_KEY = "photo-reports-dashboard-layout";
-const LAYOUT_VERSION = "4"; // Збільшуємо версію для скидання старих layout
+const LAYOUT_VERSION = "5"; // Збільшуємо версію для скидання старих layout
 
-// Дефолтні позиції блоків (h тепер в одиницях по 5px - мінімальні висоти)
+// Дефолтні позиції блоків (h тепер в одиницях по 2px - мінімальні висоти)
 // Висоти встановлені мінімальними для компактного відображення
-// h=16 означає 16*5px = 80px висоти
+// h=40 означає 40*2px = 80px висоти
 const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 16 },   // 80px
-  { i: "analytics", x: 0, y: 16, w: 12, h: 24 },     // 120px
-  { i: "financial", x: 0, y: 40, w: 12, h: 16 },     // 80px
-  { i: "masters", x: 0, y: 56, w: 12, h: 12 },       // 60px
+  { i: "test-section", x: 0, y: 0, w: 12, h: 40 },   // 80px
+  { i: "analytics", x: 0, y: 40, w: 12, h: 60 },     // 120px
+  { i: "financial", x: 0, y: 100, w: 12, h: 40 },     // 80px
+  { i: "masters", x: 0, y: 140, w: 12, h: 30 },       // 60px
 ];
 
 export default function PhotoReportsPage() {
@@ -156,6 +156,12 @@ export default function PhotoReportsPage() {
     setLayout(newLayout);
     // Зберігаємо позиції в localStorage
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayout));
+  };
+
+  const handleResizeStop = (layout: LayoutItem[]) => {
+    // Після завершення зміни розміру зберігаємо точні значення
+    setLayout(layout);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
   };
 
   const handleTestReminder = async () => {
@@ -297,9 +303,10 @@ export default function PhotoReportsPage() {
         className="layout"
         layout={layout}
         onLayoutChange={handleLayoutChange}
+        onResizeStop={handleResizeStop}
         {...({ 
           cols: 12, 
-          rowHeight: 5, // Мінімальний крок 5px для плавного пересування 
+          rowHeight: 2, // Мінімальний крок 2px для плавного пересування 
           width: containerWidth, 
           isDraggable: true, 
           isResizable: true, 
