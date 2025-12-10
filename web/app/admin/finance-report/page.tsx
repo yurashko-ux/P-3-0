@@ -713,6 +713,20 @@ export default async function FinanceReportPage({
           </section>
 
 
+          {/* Розраховуємо змінні для Управління та інвестицій (використовуються в окремому блоці) */}
+          {(() => {
+            // Отримуємо дані з API для Управління та інвестицій
+            const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+            const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+            
+            // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
+            const managementCalculated = Math.round(profitDashboard * 0.15);
+            
+            // Сума для підгрупи "Управління та інвестиції"
+            const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
+
+            return (
+              <>
           {/* Розходи за місяць */}
           <section className="card bg-base-100 shadow-sm relative">
             <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
@@ -725,8 +739,6 @@ export default async function FinanceReportPage({
                 // Отримуємо дані з API
                 const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
                 const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
-                const productPurchase = expenses?.byCategory["Product purchase"] || 0;
-                const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
                 const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
                 const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
                 const rentManual = manualFields.rent || 0; // Fallback, якщо немає в API
