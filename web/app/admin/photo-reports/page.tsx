@@ -70,15 +70,16 @@ type LayoutItem = {
 };
 
 const STORAGE_KEY = "photo-reports-dashboard-layout";
-const LAYOUT_VERSION = "3"; // Збільшуємо версію для скидання старих layout
+const LAYOUT_VERSION = "4"; // Збільшуємо версію для скидання старих layout
 
-// Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
+// Дефолтні позиції блоків (h тепер в одиницях по 5px - мінімальні висоти)
 // Висоти встановлені мінімальними для компактного відображення
+// h=16 означає 16*5px = 80px висоти
 const defaultLayout: LayoutItem[] = [
-  { i: "test-section", x: 0, y: 0, w: 12, h: 80 },
-  { i: "analytics", x: 0, y: 80, w: 12, h: 120 },
-  { i: "financial", x: 0, y: 200, w: 12, h: 80 },
-  { i: "masters", x: 0, y: 280, w: 12, h: 60 },
+  { i: "test-section", x: 0, y: 0, w: 12, h: 16 },   // 80px
+  { i: "analytics", x: 0, y: 16, w: 12, h: 24 },     // 120px
+  { i: "financial", x: 0, y: 40, w: 12, h: 16 },     // 80px
+  { i: "masters", x: 0, y: 56, w: 12, h: 12 },       // 60px
 ];
 
 export default function PhotoReportsPage() {
@@ -298,7 +299,7 @@ export default function PhotoReportsPage() {
         onLayoutChange={handleLayoutChange}
         {...({ 
           cols: 12, 
-          rowHeight: 1, 
+          rowHeight: 5, // Мінімальний крок 5px для плавного пересування 
           width: containerWidth, 
           isDraggable: true, 
           isResizable: true, 

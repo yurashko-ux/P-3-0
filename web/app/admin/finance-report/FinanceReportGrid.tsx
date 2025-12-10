@@ -14,16 +14,17 @@ type LayoutItem = {
 };
 
 const STORAGE_KEY = "finance-report-dashboard-layout";
-const LAYOUT_VERSION = "3"; // Збільшуємо версію для скидання старих layout
+const LAYOUT_VERSION = "4"; // Збільшуємо версію для скидання старих layout
 
-// Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
+// Дефолтні позиції блоків (h тепер в одиницях по 5px - мінімальні висоти)
 // Висоти встановлені мінімальними для компактного відображення
+// h=20 означає 20*5px = 100px висоти
 const defaultLayout: LayoutItem[] = [
-  { i: "block-1", x: 0, y: 0, w: 6, h: 100 },
-  { i: "block-2", x: 6, y: 0, w: 6, h: 100 },
-  { i: "block-3", x: 0, y: 100, w: 6, h: 80 },
-  { i: "block-4", x: 6, y: 100, w: 6, h: 80 },
-  { i: "block-5", x: 0, y: 180, w: 12, h: 60 },
+  { i: "block-1", x: 0, y: 0, w: 6, h: 20 },   // 100px
+  { i: "block-2", x: 6, y: 0, w: 6, h: 20 },   // 100px
+  { i: "block-3", x: 0, y: 20, w: 6, h: 16 },  // 80px
+  { i: "block-4", x: 6, y: 20, w: 6, h: 16 },  // 80px
+  { i: "block-5", x: 0, y: 36, w: 12, h: 12 },  // 60px
 ];
 
 type FinanceReportGridProps = {
@@ -98,7 +99,7 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
       onLayoutChange={handleLayoutChange}
       {...({ 
         cols: 12, 
-        rowHeight: 1, 
+        rowHeight: 5, // Мінімальний крок 5px для плавного пересування 
         width: containerWidth, 
         isDraggable: true, 
         isResizable: true, 
