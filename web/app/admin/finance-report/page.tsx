@@ -1037,6 +1037,8 @@ export default async function FinanceReportPage({
             })()}
           </div>
 
+          {/* Управління та інвестиції та Прибуток */}
+          <div className="flex flex-col md:flex-row gap-2">
           {/* Управління та інвестиції */}
           {(() => {
             // Отримуємо дані з API для Управління та інвестицій
@@ -1362,7 +1364,7 @@ export default async function FinanceReportPage({
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
 
             return (
-              <section className="card bg-base-100 shadow-sm relative">
+              <section className="card bg-base-100 shadow-sm relative flex-1">
                 <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">4</div>
                 <div className="card-body p-2 space-y-2">
                   <h2 className="card-title text-sm">Прибуток</h2>
@@ -1377,38 +1379,6 @@ export default async function FinanceReportPage({
                       month={selectedMonth}
                       currentRate={exchangeRate || 0}
                     />
-                  </div>
-                  
-                  <div className="grid gap-2 grid-cols-3">
-                    <div>
-                      <p className="text-xs uppercase text-gray-500">
-                        Доходи
-                      </p>
-                      <p className="text-lg font-semibold md:text-xl">
-                        {formatMoney(totalIncome)} грн.
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase text-gray-500">
-                        Розходи
-                      </p>
-                      <p className="text-lg font-semibold md:text-xl">
-                        {formatMoney(totalExpenses)} грн.
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase text-gray-500">
-                        Прибуток
-                      </p>
-                      <p className={`text-lg font-semibold md:text-xl ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatMoney(profit)} грн.
-                      </p>
-                      {exchangeRate > 0 && (
-                        <p className="text-sm text-gray-500 mt-1">
-                          ≈ ${profitUSD.toFixed(2)} USD
-                        </p>
-                      )}
-                    </div>
                   </div>
                   
                   {/* Баланс складу */}
@@ -1450,8 +1420,9 @@ export default async function FinanceReportPage({
                     
                     {/* Кількість Консультацій */}
                     <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-700">Кількість Консультацій</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-700">Кількість Консультацій</span>
+                        <p className="text-xs font-semibold">{formatMoney(manualFields.consultations_count || 0)} шт.</p>
                         <EditNumberField
                           year={selectedYear}
                           month={selectedMonth}
@@ -1461,13 +1432,13 @@ export default async function FinanceReportPage({
                           unit="шт."
                         />
                       </div>
-                      <p className="text-xs font-semibold">{formatMoney(manualFields.consultations_count || 0)} шт.</p>
                     </div>
                     
                     {/* Нових платних клієнтів */}
                     <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-700">Нових платних клієнтів</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-700">Нових платних клієнтів</span>
+                        <p className="text-xs font-semibold">{formatMoney(manualFields.new_paid_clients || 0)} шт.</p>
                         <EditNumberField
                           year={selectedYear}
                           month={selectedMonth}
@@ -1477,7 +1448,6 @@ export default async function FinanceReportPage({
                           unit="шт."
                         />
                       </div>
-                      <p className="text-xs font-semibold">{formatMoney(manualFields.new_paid_clients || 0)} шт.</p>
                     </div>
                     
                     {/* Вартість 1-го нового клієнта (автоматичне поле) */}
@@ -1507,6 +1477,7 @@ export default async function FinanceReportPage({
               </section>
             );
           })()}
+          </div>
 
           <section className="card bg-base-100 shadow-sm relative">
             <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">5</div>
