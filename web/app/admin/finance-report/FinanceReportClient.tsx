@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, ReactNode, useRef } from "react";
+import { ReactNode, useRef } from "react";
 import { CustomGridLayout, LayoutItem } from "@/components/admin/CustomGridLayout";
-import { EditLayoutButton } from "@/components/admin/EditLayoutButton";
+import { useLayoutEdit } from "./LayoutEditContext";
 
 type FinanceReportClientProps = {
   children: {
@@ -26,7 +26,7 @@ const defaultLayout: LayoutItem[] = [
 ];
 
 export function FinanceReportClient({ children }: FinanceReportClientProps) {
-  const [editMode, setEditMode] = useState(false);
+  const { editMode } = useLayoutEdit();
   const layoutRef = useRef<LayoutItem[]>(defaultLayout);
 
   const handleSave = (layout: LayoutItem[]) => {
@@ -35,16 +35,7 @@ export function FinanceReportClient({ children }: FinanceReportClientProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end items-center gap-4 mb-4 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg shadow-md">
-        <EditLayoutButton
-          storageKey={STORAGE_KEY}
-          onEditModeChange={setEditMode}
-          onSave={handleSave}
-        />
-      </div>
-      
-      <CustomGridLayout
+    <CustomGridLayout
         storageKey={STORAGE_KEY}
         layoutVersion={LAYOUT_VERSION}
         defaultLayout={defaultLayout}
@@ -59,7 +50,6 @@ export function FinanceReportClient({ children }: FinanceReportClientProps) {
           "block-5": children.block5,
         }}
       </CustomGridLayout>
-    </div>
   );
 }
 
