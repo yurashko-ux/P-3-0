@@ -642,6 +642,20 @@ export default async function FinanceReportPage({
       {summary && (
         <>
           {/* Компактний дашборд (як на прикладі) */}
+          <div className="mb-4 flex justify-end">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-gray-600 mb-2">💡 Для редагування розташування блоків:</p>
+              <FinanceReportClient>
+                {{
+                  block1: <div></div>,
+                  block2: <div></div>,
+                  block3: <div></div>,
+                  block4: <div></div>,
+                  block5: <div></div>,
+                }}
+              </FinanceReportClient>
+            </div>
+          </div>
           <FinanceReportClient>
             {{
               block1: (
