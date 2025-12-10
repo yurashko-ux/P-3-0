@@ -727,7 +727,7 @@ export default async function FinanceReportPage({
                   <CollapsibleSection title="Управління та інвестиції" amount={managementAndInvestments} />
                   <div className="flex justify-between items-center bg-green-50 p-1 rounded mt-2">
                     <span className="font-semibold">Чистий прибуток власника</span>
-                    <span className="font-bold">{formatMoney(ownerNetProfit)} ({formatMoneyUSD(ownerNetProfitUSD)})</span>
+                    <span className="font-bold">{formatMoney(ownerNetProfit)} ({formatMoney(ownerNetProfitUSD)})</span>
                   </div>
                   <div className="flex justify-between items-center p-1 mt-2">
                     <span>Потрібно закупити волосся на суму</span>
