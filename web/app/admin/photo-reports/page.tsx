@@ -70,6 +70,7 @@ type LayoutItem = {
 };
 
 const STORAGE_KEY = "photo-reports-dashboard-layout";
+const LAYOUT_VERSION = "2"; // Збільшуємо версію для скидання старих layout
 
 // Дефолтні позиції блоків (h тепер в одиницях по 1px - мінімальні висоти)
 const defaultLayout: LayoutItem[] = [
@@ -105,6 +106,15 @@ export default function PhotoReportsPage() {
       })
       .catch((err) => console.error("Failed to load masters:", err));
 
+    // Перевіряємо версію layout і очищаємо якщо стара
+    const savedVersion = localStorage.getItem(`${STORAGE_KEY}-version`);
+    if (savedVersion !== LAYOUT_VERSION) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(`${STORAGE_KEY}-version`, LAYOUT_VERSION);
+      setLayout(defaultLayout);
+      return;
+    }
+
     // Завантажуємо збережені позиції блоків
     const savedLayout = localStorage.getItem(STORAGE_KEY);
     if (savedLayout) {
@@ -113,7 +123,10 @@ export default function PhotoReportsPage() {
         setLayout(parsed);
       } catch (e) {
         console.error("Failed to parse saved layout:", e);
+        setLayout(defaultLayout);
       }
+    } else {
+      setLayout(defaultLayout);
     }
 
     // Встановлюємо ширину контейнера
