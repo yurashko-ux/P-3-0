@@ -1030,8 +1030,8 @@ export default async function FinanceReportPage({
                   </div>
                 );
               })()}
-                    </div>
-                  </section>
+                  </div>
+                </section>
                 </>
               );
             })()}
