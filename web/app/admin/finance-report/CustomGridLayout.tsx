@@ -37,11 +37,43 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
   const [containerWidth, setContainerWidth] = useState(1200);
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState<string | null>(null);
+  const [resizeDirection, setResizeDirection] = useState<'height' | 'width' | 'both' | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const blockRefs = useRef<Record<string, HTMLDivElement>>({});
 
   const COL_WIDTH = containerWidth / 12; // Ширина однієї колонки
+
+  const updateLayoutPositions = useCallback((updatedLayout: LayoutItem[]) => {
+    // Сортуємо блоки по y позиції
+    const sorted = [...updatedLayout].sort((a, b) => a.y - b.y);
+    const newLayout: LayoutItem[] = [];
+    
+    sorted.forEach((block, index) => {
+      if (index === 0) {
+        newLayout.push(block);
+      } else {
+        // Знаходимо найбільшу нижню точку попередніх блоків в цьому стовпці
+        const prevBlocks = newLayout.filter(b => {
+          // Перевіряємо чи блоки перекриваються по x
+          const blockRight = block.x + block.w;
+          const prevRight = b.x + b.w;
+          return !(blockRight <= b.x || block.x >= prevRight);
+        });
+        
+        if (prevBlocks.length > 0) {
+          const maxBottom = Math.max(...prevBlocks.map(b => b.y + b.h));
+          const newY = Math.max(block.y, maxBottom);
+          newLayout.push({ ...block, y: newY });
+        } else {
+          newLayout.push(block);
+        }
+      }
+    });
+    
+    return newLayout;
+  }, []);
 
   useEffect(() => {
     // Перевіряємо версію layout
@@ -85,7 +117,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayout));
   }, []);
 
-  const handleMouseDown = (e: React.MouseEvent, blockId: string, type: 'drag' | 'resize') => {
+  const handleMouseDown = (e: React.MouseEvent, blockId: string, type: 'drag' | 'resize-height' | 'resize-width' | 'resize-both') => {
     if (!containerRef.current) return;
     
     const rect = containerRef.current.getBoundingClientRect();
@@ -104,6 +136,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
       });
     } else {
       setIsResizing(blockId);
+      setResizeDirection(type === 'resize-height' ? 'height' : type === 'resize-width' ? 'width' : 'both');
       setResizeStart({
         x: e.clientX,
         y: e.clientY,
@@ -120,6 +153,64 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
     layoutRef.current = layout;
   }, [layout]);
 
+  // Відстежуємо зміни висоти блоків через ResizeObserver
+  useEffect(() => {
+    const resizeObserver = new ResizeObserver((entries) => {
+      setLayout(currentLayout => {
+        let updated = [...currentLayout];
+        let hasChanges = false;
+        
+        entries.forEach(entry => {
+          const blockId = Object.keys(blockRefs.current).find(
+            id => blockRefs.current[id] === entry.target
+          );
+          if (!blockId) return;
+          
+          const block = updated.find(b => b.i === blockId);
+          if (!block) return;
+          
+          // Отримуємо реальну висоту контенту (без padding)
+          const contentHeight = entry.contentRect.height;
+          const minHeight = 20;
+          const newHeight = Math.max(minHeight, contentHeight + 24); // +24 для padding
+          
+          if (Math.abs(block.h - newHeight) > 5) { // Поріг 5px щоб уникнути постійних оновлень
+            const blockIndex = updated.findIndex(b => b.i === blockId);
+            updated[blockIndex] = { ...block, h: newHeight };
+            hasChanges = true;
+          }
+        });
+        
+        if (hasChanges) {
+          // Оновлюємо позиції нижніх блоків
+          updated = updateLayoutPositions(updated);
+          // Зберігаємо новий layout
+          setTimeout(() => {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+          }, 100);
+          return updated;
+        }
+        
+        return currentLayout;
+      });
+    });
+    
+    // Спостерігаємо за всіма блоками
+    const observeBlocks = () => {
+      Object.values(blockRefs.current).forEach(el => {
+        if (el) resizeObserver.observe(el);
+      });
+    };
+    
+    // Спостереження після рендеру
+    const timeoutId = setTimeout(observeBlocks, 100);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      resizeObserver.disconnect();
+    };
+  }, [layout, updateLayoutPositions]);
+
   useEffect(() => {
     if (!isDragging && !isResizing) return;
 
@@ -135,21 +226,40 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
         const newX = Math.max(0, Math.floor((e.clientX - rect.left - dragStart.x) / COL_WIDTH));
         const newY = Math.max(0, e.clientY - rect.top - dragStart.y); // Прямо в пікселях, крок 1px
         
-        const newLayout = currentLayout.map(b => 
+        let newLayout = currentLayout.map(b => 
           b.i === isDragging 
             ? { ...b, x: Math.min(newX, 12 - b.w), y: newY }
             : b
         );
+        // Оновлюємо позиції нижніх блоків
+        newLayout = updateLayoutPositions(newLayout);
         setLayout(newLayout);
       } else if (isResizing) {
+        const deltaX = e.clientX - resizeStart.x;
         const deltaY = e.clientY - resizeStart.y;
-        const newH = Math.max(20, resizeStart.h + deltaY); // Прямо в пікселях, крок 1px
         
-        const newLayout = currentLayout.map(b => 
-          b.i === isResizing 
-            ? { ...b, h: newH }
-            : b
-        );
+        let newLayout = currentLayout.map(b => {
+          if (b.i !== isResizing) return b;
+          
+          const updated = { ...b };
+          
+          if (resizeDirection === 'height' || resizeDirection === 'both') {
+            updated.h = Math.max(20, resizeStart.h + deltaY);
+          }
+          
+          if (resizeDirection === 'width' || resizeDirection === 'both') {
+            const deltaW = Math.floor(deltaX / COL_WIDTH);
+            updated.w = Math.max(1, Math.min(12 - updated.x, resizeStart.w + deltaW));
+          }
+          
+          return updated;
+        });
+        
+        // Оновлюємо позиції нижніх блоків при зміні висоти
+        if (resizeDirection === 'height' || resizeDirection === 'both') {
+          newLayout = updateLayoutPositions(newLayout);
+        }
+        
         setLayout(newLayout);
       }
     };
@@ -161,6 +271,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
       }
       setIsDragging(null);
       setIsResizing(null);
+      setResizeDirection(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -170,7 +281,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragStart, resizeStart, COL_WIDTH, saveLayout]);
+  }, [isDragging, isResizing, resizeDirection, dragStart, resizeStart, COL_WIDTH, saveLayout, updateLayoutPositions]);
 
   return (
     <div 
@@ -207,17 +318,40 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
               ⋮⋮ Перетягніть
             </div>
 
-            {/* Resize handle */}
+            {/* Resize handles */}
+            {/* Bottom-right (both) */}
             <div
               className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-10"
-              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize')}
+              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-both')}
               style={{
                 background: 'linear-gradient(-45deg, transparent 30%, rgba(59, 130, 246, 0.3) 30%, rgba(59, 130, 246, 0.3) 50%, transparent 50%)',
               }}
             />
+            {/* Bottom (height only) */}
+            <div
+              className="absolute bottom-0 left-0 right-0 h-3 cursor-s-resize z-10"
+              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-height')}
+              style={{
+                background: 'linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.2))',
+              }}
+            />
+            {/* Right (width only) */}
+            <div
+              className="absolute top-0 bottom-0 right-0 w-3 cursor-e-resize z-10"
+              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-width')}
+              style={{
+                background: 'linear-gradient(to right, transparent, rgba(59, 130, 246, 0.2))',
+              }}
+            />
 
             {/* Content */}
-            <div className="h-full pt-6 overflow-auto">
+            <div 
+              ref={(el) => {
+                if (el) blockRefs.current[block.i] = el;
+              }}
+              className="h-full pt-6 overflow-auto"
+              style={{ minHeight: '100%' }}
+            >
               {child}
             </div>
           </div>

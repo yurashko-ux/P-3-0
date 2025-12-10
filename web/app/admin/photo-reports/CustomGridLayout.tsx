@@ -33,11 +33,43 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
   const [containerWidth, setContainerWidth] = useState(1200);
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState<string | null>(null);
+  const [resizeDirection, setResizeDirection] = useState<'height' | 'width' | 'both' | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const blockRefs = useRef<Record<string, HTMLDivElement>>({});
 
   const COL_WIDTH = containerWidth / 12; // Ширина однієї колонки
+
+  const updateLayoutPositions = useCallback((updatedLayout: LayoutItem[]) => {
+    // Сортуємо блоки по y позиції
+    const sorted = [...updatedLayout].sort((a, b) => a.y - b.y);
+    const newLayout: LayoutItem[] = [];
+    
+    sorted.forEach((block, index) => {
+      if (index === 0) {
+        newLayout.push(block);
+      } else {
+        // Знаходимо найбільшу нижню точку попередніх блоків в цьому стовпці
+        const prevBlocks = newLayout.filter(b => {
+          // Перевіряємо чи блоки перекриваються по x
+          const blockRight = block.x + block.w;
+          const prevRight = b.x + b.w;
+          return !(blockRight <= b.x || block.x >= prevRight);
+        });
+        
+        if (prevBlocks.length > 0) {
+          const maxBottom = Math.max(...prevBlocks.map(b => b.y + b.h));
+          const newY = Math.max(block.y, maxBottom);
+          newLayout.push({ ...block, y: newY });
+        } else {
+          newLayout.push(block);
+        }
+      }
+    });
+    
+    return newLayout;
+  }, []);
 
   useEffect(() => {
     // Перевіряємо версію layout
@@ -86,7 +118,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
     layoutRef.current = layout;
   }, [layout]);
 
-  const handleMouseDown = (e: React.MouseEvent, blockId: string, type: 'drag' | 'resize') => {
+  const handleMouseDown = (e: React.MouseEvent, blockId: string, type: 'drag' | 'resize-height' | 'resize-width' | 'resize-both') => {
     if (!containerRef.current) return;
     
     const rect = containerRef.current.getBoundingClientRect();
@@ -105,6 +137,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
       });
     } else {
       setIsResizing(blockId);
+      setResizeDirection(type === 'resize-height' ? 'height' : type === 'resize-width' ? 'width' : 'both');
       setResizeStart({
         x: e.clientX,
         y: e.clientY,
@@ -157,6 +190,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
       }
       setIsDragging(null);
       setIsResizing(null);
+      setResizeDirection(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -166,7 +200,7 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragStart, resizeStart, COL_WIDTH, saveLayout]);
+  }, [isDragging, isResizing, resizeDirection, dragStart, resizeStart, COL_WIDTH, saveLayout, updateLayoutPositions]);
 
   return (
     <div 
@@ -197,17 +231,40 @@ export function CustomGridLayout({ children }: CustomGridLayoutProps) {
               ⋮⋮ Перетягніть
             </div>
 
-            {/* Resize handle */}
+            {/* Resize handles */}
+            {/* Bottom-right (both) */}
             <div
               className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-10"
-              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize')}
+              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-both')}
               style={{
                 background: 'linear-gradient(-45deg, transparent 30%, rgba(59, 130, 246, 0.3) 30%, rgba(59, 130, 246, 0.3) 50%, transparent 50%)',
               }}
             />
+            {/* Bottom (height only) */}
+            <div
+              className="absolute bottom-0 left-0 right-0 h-3 cursor-s-resize z-10"
+              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-height')}
+              style={{
+                background: 'linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.2))',
+              }}
+            />
+            {/* Right (width only) */}
+            <div
+              className="absolute top-0 bottom-0 right-0 w-3 cursor-e-resize z-10"
+              onMouseDown={(e) => handleMouseDown(e, block.i, 'resize-width')}
+              style={{
+                background: 'linear-gradient(to right, transparent, rgba(59, 130, 246, 0.2))',
+              }}
+            />
 
             {/* Content */}
-            <div className="h-full pt-6 overflow-auto">
+            <div 
+              ref={(el) => {
+                if (el) blockRefs.current[block.i] = el;
+              }}
+              className="h-full pt-6 overflow-auto"
+              style={{ minHeight: '100%' }}
+            >
               {child}
             </div>
           </div>
