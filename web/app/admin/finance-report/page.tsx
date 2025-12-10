@@ -1752,10 +1752,15 @@ export default async function FinanceReportPage({
             )
           }}
         </FinanceReportClient>
-        </>
+        ) : null
+      }
+    >
+      {error && (
+        <div className="alert alert-error max-w-xl">
+          <span>Помилка при зверненні до Altegio: {error}</span>
+        </div>
       )}
-      </div>
-    </LayoutEditProvider>
+    </FinanceReportPageClient>
   );
 }
 
