@@ -119,28 +119,19 @@ export function EditNumberField({
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <input
-          type="number"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={label}
-          className="input input-bordered input-sm w-32"
-          min="0"
-          step="1"
-          disabled={!isAuthorized || isPending}
-          readOnly={!isAuthorized}
-        />
-        {unit && <span className="text-sm text-gray-600">{unit}</span>}
-        {!isAuthorized ? (
-          <button
-            onClick={handleUnlock}
-            className="btn btn-sm btn-ghost text-xs"
-            title={`Розблокувати для редагування (потрібен CRON_SECRET)`}
-          >
-            ✏️
-          </button>
-        ) : (
+        {isAuthorized ? (
           <>
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={label}
+              className="input input-bordered input-sm w-32"
+              min="0"
+              step="1"
+              disabled={isPending}
+            />
+            {unit && <span className="text-sm text-gray-600">{unit}</span>}
             <button
               onClick={handleSave}
               className="btn btn-sm btn-primary"
@@ -156,6 +147,14 @@ export function EditNumberField({
               ✕
             </button>
           </>
+        ) : (
+          <button
+            onClick={handleUnlock}
+            className="btn btn-sm btn-ghost text-xs p-1"
+            title={`Розблокувати для редагування (потрібен CRON_SECRET)`}
+          >
+            ✏️
+          </button>
         )}
       </div>
       {error && (
