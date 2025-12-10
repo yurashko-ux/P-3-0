@@ -714,25 +714,14 @@ export default async function FinanceReportPage({
               </div>
             </section>
 
-            {/* Розраховуємо змінні для Управління та інвестицій (використовуються в окремому блоці) */}
+            {/* Розходи за місяць */}
             {(() => {
-              // Отримуємо дані з API для Управління та інвестицій
-              const productPurchase = expenses?.byCategory["Product purchase"] || 0;
-              const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
-              
-              // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
-              const managementCalculated = Math.round(profitDashboard * 0.15);
-              
-              // Сума для підгрупи "Управління та інвестиції"
-              const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
-
               return (
                 <>
-                  {/* Розходи за місяць */}
                   <section className="card bg-base-100 shadow-sm relative flex-1">
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
-                  <div className="card-body p-2 space-y-2">
-                    <h2 className="card-title text-sm">Розходи за місяць</h2>
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">2</div>
+                    <div className="card-body p-2 space-y-2">
+                      <h2 className="card-title text-sm">Розходи за місяць</h2>
                     
 
                     {/* Структура згідно з Excel */}
@@ -1038,13 +1027,27 @@ export default async function FinanceReportPage({
                         </span>
                       </div>
                     </CollapsibleGroup>
-                  </div>
-                );
-              })()}
-            </div>
-          </section>
+                    </div>
+                  </section>
+                </>
+              );
+            })()}
+          </div>
 
-                {/* Управління та інвестиції */}
+          {/* Управління та інвестиції */}
+          {(() => {
+            // Отримуємо дані з API для Управління та інвестицій
+            const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+            const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+            
+            // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
+            const managementCalculated = Math.round(profitDashboard * 0.15);
+            
+            // Сума для підгрупи "Управління та інвестиції"
+            const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
+
+            return (
+              <>
                 {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
                   <section className="card bg-base-100 shadow-sm relative">
                     <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
@@ -1088,10 +1091,9 @@ export default async function FinanceReportPage({
                     </div>
                   </section>
                 )}
-                </>
-              );
-            })()}
-          </div>
+              </>
+            );
+          })()}
 
           {/* Прибуток */}
           {(() => {
