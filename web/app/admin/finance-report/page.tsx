@@ -1047,6 +1047,7 @@ export default async function FinanceReportPage({
                 {/* Управління та інвестиції */}
                 {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
                   <section className="card bg-base-100 shadow-sm relative">
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
                     <div className="card-body p-2 space-y-2">
                       <h2 className="card-title text-sm">Управління та інвестиції</h2>
                       <CollapsibleGroup
