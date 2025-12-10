@@ -729,52 +729,52 @@ export default async function FinanceReportPage({
                       // Отримуємо дані з API
                       const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
                       const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
-                const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
-                const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
-                const rentManual = manualFields.rent || 0; // Fallback, якщо немає в API
-                const rent = rentFromAPI > 0 ? rentFromAPI : rentManual; // Використовуємо API, якщо є
-                const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
-                const accountingManual = manualFields.accounting || 0; // Fallback, якщо немає в API
-                const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual; // Використовуємо API, якщо є
-                const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
-                const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
-                const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
-                const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
-                const directManual = manualFields.direct || 0; // Fallback, якщо немає в API
-                const direct = directFromAPI > 0 ? directFromAPI : directManual; // Використовуємо API, якщо є
-                const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
-                const taxesExtraManual = manualFields.taxes_extra || 0;
-                const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
-                const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
-                                       expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
-                                       expenses?.byCategory["Доставка товарів"] ||
-                                       0;
-                const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
-                const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
-                const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-                const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
-                const acquiringManual = manualFields.acquiring || 0; // Fallback, якщо немає в API
-                const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual; // Використовуємо API, якщо є
-                const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
-                                       expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
-                                       expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
-                                       expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
-                                       0;
+                      const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
+                      const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
+                      const rentManual = manualFields.rent || 0; // Fallback, якщо немає в API
+                      const rent = rentFromAPI > 0 ? rentFromAPI : rentManual; // Використовуємо API, якщо є
+                      const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+                      const accountingManual = manualFields.accounting || 0; // Fallback, якщо немає в API
+                      const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual; // Використовуємо API, якщо є
+                      const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+                      const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+                      const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
+                      const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
+                      const directManual = manualFields.direct || 0; // Fallback, якщо немає в API
+                      const direct = directFromAPI > 0 ? directFromAPI : directManual; // Використовуємо API, якщо є
+                      const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
+                      const taxesExtraManual = manualFields.taxes_extra || 0;
+                      const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+                      const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
+                                             expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
+                                             expenses?.byCategory["Доставка товарів"] ||
+                                             0;
+                      const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
+                      const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
+                      const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
+                      const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+                      const acquiringManual = manualFields.acquiring || 0; // Fallback, якщо немає в API
+                      const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual; // Використовуємо API, якщо є
+                      const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
+                                             expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
+                                             expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
+                                             expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
+                                             0;
 
-                // Обчислюємо суми
-                const salary = salaryFromAPI; // Тільки з API, без ручного введення
-                const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
-                const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
-                const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
-                
-                // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
-                const expensesWithoutManagementAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
-                
-                // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
-                const totalExpenses = salary + expensesWithoutManagementAndInvestments;
+                      // Обчислюємо суми
+                      const salary = salaryFromAPI; // Тільки з API, без ручного введення
+                      const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
+                      const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
+                      const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
+                      
+                      // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
+                      const expensesWithoutManagementAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+                      
+                      // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
+                      const totalExpenses = salary + expensesWithoutManagementAndInvestments;
 
-                // Сума для підгрупи "Бухгалтерія та податки" (БЕЗ Управління, Закуплено товару та Інвестицій)
-                const accountingTaxesGroupTotal = accounting + taxes;
+                      // Сума для підгрупи "Бухгалтерія та податки" (БЕЗ Управління, Закуплено товару та Інвестицій)
+                      const accountingTaxesGroupTotal = accounting + taxes;
 
                 return (
                   <div className="space-y-1">
