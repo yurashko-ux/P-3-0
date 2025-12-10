@@ -990,14 +990,14 @@ export default async function FinanceReportPage({
                       </div>
                     </div>
 
-                    {/* Управління, інвестиції, податки */}
+                    {/* Бухгалтерія та податки */}
                     <div className="p-3 bg-gray-50 rounded border">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-semibold text-gray-700">
-                          Управління, інвестиції, податки
+                          Бухгалтерія та податки
                         </span>
                         <span className="text-sm font-semibold">
-                          {formatMoney(managementGroupTotal)} грн.
+                          {formatMoney(accountingTaxesGroupTotal)} грн.
                         </span>
                       </div>
                       <div className="space-y-1 ml-2">
@@ -1025,14 +1025,6 @@ export default async function FinanceReportPage({
                             )}
                           </div>
                         )}
-
-                        {/* Управління */}
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">Управління</span>
-                          <span className="text-xs font-semibold">
-                            {formatMoney(managementCalculated)} грн.
-                          </span>
-                        </div>
 
                         {/* Податки */}
                         <div className="flex justify-between items-center">
@@ -1064,18 +1056,28 @@ export default async function FinanceReportPage({
                       </div>
                     </div>
 
-                    {/* Інвестиції */}
-                    {(productPurchase > 0 || investments > 0) && (
+                    {/* Управління та інвестиції */}
+                    {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
                       <div className="p-3 bg-gray-50 rounded border">
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-sm font-semibold text-gray-700">
-                            Інвестиції
+                            Управління та інвестиції
                           </span>
                           <span className="text-sm font-semibold">
-                            {formatMoney(purchaseInvestmentsTotal)} грн.
+                            {formatMoney(managementInvestmentsTotal)} грн.
                           </span>
                         </div>
                         <div className="space-y-1 ml-2">
+                          {/* Управління */}
+                          {managementCalculated > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">Управління</span>
+                              <span className="text-xs font-semibold">
+                                {formatMoney(managementCalculated)} грн.
+                              </span>
+                            </div>
+                          )}
+
                           {/* Закуплено товару */}
                           {productPurchase > 0 && (
                             <div className="flex justify-between items-center">
