@@ -92,6 +92,11 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
   };
 
+  const handleResize = (layout: any) => {
+    // Під час зміни розміру оновлюємо layout для плавного пересування
+    setLayout(layout);
+  };
+
   const handleResizeStop = (layout: any) => {
     // Після завершення зміни розміру зберігаємо точні значення
     setLayout(layout);
@@ -103,6 +108,7 @@ export function FinanceReportGrid({ children }: FinanceReportGridProps) {
       className="layout"
       layout={layout}
       onLayoutChange={handleLayoutChange}
+      onResize={handleResize}
       onResizeStop={handleResizeStop}
       {...({ 
         cols: 12, 

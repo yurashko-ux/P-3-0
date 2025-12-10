@@ -158,6 +158,11 @@ export default function PhotoReportsPage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayout));
   };
 
+  const handleResize = (layout: LayoutItem[]) => {
+    // Під час зміни розміру оновлюємо layout для плавного пересування
+    setLayout(layout);
+  };
+
   const handleResizeStop = (layout: LayoutItem[]) => {
     // Після завершення зміни розміру зберігаємо точні значення
     setLayout(layout);
@@ -303,6 +308,7 @@ export default function PhotoReportsPage() {
         className="layout"
         layout={layout}
         onLayoutChange={handleLayoutChange}
+        onResize={handleResize}
         onResizeStop={handleResizeStop}
         {...({ 
           cols: 12, 
