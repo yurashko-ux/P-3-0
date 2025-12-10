@@ -1101,7 +1101,8 @@ export default async function FinanceReportPage({
             const profit = totalIncome - totalExpenses;
             
             // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
-            const ownerProfitLocal = profit - management;
+            // Використовуємо managementCalculated замість management з API, щоб узгодити з блоком 1
+            const ownerProfitLocal = profit - managementCalculated;
             
             // Отримуємо компоненти для інкасації
             const costLocal = goods?.cost || 0;
