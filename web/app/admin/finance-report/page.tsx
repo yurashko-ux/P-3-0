@@ -1557,7 +1557,8 @@ export default async function FinanceReportPage({
         </FinanceReportClient>
         </>
       )}
-    </div>
+      </div>
+    </LayoutEditProvider>
   );
 }
 
