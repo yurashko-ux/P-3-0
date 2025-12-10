@@ -654,7 +654,7 @@ export default async function FinanceReportPage({
                   </colgroup>
                   <thead>
                     <tr className="bg-yellow-300">
-                      <th className="text-center text-sm font-semibold px-2 py-1" colSpan={3}>
+                      <th className="text-center text-xs font-semibold px-2 py-1" colSpan={3}>
                         {displayMonthLabel} {selectedYear}
                       </th>
                     </tr>
@@ -668,44 +668,44 @@ export default async function FinanceReportPage({
                         <>
                           <tr className="bg-cyan-200">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Оборот (Виручка)</td>
-                            <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.total)} грн.</td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">100.0%</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.total)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">100.0%</td>
                           </tr>
                           <tr className="bg-blue-100">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Послуги</td>
-                            <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.services)} грн.</td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.services)}%</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.services)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.services)}%</td>
                           </tr>
                           <tr className="bg-green-100">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Товари</td>
-                            <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.goods)} грн.</td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.goods)}%</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.goods)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.goods)}%</td>
                           </tr>
                           <tr className="bg-rose-100">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Собівартість товару</td>
-                            <td className="text-right text-base font-bold whitespace-nowrap px-2 py-1">
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">
                               <EditableCostCell
                                 year={selectedYear}
                                 month={selectedMonth}
                                 currentCost={goodsCostDashboard}
                               />
                             </td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
                           </tr>
                           <tr className="bg-blue-200">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Дохід (послуги+товар)</td>
-                            <td className="text-right text-base font-bold text-blue-900 whitespace-nowrap px-2 py-1">{formatMoney(totalIncomeDashboard)} грн.</td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(totalIncomeDashboard)}%</td>
+                            <td className="text-right text-xs font-bold text-blue-900 whitespace-nowrap px-2 py-1">{formatMoney(totalIncomeDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(totalIncomeDashboard)}%</td>
                           </tr>
                           <tr className="bg-red-200">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Розхід</td>
-                            <td className="text-right text-base font-bold text-red-800 whitespace-nowrap px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(totalExpensesDashboard)}%</td>
+                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(totalExpensesDashboard)}%</td>
                           </tr>
                           <tr className="bg-green-200">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Прибуток салону</td>
-                            <td className="text-right text-base font-bold text-green-900 whitespace-nowrap px-2 py-1">{formatMoney(profitDashboard)} грн.</td>
-                            <td className="text-right text-sm font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(profitDashboard)}%</td>
+                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-2 py-1">{formatMoney(profitDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(profitDashboard)}%</td>
                           </tr>
                         </>
                       );
@@ -797,7 +797,7 @@ export default async function FinanceReportPage({
                       defaultCollapsed={true}
                     >
                       {/* ЗП */}
-                      <div className="flex justify-between items-center bg-blue-100 px-1 py-0.5 rounded">
+                      <div className="flex justify-between items-center bg-purple-100 px-1 py-0.5 rounded">
                         <span className="text-xs font-medium">ЗП</span>
                         <span className="text-xs font-bold">
                           {formatMoney(salary)} грн.
@@ -806,14 +806,14 @@ export default async function FinanceReportPage({
 
                       {/* Оренда */}
                       {rent > 0 ? (
-                        <div className="flex justify-between items-center bg-blue-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-pink-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Оренда</span>
                           <span className="text-xs font-bold">
                             {formatMoney(rent)} грн.
                           </span>
                         </div>
                       ) : (
-                        <div className="flex justify-between items-center bg-blue-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-pink-100 px-1 py-0.5 rounded">
                           <div className="flex items-center gap-1">
                             <span className="text-xs font-medium">Оренда</span>
                             <EditExpenseField
@@ -838,7 +838,7 @@ export default async function FinanceReportPage({
                       defaultCollapsed={true}
                     >
                       {cmmFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-yellow-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">CMM</span>
                           <span className="text-xs font-bold">
                             {formatMoney(cmmFromAPI)} грн.
@@ -846,7 +846,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {targetFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-cyan-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Таргет (ведення)</span>
                           <span className="text-xs font-bold">
                             {formatMoney(targetFromAPI)} грн.
@@ -854,7 +854,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {advertisingFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-indigo-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Реклама бюджет ФБ</span>
                           <span className="text-xs font-bold">
                             {formatMoney(advertisingFromAPI)} грн.
@@ -862,7 +862,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {direct > 0 && (
-                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-teal-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Дірект</span>
                           <span className="text-xs font-bold">
                             {formatMoney(direct)} грн.
@@ -870,7 +870,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {direct === 0 && (
-                        <div className="flex justify-between items-center bg-green-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-teal-100 px-1 py-0.5 rounded">
                           <div className="flex items-center gap-1">
                             <span className="text-xs font-medium">Дірект</span>
                             <EditExpenseField
@@ -895,7 +895,7 @@ export default async function FinanceReportPage({
                       defaultCollapsed={true}
                     >
                       {miscExpensesFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-orange-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Інші витрати</span>
                           <span className="text-xs font-bold">
                             {formatMoney(miscExpensesFromAPI)} грн.
@@ -903,7 +903,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {deliveryFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-amber-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Доставка товарів</span>
                           <span className="text-xs font-bold">
                             {formatMoney(deliveryFromAPI)} грн.
@@ -911,7 +911,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {consumablesFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-lime-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Закупівля матеріалів</span>
                           <span className="text-xs font-bold">
                             {formatMoney(consumablesFromAPI)} грн.
@@ -919,7 +919,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {stationeryFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-emerald-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Канцелярські, миючі т</span>
                           <span className="text-xs font-bold">
                             {formatMoney(stationeryFromAPI)} грн.
@@ -927,7 +927,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {productsForGuestsFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-sky-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Продукти для гостей</span>
                           <span className="text-xs font-bold">
                             {formatMoney(productsForGuestsFromAPI)} грн.
@@ -935,7 +935,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {acquiring > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-violet-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Еквайринг</span>
                           <span className="text-xs font-bold">
                             {formatMoney(acquiring)} грн.
@@ -943,7 +943,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {acquiring === 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-violet-100 px-1 py-0.5 rounded">
                           <div className="flex items-center gap-1">
                             <span className="text-xs font-medium">Еквайринг</span>
                             <EditExpenseField
@@ -960,7 +960,7 @@ export default async function FinanceReportPage({
                         </div>
                       )}
                       {utilitiesFromAPI > 0 && (
-                        <div className="flex justify-between items-center bg-rose-100 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-fuchsia-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Інтернет, CRM і т д.</span>
                           <span className="text-xs font-bold">
                             {formatMoney(utilitiesFromAPI)} грн.
@@ -977,7 +977,7 @@ export default async function FinanceReportPage({
                     >
                       {/* Бухгалтерія */}
                       {(accounting > 0 || accountingManual > 0) && (
-                        <div className="flex justify-between items-center bg-blue-200 px-1 py-0.5 rounded">
+                        <div className="flex justify-between items-center bg-slate-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Бухгалтерія</span>
                           {accounting > 0 ? (
                             <span className="text-xs font-bold">
@@ -1001,7 +1001,7 @@ export default async function FinanceReportPage({
                       )}
 
                       {/* Податки */}
-                      <div className="flex justify-between items-center bg-blue-200 px-1 py-0.5 rounded">
+                      <div className="flex justify-between items-center bg-stone-100 px-1 py-0.5 rounded">
                         <div className="flex items-center gap-1">
                           <span className="text-xs font-medium">Податки</span>
                           {taxesFromAPI === 0 && (
