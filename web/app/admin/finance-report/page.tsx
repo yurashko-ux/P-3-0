@@ -18,7 +18,7 @@ import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
-import { FinanceReportGrid } from "./FinanceReportGrid";
+import { FinanceReportClient } from "./FinanceReportClient";
 
 export const dynamic = "force-dynamic";
 
@@ -642,7 +642,7 @@ export default async function FinanceReportPage({
       {summary && (
         <>
           {/* Компактний дашборд (як на прикладі) */}
-          <FinanceReportGrid>
+          <FinanceReportClient>
             {{
               block1: (
             <section className="card bg-base-100 shadow-sm relative h-full">
@@ -1549,7 +1549,7 @@ export default async function FinanceReportPage({
           </section>
             )
           }}
-        </FinanceReportGrid>
+        </FinanceReportClient>
         </>
       )}
     </div>
