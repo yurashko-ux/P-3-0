@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
-import { FinanceReportGrid } from "./FinanceReportGrid";
+import { CustomGridLayout } from "./CustomGridLayout";
 
 type FinanceReportClientProps = {
   children: {
@@ -14,6 +14,6 @@ type FinanceReportClientProps = {
 };
 
 export function FinanceReportClient({ children }: FinanceReportClientProps) {
-  return <FinanceReportGrid>{children}</FinanceReportGrid>;
+  return <CustomGridLayout>{children}</CustomGridLayout>;
 }
 
