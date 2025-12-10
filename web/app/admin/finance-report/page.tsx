@@ -14,6 +14,7 @@ import { EditExchangeRateField } from "./_components/EditExchangeRateField";
 import { EditWarehouseBalanceButton } from "./_components/EditWarehouseBalanceButton";
 import { EditNumberField } from "./_components/EditNumberField";
 import { CollapsibleSection } from "./_components/CollapsibleSection";
+import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
@@ -799,267 +800,247 @@ export default async function FinanceReportPage({
                     </div>
 
                     {/* ЗП та Оренда */}
-                    <div className="p-3 bg-gray-50 rounded border">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-semibold text-gray-700">
-                          ЗП та Оренда
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(salary + rent)} грн.
+                    <CollapsibleGroup
+                      title="ЗП та Оренда"
+                      total={salary + rent}
+                      formatMoney={formatMoney}
+                      defaultCollapsed={true}
+                    >
+                      {/* ЗП */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-600">ЗП</span>
+                        <span className="text-xs font-semibold">
+                          {formatMoney(salary)} грн.
                         </span>
                       </div>
-                      <div className="space-y-1 ml-2">
-                        {/* ЗП */}
+
+                      {/* Оренда */}
+                      {rent > 0 ? (
                         <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-600">ЗП</span>
+                          <span className="text-xs text-gray-600">Оренда</span>
                           <span className="text-xs font-semibold">
-                            {formatMoney(salary)} грн.
+                            {formatMoney(rent)} грн.
                           </span>
                         </div>
-
-                        {/* Оренда */}
-                        {rent > 0 ? (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Оренда</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(rent)} грн.
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-600">Оренда</span>
-                              <EditExpenseField
-                                year={selectedYear}
-                                month={selectedMonth}
-                                fieldKey="rent"
-                                label="Оренда"
-                                currentValue={rentManual}
-                              />
-                            </div>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(rentManual)} грн.
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Marketing/Advertising Group */}
-                    <div className="p-3 bg-gray-50 rounded border">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-semibold text-gray-700">
-                          Marketing/Advertising
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(marketingTotal)} грн.
-                        </span>
-                      </div>
-                      <div className="space-y-1 ml-2">
-                        {cmmFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">CMM</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(cmmFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {targetFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Таргет (ведення)</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(targetFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {advertisingFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Реклама бюджет ФБ</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(advertisingFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {direct > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Дірект</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(direct)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {direct === 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Дірект</span>
-                            <div className="flex items-center gap-1">
-                              <EditExpenseField
-                                year={selectedYear}
-                                month={selectedMonth}
-                                fieldKey="direct"
-                                label="Дірект"
-                                currentValue={directManual}
-                              />
-                              <span className="text-xs font-semibold">
-                                {formatMoney(directManual)} грн.
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Other Expenses Group */}
-                    <div className="p-3 bg-gray-50 rounded border">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-semibold text-gray-700">
-                          Інші витрати
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(otherExpensesTotal)} грн.
-                        </span>
-                      </div>
-                      <div className="space-y-1 ml-2">
-                        {miscExpensesFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Інші витрати</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(miscExpensesFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {deliveryFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Доставка товарів</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(deliveryFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {consumablesFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Закупівля матеріалів</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(consumablesFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {stationeryFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Канцелярські, миючі т</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(stationeryFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {productsForGuestsFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Продукти для гостей</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(productsForGuestsFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {acquiring > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Еквайринг</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(acquiring)} грн.
-                            </span>
-                          </div>
-                        )}
-                        {acquiring === 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Еквайринг</span>
-                            <div className="flex items-center gap-1">
-                              <EditExpenseField
-                                year={selectedYear}
-                                month={selectedMonth}
-                                fieldKey="acquiring"
-                                label="Еквайринг"
-                                currentValue={acquiringManual}
-                              />
-                              <span className="text-xs font-semibold">
-                                {formatMoney(acquiringManual)} грн.
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        {utilitiesFromAPI > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Інтернет, CRM і т д.</span>
-                            <span className="text-xs font-semibold">
-                              {formatMoney(utilitiesFromAPI)} грн.
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Бухгалтерія та податки */}
-                    <div className="p-3 bg-gray-50 rounded border">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-semibold text-gray-700">
-                          Бухгалтерія та податки
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {formatMoney(accountingTaxesGroupTotal)} грн.
-                        </span>
-                      </div>
-                      <div className="space-y-1 ml-2">
-                        {/* Бухгалтерія */}
-                        {(accounting > 0 || accountingManual > 0) && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">Бухгалтерія</span>
-                            {accounting > 0 ? (
-                              <span className="text-xs font-semibold">
-                                {formatMoney(accounting)} грн.
-                              </span>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <EditExpenseField
-                                  year={selectedYear}
-                                  month={selectedMonth}
-                                  fieldKey="accounting"
-                                  label="Бухгалтерія"
-                                  currentValue={accountingManual}
-                                />
-                                <span className="text-xs font-semibold">
-                                  {formatMoney(accountingManual)} грн.
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Податки */}
+                      ) : (
                         <div className="flex justify-between items-center">
                           <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-600">Податки</span>
-                            {taxesFromAPI === 0 && (
-                              <EditExpenseField
-                                year={selectedYear}
-                                month={selectedMonth}
-                                fieldKey="taxes_extra"
-                                label="Податки (додатково)"
-                                currentValue={taxesExtraManual}
-                              />
-                            )}
-                            {taxesFromAPI > 0 && taxesExtraManual > 0 && (
-                              <EditExpenseField
-                                year={selectedYear}
-                                month={selectedMonth}
-                                fieldKey="taxes_extra"
-                                label="Податки (додатково)"
-                                currentValue={taxesExtraManual}
-                              />
-                            )}
+                            <span className="text-xs text-gray-600">Оренда</span>
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="rent"
+                              label="Оренда"
+                              currentValue={rentManual}
+                            />
                           </div>
                           <span className="text-xs font-semibold">
-                            {formatMoney(taxes)} грн.
+                            {formatMoney(rentManual)} грн.
                           </span>
                         </div>
+                      )}
+                    </CollapsibleGroup>
+
+                    {/* Marketing/Advertising Group */}
+                    <CollapsibleGroup
+                      title="Marketing/Advertising"
+                      total={marketingTotal}
+                      formatMoney={formatMoney}
+                      defaultCollapsed={true}
+                    >
+                      {cmmFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">CMM</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(cmmFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {targetFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Таргет (ведення)</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(targetFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {advertisingFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Реклама бюджет ФБ</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(advertisingFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {direct > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Дірект</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(direct)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {direct === 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Дірект</span>
+                          <div className="flex items-center gap-1">
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="direct"
+                              label="Дірект"
+                              currentValue={directManual}
+                            />
+                            <span className="text-xs font-semibold">
+                              {formatMoney(directManual)} грн.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </CollapsibleGroup>
+
+                    {/* Other Expenses Group */}
+                    <CollapsibleGroup
+                      title="Інші витрати"
+                      total={otherExpensesTotal}
+                      formatMoney={formatMoney}
+                      defaultCollapsed={true}
+                    >
+                      {miscExpensesFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Інші витрати</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(miscExpensesFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {deliveryFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Доставка товарів</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(deliveryFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {consumablesFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Закупівля матеріалів</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(consumablesFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {stationeryFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Канцелярські, миючі т</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(stationeryFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {productsForGuestsFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Продукти для гостей</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(productsForGuestsFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {acquiring > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Еквайринг</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(acquiring)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {acquiring === 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Еквайринг</span>
+                          <div className="flex items-center gap-1">
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="acquiring"
+                              label="Еквайринг"
+                              currentValue={acquiringManual}
+                            />
+                            <span className="text-xs font-semibold">
+                              {formatMoney(acquiringManual)} грн.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {utilitiesFromAPI > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Інтернет, CRM і т д.</span>
+                          <span className="text-xs font-semibold">
+                            {formatMoney(utilitiesFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                    </CollapsibleGroup>
+
+                    {/* Бухгалтерія та податки */}
+                    <CollapsibleGroup
+                      title="Бухгалтерія та податки"
+                      total={accountingTaxesGroupTotal}
+                      formatMoney={formatMoney}
+                      defaultCollapsed={true}
+                    >
+                      {/* Бухгалтерія */}
+                      {(accounting > 0 || accountingManual > 0) && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-gray-600">Бухгалтерія</span>
+                          {accounting > 0 ? (
+                            <span className="text-xs font-semibold">
+                              {formatMoney(accounting)} грн.
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <EditExpenseField
+                                year={selectedYear}
+                                month={selectedMonth}
+                                fieldKey="accounting"
+                                label="Бухгалтерія"
+                                currentValue={accountingManual}
+                              />
+                              <span className="text-xs font-semibold">
+                                {formatMoney(accountingManual)} грн.
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Податки */}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-600">Податки</span>
+                          {taxesFromAPI === 0 && (
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="taxes_extra"
+                              label="Податки (додатково)"
+                              currentValue={taxesExtraManual}
+                            />
+                          )}
+                          {taxesFromAPI > 0 && taxesExtraManual > 0 && (
+                            <EditExpenseField
+                              year={selectedYear}
+                              month={selectedMonth}
+                              fieldKey="taxes_extra"
+                              label="Податки (додатково)"
+                              currentValue={taxesExtraManual}
+                            />
+                          )}
+                        </div>
+                        <span className="text-xs font-semibold">
+                          {formatMoney(taxes)} грн.
+                        </span>
                       </div>
-                    </div>
+                    </CollapsibleGroup>
                   </div>
                 );
               })()}
