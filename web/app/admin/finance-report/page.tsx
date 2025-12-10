@@ -783,6 +783,7 @@ export default async function FinanceReportPage({
             }}
           </FinanceReportClient>
       }
+      }
     >
       <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
         <div>
