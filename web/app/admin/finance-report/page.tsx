@@ -1443,43 +1443,6 @@ export default async function FinanceReportPage({
                     </div>
                   </div>
                   
-                  {/* Потрібно закупити волосся */}
-                  <div className="pt-2 border-t">
-                    <div className="flex justify-between items-center">
-                      <p className="text-xs uppercase text-gray-500">Потрібно закупити волосся на суму</p>
-                      <p className="text-base font-semibold">{formatMoney(hairPurchaseAmount)} грн.</p>
-                    </div>
-                  </div>
-                  
-                  {/* Платежі з ФОП Ореховська */}
-                  <div className="pt-2 border-t">
-                    <div className="flex justify-between items-center">
-                      <p className="text-xs uppercase text-gray-500">Платежі з ФОП Ореховська</p>
-                      <p className="text-base font-semibold">{formatMoney(fopOrekhovskaPayments)} грн.</p>
-                    </div>
-                  </div>
-                  
-                  {/* Інкасація */}
-                  <div className="pt-2 border-t">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <p className="text-xs uppercase text-gray-500">Інкасація</p>
-                        <div className="text-xs text-gray-400 mt-0.5 space-y-0.5">
-                          <p>Собівартість {formatMoney(costLocal)} грн.</p>
-                          <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
-                          <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
-                          <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
-                          <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
-                        </div>
-                      </div>
-                      <div className="text-right ml-4">
-                        <p className={`text-base font-semibold ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatMoney(encashmentLocal)} грн.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
                   {/* Ручні поля */}
                   <div className="pt-2 border-t space-y-2">
                     <h3 className="text-xs uppercase text-gray-500 font-semibold">Ручні поля</h3>
