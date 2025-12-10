@@ -23,18 +23,18 @@ export function CollapsibleSection({
   return (
     <div>
       <div
-        className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-2 rounded transition-colors"
+        className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors"
         onClick={() => setIsCollapsed(!isCollapsed)}
       >
-        <h2 className="card-title text-base">{title}</h2>
+        <h2 className="card-title text-xs font-semibold">{title}</h2>
         <div className="flex items-center gap-2">
           {summary}
-          <button className="btn btn-sm btn-ghost">
+          <button className="btn btn-xs btn-ghost p-0.5">
             {isCollapsed ? "▼" : "▲"}
           </button>
         </div>
       </div>
-      {!isCollapsed && <div className="mt-2">{children}</div>}
+      {!isCollapsed && <div className="mt-1">{children}</div>}
     </div>
   );
 }
