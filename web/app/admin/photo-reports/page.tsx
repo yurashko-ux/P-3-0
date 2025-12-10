@@ -5,7 +5,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CustomGridLayout } from "./CustomGridLayout";
+import { CustomGridLayout, LayoutItem } from "@/components/admin/CustomGridLayout";
+import { EditLayoutButton } from "@/components/admin/EditLayoutButton";
 
 type MasterProfile = {
   id: string;
@@ -211,16 +212,46 @@ export default function PhotoReportsPage() {
     );
   };
 
+  const [editMode, setEditMode] = useState(false);
+
+  const STORAGE_KEY = "photo-reports-dashboard-layout";
+  const LAYOUT_VERSION = "7";
+
+  const defaultLayout: LayoutItem[] = [
+    { i: "test-section", x: 0, y: 0, w: 12, h: 80 },
+    { i: "analytics", x: 0, y: 80, w: 12, h: 120 },
+    { i: "masters", x: 0, y: 200, w: 12, h: 60 },
+  ];
+
+  const handleSave = (layout: LayoutItem[]) => {
+    // Layout буде збережено через EditLayoutButton
+  };
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-8">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Фото-звіти</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Тестування нагадувань та аналітика по майстрах. Перетягуйте блоки для зміни їх розташування.
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Фото-звіти</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Тестування нагадувань та аналітика по майстрах.
+            </p>
+          </div>
+          <EditLayoutButton
+            storageKey={STORAGE_KEY}
+            onEditModeChange={setEditMode}
+            onSave={handleSave}
+          />
+        </div>
       </header>
 
-      <CustomGridLayout>
+      <CustomGridLayout
+        storageKey={STORAGE_KEY}
+        layoutVersion={LAYOUT_VERSION}
+        defaultLayout={defaultLayout}
+        editMode={editMode}
+        onSave={handleSave}
+      >
         {{
           'test-section': (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
