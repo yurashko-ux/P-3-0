@@ -17,8 +17,7 @@ const LAYOUT_VERSION = "6";
 const defaultLayout: LayoutItem[] = [
   { i: "test-section", x: 0, y: 0, w: 12, h: 80 },
   { i: "analytics", x: 0, y: 80, w: 12, h: 120 },
-  { i: "financial", x: 0, y: 200, w: 12, h: 80 },
-  { i: "masters", x: 0, y: 280, w: 12, h: 60 },
+  { i: "masters", x: 0, y: 200, w: 12, h: 60 },
 ];
 
 type CustomGridLayoutProps = {
