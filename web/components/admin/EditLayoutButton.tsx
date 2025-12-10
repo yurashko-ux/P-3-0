@@ -106,21 +106,43 @@ export function EditLayoutButton({
       {!isAuthorized ? (
         <button
           onClick={handleUnlock}
-          className="btn btn-sm btn-outline text-xs"
+          className="btn btn-sm btn-outline text-xs font-semibold"
           title={`Розблокувати для редагування layout (потрібен CRON_SECRET)`}
         >
           🔓 Редагувати layout
         </button>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleLock}
+              className="btn btn-sm btn-ghost text-xs"
+              disabled={isPending}
+            >
+              🔒 Заблокувати
+            </button>
+            <span className="text-xs text-green-600 font-semibold">✓ Режим редагування активний</span>
+          </div>
           <button
-            onClick={handleLock}
-            className="btn btn-sm btn-ghost text-xs"
+            onClick={() => {
+              // Отримуємо layout з localStorage
+              const savedLayout = localStorage.getItem(storageKey);
+              if (savedLayout) {
+                try {
+                  const layout = JSON.parse(savedLayout);
+                  handleSaveLayout(layout);
+                } catch (e) {
+                  setError("Помилка читання layout з localStorage");
+                }
+              } else {
+                setError("Layout не знайдено в localStorage");
+              }
+            }}
+            className="btn btn-sm btn-primary text-xs font-semibold"
             disabled={isPending}
           >
-            🔒 Заблокувати
+            {isPending ? "Збереження..." : "💾 Зберегти layout"}
           </button>
-          <span className="text-xs text-green-600">Режим редагування активний</span>
         </div>
       )}
       {error && (
@@ -134,29 +156,7 @@ export function EditLayoutButton({
         </div>
       )}
       {isAuthorized && (
-        <button
-          onClick={() => {
-            // Отримуємо layout з localStorage
-            const savedLayout = localStorage.getItem(storageKey);
-            if (savedLayout) {
-              try {
-                const layout = JSON.parse(savedLayout);
-                handleSaveLayout(layout);
-              } catch (e) {
-                setError("Помилка читання layout з localStorage");
-              }
-            } else {
-              setError("Layout не знайдено в localStorage");
-            }
-          }}
-          className="btn btn-sm btn-primary text-xs"
-          disabled={isPending}
-        >
-          {isPending ? "Збереження..." : "💾 Зберегти layout"}
-        </button>
-      )}
-      {isAuthorized && (
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-gray-500 mt-1">
           💡 Перемістіть та змініть розмір блоків, потім натисніть "Зберегти layout"
         </div>
       )}
