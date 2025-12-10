@@ -581,13 +581,10 @@ export default async function FinanceReportPage({
 
   const displayMonthLabel = monthOptions.find((m) => m.month === selectedMonth)?.label || "";
 
-  return (
-    <FinanceReportPageClient
-      summaryContent={
-        summary ? (
-          <FinanceReportClient>
-            {{
-              block1: (
+  const summaryContent = summary ? (
+    <FinanceReportClient>
+      {{
+        block1: (
             <section className="card bg-base-100 shadow-sm relative h-full">
               <div className="drag-handle absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10 cursor-move">1</div>
               <div className="card-body p-1.5">
