@@ -37,6 +37,16 @@
         }
       ],
       "destination": "/admin/finance-report"
+    },
+    {
+      "source": "/admin/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "finance-hob.vercel.app"
+        }
+      ],
+      "destination": "/admin/finance-report"
     }
   ]
 }
