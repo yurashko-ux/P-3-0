@@ -131,10 +131,34 @@ export async function getDirectClient(id: string): Promise<DirectClient | null> 
  */
 export async function getDirectClientByInstagram(username: string): Promise<DirectClient | null> {
   try {
-    const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(username));
-    if (!idData) return null;
-    const id = JSON.parse(idData);
-    return getDirectClient(id);
+    // Нормалізуємо username до нижнього регістру для пошуку
+    const normalizedUsername = username.toLowerCase().trim();
+    console.log(`[direct-store] Looking up client by Instagram username: ${normalizedUsername}`);
+    
+    const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(normalizedUsername));
+    if (!idData) {
+      console.log(`[direct-store] No client found for Instagram username: ${normalizedUsername}`);
+      return null;
+    }
+    
+    let id: string;
+    if (typeof idData === 'string') {
+      try {
+        id = JSON.parse(idData);
+      } catch {
+        id = idData; // Якщо це вже рядок, використовуємо як є
+      }
+    } else {
+      id = String(idData);
+    }
+    
+    console.log(`[direct-store] Found client ID for Instagram ${normalizedUsername}: ${id}`);
+    const client = await getDirectClient(id);
+    console.log(`[direct-store] Retrieved client by ID ${id}:`, {
+      found: !!client,
+      username: client?.instagramUsername,
+    });
+    return client;
   } catch (err) {
     console.error(`[direct-store] Failed to get client by Instagram ${username}:`, err);
     return null;
@@ -146,6 +170,12 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
  */
 export async function saveDirectClient(client: DirectClient): Promise<void> {
   try {
+    console.log(`[direct-store] saveDirectClient called:`, {
+      id: client.id,
+      instagramUsername: client.instagramUsername,
+      instagramUsernameType: typeof client.instagramUsername,
+    });
+    
     // Валідація обов'язкових полів
     if (!client.id) {
       throw new Error('Client ID is required');
@@ -154,8 +184,20 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       throw new Error(`Client instagramUsername is required and must be a string, got: ${typeof client.instagramUsername}`);
     }
 
+    // Нормалізуємо Instagram username до нижнього регістру
+    const normalizedClient = {
+      ...client,
+      instagramUsername: client.instagramUsername.toLowerCase().trim(),
+    };
+    
+    console.log(`[direct-store] Saving client to KV:`, {
+      id: normalizedClient.id,
+      instagramUsername: normalizedClient.instagramUsername,
+    });
+
     // Зберігаємо клієнта
-    await kvWrite.setRaw(directKeys.CLIENT_ITEM(client.id), JSON.stringify(client));
+    await kvWrite.setRaw(directKeys.CLIENT_ITEM(normalizedClient.id), JSON.stringify(normalizedClient));
+    console.log(`[direct-store] Client saved to KV successfully`);
 
     // Додаємо в індекс
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
@@ -192,19 +234,28 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       clientIds = [];
     }
     
-    if (!clientIds.includes(client.id)) {
-      clientIds.push(client.id);
+    if (!clientIds.includes(normalizedClient.id)) {
+      clientIds.push(normalizedClient.id);
       // Гарантуємо, що зберігаємо саме масив
       const indexToSave = JSON.stringify(clientIds);
+      console.log(`[direct-store] Updating client index:`, {
+        clientId: normalizedClient.id,
+        totalClients: clientIds.length,
+        indexPreview: clientIds.slice(0, 5),
+      });
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexToSave);
-      console.log(`[direct-store] Saved client ${client.id} to index. Total clients: ${clientIds.length}`);
+      console.log(`[direct-store] Saved client ${normalizedClient.id} to index. Total clients: ${clientIds.length}`);
     } else {
-      console.log(`[direct-store] Client ${client.id} already in index`);
+      console.log(`[direct-store] Client ${normalizedClient.id} already in index`);
     }
 
     // Зберігаємо індекс по Instagram username для швидкого пошуку
-    const instagramKey = directKeys.CLIENT_BY_INSTAGRAM(client.instagramUsername);
-    await kvWrite.setRaw(instagramKey, JSON.stringify(client.id));
+    // Нормалізуємо username до нижнього регістру для консистентності
+    const normalizedUsername = normalizedClient.instagramUsername.toLowerCase().trim();
+    const instagramKey = directKeys.CLIENT_BY_INSTAGRAM(normalizedUsername);
+    console.log(`[direct-store] Saving Instagram index: ${normalizedUsername} -> ${normalizedClient.id}`);
+    await kvWrite.setRaw(instagramKey, JSON.stringify(normalizedClient.id));
+    console.log(`[direct-store] Instagram index saved successfully`);
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client?.id || 'unknown'}:`, err);
     throw err;
