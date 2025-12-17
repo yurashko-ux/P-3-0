@@ -39,8 +39,12 @@ export default function DirectPage() {
       if (statusesRes.ok) {
         const statusesData = await statusesRes.json();
         if (statusesData.ok) {
-          setStatuses(statusesData.statuses);
+          setStatuses(statusesData.statuses || []);
+        } else {
+          console.warn('[direct] Failed to load statuses:', statusesData.error);
         }
+      } else {
+        console.warn('[direct] Statuses API returned:', statusesRes.status);
       }
 
       // Завантажуємо клієнтів
@@ -49,6 +53,7 @@ export default function DirectPage() {
       // Завантажуємо статистику
       await loadStats();
     } catch (err) {
+      console.error('[direct] Error loading data:', err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
@@ -65,15 +70,21 @@ export default function DirectPage() {
       params.set("sortOrder", sortOrder);
 
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`);
+      if (!res.ok) {
+        console.error('[direct] Clients API returned:', res.status, res.statusText);
+        setClients([]);
+        return;
+      }
+      
       const data = await res.json();
       if (data.ok) {
-        let filteredClients = data.clients;
+        let filteredClients = data.clients || [];
 
         // Пошук по Instagram username
         if (filters.search) {
           const searchLower = filters.search.toLowerCase();
           filteredClients = filteredClients.filter((c: DirectClient) =>
-            c.instagramUsername.toLowerCase().includes(searchLower) ||
+            c.instagramUsername?.toLowerCase().includes(searchLower) ||
             c.firstName?.toLowerCase().includes(searchLower) ||
             c.lastName?.toLowerCase().includes(searchLower)
           );
@@ -81,27 +92,43 @@ export default function DirectPage() {
 
         setClients(filteredClients);
       } else {
-        setError(data.error || "Failed to load clients");
+        console.error('[direct] Failed to load clients:', data.error);
+        setClients([]);
+        if (!error) {
+          setError(data.error || "Failed to load clients");
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      console.error('[direct] Error loading clients:', err);
+      setClients([]);
+      if (!error) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     }
   };
 
   const loadStats = async () => {
     try {
       const res = await fetch("/api/admin/direct/stats");
+      if (!res.ok) {
+        console.warn('[direct] Stats API returned:', res.status);
+        return;
+      }
       const data = await res.json();
       if (data.ok) {
         setStats(data.stats);
+      } else {
+        console.warn('[direct] Failed to load stats:', data.error);
       }
     } catch (err) {
-      console.error("Failed to load stats:", err);
+      console.error("[direct] Error loading stats:", err);
     }
   };
 
   useEffect(() => {
-    loadClients();
+    if (!isLoading) {
+      loadClients();
+    }
   }, [filters, sortBy, sortOrder]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
