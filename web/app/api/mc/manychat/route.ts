@@ -434,22 +434,50 @@ export async function POST(req: NextRequest) {
   // Синхронізація з Direct розділом (якщо є Instagram username)
   if (message.handle) {
     try {
-      // Викликаємо синхронізацію асинхронно (не блокуємо відповідь)
-      const syncUrl = new URL('/api/admin/direct/sync-manychat', req.url);
-      fetch(syncUrl.toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instagramUsername: message.handle,
-          fullName: message.fullName,
-          text: message.text,
+      // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
+      // Це швидше і не потребує авторизації
+      const { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } = await import('@/lib/direct-store');
+      
+      const instagram = message.handle;
+      let client = await getDirectClientByInstagram(instagram);
+      
+      const statuses = await getAllDirectStatuses();
+      const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
+      
+      if (!client) {
+        // Створюємо нового клієнта
+        const now = new Date().toISOString();
+        client = {
+          id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          instagramUsername: instagram,
+          firstName: message.fullName?.split(' ')[0],
+          lastName: message.fullName?.split(' ').slice(1).join(' '),
           source: 'instagram',
-        }),
-      }).catch((err) => {
-        console.warn('[manychat] Failed to sync with Direct:', err);
-      });
+          firstContactDate: now,
+          statusId: defaultStatus?.id || 'new',
+          visitedSalon: false,
+          signedUpForPaidService: false,
+          lastMessageAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+      } else {
+        // Оновлюємо існуючого клієнта
+        client = {
+          ...client,
+          ...(message.fullName && {
+            firstName: message.fullName.split(' ')[0],
+            lastName: message.fullName.split(' ').slice(1).join(' '),
+          }),
+          lastMessageAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      
+      await saveDirectClient(client);
+      console.log(`[manychat] Synced Direct client: @${instagram}`);
     } catch (err) {
-      console.warn('[manychat] Error syncing with Direct:', err);
+      console.error('[manychat] Error syncing with Direct:', err);
     }
   }
 

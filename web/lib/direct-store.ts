@@ -109,7 +109,23 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
 
     // Додаємо в індекс
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
-    const clientIds: string[] = indexData ? JSON.parse(indexData) : [];
+    let clientIds: string[] = [];
+    
+    if (indexData) {
+      try {
+        const parsed = JSON.parse(indexData);
+        if (Array.isArray(parsed)) {
+          clientIds = parsed;
+        } else {
+          console.warn('[direct-store] Client index is not an array, resetting');
+          clientIds = [];
+        }
+      } catch (parseErr) {
+        console.warn('[direct-store] Failed to parse client index, resetting:', parseErr);
+        clientIds = [];
+      }
+    }
+    
     if (!clientIds.includes(client.id)) {
       clientIds.push(client.id);
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(clientIds));
@@ -242,7 +258,23 @@ export async function saveDirectStatus(status: DirectStatus): Promise<void> {
 
     // Додаємо в індекс
     const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
-    const statusIds: string[] = indexData ? JSON.parse(indexData) : [];
+    let statusIds: string[] = [];
+    
+    if (indexData) {
+      try {
+        const parsed = JSON.parse(indexData);
+        if (Array.isArray(parsed)) {
+          statusIds = parsed;
+        } else {
+          console.warn('[direct-store] Status index is not an array, resetting');
+          statusIds = [];
+        }
+      } catch (parseErr) {
+        console.warn('[direct-store] Failed to parse status index, resetting:', parseErr);
+        statusIds = [];
+      }
+    }
+    
     if (!statusIds.includes(status.id)) {
       statusIds.push(status.id);
       await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify(statusIds));
