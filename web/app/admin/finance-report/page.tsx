@@ -648,15 +648,15 @@ export default async function FinanceReportPage({
               <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">1</div>
               <div className="card-body p-1 sm:p-1.5">
                 <div className="overflow-x-auto">
-                  <table className="table table-xs w-full border-collapse min-w-[260px]">
+                  <table className="table table-xs w-full border-collapse min-w-[240px]">
                   <colgroup>
                     <col className="w-auto" />
-                    <col className="w-32 sm:w-40" />
-                    <col className="w-14 sm:w-20" />
+                    <col className="w-28 sm:w-40" />
+                    <col className="w-12 sm:w-20" />
                   </colgroup>
                   <thead>
                     <tr className="bg-yellow-300">
-                      <th className="text-center text-xs font-semibold px-2 py-1" colSpan={3}>
+                      <th className="text-center text-xs font-semibold px-1 sm:px-2 py-1" colSpan={3}>
                         {displayMonthLabel} {selectedYear}
                       </th>
                     </tr>
@@ -669,23 +669,23 @@ export default async function FinanceReportPage({
                       return (
                         <>
                           <tr className="bg-cyan-200">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Оборот (Виручка)</td>
-                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.total)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">100.0%</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Оборот (Виручка)</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(summary.totals.total)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">100.0%</td>
                           </tr>
                           <tr className="bg-blue-100">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Послуги</td>
-                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.services)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.services)}%</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Послуги</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(summary.totals.services)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(summary.totals.services)}%</td>
                           </tr>
                           <tr className="bg-green-100">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Товари</td>
-                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">{formatMoney(summary.totals.goods)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.goods)}%</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Товари</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(summary.totals.goods)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(summary.totals.goods)}%</td>
                           </tr>
                           <tr className="bg-rose-100">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Собівартість товару</td>
-                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Собівартість товару</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">
                               <div className="flex items-center justify-end gap-0">
                                 <EditCostIconButton year={selectedYear} month={selectedMonth} />
                                 <EditableCostCell
@@ -695,22 +695,22 @@ export default async function FinanceReportPage({
                                 />
                               </div>
                             </td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
                           </tr>
                           <tr className="bg-blue-200">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Дохід (послуги+товар)</td>
-                            <td className="text-right text-xs font-bold text-blue-900 whitespace-nowrap px-2 py-1">{formatMoney(totalIncomeDashboard)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(totalIncomeDashboard)}%</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Дохід (послуги+товар)</td>
+                            <td className="text-right text-xs font-bold text-blue-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalIncomeDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(totalIncomeDashboard)}%</td>
                           </tr>
                           <tr className="bg-red-200">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Розхід</td>
-                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(totalExpensesDashboard)}%</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Розхід</td>
+                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(totalExpensesDashboard)}%</td>
                           </tr>
                           <tr className="bg-green-200">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Прибуток салону</td>
-                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-2 py-1">{formatMoney(profitDashboard)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(profitDashboard)}%</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Прибуток салону</td>
+                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(profitDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(profitDashboard)}%</td>
                           </tr>
                         </>
                       );
