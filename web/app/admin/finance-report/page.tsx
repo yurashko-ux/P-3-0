@@ -1,4 +1,3 @@
-// web/app/admin/finance-report/page.tsx
 import React from "react";
 import {
   fetchFinanceSummary,
