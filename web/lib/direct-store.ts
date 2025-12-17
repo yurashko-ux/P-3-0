@@ -139,13 +139,16 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
         }
         
         if (Array.isArray(parsed)) {
-          clientIds = parsed.filter((id: any): id is string => typeof id === 'string');
+          clientIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
         } else {
+          // Якщо індекс пошкоджений, скидаємо його
           console.warn('[direct-store] Client index is not an array when saving, resetting');
+          await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
           clientIds = [];
         }
       } catch (parseErr) {
         console.warn('[direct-store] Failed to parse client index when saving, resetting:', parseErr);
+        await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
         clientIds = [];
       }
     }
@@ -319,9 +322,11 @@ export async function saveDirectStatus(status: DirectStatus): Promise<void> {
         }
         
         if (Array.isArray(parsed)) {
-          statusIds = parsed.filter((id: any): id is string => typeof id === 'string');
+          statusIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.length > 0);
         } else {
+          // Якщо індекс пошкоджений, скидаємо його
           console.warn('[direct-store] Status index is not an array when saving, resetting');
+          await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify([]));
           statusIds = [];
         }
       } catch (parseErr) {
