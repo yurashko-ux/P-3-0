@@ -652,6 +652,10 @@ export default async function FinanceReportPage({
               </div>
             </section>
               ),
+              block2: null,
+              block3: null,
+              block4: null,
+              block5: null,
             }}
           </FinanceReportClient>
         ) : null
