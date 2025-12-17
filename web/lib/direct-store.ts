@@ -10,25 +10,46 @@ import type { DirectClient, DirectStatus } from './direct-types';
 export async function getAllDirectClients(): Promise<DirectClient[]> {
   try {
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
-    if (!indexData) return [];
+    if (!indexData) {
+      console.log('[direct-store] No client index found, returning empty array');
+      return [];
+    }
 
     let clientIds: string[] = [];
     try {
-      const parsed = JSON.parse(indexData);
+      // kvGetRaw може повернути вже розпарсений JSON або рядок
+      let parsed: any;
+      if (typeof indexData === 'string') {
+        parsed = JSON.parse(indexData);
+      } else {
+        parsed = indexData;
+      }
+      
       // Перевіряємо, чи це масив
       if (Array.isArray(parsed)) {
         clientIds = parsed;
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        // Якщо це об'єкт, спробуємо витягти масив з нього або скинути
+        console.warn('[direct-store] Index data is an object, not array. Resetting index.');
+        // Скидаємо індекс - він буде перестворений при наступному збереженні
+        await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
+        return [];
       } else if (typeof parsed === 'string') {
         // Якщо це просто рядок, спробуємо розпарсити ще раз
         try {
-          clientIds = JSON.parse(parsed);
+          const doubleParsed = JSON.parse(parsed);
+          if (Array.isArray(doubleParsed)) {
+            clientIds = doubleParsed;
+          } else {
+            console.warn('[direct-store] Double-parsed index is not an array');
+            return [];
+          }
         } catch {
-          // Якщо не вийшло, повертаємо порожній масив
           console.warn('[direct-store] Invalid index data format, expected array');
           return [];
         }
       } else {
-        console.warn('[direct-store] Index data is not an array:', typeof parsed);
+        console.warn('[direct-store] Index data is not an array:', typeof parsed, parsed);
         return [];
       }
     } catch (parseErr) {
@@ -182,16 +203,43 @@ export async function deleteDirectClient(id: string): Promise<void> {
 export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
   try {
     const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
-    if (!indexData) return [];
+    if (!indexData) {
+      // Якщо індексу немає, ініціалізуємо початкові статуси
+      await initializeDefaultStatuses();
+      const indexDataAfterInit = await kvRead.getRaw(directKeys.STATUS_INDEX);
+      if (!indexDataAfterInit) return [];
+      // Продовжуємо з новими даними
+      return getAllDirectStatuses();
+    }
 
     let statusIds: string[] = [];
     try {
-      const parsed = JSON.parse(indexData);
+      // kvGetRaw може повернути вже розпарсений JSON або рядок
+      let parsed: any;
+      if (typeof indexData === 'string') {
+        parsed = JSON.parse(indexData);
+      } else {
+        parsed = indexData;
+      }
+      
       if (Array.isArray(parsed)) {
         statusIds = parsed;
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        // Якщо це об'єкт, скидаємо індекс
+        console.warn('[direct-store] Status index data is an object, not array. Resetting index.');
+        await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify([]));
+        // Ініціалізуємо початкові статуси
+        await initializeDefaultStatuses();
+        return getAllDirectStatuses();
       } else if (typeof parsed === 'string') {
         try {
-          statusIds = JSON.parse(parsed);
+          const doubleParsed = JSON.parse(parsed);
+          if (Array.isArray(doubleParsed)) {
+            statusIds = doubleParsed;
+          } else {
+            console.warn('[direct-store] Double-parsed status index is not an array');
+            return [];
+          }
         } catch {
           console.warn('[direct-store] Invalid status index data format');
           return [];
