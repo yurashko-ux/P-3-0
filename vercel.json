@@ -7,6 +7,36 @@
     {
       "path": "/api/cron/exp-check",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/photo-reminders",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "hob.finance-report.vercel.com"
+        }
+      ],
+      "destination": "/finance-report/login"
+    },
+    {
+      "source": "/admin",
+      "has": [
+        {
+          "type": "host",
+          "value": "hob.finance-report.vercel.com"
+        }
+      ],
+      "destination": "/admin/finance-report"
     }
   ]
 }

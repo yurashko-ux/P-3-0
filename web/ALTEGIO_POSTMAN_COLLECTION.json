@@ -1,0 +1,265 @@
+{
+  "info": {
+    "name": "Altegio API - Support Request",
+    "description": "Collection for testing Altegio API endpoints to reproduce 403 Forbidden errors",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Get Companies (Should Work)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/vnd.api.v2+json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ALTEGIO_PARTNER_TOKEN}}, User {{ALTEGIO_USER_TOKEN}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{ALTEGIO_API_URL}}/companies",
+          "host": ["{{ALTEGIO_API_URL}}"],
+          "path": ["companies"]
+        },
+        "description": "This endpoint should work and return company information"
+      }
+    },
+    {
+      "name": "2. Get Clients - POST with company_id in body",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/vnd.api.v2+json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ALTEGIO_PARTNER_TOKEN}}, User {{ALTEGIO_USER_TOKEN}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Partner-ID",
+            "value": "{{ALTEGIO_PARTNER_ID}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Application-ID",
+            "value": "{{ALTEGIO_APPLICATION_ID}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"company_id\": {{ALTEGIO_COMPANY_ID}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{ALTEGIO_API_URL}}/clients",
+          "host": ["{{ALTEGIO_API_URL}}"],
+          "path": ["clients"]
+        },
+        "description": "Expected: 403 Forbidden - No company management rights"
+      }
+    },
+    {
+      "name": "3. Get Clients - POST to company endpoint",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/vnd.api.v2+json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ALTEGIO_PARTNER_TOKEN}}, User {{ALTEGIO_USER_TOKEN}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Partner-ID",
+            "value": "{{ALTEGIO_PARTNER_ID}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Application-ID",
+            "value": "{{ALTEGIO_APPLICATION_ID}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{ALTEGIO_API_URL}}/company/{{ALTEGIO_COMPANY_ID}}/clients",
+          "host": ["{{ALTEGIO_API_URL}}"],
+          "path": ["company", "{{ALTEGIO_COMPANY_ID}}", "clients"]
+        },
+        "description": "Expected: 403 Forbidden - No company management rights"
+      }
+    },
+    {
+      "name": "4. Get Clients - GET with query params",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/vnd.api.v2+json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ALTEGIO_PARTNER_TOKEN}}, User {{ALTEGIO_USER_TOKEN}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Partner-ID",
+            "value": "{{ALTEGIO_PARTNER_ID}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Application-ID",
+            "value": "{{ALTEGIO_APPLICATION_ID}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{ALTEGIO_API_URL}}/clients?company_id={{ALTEGIO_COMPANY_ID}}&partner_id={{ALTEGIO_PARTNER_ID}}",
+          "host": ["{{ALTEGIO_API_URL}}"],
+          "path": ["clients"],
+          "query": [
+            {
+              "key": "company_id",
+              "value": "{{ALTEGIO_COMPANY_ID}}"
+            },
+            {
+              "key": "partner_id",
+              "value": "{{ALTEGIO_PARTNER_ID}}"
+            }
+          ]
+        },
+        "description": "Expected: 404 Not Found or 403 Forbidden"
+      }
+    },
+    {
+      "name": "5. Get Appointments",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/vnd.api.v2+json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ALTEGIO_PARTNER_TOKEN}}, User {{ALTEGIO_USER_TOKEN}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Partner-ID",
+            "value": "{{ALTEGIO_PARTNER_ID}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Application-ID",
+            "value": "{{ALTEGIO_APPLICATION_ID}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{ALTEGIO_API_URL}}/company/{{ALTEGIO_COMPANY_ID}}/appointments?date_from=2025-11-23&date_to=2026-02-23",
+          "host": ["{{ALTEGIO_API_URL}}"],
+          "path": ["company", "{{ALTEGIO_COMPANY_ID}}", "appointments"],
+          "query": [
+            {
+              "key": "date_from",
+              "value": "2025-11-23"
+            },
+            {
+              "key": "date_to",
+              "value": "2026-02-23"
+            }
+          ]
+        },
+        "description": "Expected: 403 Forbidden - No company management rights"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "ALTEGIO_API_URL",
+      "value": "https://api.alteg.io/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "ALTEGIO_USER_TOKEN",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ALTEGIO_PARTNER_TOKEN",
+      "value": "48kfgfmy8s7u84ruhtju",
+      "type": "string"
+    },
+    {
+      "key": "ALTEGIO_PARTNER_ID",
+      "value": "784",
+      "type": "string"
+    },
+    {
+      "key": "ALTEGIO_APPLICATION_ID",
+      "value": "1195",
+      "type": "string"
+    },
+    {
+      "key": "ALTEGIO_COMPANY_ID",
+      "value": "1169323",
+      "type": "string"
+    }
+  ]
+}
+

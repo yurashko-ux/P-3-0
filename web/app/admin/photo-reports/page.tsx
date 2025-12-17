@@ -1,0 +1,661 @@
+// web/app/admin/photo-reports/page.tsx
+// Сторінка для тестування та аналітики фото-звітів
+// Updated: 2025-12-02
+
+"use client";
+
+import { useState, useEffect } from "react";
+import { CustomGridLayout, LayoutItem } from "@/components/admin/CustomGridLayout";
+import { EditLayoutButton } from "@/components/admin/EditLayoutButton";
+
+type MasterProfile = {
+  id: string;
+  name: string;
+  telegramUsername?: string;
+  role: string;
+  altegioStaffId?: number;
+};
+
+type TestReminderResult = {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  chatId?: number;
+  appointment?: any;
+};
+
+type PhotoReport = {
+  id: string;
+  appointmentId: string;
+  masterId: string;
+  masterName: string;
+  clientName: string;
+  serviceName: string;
+  createdAt: string;
+  telegramFileIds: string[];
+};
+
+type Analytics = {
+  totalReports: number;
+  reportsByMaster: Record<string, number>;
+  recentReports: PhotoReport[];
+};
+
+type ServicesStats = {
+  statsByMaster: Array<{
+    masterId: string;
+    masterName: string;
+    count: number;
+    plannedCount?: number;
+  }>;
+  hairExtensionAppointments: number;
+  completedAppointments: number;
+  totalAppointments: number;
+  period: {
+    daysBack: number;
+    dateFrom: string;
+    dateTo: string;
+  };
+};
+
+type AnalyticsMode = "prod" | "test";
+
+
+export default function PhotoReportsPage() {
+  const [testResult, setTestResult] = useState<TestReminderResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [telegramUsername, setTelegramUsername] = useState("Mykolay007");
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [servicesStats, setServicesStats] = useState<ServicesStats | null>(null);
+  const [isLoadingServicesStats, setIsLoadingServicesStats] = useState(false);
+  const [servicesStatsError, setServicesStatsError] = useState<string | null>(null);
+  const [masters, setMasters] = useState<MasterProfile[]>([]);
+  const [mode, setMode] = useState<AnalyticsMode>("prod");
+  const [isClearing, setIsClearing] = useState(false);
+
+  useEffect(() => {
+    // Завантажуємо майстрів при завантаженні сторінки
+    fetch("/api/photo-reports/masters")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok && data.masters) {
+          setMasters(data.masters);
+        }
+      })
+      .catch((err) => console.error("Failed to load masters:", err));
+  }, []);
+
+  const handleTestReminder = async () => {
+    setIsLoading(true);
+    setTestResult(null);
+
+    try {
+      const response = await fetch("/api/telegram/test-reminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telegramUsername,
+          clientName: "Тестовий клієнт",
+          serviceName: "Тестова послуга",
+          minutesUntilEnd: 15,
+        }),
+      });
+
+      const data = await response.json();
+      setTestResult(data);
+    } catch (error) {
+      setTestResult({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadAnalytics = async () => {
+    setIsLoadingAnalytics(true);
+    try {
+      const response = await fetch("/api/telegram/debug");
+      const data = await response.json();
+
+      if (data.ok && data.recentReports) {
+        const reportsByMaster: Record<string, number> = {};
+        data.recentReports.forEach((report: PhotoReport) => {
+          reportsByMaster[report.masterId] =
+            (reportsByMaster[report.masterId] || 0) + 1;
+        });
+
+        setAnalytics({
+          totalReports: data.recentReports.length,
+          reportsByMaster,
+          recentReports: data.recentReports.slice(0, 20),
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load analytics:", error);
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  };
+
+  const loadServicesStats = async () => {
+    setIsLoadingServicesStats(true);
+    setServicesStatsError(null);
+    try {
+      const includeFuture = mode === "test";
+      const response = await fetch(
+        `/api/photo-reports/services-stats?daysBack=30&includeFuture=${includeFuture ? "true" : "false"}`
+      );
+      const data = await response.json();
+
+      console.log("[photo-reports] Services stats response:", data);
+
+      if (data.ok && data.statsByMaster) {
+        setServicesStats(data);
+        setServicesStatsError(null);
+      } else {
+        const errorMsg = data.error || "Невідома помилка";
+        setServicesStatsError(errorMsg);
+        console.error("Failed to load services stats:", data);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setServicesStatsError(errorMsg);
+      console.error("Failed to load services stats:", error);
+    } finally {
+      setIsLoadingServicesStats(false);
+    }
+  };
+
+  const handleClearReports = async () => {
+    if (!confirm("Ви впевнені, що хочете очистити всі фото-звіти? Цю дію неможливо скасувати.")) {
+      return;
+    }
+
+    const secret = prompt("Введіть секретний ключ для підтвердження:");
+    if (!secret) {
+      return;
+    }
+
+    setIsClearing(true);
+    try {
+      const response = await fetch(`/api/photo-reports/clear?secret=${encodeURIComponent(secret)}`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (data.ok) {
+        alert(`✅ Очищено ${data.deletedCount} фото-звітів`);
+        // Оновлюємо аналітику після очищення
+        await loadAnalytics();
+      } else {
+        alert(`❌ Помилка: ${data.error}`);
+      }
+    } catch (error) {
+      alert(`❌ Помилка: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const isTestMaster = (master: MasterProfile) => {
+    const id = master.id.toLowerCase();
+    const name = master.name.toLowerCase();
+    const username = (master.telegramUsername || "").toLowerCase();
+    return (
+      id.includes("test") ||
+      name.includes("тест") ||
+      username.includes("test") ||
+      username.includes("mykolay007")
+    );
+  };
+
+  const [editMode, setEditMode] = useState(false);
+
+  const STORAGE_KEY = "photo-reports-dashboard-layout";
+  const LAYOUT_VERSION = "7";
+
+  const defaultLayout: LayoutItem[] = [
+    { i: "test-section", x: 0, y: 0, w: 12, h: 80 },
+    { i: "analytics", x: 0, y: 80, w: 12, h: 120 },
+    { i: "masters", x: 0, y: 200, w: 12, h: 60 },
+  ];
+
+  const handleSave = (layout: LayoutItem[]) => {
+    // Layout буде збережено через EditLayoutButton
+  };
+
+  return (
+    <main className="mx-auto max-w-7xl px-6 py-8">
+      <header className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Фото-звіти</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Тестування нагадувань та аналітика по майстрах.
+            </p>
+          </div>
+          <EditLayoutButton
+            storageKey={STORAGE_KEY}
+            onEditModeChange={setEditMode}
+            onSave={handleSave}
+          />
+        </div>
+      </header>
+
+      <CustomGridLayout
+        storageKey={STORAGE_KEY}
+        layoutVersion={LAYOUT_VERSION}
+        defaultLayout={defaultLayout}
+        editMode={editMode}
+        onSave={handleSave}
+      >
+        {{
+          'test-section': (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
+          <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-800">
+              🧪 Тестове нагадування
+            </h2>
+            <span className="text-xs text-slate-400">Перетягніть за заголовок</span>
+          </div>
+          <p className="mb-4 text-sm text-slate-600">
+          Відправ тестове нагадування про фото-звіт в Telegram. Користувач має
+          бути зареєстрований (надіслати /start боту).
+        </p>
+
+        <div className="mb-4 flex gap-4">
+          <div className="flex-1">
+            <label
+              htmlFor="username"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Telegram Username
+            </label>
+            <input
+              id="username"
+              type="text"
+              value={telegramUsername}
+              onChange={(e) => setTelegramUsername(e.target.value)}
+              placeholder="Mykolay007"
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={handleTestReminder}
+              disabled={isLoading || !telegramUsername}
+              className="rounded-lg bg-blue-600 px-6 py-2 font-semibold text-white shadow-md transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoading ? "Відправка..." : "Відправити тест"}
+            </button>
+          </div>
+        </div>
+
+        {testResult && (
+          <div
+            className={`rounded-lg border p-4 ${
+              testResult.ok
+                ? "border-green-200 bg-green-50"
+                : "border-red-200 bg-red-50"
+            }`}
+          >
+            {testResult.ok ? (
+              <div>
+                <p className="font-semibold text-green-800">✅ Успішно!</p>
+                <p className="mt-1 text-sm text-green-700">
+                  {testResult.message}
+                </p>
+                {testResult.chatId && (
+                  <p className="mt-1 text-xs text-green-600">
+                    Chat ID: {testResult.chatId}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="font-semibold text-red-800">❌ Помилка</p>
+                <p className="mt-1 text-sm text-red-700">
+                  {testResult.error || "Невідома помилка"}
+                </p>
+                {testResult.error?.includes("chatId not found") && (
+                  <p className="mt-2 text-xs text-red-600">
+                    💡 Підказка: Надішли /start боту в Telegram, щоб
+                    зареєструватися
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        </div>
+          ),
+          'analytics': (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
+          <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-800">
+              📊 Аналітика по майстрах
+            </h2>
+            <span className="text-xs text-slate-400">Перетягніть за заголовок</span>
+          </div>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+            <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs">
+              <button
+                onClick={() => setMode("prod")}
+                className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                  mode === "prod"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Робочий режим
+              </button>
+              <button
+                onClick={() => setMode("test")}
+                className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                  mode === "test"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Тестовий
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={loadServicesStats}
+                disabled={isLoadingServicesStats}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isLoadingServicesStats ? "Завантаження..." : "Завантажити послуги"}
+              </button>
+              <button
+                onClick={loadAnalytics}
+                disabled={isLoadingAnalytics}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isLoadingAnalytics ? "Завантаження..." : "Оновити звіти"}
+              </button>
+              <button
+                onClick={handleClearReports}
+                disabled={isClearing}
+                className="rounded-lg bg-red-100 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isClearing ? "Очищення..." : "Очистити фото-звіти"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {servicesStatsError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+            <p className="font-semibold text-red-800">❌ Помилка завантаження послуг</p>
+            <p className="mt-1 text-sm text-red-700">{servicesStatsError}</p>
+            <p className="mt-2 text-xs text-red-600">
+              Перевір логи в консолі браузера (F12) або логи Vercel для деталей.
+            </p>
+          </div>
+        )}
+
+        {analytics ? (
+          <div className="space-y-6">
+            <div className="rounded-lg bg-slate-50 p-4">
+              {servicesStats && (
+                <div className="grid grid-cols-4 gap-4">
+                  {/* Виконані послуги */}
+                  <div>
+                    <p className="text-xs text-slate-500">Виконані послуги</p>
+                    <p className="mt-1 text-xl font-bold text-green-600">
+                      {servicesStats.statsByMaster.reduce((sum, s) => sum + (s.count || 0), 0)}
+                    </p>
+                  </div>
+                  
+                  {/* Планові послуги */}
+                  <div>
+                    <p className="text-xs text-slate-500">Планові послуги</p>
+                    <p className="mt-1 text-xl font-bold text-slate-600">
+                      {servicesStats.statsByMaster.reduce((sum, s) => sum + (s.plannedCount || 0), 0)}
+                    </p>
+                  </div>
+                  
+                  {/* Всього фото-звітів */}
+                  <div>
+                    <p className="text-xs text-slate-500">Всього фото-звітів</p>
+                    <p className="mt-1 text-xl font-bold text-blue-600">
+                      {(() => {
+                        // У робочому режимі рахуємо тільки фото-звіти для майстрів, які не є тестовими
+                        if (mode === "prod") {
+                          const filteredMasters = masters.filter(
+                            (m) => m.role === "master" && !isTestMaster(m)
+                          );
+                          return filteredMasters.reduce((sum, m) => {
+                            return sum + (analytics.reportsByMaster[m.id] || 0);
+                          }, 0);
+                        }
+                        // У тестовому режимі показуємо всі фото-звіти
+                        return analytics.totalReports;
+                      })()}
+                    </p>
+                  </div>
+                  
+                  {/* % фото-звітів */}
+                  <div>
+                    <p className="text-xs text-slate-500">% фото-звітів</p>
+                    {(() => {
+                      const totalCompletedServices = servicesStats.statsByMaster.reduce((sum, s) => sum + (s.count || 0), 0);
+                      // Рахуємо тільки фото-звіти по майстрах, які мають виконані послуги нарощування
+                      const totalReportsForHairExtension = servicesStats.statsByMaster.reduce((sum, s) => {
+                        const masterReports = analytics.reportsByMaster[s.masterId] || 0;
+                        return sum + masterReports;
+                      }, 0);
+                      const totalCoveragePercent = totalCompletedServices > 0
+                        ? Math.round((totalReportsForHairExtension / totalCompletedServices) * 100)
+                        : 0;
+                      return (
+                        <p className={`mt-1 text-xl font-bold ${
+                          totalCoveragePercent >= 80
+                            ? "text-green-600"
+                            : totalCoveragePercent >= 50
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                        }`}>
+                          {totalCoveragePercent}%
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-base font-semibold text-slate-800">
+                По майстрах
+              </h3>
+              {servicesStats && (
+                <p className="mb-2 text-xs text-slate-600">
+                  Всього послуг "Нарощування волосся": {servicesStats.hairExtensionAppointments}
+                  {servicesStats.completedAppointments > 0 && (
+                    <span className="ml-1 text-slate-400">
+                      (з {servicesStats.completedAppointments} завершених)
+                    </span>
+                  )}
+                </p>
+              )}
+              <div className="space-y-1.5">
+                {masters
+                  .filter((m) => m.role === "master")
+                  .filter((m) => (mode === "prod" ? !isTestMaster(m) : true))
+                  .map((master) => {
+                    const reportsCount =
+                      analytics.reportsByMaster[master.id] || 0;
+                    
+                    // Знаходимо статистику послуг для цього майстра
+                    const servicesEntry = servicesStats?.statsByMaster.find(
+                      (s) => s.masterId === master.id
+                    );
+                    const servicesCount = servicesEntry?.count || 0; // надано
+                    const plannedServicesCount = servicesEntry?.plannedCount || 0; // заплановано
+
+                    // Обчислюємо відсоток покриття
+                    const coveragePercent =
+                      servicesCount > 0
+                        ? Math.round((reportsCount / servicesCount) * 100)
+                        : 0;
+
+                    return (
+                      <div
+                        key={master.id}
+                        className="rounded border border-slate-200 bg-white p-2"
+                      >
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {master.name}
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              {master.telegramUsername || "—"}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-2">
+                          {/* Послуги надано / заплановано */}
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-green-600">
+                              {servicesCount}
+                              <span className="text-sm font-normal text-slate-400">
+                                /{plannedServicesCount}
+                              </span>
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              послуг
+                            </p>
+                          </div>
+
+                          {/* Фото-звіти */}
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-blue-600">
+                              {reportsCount}
+                            </p>
+                            <p className="text-[10px] text-slate-500">фото</p>
+                          </div>
+
+                          {/* Покриття */}
+                          {servicesCount > 0 ? (
+                            <div className="text-center">
+                              <p
+                                className={`text-sm font-bold ${
+                                  coveragePercent >= 80
+                                    ? "text-green-600"
+                                    : coveragePercent >= 50
+                                    ? "text-yellow-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {coveragePercent}%
+                              </p>
+                              <p className="text-[10px] text-slate-500">покриття</p>
+                              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className={`h-full transition-all ${
+                                    coveragePercent >= 80
+                                      ? "bg-green-500"
+                                      : coveragePercent >= 50
+                                      ? "bg-yellow-500"
+                                      : "bg-red-500"
+                                  }`}
+                                  style={{ width: `${coveragePercent}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-center">
+                              <p className="text-sm font-bold text-slate-400">—</p>
+                              <p className="text-[10px] text-slate-400">покриття</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {analytics.recentReports.length > 0 && (
+              <div>
+                <h3 className="mb-3 text-lg font-semibold text-slate-800">
+                  Останні звіти
+                </h3>
+                <div className="space-y-2">
+                  {analytics.recentReports.map((report) => (
+                    <div
+                      key={report.id}
+                      className="rounded-lg border border-slate-200 bg-white p-3 text-sm"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-slate-800">
+                            {report.clientName} • {report.serviceName}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {report.masterName} •{" "}
+                            {new Date(report.createdAt).toLocaleString("uk-UA")}
+                          </p>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {report.telegramFileIds?.length || 0} фото
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
+            <p className="text-slate-500">
+              Натисни "Оновити", щоб завантажити аналітику
+            </p>
+          </div>
+        )}
+        </div>
+          ),
+          'masters': (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
+          <div className="drag-handle mb-4 flex cursor-move items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-800">
+              👥 Зареєстровані майстри
+            </h2>
+            <span className="text-xs text-slate-400">Перетягніть за заголовок</span>
+          </div>
+        <div className="space-y-2">
+          {masters.map((master) => (
+            <div
+              key={master.id}
+              className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3"
+            >
+              <div>
+                <p className="font-medium text-slate-800">{master.name}</p>
+                <p className="text-xs text-slate-500">
+                  {master.telegramUsername || "—"} • {master.role}
+                  {master.altegioStaffId && (
+                    <span> • Altegio ID: {master.altegioStaffId}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+        </div>
+          ),
+        }}
+      </CustomGridLayout>
+    </main>
+  );
+}
+

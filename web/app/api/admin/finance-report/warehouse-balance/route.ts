@@ -1,0 +1,160 @@
+// web/app/api/admin/finance-report/warehouse-balance/route.ts
+// API для збереження/отримання ручно введеного балансу складу за місяць/рік
+// Захищено CRON_SECRET
+
+import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+import { kvWrite, kvRead } from "@/lib/kv";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Перевіряє, чи запит дозволений (тільки з CRON_SECRET)
+ */
+function isAuthorized(req: NextRequest): boolean {
+  const secret = req.nextUrl.searchParams.get("secret");
+  const envSecret = process.env.CRON_SECRET || "";
+  return envSecret && secret && envSecret === secret;
+}
+
+/**
+ * Створює ключ для збереження балансу складу за місяць/рік
+ */
+function getWarehouseBalanceKey(year: number, month: number): string {
+  return `finance:warehouse:balance:${year}:${month}`;
+}
+
+/**
+ * GET: Отримати баланс складу за місяць/рік
+ */
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const year = parseInt(req.nextUrl.searchParams.get("year") || "0", 10);
+    const month = parseInt(req.nextUrl.searchParams.get("month") || "0", 10);
+
+    if (!year || !month || month < 1 || month > 12) {
+      return NextResponse.json(
+        { error: "Invalid year or month" },
+        { status: 400 },
+      );
+    }
+
+    const key = getWarehouseBalanceKey(year, month);
+    const rawValue = await kvRead.getRaw(key);
+
+    if (rawValue === null) {
+      return NextResponse.json({ balance: null });
+    }
+
+    // kvGetRaw може повертати {"value":"..."} або просто "..."
+    // Потрібно витягти значення з об'єкта, якщо воно там є
+    let balance: number | null = null;
+    try {
+      // Спробуємо розпарсити як JSON
+      const parsed = JSON.parse(rawValue);
+      if (typeof parsed === "number") {
+        balance = parsed;
+      } else if (typeof parsed === "object" && parsed !== null) {
+        // Якщо це об'єкт, шукаємо value всередині
+        const value = (parsed as any).value ?? parsed;
+        if (typeof value === "number") {
+          balance = value;
+        } else if (typeof value === "string") {
+          balance = parseFloat(value);
+        }
+      } else if (typeof parsed === "string") {
+        balance = parseFloat(parsed);
+      }
+    } catch {
+      // Якщо не JSON, пробуємо як число
+      balance = parseFloat(rawValue);
+    }
+
+    return NextResponse.json({
+      balance: Number.isFinite(balance) && balance >= 0 ? balance : null,
+    });
+  } catch (error: any) {
+    console.error("[admin/finance-report/warehouse-balance] GET error:", error);
+    return NextResponse.json(
+      { error: String(error?.message || error) },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * POST: Зберегти баланс складу за місяць/рік
+ */
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const { year, month, balance } = body;
+
+    if (!year || !month || month < 1 || month > 12) {
+      return NextResponse.json(
+        { error: "Invalid year or month" },
+        { status: 400 },
+      );
+    }
+
+    if (balance === undefined || balance === null) {
+      return NextResponse.json(
+        { error: "Balance is required" },
+        { status: 400 },
+      );
+    }
+
+    const balanceValue = typeof balance === "number" ? balance : parseFloat(String(balance));
+
+    if (!Number.isFinite(balanceValue) || balanceValue < 0) {
+      return NextResponse.json(
+        { error: "Balance must be a non-negative number" },
+        { status: 400 },
+      );
+    }
+
+    const key = getWarehouseBalanceKey(year, month);
+    // Зберігаємо як JSON рядок
+    console.log(`[admin/finance-report/warehouse-balance] 💾 Saving balance: key=${key}, value=${balanceValue}, year=${year}, month=${month}`);
+    
+    const valueToStore = JSON.stringify(balanceValue);
+    console.log(`[admin/finance-report/warehouse-balance] Value to store (JSON): ${valueToStore}`);
+    
+    await kvWrite.setRaw(key, valueToStore);
+    console.log(`[admin/finance-report/warehouse-balance] ✅ Balance saved successfully to KV`);
+
+    // Перевіряємо, що дані збереглися (читаємо одразу після запису)
+    const verifyValue = await kvRead.getRaw(key);
+    console.log(`[admin/finance-report/warehouse-balance] 🔍 Verification read after save:`, {
+      hasValue: verifyValue !== null,
+      valueType: typeof verifyValue,
+      value: verifyValue,
+      valuePreview: verifyValue ? String(verifyValue).slice(0, 100) : null,
+    });
+
+    // Оновлюємо кеш сторінки фінансового звіту
+    revalidatePath("/admin/finance-report");
+    console.log(`[admin/finance-report/warehouse-balance] 🔄 Cache invalidated for /admin/finance-report`);
+
+    return NextResponse.json({
+      success: true,
+      year,
+      month,
+      balance: balanceValue,
+    });
+  } catch (error: any) {
+    console.error("[admin/finance-report/warehouse-balance] POST error:", error);
+    return NextResponse.json(
+      { error: String(error?.message || error) },
+      { status: 500 },
+    );
+  }
+}

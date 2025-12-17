@@ -1,0 +1,187 @@
+// web/lib/altegio/companies.ts
+import { altegioFetch } from './client';
+import type { Company } from './types';
+
+/**
+ * Отримує список компаній (салонів)
+ * @param filterById - Якщо вказано, поверне тільки компанію з цим ID (для фільтрації своєї філії)
+ */
+export async function getCompanies(filterById?: number | string): Promise<Company[]> {
+  try {
+    // Якщо вказано ID філії, спробуємо отримати конкретну компанію
+    if (filterById) {
+      const companyId = typeof filterById === 'string' ? parseInt(filterById, 10) : filterById;
+      if (!isNaN(companyId)) {
+        try {
+          const company = await getCompany(companyId);
+          return company ? [company] : [];
+        } catch (err) {
+          console.warn(`[altegio/companies] Failed to get specific company ${companyId}, falling back to list:`, err);
+          // Якщо не вдалося отримати конкретну компанію, повертаємося до списку
+        }
+      }
+    }
+    
+    const response = await altegioFetch<Company[] | { data?: Company[] }>('/companies');
+    
+    // Alteg.io може повертати дані в різних форматах
+    let companies: Company[] = [];
+    if (Array.isArray(response)) {
+      companies = response;
+    } else if (response && typeof response === 'object' && 'data' in response) {
+      companies = response.data || [];
+    }
+    
+    // Якщо вказано ID для фільтрації, фільтруємо результат
+    if (filterById && companies.length > 0) {
+      const filterId = typeof filterById === 'string' ? filterById : String(filterById);
+      const filtered = companies.filter((c: any) => {
+        const id = String(c.id || c.company_id || '');
+        return id === filterId || id === String(filterById);
+      });
+      
+      // Якщо знайшли компанію за ID, повертаємо тільки її
+      if (filtered.length > 0) {
+        console.log(`[altegio/companies] Filtered companies by ID ${filterById}: found ${filtered.length} out of ${companies.length}`);
+        return filtered;
+      }
+      
+      // Якщо не знайшли за ID, може Partner ID - це не ID компанії
+      console.warn(`[altegio/companies] Company with ID ${filterById} not found in list. Total companies: ${companies.length}`);
+    }
+    
+    return companies;
+  } catch (err) {
+    console.error('[altegio/companies] Failed to get companies:', err);
+    throw err;
+  }
+}
+
+/**
+ * Отримує інформацію про конкретну компанію
+ */
+export async function getCompany(companyId: number): Promise<Company | null> {
+  try {
+    const response = await altegioFetch<Company | { data?: Company }>(`/company/${companyId}`);
+    
+    if (response && typeof response === 'object') {
+      if ('id' in response) {
+        return response as Company;
+      }
+      if ('data' in response && response.data) {
+        return response.data as Company;
+      }
+    }
+    
+    return null;
+  } catch (err) {
+    console.error(`[altegio/companies] Failed to get company ${companyId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Отримує філії (компанії) з мережі за business_group_id або main_group_id
+ * Якщо передано ID мережі, спробуємо отримати філії цієї мережі
+ */
+export async function getCompaniesByGroup(groupId: number | string): Promise<Company[]> {
+  try {
+    const groupIdStr = String(groupId);
+    
+    // Спробуємо різні endpoint'и для отримання філій з мережі
+    const endpoints = [
+      `/companies?business_group_id=${groupIdStr}`,
+      `/companies?main_group_id=${groupIdStr}`,
+      `/companies?group_id=${groupIdStr}`,
+      `/business_groups/${groupIdStr}/companies`,
+      `/groups/${groupIdStr}/companies`,
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const response = await altegioFetch<Company[] | { data?: Company[] }>(endpoint);
+        
+        let companies: Company[] = [];
+        if (Array.isArray(response)) {
+          companies = response;
+        } else if (response && typeof response === 'object' && 'data' in response) {
+          companies = Array.isArray(response.data) ? response.data : [];
+        }
+        
+        if (companies.length > 0) {
+          console.log(`[altegio/companies] Found ${companies.length} companies by group ID ${groupId} using ${endpoint}`);
+          return companies;
+        }
+      } catch (err) {
+        // Продовжуємо спробувати інші endpoint'и
+        console.log(`[altegio/companies] Endpoint ${endpoint} failed, trying next...`);
+        continue;
+      }
+    }
+    
+    return [];
+  } catch (err) {
+    console.error(`[altegio/companies] Failed to get companies by group ID ${groupId}:`, err);
+    return [];
+  }
+}
+
+/**
+ * Отримує компанію за Partner ID (може бути ID в маркетплейсі)
+ * Спробуємо різні endpoint'и для отримання своєї філії
+ */
+export async function getCompanyByPartnerId(partnerId: string | number): Promise<Company | null> {
+  try {
+    const partnerIdStr = String(partnerId);
+    
+    // Варіант 1: Спробуємо отримати компанію безпосередньо за Partner ID
+    // Можливо, endpoint такий: /company/by-partner/{partnerId} або /partner/{partnerId}/company
+    const endpoints = [
+      `/company/by-partner/${partnerIdStr}`,
+      `/partner/${partnerIdStr}/company`,
+      `/companies?partner_id=${partnerIdStr}`,
+      `/company/${partnerIdStr}`, // Можливо, Partner ID співпадає з Company ID
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const response = await altegioFetch<Company | Company[] | { data?: Company | Company[] }>(endpoint);
+        
+        if (response && typeof response === 'object') {
+          // Якщо це масив, беремо перший елемент
+          if (Array.isArray(response)) {
+            if (response.length > 0) {
+              return response[0] as Company;
+            }
+          }
+          
+          // Якщо це об'єкт з data
+          if ('data' in response && response.data) {
+            const data = response.data;
+            if (Array.isArray(data) && data.length > 0) {
+              return data[0] as Company;
+            }
+            if (typeof data === 'object' && 'id' in data) {
+              return data as Company;
+            }
+          }
+          
+          // Якщо це об'єкт Company
+          if ('id' in response) {
+            return response as Company;
+          }
+        }
+      } catch (err) {
+        // Продовжуємо спробувати інші endpoint'и
+        console.log(`[altegio/companies] Endpoint ${endpoint} failed, trying next...`);
+        continue;
+      }
+    }
+    
+    return null;
+  } catch (err) {
+    console.error(`[altegio/companies] Failed to get company by Partner ID ${partnerId}:`, err);
+    return null;
+  }
+}
+

@@ -15,6 +15,7 @@ const KEYCRM_FALLBACKS: Record<string, string> = {
 };
 
 export const ENV = {
+  // KeyCRM
   KEYCRM_API_URL:
     process.env.KEYCRM_API_URL?.trim() || KEYCRM_DEFAULT_API_URL,
   KEYCRM_API_TOKEN:
@@ -25,6 +26,14 @@ export const ENV = {
     process.env.KEYCRM_BEARER?.trim() ||
     process.env.KEYCRM_API_TOKEN?.trim() ||
     KEYCRM_DEFAULT_API_TOKEN,
+
+  // Altegio / Альтеджіо
+  ALTEGIO_API_URL: process.env.ALTEGIO_API_URL?.trim() || "",
+  ALTEGIO_APPLICATION_ID: process.env.ALTEGIO_APPLICATION_ID?.trim() || "",
+  ALTEGIO_PARTNER_ID: process.env.ALTEGIO_PARTNER_ID?.trim() || "",
+  ALTEGIO_PARTNER_TOKEN: process.env.ALTEGIO_PARTNER_TOKEN?.trim() || "",
+  ALTEGIO_USER_TOKEN: process.env.ALTEGIO_USER_TOKEN?.trim() || "",
+  ALTEGIO_COMPANY_ID: process.env.ALTEGIO_COMPANY_ID?.trim() || "",
 };
 
 // невелика перевірка, щоб ловити відсутні змінні ще на сервері
@@ -34,6 +43,22 @@ export function assertKeycrmEnv() {
   }
   if (!ENV.KEYCRM_API_TOKEN) {
     throw new Error("Missing env KEYCRM_API_TOKEN");
+  }
+}
+
+/** Базова перевірка змінних середовища для Altegio */
+export function assertAltegioEnv() {
+  if (!ENV.ALTEGIO_API_URL) {
+    throw new Error("Missing env ALTEGIO_API_URL");
+  }
+  if (!ENV.ALTEGIO_PARTNER_TOKEN) {
+    throw new Error("Missing env ALTEGIO_PARTNER_TOKEN");
+  }
+  if (!ENV.ALTEGIO_USER_TOKEN) {
+    throw new Error("Missing env ALTEGIO_USER_TOKEN");
+  }
+  if (!ENV.ALTEGIO_COMPANY_ID) {
+    throw new Error("Missing env ALTEGIO_COMPANY_ID");
   }
 }
 
@@ -112,3 +137,25 @@ export function getEnvValue(...names: Array<string>): string | undefined {
 export function hasEnvValue(...names: Array<string>): boolean {
   return getEnvValue(...names) !== undefined;
 }
+
+/** Заголовки авторизації для Altegio (partner + user токени) */
+export function altegioHeaders() {
+  // Altegio REST API очікує:
+  // Authorization: Bearer <partner_token>, User <user_token>
+  return {
+    Accept: "application/vnd.api.v2+json",
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${ENV.ALTEGIO_PARTNER_TOKEN}, User ${ENV.ALTEGIO_USER_TOKEN}`,
+  };
+}
+
+/** Склеює відносний шлях із базовим URL Altegio */
+export function altegioUrl(path: string) {
+  const base = (ENV.ALTEGIO_API_URL || "https://api.alteg.io/api/v1").replace(
+    /\/+$/,
+    "",
+  );
+  const rel = path.replace(/^\/+/, "");
+  return `${base}/${rel}`;
+}
+

@@ -449,9 +449,14 @@ export async function POST(req: NextRequest) {
     pickNum(body.expire) ??
     pickNum(body.vexp);
 
+  // Обробляємо v1_condition та v2_condition з форми
+  const v1Condition = body.v1_condition && typeof body.v1_condition === "object" ? body.v1_condition : null;
+  const v2Condition = body.v2_condition && typeof body.v2_condition === "object" ? body.v2_condition : null;
+
   const rawRules = (body?.rules && typeof body.rules === "object") ? body.rules : null;
-  const ruleV1 = parseRule(rawRules?.v1 ?? rawRules?.V1 ?? rawRules?.variant1);
-  const ruleV2 = parseRule(rawRules?.v2 ?? rawRules?.V2 ?? rawRules?.variant2);
+  // Парсимо правила з різних джерел: rules.v1, v1_condition, тощо
+  const ruleV1 = parseRule(rawRules?.v1 ?? rawRules?.V1 ?? rawRules?.variant1 ?? v1Condition);
+  const ruleV2 = parseRule(rawRules?.v2 ?? rawRules?.V2 ?? rawRules?.variant2 ?? v2Condition);
 
   const normalizedRules: Record<string, Rule> = {};
   if (ruleV1) normalizedRules.v1 = ruleV1;
@@ -475,6 +480,28 @@ export async function POST(req: NextRequest) {
 
   const ruleValueV1 = ruleV1?.value ?? v1;
   const ruleValueV2 = ruleV2?.value ?? v2;
+
+  // Перевірка унікальності V1/V2 перед створенням кампанії
+  try {
+    const { checkCampaignVUniqueness } = await import('@/lib/campaign-uniqueness');
+    const uniquenessCheck = await checkCampaignVUniqueness(ruleValueV1, ruleValueV2);
+    
+    if (uniquenessCheck) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: uniquenessCheck.error,
+          conflictingValue: uniquenessCheck.conflictingValue,
+          conflictingCampaign: uniquenessCheck.conflictingCampaign,
+        },
+        { status: 400 }
+      );
+    }
+  } catch (err) {
+    // Якщо перевірка не вдалася - логуємо, але продовжуємо створення
+    console.error('[campaigns] Failed to check V uniqueness:', err);
+    // Не блокуємо створення кампанії через помилку перевірки
+  }
 
   const campaign: Campaign = {
     id,

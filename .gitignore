@@ -1,0 +1,9 @@
+tokens.json
+
+# Environment files (do not commit secrets)
+.env
+.env.local
+.env.*
+web/.env
+web/.env.local
+web/.env.*
