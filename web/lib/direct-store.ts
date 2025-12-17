@@ -120,6 +120,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
       }
     }
 
+    console.log(`[direct-store] getAllDirectClients: Returning ${clients.length} clients`);
     return clients;
   } catch (err) {
     console.error('[direct-store] Failed to get all clients:', err);
