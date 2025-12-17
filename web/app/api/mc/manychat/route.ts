@@ -431,6 +431,28 @@ export async function POST(req: NextRequest) {
     };
   }
 
+  // Синхронізація з Direct розділом (якщо є Instagram username)
+  if (message.handle) {
+    try {
+      // Викликаємо синхронізацію асинхронно (не блокуємо відповідь)
+      const syncUrl = new URL('/api/admin/direct/sync-manychat', req.url);
+      fetch(syncUrl.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instagramUsername: message.handle,
+          fullName: message.fullName,
+          text: message.text,
+          source: 'instagram',
+        }),
+      }).catch((err) => {
+        console.warn('[manychat] Failed to sync with Direct:', err);
+      });
+    } catch (err) {
+      console.warn('[manychat] Error syncing with Direct:', err);
+    }
+  }
+
   let automation: ManychatRoutingSuccess | ManychatRoutingError;
 
   console.log('[manychat] Step 4: Starting automation routing');

@@ -22,6 +22,14 @@ export const expTrackingKeys = {
   TRACK_KEY: (campaignId: string, cardId: string) => `exp:track:${campaignId}:${cardId}`,
 } as const;
 
+export const directKeys = {
+  CLIENT_INDEX: 'direct:clients:index', // Список всіх ID клієнтів
+  CLIENT_ITEM: (id: string) => `direct:client:${id}`, // Окремий клієнт
+  STATUS_INDEX: 'direct:statuses:index', // Список всіх статусів
+  STATUS_ITEM: (id: string) => `direct:status:${id}`, // Окремий статус
+  CLIENT_BY_INSTAGRAM: (username: string) => `direct:by-instagram:${username.toLowerCase()}`, // Швидкий пошук по Instagram username
+} as const;
+
 type KvRuntimeConfig = {
   rawBase: string;
   baseCandidates: string[];
