@@ -583,7 +583,7 @@ export default async function FinanceReportPage({
     <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
       <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Фінансовий звіт (Altegio)</h1>
+          <h1 className="text-base sm:text-lg font-semibold">Фінансовий звіт (Altegio)</h1>
           {summary && (
             <p className="text-xs text-gray-500">
               Період:{" "}
@@ -595,15 +595,15 @@ export default async function FinanceReportPage({
 
         {/* Вибір місяця / року через GET-параметри */}
         <form
-          className="flex flex-wrap items-center gap-2 text-sm"
+          className="flex flex-wrap items-center gap-2 text-xs sm:text-sm"
           method="GET"
         >
-          <label className="flex items-center gap-2">
-            <span className="text-gray-600">Місяць:</span>
+          <label className="flex items-center gap-1 sm:gap-2">
+            <span className="text-gray-600 text-xs sm:text-sm">Місяць:</span>
             <select
               name="month"
               defaultValue={String(selectedMonth)}
-              className="select select-bordered select-sm"
+              className="select select-bordered select-xs sm:select-sm text-xs"
             >
               {monthOptions.map((opt) => (
                 <option key={opt.month} value={opt.month}>
@@ -612,12 +612,12 @@ export default async function FinanceReportPage({
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-2">
-            <span className="text-gray-600">Рік:</span>
+          <label className="flex items-center gap-1 sm:gap-2">
+            <span className="text-gray-600 text-xs sm:text-sm">Рік:</span>
             <select
               name="year"
               defaultValue={String(selectedYear)}
-              className="select select-bordered select-sm"
+              className="select select-bordered select-xs sm:select-sm text-xs"
             >
               {yearOptions.map((year) => (
                 <option key={year} value={year}>
@@ -626,7 +626,7 @@ export default async function FinanceReportPage({
               ))}
             </select>
           </label>
-          <button type="submit" className="btn btn-sm btn-primary">
+          <button type="submit" className="btn btn-xs sm:btn-sm btn-primary text-xs">
             Показати
           </button>
         </form>
@@ -645,13 +645,14 @@ export default async function FinanceReportPage({
             <div className="flex flex-col md:flex-row gap-2">
             <section className="card bg-base-100 shadow-sm relative flex-1">
               <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">1</div>
-              <div className="card-body p-1.5">
-                <table className="table table-xs w-full border-collapse">
-                  <colgroup>
-                    <col className="w-auto" />
-                    <col className="w-40" />
-                    <col className="w-20" />
-                  </colgroup>
+              <div className="card-body p-1 sm:p-1.5">
+                <div className="overflow-x-auto">
+                  <table className="table table-xs w-full border-collapse min-w-[280px]">
+                    <colgroup>
+                      <col className="w-auto" />
+                      <col className="w-32 sm:w-40" />
+                      <col className="w-16 sm:w-20" />
+                    </colgroup>
                   <thead>
                     <tr className="bg-yellow-300">
                       <th className="text-center text-xs font-semibold px-2 py-1" colSpan={3}>
@@ -712,6 +713,7 @@ export default async function FinanceReportPage({
                     })()}
                   </tbody>
                 </table>
+                </div>
               </div>
             </section>
 
