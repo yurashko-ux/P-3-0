@@ -12,17 +12,54 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
     if (!indexData) return [];
 
-    const clientIds: string[] = JSON.parse(indexData);
+    let clientIds: string[] = [];
+    try {
+      const parsed = JSON.parse(indexData);
+      // Перевіряємо, чи це масив
+      if (Array.isArray(parsed)) {
+        clientIds = parsed;
+      } else if (typeof parsed === 'string') {
+        // Якщо це просто рядок, спробуємо розпарсити ще раз
+        try {
+          clientIds = JSON.parse(parsed);
+        } catch {
+          // Якщо не вийшло, повертаємо порожній масив
+          console.warn('[direct-store] Invalid index data format, expected array');
+          return [];
+        }
+      } else {
+        console.warn('[direct-store] Index data is not an array:', typeof parsed);
+        return [];
+      }
+    } catch (parseErr) {
+      console.error('[direct-store] Failed to parse index data:', parseErr);
+      return [];
+    }
+
     const clients: DirectClient[] = [];
 
     for (const id of clientIds) {
-      const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
-      if (clientData) {
-        try {
-          clients.push(JSON.parse(clientData));
-        } catch (err) {
-          console.warn(`[direct-store] Failed to parse client ${id}:`, err);
+      if (!id || typeof id !== 'string') {
+        console.warn(`[direct-store] Invalid client ID in index:`, id);
+        continue;
+      }
+      
+      try {
+        const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
+        if (clientData) {
+          try {
+            const client = JSON.parse(clientData);
+            if (client && typeof client === 'object' && client.id) {
+              clients.push(client);
+            } else {
+              console.warn(`[direct-store] Invalid client data for ${id}`);
+            }
+          } catch (err) {
+            console.warn(`[direct-store] Failed to parse client ${id}:`, err);
+          }
         }
+      } catch (err) {
+        console.warn(`[direct-store] Failed to read client ${id}:`, err);
       }
     }
 
@@ -125,17 +162,51 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
     const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
     if (!indexData) return [];
 
-    const statusIds: string[] = JSON.parse(indexData);
+    let statusIds: string[] = [];
+    try {
+      const parsed = JSON.parse(indexData);
+      if (Array.isArray(parsed)) {
+        statusIds = parsed;
+      } else if (typeof parsed === 'string') {
+        try {
+          statusIds = JSON.parse(parsed);
+        } catch {
+          console.warn('[direct-store] Invalid status index data format');
+          return [];
+        }
+      } else {
+        console.warn('[direct-store] Status index data is not an array:', typeof parsed);
+        return [];
+      }
+    } catch (parseErr) {
+      console.error('[direct-store] Failed to parse status index data:', parseErr);
+      return [];
+    }
+
     const statuses: DirectStatus[] = [];
 
     for (const id of statusIds) {
-      const statusData = await kvRead.getRaw(directKeys.STATUS_ITEM(id));
-      if (statusData) {
-        try {
-          statuses.push(JSON.parse(statusData));
-        } catch (err) {
-          console.warn(`[direct-store] Failed to parse status ${id}:`, err);
+      if (!id || typeof id !== 'string') {
+        console.warn(`[direct-store] Invalid status ID in index:`, id);
+        continue;
+      }
+      
+      try {
+        const statusData = await kvRead.getRaw(directKeys.STATUS_ITEM(id));
+        if (statusData) {
+          try {
+            const status = JSON.parse(statusData);
+            if (status && typeof status === 'object' && status.id) {
+              statuses.push(status);
+            } else {
+              console.warn(`[direct-store] Invalid status data for ${id}`);
+            }
+          } catch (err) {
+            console.warn(`[direct-store] Failed to parse status ${id}:`, err);
+          }
         }
+      } catch (err) {
+        console.warn(`[direct-store] Failed to read status ${id}:`, err);
       }
     }
 
