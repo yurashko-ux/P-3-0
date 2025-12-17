@@ -23,7 +23,7 @@
       "has": [
         {
           "type": "host",
-          "value": "finance-report.example.com"
+          "value": "hob.finance-report.vercel.com"
         }
       ],
       "destination": "/finance-report/login"
@@ -33,7 +33,7 @@
       "has": [
         {
           "type": "host",
-          "value": "finance-report.example.com"
+          "value": "hob.finance-report.vercel.com"
         }
       ],
       "destination": "/admin/finance-report"
