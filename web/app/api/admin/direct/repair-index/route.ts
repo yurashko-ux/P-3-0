@@ -66,24 +66,21 @@ export async function POST(req: NextRequest) {
     }
     
     // Спробуємо знайти клієнтів через Instagram index
-    // (це не ідеально, але може допомогти)
-    const testUsernames = ['mykolayyurashko']; // Додайте тестові username, якщо знаєте
-    for (const username of testUsernames) {
-      try {
-        const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(username));
-        if (idData) {
-          const id = typeof idData === 'string' ? JSON.parse(idData) : idData;
-          if (typeof id === 'string' && !clientIds.includes(id)) {
-            clientIds.push(id);
-          }
-        }
-      } catch (e) {
-        // Ігноруємо помилки
-      }
-    }
+    // Шукаємо всі ключі, які починаються з direct:by-instagram:
+    // Це не ідеально, але може допомогти знайти клієнтів, навіть якщо основний індекс пошкоджений
+    
+    // Оскільки ми не можемо легко отримати список всіх ключів з KV,
+    // спробуємо знайти клієнтів через тестові username або через перевірку існуючих клієнтів
+    // Найкращий спосіб - перевірити, чи є клієнти через Instagram index для відомих username
+    
+    // Якщо у нас є хоча б один клієнт, спробуємо знайти інших через перевірку існуючих записів
+    // Але оскільки ми не можемо отримати список всіх ключів, покладаємося на те,
+    // що клієнти зберігаються з правильним Instagram index
     
     // Тепер читаємо всіх знайдених клієнтів
     const foundClients: any[] = [];
+    const foundClientIds = new Set<string>();
+    
     for (const id of clientIds) {
       try {
         const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
@@ -91,6 +88,7 @@ export async function POST(req: NextRequest) {
           const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
           if (client && client.id && client.instagramUsername) {
             foundClients.push(client);
+            foundClientIds.add(client.id);
           }
         }
       } catch (e) {
@@ -98,11 +96,49 @@ export async function POST(req: NextRequest) {
       }
     }
     
+    // Додатково: спробуємо знайти клієнтів через Instagram index
+    // Перевіряємо відомі username (можна розширити список)
+    const knownUsernames = ['mykolayyurashko']; // Можна додати інші
+    for (const username of knownUsernames) {
+      try {
+        const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(username));
+        if (idData) {
+          let id: string;
+          if (typeof idData === 'string') {
+            try {
+              id = JSON.parse(idData);
+            } catch {
+              id = idData;
+            }
+          } else {
+            id = String(idData);
+          }
+          
+          if (typeof id === 'string' && id.startsWith('direct_') && !foundClientIds.has(id)) {
+            try {
+              const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
+              if (clientData) {
+                const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
+                if (client && client.id && client.instagramUsername) {
+                  foundClients.push(client);
+                  foundClientIds.add(client.id);
+                }
+              }
+            } catch (e) {
+              console.warn(`[repair-index] Failed to read client from Instagram index ${id}:`, e);
+            }
+          }
+        }
+      } catch (e) {
+        // Ігноруємо помилки
+      }
+    }
+    
     // Відновлюємо індекс клієнтів
-    const recoveredClientIds = foundClients.map(c => c.id);
+    const recoveredClientIds = Array.from(foundClientIds);
     if (recoveredClientIds.length > 0) {
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(recoveredClientIds));
-      console.log(`[repair-index] Recovered ${recoveredClientIds.length} client IDs`);
+      console.log(`[repair-index] Recovered ${recoveredClientIds.length} client IDs:`, recoveredClientIds);
     } else {
       // Якщо нічого не знайдено, створюємо порожній індекс
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
