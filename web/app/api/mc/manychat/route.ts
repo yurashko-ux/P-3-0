@@ -453,8 +453,9 @@ export async function POST(req: NextRequest) {
         // Створюємо нового клієнта
         const now = new Date().toISOString();
         const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
+        const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         client = {
-          id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: clientId,
           instagramUsername: instagram,
           firstName: fullNameParts[0] || undefined,
           lastName: fullNameParts.slice(1).join(' ') || undefined,
@@ -467,11 +468,18 @@ export async function POST(req: NextRequest) {
           createdAt: now,
           updatedAt: now,
         };
+        
+        // Перевірка після створення
+        if (!client.id) {
+          console.error('[manychat] Failed to generate client ID');
+          return;
+        }
       } else {
         // Оновлюємо існуючого клієнта
         const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
         client = {
           ...client,
+          id: client.id, // Гарантуємо, що id завжди є
           instagramUsername: instagram, // Гарантуємо, що username завжди є
           ...(message.fullName && fullNameParts.length > 0 && {
             firstName: fullNameParts[0],
@@ -483,8 +491,12 @@ export async function POST(req: NextRequest) {
       }
       
       // Додаткова перевірка перед збереженням
+      if (!client.id || typeof client.id !== 'string') {
+        console.error('[manychat] Invalid client data, missing id:', { client, instagram });
+        return;
+      }
       if (!client.instagramUsername || typeof client.instagramUsername !== 'string') {
-        console.error('[manychat] Invalid client data, missing instagramUsername:', client);
+        console.error('[manychat] Invalid client data, missing instagramUsername:', { client, instagram });
         return;
       }
       
