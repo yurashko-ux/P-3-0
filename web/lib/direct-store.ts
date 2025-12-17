@@ -30,8 +30,29 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         clientIds = parsed;
       } else if (typeof parsed === 'object' && parsed !== null) {
         // Якщо це об'єкт, спробуємо витягти масив з нього або скинути
-        console.warn('[direct-store] Index data is an object, not array. Resetting index.');
-        // Скидаємо індекс - він буде перестворений при наступному збереженні
+        console.warn('[direct-store] Index data is an object, not array. Attempting to repair...');
+        
+        // Спробуємо знайти клієнтів через Instagram index перед скиданням
+        // Це допоможе не втратити дані
+        try {
+          // Перевіряємо відомий тестовий username
+          const testUsername = 'mykolayyurashko';
+          const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(testUsername));
+          if (idData) {
+            const id = typeof idData === 'string' ? JSON.parse(idData) : idData;
+            if (typeof id === 'string' && id.startsWith('direct_')) {
+              // Знайшли хоча б одного клієнта - відновлюємо індекс
+              await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([id]));
+              console.log('[direct-store] Repaired index with found client:', id);
+              // Продовжуємо з відновленим індексом
+              return getAllDirectClients();
+            }
+          }
+        } catch (repairErr) {
+          console.warn('[direct-store] Failed to repair index:', repairErr);
+        }
+        
+        // Якщо не вдалося відновити, скидаємо індекс
         await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
         return [];
       } else if (typeof parsed === 'string') {
