@@ -127,7 +127,29 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
 
     // Додаємо в індекс
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
-    const clientIds: string[] = indexData ? JSON.parse(indexData) : [];
+    let clientIds: string[] = [];
+    
+    if (indexData) {
+      try {
+        let parsed: any;
+        if (typeof indexData === 'string') {
+          parsed = JSON.parse(indexData);
+        } else {
+          parsed = indexData;
+        }
+        
+        if (Array.isArray(parsed)) {
+          clientIds = parsed.filter((id: any): id is string => typeof id === 'string');
+        } else {
+          console.warn('[direct-store] Client index is not an array when saving, resetting');
+          clientIds = [];
+        }
+      } catch (parseErr) {
+        console.warn('[direct-store] Failed to parse client index when saving, resetting:', parseErr);
+        clientIds = [];
+      }
+    }
+    
     if (!clientIds.includes(client.id)) {
       clientIds.push(client.id);
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(clientIds));
