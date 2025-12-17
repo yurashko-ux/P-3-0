@@ -13,6 +13,17 @@ export default function middleware(req: NextRequest) {
   // Спеціальна логіка для /admin/finance-report:
   // окреме логування з паролем FINANCE_REPORT_PASS,
   // але власники ADMIN_PASS теж мають доступ.
+  
+  // Logout для фінзвіту
+  if (pathname === '/admin/finance-report/logout') {
+    const loginUrl = url.clone();
+    loginUrl.pathname = '/finance-report/login';
+    loginUrl.search = '';
+    const res = NextResponse.redirect(loginUrl);
+    res.cookies.set('finance_report_token', '', { path: '/', maxAge: 0 });
+    return res;
+  }
+  
   if (pathname.startsWith('/admin/finance-report')) {
     // Якщо користувач вже залогінений як адмін — впускаємо
     const adminToken = req.cookies.get('admin_token')?.value || '';

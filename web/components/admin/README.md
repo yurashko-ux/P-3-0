@@ -43,3 +43,4 @@ const defaultLayout: LayoutItem[] = [
 - `web/app/admin/finance-report/` - Фінансовий звіт
 - `web/app/admin/photo-reports/` - Фото-звіти
 
+
