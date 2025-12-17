@@ -142,9 +142,19 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
     
     if (indexData) {
       try {
-        const parsed = JSON.parse(indexData);
+        let parsed: any;
+        if (typeof indexData === 'string') {
+          parsed = JSON.parse(indexData);
+        } else {
+          parsed = indexData;
+        }
+        
         if (Array.isArray(parsed)) {
           clientIds = parsed;
+        } else if (typeof parsed === 'object' && parsed !== null) {
+          // Якщо індекс - об'єкт, скидаємо його
+          console.warn('[direct-store] Client index is an object, resetting to array');
+          clientIds = [];
         } else {
           console.warn('[direct-store] Client index is not an array, resetting');
           clientIds = [];
@@ -155,9 +165,20 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       }
     }
     
+    // Гарантуємо, що це масив перед додаванням
+    if (!Array.isArray(clientIds)) {
+      console.warn('[direct-store] clientIds is not an array, creating new array');
+      clientIds = [];
+    }
+    
     if (!clientIds.includes(client.id)) {
       clientIds.push(client.id);
-      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(clientIds));
+      // Гарантуємо, що зберігаємо саме масив
+      const indexToSave = JSON.stringify(clientIds);
+      await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexToSave);
+      console.log(`[direct-store] Saved client ${client.id} to index. Total clients: ${clientIds.length}`);
+    } else {
+      console.log(`[direct-store] Client ${client.id} already in index`);
     }
 
     // Зберігаємо індекс по Instagram username для швидкого пошуку
