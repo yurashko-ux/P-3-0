@@ -63,16 +63,25 @@ export default function DirectPage() {
     setError(null);
     try {
       // Завантажуємо статуси (initializeDefaultStatuses викликається автоматично в getAllDirectStatuses)
-      const statusesRes = await fetch("/api/admin/direct/statuses");
-      if (statusesRes.ok) {
-        const statusesData = await statusesRes.json();
-        if (statusesData.ok) {
-          setStatuses(statusesData.statuses || []);
+      try {
+        const statusesRes = await fetch("/api/admin/direct/statuses", {
+          signal: AbortSignal.timeout(10000), // 10 секунд таймаут
+        });
+        if (statusesRes.ok) {
+          const statusesData = await statusesRes.json();
+          if (statusesData.ok) {
+            setStatuses(statusesData.statuses || []);
+          } else {
+            console.warn('[direct] Failed to load statuses:', statusesData.error);
+            setStatuses([]);
+          }
         } else {
-          console.warn('[direct] Failed to load statuses:', statusesData.error);
+          console.warn('[direct] Statuses API returned:', statusesRes.status);
+          setStatuses([]);
         }
-      } else {
-        console.warn('[direct] Statuses API returned:', statusesRes.status);
+      } catch (fetchErr) {
+        console.error('[direct] Error fetching statuses:', fetchErr);
+        setStatuses([]);
       }
 
       // Завантажуємо клієнтів
@@ -97,7 +106,9 @@ export default function DirectPage() {
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
 
-      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`);
+      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+        signal: AbortSignal.timeout(10000), // 10 секунд таймаут
+      });
       if (!res.ok) {
         console.error('[direct] Clients API returned:', res.status, res.statusText);
         setClients([]);
@@ -137,7 +148,9 @@ export default function DirectPage() {
 
   const loadStats = async () => {
     try {
-      const res = await fetch("/api/admin/direct/stats");
+      const res = await fetch("/api/admin/direct/stats", {
+        signal: AbortSignal.timeout(10000), // 10 секунд таймаут
+      });
       if (!res.ok) {
         console.warn('[direct] Stats API returned:', res.status);
         return;
@@ -150,6 +163,7 @@ export default function DirectPage() {
       }
     } catch (err) {
       console.error("[direct] Error loading stats:", err);
+      // Не встановлюємо помилку для stats, бо це не критично
     }
   };
 
