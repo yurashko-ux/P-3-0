@@ -62,33 +62,78 @@ export default function DirectPage() {
     setIsLoading(true);
     setError(null);
     try {
-      // Завантажуємо статуси (initializeDefaultStatuses викликається автоматично в getAllDirectStatuses)
-      try {
-        const statusesRes = await fetch("/api/admin/direct/statuses", {
-          signal: AbortSignal.timeout(10000), // 10 секунд таймаут
-        });
-        if (statusesRes.ok) {
-          const statusesData = await statusesRes.json();
+      // Завантажуємо дані паралельно для швидшої роботи
+      const createController = () => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 5000); // 5 секунд
+        return controller;
+      };
+
+      const [statusesRes, clientsRes, statsRes] = await Promise.allSettled([
+        fetch("/api/admin/direct/statuses", {
+          signal: createController().signal,
+        }).catch(() => null),
+        fetch("/api/admin/direct/clients", {
+          signal: createController().signal,
+        }).catch(() => null),
+        fetch("/api/admin/direct/stats", {
+          signal: createController().signal,
+        }).catch(() => null),
+      ]);
+
+      // Обробляємо статуси
+      if (statusesRes.status === 'fulfilled' && statusesRes.value?.ok) {
+        try {
+          const statusesData = await statusesRes.value.json();
           if (statusesData.ok) {
             setStatuses(statusesData.statuses || []);
           } else {
-            console.warn('[direct] Failed to load statuses:', statusesData.error);
             setStatuses([]);
           }
-        } else {
-          console.warn('[direct] Statuses API returned:', statusesRes.status);
+        } catch {
           setStatuses([]);
         }
-      } catch (fetchErr) {
-        console.error('[direct] Error fetching statuses:', fetchErr);
+      } else {
         setStatuses([]);
       }
 
-      // Завантажуємо клієнтів
-      await loadClients();
+      // Обробляємо клієнтів
+      if (clientsRes.status === 'fulfilled' && clientsRes.value?.ok) {
+        try {
+          const clientsData = await clientsRes.value.json();
+          if (clientsData.ok) {
+            let filteredClients = clientsData.clients || [];
+            // Пошук по Instagram username
+            if (filters.search) {
+              const searchLower = filters.search.toLowerCase();
+              filteredClients = filteredClients.filter((c: DirectClient) =>
+                c.instagramUsername?.toLowerCase().includes(searchLower) ||
+                c.firstName?.toLowerCase().includes(searchLower) ||
+                c.lastName?.toLowerCase().includes(searchLower)
+              );
+            }
+            setClients(filteredClients);
+          } else {
+            setClients([]);
+          }
+        } catch {
+          setClients([]);
+        }
+      } else {
+        setClients([]);
+      }
 
-      // Завантажуємо статистику
-      await loadStats();
+      // Обробляємо статистику
+      if (statsRes.status === 'fulfilled' && statsRes.value?.ok) {
+        try {
+          const statsData = await statsRes.value.json();
+          if (statsData.ok) {
+            setStats(statsData.stats);
+          }
+        } catch {
+          // Ігноруємо помилки статистики
+        }
+      }
     } catch (err) {
       console.error('[direct] Error loading data:', err);
       setError(err instanceof Error ? err.message : String(err));
@@ -174,9 +219,52 @@ export default function DirectPage() {
   };
 
   useEffect(() => {
-    // Завантажуємо клієнтів тільки після початкового завантаження
+    // Завантажуємо клієнтів тільки після початкового завантаження та при зміні фільтрів
     if (!isLoading) {
-      loadClients();
+      const loadClientsOnly = async () => {
+        try {
+          const params = new URLSearchParams();
+          if (filters.statusId) params.set("statusId", filters.statusId);
+          if (filters.masterId) params.set("masterId", filters.masterId);
+          if (filters.source) params.set("source", filters.source);
+          params.set("sortBy", sortBy);
+          params.set("sortOrder", sortOrder);
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          
+          if (!res.ok) {
+            console.error('[direct] Clients API returned:', res.status, res.statusText);
+            setClients([]);
+            return;
+          }
+          
+          const data = await res.json();
+          if (data.ok) {
+            let filteredClients = data.clients || [];
+            if (filters.search) {
+              const searchLower = filters.search.toLowerCase();
+              filteredClients = filteredClients.filter((c: DirectClient) =>
+                c.instagramUsername?.toLowerCase().includes(searchLower) ||
+                c.firstName?.toLowerCase().includes(searchLower) ||
+                c.lastName?.toLowerCase().includes(searchLower)
+              );
+            }
+            setClients(filteredClients);
+          } else {
+            setClients([]);
+          }
+        } catch (err) {
+          console.error('[direct] Error loading clients:', err);
+          setClients([]);
+        }
+      };
+      
+      loadClientsOnly();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, sortBy, sortOrder]);
