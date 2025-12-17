@@ -601,7 +601,7 @@ export default async function FinanceReportPage({
                   <thead>
                     <tr className="bg-yellow-300">
                       <th className="text-center text-xs font-semibold px-2 py-1" colSpan={3}>
-                        Листопад 2025
+                        {displayMonthLabel} {selectedYear}
                       </th>
                     </tr>
                   </thead>
@@ -634,18 +634,18 @@ export default async function FinanceReportPage({
                     </tr>
                     <tr>
                       <td className="px-2 py-1 text-xs bg-blue-50">Дохід (послуги+товар)</td>
-                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(totalIncome)}</td>
-                      <td className="px-2 py-1 text-xs text-right">{((totalIncome / summary.totals.total) * 100).toFixed(1)}%</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(totalIncomeDashboard)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((totalIncomeDashboard / summary.totals.total) * 100).toFixed(1)}%</td>
                     </tr>
                     <tr>
                       <td className="px-2 py-1 text-xs bg-red-50">Розхід</td>
-                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(totalExpenses)}</td>
-                      <td className="px-2 py-1 text-xs text-right">{((totalExpenses / summary.totals.total) * 100).toFixed(1)}%</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(totalExpensesDashboard)}</td>
+                      <td className="px-2 py-1 text-xs text-right">{((totalExpensesDashboard / summary.totals.total) * 100).toFixed(1)}%</td>
                     </tr>
                     <tr>
                       <td className="px-2 py-1 text-xs bg-green-50 font-semibold">Прибуток салону</td>
-                      <td className="px-2 py-1 text-xs text-right font-bold">{formatMoney(profit)}</td>
-                      <td className="px-2 py-1 text-xs text-right font-semibold">{((profit / summary.totals.total) * 100).toFixed(1)}%</td>
+                      <td className="px-2 py-1 text-xs text-right font-bold">{formatMoney(profitDashboard)}</td>
+                      <td className="px-2 py-1 text-xs text-right font-semibold">{((profitDashboard / summary.totals.total) * 100).toFixed(1)}%</td>
                     </tr>
                   </tbody>
                 </table>
