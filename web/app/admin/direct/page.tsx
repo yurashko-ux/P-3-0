@@ -4,7 +4,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { initializeDefaultStatuses } from "@/lib/direct-store";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { DirectStats } from "./_components/DirectStats";
@@ -33,14 +32,7 @@ export default function DirectPage() {
     setIsLoading(true);
     setError(null);
     try {
-      // Ініціалізуємо початкові статуси (якщо їх немає) - тільки один раз
-      try {
-        await initializeDefaultStatuses();
-      } catch (initErr) {
-        console.warn('[direct] Failed to initialize default statuses:', initErr);
-      }
-      
-      // Завантажуємо статуси
+      // Завантажуємо статуси (initializeDefaultStatuses викликається автоматично в getAllDirectStatuses)
       const statusesRes = await fetch("/api/admin/direct/statuses");
       if (statusesRes.ok) {
         const statusesData = await statusesRes.json();
