@@ -432,13 +432,18 @@ export async function POST(req: NextRequest) {
   }
 
   // Синхронізація з Direct розділом (якщо є Instagram username)
-  if (message.handle) {
+  if (message.handle && typeof message.handle === 'string' && message.handle.trim()) {
     try {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
       // Це швидше і не потребує авторизації
       const { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } = await import('@/lib/direct-store');
       
-      const instagram = message.handle;
+      const instagram = message.handle.trim();
+      if (!instagram) {
+        console.warn('[manychat] Empty Instagram username after trim, skipping Direct sync');
+        return;
+      }
+      
       let client = await getDirectClientByInstagram(instagram);
       
       const statuses = await getAllDirectStatuses();
@@ -447,11 +452,12 @@ export async function POST(req: NextRequest) {
       if (!client) {
         // Створюємо нового клієнта
         const now = new Date().toISOString();
+        const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
         client = {
           id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           instagramUsername: instagram,
-          firstName: message.fullName?.split(' ')[0],
-          lastName: message.fullName?.split(' ').slice(1).join(' '),
+          firstName: fullNameParts[0] || undefined,
+          lastName: fullNameParts.slice(1).join(' ') || undefined,
           source: 'instagram',
           firstContactDate: now,
           statusId: defaultStatus?.id || 'new',
@@ -463,15 +469,23 @@ export async function POST(req: NextRequest) {
         };
       } else {
         // Оновлюємо існуючого клієнта
+        const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
         client = {
           ...client,
-          ...(message.fullName && {
-            firstName: message.fullName.split(' ')[0],
-            lastName: message.fullName.split(' ').slice(1).join(' '),
+          instagramUsername: instagram, // Гарантуємо, що username завжди є
+          ...(message.fullName && fullNameParts.length > 0 && {
+            firstName: fullNameParts[0],
+            lastName: fullNameParts.slice(1).join(' ') || undefined,
           }),
           lastMessageAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+      }
+      
+      // Додаткова перевірка перед збереженням
+      if (!client.instagramUsername || typeof client.instagramUsername !== 'string') {
+        console.error('[manychat] Invalid client data, missing instagramUsername:', client);
+        return;
       }
       
       await saveDirectClient(client);
@@ -479,6 +493,11 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.error('[manychat] Error syncing with Direct:', err);
     }
+  } else {
+    console.warn('[manychat] No valid Instagram handle in message, skipping Direct sync:', {
+      handle: message.handle,
+      handleType: typeof message.handle,
+    });
   }
 
   let automation: ManychatRoutingSuccess | ManychatRoutingError;

@@ -104,6 +104,14 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
  */
 export async function saveDirectClient(client: DirectClient): Promise<void> {
   try {
+    // Валідація обов'язкових полів
+    if (!client.id) {
+      throw new Error('Client ID is required');
+    }
+    if (!client.instagramUsername || typeof client.instagramUsername !== 'string') {
+      throw new Error(`Client instagramUsername is required and must be a string, got: ${typeof client.instagramUsername}`);
+    }
+
     // Зберігаємо клієнта
     await kvWrite.setRaw(directKeys.CLIENT_ITEM(client.id), JSON.stringify(client));
 
@@ -132,12 +140,10 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
     }
 
     // Зберігаємо індекс по Instagram username для швидкого пошуку
-    await kvWrite.setRaw(
-      directKeys.CLIENT_BY_INSTAGRAM(client.instagramUsername),
-      JSON.stringify(client.id)
-    );
+    const instagramKey = directKeys.CLIENT_BY_INSTAGRAM(client.instagramUsername);
+    await kvWrite.setRaw(instagramKey, JSON.stringify(client.id));
   } catch (err) {
-    console.error(`[direct-store] Failed to save client ${client.id}:`, err);
+    console.error(`[direct-store] Failed to save client ${client?.id || 'unknown'}:`, err);
     throw err;
   }
 }
