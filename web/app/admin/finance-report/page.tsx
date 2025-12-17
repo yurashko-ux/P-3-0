@@ -629,7 +629,7 @@ export default async function FinanceReportPage({
                         />
                       </td>
                       <td className="px-2 py-1 text-xs text-right font-semibold">{formatMoney(goods?.cost || 0)}</td>
-                      <td className="px-2 py-1 text-xs text-right">{((goods?.cost || 0) / summary.totals.total) * 100).toFixed(1)}%</td>
+                      <td className="px-2 py-1 text-xs text-right">{(((goods?.cost || 0) / summary.totals.total) * 100).toFixed(1)}%</td>
                     </tr>
                     <tr>
                       <td className="px-2 py-1 text-xs bg-blue-50">Дохід (послуги+товар)</td>

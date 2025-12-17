@@ -1,9 +1,9 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, Suspense } from "react";
 
-export default function FinanceReportLoginPage() {
+function FinanceReportLoginForm() {
   const searchParams = useSearchParams();
   const hasError = searchParams.get("err") === "1" || searchParams.get("err") === "auth";
   const [pwd, setPwd] = useState("");
@@ -65,5 +65,19 @@ export default function FinanceReportLoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function FinanceReportLoginPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-sm rounded-2xl shadow p-6 bg-white">
+          <div className="text-center">Завантаження...</div>
+        </div>
+      </main>
+    }>
+      <FinanceReportLoginForm />
+    </Suspense>
   );
 }
