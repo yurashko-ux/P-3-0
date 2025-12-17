@@ -10,19 +10,53 @@ import type { DirectClient, DirectStatus } from './direct-types';
 export async function getAllDirectClients(): Promise<DirectClient[]> {
   try {
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
-    if (!indexData) return [];
+    if (!indexData) {
+      return [];
+    }
 
-    const clientIds: string[] = JSON.parse(indexData);
+    // Обробляємо різні формати даних
+    let parsed: any;
+    try {
+      if (typeof indexData === 'string') {
+        parsed = JSON.parse(indexData);
+      } else {
+        parsed = indexData;
+      }
+    } catch (parseErr) {
+      console.warn('[direct-store] Failed to parse client index, resetting:', parseErr);
+      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
+      return [];
+    }
+    
+    // Перевіряємо, чи це масив
+    if (!Array.isArray(parsed)) {
+      console.warn('[direct-store] Client index data is not an array, resetting:', typeof parsed, parsed);
+      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
+      return [];
+    }
+
+    // Гарантуємо, що це масив рядків
+    const clientIds: string[] = parsed.filter((id: any): id is string => 
+      typeof id === 'string' && id.length > 0
+    );
+    
     const clients: DirectClient[] = [];
 
     for (const id of clientIds) {
-      const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
-      if (clientData) {
-        try {
-          clients.push(JSON.parse(clientData));
-        } catch (err) {
-          console.warn(`[direct-store] Failed to parse client ${id}:`, err);
+      try {
+        const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
+        if (clientData) {
+          try {
+            const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
+            if (client && typeof client === 'object' && client.id && client.instagramUsername) {
+              clients.push(client);
+            }
+          } catch (parseErr) {
+            console.warn(`[direct-store] Failed to parse client ${id}:`, parseErr);
+          }
         }
+      } catch (readErr) {
+        console.warn(`[direct-store] Failed to read client ${id}:`, readErr);
       }
     }
 
@@ -151,16 +185,26 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
       await initializeDefaultStatuses();
       const indexDataAfterInit = await kvRead.getRaw(directKeys.STATUS_INDEX);
       if (!indexDataAfterInit) return [];
-      // Продовжуємо з новими даними
-      return getAllDirectStatuses();
+      // Продовжуємо з новими даними (але без рекурсії, щоб уникнути циклу)
+      const newParsed = typeof indexDataAfterInit === 'string' ? JSON.parse(indexDataAfterInit) : indexDataAfterInit;
+      if (!Array.isArray(newParsed)) return [];
+      const statusIds = newParsed.filter((id: any): id is string => typeof id === 'string');
+      return await loadStatusesByIds(statusIds);
     }
 
     // Обробляємо різні формати даних
     let parsed: any;
-    if (typeof indexData === 'string') {
-      parsed = JSON.parse(indexData);
-    } else {
-      parsed = indexData;
+    try {
+      if (typeof indexData === 'string') {
+        parsed = JSON.parse(indexData);
+      } else {
+        parsed = indexData;
+      }
+    } catch (parseErr) {
+      console.warn('[direct-store] Failed to parse status index, resetting:', parseErr);
+      await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify([]));
+      await initializeDefaultStatuses();
+      return [];
     }
     
     // Перевіряємо, чи це масив
@@ -170,7 +214,7 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
       await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify([]));
       // Ініціалізуємо початкові статуси
       await initializeDefaultStatuses();
-      // Повертаємо статуси без рекурсії
+      // Читаємо знову, але без рекурсії
       const indexDataAfterInit = await kvRead.getRaw(directKeys.STATUS_INDEX);
       if (!indexDataAfterInit) return [];
       const newParsed = typeof indexDataAfterInit === 'string' ? JSON.parse(indexDataAfterInit) : indexDataAfterInit;
@@ -178,22 +222,43 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
       parsed = newParsed;
     }
 
-    const statusIds: string[] = parsed;
-    const statuses: DirectStatus[] = [];
+    // Гарантуємо, що це масив рядків
+    const statusIds: string[] = parsed.filter((id: any): id is string => 
+      typeof id === 'string' && id.length > 0
+    );
+    return await loadStatusesByIds(statusIds);
+  } catch (err) {
+    console.error('[direct-store] Failed to get all statuses:', err);
+    return [];
+  }
+}
 
-    for (const id of statusIds) {
+/**
+ * Допоміжна функція для завантаження статусів за ID (без рекурсії)
+ */
+async function loadStatusesByIds(statusIds: string[]): Promise<DirectStatus[]> {
+  const statuses: DirectStatus[] = [];
+
+  for (const id of statusIds) {
+    try {
       const statusData = await kvRead.getRaw(directKeys.STATUS_ITEM(id));
       if (statusData) {
         try {
-          statuses.push(JSON.parse(statusData));
-        } catch (err) {
-          console.warn(`[direct-store] Failed to parse status ${id}:`, err);
+          const status = typeof statusData === 'string' ? JSON.parse(statusData) : statusData;
+          if (status && typeof status === 'object' && status.id) {
+            statuses.push(status);
+          }
+        } catch (parseErr) {
+          console.warn(`[direct-store] Failed to parse status ${id}:`, parseErr);
         }
       }
+    } catch (readErr) {
+      console.warn(`[direct-store] Failed to read status ${id}:`, readErr);
     }
+  }
 
-    // Сортуємо по order
-    return statuses.sort((a, b) => a.order - b.order);
+  // Сортуємо по order
+  return statuses.sort((a, b) => a.order - b.order);
   } catch (err) {
     console.error('[direct-store] Failed to get all statuses:', err);
     return [];
