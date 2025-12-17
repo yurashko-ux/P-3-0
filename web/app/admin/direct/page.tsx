@@ -26,8 +26,6 @@ export default function DirectPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
-    // Ініціалізуємо початкові статуси (якщо їх немає)
-    initializeDefaultStatuses().catch(console.error);
     loadData();
   }, []);
 
@@ -35,6 +33,13 @@ export default function DirectPage() {
     setIsLoading(true);
     setError(null);
     try {
+      // Ініціалізуємо початкові статуси (якщо їх немає) - тільки один раз
+      try {
+        await initializeDefaultStatuses();
+      } catch (initErr) {
+        console.warn('[direct] Failed to initialize default statuses:', initErr);
+      }
+      
       // Завантажуємо статуси
       const statusesRes = await fetch("/api/admin/direct/statuses");
       if (statusesRes.ok) {
