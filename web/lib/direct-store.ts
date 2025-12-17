@@ -363,6 +363,7 @@ export async function deleteDirectStatus(id: string): Promise<void> {
 
 /**
  * Ініціалізувати початкові статуси
+ * ВАЖЛИВО: Не викликає getAllDirectStatuses, щоб уникнути рекурсії
  */
 export async function initializeDefaultStatuses(): Promise<void> {
   const defaultStatuses: Omit<DirectStatus, 'createdAt'>[] = [
@@ -375,9 +376,28 @@ export async function initializeDefaultStatuses(): Promise<void> {
     { id: 'no-response', name: 'Не відповідає', color: '#6b7280', order: 7, isDefault: false },
   ];
 
-  const existingStatuses = await getAllDirectStatuses();
-  const existingIds = new Set(existingStatuses.map((s) => s.id));
+  // Читаємо індекс напряму, без виклику getAllDirectStatuses
+  const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
+  let existingIds = new Set<string>();
+  
+  if (indexData) {
+    try {
+      let parsed: any;
+      if (typeof indexData === 'string') {
+        parsed = JSON.parse(indexData);
+      } else {
+        parsed = indexData;
+      }
+      
+      if (Array.isArray(parsed)) {
+        existingIds = new Set(parsed.filter((id: any): id is string => typeof id === 'string'));
+      }
+    } catch (err) {
+      // Ігноруємо помилки парсингу - просто створюємо всі статуси
+    }
+  }
 
+  // Створюємо тільки ті статуси, яких немає
   for (const status of defaultStatuses) {
     if (!existingIds.has(status.id)) {
       const fullStatus: DirectStatus = {
