@@ -48,9 +48,9 @@ export default function DirectPage() {
       if (mounted && isLoading) {
         console.error('[direct] Loading timeout, forcing stop');
         setIsLoading(false);
-        setError('Час очікування вичерпано. Перезавантажте сторінку.');
+        setError('Час очікування вичерпано. Перезавантажте сторінку або натисніть "Відновити індекс".');
       }
-    }, 15000); // 15 секунд
+    }, 8000); // 8 секунд (зменшено з 15)
     
     return () => {
       mounted = false;
@@ -107,7 +107,7 @@ export default function DirectPage() {
       params.set("sortOrder", sortOrder);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // Зменшено до 5 секунд
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
         signal: controller.signal,
       });
@@ -152,7 +152,7 @@ export default function DirectPage() {
   const loadStats = async () => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // Зменшено до 5 секунд
       const res = await fetch("/api/admin/direct/stats", {
         signal: controller.signal,
       });
