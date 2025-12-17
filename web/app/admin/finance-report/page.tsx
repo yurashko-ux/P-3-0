@@ -649,11 +649,11 @@ export default async function FinanceReportPage({
               <div className="card-body p-1 sm:p-1.5">
                 <div className="overflow-x-auto">
                   <table className="table table-xs w-full border-collapse min-w-[280px]">
-                    <colgroup>
-                      <col className="w-auto" />
-                      <col className="w-32 sm:w-40" />
-                      <col className="w-16 sm:w-20" />
-                    </colgroup>
+                  <colgroup>
+                    <col className="w-auto" />
+                    <col className="w-36 sm:w-40" />
+                    <col className="w-18 sm:w-20" />
+                  </colgroup>
                   <thead>
                     <tr className="bg-yellow-300">
                       <th className="text-center text-xs font-semibold px-2 py-1" colSpan={3}>
@@ -684,18 +684,16 @@ export default async function FinanceReportPage({
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.goods)}%</td>
                           </tr>
                           <tr className="bg-rose-100">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">
-                              <div className="flex items-center gap-1">
-                                <span>Собівартість товару</span>
+                            <td className="font-medium whitespace-nowrap px-2 py-1">Собівартість товару</td>
+                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">
+                              <div className="flex items-center justify-end gap-1">
+                                <EditableCostCell
+                                  year={selectedYear}
+                                  month={selectedMonth}
+                                  currentCost={goodsCostDashboard}
+                                />
                                 <EditCostIconButton year={selectedYear} month={selectedMonth} />
                               </div>
-                            </td>
-                            <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">
-                              <EditableCostCell
-                                year={selectedYear}
-                                month={selectedMonth}
-                                currentCost={goodsCostDashboard}
-                              />
                             </td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
                           </tr>
