@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
     let messageText: string | undefined;
 
     if (messageId) {
-      const message = await readManychatMessage();
-      if (message) {
+      const result = await readManychatMessage();
+      if (result && result.message) {
+        const message = result.message;
         instagram = message.handle || null;
         firstName = message.fullName?.split(' ')[0];
         lastName = message.fullName?.split(' ').slice(1).join(' ');
