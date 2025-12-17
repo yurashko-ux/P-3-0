@@ -16,5 +16,27 @@
       "path": "/api/cron/photo-reminders",
       "schedule": "*/5 * * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "finance-report.example.com"
+        }
+      ],
+      "destination": "/finance-report/login"
+    },
+    {
+      "source": "/admin",
+      "has": [
+        {
+          "type": "host",
+          "value": "finance-report.example.com"
+        }
+      ],
+      "destination": "/admin/finance-report"
+    }
   ]
 }
