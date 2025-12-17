@@ -9,11 +9,18 @@ import type { DirectClient, DirectStatus } from './direct-types';
  */
 export async function getAllDirectClients(): Promise<DirectClient[]> {
   try {
+    console.log('[direct-store] getAllDirectClients: Starting to fetch clients');
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
     if (!indexData) {
       console.log('[direct-store] No client index found, returning empty array');
       return [];
     }
+
+    console.log('[direct-store] Index data retrieved:', {
+      type: typeof indexData,
+      isString: typeof indexData === 'string',
+      length: typeof indexData === 'string' ? indexData.length : 'N/A',
+    });
 
     let clientIds: string[] = [];
     try {
@@ -25,9 +32,17 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         parsed = indexData;
       }
       
+      console.log('[direct-store] Parsed index data:', {
+        type: typeof parsed,
+        isArray: Array.isArray(parsed),
+        isObject: typeof parsed === 'object' && parsed !== null,
+        value: Array.isArray(parsed) ? `Array(${parsed.length})` : String(parsed).slice(0, 100),
+      });
+      
       // Перевіряємо, чи це масив
       if (Array.isArray(parsed)) {
         clientIds = parsed;
+        console.log(`[direct-store] Found ${clientIds.length} client IDs in index`);
       } else if (typeof parsed === 'object' && parsed !== null) {
         // Якщо це об'єкт, спробуємо витягти масив з нього або скинути
         console.warn('[direct-store] Index data is an object, not array. Attempting to repair...');
