@@ -281,10 +281,6 @@ async function loadStatusesByIds(statusIds: string[]): Promise<DirectStatus[]> {
 
   // Сортуємо по order
   return statuses.sort((a, b) => a.order - b.order);
-  } catch (err) {
-    console.error('[direct-store] Failed to get all statuses:', err);
-    return [];
-  }
 }
 
 /**
@@ -311,7 +307,29 @@ export async function saveDirectStatus(status: DirectStatus): Promise<void> {
 
     // Додаємо в індекс
     const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
-    const statusIds: string[] = indexData ? JSON.parse(indexData) : [];
+    let statusIds: string[] = [];
+    
+    if (indexData) {
+      try {
+        let parsed: any;
+        if (typeof indexData === 'string') {
+          parsed = JSON.parse(indexData);
+        } else {
+          parsed = indexData;
+        }
+        
+        if (Array.isArray(parsed)) {
+          statusIds = parsed.filter((id: any): id is string => typeof id === 'string');
+        } else {
+          console.warn('[direct-store] Status index is not an array when saving, resetting');
+          statusIds = [];
+        }
+      } catch (parseErr) {
+        console.warn('[direct-store] Failed to parse status index when saving, resetting:', parseErr);
+        statusIds = [];
+      }
+    }
+    
     if (!statusIds.includes(status.id)) {
       statusIds.push(status.id);
       await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify(statusIds));
