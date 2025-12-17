@@ -229,6 +229,25 @@ export default function DirectPage() {
       {error && (
         <div className="alert alert-error">
           <span>{error}</span>
+          <button
+            className="btn btn-sm btn-ghost ml-4"
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/admin/direct/repair-index", { method: "POST" });
+                const data = await res.json();
+                if (data.ok) {
+                  alert(`Відновлено: ${data.recovered.clients} клієнтів, ${data.recovered.statuses} статусів`);
+                  await loadData();
+                } else {
+                  alert(`Помилка: ${data.error}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+          >
+            Відновити індекс
+          </button>
         </div>
       )}
 
