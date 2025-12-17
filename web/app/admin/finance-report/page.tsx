@@ -16,6 +16,7 @@ import { EditNumberField } from "./_components/EditNumberField";
 import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
+import { EditCostIconButton } from "./_components/EditCostIconButton";
 import { getWarehouseBalance } from "@/lib/altegio";
 import { unstable_noStore as noStore } from "next/cache";
 
@@ -683,7 +684,12 @@ export default async function FinanceReportPage({
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(summary.totals.goods)}%</td>
                           </tr>
                           <tr className="bg-rose-100">
-                            <td className="font-medium whitespace-nowrap px-2 py-1">Собівартість товару</td>
+                            <td className="font-medium whitespace-nowrap px-2 py-1">
+                              <div className="flex items-center gap-1">
+                                <span>Собівартість товару</span>
+                                <EditCostIconButton year={selectedYear} month={selectedMonth} />
+                              </div>
+                            </td>
                             <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">
                               <EditableCostCell
                                 year={selectedYear}
