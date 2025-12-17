@@ -106,9 +106,12 @@ export default function DirectPage() {
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-        signal: AbortSignal.timeout(10000), // 10 секунд таймаут
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         console.error('[direct] Clients API returned:', res.status, res.statusText);
         setClients([]);
@@ -148,9 +151,12 @@ export default function DirectPage() {
 
   const loadStats = async () => {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       const res = await fetch("/api/admin/direct/stats", {
-        signal: AbortSignal.timeout(10000), // 10 секунд таймаут
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         console.warn('[direct] Stats API returned:', res.status);
         return;
