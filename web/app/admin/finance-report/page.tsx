@@ -648,11 +648,11 @@ export default async function FinanceReportPage({
               <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">1</div>
               <div className="card-body p-1 sm:p-1.5">
                 <div className="overflow-x-auto">
-                  <table className="table table-xs w-full border-collapse min-w-[280px]">
+                  <table className="table table-xs w-full border-collapse min-w-[260px]">
                   <colgroup>
                     <col className="w-auto" />
-                    <col className="w-36 sm:w-40" />
-                    <col className="w-18 sm:w-20" />
+                    <col className="w-32 sm:w-40" />
+                    <col className="w-14 sm:w-20" />
                   </colgroup>
                   <thead>
                     <tr className="bg-yellow-300">
