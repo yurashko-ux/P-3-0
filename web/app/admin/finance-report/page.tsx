@@ -686,13 +686,13 @@ export default async function FinanceReportPage({
                           <tr className="bg-rose-100">
                             <td className="font-medium whitespace-nowrap px-2 py-1">Собівартість товару</td>
                             <td className="text-right text-xs font-bold whitespace-nowrap px-2 py-1">
-                              <div className="flex items-center justify-end gap-1">
+                              <div className="flex items-center justify-end gap-0">
+                                <EditCostIconButton year={selectedYear} month={selectedMonth} />
                                 <EditableCostCell
                                   year={selectedYear}
                                   month={selectedMonth}
                                   currentCost={goodsCostDashboard}
                                 />
-                                <EditCostIconButton year={selectedYear} month={selectedMonth} />
                               </div>
                             </td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>

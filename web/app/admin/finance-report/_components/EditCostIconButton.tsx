@@ -69,10 +69,10 @@ export function EditCostIconButton({ year, month }: EditCostIconButtonProps) {
     <button
       onClick={handleEditClick}
       disabled={isProcessing}
-      className="btn btn-xs btn-ghost p-0 opacity-60 hover:opacity-100 inline-flex items-center shrink-0 h-auto min-h-0"
+      className="btn btn-xs btn-ghost p-0 opacity-60 hover:opacity-100 inline-flex items-center shrink-0 h-auto min-h-0 -mr-0.5"
       title="Редагувати собівартість (потрібен CRON_SECRET)"
     >
-      <span className="text-xs">✏️</span>
+      <span className="text-xs leading-none">✏️</span>
     </button>
   );
 }
