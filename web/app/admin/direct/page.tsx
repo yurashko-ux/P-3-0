@@ -27,7 +27,35 @@ export default function DirectPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
-    loadData();
+    let mounted = true;
+    
+    const loadDataWithTimeout = async () => {
+      try {
+        await loadData();
+      } catch (err) {
+        if (mounted) {
+          console.error('[direct] Load data error:', err);
+          setIsLoading(false);
+          setError('Помилка завантаження даних. Перезавантажте сторінку.');
+        }
+      }
+    };
+    
+    loadDataWithTimeout();
+    
+    // Таймаут на випадок, якщо завантаження зависне
+    const timeout = setTimeout(() => {
+      if (mounted && isLoading) {
+        console.error('[direct] Loading timeout, forcing stop');
+        setIsLoading(false);
+        setError('Час очікування вичерпано. Перезавантажте сторінку.');
+      }
+    }, 15000); // 15 секунд
+    
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   const loadData = async () => {
@@ -126,9 +154,11 @@ export default function DirectPage() {
   };
 
   useEffect(() => {
+    // Завантажуємо клієнтів тільки після початкового завантаження
     if (!isLoading) {
       loadClients();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, sortBy, sortOrder]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
