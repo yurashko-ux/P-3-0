@@ -501,31 +501,64 @@ export async function saveDirectStatus(status: DirectStatus): Promise<void> {
     // Зберігаємо статус
     await kvWrite.setRaw(directKeys.STATUS_ITEM(status.id), JSON.stringify(status));
 
-    // Додаємо в індекс
-    const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
-    let statusIds: string[] = [];
+    // Додаємо в індекс з retry логікою для уникнення race conditions
+    let retries = 3;
+    let added = false;
     
-    if (indexData) {
-      try {
-        // Рекурсивно розгортаємо обгортки
-        const parsed = unwrapKVResponse(indexData);
-        
-        if (Array.isArray(parsed)) {
-          statusIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.length > 0);
-        } else {
-          // Якщо індекс пошкоджений, скидаємо його
-          console.warn('[direct-store] Status index is not an array when saving, resetting');
+    while (retries > 0 && !added) {
+      const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
+      let statusIds: string[] = [];
+      
+      if (indexData) {
+        try {
+          // Рекурсивно розгортаємо обгортки
+          const parsed = unwrapKVResponse(indexData);
+          
+          if (Array.isArray(parsed)) {
+            statusIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.length > 0);
+          } else {
+            // Якщо індекс пошкоджений, скидаємо його
+            console.warn('[direct-store] Status index is not an array when saving, resetting');
+            statusIds = [];
+          }
+        } catch (parseErr) {
+          console.warn('[direct-store] Failed to parse status index when saving, resetting:', parseErr);
           statusIds = [];
         }
-      } catch (parseErr) {
-        console.warn('[direct-store] Failed to parse status index when saving, resetting:', parseErr);
-        statusIds = [];
       }
-    }
-    
-    if (!statusIds.includes(status.id)) {
-      statusIds.push(status.id);
-      await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify(statusIds));
+      
+      if (!statusIds.includes(status.id)) {
+        statusIds.push(status.id);
+        const indexJson = JSON.stringify(statusIds);
+        await kvWrite.setRaw(directKeys.STATUS_INDEX, indexJson);
+        
+        // Затримка для стабільності KV (eventual consistency)
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        // Перевіряємо, чи індекс зберігся правильно
+        const verifyIndex = await kvRead.getRaw(directKeys.STATUS_INDEX);
+        if (verifyIndex) {
+          try {
+            const verifyParsed = unwrapKVResponse(verifyIndex);
+            if (Array.isArray(verifyParsed) && verifyParsed.includes(status.id)) {
+              added = true;
+              console.log(`[direct-store] ✅ Added status ${status.id} to index. Total: ${statusIds.length}`);
+            }
+          } catch {}
+        }
+        
+        if (!added && retries > 1) {
+          console.warn(`[direct-store] Status index verification failed, retrying... (${retries - 1} attempts left)`);
+          retries--;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } else if (!added) {
+          console.error(`[direct-store] ⚠️ WARNING: Failed to verify status index after ${retries} attempts for status ${status.id}`);
+          retries = 0;
+        }
+      } else {
+        added = true;
+        console.log(`[direct-store] ℹ️ Status ${status.id} already in index`);
+      }
     }
   } catch (err) {
     console.error(`[direct-store] Failed to save status ${status.id}:`, err);
