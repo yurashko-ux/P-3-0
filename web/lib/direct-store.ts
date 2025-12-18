@@ -309,10 +309,24 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
       const indexDataAfterInit = await kvRead.getRaw(directKeys.STATUS_INDEX);
       if (!indexDataAfterInit) return [];
       // Продовжуємо з новими даними (але без рекурсії, щоб уникнути циклу)
-      const newParsed = typeof indexDataAfterInit === 'string' ? JSON.parse(indexDataAfterInit) : indexDataAfterInit;
-      if (!Array.isArray(newParsed)) return [];
-      const statusIds = newParsed.filter((id: any): id is string => typeof id === 'string');
-      return await loadStatusesByIds(statusIds);
+      let newRawString: string | null = null;
+      if (typeof indexDataAfterInit === 'string') {
+        newRawString = indexDataAfterInit;
+      } else if (indexDataAfterInit && typeof indexDataAfterInit === 'object') {
+        const extracted = (indexDataAfterInit as any).value ?? (indexDataAfterInit as any).result ?? (indexDataAfterInit as any).data;
+        newRawString = typeof extracted === 'string' ? extracted : JSON.stringify(extracted);
+      } else {
+        newRawString = String(indexDataAfterInit);
+      }
+      if (!newRawString) return [];
+      try {
+        const newParsed = JSON.parse(newRawString);
+        if (!Array.isArray(newParsed)) return [];
+        const statusIds = newParsed.filter((id: any): id is string => typeof id === 'string');
+        return await loadStatusesByIds(statusIds);
+      } catch {
+        return [];
+      }
     }
 
     // Обробляємо різні формати даних
@@ -460,20 +474,35 @@ export async function saveDirectStatus(status: DirectStatus): Promise<void> {
     
     if (indexData) {
       try {
-        let parsed: any;
+        // Обробляємо різні формати даних
+        let rawString: string | null = null;
+        
         if (typeof indexData === 'string') {
-          parsed = JSON.parse(indexData);
+          rawString = indexData;
+        } else if (indexData && typeof indexData === 'object') {
+          const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
+          if (typeof extracted === 'string') {
+            rawString = extracted;
+          } else {
+            try {
+              rawString = JSON.stringify(extracted);
+            } catch {
+              rawString = String(extracted);
+            }
+          }
         } else {
-          parsed = indexData;
+          rawString = String(indexData);
         }
         
-        if (Array.isArray(parsed)) {
-          statusIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.length > 0);
-        } else {
-          // Якщо індекс пошкоджений, скидаємо його
-          console.warn('[direct-store] Status index is not an array when saving, resetting');
-          await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify([]));
-          statusIds = [];
+        if (rawString) {
+          const parsed = JSON.parse(rawString);
+          if (Array.isArray(parsed)) {
+            statusIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.length > 0);
+          } else {
+            // Якщо індекс пошкоджений, скидаємо його
+            console.warn('[direct-store] Status index is not an array when saving, resetting');
+            statusIds = [];
+          }
         }
       } catch (parseErr) {
         console.warn('[direct-store] Failed to parse status index when saving, resetting:', parseErr);
@@ -502,9 +531,28 @@ export async function deleteDirectStatus(id: string): Promise<void> {
     // Видаляємо з індексу
     const indexData = await kvRead.getRaw(directKeys.STATUS_INDEX);
     if (indexData) {
-      const statusIds: string[] = JSON.parse(indexData);
-      const filtered = statusIds.filter((sid) => sid !== id);
-      await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify(filtered));
+      // Обробляємо різні формати даних
+      let rawString: string | null = null;
+      if (typeof indexData === 'string') {
+        rawString = indexData;
+      } else if (indexData && typeof indexData === 'object') {
+        const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
+        rawString = typeof extracted === 'string' ? extracted : JSON.stringify(extracted);
+      } else {
+        rawString = String(indexData);
+      }
+      
+      if (rawString) {
+        try {
+          const statusIds: string[] = JSON.parse(rawString);
+          if (Array.isArray(statusIds)) {
+            const filtered = statusIds.filter((sid) => sid !== id);
+            await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify(filtered));
+          }
+        } catch (err) {
+          console.warn('[direct-store] Failed to parse index when deleting status:', err);
+        }
+      }
     }
   } catch (err) {
     console.error(`[direct-store] Failed to delete status ${id}:`, err);
