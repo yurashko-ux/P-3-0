@@ -192,7 +192,10 @@ export default function DirectPage() {
                 const data = await res.json();
                 if (data.ok) {
                   alert(`Синхронізовано: ${data.stats.syncedClients} клієнтів з ${data.stats.totalCards} карток`);
-                  await loadData();
+                  // Затримка перед оновленням, щоб KV встиг оновитися
+                  setTimeout(async () => {
+                    await loadData();
+                  }, 1000);
                 } else {
                   alert(`Помилка: ${data.error}`);
                 }
@@ -205,6 +208,21 @@ export default function DirectPage() {
             disabled={isLoading}
           >
             🔗 Синхронізувати з KeyCRM
+          </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/admin/direct/debug');
+                const data = await res.json();
+                console.log('Direct Debug Info:', data);
+                alert(`Діагностика:\nІндекс: ${data.index?.length || 0} клієнтів\nЗавантажено: ${data.allClientsCount || 0} клієнтів\n\nДеталі в консолі (F12)`);
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+          >
+            🔍 Діагностика
           </button>
         </div>
       </div>

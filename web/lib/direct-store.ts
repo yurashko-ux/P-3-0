@@ -11,6 +11,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
   try {
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
     if (!indexData) {
+      console.log('[direct-store] No client index found');
       return [];
     }
 
@@ -37,10 +38,14 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
 
     // Гарантуємо, що це масив рядків
     const clientIds: string[] = parsed.filter((id: any): id is string => 
-      typeof id === 'string' && id.length > 0
+      typeof id === 'string' && id.length > 0 && id.startsWith('direct_')
     );
     
+    console.log(`[direct-store] getAllDirectClients: Found ${clientIds.length} client IDs in index`);
+
     const clients: DirectClient[] = [];
+    let loadedCount = 0;
+    let errorCount = 0;
 
     for (const id of clientIds) {
       try {
@@ -50,16 +55,29 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
             const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
             if (client && typeof client === 'object' && client.id && client.instagramUsername) {
               clients.push(client);
+              loadedCount++;
+            } else {
+              console.warn(`[direct-store] Invalid client data for ${id}:`, {
+                hasId: !!client?.id,
+                hasUsername: !!client?.instagramUsername,
+              });
+              errorCount++;
             }
           } catch (parseErr) {
             console.warn(`[direct-store] Failed to parse client ${id}:`, parseErr);
+            errorCount++;
           }
+        } else {
+          console.warn(`[direct-store] Client ${id} not found in KV`);
+          errorCount++;
         }
       } catch (readErr) {
         console.warn(`[direct-store] Failed to read client ${id}:`, readErr);
+        errorCount++;
       }
     }
 
+    console.log(`[direct-store] getAllDirectClients: Loaded ${loadedCount} clients, ${errorCount} errors`);
     return clients;
   } catch (err) {
     console.error('[direct-store] Failed to get all clients:', err);
