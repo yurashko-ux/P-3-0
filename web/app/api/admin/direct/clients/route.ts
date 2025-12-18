@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'firstContactDate';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
+    console.log('[direct/clients] GET: Fetching all clients...');
     let clients = await getAllDirectClients();
+    console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
 
     // Фільтрація
     if (statusId) {
@@ -73,7 +75,8 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    return NextResponse.json({ ok: true, clients });
+    console.log(`[direct/clients] GET: Returning ${clients.length} clients after filtering and sorting`);
+    return NextResponse.json({ ok: true, clients, debug: { totalBeforeFilter: clients.length } });
   } catch (error) {
     console.error('[direct/clients] GET error:', error);
     return NextResponse.json(

@@ -240,6 +240,24 @@ export default function DirectPage() {
           >
             🔍 Діагностика
           </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/admin/direct/test-kv');
+                const data = await res.json();
+                console.log('KV Test Results:', data);
+                const test = data.results?.writeTest;
+                const index = data.results?.index;
+                alert(`Тест KV:\nЗапис: ${test?.success ? '✅' : '❌'}\nІндекс існує: ${index?.exists ? '✅' : '❌'}\nТип індексу: ${index?.type}\n\nДеталі в консолі (F12)`);
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+            title="Тест запису/читання KV"
+          >
+            🧪 Тест KV
+          </button>
         </div>
       </div>
 
