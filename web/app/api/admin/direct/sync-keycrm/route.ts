@@ -294,9 +294,32 @@ export async function POST(req: NextRequest) {
 
           // Зберігаємо оновлений індекс
           await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(currentIds));
+          
+          // Затримка для стабільності KV (eventual consistency)
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Перевіряємо, чи індекс зберігся
+          const verifyIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+          let verifiedCount = 0;
+          if (verifyIndex) {
+            try {
+              const verifyParsed = typeof verifyIndex === 'string' ? JSON.parse(verifyIndex) : verifyIndex;
+              if (Array.isArray(verifyParsed)) {
+                verifiedCount = verifyParsed.length;
+              }
+            } catch {}
+          }
+          
           syncedClients += batch.length;
           
-          console.log(`[direct/sync-keycrm] Batch saved. Total in index: ${currentIds.length}, synced: ${syncedClients}`);
+          console.log(`[direct/sync-keycrm] Batch saved. Expected in index: ${currentIds.length}, verified: ${verifiedCount}, synced: ${syncedClients}`);
+          
+          if (verifiedCount !== currentIds.length) {
+            console.warn(`[direct/sync-keycrm] ⚠️ Index count mismatch! Expected ${currentIds.length}, got ${verifiedCount}. Retrying...`);
+            // Спробуємо зберегти ще раз
+            await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(currentIds));
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
           
           // Невелика затримка між батчами
           if (i + batchSize < clientsToSave.length) {
@@ -318,8 +341,8 @@ export async function POST(req: NextRequest) {
       page++;
     }
 
-    // Перевіряємо фінальний стан індексу (з невеликою затримкою для стабільності KV)
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Перевіряємо фінальний стан індексу (з затримкою для стабільності KV eventual consistency)
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     const finalIndexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
     let finalIndexLength = 0;
