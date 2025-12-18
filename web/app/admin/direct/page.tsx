@@ -191,11 +191,27 @@ export default function DirectPage() {
                 });
                 const data = await res.json();
                 if (data.ok) {
-                  alert(`Синхронізовано: ${data.stats.syncedClients} клієнтів з ${data.stats.totalCards} карток`);
-                  // Затримка перед оновленням, щоб KV встиг оновитися
-                  setTimeout(async () => {
+                  const message = data.message || `Синхронізовано: ${data.stats.syncedClients} клієнтів з ${data.stats.totalCards} карток`;
+                  if (data.stats.finalIndexLength !== undefined) {
+                    alert(`${message}\n\nІндекс містить: ${data.stats.finalIndexLength} записів`);
+                  } else {
+                    alert(message);
+                  }
+                  
+                  // Затримка перед оновленням, щоб KV встиг оновитися (eventual consistency)
+                  // Спробуємо оновити кілька разів з затримками
+                  for (let attempt = 1; attempt <= 3; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 2000)); // 2s, 4s, 6s
                     await loadData();
-                  }, 1000);
+                    
+                    // Якщо клієнти з'явилися, припиняємо спроби
+                    const checkRes = await fetch('/api/admin/direct/clients');
+                    const checkData = await checkRes.json();
+                    if (checkData.ok && checkData.clients && checkData.clients.length > 0) {
+                      console.log(`[direct] Clients loaded after ${attempt} attempt(s)`);
+                      break;
+                    }
+                  }
                 } else {
                   alert(`Помилка: ${data.error}`);
                 }
