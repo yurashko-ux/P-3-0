@@ -214,7 +214,7 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
         const verifyIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
         if (verifyIndex) {
           try {
-            const verifyParsed = typeof verifyIndex === 'string' ? JSON.parse(verifyIndex) : verifyIndex;
+            const verifyParsed = unwrapKVResponse(verifyIndex);
             if (Array.isArray(verifyParsed) && verifyParsed.includes(client.id)) {
               added = true;
               console.log(`[direct-store] ✅ Added client ${client.id} to index. Total: ${clientIds.length}`);
