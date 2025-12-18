@@ -158,6 +158,23 @@ export default function DirectPage() {
             Робота з клієнтами Instagram Direct
           </p>
         </div>
+        <button
+          className="btn btn-sm btn-primary"
+          onClick={() => {
+            setIsLoading(true);
+            loadData();
+          }}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <>
+              <span className="loading loading-spinner loading-xs"></span>
+              Оновлення...
+            </>
+          ) : (
+            "🔄 Оновити"
+          )}
+        </button>
       </div>
 
       {error && (
