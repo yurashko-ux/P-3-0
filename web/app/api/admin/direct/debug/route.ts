@@ -67,35 +67,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Перевіряємо, чи є клієнти в KV, які не в індексі (через перевірку Instagram index)
-    const instagramIndexSample: any[] = [];
-    const sampleUsernames = ['mykolayyurashko', 'test', 'example', 'user1', 'user2'];
-    for (const username of sampleUsernames) {
-      try {
-        const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(username));
-        if (idData) {
-          const clientId = typeof idData === 'string' ? JSON.parse(idData) : idData;
-          const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(clientId));
-          if (clientData) {
-            instagramIndexSample.push({
-              username,
-              clientId,
-              found: true,
-              inMainIndex: indexIsArray && Array.isArray(indexParsed) ? indexParsed.includes(clientId) : false,
-            });
-          }
-        }
-      } catch (err) {
-        // Ігноруємо помилки для неіснуючих користувачів
-      }
-    }
-
     // Отримуємо всіх клієнтів через getAllDirectClients
     const allClients = await getAllDirectClients();
 
     // Перевіряємо Instagram index для кількох прикладів
-    const sampleUsernames = ['mykolayyurashko', 'test', 'example'];
+    const sampleUsernames = ['mykolayyurashko', 'test', 'example', 'user1', 'user2'];
     const instagramIndexChecks: any[] = [];
+    const instagramIndexSample: any[] = [];
+    
     for (const username of sampleUsernames) {
       try {
         const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(username));
@@ -104,6 +83,24 @@ export async function GET(req: NextRequest) {
           found: !!idData,
           idData: idData ? (typeof idData === 'string' ? idData.slice(0, 50) : String(idData).slice(0, 50)) : null,
         });
+        
+        // Якщо знайдено, перевіряємо чи клієнт в основному індексі
+        if (idData) {
+          try {
+            const clientId = typeof idData === 'string' ? JSON.parse(idData) : idData;
+            const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(clientId));
+            if (clientData) {
+              instagramIndexSample.push({
+                username,
+                clientId,
+                found: true,
+                inMainIndex: indexIsArray && Array.isArray(indexParsed) ? indexParsed.includes(clientId) : false,
+              });
+            }
+          } catch (err) {
+            // Ігноруємо помилки парсингу
+          }
+        }
       } catch (err) {
         instagramIndexChecks.push({ username, error: err instanceof Error ? err.message : String(err) });
       }
