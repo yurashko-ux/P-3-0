@@ -152,11 +152,20 @@ function extractInstagramFromCard(card: any): string | null {
 
 // Витягування імені з картки
 function extractNameFromCard(card: any): { firstName?: string; lastName?: string; fullName?: string } {
-  const contact = card?.contact || card?.contact?.client;
-  const fullName = contact?.full_name || contact?.name || card?.title || null;
+  const contact = card?.contact;
+  const client = card?.contact?.client;
+  
+  // Спробуємо витягти ім'я з різних джерел
+  const fullName = 
+    contact?.full_name || 
+    contact?.name || 
+    client?.full_name ||
+    client?.name ||
+    card?.title?.replace(/^Чат\s+з\s+/i, '') || // "Чат з Тетяна Бойко" → "Тетяна Бойко"
+    null;
   
   if (fullName) {
-    const parts = fullName.trim().split(' ');
+    const parts = fullName.trim().split(' ').filter(p => p.length > 0);
     return {
       fullName,
       firstName: parts[0] || undefined,
@@ -165,8 +174,8 @@ function extractNameFromCard(card: any): { firstName?: string; lastName?: string
   }
 
   return {
-    firstName: contact?.first_name || undefined,
-    lastName: contact?.last_name || undefined,
+    firstName: contact?.first_name || client?.first_name || undefined,
+    lastName: contact?.last_name || client?.last_name || undefined,
   };
 }
 
