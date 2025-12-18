@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // Перевіряємо кілька клієнтів з індексу
     const sampleClients: any[] = [];
     if (indexIsArray && Array.isArray(indexParsed)) {
-      const sampleIds = indexParsed.slice(0, 5);
+      const sampleIds = indexParsed.slice(0, 10);
       for (const id of sampleIds) {
         try {
           const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
               instagramUsername: client?.instagramUsername,
               hasId: !!client?.id,
               hasUsername: !!client?.instagramUsername,
+              fullClient: client, // Повний клієнт для діагностики
             });
           } else {
             sampleClients.push({ id, error: 'Not found in KV' });
@@ -63,6 +64,29 @@ export async function GET(req: NextRequest) {
         } catch (err) {
           sampleClients.push({ id, error: err instanceof Error ? err.message : String(err) });
         }
+      }
+    }
+
+    // Перевіряємо, чи є клієнти в KV, які не в індексі (через перевірку Instagram index)
+    const instagramIndexSample: any[] = [];
+    const sampleUsernames = ['mykolayyurashko', 'test', 'example', 'user1', 'user2'];
+    for (const username of sampleUsernames) {
+      try {
+        const idData = await kvRead.getRaw(directKeys.CLIENT_BY_INSTAGRAM(username));
+        if (idData) {
+          const clientId = typeof idData === 'string' ? JSON.parse(idData) : idData;
+          const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(clientId));
+          if (clientData) {
+            instagramIndexSample.push({
+              username,
+              clientId,
+              found: true,
+              inMainIndex: indexIsArray && Array.isArray(indexParsed) ? indexParsed.includes(clientId) : false,
+            });
+          }
+        }
+      } catch (err) {
+        // Ігноруємо помилки для неіснуючих користувачів
       }
     }
 
@@ -101,6 +125,14 @@ export async function GET(req: NextRequest) {
         instagramUsername: c.instagramUsername,
       })),
       instagramIndexChecks,
+      instagramIndexSample,
+      recommendations: indexLength === 0 && allClients.length === 0 
+        ? 'Індекс порожній. Спробуйте: 1) Синхронізувати з KeyCRM, 2) Відновити індекс'
+        : indexLength > 0 && allClients.length === 0
+        ? 'Індекс містить записи, але клієнти не завантажуються. Перевірте логування getAllDirectClients.'
+        : indexLength === 0 && allClients.length > 0
+        ? 'Клієнти завантажуються, але індекс порожній. Відновіть індекс.'
+        : 'Все працює нормально',
     });
   } catch (error) {
     console.error('[direct/debug] GET error:', error);
