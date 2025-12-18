@@ -178,8 +178,8 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
         const indexJson = JSON.stringify(clientIds);
         await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexJson);
         
-        // Невелика затримка для стабільності KV
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Затримка для стабільності KV (eventual consistency)
+        await new Promise(resolve => setTimeout(resolve, 150));
         
         // Перевіряємо, чи індекс зберігся правильно
         const verifyIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
