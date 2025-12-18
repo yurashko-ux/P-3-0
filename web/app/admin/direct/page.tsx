@@ -3,9 +3,8 @@
 
 "use client";
 
-export const dynamic = 'force-dynamic';
-
 import { useState, useEffect } from "react";
+import { initializeDefaultStatuses } from "@/lib/direct-store";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { DirectStats } from "./_components/DirectStats";
@@ -27,115 +26,30 @@ export default function DirectPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
-    let mounted = true;
-    
-    const loadDataWithTimeout = async () => {
-      try {
-        await loadData();
-      } catch (err) {
-        if (mounted) {
-          console.error('[direct] Load data error:', err);
-          setIsLoading(false);
-          setError('Помилка завантаження даних. Перезавантажте сторінку.');
-        }
-      }
-    };
-    
-    loadDataWithTimeout();
-    
-    // Таймаут на випадок, якщо завантаження зависне
-    const timeout = setTimeout(() => {
-      if (mounted && isLoading) {
-        console.error('[direct] Loading timeout, forcing stop');
-        setIsLoading(false);
-        setError('Час очікування вичерпано. Перезавантажте сторінку або натисніть "Відновити індекс".');
-      }
-    }, 8000); // 8 секунд (зменшено з 15)
-    
-    return () => {
-      mounted = false;
-      clearTimeout(timeout);
-    };
+    // Ініціалізуємо початкові статуси (якщо їх немає)
+    initializeDefaultStatuses().catch(console.error);
+    loadData();
   }, []);
 
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Завантажуємо дані паралельно для швидшої роботи
-      const createController = () => {
-        const controller = new AbortController();
-        setTimeout(() => controller.abort(), 5000); // 5 секунд
-        return controller;
-      };
-
-      const [statusesRes, clientsRes, statsRes] = await Promise.allSettled([
-        fetch("/api/admin/direct/statuses", {
-          signal: createController().signal,
-        }).catch(() => null),
-        fetch("/api/admin/direct/clients", {
-          signal: createController().signal,
-        }).catch(() => null),
-        fetch("/api/admin/direct/stats", {
-          signal: createController().signal,
-        }).catch(() => null),
-      ]);
-
-      // Обробляємо статуси
-      if (statusesRes.status === 'fulfilled' && statusesRes.value?.ok) {
-        try {
-          const statusesData = await statusesRes.value.json();
-          if (statusesData.ok) {
-            setStatuses(statusesData.statuses || []);
-          } else {
-            setStatuses([]);
-          }
-        } catch {
-          setStatuses([]);
-        }
-      } else {
-        setStatuses([]);
-      }
-
-      // Обробляємо клієнтів
-      if (clientsRes.status === 'fulfilled' && clientsRes.value?.ok) {
-        try {
-          const clientsData = await clientsRes.value.json();
-          if (clientsData.ok) {
-            let filteredClients = clientsData.clients || [];
-            // Пошук по Instagram username
-            if (filters.search) {
-              const searchLower = filters.search.toLowerCase();
-              filteredClients = filteredClients.filter((c: DirectClient) =>
-                c.instagramUsername?.toLowerCase().includes(searchLower) ||
-                c.firstName?.toLowerCase().includes(searchLower) ||
-                c.lastName?.toLowerCase().includes(searchLower)
-              );
-            }
-            setClients(filteredClients);
-          } else {
-            setClients([]);
-          }
-        } catch {
-          setClients([]);
-        }
-      } else {
-        setClients([]);
-      }
-
-      // Обробляємо статистику
-      if (statsRes.status === 'fulfilled' && statsRes.value?.ok) {
-        try {
-          const statsData = await statsRes.value.json();
-          if (statsData.ok) {
-            setStats(statsData.stats);
-          }
-        } catch {
-          // Ігноруємо помилки статистики
+      // Завантажуємо статуси
+      const statusesRes = await fetch("/api/admin/direct/statuses");
+      if (statusesRes.ok) {
+        const statusesData = await statusesRes.json();
+        if (statusesData.ok) {
+          setStatuses(statusesData.statuses);
         }
       }
+
+      // Завантажуємо клієнтів
+      await loadClients();
+
+      // Завантажуємо статистику
+      await loadStats();
     } catch (err) {
-      console.error('[direct] Error loading data:', err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
@@ -151,27 +65,16 @@ export default function DirectPage() {
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // Зменшено до 5 секунд
-      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        console.error('[direct] Clients API returned:', res.status, res.statusText);
-        setClients([]);
-        return;
-      }
-      
+      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`);
       const data = await res.json();
       if (data.ok) {
-        let filteredClients = data.clients || [];
+        let filteredClients = data.clients;
 
         // Пошук по Instagram username
         if (filters.search) {
           const searchLower = filters.search.toLowerCase();
           filteredClients = filteredClients.filter((c: DirectClient) =>
-            c.instagramUsername?.toLowerCase().includes(searchLower) ||
+            c.instagramUsername.toLowerCase().includes(searchLower) ||
             c.firstName?.toLowerCase().includes(searchLower) ||
             c.lastName?.toLowerCase().includes(searchLower)
           );
@@ -179,95 +82,38 @@ export default function DirectPage() {
 
         setClients(filteredClients);
       } else {
-        console.error('[direct] Failed to load clients:', data.error);
-        setClients([]);
-        if (!error) {
-          setError(data.error || "Failed to load clients");
-        }
+        setError(data.error || "Failed to load clients");
       }
     } catch (err) {
-      console.error('[direct] Error loading clients:', err);
-      setClients([]);
-      if (!error) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
   const loadStats = async () => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // Зменшено до 5 секунд
-      const res = await fetch("/api/admin/direct/stats", {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        console.warn('[direct] Stats API returned:', res.status);
-        return;
-      }
+      const res = await fetch("/api/admin/direct/stats");
       const data = await res.json();
       if (data.ok) {
         setStats(data.stats);
-      } else {
-        console.warn('[direct] Failed to load stats:', data.error);
       }
     } catch (err) {
-      console.error("[direct] Error loading stats:", err);
-      // Не встановлюємо помилку для stats, бо це не критично
+      console.error("Failed to load stats:", err);
     }
   };
 
   useEffect(() => {
-    // Завантажуємо клієнтів тільки після початкового завантаження та при зміні фільтрів
-    if (!isLoading) {
-      const loadClientsOnly = async () => {
-        try {
-          const params = new URLSearchParams();
-          if (filters.statusId) params.set("statusId", filters.statusId);
-          if (filters.masterId) params.set("masterId", filters.masterId);
-          if (filters.source) params.set("source", filters.source);
-          params.set("sortBy", sortBy);
-          params.set("sortOrder", sortOrder);
-
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
-          const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-            signal: controller.signal,
-          });
-          clearTimeout(timeoutId);
-          
-          if (!res.ok) {
-            console.error('[direct] Clients API returned:', res.status, res.statusText);
-            setClients([]);
-            return;
-          }
-          
-          const data = await res.json();
-          if (data.ok) {
-            let filteredClients = data.clients || [];
-            if (filters.search) {
-              const searchLower = filters.search.toLowerCase();
-              filteredClients = filteredClients.filter((c: DirectClient) =>
-                c.instagramUsername?.toLowerCase().includes(searchLower) ||
-                c.firstName?.toLowerCase().includes(searchLower) ||
-                c.lastName?.toLowerCase().includes(searchLower)
-              );
-            }
-            setClients(filteredClients);
-          } else {
-            setClients([]);
-          }
-        } catch (err) {
-          console.error('[direct] Error loading clients:', err);
-          setClients([]);
-        }
-      };
-      
-      loadClientsOnly();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadClients();
   }, [filters, sortBy, sortOrder]);
+
+  // Автоматичне оновлення даних кожні 10 секунд
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadClients();
+      loadStats();
+    }, 10000); // 10 секунд
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
     try {
@@ -319,22 +165,12 @@ export default function DirectPage() {
           <span>{error}</span>
           <button
             className="btn btn-sm btn-ghost ml-4"
-            onClick={async () => {
-              try {
-                const res = await fetch("/api/admin/direct/repair-index", { method: "POST" });
-                const data = await res.json();
-                if (data.ok) {
-                  alert(`Відновлено: ${data.recovered.clients} клієнтів, ${data.recovered.statuses} статусів`);
-                  await loadData();
-                } else {
-                  alert(`Помилка: ${data.error}`);
-                }
-              } catch (err) {
-                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-              }
+            onClick={() => {
+              setError(null);
+              loadData();
             }}
           >
-            Відновити індекс
+            Оновити
           </button>
         </div>
       )}

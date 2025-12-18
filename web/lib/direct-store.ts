@@ -156,6 +156,9 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
     if (!clientIds.includes(client.id)) {
       clientIds.push(client.id);
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(clientIds));
+      console.log(`[direct-store] ✅ Added client ${client.id} to index. Total: ${clientIds.length}`);
+    } else {
+      console.log(`[direct-store] ℹ️ Client ${client.id} already in index`);
     }
 
     // Зберігаємо індекс по Instagram username для швидкого пошуку
@@ -165,6 +168,7 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       directKeys.CLIENT_BY_INSTAGRAM(normalizedUsername),
       JSON.stringify(client.id)
     );
+    console.log(`[direct-store] ✅ Saved Instagram index: ${normalizedUsername} -> ${client.id}`);
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client.id}:`, err);
     throw err;
