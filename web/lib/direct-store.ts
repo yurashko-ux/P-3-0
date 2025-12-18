@@ -31,8 +31,14 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     
     // Перевіряємо, чи це масив
     if (!Array.isArray(parsed)) {
-      console.warn('[direct-store] Client index data is not an array, resetting:', typeof parsed, parsed);
-      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
+      console.error('[direct-store] ⚠️ CRITICAL: Client index data is not an array!', {
+        type: typeof parsed,
+        value: parsed,
+        stringValue: typeof parsed === 'string' ? parsed : String(parsed).slice(0, 200),
+      });
+      // НЕ скидаємо індекс автоматично - це може бути тимчасовий стан під час запису
+      // Замість цього повертаємо порожній масив, але не змінюємо індекс
+      console.warn('[direct-store] Returning empty array without resetting index (may be temporary state)');
       return [];
     }
 
