@@ -41,13 +41,25 @@ export function DirectClientTable({
   // Завантажуємо майстрів
   useEffect(() => {
     fetch("/api/photo-reports/masters")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`[DirectClientTable] Failed to load masters: ${res.status} ${res.statusText}`);
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (data.ok && data.masters) {
+        if (data && data.ok && data.masters) {
           setMasters(data.masters);
+        } else {
+          // Якщо endpoint не існує, використовуємо порожній масив
+          setMasters([]);
         }
       })
-      .catch((err) => console.error("Failed to load masters:", err));
+      .catch((err) => {
+        console.warn("[DirectClientTable] Failed to load masters (non-critical):", err);
+        setMasters([]);
+      });
   }, []);
 
   const formatDate = (dateStr?: string) => {
