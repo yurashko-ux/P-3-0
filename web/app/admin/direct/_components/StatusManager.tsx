@@ -36,7 +36,26 @@ export function StatusManager({ statuses, onStatusCreated }: StatusManagerProps)
       if (data.ok) {
         setNewStatus({ name: "", color: "#6b7280", order: statuses.length + 2, isDefault: false });
         setIsCreating(false);
-        await onStatusCreated();
+        
+        // Затримка перед оновленням для eventual consistency KV
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Оновлюємо кілька разів з затримками для надійності
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          await onStatusCreated();
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Перевіряємо, чи статус з'явився
+          const checkRes = await fetch('/api/admin/direct/statuses');
+          const checkData = await checkRes.json();
+          if (checkData.ok && checkData.statuses) {
+            const found = checkData.statuses.find((s: any) => s.id === data.status?.id);
+            if (found) {
+              console.log(`[StatusManager] Status ${data.status.id} found after ${attempt} attempt(s)`);
+              break;
+            }
+          }
+        }
       } else {
         alert(data.error || "Failed to create status");
       }
