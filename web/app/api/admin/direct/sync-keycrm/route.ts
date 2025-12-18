@@ -248,9 +248,11 @@ export async function POST(req: NextRequest) {
       params.set('limit', String(perPage));
       
       // Додаємо include для отримання контактів (важливо для Instagram username)
+      // KeyCRM підтримує include як масив або окремі параметри
       params.append('include[]', 'contact');
       params.append('include[]', 'contact.client');
       params.append('include[]', 'status');
+      params.append('include[]', 'custom_fields');
 
       if (pipelineId) {
         if (typeof pipelineId === 'number') {
