@@ -297,7 +297,7 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
     }
 
     // Обробляємо різні формати даних - рекурсивно розгортаємо обгортки
-    const parsed = unwrapKVResponse(indexData);
+    let parsed = unwrapKVResponse(indexData);
     
     if (!parsed || parsed === null) {
       // Якщо індексу немає, ініціалізуємо початкові статуси
