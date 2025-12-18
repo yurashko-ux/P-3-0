@@ -6,6 +6,88 @@ import { kvRead, kvWrite, directKeys } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 
+// Копіюємо unwrapKVResponse з direct-store.ts (оскільки він не експортований)
+function unwrapKVResponse(data: any, maxAttempts = 20): any {
+  let current: any = data;
+  let attempts = 0;
+  let lastStringValue: string | null = null;
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    if (Array.isArray(current)) {
+      const filtered = current.filter(item => item !== null && item !== undefined);
+      return filtered.length > 0 ? filtered : current;
+    }
+    
+    if (typeof current === 'string') {
+      if (!current.trim()) {
+        return current;
+      }
+      
+      const trimmed = current.trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        if (lastStringValue === current) {
+          try {
+            const parsed = JSON.parse(current);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              const extracted = parsed.value ?? parsed.result ?? parsed.data;
+              if (extracted !== undefined && extracted !== null) {
+                current = extracted;
+                lastStringValue = null;
+                continue;
+              }
+            }
+            return parsed;
+          } catch {
+            return current;
+          }
+        }
+        
+        lastStringValue = current;
+        try {
+          const parsed = JSON.parse(current);
+          current = parsed;
+          continue;
+        } catch {
+          return current;
+        }
+      } else {
+        return current;
+      }
+    }
+    
+    if (current && typeof current === 'object' && !Array.isArray(current)) {
+      const extracted = (current as any).value ?? (current as any).result ?? (current as any).data;
+      if (extracted !== undefined && extracted !== null) {
+        current = extracted;
+        lastStringValue = null;
+        continue;
+      }
+    }
+    
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return current;
+    }
+    
+    break;
+  }
+  
+  if (typeof current === 'string' && current.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(current);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(item => item !== null && item !== undefined);
+      }
+      return parsed;
+    } catch {
+      // ignore
+    }
+  }
+  
+  return current;
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Перевірка авторизації
