@@ -181,10 +181,16 @@ export default function DirectPage() {
               }
               setIsLoading(true);
               try {
+                // Для тесту: max_clients: 10, для повної синхронізації: max_pages: 0
+                const testMode = confirm('Тестовий режим (10 клієнтів)?\n\nOK - тест на 10 клієнтах\nСкасувати - повна синхронізація');
+                const syncParams = testMode 
+                  ? { max_clients: 10 } 
+                  : { max_pages: 0 }; // 0 = синхронізувати всіх (до 100 сторінок)
+                
                 const res = await fetch('/api/admin/direct/sync-keycrm', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ max_pages: 0 }), // 0 = синхронізувати всіх (до 100 сторінок)
+                  body: JSON.stringify(syncParams),
                 });
                 const data = await res.json();
                 if (data.ok) {

@@ -132,10 +132,23 @@ export async function POST(req: NextRequest) {
     const pipelineId = body.pipeline_id || body.pipelineId;
     const statusId = body.status_id || body.statusId;
     const perPage = Math.min(Math.max(body.per_page || body.perPage || 50, 1), 100);
-    // Якщо max_pages не вказано або 0, синхронізуємо всіх (до 100 сторінок для безпеки)
-    const maxPages = body.max_pages === 0 || body.maxPages === 0 
-      ? 100 
-      : Math.min(Math.max(body.max_pages || body.maxPages || 10, 1), 100);
+    
+    // Для тесту: якщо вказано max_clients, обмежуємо кількість клієнтів
+    const maxClients = body.max_clients || body.maxClients;
+    let maxPages: number;
+    
+    if (maxClients && typeof maxClients === 'number' && maxClients > 0) {
+      // Якщо вказано max_clients, обчислюємо скільки сторінок потрібно
+      maxPages = Math.ceil(maxClients / perPage);
+      console.log(`[direct/sync-keycrm] Test mode: limiting to ${maxClients} clients (${maxPages} pages)`);
+    } else if (body.max_pages === 0 || body.maxPages === 0) {
+      // Якщо max_pages = 0, синхронізуємо всіх (до 100 сторінок для безпеки)
+      maxPages = 100;
+      console.log(`[direct/sync-keycrm] Full sync mode: up to 100 pages`);
+    } else {
+      // За замовчуванням 10 сторінок
+      maxPages = Math.min(Math.max(body.max_pages || body.maxPages || 10, 1), 100);
+    }
 
     console.log('[direct/sync-keycrm] Starting sync:', {
       pipelineId,
@@ -153,6 +166,7 @@ export async function POST(req: NextRequest) {
     let skippedNoInstagram = 0;
     let errors = 0;
     const allSyncedClientIds: string[] = []; // Зберігаємо всі ID для можливого перебудови індексу
+    const maxClientsToSync = maxClients && typeof maxClients === 'number' ? maxClients : null;
 
     while (page <= maxPages) {
       // Формуємо URL для отримання карток
@@ -251,12 +265,24 @@ export async function POST(req: NextRequest) {
           if (client.id && !allSyncedClientIds.includes(client.id)) {
             allSyncedClientIds.push(client.id);
           }
+          
+          // Якщо досягли ліміту для тесту, зупиняємося
+          if (maxClientsToSync && allSyncedClientIds.length >= maxClientsToSync) {
+            console.log(`[direct/sync-keycrm] Reached max_clients limit: ${maxClientsToSync}`);
+            break;
+          }
         } catch (err) {
           console.error(`[direct/sync-keycrm] Error processing card ${card?.id}:`, err);
           errors++;
         }
       }
 
+      // Якщо досягли ліміту для тесту, не обробляємо решту карток
+      if (maxClientsToSync && allSyncedClientIds.length >= maxClientsToSync) {
+        console.log(`[direct/sync-keycrm] Reached max_clients limit before processing batch`);
+        break;
+      }
+      
       // Зберігаємо клієнтів батчами по 20
       const batchSize = 20;
       for (let i = 0; i < clientsToSave.length; i += batchSize) {
