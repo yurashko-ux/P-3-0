@@ -29,11 +29,16 @@ export async function POST(req: NextRequest) {
     
     if (currentIndexData) {
       try {
-        const parsed = typeof currentIndexData === 'string' ? JSON.parse(currentIndexData) : currentIndexData;
+        // Використовуємо unwrapKVResponse для правильного розгортання обгорток
+        const parsed = unwrapKVResponse(currentIndexData);
         if (Array.isArray(parsed)) {
-          existingIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
+          existingIds = parsed
+            .filter((id: any) => id !== null && id !== undefined)
+            .filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[direct/rebuild-index] Failed to parse current index:', err);
+      }
     }
 
     console.log(`[direct/rebuild-index] Current index has ${existingIds.length} IDs`);
@@ -49,8 +54,22 @@ export async function POST(req: NextRequest) {
       try {
         const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
         if (clientData) {
-          const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
-          if (client && client.id && client.instagramUsername) {
+          // Використовуємо unwrapKVResponse для правильного розгортання обгорток
+          const unwrapped = unwrapKVResponse(clientData);
+          
+          // Після розгортання, якщо це рядок, парсимо як JSON
+          let client: any;
+          if (typeof unwrapped === 'string') {
+            try {
+              client = JSON.parse(unwrapped);
+            } catch {
+              client = unwrapped;
+            }
+          } else {
+            client = unwrapped;
+          }
+          
+          if (client && typeof client === 'object' && client.id && client.instagramUsername) {
             foundIds.add(client.id);
             foundCount++;
           }
@@ -63,12 +82,81 @@ export async function POST(req: NextRequest) {
 
     console.log(`[direct/rebuild-index] Checked ${checkedCount} clients from index, found ${foundCount} valid`);
 
-    // Якщо індекс порожній або малий, спробуємо знайти клієнтів через Instagram index
-    // (це не повне рішення, але може допомогти)
+    // Якщо індекс порожній або малий, спробуємо знайти клієнтів через перевірку відомих Instagram usernames
+    // або через перевірку клієнтів, які можуть бути в KV, але не в індексі
     if (foundIds.size < 10) {
-      console.log('[direct/rebuild-index] Index is small, attempting to find clients via Instagram index...');
-      // Це не повне рішення, але ми не можемо перебрати всі можливі Instagram usernames
-      // Тому просто зберігаємо те, що знайшли
+      console.log('[direct/rebuild-index] Index is small, attempting to find clients via known Instagram usernames...');
+      
+      // Список відомих Instagram usernames для пошуку (можна розширити)
+      const knownUsernames = [
+        '_natali_231', // Клієнт, який був раніше
+        'juliagricina',
+        'lvivskacukerochka',
+        '30.03.1994.m.r',
+      ];
+      
+      for (const username of knownUsernames) {
+        try {
+          const instagramKey = directKeys.CLIENT_BY_INSTAGRAM(username);
+          const idData = await kvRead.getRaw(instagramKey);
+          
+          if (idData) {
+            // Розгортаємо обгортки
+            let clientId: string | null = null;
+            if (typeof idData === 'string') {
+              try {
+                const parsed = JSON.parse(idData);
+                clientId = typeof parsed === 'string' ? parsed : String(parsed);
+              } catch {
+                clientId = idData;
+              }
+            } else if (typeof idData === 'object' && idData !== null) {
+              clientId = (idData as any).value ?? (idData as any).id ?? String(idData);
+            } else {
+              clientId = String(idData);
+            }
+            
+            if (clientId && clientId.startsWith('direct_')) {
+              // Перевіряємо, чи клієнт існує
+              const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(clientId));
+              if (clientData) {
+                foundIds.add(clientId);
+                console.log(`[direct/rebuild-index] Found client via Instagram index: ${username} -> ${clientId}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[direct/rebuild-index] Failed to check Instagram username ${username}:`, err);
+        }
+      }
+      
+      // Також спробуємо знайти клієнтів через перевірку конкретних ID, які можуть бути в KV
+      // (наприклад, якщо ми знаємо ID з логів)
+      const knownClientIds = [
+        'direct_1766094118929_x1z9fbvy4', // ID з логів
+      ];
+      
+      for (const clientId of knownClientIds) {
+        if (!foundIds.has(clientId)) {
+          try {
+            const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(clientId));
+            if (clientData) {
+              // Розгортаємо обгортки
+              const unwrapped = typeof clientData === 'string' 
+                ? (() => { try { return JSON.parse(clientData); } catch { return clientData; } })()
+                : clientData;
+              
+              // Перевіряємо, чи це валідний клієнт
+              if (unwrapped && typeof unwrapped === 'object' && unwrapped.id && unwrapped.instagramUsername) {
+                foundIds.add(clientId);
+                console.log(`[direct/rebuild-index] Found client by direct ID check: ${clientId}`);
+              }
+            }
+          } catch (err) {
+            console.warn(`[direct/rebuild-index] Failed to check client ID ${clientId}:`, err);
+          }
+        }
+      }
     }
 
     const finalIds = Array.from(foundIds);
