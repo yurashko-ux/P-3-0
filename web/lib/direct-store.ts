@@ -173,8 +173,28 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
     
     if (!clientIds.includes(client.id)) {
       clientIds.push(client.id);
-      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(clientIds));
-      console.log(`[direct-store] ✅ Added client ${client.id} to index. Total: ${clientIds.length}`);
+      const indexJson = JSON.stringify(clientIds);
+      await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexJson);
+      
+      // Перевіряємо, чи індекс зберігся правильно
+      const verifyIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+      let verified = false;
+      if (verifyIndex) {
+        try {
+          const verifyParsed = typeof verifyIndex === 'string' ? JSON.parse(verifyIndex) : verifyIndex;
+          if (Array.isArray(verifyParsed) && verifyParsed.includes(client.id)) {
+            verified = true;
+          }
+        } catch {}
+      }
+      
+      if (verified) {
+        console.log(`[direct-store] ✅ Added client ${client.id} to index. Total: ${clientIds.length}`);
+      } else {
+        console.error(`[direct-store] ⚠️ WARNING: Client ${client.id} saved but index verification failed!`);
+        // Спробуємо зберегти ще раз
+        await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexJson);
+      }
     } else {
       console.log(`[direct-store] ℹ️ Client ${client.id} already in index`);
     }

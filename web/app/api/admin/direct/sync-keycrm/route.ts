@@ -241,6 +241,21 @@ export async function POST(req: NextRequest) {
 
           await saveDirectClient(client);
           syncedClients++;
+          
+          // Невелика затримка між збереженнями для стабільності KV
+          if (syncedClients % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            // Перевіряємо індекс після кожних 10 клієнтів
+            const checkIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+            if (checkIndex) {
+              try {
+                const checkParsed = typeof checkIndex === 'string' ? JSON.parse(checkIndex) : checkIndex;
+                if (Array.isArray(checkParsed)) {
+                  console.log(`[direct/sync-keycrm] Progress: ${syncedClients} saved, index has ${checkParsed.length} entries`);
+                }
+              } catch {}
+            }
+          }
         } catch (err) {
           console.error(`[direct/sync-keycrm] Error processing card ${card?.id}:`, err);
           errors++;
@@ -257,6 +272,30 @@ export async function POST(req: NextRequest) {
       page++;
     }
 
+    // Перевіряємо фінальний стан індексу (з невеликою затримкою для стабільності KV)
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    const finalIndexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+    let finalIndexLength = 0;
+    let finalIndexIsArray = false;
+    if (finalIndexData) {
+      try {
+        const parsed = typeof finalIndexData === 'string' ? JSON.parse(finalIndexData) : finalIndexData;
+        finalIndexIsArray = Array.isArray(parsed);
+        if (finalIndexIsArray) {
+          finalIndexLength = parsed.length;
+        }
+      } catch (err) {
+        console.error('[direct/sync-keycrm] Failed to parse final index:', err);
+      }
+    }
+
+    // Якщо індекс порожній або не масив, але ми синхронізували клієнтів - це проблема
+    if (syncedClients > 0 && finalIndexLength === 0) {
+      console.error('[direct/sync-keycrm] ⚠️ WARNING: Synced clients but index is empty!');
+      console.error('[direct/sync-keycrm] This might indicate an issue with KV write operations');
+    }
+
     return NextResponse.json({
       ok: true,
       stats: {
@@ -265,7 +304,10 @@ export async function POST(req: NextRequest) {
         syncedClients,
         skippedNoInstagram,
         errors,
+        finalIndexLength,
+        finalIndexIsArray,
       },
+      message: `Синхронізовано ${syncedClients} клієнтів. Індекс містить ${finalIndexLength} записів.`,
     });
   } catch (error) {
     console.error('[direct/sync-keycrm] POST error:', error);
