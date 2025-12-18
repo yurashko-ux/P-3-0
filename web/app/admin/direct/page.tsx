@@ -184,7 +184,7 @@ export default function DirectPage() {
                 const res = await fetch('/api/admin/direct/sync-keycrm', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ max_pages: 10 }),
+                  body: JSON.stringify({ max_pages: 0 }), // 0 = синхронізувати всіх (до 100 сторінок)
                 });
                 const data = await res.json();
                 if (data.ok) {

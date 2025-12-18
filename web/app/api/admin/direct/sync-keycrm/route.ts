@@ -132,7 +132,10 @@ export async function POST(req: NextRequest) {
     const pipelineId = body.pipeline_id || body.pipelineId;
     const statusId = body.status_id || body.statusId;
     const perPage = Math.min(Math.max(body.per_page || body.perPage || 50, 1), 100);
-    const maxPages = Math.min(Math.max(body.max_pages || body.maxPages || 5, 1), 20);
+    // Якщо max_pages не вказано або 0, синхронізуємо всіх (до 100 сторінок для безпеки)
+    const maxPages = body.max_pages === 0 || body.maxPages === 0 
+      ? 100 
+      : Math.min(Math.max(body.max_pages || body.maxPages || 10, 1), 100);
 
     console.log('[direct/sync-keycrm] Starting sync:', {
       pipelineId,
@@ -378,9 +381,18 @@ export async function POST(req: NextRequest) {
       }
 
       // Перевіряємо, чи є наступна сторінка
-      const hasNext = data?.next_page_url || (data?.current_page && data?.last_page && data.current_page < data.last_page);
+      const hasNext = data?.next_page_url || 
+                     (data?.current_page && data?.last_page && data.current_page < data.last_page) ||
+                     (data?.meta?.current_page && data?.meta?.last_page && data.meta.current_page < data.meta.last_page);
+      
       if (!hasNext) {
-        console.log(`[direct/sync-keycrm] No more pages`);
+        console.log(`[direct/sync-keycrm] No more pages. Processed ${page} pages, ${totalCards} cards total`);
+        break;
+      }
+
+      // Якщо досягли maxPages, зупиняємося
+      if (page >= maxPages) {
+        console.log(`[direct/sync-keycrm] Reached max pages limit: ${maxPages}`);
         break;
       }
 
