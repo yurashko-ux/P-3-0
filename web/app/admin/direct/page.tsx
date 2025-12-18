@@ -255,6 +255,35 @@ export default function DirectPage() {
           >
             🧪 Тест KV
           </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              if (!confirm('Відновити індекс клієнтів? Це перебудує індекс з усіх збережених клієнтів.')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/rebuild-index', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  alert(data.message || `Індекс відновлено: ${data.stats?.afterRebuild || 0} клієнтів`);
+                  // Оновлюємо дані
+                  setTimeout(async () => {
+                    await loadData();
+                  }, 2000);
+                } else {
+                  alert(`Помилка: ${data.error}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            title="Відновити індекс клієнтів"
+          >
+            🔧 Відновити індекс
+          </button>
         </div>
       </div>
 
