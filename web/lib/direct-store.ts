@@ -16,24 +16,36 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     }
 
     // Обробляємо різні формати даних
+    // kvGetRaw повинен повертати рядок, але іноді може повернути об'єкт
+    let rawString: string | null = null;
+    
+    if (typeof indexData === 'string') {
+      rawString = indexData;
+    } else if (indexData && typeof indexData === 'object') {
+      // Якщо це об'єкт, спробуємо витягти value/result/data
+      const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
+      if (typeof extracted === 'string') {
+        rawString = extracted;
+      } else {
+        // Якщо не рядок, спробуємо серіалізувати
+        try {
+          rawString = JSON.stringify(extracted);
+        } catch {
+          rawString = String(extracted);
+        }
+      }
+    } else if (indexData !== null && indexData !== undefined) {
+      rawString = String(indexData);
+    }
+    
+    if (!rawString) {
+      console.log('[direct-store] No client index found (empty/null)');
+      return [];
+    }
+    
     let parsed: any;
     try {
-      if (typeof indexData === 'string') {
-        parsed = JSON.parse(indexData);
-      } else if (indexData && typeof indexData === 'object') {
-        // Якщо це об'єкт, спробуємо витягти value/result/data
-        parsed = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data ?? indexData;
-        // Якщо витягнуте значення - рядок, парсимо його
-        if (typeof parsed === 'string') {
-          try {
-            parsed = JSON.parse(parsed);
-          } catch {
-            // Якщо не вдалося розпарсити, залишаємо як є
-          }
-        }
-      } else {
-        parsed = indexData;
-      }
+      parsed = JSON.parse(rawString);
     } catch (parseErr) {
       console.warn('[direct-store] Failed to parse client index, resetting:', parseErr);
       await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
@@ -172,30 +184,36 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       
       if (indexData) {
         try {
-          let parsed: any;
+          // Обробляємо різні формати даних
+          let rawString: string | null = null;
+          
           if (typeof indexData === 'string') {
-            parsed = JSON.parse(indexData);
+            rawString = indexData;
           } else if (indexData && typeof indexData === 'object') {
             // Якщо це об'єкт, спробуємо витягти value/result/data
-            parsed = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data ?? indexData;
-            // Якщо витягнуте значення - рядок, парсимо його
-            if (typeof parsed === 'string') {
+            const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
+            if (typeof extracted === 'string') {
+              rawString = extracted;
+            } else {
               try {
-                parsed = JSON.parse(parsed);
+                rawString = JSON.stringify(extracted);
               } catch {
-                // Якщо не вдалося розпарсити, залишаємо як є
+                rawString = String(extracted);
               }
             }
           } else {
-            parsed = indexData;
+            rawString = String(indexData);
           }
           
-          if (Array.isArray(parsed)) {
-            clientIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
-          } else {
-            // Якщо індекс пошкоджений, скидаємо його
-            console.warn('[direct-store] Client index is not an array when saving, resetting');
-            clientIds = [];
+          if (rawString) {
+            const parsed = JSON.parse(rawString);
+            if (Array.isArray(parsed)) {
+              clientIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
+            } else {
+              // Якщо індекс пошкоджений, скидаємо його
+              console.warn('[direct-store] Client index is not an array when saving, resetting');
+              clientIds = [];
+            }
           }
         } catch (parseErr) {
           console.warn('[direct-store] Failed to parse client index when saving, resetting:', parseErr);
@@ -298,13 +316,52 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
     }
 
     // Обробляємо різні формати даних
+    // kvGetRaw повинен повертати рядок, але іноді може повернути об'єкт
+    let rawString: string | null = null;
+    
+    if (typeof indexData === 'string') {
+      rawString = indexData;
+    } else if (indexData && typeof indexData === 'object') {
+      // Якщо це об'єкт, спробуємо витягти value/result/data
+      const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
+      if (typeof extracted === 'string') {
+        rawString = extracted;
+      } else {
+        // Якщо не рядок, спробуємо серіалізувати
+        try {
+          rawString = JSON.stringify(extracted);
+        } catch {
+          rawString = String(extracted);
+        }
+      }
+    } else if (indexData !== null && indexData !== undefined) {
+      rawString = String(indexData);
+    }
+    
+    if (!rawString) {
+      // Якщо індексу немає, ініціалізуємо початкові статуси
+      await initializeDefaultStatuses();
+      const indexDataAfterInit = await kvRead.getRaw(directKeys.STATUS_INDEX);
+      if (!indexDataAfterInit) return [];
+      // Продовжуємо з новими даними (але без рекурсії, щоб уникнути циклу)
+      const newRawString = typeof indexDataAfterInit === 'string' ? indexDataAfterInit : 
+        (indexDataAfterInit && typeof indexDataAfterInit === 'object' ? 
+          ((indexDataAfterInit as any).value ?? (indexDataAfterInit as any).result ?? (indexDataAfterInit as any).data ?? JSON.stringify(indexDataAfterInit)) : 
+          String(indexDataAfterInit));
+      if (!newRawString) return [];
+      try {
+        const newParsed = JSON.parse(newRawString);
+        if (!Array.isArray(newParsed)) return [];
+        const statusIds = newParsed.filter((id: any): id is string => typeof id === 'string');
+        return await loadStatusesByIds(statusIds);
+      } catch {
+        return [];
+      }
+    }
+    
     let parsed: any;
     try {
-      if (typeof indexData === 'string') {
-        parsed = JSON.parse(indexData);
-      } else {
-        parsed = indexData;
-      }
+      parsed = JSON.parse(rawString);
     } catch (parseErr) {
       console.warn('[direct-store] Failed to parse status index, resetting:', parseErr);
       await kvWrite.setRaw(directKeys.STATUS_INDEX, JSON.stringify([]));
@@ -322,9 +379,18 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
       // Читаємо знову, але без рекурсії
       const indexDataAfterInit = await kvRead.getRaw(directKeys.STATUS_INDEX);
       if (!indexDataAfterInit) return [];
-      const newParsed = typeof indexDataAfterInit === 'string' ? JSON.parse(indexDataAfterInit) : indexDataAfterInit;
-      if (!Array.isArray(newParsed)) return [];
-      parsed = newParsed;
+      const newRawString = typeof indexDataAfterInit === 'string' ? indexDataAfterInit : 
+        (indexDataAfterInit && typeof indexDataAfterInit === 'object' ? 
+          ((indexDataAfterInit as any).value ?? (indexDataAfterInit as any).result ?? (indexDataAfterInit as any).data ?? JSON.stringify(indexDataAfterInit)) : 
+          String(indexDataAfterInit));
+      if (!newRawString) return [];
+      try {
+        const newParsed = JSON.parse(newRawString);
+        if (!Array.isArray(newParsed)) return [];
+        parsed = newParsed;
+      } catch {
+        return [];
+      }
     }
 
     // Гарантуємо, що це масив рядків
@@ -467,15 +533,31 @@ export async function initializeDefaultStatuses(): Promise<void> {
   
   if (indexData) {
     try {
-      let parsed: any;
+      // Обробляємо різні формати даних
+      let rawString: string | null = null;
+      
       if (typeof indexData === 'string') {
-        parsed = JSON.parse(indexData);
+        rawString = indexData;
+      } else if (indexData && typeof indexData === 'object') {
+        const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
+        if (typeof extracted === 'string') {
+          rawString = extracted;
+        } else {
+          try {
+            rawString = JSON.stringify(extracted);
+          } catch {
+            rawString = String(extracted);
+          }
+        }
       } else {
-        parsed = indexData;
+        rawString = String(indexData);
       }
       
-      if (Array.isArray(parsed)) {
-        existingIds = new Set(parsed.filter((id: any): id is string => typeof id === 'string'));
+      if (rawString) {
+        const parsed = JSON.parse(rawString);
+        if (Array.isArray(parsed)) {
+          existingIds = new Set(parsed.filter((id: any): id is string => typeof id === 'string'));
+        }
       }
     } catch (err) {
       // Ігноруємо помилки парсингу - просто створюємо всі статуси
