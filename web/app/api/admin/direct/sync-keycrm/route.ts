@@ -197,6 +197,7 @@ export async function POST(req: NextRequest) {
 
       // Збираємо всіх клієнтів для батч-збереження
       const clientsToSave: DirectClient[] = [];
+      const allSyncedClientIds: string[] = []; // Зберігаємо всі ID для можливого перебудови індексу
 
       for (const card of cards) {
         try {
@@ -244,6 +245,9 @@ export async function POST(req: NextRequest) {
           }
 
           clientsToSave.push(client);
+          if (client.id && !allSyncedClientIds.includes(client.id)) {
+            allSyncedClientIds.push(client.id);
+          }
         } catch (err) {
           console.error(`[direct/sync-keycrm] Error processing card ${card?.id}:`, err);
           errors++;
@@ -342,7 +346,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Перевіряємо фінальний стан індексу (з затримкою для стабільності KV eventual consistency)
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     const finalIndexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
     let finalIndexLength = 0;
@@ -359,10 +363,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Якщо індекс порожній або не масив, але ми синхронізували клієнтів - це проблема
+    // Якщо індекс порожній або не масив, але ми синхронізували клієнтів - спробуємо перебудувати індекс
     if (syncedClients > 0 && finalIndexLength === 0) {
-      console.error('[direct/sync-keycrm] ⚠️ WARNING: Synced clients but index is empty!');
-      console.error('[direct/sync-keycrm] This might indicate an issue with KV write operations');
+      console.warn('[direct/sync-keycrm] ⚠️ WARNING: Synced clients but index is empty! Attempting to rebuild index...');
+      
+      // Спробуємо знайти всіх клієнтів через пошук по ключам
+      // Це не ідеально, але може допомогти в разі проблем з індексом
+      try {
+        // Використовуємо зібрані ID
+        if (allSyncedClientIds.length > 0) {
+          console.log(`[direct/sync-keycrm] Rebuilding index with ${allSyncedClientIds.length} client IDs`);
+          await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(allSyncedClientIds));
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Перевіряємо ще раз
+          const rebuiltIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+          if (rebuiltIndex) {
+            try {
+              const rebuiltParsed = typeof rebuiltIndex === 'string' ? JSON.parse(rebuiltIndex) : rebuiltIndex;
+              if (Array.isArray(rebuiltParsed)) {
+                finalIndexLength = rebuiltParsed.length;
+                console.log(`[direct/sync-keycrm] ✅ Index rebuilt successfully: ${finalIndexLength} entries`);
+              }
+            } catch {}
+          }
+        }
+      } catch (rebuildErr) {
+        console.error('[direct/sync-keycrm] Failed to rebuild index:', rebuildErr);
+      }
     }
 
     return NextResponse.json({
