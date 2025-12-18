@@ -359,7 +359,7 @@ async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; 
 }
 
 export async function POST(req: NextRequest) {
-  console.log('[manychat] POST request received');
+  console.log('[manychat] 📨 POST request received');
   
   try {
     console.log('[manychat] Step 1: Checking authentication');
@@ -394,6 +394,19 @@ export async function POST(req: NextRequest) {
       payload = result.parsed;
       rawText = result.rawText;
       console.log('[manychat] Step 2: Request payload read successfully');
+      
+      // Логуємо структуру payload для діагностики
+      if (payload && typeof payload === 'object') {
+        const payloadObj = payload as Record<string, unknown>;
+        console.log('[manychat] 📦 Payload structure:', {
+          hasHandle: 'handle' in payloadObj || 'username' in payloadObj,
+          hasSubscriber: 'subscriber' in payloadObj,
+          hasUser: 'user' in payloadObj,
+          hasMessage: 'message' in payloadObj,
+          hasText: 'text' in payloadObj,
+          topLevelKeys: Object.keys(payloadObj).slice(0, 10),
+        });
+      }
     } catch (err) {
       console.error('[manychat] Step 2: Failed to read request payload:', err);
       throw err;
@@ -404,6 +417,12 @@ export async function POST(req: NextRequest) {
     try {
       message = normalisePayload(payload, rawText);
       console.log('[manychat] Step 3: Payload normalized successfully');
+      console.log('[manychat] 📝 Extracted data:', {
+        handle: message.handle || 'NOT FOUND',
+        fullName: message.fullName || 'NOT FOUND',
+        textLength: message.text?.length || 0,
+        textPreview: message.text?.slice(0, 100) || 'EMPTY',
+      });
     } catch (err) {
       console.error('[manychat] Step 3: Failed to normalize payload:', err);
       throw err;
@@ -432,119 +451,83 @@ export async function POST(req: NextRequest) {
   }
 
   // Синхронізація з Direct розділом (якщо є Instagram username)
-  console.log('[manychat] Step 5: Starting Direct sync check', {
+  console.log('[manychat] Direct sync check:', {
     hasHandle: !!message.handle,
-    handleType: typeof message.handle,
-    handleValue: message.handle,
+    handle: message.handle,
+    hasText: !!message.text,
+    textPreview: message.text?.slice(0, 50),
+    hasFullName: !!message.fullName,
+    fullName: message.fullName,
   });
-  
-  if (message.handle && typeof message.handle === 'string' && message.handle.trim()) {
+
+  if (message.handle && message.handle.trim()) {
     try {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
-      // Це швидше і не потребує авторизації
       const { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } = await import('@/lib/direct-store');
       
       const instagram = message.handle.trim().toLowerCase();
-      console.log('[manychat] Step 5.1: Processing Instagram username:', instagram);
+      console.log('[manychat] Processing Direct client sync for:', instagram);
       
-      if (!instagram) {
-        console.warn('[manychat] Empty Instagram username after trim, skipping Direct sync');
+      let client = await getDirectClientByInstagram(instagram);
+      
+      const statuses = await getAllDirectStatuses();
+      const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
+      
+      if (!client || !client.id) {
+        // Створюємо нового клієнта
+        const now = new Date().toISOString();
+        const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
+        const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        client = {
+          id: clientId,
+          instagramUsername: instagram,
+          firstName: fullNameParts[0] || undefined,
+          lastName: fullNameParts.slice(1).join(' ') || undefined,
+          source: 'instagram',
+          firstContactDate: now,
+          statusId: defaultStatus?.id || 'new',
+          visitedSalon: false,
+          signedUpForPaidService: false,
+          lastMessageAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+        console.log('[manychat] Created new Direct client:', { id: client.id, username: client.instagramUsername });
       } else {
-        console.log('[manychat] Step 5.2: Looking up existing client by Instagram:', instagram);
-        let client = await getDirectClientByInstagram(instagram);
-        console.log('[manychat] Step 5.3: Existing client lookup result:', {
-          found: !!client,
-          clientId: client?.id,
-          clientUsername: client?.instagramUsername,
-        });
-        
-        console.log('[manychat] Step 5.4: Loading statuses');
-        const statuses = await getAllDirectStatuses();
-        const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
-        console.log('[manychat] Step 5.5: Statuses loaded:', {
-          total: statuses.length,
-          defaultStatusId: defaultStatus?.id,
-        });
-        
-        if (!client || !client.id) {
-          // Створюємо нового клієнта
-          console.log('[manychat] Step 5.6: Creating new Direct client');
-          const now = new Date().toISOString();
-          const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
-          const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          client = {
-            id: clientId,
-            instagramUsername: instagram,
-            firstName: fullNameParts[0] || undefined,
+        // Оновлюємо існуючого клієнта
+        const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
+        client = {
+          ...client,
+          id: client.id,
+          instagramUsername: instagram,
+          ...(message.fullName && fullNameParts.length > 0 && {
+            firstName: fullNameParts[0],
             lastName: fullNameParts.slice(1).join(' ') || undefined,
-            source: 'instagram',
-            firstContactDate: now,
-            statusId: defaultStatus?.id || 'new',
-            visitedSalon: false,
-            signedUpForPaidService: false,
-            lastMessageAt: now,
-            createdAt: now,
-            updatedAt: now,
-          };
-          console.log('[manychat] Step 5.7: New client object created:', {
-            id: client.id,
-            instagramUsername: client.instagramUsername,
-            statusId: client.statusId,
-          });
-        } else {
-          // Оновлюємо існуючого клієнта
-          console.log('[manychat] Step 5.6: Updating existing Direct client');
-          const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
-          client = {
-            ...client,
-            id: client.id, // Гарантуємо, що id завжди є
-            instagramUsername: instagram, // Гарантуємо, що username завжди є
-            ...(message.fullName && fullNameParts.length > 0 && {
-              firstName: fullNameParts[0],
-              lastName: fullNameParts.slice(1).join(' ') || undefined,
-            }),
-            lastMessageAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          console.log('[manychat] Step 5.7: Client object updated:', {
-            id: client.id,
-            instagramUsername: client.instagramUsername,
-          });
-        }
-        
-        // Додаткова перевірка перед збереженням
-        if (!client.id || typeof client.id !== 'string') {
-          console.error('[manychat] Step 5.8: Invalid client data, missing id:', { client, instagram });
-        } else if (!client.instagramUsername || typeof client.instagramUsername !== 'string') {
-          console.error('[manychat] Step 5.8: Invalid client data, missing instagramUsername:', { client, instagram });
-        } else {
-          console.log('[manychat] Step 5.8: Saving client to KV:', {
-            id: client.id,
-            instagramUsername: client.instagramUsername,
-          });
-          await saveDirectClient(client);
-          console.log(`[manychat] Step 5.9: Successfully synced Direct client: @${instagram} (ID: ${client.id})`);
-          
-          // Перевіряємо, чи клієнт зберігся
-          const verifyClient = await getDirectClientByInstagram(instagram);
-          if (verifyClient) {
-            console.log(`[manychat] Step 5.10: Verified client saved successfully: @${instagram} (ID: ${verifyClient.id})`);
-          } else {
-            console.error(`[manychat] Step 5.10: WARNING - Client not found after save: @${instagram}`);
-          }
-        }
+          }),
+          lastMessageAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        console.log('[manychat] Updated existing Direct client:', { id: client.id, username: client.instagramUsername });
+      }
+      
+      if (client.id && client.instagramUsername) {
+        await saveDirectClient(client);
+        console.log('[manychat] ✅ Successfully synced Direct client:', {
+          id: client.id,
+          username: client.instagramUsername,
+          statusId: client.statusId,
+        });
+      } else {
+        console.error('[manychat] ❌ Invalid client data:', { id: client.id, username: client.instagramUsername });
       }
     } catch (err) {
-      console.error('[manychat] Step 5: Error syncing with Direct:', {
+      console.error('[manychat] ❌ Error syncing with Direct:', {
         error: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
       });
     }
   } else {
-    console.warn('[manychat] Step 5: No valid Instagram handle in message, skipping Direct sync:', {
-      handle: message.handle,
-      handleType: typeof message.handle,
-    });
+    console.warn('[manychat] ⚠️ Skipping Direct sync - no Instagram handle found');
   }
 
   let automation: ManychatRoutingSuccess | ManychatRoutingError;
