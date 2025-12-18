@@ -20,6 +20,17 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     try {
       if (typeof indexData === 'string') {
         parsed = JSON.parse(indexData);
+      } else if (indexData && typeof indexData === 'object') {
+        // Якщо це об'єкт, спробуємо витягти value/result/data
+        parsed = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data ?? indexData;
+        // Якщо витягнуте значення - рядок, парсимо його
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            // Якщо не вдалося розпарсити, залишаємо як є
+          }
+        }
       } else {
         parsed = indexData;
       }
@@ -35,6 +46,8 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         type: typeof parsed,
         value: parsed,
         stringValue: typeof parsed === 'string' ? parsed : String(parsed).slice(0, 200),
+        indexDataType: typeof indexData,
+        indexDataValue: typeof indexData === 'string' ? indexData.slice(0, 100) : String(indexData).slice(0, 100),
       });
       // НЕ скидаємо індекс автоматично - це може бути тимчасовий стан під час запису
       // Замість цього повертаємо порожній масив, але не змінюємо індекс
@@ -162,6 +175,17 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
           let parsed: any;
           if (typeof indexData === 'string') {
             parsed = JSON.parse(indexData);
+          } else if (indexData && typeof indexData === 'object') {
+            // Якщо це об'єкт, спробуємо витягти value/result/data
+            parsed = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data ?? indexData;
+            // Якщо витягнуте значення - рядок, парсимо його
+            if (typeof parsed === 'string') {
+              try {
+                parsed = JSON.parse(parsed);
+              } catch {
+                // Якщо не вдалося розпарсити, залишаємо як є
+              }
+            }
           } else {
             parsed = indexData;
           }
