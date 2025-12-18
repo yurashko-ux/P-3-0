@@ -58,17 +58,58 @@ function normalizeInstagram(username: string | null | undefined): string | null 
 // Витягування Instagram username з картки KeyCRM
 function extractInstagramFromCard(card: any): string | null {
   // Спробуємо різні місця, де може бути Instagram username
+  
+  // 1. Custom fields (найбільш ймовірне місце для Instagram)
+  if (card?.custom_fields && Array.isArray(card.custom_fields)) {
+    for (const field of card.custom_fields) {
+      if (field?.name && /instagram/i.test(field.name)) {
+        const normalized = normalizeInstagram(field.value);
+        if (normalized) return normalized;
+      }
+      // Також перевіряємо по uuid або name
+      if (field?.uuid && /instagram/i.test(field.uuid)) {
+        const normalized = normalizeInstagram(field.value);
+        if (normalized) return normalized;
+      }
+    }
+  }
+  
+  // 2. Contact custom fields
+  if (card?.contact?.custom_fields && Array.isArray(card.contact.custom_fields)) {
+    for (const field of card.contact.custom_fields) {
+      if (field?.name && /instagram/i.test(field.name)) {
+        const normalized = normalizeInstagram(field.value);
+        if (normalized) return normalized;
+      }
+    }
+  }
+  
+  // 3. Client custom fields
+  if (card?.contact?.client?.custom_fields && Array.isArray(card.contact.client.custom_fields)) {
+    for (const field of card.contact.client.custom_fields) {
+      if (field?.name && /instagram/i.test(field.name)) {
+        const normalized = normalizeInstagram(field.value);
+        if (normalized) return normalized;
+      }
+    }
+  }
+  
+  // 4. Social ID (перевіряємо чи це Instagram, а не Telegram/інше)
+  const socialId = card?.contact?.social_id || card?.contact?.client?.social_id;
+  if (socialId) {
+    const socialName = card?.contact?.social_name || '';
+    // Якщо social_name містить "instagram" або social_id виглядає як Instagram username
+    if (/instagram/i.test(socialName) || (!/telegram|facebook|vk|whatsapp/i.test(socialName) && /^@?[a-z0-9._]+$/i.test(String(socialId).replace(/^@+/, '')))) {
+      const normalized = normalizeInstagram(socialId);
+      if (normalized) return normalized;
+    }
+  }
+  
+  // 5. Прямі поля
   const candidates = [
-    card?.contact?.social_id,
-    card?.contact?.client?.social_id,
     card?.contact?.instagram,
     card?.contact?.client?.instagram,
-    card?.social_id,
     card?.instagram,
-    // Custom fields
-    card?.contact?.custom_fields?.instagram,
-    card?.contact?.client?.custom_fields?.instagram,
-    card?.custom_fields?.instagram,
   ];
 
   for (const candidate of candidates) {
@@ -203,7 +244,10 @@ export async function POST(req: NextRequest) {
       }
 
       const data = response.json;
+      // KeyCRM повертає структуру: { data: [...], total, current_page, per_page, next_page_url }
       const cards = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+      
+      console.log(`[direct/sync-keycrm] Page ${page}: received ${cards.length} cards, total: ${data?.total || 'unknown'}`);
       
       if (cards.length === 0) {
         console.log(`[direct/sync-keycrm] No more cards on page ${page}`);
