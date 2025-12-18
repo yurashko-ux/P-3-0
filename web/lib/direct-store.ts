@@ -16,56 +16,54 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     }
 
     // Обробляємо різні формати даних
-    // kvGetRaw повинен повертати рядок, але іноді може повернути об'єкт
-    let rawString: string | null = null;
+    // KV може повертати подвійну обгортку: '{"value":"[\\"id\\"]"}' → {value: '["id"]'} → ["id"]
+    let current: any = indexData;
+    let attempts = 0;
+    const maxAttempts = 5; // Захист від нескінченного циклу
     
-    if (typeof indexData === 'string') {
-      rawString = indexData;
-    } else if (indexData && typeof indexData === 'object') {
-      // Якщо це об'єкт, спробуємо витягти value/result/data
-      const extracted = (indexData as any).value ?? (indexData as any).result ?? (indexData as any).data;
-      if (typeof extracted === 'string') {
-        rawString = extracted;
-      } else {
-        // Якщо не рядок, спробуємо серіалізувати
+    // Рекурсивно розгортаємо обгортки, поки не отримаємо масив
+    while (attempts < maxAttempts && !Array.isArray(current)) {
+      attempts++;
+      
+      // Якщо це рядок, спробуємо розпарсити
+      if (typeof current === 'string') {
         try {
-          rawString = JSON.stringify(extracted);
+          current = JSON.parse(current);
+          continue;
         } catch {
-          rawString = String(extracted);
+          // Якщо не JSON, зупиняємося
+          break;
         }
       }
-    } else if (indexData !== null && indexData !== undefined) {
-      rawString = String(indexData);
-    }
-    
-    if (!rawString) {
-      console.log('[direct-store] No client index found (empty/null)');
-      return [];
-    }
-    
-    let parsed: any;
-    try {
-      parsed = JSON.parse(rawString);
-    } catch (parseErr) {
-      console.warn('[direct-store] Failed to parse client index, resetting:', parseErr);
-      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
-      return [];
+      
+      // Якщо це об'єкт (не масив), витягуємо value/result/data
+      if (current && typeof current === 'object' && !Array.isArray(current)) {
+        const extracted = (current as any).value ?? (current as any).result ?? (current as any).data;
+        if (extracted !== undefined && extracted !== null) {
+          current = extracted;
+          continue;
+        }
+      }
+      
+      // Якщо не вдалося розгорнути, зупиняємося
+      break;
     }
     
     // Перевіряємо, чи це масив
-    if (!Array.isArray(parsed)) {
-      console.error('[direct-store] ⚠️ CRITICAL: Client index data is not an array!', {
-        type: typeof parsed,
-        value: parsed,
-        stringValue: typeof parsed === 'string' ? parsed : String(parsed).slice(0, 200),
-        indexDataType: typeof indexData,
-        indexDataValue: typeof indexData === 'string' ? indexData.slice(0, 100) : String(indexData).slice(0, 100),
+    if (!Array.isArray(current)) {
+      console.error('[direct-store] ⚠️ CRITICAL: Client index data is not an array after unwrapping!', {
+        attempts,
+        finalType: typeof current,
+        finalValue: current,
+        originalType: typeof indexData,
+        originalValue: typeof indexData === 'string' ? indexData.slice(0, 200) : String(indexData).slice(0, 200),
       });
       // НЕ скидаємо індекс автоматично - це може бути тимчасовий стан під час запису
-      // Замість цього повертаємо порожній масив, але не змінюємо індекс
       console.warn('[direct-store] Returning empty array without resetting index (may be temporary state)');
       return [];
     }
+    
+    const parsed = current;
 
     // Гарантуємо, що це масив рядків
     const clientIds: string[] = parsed.filter((id: any): id is string => 
