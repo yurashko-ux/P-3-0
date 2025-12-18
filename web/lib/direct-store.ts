@@ -8,20 +8,32 @@ import type { DirectClient, DirectStatus } from './direct-types';
  * Рекурсивно розгортає KV відповідь, поки не отримаємо масив або примітивне значення
  * KV може повертати подвійну обгортку: '{"value":"[\\"id\\"]"}' → {value: '["id"]'} → ["id"]
  */
-function unwrapKVResponse(data: any, maxAttempts = 5): any {
+function unwrapKVResponse(data: any, maxAttempts = 10): any {
   let current: any = data;
   let attempts = 0;
   
-  while (attempts < maxAttempts && !Array.isArray(current) && (current === null || typeof current === 'object')) {
+  // Продовжуємо розгортати, поки не отримаємо масив або не досягнемо ліміту спроб
+  while (attempts < maxAttempts) {
     attempts++;
     
-    // Якщо це рядок, спробуємо розпарсити
+    // Якщо це масив - повертаємо його
+    if (Array.isArray(current)) {
+      return current;
+    }
+    
+    // Якщо це рядок, спробуємо розпарсити як JSON
     if (typeof current === 'string') {
+      // Якщо рядок порожній або не виглядає як JSON, повертаємо як є
+      if (!current.trim() || (!current.trim().startsWith('{') && !current.trim().startsWith('['))) {
+        return current;
+      }
+      
       try {
-        current = JSON.parse(current);
-        continue;
+        const parsed = JSON.parse(current);
+        current = parsed;
+        continue; // Продовжуємо розгортання
       } catch {
-        // Якщо не JSON, повертаємо як є
+        // Якщо не вдалося розпарсити, повертаємо як є
         return current;
       }
     }
@@ -31,11 +43,16 @@ function unwrapKVResponse(data: any, maxAttempts = 5): any {
       const extracted = (current as any).value ?? (current as any).result ?? (current as any).data;
       if (extracted !== undefined && extracted !== null) {
         current = extracted;
-        continue;
+        continue; // Продовжуємо розгортання
       }
     }
     
-    // Якщо не вдалося розгорнути, зупиняємося
+    // Якщо це null, undefined, number, boolean - повертаємо як є
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return current;
+    }
+    
+    // Якщо не вдалося розгорнути далі, зупиняємося
     break;
   }
   
