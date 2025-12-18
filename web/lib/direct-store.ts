@@ -7,33 +7,65 @@ import type { DirectClient, DirectStatus } from './direct-types';
 /**
  * Рекурсивно розгортає KV відповідь, поки не отримаємо масив або примітивне значення
  * KV може повертати подвійну обгортку: '{"value":"[\\"id\\"]"}' → {value: '["id"]'} → ["id"]
+ * Або навіть потрійну: '{"value":"{\\"value\\":\\"[\\\\\\"id\\\\\\"]\\"}"}'
  */
-function unwrapKVResponse(data: any, maxAttempts = 10): any {
+function unwrapKVResponse(data: any, maxAttempts = 20): any {
   let current: any = data;
   let attempts = 0;
+  let lastStringValue: string | null = null;
   
   // Продовжуємо розгортати, поки не отримаємо масив або не досягнемо ліміту спроб
   while (attempts < maxAttempts) {
     attempts++;
     
-    // Якщо це масив - повертаємо його
+    // Якщо це масив - повертаємо його (після фільтрації null)
     if (Array.isArray(current)) {
-      return current;
+      // Фільтруємо null значення
+      const filtered = current.filter(item => item !== null && item !== undefined);
+      return filtered.length > 0 ? filtered : current; // Повертаємо фільтрований, якщо є валідні значення
     }
     
     // Якщо це рядок, спробуємо розпарсити як JSON
     if (typeof current === 'string') {
-      // Якщо рядок порожній або не виглядає як JSON, повертаємо як є
-      if (!current.trim() || (!current.trim().startsWith('{') && !current.trim().startsWith('['))) {
+      // Якщо рядок порожній, повертаємо як є
+      if (!current.trim()) {
         return current;
       }
       
-      try {
-        const parsed = JSON.parse(current);
-        current = parsed;
-        continue; // Продовжуємо розгортання
-      } catch {
-        // Якщо не вдалося розпарсити, повертаємо як є
+      // Якщо рядок виглядає як JSON (починається з { або [), спробуємо розпарсити
+      const trimmed = current.trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        // Запобігаємо нескінченному циклу: якщо цей самий рядок вже був розпарсений, зупиняємося
+        if (lastStringValue === current) {
+          // Якщо це той самий рядок, спробуємо розпарсити його як JSON напряму
+          try {
+            const parsed = JSON.parse(current);
+            // Якщо після парсингу отримали об'єкт з value, продовжуємо
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              const extracted = parsed.value ?? parsed.result ?? parsed.data;
+              if (extracted !== undefined && extracted !== null) {
+                current = extracted;
+                lastStringValue = null; // Скидаємо, щоб продовжити
+                continue;
+              }
+            }
+            return parsed;
+          } catch {
+            return current;
+          }
+        }
+        
+        lastStringValue = current;
+        try {
+          const parsed = JSON.parse(current);
+          current = parsed;
+          continue; // Продовжуємо розгортання
+        } catch {
+          // Якщо не вдалося розпарсити, повертаємо як є
+          return current;
+        }
+      } else {
+        // Якщо рядок не виглядає як JSON, повертаємо як є
         return current;
       }
     }
@@ -43,6 +75,7 @@ function unwrapKVResponse(data: any, maxAttempts = 10): any {
       const extracted = (current as any).value ?? (current as any).result ?? (current as any).data;
       if (extracted !== undefined && extracted !== null) {
         current = extracted;
+        lastStringValue = null; // Скидаємо при зміні типу
         continue; // Продовжуємо розгортання
       }
     }
@@ -54,6 +87,19 @@ function unwrapKVResponse(data: any, maxAttempts = 10): any {
     
     // Якщо не вдалося розгорнути далі, зупиняємося
     break;
+  }
+  
+  // Якщо досягли ліміту спроб, спробуємо останній раз розпарсити як JSON, якщо це рядок
+  if (typeof current === 'string' && current.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(current);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(item => item !== null && item !== undefined);
+      }
+      return parsed;
+    } catch {
+      // Ігноруємо помилку
+    }
   }
   
   return current;
@@ -86,10 +132,12 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
       return [];
     }
 
-    // Гарантуємо, що це масив рядків
-    const clientIds: string[] = parsed.filter((id: any): id is string => 
-      typeof id === 'string' && id.length > 0 && id.startsWith('direct_')
-    );
+    // Гарантуємо, що це масив рядків (фільтруємо null, undefined та невалідні значення)
+    const clientIds: string[] = parsed
+      .filter((id: any) => id !== null && id !== undefined) // Спочатку прибираємо null/undefined
+      .filter((id: any): id is string => 
+        typeof id === 'string' && id.length > 0 && id.startsWith('direct_')
+      );
     
     console.log(`[direct-store] getAllDirectClients: Found ${clientIds.length} client IDs in index`);
 
@@ -160,7 +208,20 @@ export async function getDirectClient(id: string): Promise<DirectClient | null> 
   try {
     const data = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
     if (!data) return null;
-    return JSON.parse(data);
+    
+    // Рекурсивно розгортаємо обгортки KV
+    const unwrapped = unwrapKVResponse(data);
+    
+    // Після розгортання, якщо це рядок, парсимо як JSON
+    if (typeof unwrapped === 'string') {
+      try {
+        return JSON.parse(unwrapped);
+      } catch {
+        return null;
+      }
+    }
+    
+    return unwrapped as DirectClient;
   } catch (err) {
     console.error(`[direct-store] Failed to get client ${id}:`, err);
     return null;
