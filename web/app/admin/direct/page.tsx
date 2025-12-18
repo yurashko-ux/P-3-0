@@ -286,6 +286,37 @@ export default function DirectPage() {
             🔄 Відновити клієнта
           </button>
           <button
+            className="btn btn-sm btn-info"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/test-status-save', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const test = data.test;
+                  const summary = test.summary;
+                  alert(`Тест збереження статусу:\n\n` +
+                    `Статус збережено в KV: ${summary.saved ? '✅' : '❌'}\n` +
+                    `Статус в індексі: ${summary.inIndex ? '✅' : '❌'}\n` +
+                    `Статус в getAllDirectStatuses: ${summary.inGetAll ? '✅' : '❌'}\n` +
+                    `Індекс збільшився: ${summary.indexIncreased ? '✅' : '❌'}\n\n` +
+                    `Деталі в консолі (F12)`);
+                  console.log('Status Save Test Results:', data.test);
+                } else {
+                  alert(`Помилка: ${data.error || 'Unknown error'}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Тест збереження статусу"
+          >
+            🧪 Тест статусу
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Відновити індекс клієнтів? Це перебудує індекс з усіх збережених клієнтів.')) {
