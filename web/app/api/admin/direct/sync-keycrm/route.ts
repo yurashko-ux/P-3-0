@@ -197,7 +197,6 @@ export async function POST(req: NextRequest) {
 
       // Збираємо всіх клієнтів для батч-збереження
       const clientsToSave: DirectClient[] = [];
-      const allSyncedClientIds: string[] = []; // Зберігаємо всі ID для можливого перебудови індексу
 
       for (const card of cards) {
         try {
