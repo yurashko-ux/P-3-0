@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
     let syncedClients = 0;
     let skippedNoInstagram = 0;
     let errors = 0;
+    const allSyncedClientIds: string[] = []; // Зберігаємо всі ID для можливого перебудови індексу
 
     while (page <= maxPages) {
       // Формуємо URL для отримання карток
