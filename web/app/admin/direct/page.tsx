@@ -262,6 +262,30 @@ export default function DirectPage() {
             🧪 Тест KV
           </button>
           <button
+            className="btn btn-sm btn-success"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/recover-client', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  alert(`✅ ${data.message}\n\nЗнайдено через getAllDirectClients: ${data.stats.foundViaGetAll}\nЗнайдено через Instagram index: ${data.stats.foundViaInstagram}\nВсього в індексі: ${data.stats.totalInIndex}`);
+                  await loadData();
+                } else {
+                  alert(`❌ ${data.message || data.error || 'Помилка відновлення'}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Відновити втраченого клієнта в індекс"
+          >
+            🔄 Відновити клієнта
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Відновити індекс клієнтів? Це перебудує індекс з усіх збережених клієнтів.')) {
