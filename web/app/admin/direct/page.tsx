@@ -158,23 +158,55 @@ export default function DirectPage() {
             Робота з клієнтами Instagram Direct
           </p>
         </div>
-        <button
-          className="btn btn-sm btn-primary"
-          onClick={() => {
-            setIsLoading(true);
-            loadData();
-          }}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
-              <span className="loading loading-spinner loading-xs"></span>
-              Оновлення...
-            </>
-          ) : (
-            "🔄 Оновити"
-          )}
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              setIsLoading(true);
+              loadData();
+            }}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <span className="loading loading-spinner loading-xs"></span>
+                Оновлення...
+              </>
+            ) : (
+              "🔄 Оновити"
+            )}
+          </button>
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              if (!confirm('Синхронізувати клієнтів з KeyCRM? Це може зайняти деякий час.')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/sync-keycrm', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ max_pages: 10 }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  alert(`Синхронізовано: ${data.stats.syncedClients} клієнтів з ${data.stats.totalCards} карток`);
+                  await loadData();
+                } else {
+                  alert(`Помилка: ${data.error}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+          >
+            🔗 Синхронізувати з KeyCRM
+          </button>
+        </div>
       </div>
 
       {error && (
