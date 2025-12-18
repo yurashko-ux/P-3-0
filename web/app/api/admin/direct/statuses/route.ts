@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // getAllDirectStatuses автоматично ініціалізує статуси, якщо їх немає (на сервері)
     const statuses = await getAllDirectStatuses();
     return NextResponse.json({ ok: true, statuses });
   } catch (error) {

@@ -4,7 +4,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { initializeDefaultStatuses } from "@/lib/direct-store";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { DirectStats } from "./_components/DirectStats";
@@ -26,8 +25,6 @@ export default function DirectPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
-    // Ініціалізуємо початкові статуси (якщо їх немає)
-    initializeDefaultStatuses().catch(console.error);
     loadData();
   }, []);
 
