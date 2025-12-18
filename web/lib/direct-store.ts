@@ -12,7 +12,7 @@ import type { DirectClient, DirectStatus } from './direct-types';
 function unwrapKVResponse(data: any, maxAttempts = 20): any {
   let current: any = data;
   let attempts = 0;
-  let lastStringValue: string | null = null;
+  const seenStrings = new Set<string>(); // Відстежуємо вже бачені рядки для запобігання циклів
   
   // Продовжуємо розгортати, поки не отримаємо масив або не досягнемо ліміту спроб
   while (attempts < maxAttempts) {
@@ -20,9 +20,8 @@ function unwrapKVResponse(data: any, maxAttempts = 20): any {
     
     // Якщо це масив - повертаємо його (після фільтрації null)
     if (Array.isArray(current)) {
-      // Фільтруємо null значення
       const filtered = current.filter(item => item !== null && item !== undefined);
-      return filtered.length > 0 ? filtered : current; // Повертаємо фільтрований, якщо є валідні значення
+      return filtered.length > 0 ? filtered : current;
     }
     
     // Якщо це рядок, спробуємо розпарсити як JSON
@@ -32,20 +31,24 @@ function unwrapKVResponse(data: any, maxAttempts = 20): any {
         return current;
       }
       
-      // Якщо рядок виглядає як JSON (починається з { або [), спробуємо розпарсити
       const trimmed = current.trim();
+      
+      // Якщо рядок виглядає як JSON (починається з { або [), спробуємо розпарсити
       if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        // Запобігаємо нескінченному циклу: якщо цей самий рядок вже був розпарсений, зупиняємося
-        if (lastStringValue === current) {
-          // Якщо це той самий рядок, спробуємо розпарсити його як JSON напряму
+        // Запобігаємо нескінченному циклу: якщо цей рядок вже бачили, спробуємо розпарсити і повернути
+        if (seenStrings.has(current)) {
           try {
             const parsed = JSON.parse(current);
-            // Якщо після парсингу отримали об'єкт з value, продовжуємо
+            // Якщо це масив - повертаємо
+            if (Array.isArray(parsed)) {
+              return parsed.filter(item => item !== null && item !== undefined);
+            }
+            // Якщо це об'єкт, витягуємо value/result/data і продовжуємо
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
               const extracted = parsed.value ?? parsed.result ?? parsed.data;
               if (extracted !== undefined && extracted !== null) {
                 current = extracted;
-                lastStringValue = null; // Скидаємо, щоб продовжити
+                seenStrings.delete(current); // Видаляємо з seen, щоб можна було продовжити
                 continue;
               }
             }
@@ -55,7 +58,9 @@ function unwrapKVResponse(data: any, maxAttempts = 20): any {
           }
         }
         
-        lastStringValue = current;
+        // Додаємо рядок до seen перед парсингом
+        seenStrings.add(current);
+        
         try {
           const parsed = JSON.parse(current);
           current = parsed;
@@ -75,7 +80,10 @@ function unwrapKVResponse(data: any, maxAttempts = 20): any {
       const extracted = (current as any).value ?? (current as any).result ?? (current as any).data;
       if (extracted !== undefined && extracted !== null) {
         current = extracted;
-        lastStringValue = null; // Скидаємо при зміні типу
+        // Якщо витягли рядок, очищаємо seen для нього, щоб можна було парсити
+        if (typeof extracted === 'string') {
+          seenStrings.delete(extracted);
+        }
         continue; // Продовжуємо розгортання
       }
     }
@@ -90,15 +98,26 @@ function unwrapKVResponse(data: any, maxAttempts = 20): any {
   }
   
   // Якщо досягли ліміту спроб, спробуємо останній раз розпарсити як JSON, якщо це рядок
-  if (typeof current === 'string' && current.trim().startsWith('{')) {
-    try {
-      const parsed = JSON.parse(current);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(item => item !== null && item !== undefined);
+  if (typeof current === 'string') {
+    const trimmed = current.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(current);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(item => item !== null && item !== undefined);
+        }
+        // Якщо це об'єкт, витягуємо value/result/data
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const extracted = parsed.value ?? parsed.result ?? parsed.data;
+          if (extracted !== undefined && extracted !== null) {
+            // Рекурсивно викликаємо для витягнутого значення
+            return unwrapKVResponse(extracted, 5);
+          }
+        }
+        return parsed;
+      } catch {
+        // Ігноруємо помилку
       }
-      return parsed;
-    } catch {
-      // Ігноруємо помилку
     }
   }
   
