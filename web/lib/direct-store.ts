@@ -102,7 +102,23 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
         if (clientData) {
           try {
-            const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
+            // Рекурсивно розгортаємо обгортки KV (як для індексу)
+            const unwrapped = unwrapKVResponse(clientData);
+            
+            // Після розгортання, якщо це рядок, парсимо як JSON
+            let client: any;
+            if (typeof unwrapped === 'string') {
+              try {
+                client = JSON.parse(unwrapped);
+              } catch {
+                // Якщо не JSON, спробуємо як об'єкт
+                client = unwrapped;
+              }
+            } else {
+              client = unwrapped;
+            }
+            
+            // Перевіряємо валідність клієнта
             if (client && typeof client === 'object' && client.id && client.instagramUsername) {
               clients.push(client);
               loadedCount++;
@@ -110,6 +126,8 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
               console.warn(`[direct-store] Invalid client data for ${id}:`, {
                 hasId: !!client?.id,
                 hasUsername: !!client?.instagramUsername,
+                unwrappedType: typeof unwrapped,
+                unwrappedPreview: typeof unwrapped === 'string' ? unwrapped.slice(0, 100) : String(unwrapped).slice(0, 100),
               });
               errorCount++;
             }
