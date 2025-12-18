@@ -277,52 +277,94 @@ export async function POST(req: NextRequest) {
 
         // Потім оновлюємо індекс одним запитом
         try {
-          const currentIndexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+          // Читаємо індекс кілька разів для надійності (eventual consistency)
           let currentIds: string[] = [];
+          let readAttempts = 3;
           
-          if (currentIndexData) {
-            try {
-              const parsed = typeof currentIndexData === 'string' ? JSON.parse(currentIndexData) : currentIndexData;
-              if (Array.isArray(parsed)) {
-                currentIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
+          while (readAttempts > 0) {
+            const currentIndexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+            
+            if (currentIndexData) {
+              try {
+                const parsed = typeof currentIndexData === 'string' ? JSON.parse(currentIndexData) : currentIndexData;
+                if (Array.isArray(parsed)) {
+                  currentIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
+                  break; // Успішно прочитали
+                } else {
+                  console.warn(`[direct/sync-keycrm] Index is not array on attempt ${4 - readAttempts}:`, typeof parsed);
+                }
+              } catch (parseErr) {
+                console.warn(`[direct/sync-keycrm] Failed to parse index on attempt ${4 - readAttempts}:`, parseErr);
               }
-            } catch {}
-          }
-
-          // Додаємо нові ID з батча
-          for (const client of batch) {
-            if (!currentIds.includes(client.id)) {
-              currentIds.push(client.id);
+            }
+            
+            readAttempts--;
+            if (readAttempts > 0) {
+              await new Promise(resolve => setTimeout(resolve, 200));
             }
           }
 
+          // Додаємо нові ID з батча
+          const beforeAdd = currentIds.length;
+          for (const client of batch) {
+            if (client.id && !currentIds.includes(client.id)) {
+              currentIds.push(client.id);
+            }
+          }
+          const afterAdd = currentIds.length;
+          
+          console.log(`[direct/sync-keycrm] Batch ${Math.floor(i / batchSize) + 1}: Adding ${afterAdd - beforeAdd} new IDs to index (${beforeAdd} -> ${afterAdd})`);
+
           // Зберігаємо оновлений індекс
-          await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(currentIds));
+          const indexJson = JSON.stringify(currentIds);
+          console.log(`[direct/sync-keycrm] Saving index with ${currentIds.length} IDs`);
+          await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexJson);
           
           // Затримка для стабільності KV (eventual consistency)
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 500));
           
-          // Перевіряємо, чи індекс зберігся
-          const verifyIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+          // Перевіряємо, чи індекс зберігся (кілька спроб)
           let verifiedCount = 0;
-          if (verifyIndex) {
-            try {
-              const verifyParsed = typeof verifyIndex === 'string' ? JSON.parse(verifyIndex) : verifyIndex;
-              if (Array.isArray(verifyParsed)) {
-                verifiedCount = verifyParsed.length;
-              }
-            } catch {}
+          for (let verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const verifyIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+            if (verifyIndex) {
+              try {
+                const verifyParsed = typeof verifyIndex === 'string' ? JSON.parse(verifyIndex) : verifyIndex;
+                if (Array.isArray(verifyParsed)) {
+                  verifiedCount = verifyParsed.length;
+                  if (verifiedCount === currentIds.length) {
+                    console.log(`[direct/sync-keycrm] ✅ Index verified on attempt ${verifyAttempt}: ${verifiedCount} IDs`);
+                    break;
+                  }
+                }
+              } catch {}
+            }
+            if (verifyAttempt < 3) {
+              console.warn(`[direct/sync-keycrm] Verification attempt ${verifyAttempt} failed, retrying...`);
+            }
           }
           
           syncedClients += batch.length;
           
-          console.log(`[direct/sync-keycrm] Batch saved. Expected in index: ${currentIds.length}, verified: ${verifiedCount}, synced: ${syncedClients}`);
+          console.log(`[direct/sync-keycrm] Batch ${Math.floor(i / batchSize) + 1} saved. Expected: ${currentIds.length}, verified: ${verifiedCount}, synced: ${syncedClients}`);
           
           if (verifiedCount !== currentIds.length) {
-            console.warn(`[direct/sync-keycrm] ⚠️ Index count mismatch! Expected ${currentIds.length}, got ${verifiedCount}. Retrying...`);
+            console.error(`[direct/sync-keycrm] ⚠️ CRITICAL: Index count mismatch! Expected ${currentIds.length}, got ${verifiedCount}. Retrying save...`);
             // Спробуємо зберегти ще раз
-            await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(currentIds));
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await kvWrite.setRaw(directKeys.CLIENT_INDEX, indexJson);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Фінальна перевірка
+            const finalCheck = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+            if (finalCheck) {
+              try {
+                const finalParsed = typeof finalCheck === 'string' ? JSON.parse(finalCheck) : finalCheck;
+                if (Array.isArray(finalParsed)) {
+                  console.log(`[direct/sync-keycrm] After retry: ${finalParsed.length} IDs in index`);
+                }
+              } catch {}
+            }
           }
           
           // Невелика затримка між батчами
