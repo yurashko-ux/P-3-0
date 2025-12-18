@@ -125,7 +125,6 @@ export async function GET(req: NextRequest) {
         instagramUsername: c.instagramUsername,
       })),
       instagramIndexChecks,
-      instagramIndexSample,
       recommendations: indexLength === 0 && allClients.length === 0 
         ? 'Індекс порожній. Спробуйте: 1) Синхронізувати з KeyCRM, 2) Відновити індекс'
         : indexLength > 0 && allClients.length === 0
