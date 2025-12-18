@@ -3,7 +3,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveKeycrmBaseUrl, resolveKeycrmBearer, resolveKeycrmToken } from '@/lib/env';
-import { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
+import { getDirectClientByInstagram, getAllDirectStatuses } from '@/lib/direct-store';
+import { kvRead, kvWrite, directKeys } from '@/lib/kv';
 import type { DirectClient } from '@/lib/direct-types';
 
 export const dynamic = 'force-dynamic';
@@ -194,6 +195,9 @@ export async function POST(req: NextRequest) {
       totalCards += cards.length;
       console.log(`[direct/sync-keycrm] Processing ${cards.length} cards from page ${page}`);
 
+      // Збираємо всіх клієнтів для батч-збереження
+      const clientsToSave: DirectClient[] = [];
+
       for (const card of cards) {
         try {
           const instagram = extractInstagramFromCard(card);
@@ -225,7 +229,7 @@ export async function POST(req: NextRequest) {
               createdAt: now,
               updatedAt: now,
             };
-            console.log(`[direct/sync-keycrm] Creating new client: @${instagram}`);
+            console.log(`[direct/sync-keycrm] Preparing new client: @${instagram}`);
           } else {
             // Оновлюємо існуючого клієнта
             client = {
@@ -236,29 +240,71 @@ export async function POST(req: NextRequest) {
               ...(nameData.lastName && { lastName: nameData.lastName }),
               updatedAt: now,
             };
-            console.log(`[direct/sync-keycrm] Updating existing client: @${instagram}`);
+            console.log(`[direct/sync-keycrm] Preparing update for client: @${instagram}`);
           }
 
-          await saveDirectClient(client);
-          syncedClients++;
-          
-          // Невелика затримка між збереженнями для стабільності KV
-          if (syncedClients % 10 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            // Перевіряємо індекс після кожних 10 клієнтів
-            const checkIndex = await kvRead.getRaw(directKeys.CLIENT_INDEX);
-            if (checkIndex) {
-              try {
-                const checkParsed = typeof checkIndex === 'string' ? JSON.parse(checkIndex) : checkIndex;
-                if (Array.isArray(checkParsed)) {
-                  console.log(`[direct/sync-keycrm] Progress: ${syncedClients} saved, index has ${checkParsed.length} entries`);
-                }
-              } catch {}
-            }
-          }
+          clientsToSave.push(client);
         } catch (err) {
           console.error(`[direct/sync-keycrm] Error processing card ${card?.id}:`, err);
           errors++;
+        }
+      }
+
+      // Зберігаємо клієнтів батчами по 20
+      const batchSize = 20;
+      for (let i = 0; i < clientsToSave.length; i += batchSize) {
+        const batch = clientsToSave.slice(i, i + batchSize);
+        console.log(`[direct/sync-keycrm] Saving batch ${Math.floor(i / batchSize) + 1} (${batch.length} clients)`);
+        
+        // Спочатку зберігаємо всіх клієнтів
+        for (const client of batch) {
+          try {
+            await kvWrite.setRaw(directKeys.CLIENT_ITEM(client.id), JSON.stringify(client));
+            const normalizedUsername = client.instagramUsername.toLowerCase().trim();
+            await kvWrite.setRaw(
+              directKeys.CLIENT_BY_INSTAGRAM(normalizedUsername),
+              JSON.stringify(client.id)
+            );
+          } catch (err) {
+            console.error(`[direct/sync-keycrm] Failed to save client ${client.id}:`, err);
+            errors++;
+          }
+        }
+
+        // Потім оновлюємо індекс одним запитом
+        try {
+          const currentIndexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
+          let currentIds: string[] = [];
+          
+          if (currentIndexData) {
+            try {
+              const parsed = typeof currentIndexData === 'string' ? JSON.parse(currentIndexData) : currentIndexData;
+              if (Array.isArray(parsed)) {
+                currentIds = parsed.filter((id: any): id is string => typeof id === 'string' && id.startsWith('direct_'));
+              }
+            } catch {}
+          }
+
+          // Додаємо нові ID з батча
+          for (const client of batch) {
+            if (!currentIds.includes(client.id)) {
+              currentIds.push(client.id);
+            }
+          }
+
+          // Зберігаємо оновлений індекс
+          await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(currentIds));
+          syncedClients += batch.length;
+          
+          console.log(`[direct/sync-keycrm] Batch saved. Total in index: ${currentIds.length}, synced: ${syncedClients}`);
+          
+          // Невелика затримка між батчами
+          if (i + batchSize < clientsToSave.length) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } catch (err) {
+          console.error(`[direct/sync-keycrm] Failed to update index for batch:`, err);
+          errors += batch.length;
         }
       }
 
