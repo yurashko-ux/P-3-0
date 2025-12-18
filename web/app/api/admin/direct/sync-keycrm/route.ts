@@ -57,19 +57,24 @@ function normalizeInstagram(username: string | null | undefined): string | null 
 
 // Витягування Instagram username з картки KeyCRM
 function extractInstagramFromCard(card: any): string | null {
-  // Спробуємо різні місця, де може бути Instagram username
+  console.log(`[direct/sync-keycrm] Extracting Instagram from card ${card?.id}, title: "${card?.title}"`);
   
   // 1. Custom fields (найбільш ймовірне місце для Instagram)
   if (card?.custom_fields && Array.isArray(card.custom_fields)) {
     for (const field of card.custom_fields) {
       if (field?.name && /instagram/i.test(field.name)) {
         const normalized = normalizeInstagram(field.value);
-        if (normalized) return normalized;
+        if (normalized) {
+          console.log(`[direct/sync-keycrm] Found Instagram in custom_fields: ${normalized}`);
+          return normalized;
+        }
       }
-      // Також перевіряємо по uuid або name
       if (field?.uuid && /instagram/i.test(field.uuid)) {
         const normalized = normalizeInstagram(field.value);
-        if (normalized) return normalized;
+        if (normalized) {
+          console.log(`[direct/sync-keycrm] Found Instagram in custom_fields (by uuid): ${normalized}`);
+          return normalized;
+        }
       }
     }
   }
@@ -79,7 +84,10 @@ function extractInstagramFromCard(card: any): string | null {
     for (const field of card.contact.custom_fields) {
       if (field?.name && /instagram/i.test(field.name)) {
         const normalized = normalizeInstagram(field.value);
-        if (normalized) return normalized;
+        if (normalized) {
+          console.log(`[direct/sync-keycrm] Found Instagram in contact.custom_fields: ${normalized}`);
+          return normalized;
+        }
       }
     }
   }
@@ -89,7 +97,10 @@ function extractInstagramFromCard(card: any): string | null {
     for (const field of card.contact.client.custom_fields) {
       if (field?.name && /instagram/i.test(field.name)) {
         const normalized = normalizeInstagram(field.value);
-        if (normalized) return normalized;
+        if (normalized) {
+          console.log(`[direct/sync-keycrm] Found Instagram in contact.client.custom_fields: ${normalized}`);
+          return normalized;
+        }
       }
     }
   }
@@ -101,7 +112,10 @@ function extractInstagramFromCard(card: any): string | null {
     // Якщо social_name містить "instagram" або social_id виглядає як Instagram username
     if (/instagram/i.test(socialName) || (!/telegram|facebook|vk|whatsapp/i.test(socialName) && /^@?[a-z0-9._]+$/i.test(String(socialId).replace(/^@+/, '')))) {
       const normalized = normalizeInstagram(socialId);
-      if (normalized) return normalized;
+      if (normalized) {
+        console.log(`[direct/sync-keycrm] Found Instagram in social_id: ${normalized}`);
+        return normalized;
+      }
     }
   }
   
@@ -114,9 +128,25 @@ function extractInstagramFromCard(card: any): string | null {
 
   for (const candidate of candidates) {
     const normalized = normalizeInstagram(candidate);
-    if (normalized) return normalized;
+    if (normalized) {
+      console.log(`[direct/sync-keycrm] Found Instagram in direct field: ${normalized}`);
+      return normalized;
+    }
+  }
+  
+  // 6. Спробуємо витягти з title (наприклад, "Чат з juliagricina" → "juliagricina")
+  if (card?.title) {
+    const titleMatch = card.title.match(/чат\s+з\s+([a-z0-9._]+)/i);
+    if (titleMatch && titleMatch[1]) {
+      const normalized = normalizeInstagram(titleMatch[1]);
+      if (normalized && normalized.length > 0) {
+        console.log(`[direct/sync-keycrm] Extracted Instagram from title: ${normalized}`);
+        return normalized;
+      }
+    }
   }
 
+  console.log(`[direct/sync-keycrm] No Instagram found for card ${card?.id}`);
   return null;
 }
 
@@ -213,10 +243,11 @@ export async function POST(req: NextRequest) {
       // Формуємо URL для отримання карток
       let path = '/pipelines/cards';
       const params = new URLSearchParams();
-      params.set('page[number]', String(page));
-      params.set('page[size]', String(perPage));
+      // KeyCRM використовує page та limit (не page[number] та page[size])
+      params.set('page', String(page));
+      params.set('limit', String(perPage));
       
-      // Додаємо include для отримання контактів
+      // Додаємо include для отримання контактів (важливо для Instagram username)
       params.append('include[]', 'contact');
       params.append('include[]', 'contact.client');
       params.append('include[]', 'status');
@@ -248,6 +279,13 @@ export async function POST(req: NextRequest) {
       const cards = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
       
       console.log(`[direct/sync-keycrm] Page ${page}: received ${cards.length} cards, total: ${data?.total || 'unknown'}`);
+      console.log(`[direct/sync-keycrm] Sample card structure:`, cards[0] ? {
+        id: cards[0].id,
+        title: cards[0].title,
+        hasContact: !!cards[0].contact,
+        hasContactClient: !!cards[0].contact?.client,
+        contactId: cards[0].contact_id,
+      } : 'No cards');
       
       if (cards.length === 0) {
         console.log(`[direct/sync-keycrm] No more cards on page ${page}`);
