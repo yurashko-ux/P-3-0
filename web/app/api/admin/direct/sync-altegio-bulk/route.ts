@@ -27,30 +27,70 @@ function isAuthorized(req: NextRequest): boolean {
  * Витягує Instagram username з клієнта Altegio
  */
 function extractInstagramFromAltegioClient(client: any): string | null {
+  // Логуємо структуру клієнта для діагностики
+  if (client.id === 176404915) {
+    console.log(`[direct/sync-altegio-bulk] DEBUG: Extracting Instagram for client ${client.id}:`, {
+      name: client.name,
+      custom_fields: client.custom_fields,
+      custom_fields_keys: client.custom_fields ? Object.keys(client.custom_fields) : [],
+      all_keys: Object.keys(client),
+      full_custom_fields: JSON.stringify(client.custom_fields, null, 2),
+    });
+  }
+
   // Перевіряємо різні варіанти назв полів Instagram
   const instagramFields = [
+    // Прямі поля
     client['instagram-user-name'],
     client.instagram_user_name,
     client.instagramUsername,
     client.instagram_username,
     client.instagram,
     client['instagram'],
-    // В custom_fields
+    // В custom_fields (різні варіанти назв)
     client.custom_fields?.['instagram-user-name'],
+    client.custom_fields?.['Instagram user name'],
+    client.custom_fields?.['Instagram username'],
     client.custom_fields?.instagram_user_name,
     client.custom_fields?.instagramUsername,
     client.custom_fields?.instagram_username,
     client.custom_fields?.instagram,
     client.custom_fields?.['instagram'],
+    // Якщо custom_fields - це масив об'єктів
+    ...(Array.isArray(client.custom_fields) 
+      ? client.custom_fields
+          .filter((f: any) => f && typeof f === 'object')
+          .map((f: any) => {
+            // Перевіряємо різні поля в об'єкті custom_field
+            const name = f.name || f.field_name || f.key || f.label || '';
+            const value = f.value || f.data || f.content || '';
+            if (/instagram/i.test(name) && value && typeof value === 'string') {
+              return value;
+            }
+            return null;
+          })
+          .filter(Boolean)
+      : []
+    ),
   ];
 
   for (const field of instagramFields) {
     if (field && typeof field === 'string' && field.trim()) {
       const normalized = normalizeInstagram(field.trim());
       if (normalized) {
+        if (client.id === 176404915) {
+          console.log(`[direct/sync-altegio-bulk] DEBUG: Found Instagram for client ${client.id}:`, {
+            original: field,
+            normalized,
+          });
+        }
         return normalized;
       }
     }
+  }
+
+  if (client.id === 176404915) {
+    console.log(`[direct/sync-altegio-bulk] DEBUG: No Instagram found for client ${client.id}`);
   }
 
   return null;
