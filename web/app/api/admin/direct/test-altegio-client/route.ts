@@ -264,53 +264,112 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Спроба 6: Отримати список custom_fields для location
-    try {
-      // Спробуємо різні field_category
-      const fieldCategories = ['client', 'clients', 'client_fields'];
-      for (const category of fieldCategories) {
-        try {
-          const customFieldsMeta = await altegioFetch<any>(`/custom_fields/${category}/${companyId}`, {
-            method: 'GET',
-          });
-          results.attempts.push({
-            method: 'GET',
-            url: `/custom_fields/${category}/${companyId}`,
-            params: 'metadata',
-            success: true,
-            response: customFieldsMeta,
-            note: 'This returns metadata about custom fields, not values',
-          });
-        } catch (err) {
-          // Ігноруємо помилки для неіснуючих категорій
-        }
+    // Спроба 6: Отримати значення custom_fields для конкретного клієнта
+    // Можливо, є endpoint типу /custom_fields/client/{client_id} або /company/{id}/client/{id}/custom_fields
+    const customFieldEndpoints = [
+      `/company/${companyId}/client/${clientId}/custom_fields`,
+      `/company/${companyId}/clients/${clientId}/custom_fields`,
+      `/custom_fields/client/${clientId}`,
+      `/custom_fields/clients/${clientId}`,
+      `/company/${companyId}/custom_fields/client/${clientId}`,
+    ];
+    
+    for (const endpoint of customFieldEndpoints) {
+      try {
+        const customFieldsValues = await altegioFetch<any>(endpoint, {
+          method: 'GET',
+        });
+        results.attempts.push({
+          method: 'GET',
+          url: endpoint,
+          params: 'custom_fields values',
+          success: true,
+          response: customFieldsValues,
+          note: 'Attempting to get custom field values for specific client',
+        });
+        break; // Якщо знайшли працюючий endpoint, не пробуємо інші
+      } catch (err) {
+        // Продовжуємо спроби
       }
+    }
+
+    // Спроба 7: Отримати список custom_fields метаданих для location (для перевірки структури)
+    try {
+      const customFieldsMeta = await altegioFetch<any>(`/custom_fields/client/${companyId}`, {
+        method: 'GET',
+      });
+      results.attempts.push({
+        method: 'GET',
+        url: `/custom_fields/client/${companyId}`,
+        params: 'metadata',
+        success: true,
+        response: customFieldsMeta,
+        note: 'This returns metadata about custom fields, not values. Field code: instagram-user-name',
+        instagramFieldCode: 'instagram-user-name', // З скріншота
+      });
     } catch (err) {
       // Ігноруємо помилки
     }
 
     // Витягуємо Instagram з усіх спроб
+    // Згідно зі скріншотом, ключ для API: "instagram-user-name"
     const instagramValues: string[] = [];
     for (const attempt of results.attempts) {
       if (attempt.success && attempt.response) {
-        const client = attempt.response;
+        const response = attempt.response;
         
-        // Перевіряємо різні місця
-        const checks = [
-          client?.custom_fields?.['instagram-user-name'],
-          client?.custom_fields?.['Instagram user name'],
-          client?.custom_fields?.instagram_user_name,
-          client?.custom_fields?.instagram,
-          client?.['instagram-user-name'],
-          client?.instagram_user_name,
-          client?.instagram,
-        ];
-        
-        for (const value of checks) {
-          if (value && typeof value === 'string' && value.trim()) {
-            const normalized = normalizeInstagram(value.trim());
-            if (normalized && !instagramValues.includes(normalized)) {
-              instagramValues.push(normalized);
+        // Якщо це об'єкт клієнта
+        if (response && typeof response === 'object') {
+          // Перевіряємо custom_fields як об'єкт
+          if (response.custom_fields && typeof response.custom_fields === 'object' && !Array.isArray(response.custom_fields)) {
+            const checks = [
+              response.custom_fields['instagram-user-name'], // Основний ключ зі скріншота
+              response.custom_fields['Instagram user name'],
+              response.custom_fields.instagram_user_name,
+              response.custom_fields.instagram,
+            ];
+            
+            for (const value of checks) {
+              if (value && typeof value === 'string' && value.trim()) {
+                const normalized = normalizeInstagram(value.trim());
+                if (normalized && !instagramValues.includes(normalized)) {
+                  instagramValues.push(normalized);
+                }
+              }
+            }
+          }
+          
+          // Перевіряємо прямі поля (якщо custom_fields - це масив або інша структура)
+          const directChecks = [
+            response['instagram-user-name'],
+            response.instagram_user_name,
+            response.instagram,
+          ];
+          
+          for (const value of directChecks) {
+            if (value && typeof value === 'string' && value.trim()) {
+              const normalized = normalizeInstagram(value.trim());
+              if (normalized && !instagramValues.includes(normalized)) {
+                instagramValues.push(normalized);
+              }
+            }
+          }
+          
+          // Якщо response - це масив custom_fields (якщо отримали через окремий endpoint)
+          if (Array.isArray(response)) {
+            for (const field of response) {
+              if (field && typeof field === 'object') {
+                // Перевіряємо різні структури поля
+                const fieldCode = field.code || field.key || field.field_code;
+                const fieldValue = field.value || field.data || field.content;
+                
+                if (fieldCode === 'instagram-user-name' && fieldValue && typeof fieldValue === 'string') {
+                  const normalized = normalizeInstagram(fieldValue.trim());
+                  if (normalized && !instagramValues.includes(normalized)) {
+                    instagramValues.push(normalized);
+                  }
+                }
+              }
             }
           }
         }
