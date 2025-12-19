@@ -128,14 +128,12 @@ export async function GET(req: NextRequest) {
 
     if (indexData) {
       try {
-        if (typeof indexData === 'string') {
-          indexParsed = JSON.parse(indexData);
-        } else {
-          indexParsed = indexData;
-        }
+        // Використовуємо unwrapKVResponse для правильного розпакування
+        indexParsed = unwrapKVResponse(indexData);
         indexIsArray = Array.isArray(indexParsed);
         indexLength = indexIsArray ? indexParsed.length : 0;
       } catch (err) {
+        console.error('[direct/debug] Failed to parse index:', err);
         // Помилка парсингу
       }
     }
@@ -211,7 +209,17 @@ export async function GET(req: NextRequest) {
         type: typeof indexData,
         isArray: indexIsArray,
         length: indexLength,
-        preview: indexIsArray && Array.isArray(indexParsed) ? indexParsed.slice(0, 10) : indexParsed,
+        preview: indexIsArray && Array.isArray(indexParsed) 
+          ? { 
+              first10: indexParsed.slice(0, 10),
+              total: indexParsed.length,
+            }
+          : {
+              type: typeof indexParsed,
+              value: typeof indexParsed === 'string' 
+                ? indexParsed.slice(0, 500) 
+                : JSON.stringify(indexParsed).slice(0, 500),
+            },
       },
       sampleClients,
       allClientsCount: allClients.length,
