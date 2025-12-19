@@ -252,6 +252,19 @@ export function DirectClientTable({
                       Статус {sortBy === "statusId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[200px]">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "comment",
+                          sortBy === "comment" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
                     <button
                       className="hover:underline cursor-pointer"
@@ -343,19 +356,6 @@ export function DirectClientTable({
                       Хто записав {sortBy === "signupAdmin" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[200px]">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "comment",
-                          sortBy === "comment" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дії</th>
                 </tr>
               </thead>
@@ -401,6 +401,16 @@ export function DirectClientTable({
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
+                        <input
+                          type="text"
+                          className="input input-xs input-bordered w-full min-w-[180px]"
+                          placeholder="Коментар..."
+                          value={client.comment || ""}
+                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
+                          title={client.comment || "Коментар..."}
+                        />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         {client.statusId === "consultation" ? (
@@ -450,10 +460,8 @@ export function DirectClientTable({
                               visitedSalon: e.target.checked,
                               visitDate: e.target.checked ? new Date().toISOString() : undefined,
                             };
-                            handleFieldUpdate(client, "visitedSalon", updates.visitedSalon);
-                            if (updates.visitDate) {
-                              handleFieldUpdate(client, "visitDate", updates.visitDate);
-                            }
+                            // Оновлюємо обидва поля одночасно
+                            onClientUpdate(client.id, updates);
                           }}
                         />
                       </td>
@@ -470,10 +478,8 @@ export function DirectClientTable({
                               signedUpForPaidService: e.target.checked,
                               paidServiceDate: e.target.checked ? new Date().toISOString() : undefined,
                             };
-                            handleFieldUpdate(client, "signedUpForPaidService", updates.signedUpForPaidService);
-                            if (updates.paidServiceDate) {
-                              handleFieldUpdate(client, "paidServiceDate", updates.paidServiceDate);
-                            }
+                            // Оновлюємо обидва поля одночасно
+                            onClientUpdate(client.id, updates);
                           }}
                         />
                       </td>
@@ -487,16 +493,6 @@ export function DirectClientTable({
                           placeholder="Адмін"
                           value={client.signupAdmin || ""}
                           onChange={(e) => handleFieldUpdate(client, "signupAdmin", e.target.value || undefined)}
-                        />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
-                        <input
-                          type="text"
-                          className="input input-xs input-bordered w-full min-w-[180px]"
-                          placeholder="Коментар..."
-                          value={client.comment || ""}
-                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
-                          title={client.comment || "Коментар..."}
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
