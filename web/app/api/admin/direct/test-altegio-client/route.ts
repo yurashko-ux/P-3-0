@@ -528,18 +528,44 @@ export async function POST(req: NextRequest) {
     }
 
     // Витягуємо Instagram з усіх спроб
-    // Згідно зі скріншотом, ключ для API: "instagram-user-name"
+    // ВАЖЛИВО: Altegio повертає custom_fields як МАСИВ об'єктів з title/value, а не як об'єкт з ключами!
     const instagramValues: string[] = [];
     for (const attempt of results.attempts) {
       if (attempt.success && attempt.response) {
         const response = attempt.response;
         
         // Якщо це об'єкт клієнта
-        if (response && typeof response === 'object') {
-          // Перевіряємо custom_fields як об'єкт
+        if (response && typeof response === 'object' && !Array.isArray(response)) {
+          // ВАЖЛИВО: custom_fields - це МАСИВ об'єктів з title/value
+          if (Array.isArray(response.custom_fields)) {
+            for (const field of response.custom_fields) {
+              if (field && typeof field === 'object') {
+                const title = field.title || field.name || field.label || '';
+                const value = field.value || field.data || field.content || field.text || '';
+                
+                // Шукаємо по title "Instagram user name"
+                if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                  const normalized = normalizeInstagram(value.trim());
+                  if (normalized && !instagramValues.includes(normalized)) {
+                    instagramValues.push(normalized);
+                  }
+                }
+                
+                // Також перевіряємо по id поля (76671 з метаданих)
+                if (field.id === 76671 && value && typeof value === 'string') {
+                  const normalized = normalizeInstagram(value.trim());
+                  if (normalized && !instagramValues.includes(normalized)) {
+                    instagramValues.push(normalized);
+                  }
+                }
+              }
+            }
+          }
+          
+          // Fallback: якщо custom_fields - це об'єкт (старий формат)
           if (response.custom_fields && typeof response.custom_fields === 'object' && !Array.isArray(response.custom_fields)) {
             const checks = [
-              response.custom_fields['instagram-user-name'], // Основний ключ зі скріншота
+              response.custom_fields['instagram-user-name'],
               response.custom_fields['Instagram user name'],
               response.custom_fields.instagram_user_name,
               response.custom_fields.instagram,
@@ -555,7 +581,7 @@ export async function POST(req: NextRequest) {
             }
           }
           
-          // Перевіряємо прямі поля (якщо custom_fields - це масив або інша структура)
+          // Перевіряємо прямі поля
           const directChecks = [
             response['instagram-user-name'],
             response.instagram_user_name,
@@ -570,20 +596,19 @@ export async function POST(req: NextRequest) {
               }
             }
           }
-          
-          // Якщо response - це масив custom_fields (якщо отримали через окремий endpoint)
-          if (Array.isArray(response)) {
-            for (const field of response) {
-              if (field && typeof field === 'object') {
-                // Перевіряємо різні структури поля
-                const fieldCode = field.code || field.key || field.field_code;
-                const fieldValue = field.value || field.data || field.content;
-                
-                if (fieldCode === 'instagram-user-name' && fieldValue && typeof fieldValue === 'string') {
-                  const normalized = normalizeInstagram(fieldValue.trim());
-                  if (normalized && !instagramValues.includes(normalized)) {
-                    instagramValues.push(normalized);
-                  }
+        }
+        
+        // Якщо response - це масив custom_fields (якщо отримали через окремий endpoint)
+        if (Array.isArray(response)) {
+          for (const field of response) {
+            if (field && typeof field === 'object') {
+              const title = field.title || field.name || field.label || '';
+              const value = field.value || field.data || field.content || field.text || '';
+              
+              if (/instagram/i.test(title) && value && typeof value === 'string') {
+                const normalized = normalizeInstagram(value.trim());
+                if (normalized && !instagramValues.includes(normalized)) {
+                  instagramValues.push(normalized);
                 }
               }
             }

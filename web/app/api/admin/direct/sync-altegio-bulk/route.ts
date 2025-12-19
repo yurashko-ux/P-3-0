@@ -25,6 +25,19 @@ function isAuthorized(req: NextRequest): boolean {
 
 /**
  * Витягує Instagram username з клієнта Altegio
+ * 
+ * ВАЖЛИВО: Altegio повертає custom_fields як масив об'єктів з структурою:
+ * {
+ *   "custom_fields": [
+ *     {
+ *       "id": 77,
+ *       "title": "Instagram user name",
+ *       "value": "my_instagram"
+ *     }
+ *   ]
+ * }
+ * 
+ * API key "instagram-user-name" використовується тільки для UPDATE, не для READ!
  */
 function extractInstagramFromAltegioClient(client: any): string | null {
   // Логуємо структуру клієнта для діагностики
@@ -34,63 +47,65 @@ function extractInstagramFromAltegioClient(client: any): string | null {
       custom_fields: client.custom_fields,
       custom_fields_type: typeof client.custom_fields,
       custom_fields_isArray: Array.isArray(client.custom_fields),
-      custom_fields_keys: client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields) 
-        ? Object.keys(client.custom_fields) 
-        : [],
+      custom_fields_length: Array.isArray(client.custom_fields) ? client.custom_fields.length : 0,
       all_keys: Object.keys(client),
       full_custom_fields: JSON.stringify(client.custom_fields, null, 2),
     });
   }
 
   // Перевіряємо різні варіанти назв полів Instagram
-  const instagramFields = [
-    // Прямі поля
+  const instagramFields: (string | null)[] = [
+    // Прямі поля (на випадок, якщо вони є)
     client['instagram-user-name'],
     client.instagram_user_name,
     client.instagramUsername,
     client.instagram_username,
     client.instagram,
     client['instagram'],
-    // В custom_fields як об'єкт (найпоширеніший випадок)
-    ...(client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)
-      ? [
-          client.custom_fields['instagram-user-name'],
-          client.custom_fields['Instagram user name'],
-          client.custom_fields['Instagram username'],
-          client.custom_fields.instagram_user_name,
-          client.custom_fields.instagramUsername,
-          client.custom_fields.instagram_username,
-          client.custom_fields.instagram,
-          client.custom_fields['instagram'],
-          // Також перевіряємо всі ключі, які містять "instagram"
-          ...Object.keys(client.custom_fields)
-            .filter(key => /instagram/i.test(key))
-            .map(key => client.custom_fields[key])
-            .filter(val => val && typeof val === 'string'),
-        ]
-      : []
-    ),
-    // Якщо custom_fields - це масив об'єктів
-    ...(Array.isArray(client.custom_fields) 
-      ? client.custom_fields
-          .filter((f: any) => f && typeof f === 'object')
-          .map((f: any) => {
-            // Перевіряємо різні поля в об'єкті custom_field
-            const name = f.name || f.field_name || f.key || f.label || f.code || '';
-            const value = f.value || f.data || f.content || f.text || '';
-            if (/instagram/i.test(name) && value && typeof value === 'string') {
-              return value;
-            }
-            // Також перевіряємо, чи сам об'єкт не містить Instagram в коді
-            if (f.code && /instagram/i.test(f.code) && value && typeof value === 'string') {
-              return value;
-            }
-            return null;
-          })
-          .filter(Boolean)
-      : []
-    ),
   ];
+
+  // ВАЖЛИВО: Altegio повертає custom_fields як МАСИВ об'єктів з title/value
+  if (Array.isArray(client.custom_fields)) {
+    for (const field of client.custom_fields) {
+      if (field && typeof field === 'object') {
+        const title = field.title || field.name || field.label || '';
+        const value = field.value || field.data || field.content || field.text || '';
+        
+        // Шукаємо по title (найпростіший спосіб)
+        // Можливі варіанти: "Instagram user name", "Instagram username", "Instagram", тощо
+        if (value && typeof value === 'string' && /instagram/i.test(title)) {
+          instagramFields.push(value);
+          if (client.id === 176404915) {
+            console.log(`[direct/sync-altegio-bulk] DEBUG: Found Instagram by title "${title}": ${value}`);
+          }
+        }
+        
+        // Також перевіряємо по id (якщо знаємо id поля - 76671 з метаданих)
+        // Але це менш надійно, бо id може відрізнятися для різних компаній
+        if (field.id === 76671 && value && typeof value === 'string') {
+          instagramFields.push(value);
+          if (client.id === 176404915) {
+            console.log(`[direct/sync-altegio-bulk] DEBUG: Found Instagram by field id 76671: ${value}`);
+          }
+        }
+      }
+    }
+  }
+  
+  // Fallback: якщо custom_fields - це об'єкт (старий формат або інша структура)
+  if (client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+    const objFields = [
+      client.custom_fields['instagram-user-name'],
+      client.custom_fields['Instagram user name'],
+      client.custom_fields['Instagram username'],
+      client.custom_fields.instagram_user_name,
+      client.custom_fields.instagramUsername,
+      client.custom_fields.instagram_username,
+      client.custom_fields.instagram,
+      client.custom_fields['instagram'],
+    ];
+    instagramFields.push(...objFields);
+  }
 
   for (const field of instagramFields) {
     if (field && typeof field === 'string' && field.trim()) {
