@@ -4,33 +4,110 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createRoot } from "react-dom/client";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { DirectStats } from "./_components/DirectStats";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
+// Компонент для діагностичного модального вікна з кнопкою копіювання
+function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
+  const handleCopy = () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = message;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    
+    try {
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      
+      if (copied) {
+        // Показуємо тимчасове повідомлення про успіх
+        const successMsg = document.createElement('div');
+        successMsg.textContent = '✅ Скопійовано!';
+        successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 24px; border-radius: 8px; z-index: 10000; font-weight: bold;';
+        document.body.appendChild(successMsg);
+        setTimeout(() => {
+          document.body.removeChild(successMsg);
+        }, 2000);
+      }
+    } catch (err) {
+      document.body.removeChild(textarea);
+      alert('Не вдалося скопіювати. Спробуйте виділити текст вручну.');
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 flex-1 overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-lg">Діагностика</h3>
+            <button
+              className="btn btn-sm btn-circle btn-ghost"
+              onClick={onClose}
+            >
+              ✕
+            </button>
+          </div>
+          <pre className="bg-gray-100 p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap font-mono">
+            {message}
+          </pre>
+        </div>
+        <div className="p-4 border-t flex justify-end gap-2">
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={handleCopy}
+          >
+            📋 Копіювати
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={onClose}
+          >
+            Закрити
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Функція для показу alert з можливістю копіювання
 function showCopyableAlert(message: string) {
-  const textarea = document.createElement('textarea');
-  textarea.value = message;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
+  // Створюємо модальне вікно
+  const modalContainer = document.createElement('div');
+  modalContainer.id = 'diagnostic-modal-container';
+  document.body.appendChild(modalContainer);
   
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
+  // Рендеримо React компонент
+  const root = document.createElement('div');
+  modalContainer.appendChild(root);
   
-  if (copied) {
-    alert(message + '\n\n✅ Текст скопійовано в буфер обміну!');
-  } else {
-    // Якщо не вдалося скопіювати, показуємо prompt
-    const userInput = prompt(message + '\n\nНатисніть Ctrl+C (Cmd+C на Mac) щоб скопіювати:');
-    if (userInput === null) {
-      // Користувач натиснув Cancel
-      return;
-    }
-  }
+  const reactRoot = createRoot(root);
+  reactRoot.render(
+    <DiagnosticModal
+      message={message}
+      onClose={() => {
+        reactRoot.unmount();
+        if (document.body.contains(modalContainer)) {
+          document.body.removeChild(modalContainer);
+        }
+      }}
+    />
+  );
 }
 
 export default function DirectPage() {
