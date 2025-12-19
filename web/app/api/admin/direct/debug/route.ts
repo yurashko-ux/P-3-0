@@ -5,6 +5,104 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead, directKeys } from '@/lib/kv';
 import { getAllDirectClients } from '@/lib/direct-store';
 
+// Копіюємо unwrapKVResponse для використання в debug
+function unwrapKVResponse(data: any, maxAttempts = 20): any {
+  let current: any = data;
+  let attempts = 0;
+  const seenStrings = new Set<string>();
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    if (Array.isArray(current)) {
+      const filtered = current.filter(item => item !== null && item !== undefined);
+      return filtered.length > 0 ? filtered : current;
+    }
+    
+    if (typeof current === 'string') {
+      if (!current.trim()) {
+        return current;
+      }
+      
+      const trimmed = current.trim();
+      
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        if (seenStrings.has(current)) {
+          try {
+            const parsed = JSON.parse(current);
+            if (Array.isArray(parsed)) {
+              return parsed.filter(item => item !== null && item !== undefined);
+            }
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              const extracted = parsed.value ?? parsed.result ?? parsed.data;
+              if (extracted !== undefined && extracted !== null) {
+                current = extracted;
+                seenStrings.delete(current);
+                continue;
+              }
+            }
+            return parsed;
+          } catch {
+            return current;
+          }
+        }
+        
+        seenStrings.add(current);
+        
+        try {
+          const parsed = JSON.parse(current);
+          current = parsed;
+          continue;
+        } catch {
+          return current;
+        }
+      } else {
+        return current;
+      }
+    }
+    
+    if (current && typeof current === 'object' && !Array.isArray(current)) {
+      const extracted = (current as any).value ?? (current as any).result ?? (current as any).data;
+      if (extracted !== undefined && extracted !== null) {
+        current = extracted;
+        if (typeof extracted === 'string') {
+          seenStrings.delete(extracted);
+        }
+        continue;
+      }
+    }
+    
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return current;
+    }
+    
+    break;
+  }
+  
+  if (typeof current === 'string') {
+    const trimmed = current.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(current);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(item => item !== null && item !== undefined);
+        }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const extracted = parsed.value ?? parsed.result ?? parsed.data;
+          if (extracted !== undefined && extracted !== null) {
+            return unwrapKVResponse(extracted, 5);
+          }
+        }
+        return parsed;
+      } catch {
+        // ignore
+      }
+    }
+  }
+  
+  return current;
+}
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
