@@ -67,6 +67,36 @@ export async function POST(req: NextRequest) {
       attempts: [],
     };
 
+    // Спроба 0: GET /clients/{client_id} (згідно з GPT - без /company/{id}/)
+    try {
+      const response0 = await altegioFetch<any>(`/clients/${clientId}`, {
+        method: 'GET',
+      });
+      results.attempts.push({
+        method: 'GET',
+        url: `/clients/${clientId}`,
+        params: 'none (GPT format: /api/v1/clients/{client_id})',
+        success: true,
+        hasCustomFields: !!response0?.custom_fields,
+        customFieldsType: typeof response0?.custom_fields,
+        customFieldsIsArray: Array.isArray(response0?.custom_fields),
+        customFieldsKeys: response0?.custom_fields && typeof response0?.custom_fields === 'object' && !Array.isArray(response0?.custom_fields)
+          ? Object.keys(response0?.custom_fields)
+          : [],
+        response: response0,
+        allKeys: Object.keys(response0 || {}),
+        fullResponse: JSON.stringify(response0, null, 2).substring(0, 1000),
+      });
+    } catch (err) {
+      results.attempts.push({
+        method: 'GET',
+        url: `/clients/${clientId}`,
+        params: 'none (GPT format)',
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Спроба 1: GET /company/{id}/clients/{id} (множина)
     try {
       const response1 = await altegioFetch<any>(`/company/${companyId}/clients/${clientId}`, {
@@ -74,7 +104,7 @@ export async function POST(req: NextRequest) {
       });
       results.attempts.push({
         method: 'GET',
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/company/${companyId}/clients/${clientId}`,
         params: 'none',
         success: true,
         hasCustomFields: !!response1?.custom_fields,
