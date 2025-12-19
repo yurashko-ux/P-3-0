@@ -268,7 +268,8 @@ export async function POST(req: NextRequest) {
             foundOnPage: page,
           });
           
-          // Спроба 5b: Отримати клієнта з include замість fields
+          // Спроба 5b: Отримати клієнта з include замість fields (БЕЗ фільтра, бо фільтр не працює)
+          // Отримаємо клієнта з тієї ж сторінки, де він знайдений
           try {
             const response5b = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
               method: 'POST',
@@ -276,25 +277,26 @@ export async function POST(req: NextRequest) {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                filters: [{ field: 'id', operation: 'eq', value: clientId }],
                 include: ['custom_fields'],
-                page: 1,
-                page_size: 1,
+                page: page, // Використовуємо ту саму сторінку, де знайшли клієнта
+                page_size: 100,
+                order_by: 'id',
+                order_by_direction: 'desc',
               }),
             });
             
-            let clientWithInclude: any = null;
+            let clientsWithInclude: any[] = [];
             if (Array.isArray(response5b)) {
-              clientWithInclude = response5b[0];
+              clientsWithInclude = response5b;
             } else if (response5b?.data && Array.isArray(response5b.data)) {
-              clientWithInclude = response5b.data[0];
+              clientsWithInclude = response5b.data;
             } else if (response5b?.clients && Array.isArray(response5b.clients)) {
-              clientWithInclude = response5b.clients[0];
-            } else if (response5b && typeof response5b === 'object' && !Array.isArray(response5b)) {
-              clientWithInclude = response5b;
+              clientsWithInclude = response5b.clients;
             }
             
-            if (clientWithInclude && clientWithInclude.id === clientId) {
+            const clientWithInclude = clientsWithInclude.find((c: any) => c.id === clientId);
+            
+            if (clientWithInclude) {
               results.attempts.push({
                 method: 'POST',
                 url: `/company/${companyId}/clients/search`,
@@ -330,7 +332,7 @@ export async function POST(req: NextRequest) {
             });
           }
           
-          // Спроба 5c: Отримати клієнта БЕЗ fields (можливо, поверне всі поля включаючи custom_fields)
+          // Спроба 5c: Отримати клієнта БЕЗ fields та БЕЗ include (можливо, поверне всі поля включаючи custom_fields)
           try {
             const response5c = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
               method: 'POST',
@@ -338,24 +340,25 @@ export async function POST(req: NextRequest) {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                filters: [{ field: 'id', operation: 'eq', value: clientId }],
-                page: 1,
-                page_size: 1,
+                page: page, // Використовуємо ту саму сторінку, де знайшли клієнта
+                page_size: 100,
+                order_by: 'id',
+                order_by_direction: 'desc',
               }),
             });
             
-            let clientWithoutFields: any = null;
+            let clientsWithoutFields: any[] = [];
             if (Array.isArray(response5c)) {
-              clientWithoutFields = response5c[0];
+              clientsWithoutFields = response5c;
             } else if (response5c?.data && Array.isArray(response5c.data)) {
-              clientWithoutFields = response5c.data[0];
+              clientsWithoutFields = response5c.data;
             } else if (response5c?.clients && Array.isArray(response5c.clients)) {
-              clientWithoutFields = response5c.clients[0];
-            } else if (response5c && typeof response5c === 'object' && !Array.isArray(response5c)) {
-              clientWithoutFields = response5c;
+              clientsWithoutFields = response5c.clients;
             }
             
-            if (clientWithoutFields && clientWithoutFields.id === clientId) {
+            const clientWithoutFields = clientsWithoutFields.find((c: any) => c.id === clientId);
+            
+            if (clientWithoutFields) {
               results.attempts.push({
                 method: 'POST',
                 url: `/company/${companyId}/clients/search`,
@@ -391,38 +394,58 @@ export async function POST(req: NextRequest) {
             });
           }
           
-          // Спроба 5d: Отримати custom_fields через окремий запит після знаходження клієнта
-          // Можливо, потрібно зробити окремий GET запит для отримання custom_fields значень
+          // Спроба 5d: Отримати клієнта з with замість include
           try {
-            // Спробуємо різні варіанти endpoint для отримання значень custom_fields
-            const customFieldValueEndpoints = [
-              `/company/${companyId}/client/${clientId}/custom_fields`,
-              `/company/${companyId}/clients/${clientId}/custom_fields`,
-              `/custom_fields/client/${companyId}/client/${clientId}`,
-              `/custom_fields/client/${companyId}/${clientId}`,
-            ];
+            const response5d = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                with: ['custom_fields'],
+                page: page,
+                page_size: 100,
+                order_by: 'id',
+                order_by_direction: 'desc',
+              }),
+            });
             
-            for (const endpoint of customFieldValueEndpoints) {
-              try {
-                const customFieldsResponse = await altegioFetch<any>(endpoint, {
-                  method: 'GET',
-                });
-                
-                results.attempts.push({
-                  method: 'GET',
-                  url: endpoint,
-                  params: 'custom_fields values for specific client',
-                  success: true,
-                  response: customFieldsResponse,
-                  note: 'Attempting to get custom field values via separate endpoint',
-                });
-                break; // Якщо знайшли працюючий endpoint
-              } catch (err) {
-                // Продовжуємо спроби
-              }
+            let clientsWithWith: any[] = [];
+            if (Array.isArray(response5d)) {
+              clientsWithWith = response5d;
+            } else if (response5d?.data && Array.isArray(response5d.data)) {
+              clientsWithWith = response5d.data;
+            } else if (response5d?.clients && Array.isArray(response5d.clients)) {
+              clientsWithWith = response5d.clients;
+            }
+            
+            const clientWithWith = clientsWithWith.find((c: any) => c.id === clientId);
+            
+            if (clientWithWith) {
+              results.attempts.push({
+                method: 'POST',
+                url: `/company/${companyId}/clients/search`,
+                params: `with: ['custom_fields'], page ${page}`,
+                success: true,
+                hasCustomFields: !!clientWithWith?.custom_fields,
+                customFieldsType: typeof clientWithWith?.custom_fields,
+                customFieldsIsArray: Array.isArray(clientWithWith?.custom_fields),
+                customFieldsKeys: clientWithWith?.custom_fields && typeof clientWithWith?.custom_fields === 'object' && !Array.isArray(clientWithWith?.custom_fields)
+                  ? Object.keys(clientWithWith?.custom_fields)
+                  : [],
+                response: clientWithWith,
+                allKeys: Object.keys(clientWithWith || {}),
+                fullResponse: JSON.stringify(clientWithWith, null, 2).substring(0, 1000),
+              });
             }
           } catch (err) {
-            // Ігноруємо помилки
+            results.attempts.push({
+              method: 'POST',
+              url: `/company/${companyId}/clients/search`,
+              params: `with: ['custom_fields']`,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
           
           break;
