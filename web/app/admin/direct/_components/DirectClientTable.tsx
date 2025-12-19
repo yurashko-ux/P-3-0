@@ -77,6 +77,11 @@ export function DirectClientTable({
     return status?.color || "#6b7280";
   };
 
+  const getFullName = (client: DirectClient) => {
+    const parts = [client.firstName, client.lastName].filter(Boolean);
+    return parts.length ? parts.join(" ") : "-";
+  };
+
   const handleStatusChange = async (client: DirectClient, newStatusId: string) => {
     await onClientUpdate(client.id, { statusId: newStatusId });
   };
@@ -239,6 +244,9 @@ export function DirectClientTable({
                       Instagram {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    Повне імʼя
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">
                     <button
                       className="hover:underline cursor-pointer"
@@ -362,7 +370,7 @@ export function DirectClientTable({
               <tbody>
                 {clients.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="text-center py-8 text-gray-500">
+                    <td colSpan={13} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -387,6 +395,9 @@ export function DirectClientTable({
                         >
                           @{client.instagramUsername}
                         </a>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {getFullName(client)}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
                         <select
@@ -484,7 +495,7 @@ export function DirectClientTable({
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.paidServiceDate ? formatDate(client.paidServiceDate) : "-"}
+                        {client.signedUpForPaidService && client.paidServiceDate ? formatDate(client.paidServiceDate) : "-"}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <input
