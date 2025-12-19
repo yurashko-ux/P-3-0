@@ -32,23 +32,36 @@ export async function GET(req: NextRequest) {
   try {
     const clients = await getAllDirectClients();
 
+    // Унікалізуємо клієнтів за Instagram, щоб не рахувати дублікати
+    const uniqueMap = new Map<string, typeof clients[number]>();
+    const normalize = (username: string) => username.trim().toLowerCase();
+
+    for (const client of clients) {
+      const key = normalize(client.instagramUsername);
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, client);
+      }
+    }
+
+    const uniqueClients = Array.from(uniqueMap.values());
+
     // Підрахунок по статусах
     const byStatus: Record<string, number> = {};
-    clients.forEach((c) => {
+    uniqueClients.forEach((c) => {
       byStatus[c.statusId] = (byStatus[c.statusId] || 0) + 1;
     });
 
     // Конверсія 1: Запис на консультацію → Візит в салон
-    const consultationsWithMaster = clients.filter(
+    const consultationsWithMaster = uniqueClients.filter(
       (c) => c.statusId === 'consultation' && c.masterId && c.consultationDate
     ).length;
-    const visitedSalon = clients.filter((c) => c.visitedSalon).length;
+    const visitedSalon = uniqueClients.filter((c) => c.visitedSalon).length;
     const conversion1Rate = consultationsWithMaster > 0
       ? (visitedSalon / consultationsWithMaster) * 100
       : 0;
 
     // Конверсія 2: Візит в салон → Запис на платну послугу
-    const signedUpForPaid = clients.filter((c) => c.signedUpForPaidService).length;
+    const signedUpForPaid = uniqueClients.filter((c) => c.signedUpForPaidService).length;
     const conversion2Rate = visitedSalon > 0
       ? (signedUpForPaid / visitedSalon) * 100
       : 0;
@@ -59,7 +72,7 @@ export async function GET(req: NextRequest) {
       : 0;
 
     const stats: DirectStats = {
-      totalClients: clients.length,
+      totalClients: uniqueClients.length,
       byStatus,
       conversion1: {
         consultationsWithMaster,
