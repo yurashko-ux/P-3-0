@@ -77,6 +77,23 @@ export type Campaign = {
   createdAt?: number;
 };
 
+/**
+ * Нормалізація Instagram username
+ * Прибирає @, протоколи, домени, залишає тільки username
+ */
+export function normalizeInstagram(username: string | null | undefined): string | null {
+  if (!username) return null;
+  let normalized = username.trim().toLowerCase();
+  normalized = normalized.replace(/^@+/, ''); // Прибираємо @
+  normalized = normalized.replace(/^https?:\/\//, ''); // Прибираємо протокол
+  normalized = normalized.replace(/^www\./, '');
+  normalized = normalized.replace(/^instagram\.com\//, '');
+  normalized = normalized.split('/')[0]; // Беремо тільки username
+  normalized = normalized.split('?')[0]; // Прибираємо query параметри
+  normalized = normalized.split('#')[0]; // Прибираємо hash
+  return normalized || null;
+}
+
 /** Нормалізація Campaign з будь-якої "сирої" структури. */
 export function normalizeCampaign(input: any): Campaign {
   const v = unwrapDeep<any>(input) ?? {};
