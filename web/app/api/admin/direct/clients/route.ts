@@ -51,6 +51,22 @@ export async function GET(req: NextRequest) {
     const statuses = await getAllDirectStatuses();
     const statusMap = new Map(statuses.map(s => [s.id, s.name]));
 
+    // Завантажуємо майстрів для сортування по імені (якщо потрібно)
+    let masterMap = new Map<string, string>();
+    if (sortBy === 'masterId') {
+      try {
+        const mastersRes = await fetch(`${req.nextUrl.origin}/api/photo-reports/masters`);
+        if (mastersRes.ok) {
+          const mastersData = await mastersRes.json();
+          if (mastersData?.ok && Array.isArray(mastersData.masters)) {
+            masterMap = new Map(mastersData.masters.map((m: any) => [m.id, m.name || '']));
+          }
+        }
+      } catch (err) {
+        console.warn('[direct/clients] Failed to load masters for sorting:', err);
+      }
+    }
+
     // Фільтрація
     if (statusId) {
       clients = clients.filter((c) => c.statusId === statusId);
@@ -73,6 +89,13 @@ export async function GET(req: NextRequest) {
         bVal = statusMap.get(b.statusId) || '';
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
+      }
+      // Спеціальна обробка для майстрів - сортуємо по імені
+      else if (sortBy === 'masterId') {
+        aVal = masterMap.get(a.masterId || '') || a.masterId || '';
+        bVal = masterMap.get(b.masterId || '') || b.masterId || '';
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
       }
       // Обробка дат
       else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate') {
