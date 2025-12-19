@@ -91,6 +91,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { location_id, max_clients, page_size = 100 } = body;
 
+    // Визначаємо, чи це тестовий режим (якщо вказано max_clients)
+    const isTestMode = !!max_clients && max_clients > 0;
+
     // Отримуємо location_id з body або з env
     const companyIdStr = location_id || getEnvValue('ALTEGIO_COMPANY_ID');
     if (!companyIdStr) {
@@ -108,7 +111,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[direct/sync-altegio-bulk] Starting bulk sync from Altegio location_id=${companyId}`);
+    console.log(`[direct/sync-altegio-bulk] Starting bulk sync from Altegio location_id=${companyId}, testMode=${isTestMode}`);
 
     // Отримуємо існуючих Direct клієнтів для перевірки дублікатів
     const existingDirectClients = await getAllDirectClients();
@@ -197,7 +200,22 @@ export async function POST(req: NextRequest) {
           }
 
           // Витягуємо Instagram username
-          const instagramUsername = extractInstagramFromAltegioClient(altegioClient);
+          let instagramUsername = extractInstagramFromAltegioClient(altegioClient);
+          
+          // У тестовому режимі дозволяємо збереження без Instagram username
+          // Генеруємо унікальний username на основі ID або імені
+          if (!instagramUsername && isTestMode) {
+            const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
+            const namePart = firstName || lastName || 'client';
+            // Генеруємо унікальний username: altegio_{id} або altegio_{name}_{id}
+            const nameSlug = (firstName || lastName || 'client')
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '')
+              .substring(0, 10);
+            instagramUsername = `altegio_${nameSlug}_${altegioClient.id}`;
+            console.log(`[direct/sync-altegio-bulk] Generated Instagram username for client ${altegioClient.id}: ${instagramUsername}`);
+          }
+          
           if (!instagramUsername) {
             totalSkippedNoInstagram++;
             continue;
