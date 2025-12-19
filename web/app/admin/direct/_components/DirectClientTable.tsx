@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 
@@ -93,6 +93,22 @@ export function DirectClientTable({
   const handleFieldUpdate = async (client: DirectClient, field: keyof DirectClient, value: any) => {
     await onClientUpdate(client.id, { [field]: value });
   };
+
+  // Унікалізуємо клієнтів за instagramUsername, щоб не було дублів
+  const uniqueClients = useMemo(() => {
+    const map = new Map<string, DirectClient>();
+
+    const normalize = (username: string) => username.trim().toLowerCase();
+
+    for (const client of clients) {
+      const key = normalize(client.instagramUsername);
+      if (!map.has(key)) {
+        map.set(key, client);
+      }
+    }
+
+    return Array.from(map.values());
+  }, [clients]);
 
   return (
     <div className="space-y-4">
@@ -218,6 +234,7 @@ export function DirectClientTable({
             <table className="table table-xs sm:table-sm w-full border-collapse min-w-[800px]">
               <thead>
                 <tr className="bg-base-200">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">№</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
                     <button
                       className="hover:underline cursor-pointer"
@@ -368,14 +385,14 @@ export function DirectClientTable({
                 </tr>
               </thead>
               <tbody>
-                {clients.length === 0 ? (
+                {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-8 text-gray-500">
+                    <td colSpan={14} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
                 ) : (
-                  clients.map((client) => (
+                  uniqueClients.map((client, index) => (
                     <tr
                       key={client.id}
                       style={{
@@ -383,6 +400,7 @@ export function DirectClientTable({
                         borderLeft: `3px solid ${getStatusColor(client.statusId)}`,
                       }}
                     >
+                      <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {formatDate(client.firstContactDate)}
                       </td>
