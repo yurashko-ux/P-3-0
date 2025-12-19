@@ -32,7 +32,11 @@ function extractInstagramFromAltegioClient(client: any): string | null {
     console.log(`[direct/sync-altegio-bulk] DEBUG: Extracting Instagram for client ${client.id}:`, {
       name: client.name,
       custom_fields: client.custom_fields,
-      custom_fields_keys: client.custom_fields ? Object.keys(client.custom_fields) : [],
+      custom_fields_type: typeof client.custom_fields,
+      custom_fields_isArray: Array.isArray(client.custom_fields),
+      custom_fields_keys: client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields) 
+        ? Object.keys(client.custom_fields) 
+        : [],
       all_keys: Object.keys(client),
       full_custom_fields: JSON.stringify(client.custom_fields, null, 2),
     });
@@ -47,24 +51,38 @@ function extractInstagramFromAltegioClient(client: any): string | null {
     client.instagram_username,
     client.instagram,
     client['instagram'],
-    // В custom_fields (різні варіанти назв)
-    client.custom_fields?.['instagram-user-name'],
-    client.custom_fields?.['Instagram user name'],
-    client.custom_fields?.['Instagram username'],
-    client.custom_fields?.instagram_user_name,
-    client.custom_fields?.instagramUsername,
-    client.custom_fields?.instagram_username,
-    client.custom_fields?.instagram,
-    client.custom_fields?.['instagram'],
+    // В custom_fields як об'єкт (найпоширеніший випадок)
+    ...(client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)
+      ? [
+          client.custom_fields['instagram-user-name'],
+          client.custom_fields['Instagram user name'],
+          client.custom_fields['Instagram username'],
+          client.custom_fields.instagram_user_name,
+          client.custom_fields.instagramUsername,
+          client.custom_fields.instagram_username,
+          client.custom_fields.instagram,
+          client.custom_fields['instagram'],
+          // Також перевіряємо всі ключі, які містять "instagram"
+          ...Object.keys(client.custom_fields)
+            .filter(key => /instagram/i.test(key))
+            .map(key => client.custom_fields[key])
+            .filter(val => val && typeof val === 'string'),
+        ]
+      : []
+    ),
     // Якщо custom_fields - це масив об'єктів
     ...(Array.isArray(client.custom_fields) 
       ? client.custom_fields
           .filter((f: any) => f && typeof f === 'object')
           .map((f: any) => {
             // Перевіряємо різні поля в об'єкті custom_field
-            const name = f.name || f.field_name || f.key || f.label || '';
-            const value = f.value || f.data || f.content || '';
+            const name = f.name || f.field_name || f.key || f.label || f.code || '';
+            const value = f.value || f.data || f.content || f.text || '';
             if (/instagram/i.test(name) && value && typeof value === 'string') {
+              return value;
+            }
+            // Також перевіряємо, чи сам об'єкт не містить Instagram в коді
+            if (f.code && /instagram/i.test(f.code) && value && typeof value === 'string') {
               return value;
             }
             return null;
@@ -244,8 +262,50 @@ export async function POST(req: NextRequest) {
             break;
           }
 
+          // Детальне логування для проблемного клієнта
+          if (altegioClient.id === 176404915) {
+            console.log(`[direct/sync-altegio-bulk] DEBUG: Full client data for ${altegioClient.id}:`, {
+              id: altegioClient.id,
+              name: altegioClient.name,
+              allKeys: Object.keys(altegioClient),
+              custom_fields: altegioClient.custom_fields,
+              custom_fields_type: typeof altegioClient.custom_fields,
+              custom_fields_isArray: Array.isArray(altegioClient.custom_fields),
+              fullClient: JSON.stringify(altegioClient, null, 2),
+            });
+          }
+
           // Витягуємо Instagram username
           let instagramUsername = extractInstagramFromAltegioClient(altegioClient);
+          
+          // Якщо Instagram не знайдено і це проблемний клієнт, спробуємо отримати детальну інформацію
+          if (!instagramUsername && altegioClient.id === 176404915) {
+            console.log(`[direct/sync-altegio-bulk] DEBUG: Instagram not found in search response, trying detailed client fetch...`);
+            try {
+              const detailedClient = await altegioFetch<any>(
+                `/company/${companyId}/client/${altegioClient.id}`,
+                {
+                  method: 'GET',
+                }
+              );
+              console.log(`[direct/sync-altegio-bulk] DEBUG: Detailed client data for ${altegioClient.id}:`, {
+                id: detailedClient?.id,
+                name: detailedClient?.name,
+                allKeys: detailedClient ? Object.keys(detailedClient) : [],
+                custom_fields: detailedClient?.custom_fields,
+                custom_fields_type: typeof detailedClient?.custom_fields,
+                fullClient: JSON.stringify(detailedClient, null, 2),
+              });
+              
+              // Спробуємо витягнути Instagram з детальної інформації
+              instagramUsername = extractInstagramFromAltegioClient(detailedClient);
+              if (instagramUsername) {
+                console.log(`[direct/sync-altegio-bulk] DEBUG: Found Instagram in detailed fetch: ${instagramUsername}`);
+              }
+            } catch (err) {
+              console.error(`[direct/sync-altegio-bulk] DEBUG: Failed to fetch detailed client ${altegioClient.id}:`, err);
+            }
+          }
           
           // У тестовому режимі дозволяємо збереження без Instagram username
           // Генеруємо унікальний username на основі ID або імені
