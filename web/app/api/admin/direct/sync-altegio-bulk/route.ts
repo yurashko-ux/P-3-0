@@ -229,11 +229,27 @@ export async function POST(req: NextRequest) {
           // Перевіряємо на дублікати
           const normalizedInstagram = normalizeInstagram(instagramUsername);
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
+          let foundByInstagram = !!existingClientId;
           
           // Якщо не знайдено по Instagram, шукаємо по altegioClientId
           // (це важливо для клієнтів, які раніше були без Instagram username)
           if (!existingClientId && altegioClient.id) {
             existingClientId = existingAltegioIdMap.get(altegioClient.id);
+          }
+          
+          // Якщо знайдено по Instagram, але altegioClientId не співпадає,
+          // це може бути інший клієнт з таким же Instagram - перевіряємо
+          if (foundByInstagram && existingClientId && altegioClient.id) {
+            const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
+            // Якщо знайдений клієнт має інший altegioClientId, шукаємо по altegioClientId
+            if (existingClient && existingClient.altegioClientId && existingClient.altegioClientId !== altegioClient.id) {
+              const clientByAltegioId = existingAltegioIdMap.get(altegioClient.id);
+              if (clientByAltegioId) {
+                // Знайдено клієнта по altegioClientId - використовуємо його
+                existingClientId = clientByAltegioId;
+                foundByInstagram = false;
+              }
+            }
           }
 
           // Витягуємо ім'я
@@ -250,11 +266,16 @@ export async function POST(req: NextRequest) {
               // Оновлюємо Instagram username якщо:
               // 1. Він змінився
               // 2. Або старий був згенерований (починається з "altegio_"), а новий - справжній
+              // 3. Або клієнт знайдений по altegioClientId (не по Instagram) - тоді завжди оновлюємо
               const isOldGenerated = existingNormalized && existingNormalized.startsWith('altegio_');
               const isNewReal = currentNormalized && !currentNormalized.startsWith('altegio_');
-              const shouldUpdateInstagram = existingNormalized !== currentNormalized || (isOldGenerated && isNewReal);
+              const shouldUpdateInstagram = 
+                existingNormalized !== currentNormalized || 
+                (isOldGenerated && isNewReal) ||
+                !foundByInstagram; // Якщо знайдено по altegioClientId, завжди оновлюємо Instagram
               
               console.log(`[direct/sync-altegio-bulk] Updating client ${existingClientId}:`, {
+                foundByInstagram,
                 existingInstagram: existingClient.instagramUsername,
                 newInstagram: instagramUsername,
                 existingNormalized,
@@ -262,6 +283,8 @@ export async function POST(req: NextRequest) {
                 isOldGenerated,
                 isNewReal,
                 shouldUpdateInstagram,
+                altegioClientId: altegioClient.id,
+                existingAltegioClientId: existingClient.altegioClientId,
               });
               
               const updated: typeof existingClient = {
