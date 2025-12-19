@@ -228,7 +228,7 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Джерело</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Instagram</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Статус</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">Статус</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Майстер</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дата консультації</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Прийшов</th>
