@@ -55,13 +55,8 @@ export async function GET(req: NextRequest) {
     let masterMap = new Map<string, string>();
     if (sortBy === 'masterId') {
       try {
-        const mastersRes = await fetch(`${req.nextUrl.origin}/api/photo-reports/masters`);
-        if (mastersRes.ok) {
-          const mastersData = await mastersRes.json();
-          if (mastersData?.ok && Array.isArray(mastersData.masters)) {
-            masterMap = new Map(mastersData.masters.map((m: any) => [m.id, m.name || '']));
-          }
-        }
+        const masters = getMasters();
+        masterMap = new Map(masters.map((m: any) => [m.id, m.name || '']));
       } catch (err) {
         console.warn('[direct/clients] Failed to load masters for sorting:', err);
       }
