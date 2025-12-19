@@ -374,16 +374,14 @@ export function DirectClientTable({
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
-                        <div className="tooltip tooltip-top w-full" data-tip={client.comment || "Коментар..."}>
-                          <input
-                            type="text"
-                            className="input input-xs input-bordered w-full min-w-[180px]"
-                            placeholder="Коментар..."
-                            value={client.comment || ""}
-                            onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
-                            title={client.comment || undefined}
-                          />
-                        </div>
+                        <input
+                          type="text"
+                          className="input input-xs input-bordered w-full min-w-[180px]"
+                          placeholder="Коментар..."
+                          value={client.comment || ""}
+                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
+                          title={client.comment || "Коментар..."}
+                        />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <button
