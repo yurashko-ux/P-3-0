@@ -13,32 +13,45 @@ import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from 
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
-  const handleCopy = () => {
-    const textarea = document.createElement('textarea');
-    textarea.value = message;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    
+  const handleCopy = async () => {
     try {
-      const copied = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      
-      if (copied) {
-        // Показуємо тимчасове повідомлення про успіх
-        const successMsg = document.createElement('div');
-        successMsg.textContent = '✅ Скопійовано!';
-        successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 24px; border-radius: 8px; z-index: 10000; font-weight: bold;';
-        document.body.appendChild(successMsg);
-        setTimeout(() => {
-          document.body.removeChild(successMsg);
-        }, 2000);
+      // Використовуємо сучасний Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(message);
+        showSuccessMessage('✅ Скопійовано!');
+      } else {
+        // Fallback для старих браузерів
+        const textarea = document.createElement('textarea');
+        textarea.value = message;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        
+        if (copied) {
+          showSuccessMessage('✅ Скопійовано!');
+        } else {
+          showSuccessMessage('❌ Не вдалося скопіювати');
+        }
       }
     } catch (err) {
-      document.body.removeChild(textarea);
-      alert('Не вдалося скопіювати. Спробуйте виділити текст вручну.');
+      showSuccessMessage('❌ Помилка копіювання');
     }
+  };
+
+  const showSuccessMessage = (text: string) => {
+    const successMsg = document.createElement('div');
+    successMsg.textContent = text;
+    successMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 12px 24px; border-radius: 8px; z-index: 10000; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+    document.body.appendChild(successMsg);
+    setTimeout(() => {
+      if (document.body.contains(successMsg)) {
+        document.body.removeChild(successMsg);
+      }
+    }, 2000);
   };
 
   return (
