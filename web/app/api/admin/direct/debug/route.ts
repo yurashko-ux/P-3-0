@@ -146,7 +146,21 @@ export async function GET(req: NextRequest) {
         try {
           const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(id));
           if (clientData) {
-            const client = typeof clientData === 'string' ? JSON.parse(clientData) : clientData;
+            // Використовуємо unwrapKVResponse для правильного розпакування
+            const unwrapped = unwrapKVResponse(clientData);
+            
+            // Після розгортання, якщо це рядок, парсимо як JSON
+            let client: any;
+            if (typeof unwrapped === 'string') {
+              try {
+                client = JSON.parse(unwrapped);
+              } catch {
+                client = unwrapped;
+              }
+            } else {
+              client = unwrapped;
+            }
+            
             sampleClients.push({
               id: client?.id,
               instagramUsername: client?.instagramUsername,
@@ -183,7 +197,21 @@ export async function GET(req: NextRequest) {
         // Якщо знайдено, перевіряємо чи клієнт в основному індексі
         if (idData) {
           try {
-            const clientId = typeof idData === 'string' ? JSON.parse(idData) : idData;
+            // Використовуємо unwrapKVResponse для правильного розпакування
+            const unwrappedIdData = unwrapKVResponse(idData);
+            let clientId: string;
+            if (typeof unwrappedIdData === 'string') {
+              // Може бути подвійно обгорнутий JSON рядок
+              try {
+                const parsed = JSON.parse(unwrappedIdData);
+                clientId = typeof parsed === 'string' ? parsed : String(parsed);
+              } catch {
+                clientId = unwrappedIdData;
+              }
+            } else {
+              clientId = String(unwrappedIdData);
+            }
+            
             const clientData = await kvRead.getRaw(directKeys.CLIENT_ITEM(clientId));
             if (clientData) {
               instagramIndexSample.push({
