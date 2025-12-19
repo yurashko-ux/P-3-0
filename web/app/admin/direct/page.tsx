@@ -253,6 +253,54 @@ export default function DirectPage() {
             🔗 Синхронізувати з KeyCRM
           </button>
           <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              if (!confirm('Завантажити клієнтів з Altegio? Це може зайняти деякий час.')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const testMode = confirm('Тестовий режим (50 клієнтів)?\n\nOK - тест на 50 клієнтах\nСкасувати - повна синхронізація');
+                const syncParams = testMode 
+                  ? { max_clients: 50, page_size: 50 } 
+                  : { page_size: 100 }; // Повна синхронізація
+                
+                const res = await fetch('/api/admin/direct/sync-altegio-bulk', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(syncParams),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = data.message || `Синхронізовано: ${data.stats.totalCreated} створено, ${data.stats.totalUpdated} оновлено`;
+                  alert(`${message}\n\nОброблено: ${data.stats.totalProcessed} клієнтів\nПропущено (немає Instagram): ${data.stats.totalSkippedNoInstagram}`);
+                  
+                  // Затримка перед оновленням, щоб KV встиг оновитися (eventual consistency)
+                  for (let attempt = 1; attempt <= 3; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 2000)); // 2s, 4s, 6s
+                    await loadData();
+                    
+                    const checkRes = await fetch('/api/admin/direct/clients');
+                    const checkData = await checkRes.json();
+                    if (checkData.ok && checkData.clients && checkData.clients.length > 0) {
+                      console.log(`[direct] Clients loaded after ${attempt} attempt(s)`);
+                      break;
+                    }
+                  }
+                } else {
+                  alert(`Помилка: ${data.error}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+          >
+            📥 Завантажити з Altegio
+          </button>
+          <button
             className="btn btn-sm btn-ghost"
             onClick={async () => {
               try {
