@@ -267,6 +267,100 @@ export async function POST(req: NextRequest) {
             totalClientsInResponse: clients.length,
             foundOnPage: page,
           });
+          
+          // Спроба 5b: Отримати клієнта з include замість fields
+          try {
+            const response5b = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                filters: [{ field: 'id', operation: 'eq', value: clientId }],
+                include: ['custom_fields'],
+                page: 1,
+                page_size: 1,
+              }),
+            });
+            
+            let clientWithInclude: any = null;
+            if (Array.isArray(response5b)) {
+              clientWithInclude = response5b[0];
+            } else if (response5b?.data && Array.isArray(response5b.data)) {
+              clientWithInclude = response5b.data[0];
+            } else if (response5b?.clients && Array.isArray(response5b.clients)) {
+              clientWithInclude = response5b.clients[0];
+            } else if (response5b && typeof response5b === 'object' && !Array.isArray(response5b)) {
+              clientWithInclude = response5b;
+            }
+            
+            if (clientWithInclude && clientWithInclude.id === clientId) {
+              results.attempts.push({
+                method: 'POST',
+                url: `/company/${companyId}/clients/search`,
+                params: `filters + include: ['custom_fields']`,
+                success: true,
+                hasCustomFields: !!clientWithInclude?.custom_fields,
+                customFieldsType: typeof clientWithInclude?.custom_fields,
+                customFieldsIsArray: Array.isArray(clientWithInclude?.custom_fields),
+                customFieldsKeys: clientWithInclude?.custom_fields && typeof clientWithInclude?.custom_fields === 'object' && !Array.isArray(clientWithInclude?.custom_fields)
+                  ? Object.keys(clientWithInclude?.custom_fields)
+                  : [],
+                response: clientWithInclude,
+                allKeys: Object.keys(clientWithInclude || {}),
+                fullResponse: JSON.stringify(clientWithInclude, null, 2).substring(0, 1000),
+              });
+            }
+          } catch (err) {
+            // Ігноруємо помилки
+          }
+          
+          // Спроба 5c: Отримати клієнта БЕЗ fields (можливо, поверне всі поля включаючи custom_fields)
+          try {
+            const response5c = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                filters: [{ field: 'id', operation: 'eq', value: clientId }],
+                page: 1,
+                page_size: 1,
+              }),
+            });
+            
+            let clientWithoutFields: any = null;
+            if (Array.isArray(response5c)) {
+              clientWithoutFields = response5c[0];
+            } else if (response5c?.data && Array.isArray(response5c.data)) {
+              clientWithoutFields = response5c.data[0];
+            } else if (response5c?.clients && Array.isArray(response5c.clients)) {
+              clientWithoutFields = response5c.clients[0];
+            } else if (response5c && typeof response5c === 'object' && !Array.isArray(response5c)) {
+              clientWithoutFields = response5c;
+            }
+            
+            if (clientWithoutFields && clientWithoutFields.id === clientId) {
+              results.attempts.push({
+                method: 'POST',
+                url: `/company/${companyId}/clients/search`,
+                params: `filters, NO fields parameter (should return all fields)`,
+                success: true,
+                hasCustomFields: !!clientWithoutFields?.custom_fields,
+                customFieldsType: typeof clientWithoutFields?.custom_fields,
+                customFieldsIsArray: Array.isArray(clientWithoutFields?.custom_fields),
+                customFieldsKeys: clientWithoutFields?.custom_fields && typeof clientWithoutFields?.custom_fields === 'object' && !Array.isArray(clientWithoutFields?.custom_fields)
+                  ? Object.keys(clientWithoutFields?.custom_fields)
+                  : [],
+                response: clientWithoutFields,
+                allKeys: Object.keys(clientWithoutFields || {}),
+                fullResponse: JSON.stringify(clientWithoutFields, null, 2).substring(0, 1000),
+              });
+            }
+          } catch (err) {
+            // Ігноруємо помилки
+          }
+          
           break;
         }
         
@@ -305,6 +399,8 @@ export async function POST(req: NextRequest) {
       `/custom_fields/client/${clientId}`,
       `/custom_fields/clients/${clientId}`,
       `/company/${companyId}/custom_fields/client/${clientId}`,
+      `/custom_fields/client/${companyId}/values/${clientId}`,
+      `/custom_fields/client/${companyId}/${clientId}`,
     ];
     
     for (const endpoint of customFieldEndpoints) {
@@ -324,6 +420,29 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         // Продовжуємо спроби
       }
+    }
+    
+    // Спроба 6b: Можливо, потрібно отримати значення через POST з client_id
+    try {
+      const customFieldsValuesPost = await altegioFetch<any>(`/custom_fields/client/${companyId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+        }),
+      });
+      results.attempts.push({
+        method: 'POST',
+        url: `/custom_fields/client/${companyId}`,
+        params: `body: { client_id: ${clientId} }`,
+        success: true,
+        response: customFieldsValuesPost,
+        note: 'Attempting to get custom field values via POST with client_id',
+      });
+    } catch (err) {
+      // Ігноруємо помилки
     }
 
     // Спроба 7: Отримати список custom_fields метаданих для location (для перевірки структури)
