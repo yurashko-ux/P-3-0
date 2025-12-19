@@ -466,7 +466,7 @@ export function DirectClientTable({
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.visitDate ? formatDate(client.visitDate) : "-"}
+                        {client.visitedSalon && client.visitDate ? formatDate(client.visitDate) : "-"}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <input
