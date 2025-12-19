@@ -391,6 +391,35 @@ export default function DirectPage() {
           >
             📥 Завантажити з Altegio
           </button>
+
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              const clientId = prompt('Введіть Altegio Client ID для тестування (наприклад, 176404915):');
+              if (!clientId) return;
+              
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/test-altegio-client', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ client_id: clientId }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  showCopyableAlert(JSON.stringify(data, null, 2));
+                } else {
+                  showCopyableAlert(`Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+          >
+            🧪 Тест клієнта Altegio
+          </button>
           <button
             className="btn btn-sm btn-ghost"
             onClick={async () => {
