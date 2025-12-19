@@ -9,6 +9,30 @@ import { StatusManager } from "./_components/StatusManager";
 import { DirectStats } from "./_components/DirectStats";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
+// Функція для показу alert з можливістю копіювання
+function showCopyableAlert(message: string) {
+  const textarea = document.createElement('textarea');
+  textarea.value = message;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  
+  if (copied) {
+    alert(message + '\n\n✅ Текст скопійовано в буфер обміну!');
+  } else {
+    // Якщо не вдалося скопіювати, показуємо prompt
+    const userInput = prompt(message + '\n\nНатисніть Ctrl+C (Cmd+C на Mac) щоб скопіювати:');
+    if (userInput === null) {
+      // Користувач натиснув Cancel
+      return;
+    }
+  }
+}
+
 export default function DirectPage() {
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
@@ -235,7 +259,8 @@ export default function DirectPage() {
                 const res = await fetch('/api/admin/direct/debug');
                 const data = await res.json();
                 console.log('Direct Debug Info:', data);
-                alert(`Діагностика:\nІндекс: ${data.index?.length || 0} клієнтів\nЗавантажено: ${data.allClientsCount || 0} клієнтів\n\nДеталі в консолі (F12)`);
+                const message = `Діагностика:\nІндекс: ${data.index?.length || 0} клієнтів\nЗавантажено: ${data.allClientsCount || 0} клієнтів\n\nДеталі в консолі (F12)\n\nJSON:\n${JSON.stringify(data, null, 2)}`;
+                showCopyableAlert(message);
               } catch (err) {
                 alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
               }
@@ -252,7 +277,8 @@ export default function DirectPage() {
                 console.log('KV Test Results:', data);
                 const test = data.results?.writeTest;
                 const index = data.results?.index;
-                alert(`Тест KV:\nЗапис: ${test?.success ? '✅' : '❌'}\nІндекс існує: ${index?.exists ? '✅' : '❌'}\nТип індексу: ${index?.type}\n\nДеталі в консолі (F12)`);
+                const message = `Тест KV:\nЗапис: ${test?.success ? '✅' : '❌'}\nІндекс існує: ${index?.exists ? '✅' : '❌'}\nТип індексу: ${index?.type}\n\nДеталі в консолі (F12)\n\nJSON:\n${JSON.stringify(data, null, 2)}`;
+                showCopyableAlert(message);
               } catch (err) {
                 alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
               }
@@ -269,10 +295,11 @@ export default function DirectPage() {
                 const res = await fetch('/api/admin/direct/recover-client', { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
-                  alert(`✅ ${data.message}\n\nЗнайдено через getAllDirectClients: ${data.stats.foundViaGetAll}\nЗнайдено через Instagram index: ${data.stats.foundViaInstagram}\nВсього в індексі: ${data.stats.totalInIndex}`);
+                  const message = `✅ ${data.message}\n\nЗнайдено через getAllDirectClients: ${data.stats.foundViaGetAll}\nЗнайдено через Instagram index: ${data.stats.foundViaInstagram}\nВсього в індексі: ${data.stats.totalInIndex}\n\nJSON:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
                   await loadData();
                 } else {
-                  alert(`❌ ${data.message || data.error || 'Помилка відновлення'}`);
+                  showCopyableAlert(`❌ ${data.message || data.error || 'Помилка відновлення'}\n\nJSON:\n${JSON.stringify(data, null, 2)}`);
                 }
               } catch (err) {
                 alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
