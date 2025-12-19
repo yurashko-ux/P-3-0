@@ -67,9 +67,9 @@ export async function POST(req: NextRequest) {
       attempts: [],
     };
 
-    // Спроба 1: GET /company/{id}/client/{id} без параметрів
+    // Спроба 1: GET /company/{id}/clients/{id} (множина)
     try {
-      const response1 = await altegioFetch<any>(`/company/${companyId}/client/${clientId}`, {
+      const response1 = await altegioFetch<any>(`/company/${companyId}/clients/${clientId}`, {
         method: 'GET',
       });
       results.attempts.push({
@@ -88,24 +88,24 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       results.attempts.push({
         method: 'GET',
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/company/${companyId}/clients/${clientId}`,
         params: 'none',
         success: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }
 
-    // Спроба 2: GET з fields[]=custom_fields
+    // Спроба 2: GET /company/{id}/clients/{id} з fields[]=custom_fields
     try {
       const response2 = await altegioFetch<any>(
-        `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
+        `/company/${companyId}/clients/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
         {
           method: 'GET',
         }
       );
       results.attempts.push({
         method: 'GET',
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/company/${companyId}/clients/${clientId}`,
         params: 'fields[]=custom_fields',
         success: true,
         hasCustomFields: !!response2?.custom_fields,
@@ -119,24 +119,24 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       results.attempts.push({
         method: 'GET',
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/company/${companyId}/clients/${clientId}`,
         params: 'fields[]=custom_fields',
         success: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }
 
-    // Спроба 3: GET з include[]=custom_fields
+    // Спроба 3: GET /company/{id}/clients/{id} з include[]=custom_fields
     try {
       const response3 = await altegioFetch<any>(
-        `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields`,
+        `/company/${companyId}/clients/${clientId}?include[]=custom_fields&with[]=custom_fields`,
         {
           method: 'GET',
         }
       );
       results.attempts.push({
         method: 'GET',
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/company/${companyId}/clients/${clientId}`,
         params: 'include[]=custom_fields',
         success: true,
         hasCustomFields: !!response3?.custom_fields,
@@ -150,27 +150,29 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       results.attempts.push({
         method: 'GET',
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/company/${companyId}/clients/${clientId}`,
         params: 'include[]=custom_fields',
         success: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }
 
-    // Спроба 4: POST /clients/search з фільтром по client_id
-    try {
-      const response4 = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filters: [{ field: 'id', operation: 'equals', value: clientId }],
-          fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
-          page: 1,
-          page_size: 1,
-        }),
-      });
+    // Спроба 4: POST /clients/search з фільтром по client_id (різні операції)
+    const filterOperations = ['eq', '=', '==', 'equals'];
+    for (const operation of filterOperations) {
+      try {
+        const response4 = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filters: [{ field: 'id', operation, value: clientId }],
+            fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+            page: 1,
+            page_size: 1,
+          }),
+        });
       
       let clientFromSearch: any = null;
       if (Array.isArray(response4)) {
@@ -183,30 +185,86 @@ export async function POST(req: NextRequest) {
         clientFromSearch = response4;
       }
 
+        results.attempts.push({
+          method: 'POST',
+          url: `/company/${companyId}/clients/search`,
+          params: `filters (operation: ${operation}) + fields[]=custom_fields`,
+          success: true,
+          hasCustomFields: !!clientFromSearch?.custom_fields,
+          customFieldsType: typeof clientFromSearch?.custom_fields,
+          customFieldsIsArray: Array.isArray(clientFromSearch?.custom_fields),
+          customFieldsKeys: clientFromSearch?.custom_fields && typeof clientFromSearch?.custom_fields === 'object' && !Array.isArray(clientFromSearch?.custom_fields)
+            ? Object.keys(clientFromSearch?.custom_fields)
+            : [],
+          response: clientFromSearch || response4,
+        });
+        break; // Якщо успішно, не пробуємо інші операції
+      } catch (err) {
+        if (operation === filterOperations[filterOperations.length - 1]) {
+          // Тільки для останньої операції додаємо помилку
+          results.attempts.push({
+            method: 'POST',
+            url: `/company/${companyId}/clients/search`,
+            params: `filters (operation: ${operation}) + fields[]=custom_fields`,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    // Спроба 5: POST /clients/search без фільтрів, але з пагінацією (можливо, клієнт на першій сторінці)
+    try {
+      const response5 = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+          page: 1,
+          page_size: 100,
+          order_by: 'id',
+          order_by_direction: 'desc',
+        }),
+      });
+      
+      let clients: any[] = [];
+      if (Array.isArray(response5)) {
+        clients = response5;
+      } else if (response5?.data && Array.isArray(response5.data)) {
+        clients = response5.data;
+      } else if (response5?.clients && Array.isArray(response5.clients)) {
+        clients = response5.clients;
+      }
+      
+      const foundClient = clients.find((c: any) => c.id === clientId);
+      
       results.attempts.push({
         method: 'POST',
         url: `/company/${companyId}/clients/search`,
-        params: 'filters + fields[]=custom_fields',
-        success: true,
-        hasCustomFields: !!clientFromSearch?.custom_fields,
-        customFieldsType: typeof clientFromSearch?.custom_fields,
-        customFieldsIsArray: Array.isArray(clientFromSearch?.custom_fields),
-        customFieldsKeys: clientFromSearch?.custom_fields && typeof clientFromSearch?.custom_fields === 'object' && !Array.isArray(clientFromSearch?.custom_fields)
-          ? Object.keys(clientFromSearch?.custom_fields)
+        params: 'no filters, page 1, page_size 100',
+        success: !!foundClient,
+        hasCustomFields: !!foundClient?.custom_fields,
+        customFieldsType: typeof foundClient?.custom_fields,
+        customFieldsIsArray: Array.isArray(foundClient?.custom_fields),
+        customFieldsKeys: foundClient?.custom_fields && typeof foundClient?.custom_fields === 'object' && !Array.isArray(foundClient?.custom_fields)
+          ? Object.keys(foundClient?.custom_fields)
           : [],
-        response: clientFromSearch || response4,
+        response: foundClient || null,
+        totalClientsInResponse: clients.length,
       });
     } catch (err) {
       results.attempts.push({
         method: 'POST',
         url: `/company/${companyId}/clients/search`,
-        params: 'filters + fields[]=custom_fields',
+        params: 'no filters, page 1',
         success: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }
 
-    // Спроба 5: Отримати список custom_fields для location
+    // Спроба 6: Отримати список custom_fields для location
     try {
       // Спробуємо різні field_category
       const fieldCategories = ['client', 'clients', 'client_fields'];
