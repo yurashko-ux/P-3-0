@@ -2,7 +2,7 @@
 // API endpoint для роботи з Direct клієнтами
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
+import { getAllDirectClients, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -47,6 +47,10 @@ export async function GET(req: NextRequest) {
     let clients = await getAllDirectClients();
     console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
 
+    // Завантажуємо статуси для сортування по назві
+    const statuses = await getAllDirectStatuses();
+    const statusMap = new Map(statuses.map(s => [s.id, s.name]));
+
     // Фільтрація
     if (statusId) {
       clients = clients.filter((c) => c.statusId === statusId);
@@ -63,8 +67,15 @@ export async function GET(req: NextRequest) {
       let aVal: any = a[sortBy as keyof DirectClient];
       let bVal: any = b[sortBy as keyof DirectClient];
 
+      // Спеціальна обробка для статусів - сортуємо по назві
+      if (sortBy === 'statusId') {
+        aVal = statusMap.get(a.statusId) || '';
+        bVal = statusMap.get(b.statusId) || '';
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
       // Обробка дат
-      if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate') {
+      else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate') {
         aVal = aVal ? new Date(aVal).getTime() : 0;
         bVal = bVal ? new Date(bVal).getTime() : 0;
       }
