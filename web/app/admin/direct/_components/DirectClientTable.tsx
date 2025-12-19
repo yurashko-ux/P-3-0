@@ -272,9 +272,9 @@ export function DirectClientTable({
                           @{client.instagramUsername}
                         </a>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
+                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
                         <select
-                          className="select select-xs select-bordered w-full max-w-[120px]"
+                          className="select select-xs select-bordered w-full min-w-[160px]"
                           value={client.statusId}
                           onChange={(e) => handleStatusChange(client, e.target.value)}
                           style={{ borderColor: getStatusColor(client.statusId) }}
@@ -373,14 +373,17 @@ export function DirectClientTable({
                           onChange={(e) => handleFieldUpdate(client, "signupAdmin", e.target.value || undefined)}
                         />
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <input
-                          type="text"
-                          className="input input-xs input-bordered w-full max-w-[150px]"
-                          placeholder="Коментар..."
-                          value={client.comment || ""}
-                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
-                        />
+                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
+                        <div className="tooltip tooltip-top w-full" data-tip={client.comment || "Коментар..."}>
+                          <input
+                            type="text"
+                            className="input input-xs input-bordered w-full min-w-[180px]"
+                            placeholder="Коментар..."
+                            value={client.comment || ""}
+                            onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
+                            title={client.comment || undefined}
+                          />
+                        </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <button
