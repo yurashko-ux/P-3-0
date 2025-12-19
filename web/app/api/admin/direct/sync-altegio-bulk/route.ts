@@ -116,10 +116,15 @@ export async function POST(req: NextRequest) {
     // Отримуємо існуючих Direct клієнтів для перевірки дублікатів
     const existingDirectClients = await getAllDirectClients();
     const existingInstagramMap = new Map<string, string>(); // instagram -> clientId
+    const existingAltegioIdMap = new Map<number, string>(); // altegioClientId -> clientId
     for (const client of existingDirectClients) {
       const normalized = normalizeInstagram(client.instagramUsername);
       if (normalized) {
         existingInstagramMap.set(normalized, client.id);
+      }
+      // Також індексуємо по altegioClientId для оновлення існуючих клієнтів
+      if (client.altegioClientId) {
+        existingAltegioIdMap.set(client.altegioClientId, client.id);
       }
     }
 
@@ -223,7 +228,13 @@ export async function POST(req: NextRequest) {
 
           // Перевіряємо на дублікати
           const normalizedInstagram = normalizeInstagram(instagramUsername);
-          const existingClientId = existingInstagramMap.get(normalizedInstagram);
+          let existingClientId = existingInstagramMap.get(normalizedInstagram);
+          
+          // Якщо не знайдено по Instagram, шукаємо по altegioClientId
+          // (це важливо для клієнтів, які раніше були без Instagram username)
+          if (!existingClientId && altegioClient.id) {
+            existingClientId = existingAltegioIdMap.get(altegioClient.id);
+          }
 
           // Витягуємо ім'я
           const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
@@ -232,9 +243,16 @@ export async function POST(req: NextRequest) {
             // Оновлюємо існуючого клієнта
             const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
             if (existingClient) {
+              // Якщо Instagram username змінився (наприклад, був згенерований, тепер справжній),
+              // оновлюємо його
+              const existingNormalized = normalizeInstagram(existingClient.instagramUsername);
+              const shouldUpdateInstagram = existingNormalized !== normalizedInstagram;
+              
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: altegioClient.id,
+                // Оновлюємо Instagram username, якщо він змінився (наприклад, з згенерованого на справжній)
+                ...(shouldUpdateInstagram && { instagramUsername: normalizedInstagram }),
                 ...(firstName && !existingClient.firstName && { firstName }),
                 ...(lastName && !existingClient.lastName && { lastName }),
                 updatedAt: new Date().toISOString(),
@@ -242,6 +260,15 @@ export async function POST(req: NextRequest) {
               await saveDirectClient(updated);
               totalUpdated++;
               syncedClientIds.push(existingClientId);
+              
+              // Оновлюємо мапи для наступних ітерацій
+              if (shouldUpdateInstagram) {
+                existingInstagramMap.set(normalizedInstagram, existingClientId);
+                // Видаляємо старий Instagram username з мапи, якщо він був згенерований
+                if (existingNormalized && existingNormalized.startsWith('altegio_')) {
+                  existingInstagramMap.delete(existingNormalized);
+                }
+              }
             } else {
               totalSkippedDuplicate++;
             }
@@ -267,6 +294,10 @@ export async function POST(req: NextRequest) {
             totalCreated++;
             syncedClientIds.push(newClient.id);
             existingInstagramMap.set(normalizedInstagram, newClient.id);
+            // Додаємо в мапу по altegioClientId для майбутніх оновлень
+            if (altegioClient.id) {
+              existingAltegioIdMap.set(altegioClient.id, newClient.id);
+            }
           }
         }
 
