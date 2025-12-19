@@ -63,9 +63,28 @@ export async function GET(req: NextRequest) {
       let aVal: any = a[sortBy as keyof DirectClient];
       let bVal: any = b[sortBy as keyof DirectClient];
 
-      if (sortBy.includes('Date')) {
+      // Обробка дат
+      if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate') {
         aVal = aVal ? new Date(aVal).getTime() : 0;
         bVal = bVal ? new Date(bVal).getTime() : 0;
+      }
+      // Обробка boolean
+      else if (sortBy === 'visitedSalon' || sortBy === 'signedUpForPaidService') {
+        aVal = aVal ? 1 : 0;
+        bVal = bVal ? 1 : 0;
+      }
+      // Обробка рядків (для порожніх значень)
+      else if (typeof aVal === 'string' || typeof bVal === 'string') {
+        aVal = aVal || '';
+        bVal = bVal || '';
+        // Сортування без урахування регістру
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+      // Обробка порожніх значень
+      else {
+        aVal = aVal ?? '';
+        bVal = bVal ?? '';
       }
 
       if (sortOrder === 'asc') {

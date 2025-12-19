@@ -45,7 +45,7 @@ export default function DirectPage() {
     source: "",
     search: "",
   });
-  const [sortBy, setSortBy] = useState<"firstContactDate" | "lastMessageAt" | "statusId">("firstContactDate");
+  const [sortBy, setSortBy] = useState<string>("firstContactDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {

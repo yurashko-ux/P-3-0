@@ -17,9 +17,9 @@ type DirectClientTableProps = {
     search: string;
   };
   onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
-  sortBy: "firstContactDate" | "lastMessageAt" | "statusId";
+  sortBy: string;
   sortOrder: "asc" | "desc";
-  onSortChange: (by: DirectClientTableProps["sortBy"], order: DirectClientTableProps["sortOrder"]) => void;
+  onSortChange: (by: string, order: "asc" | "desc") => void;
   onClientUpdate: (clientId: string, updates: Partial<DirectClient>) => Promise<void>;
   onRefresh: () => Promise<void>;
 };
@@ -215,35 +215,154 @@ export function DirectClientTable({
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
                     <button
-                      className="hover:underline"
+                      className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
                           "firstContactDate",
-                          sortBy === "firstContactDate" && sortOrder === "asc" ? "desc" : "asc"
+                          sortBy === "firstContactDate" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
                       Дата контакту {sortBy === "firstContactDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Джерело</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Instagram</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">Статус</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Майстер</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дата консультації</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Прийшов</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дата візиту</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Записався на послугу</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дата запису</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Хто записав</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Коментар</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "instagramUsername",
+                          sortBy === "instagramUsername" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Instagram {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "statusId",
+                          sortBy === "statusId" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Статус {sortBy === "statusId" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "masterId",
+                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "consultationDate",
+                          sortBy === "consultationDate" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Дата консультації {sortBy === "consultationDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "visitedSalon",
+                          sortBy === "visitedSalon" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Прийшов {sortBy === "visitedSalon" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "visitDate",
+                          sortBy === "visitDate" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Дата візиту {sortBy === "visitDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "signedUpForPaidService",
+                          sortBy === "signedUpForPaidService" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Записався на послугу {sortBy === "signedUpForPaidService" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "paidServiceDate",
+                          sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Дата запису {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "signupAdmin",
+                          sortBy === "signupAdmin" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Хто записав {sortBy === "signupAdmin" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[200px]">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "comment",
+                          sortBy === "comment" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дії</th>
                 </tr>
               </thead>
               <tbody>
                 {clients.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-8 text-gray-500">
+                    <td colSpan={12} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -258,9 +377,6 @@ export function DirectClientTable({
                     >
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {formatDate(client.firstContactDate)}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.source === "instagram" ? "📷 Instagram" : client.source === "tiktok" ? "🎵 TikTok" : "📱 Інше"}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         <a
