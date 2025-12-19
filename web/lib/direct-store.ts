@@ -138,11 +138,27 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     // Обробляємо різні формати даних - рекурсивно розгортаємо обгортки
     const parsed = unwrapKVResponse(indexData);
     
+    // Додаткова спроба: якщо parsed - це об'єкт з value, який є JSON рядком
+    let finalParsed = parsed;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const value = (parsed as any).value;
+      if (typeof value === 'string' && value.trim().startsWith('[')) {
+        try {
+          finalParsed = JSON.parse(value);
+          console.log('[direct-store] Successfully extracted array from nested value');
+        } catch (err) {
+          console.warn('[direct-store] Failed to parse nested value:', err);
+        }
+      }
+    }
+    
     // Перевіряємо, чи це масив
-    if (!Array.isArray(parsed)) {
+    if (!Array.isArray(finalParsed)) {
       console.error('[direct-store] ⚠️ CRITICAL: Client index data is not an array after unwrapping!', {
-        finalType: typeof parsed,
-        finalValue: parsed,
+        finalType: typeof finalParsed,
+        finalValue: typeof finalParsed === 'string' ? finalParsed.slice(0, 200) : JSON.stringify(finalParsed).slice(0, 200),
+        parsedType: typeof parsed,
+        parsedValue: typeof parsed === 'string' ? parsed.slice(0, 200) : JSON.stringify(parsed).slice(0, 200),
         originalType: typeof indexData,
         originalValue: typeof indexData === 'string' ? indexData.slice(0, 200) : String(indexData).slice(0, 200),
       });
@@ -152,7 +168,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     }
 
     // Гарантуємо, що це масив рядків (фільтруємо null, undefined та невалідні значення)
-    const clientIds: string[] = parsed
+    const clientIds: string[] = finalParsed
       .filter((id: any) => id !== null && id !== undefined) // Спочатку прибираємо null/undefined
       .filter((id: any): id is string => 
         typeof id === 'string' && id.length > 0 && id.startsWith('direct_')
