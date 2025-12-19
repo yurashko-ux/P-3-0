@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import React from "react";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { DirectStats } from "./_components/DirectStats";
@@ -98,15 +99,15 @@ function showCopyableAlert(message: string) {
   
   const reactRoot = createRoot(root);
   reactRoot.render(
-    <DiagnosticModal
-      message={message}
-      onClose={() => {
+    React.createElement(DiagnosticModal, {
+      message,
+      onClose: () => {
         reactRoot.unmount();
         if (document.body.contains(modalContainer)) {
           document.body.removeChild(modalContainer);
         }
-      }}
-    />
+      },
+    })
   );
 }
 
