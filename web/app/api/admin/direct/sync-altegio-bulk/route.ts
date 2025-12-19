@@ -243,15 +243,31 @@ export async function POST(req: NextRequest) {
             // Оновлюємо існуючого клієнта
             const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
             if (existingClient) {
-              // Якщо Instagram username змінився (наприклад, був згенерований, тепер справжній),
-              // оновлюємо його
+              // Перевіряємо, чи потрібно оновити Instagram username
               const existingNormalized = normalizeInstagram(existingClient.instagramUsername);
-              const shouldUpdateInstagram = existingNormalized !== normalizedInstagram;
+              const currentNormalized = normalizedInstagram;
+              
+              // Оновлюємо Instagram username якщо:
+              // 1. Він змінився
+              // 2. Або старий був згенерований (починається з "altegio_"), а новий - справжній
+              const isOldGenerated = existingNormalized && existingNormalized.startsWith('altegio_');
+              const isNewReal = currentNormalized && !currentNormalized.startsWith('altegio_');
+              const shouldUpdateInstagram = existingNormalized !== currentNormalized || (isOldGenerated && isNewReal);
+              
+              console.log(`[direct/sync-altegio-bulk] Updating client ${existingClientId}:`, {
+                existingInstagram: existingClient.instagramUsername,
+                newInstagram: instagramUsername,
+                existingNormalized,
+                currentNormalized,
+                isOldGenerated,
+                isNewReal,
+                shouldUpdateInstagram,
+              });
               
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: altegioClient.id,
-                // Оновлюємо Instagram username, якщо він змінився (наприклад, з згенерованого на справжній)
+                // Оновлюємо Instagram username, якщо він змінився або був згенерований
                 ...(shouldUpdateInstagram && { instagramUsername: normalizedInstagram }),
                 ...(firstName && !existingClient.firstName && { firstName }),
                 ...(lastName && !existingClient.lastName && { lastName }),
