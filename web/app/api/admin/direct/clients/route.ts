@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
+import { getMasters } from '@/lib/photo-reports/service';
 import type { DirectClient } from '@/lib/direct-types';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
