@@ -295,18 +295,20 @@ export default function DirectPage() {
                 if (data.ok) {
                   const test = data.test;
                   const summary = test.summary;
-                  alert(`Тест збереження статусу:\n\n` +
+                  const message = `Тест збереження статусу:\n\n` +
                     `Статус збережено в KV: ${summary.saved ? '✅' : '❌'}\n` +
                     `Статус в індексі: ${summary.inIndex ? '✅' : '❌'}\n` +
                     `Статус в getAllDirectStatuses: ${summary.inGetAll ? '✅' : '❌'}\n` +
                     `Індекс збільшився: ${summary.indexIncreased ? '✅' : '❌'}\n\n` +
-                    `Деталі в консолі (F12)`);
+                    `Деталі в консолі (F12)\n\n` +
+                    `JSON:\n${JSON.stringify(data.test, null, 2)}`;
                   console.log('Status Save Test Results:', data.test);
+                  showCopyableAlert(message);
                 } else {
-                  alert(`Помилка: ${data.error || 'Unknown error'}`);
+                  showCopyableAlert(`Помилка: ${data.error || 'Unknown error'}\n\nJSON:\n${JSON.stringify(data, null, 2)}`);
                 }
               } catch (err) {
-                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
               } finally {
                 setIsLoading(false);
               }

@@ -456,25 +456,57 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
  */
 async function loadStatusesByIds(statusIds: string[]): Promise<DirectStatus[]> {
   const statuses: DirectStatus[] = [];
+  let loadedCount = 0;
+  let errorCount = 0;
 
   for (const id of statusIds) {
     try {
       const statusData = await kvRead.getRaw(directKeys.STATUS_ITEM(id));
       if (statusData) {
         try {
-          const status = typeof statusData === 'string' ? JSON.parse(statusData) : statusData;
+          // Рекурсивно розгортаємо обгортки KV (як для клієнтів)
+          const unwrapped = unwrapKVResponse(statusData);
+          
+          // Після розгортання, якщо це рядок, парсимо як JSON
+          let status: any;
+          if (typeof unwrapped === 'string') {
+            try {
+              status = JSON.parse(unwrapped);
+            } catch {
+              status = unwrapped;
+            }
+          } else {
+            status = unwrapped;
+          }
+          
+          // Перевіряємо валідність статусу
           if (status && typeof status === 'object' && status.id) {
             statuses.push(status);
+            loadedCount++;
+          } else {
+            console.warn(`[direct-store] Invalid status data for ${id}:`, {
+              hasId: !!status?.id,
+              hasName: !!status?.name,
+              unwrappedType: typeof unwrapped,
+            });
+            errorCount++;
           }
         } catch (parseErr) {
           console.warn(`[direct-store] Failed to parse status ${id}:`, parseErr);
+          errorCount++;
         }
+      } else {
+        console.warn(`[direct-store] Status ${id} not found in KV`);
+        errorCount++;
       }
     } catch (readErr) {
       console.warn(`[direct-store] Failed to read status ${id}:`, readErr);
+      errorCount++;
     }
   }
 
+  console.log(`[direct-store] loadStatusesByIds: Loaded ${loadedCount} statuses, ${errorCount} errors from ${statusIds.length} IDs`);
+  
   // Сортуємо по order
   return statuses.sort((a, b) => a.order - b.order);
 }
