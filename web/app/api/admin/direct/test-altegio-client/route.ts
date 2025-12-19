@@ -310,9 +310,24 @@ export async function POST(req: NextRequest) {
                 allKeys: Object.keys(clientWithInclude || {}),
                 fullResponse: JSON.stringify(clientWithInclude, null, 2).substring(0, 1000),
               });
+            } else {
+              results.attempts.push({
+                method: 'POST',
+                url: `/company/${companyId}/clients/search`,
+                params: `filters + include: ['custom_fields']`,
+                success: false,
+                error: 'Client not found in response or wrong ID',
+                response: response5b,
+              });
             }
           } catch (err) {
-            // Ігноруємо помилки
+            results.attempts.push({
+              method: 'POST',
+              url: `/company/${companyId}/clients/search`,
+              params: `filters + include: ['custom_fields']`,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
           
           // Спроба 5c: Отримати клієнта БЕЗ fields (можливо, поверне всі поля включаючи custom_fields)
@@ -356,6 +371,55 @@ export async function POST(req: NextRequest) {
                 allKeys: Object.keys(clientWithoutFields || {}),
                 fullResponse: JSON.stringify(clientWithoutFields, null, 2).substring(0, 1000),
               });
+            } else {
+              results.attempts.push({
+                method: 'POST',
+                url: `/company/${companyId}/clients/search`,
+                params: `filters, NO fields parameter`,
+                success: false,
+                error: 'Client not found in response or wrong ID',
+                response: response5c,
+              });
+            }
+          } catch (err) {
+            results.attempts.push({
+              method: 'POST',
+              url: `/company/${companyId}/clients/search`,
+              params: `filters, NO fields parameter`,
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          
+          // Спроба 5d: Отримати custom_fields через окремий запит після знаходження клієнта
+          // Можливо, потрібно зробити окремий GET запит для отримання custom_fields значень
+          try {
+            // Спробуємо різні варіанти endpoint для отримання значень custom_fields
+            const customFieldValueEndpoints = [
+              `/company/${companyId}/client/${clientId}/custom_fields`,
+              `/company/${companyId}/clients/${clientId}/custom_fields`,
+              `/custom_fields/client/${companyId}/client/${clientId}`,
+              `/custom_fields/client/${companyId}/${clientId}`,
+            ];
+            
+            for (const endpoint of customFieldValueEndpoints) {
+              try {
+                const customFieldsResponse = await altegioFetch<any>(endpoint, {
+                  method: 'GET',
+                });
+                
+                results.attempts.push({
+                  method: 'GET',
+                  url: endpoint,
+                  params: 'custom_fields values for specific client',
+                  success: true,
+                  response: customFieldsResponse,
+                  note: 'Attempting to get custom field values via separate endpoint',
+                });
+                break; // Якщо знайшли працюючий endpoint
+              } catch (err) {
+                // Продовжуємо спроби
+              }
             }
           } catch (err) {
             // Ігноруємо помилки
