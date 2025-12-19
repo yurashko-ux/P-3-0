@@ -157,9 +157,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Спроба 4: POST /clients/search з фільтром по client_id (різні операції)
-    const filterOperations = ['eq', '=', '==', 'equals'];
-    for (const operation of filterOperations) {
+    // Спроба 4: POST /clients/search з фільтром по client_id (різні операції та формати)
+    const filterVariants = [
+      { field: 'id', operation: 'eq', value: clientId },
+      { field: 'id', operation: '=', value: clientId },
+      { field: 'id', operation: '==', value: clientId },
+      { field: 'id', operation: 'equals', value: clientId },
+      { field: 'client_id', operation: 'eq', value: clientId },
+      { id: clientId }, // Можливо, фільтр має інший формат
+    ];
+    
+    for (const filterVariant of filterVariants) {
       try {
         const response4 = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
           method: 'POST',
@@ -167,98 +175,123 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            filters: [{ field: 'id', operation, value: clientId }],
+            filters: Array.isArray(filterVariant) ? filterVariant : [filterVariant],
             fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
             page: 1,
             page_size: 1,
           }),
         });
-      
-      let clientFromSearch: any = null;
-      if (Array.isArray(response4)) {
-        clientFromSearch = response4[0];
-      } else if (response4?.data && Array.isArray(response4.data)) {
-        clientFromSearch = response4.data[0];
-      } else if (response4?.clients && Array.isArray(response4.clients)) {
-        clientFromSearch = response4.clients[0];
-      } else if (response4 && typeof response4 === 'object' && !Array.isArray(response4)) {
-        clientFromSearch = response4;
-      }
+        
+        let clientFromSearch: any = null;
+        if (Array.isArray(response4)) {
+          clientFromSearch = response4[0];
+        } else if (response4?.data && Array.isArray(response4.data)) {
+          clientFromSearch = response4.data[0];
+        } else if (response4?.clients && Array.isArray(response4.clients)) {
+          clientFromSearch = response4.clients[0];
+        } else if (response4 && typeof response4 === 'object' && !Array.isArray(response4)) {
+          clientFromSearch = response4;
+        }
 
-        results.attempts.push({
-          method: 'POST',
-          url: `/company/${companyId}/clients/search`,
-          params: `filters (operation: ${operation}) + fields[]=custom_fields`,
-          success: true,
-          hasCustomFields: !!clientFromSearch?.custom_fields,
-          customFieldsType: typeof clientFromSearch?.custom_fields,
-          customFieldsIsArray: Array.isArray(clientFromSearch?.custom_fields),
-          customFieldsKeys: clientFromSearch?.custom_fields && typeof clientFromSearch?.custom_fields === 'object' && !Array.isArray(clientFromSearch?.custom_fields)
-            ? Object.keys(clientFromSearch?.custom_fields)
-            : [],
-          response: clientFromSearch || response4,
-        });
-        break; // Якщо успішно, не пробуємо інші операції
-      } catch (err) {
-        if (operation === filterOperations[filterOperations.length - 1]) {
-          // Тільки для останньої операції додаємо помилку
+        if (clientFromSearch && clientFromSearch.id === clientId) {
           results.attempts.push({
             method: 'POST',
             url: `/company/${companyId}/clients/search`,
-            params: `filters (operation: ${operation}) + fields[]=custom_fields`,
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
+            params: `filters: ${JSON.stringify(filterVariant)} + fields[]=custom_fields`,
+            success: true,
+            hasCustomFields: !!clientFromSearch?.custom_fields,
+            customFieldsType: typeof clientFromSearch?.custom_fields,
+            customFieldsIsArray: Array.isArray(clientFromSearch?.custom_fields),
+            customFieldsKeys: clientFromSearch?.custom_fields && typeof clientFromSearch?.custom_fields === 'object' && !Array.isArray(clientFromSearch?.custom_fields)
+              ? Object.keys(clientFromSearch?.custom_fields)
+              : [],
+            response: clientFromSearch,
+            allKeys: Object.keys(clientFromSearch || {}),
           });
+          break; // Якщо знайшли клієнта, не пробуємо інші варіанти
         }
+      } catch (err) {
+        // Продовжуємо спроби
       }
     }
 
-    // Спроба 5: POST /clients/search без фільтрів, але з пагінацією (можливо, клієнт на першій сторінці)
+    // Спроба 5: POST /clients/search без фільтрів, але з пагінацією (шукаємо клієнта на різних сторінках)
+    // Також перевіряємо структуру відповіді - можливо, custom_fields повертаються в іншому форматі
     try {
-      const response5 = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
-          page: 1,
-          page_size: 100,
-          order_by: 'id',
-          order_by_direction: 'desc',
-        }),
-      });
+      let foundClient: any = null;
+      let page = 1;
+      const maxPages = 10; // Перевіряємо до 10 сторінок
       
-      let clients: any[] = [];
-      if (Array.isArray(response5)) {
-        clients = response5;
-      } else if (response5?.data && Array.isArray(response5.data)) {
-        clients = response5.data;
-      } else if (response5?.clients && Array.isArray(response5.clients)) {
-        clients = response5.clients;
+      while (page <= maxPages && !foundClient) {
+        const response5 = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+            page,
+            page_size: 100,
+            order_by: 'id',
+            order_by_direction: 'desc',
+          }),
+        });
+        
+        let clients: any[] = [];
+        if (Array.isArray(response5)) {
+          clients = response5;
+        } else if (response5?.data && Array.isArray(response5.data)) {
+          clients = response5.data;
+        } else if (response5?.clients && Array.isArray(response5.clients)) {
+          clients = response5.clients;
+        }
+        
+        foundClient = clients.find((c: any) => c.id === clientId);
+        
+        if (foundClient) {
+          // Детально логуємо структуру знайденого клієнта
+          results.attempts.push({
+            method: 'POST',
+            url: `/company/${companyId}/clients/search`,
+            params: `no filters, page ${page}, page_size 100`,
+            success: true,
+            hasCustomFields: !!foundClient?.custom_fields,
+            customFieldsType: typeof foundClient?.custom_fields,
+            customFieldsIsArray: Array.isArray(foundClient?.custom_fields),
+            customFieldsKeys: foundClient?.custom_fields && typeof foundClient?.custom_fields === 'object' && !Array.isArray(foundClient?.custom_fields)
+              ? Object.keys(foundClient?.custom_fields)
+              : [],
+            response: foundClient,
+            allKeys: Object.keys(foundClient || {}),
+            fullResponse: JSON.stringify(foundClient, null, 2).substring(0, 1000), // Перші 1000 символів для діагностики
+            totalClientsInResponse: clients.length,
+            foundOnPage: page,
+          });
+          break;
+        }
+        
+        if (clients.length === 0) {
+          // Більше немає клієнтів
+          break;
+        }
+        
+        page++;
       }
       
-      const foundClient = clients.find((c: any) => c.id === clientId);
-      
-      results.attempts.push({
-        method: 'POST',
-        url: `/company/${companyId}/clients/search`,
-        params: 'no filters, page 1, page_size 100',
-        success: !!foundClient,
-        hasCustomFields: !!foundClient?.custom_fields,
-        customFieldsType: typeof foundClient?.custom_fields,
-        customFieldsIsArray: Array.isArray(foundClient?.custom_fields),
-        customFieldsKeys: foundClient?.custom_fields && typeof foundClient?.custom_fields === 'object' && !Array.isArray(foundClient?.custom_fields)
-          ? Object.keys(foundClient?.custom_fields)
-          : [],
-        response: foundClient || null,
-        totalClientsInResponse: clients.length,
-      });
+      if (!foundClient) {
+        results.attempts.push({
+          method: 'POST',
+          url: `/company/${companyId}/clients/search`,
+          params: `no filters, pages 1-${page - 1}`,
+          success: false,
+          error: `Client ${clientId} not found in first ${page - 1} pages`,
+        });
+      }
     } catch (err) {
       results.attempts.push({
         method: 'POST',
         url: `/company/${companyId}/clients/search`,
-        params: 'no filters, page 1',
+        params: 'no filters, pagination',
         success: false,
         error: err instanceof Error ? err.message : String(err),
       });
