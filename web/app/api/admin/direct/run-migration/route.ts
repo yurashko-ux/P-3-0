@@ -43,47 +43,141 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Виконуємо міграцію (створюємо таблиці)
+    // Спочатку пробуємо db push (створює таблиці без міграцій)
     try {
-      results.push('\nВиконання міграції БД...');
-      // Використовуємо migrate deploy для production (без інтерактивності)
-      const { stdout: migrateStdout, stderr: migrateStderr } = await execAsync(
-        'npx prisma migrate deploy',
-        { cwd: process.cwd() }
+      results.push('\nСтворення таблиць через db push...');
+      const { stdout: pushStdout, stderr: pushStderr } = await execAsync(
+        'npx prisma db push --accept-data-loss',
+        { cwd: process.cwd(), timeout: 60000 }
       );
-      if (migrateStdout) results.push(migrateStdout);
-      if (migrateStderr && !migrateStderr.includes('warning')) results.push(migrateStderr);
-      results.push('✅ Міграція виконана');
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      results.push(`❌ Помилка міграції: ${errorMsg}`);
+      if (pushStdout) results.push(pushStdout);
+      if (pushStderr && !pushStderr.includes('warning') && !pushStderr.includes('info')) {
+        results.push(pushStderr);
+      }
+      results.push('✅ Таблиці створені через db push');
+      success = true;
+    } catch (pushErr) {
+      const pushErrorMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+      results.push(`⚠️ db push не вдався: ${pushErrorMsg}`);
       
-      // Якщо помилка про те, що міграцій немає, спробуємо створити їх
-      if (errorMsg.includes('No migrations found') || errorMsg.includes('migration')) {
+      // Якщо db push не спрацював, пробуємо migrate deploy
+      try {
+        results.push('\nСпроба через migrate deploy...');
+        const { stdout: migrateStdout, stderr: migrateStderr } = await execAsync(
+          'npx prisma migrate deploy',
+          { cwd: process.cwd(), timeout: 60000 }
+        );
+        if (migrateStdout) results.push(migrateStdout);
+        if (migrateStderr && !migrateStderr.includes('warning')) results.push(migrateStderr);
+        results.push('✅ Міграція виконана через migrate deploy');
+        success = true;
+      } catch (migrateErr) {
+        const migrateErrorMsg = migrateErr instanceof Error ? migrateErr.message : String(migrateErr);
+        results.push(`❌ migrate deploy також не вдався: ${migrateErrorMsg}`);
+        
+        // Остання спроба - створити міграцію вручну через SQL
         try {
-          results.push('\nСпроба створити міграцію...');
-          const { stdout: createStdout, stderr: createStderr } = await execAsync(
-            'npx prisma migrate dev --name init_direct --create-only',
-            { cwd: process.cwd() }
-          );
-          if (createStdout) results.push(createStdout);
-          if (createStderr && !createStderr.includes('warning')) results.push(createStderr);
+          results.push('\nСпроба створити таблиці через SQL...');
+          const { prisma } = await import('@/lib/prisma');
           
-          // Тепер виконуємо міграцію
-          const { stdout: applyStdout, stderr: applyStderr } = await execAsync(
-            'npx prisma migrate deploy',
-            { cwd: process.cwd() }
-          );
-          if (applyStdout) results.push(applyStdout);
-          if (applyStderr && !applyStderr.includes('warning')) results.push(applyStderr);
-          results.push('✅ Міграція створена та виконана');
+          // Створюємо таблицю статусів
+          await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "direct_statuses" (
+              "id" TEXT NOT NULL,
+              "name" TEXT NOT NULL,
+              "color" TEXT NOT NULL DEFAULT '#6b7280',
+              "order" INTEGER NOT NULL DEFAULT 0,
+              "isDefault" BOOLEAN NOT NULL DEFAULT false,
+              "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              "updatedAt" TIMESTAMP(3) NOT NULL,
+              CONSTRAINT "direct_statuses_pkey" PRIMARY KEY ("id")
+            )
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_statuses_order_idx" ON "direct_statuses"("order")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_statuses_isDefault_idx" ON "direct_statuses"("isDefault")
+          `);
+          
+          // Створюємо таблицю клієнтів
+          await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "direct_clients" (
+              "id" TEXT NOT NULL,
+              "instagramUsername" TEXT NOT NULL,
+              "firstName" TEXT,
+              "lastName" TEXT,
+              "source" TEXT NOT NULL DEFAULT 'instagram',
+              "state" TEXT,
+              "firstContactDate" TIMESTAMP(3) NOT NULL,
+              "statusId" TEXT NOT NULL,
+              "masterId" TEXT,
+              "consultationDate" TIMESTAMP(3),
+              "visitedSalon" BOOLEAN NOT NULL DEFAULT false,
+              "visitDate" TIMESTAMP(3),
+              "signedUpForPaidService" BOOLEAN NOT NULL DEFAULT false,
+              "paidServiceDate" TIMESTAMP(3),
+              "signupAdmin" TEXT,
+              "comment" TEXT,
+              "altegioClientId" INTEGER,
+              "lastMessageAt" TIMESTAMP(3),
+              "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              "updatedAt" TIMESTAMP(3) NOT NULL,
+              CONSTRAINT "direct_clients_pkey" PRIMARY KEY ("id")
+            )
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE UNIQUE INDEX IF NOT EXISTS "direct_clients_instagramUsername_key" ON "direct_clients"("instagramUsername")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_statusId_idx" ON "direct_clients"("statusId")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_masterId_idx" ON "direct_clients"("masterId")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_altegioClientId_idx" ON "direct_clients"("altegioClientId")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_state_idx" ON "direct_clients"("state")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_source_idx" ON "direct_clients"("source")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_firstContactDate_idx" ON "direct_clients"("firstContactDate")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_clients_createdAt_idx" ON "direct_clients"("createdAt")
+          `);
+          
+          // Створюємо foreign key
+          await prisma.$executeRawUnsafe(`
+            DO $$ BEGIN
+              ALTER TABLE "direct_clients" ADD CONSTRAINT "direct_clients_statusId_fkey" 
+              FOREIGN KEY ("statusId") REFERENCES "direct_statuses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+            EXCEPTION
+              WHEN duplicate_object THEN null;
+            END $$;
+          `);
+          
+          results.push('✅ Таблиці створені через SQL');
           success = true;
-        } catch (createErr) {
-          const createErrorMsg = createErr instanceof Error ? createErr.message : String(createErr);
-          results.push(`❌ Помилка створення міграції: ${createErrorMsg}`);
+        } catch (sqlErr) {
+          const sqlErrorMsg = sqlErr instanceof Error ? sqlErr.message : String(sqlErr);
+          results.push(`❌ SQL створення також не вдалося: ${sqlErrorMsg}`);
           success = false;
         }
-      } else {
-        success = false;
       }
     }
 
