@@ -300,49 +300,56 @@ export async function POST(req: NextRequest) {
           let instagramUsername: string | null = null;
 
           try {
-            // Отримуємо повні дані клієнта через GET /clients/{id}
-            // Спробуємо різні варіанти endpoint
-            const clientEndpoints = [
-              `/clients/${altegioClient.id}`, // GPT формат: /api/v1/clients/{id}
-              `/company/${companyId}/clients/${altegioClient.id}`, // З company_id
-            ];
-
-            for (const endpoint of clientEndpoints) {
-              try {
-                const detailedClient = await altegioFetch<any>(endpoint, {
-                  method: 'GET',
-                });
-                
-                if (detailedClient && detailedClient.id === altegioClient.id) {
-                  fullClientData = detailedClient;
-                  console.log(`[direct/sync-altegio-bulk] ✅ Got full client data for ${altegioClient.id} via ${endpoint}`);
-                  
-                  // Детальне логування для проблемного клієнта
-                  if (altegioClient.id === 176404915) {
-                    console.log(`[direct/sync-altegio-bulk] DEBUG: Full client data for ${altegioClient.id}:`, {
-                      id: fullClientData.id,
-                      name: fullClientData.name,
-                      allKeys: Object.keys(fullClientData),
-                      custom_fields: fullClientData.custom_fields,
-                      custom_fields_type: typeof fullClientData.custom_fields,
-                      custom_fields_isArray: Array.isArray(fullClientData.custom_fields),
-                      fullClient: JSON.stringify(fullClientData, null, 2).substring(0, 1000),
-                    });
-                  }
-                  break; // Якщо знайшли працюючий endpoint, не пробуємо інші
-                }
-              } catch (err) {
-                // Продовжуємо спроби з іншими endpoint'ами
-                if (altegioClient.id === 176404915) {
-                  console.log(`[direct/sync-altegio-bulk] DEBUG: Failed to fetch via ${endpoint}:`, err instanceof Error ? err.message : String(err));
-                }
+            // ВАЖЛИВО: Правильний endpoint - GET /company/{company_id}/clients/{client_id}
+            // /clients/{id} НЕ існує (404 був через неправильний endpoint)
+            // Також важливо мати заголовок Accept: application/json
+            const correctEndpoint = `/company/${companyId}/clients/${altegioClient.id}`;
+            
+            const detailedClient = await altegioFetch<any>(correctEndpoint, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+            });
+            
+            // Обробляємо різні формати відповіді
+            let client: any = null;
+            if (detailedClient && typeof detailedClient === 'object') {
+              if ('id' in detailedClient && detailedClient.id === altegioClient.id) {
+                client = detailedClient;
+              } else if ('data' in detailedClient && detailedClient.data && detailedClient.data.id === altegioClient.id) {
+                client = detailedClient.data;
               }
+            }
+            
+            if (client && client.id === altegioClient.id) {
+              fullClientData = client;
+              console.log(`[direct/sync-altegio-bulk] ✅ Got full client data for ${altegioClient.id} via ${correctEndpoint}`);
+              
+              // Детальне логування для проблемного клієнта
+              if (altegioClient.id === 176404915) {
+                console.log(`[direct/sync-altegio-bulk] DEBUG: Full client data for ${altegioClient.id}:`, {
+                  id: fullClientData.id,
+                  name: fullClientData.name,
+                  allKeys: Object.keys(fullClientData),
+                  custom_fields: fullClientData.custom_fields,
+                  custom_fields_type: typeof fullClientData.custom_fields,
+                  custom_fields_isArray: Array.isArray(fullClientData.custom_fields),
+                  fullClient: JSON.stringify(fullClientData, null, 2).substring(0, 1000),
+                });
+              }
+            } else {
+              console.warn(`[direct/sync-altegio-bulk] Client ID mismatch for ${altegioClient.id} via ${correctEndpoint}`);
             }
             
             // Затримка між запитами для уникнення rate limiting (200 запитів/хвилину або 5/секунду)
             await new Promise(resolve => setTimeout(resolve, 250)); // 250ms = 4 запити/секунду
           } catch (err) {
             console.warn(`[direct/sync-altegio-bulk] Failed to get full client data for ${altegioClient.id}:`, err);
+            if (altegioClient.id === 176404915) {
+              console.log(`[direct/sync-altegio-bulk] DEBUG: Error details:`, err instanceof Error ? err.message : String(err));
+            }
           }
 
           // Витягуємо Instagram username з повних даних клієнта
