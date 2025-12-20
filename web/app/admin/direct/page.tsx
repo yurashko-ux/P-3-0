@@ -635,6 +635,33 @@ export default function DirectPage() {
             🧪 Тест статусу
           </button>
           <button
+            className="btn btn-sm btn-error"
+            onClick={async () => {
+              if (!confirm('Створити таблиці в Postgres (Prisma міграція)?\n\nЦе створить таблиці direct_clients та direct_statuses в базі даних.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/run-migration', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Міграція виконана!\n\n${data.results}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка міграції: ${data.error || 'Невідома помилка'}\n\n${data.results || ''}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Створити таблиці в Postgres (Prisma міграція)"
+          >
+            🗄️ Створити таблиці
+          </button>
+          <button
             className="btn btn-sm btn-accent"
             onClick={async () => {
               if (!confirm('Виконати міграцію даних з KV → Postgres?\n\nЦе перенесе всіх клієнтів та статуси з KV в Postgres.\n\nПродовжити?')) {

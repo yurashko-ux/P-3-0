@@ -108,6 +108,26 @@ function unwrapKVResponse(data: any, maxAttempts = 20): any {
  */
 export async function POST(req: NextRequest) {
   try {
+    // Перевіряємо, чи таблиці існують
+    try {
+      const { prisma } = await import('@/lib/prisma');
+      await prisma.$queryRaw`SELECT 1 FROM direct_clients LIMIT 1`.catch(() => {
+        throw new Error('Таблиця direct_clients не існує');
+      });
+      await prisma.$queryRaw`SELECT 1 FROM direct_statuses LIMIT 1`.catch(() => {
+        throw new Error('Таблиця direct_statuses не існує');
+      });
+    } catch (tableError) {
+      const errorMsg = tableError instanceof Error ? tableError.message : String(tableError);
+      return NextResponse.json({
+        ok: false,
+        error: 'Таблиці в базі даних не створені',
+        message: `Спочатку потрібно створити таблиці через кнопку "🗄️ Створити таблиці" або виконати команду: npx prisma migrate deploy`,
+        details: errorMsg,
+        recommendation: 'Використайте endpoint /api/admin/direct/run-migration для створення таблиць',
+      }, { status: 400 });
+    }
+    
     const stats = {
       clients: { found: 0, migrated: 0, errors: 0, errorsList: [] as string[] },
       statuses: { found: 0, migrated: 0, errors: 0, errorsList: [] as string[] },
