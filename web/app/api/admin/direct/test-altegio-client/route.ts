@@ -270,13 +270,13 @@ export async function POST(req: NextRequest) {
           params: 'Direct GET (without search) - for comparison',
           success: true,
           hasCustomFields: !!response1?.custom_fields,
-        customFieldsType: typeof response1?.custom_fields,
-        customFieldsIsArray: Array.isArray(response1?.custom_fields),
-        customFieldsKeys: response1?.custom_fields && typeof response1?.custom_fields === 'object' && !Array.isArray(response1?.custom_fields)
-          ? Object.keys(response1?.custom_fields)
-          : [],
-        response: response1,
-      });
+          customFieldsType: typeof response1?.custom_fields,
+          customFieldsIsArray: Array.isArray(response1?.custom_fields),
+          customFieldsKeys: response1?.custom_fields && typeof response1?.custom_fields === 'object' && !Array.isArray(response1?.custom_fields)
+            ? Object.keys(response1?.custom_fields)
+            : [],
+          response: response1,
+        });
     } catch (err) {
       results.attempts.push({
         method: 'GET',
