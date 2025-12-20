@@ -433,26 +433,12 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
                         {client.state === 'client' ? (
                           <div className="flex items-center justify-center" title="Клієнт">
-                            {/* Іконка дівчини з сумочкою (рожева) */}
-                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              {/* Голова */}
-                              <circle cx="14" cy="9" r="5" fill="#FFB6C1" stroke="#9333EA" strokeWidth="1.5"/>
-                              {/* Очі */}
-                              <circle cx="12.5" cy="8.5" r="0.8" fill="#9333EA"/>
-                              <circle cx="15.5" cy="8.5" r="0.8" fill="#9333EA"/>
-                              {/* Рум'яна */}
-                              <circle cx="11" cy="10" r="1" fill="#FFB6C1" opacity="0.6"/>
-                              <circle cx="17" cy="10" r="1" fill="#FFB6C1" opacity="0.6"/>
-                              {/* Рот */}
-                              <path d="M12.5 11 Q14 11.5 15.5 11" stroke="#9333EA" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
-                              {/* Тіло */}
-                              <path d="M14 14 L14 22" stroke="#9333EA" strokeWidth="1.8" fill="none"/>
-                              {/* Руки */}
-                              <path d="M10 16 L14 18 L18 16" stroke="#9333EA" strokeWidth="1.8" fill="none"/>
-                              {/* Сумочка */}
-                              <rect x="19" y="19" width="5" height="7" rx="0.8" fill="#FFB6C1" stroke="#9333EA" strokeWidth="1.5"/>
-                              <text x="21.5" y="24" fontSize="7" fill="#9333EA" textAnchor="middle" fontWeight="bold">$</text>
-                            </svg>
+                            {/* Дівчина з сумочкою зі знаком долара */}
+                            <img 
+                              src="/assets/image-client.png" 
+                              alt="Клієнт" 
+                              className="w-7 h-7 object-contain"
+                            />
                           </div>
                         ) : client.state === 'consultation' ? (
                           <div className="flex items-center justify-center" title="Консультація">
@@ -460,16 +446,12 @@ export function DirectClientTable({
                           </div>
                         ) : (
                           <div className="flex items-center justify-center" title="Лід">
-                            {/* Іконка лійки з людиною (синя) */}
-                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              {/* Людина (темно-сіра) */}
-                              <circle cx="14" cy="7" r="3.5" fill="#4A5568" stroke="#3B82F6" strokeWidth="1.2"/>
-                              <path d="M14 10.5 L14 17" stroke="#3B82F6" strokeWidth="1.8" fill="none"/>
-                              <path d="M10.5 14 L14 17 L17.5 14" stroke="#3B82F6" strokeWidth="1.8" fill="none"/>
-                              {/* Лійка (синя) */}
-                              <path d="M7 19 L21 19 L19.5 25 L8.5 25 Z" fill="#3B82F6" stroke="#3B82F6" strokeWidth="1.2"/>
-                              <path d="M9 21 L19 21" stroke="white" strokeWidth="1"/>
-                            </svg>
+                            {/* Лійка з трьома людьми */}
+                            <img 
+                              src="/assets/image-lead.png" 
+                              alt="Лід" 
+                              className="w-7 h-7 object-contain"
+                            />
                           </div>
                         )}
                       </td>
