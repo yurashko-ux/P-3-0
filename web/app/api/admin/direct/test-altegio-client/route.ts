@@ -65,49 +65,211 @@ export async function POST(req: NextRequest) {
       client_id: clientId,
       location_id: companyId,
       attempts: [],
+      flow: 'search → get by id (proper Altegio flow)',
     };
-
-    // Спроба 0: GET /clients/{client_id} (згідно з GPT - без /company/{id}/)
-    try {
-      const response0 = await altegioFetch<any>(`/clients/${clientId}`, {
-        method: 'GET',
-      });
+    
+    // КРОК 1: Знаходимо клієнта через search
+    let foundClientFromSearch: any = null;
+    let searchPage = 1;
+    const maxSearchPages = 20;
+    
+    console.log(`[direct/test-altegio-client] Step 1: Searching for client ${clientId} via /clients/search...`);
+    
+    while (searchPage <= maxSearchPages && !foundClientFromSearch) {
+      try {
+        const searchResponse = await altegioFetch<any>(`/company/${companyId}/clients/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            page: searchPage,
+            page_size: 100,
+            order_by: 'id',
+            order_by_direction: 'desc',
+          }),
+        });
+        
+        let clients: any[] = [];
+        if (Array.isArray(searchResponse)) {
+          clients = searchResponse;
+        } else if (searchResponse?.data && Array.isArray(searchResponse.data)) {
+          clients = searchResponse.data;
+        } else if (searchResponse?.clients && Array.isArray(searchResponse.clients)) {
+          clients = searchResponse.clients;
+        }
+        
+        foundClientFromSearch = clients.find((c: any) => c.id === clientId);
+        
+        if (foundClientFromSearch) {
+          results.attempts.push({
+            method: 'POST',
+            url: `/company/${companyId}/clients/search`,
+            params: `Step 1: Search (found on page ${searchPage})`,
+            success: true,
+            hasCustomFields: !!foundClientFromSearch?.custom_fields,
+            customFieldsType: typeof foundClientFromSearch?.custom_fields,
+            note: '⚠️ /clients/search never returns custom_fields by design',
+            response: {
+              id: foundClientFromSearch.id,
+              name: foundClientFromSearch.name,
+              allKeys: Object.keys(foundClientFromSearch),
+            },
+          });
+          break;
+        }
+        
+        if (clients.length === 0) {
+          break;
+        }
+        
+        searchPage++;
+      } catch (err) {
+        results.attempts.push({
+          method: 'POST',
+          url: `/company/${companyId}/clients/search`,
+          params: `Step 1: Search (page ${searchPage})`,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        break;
+      }
+    }
+    
+    if (!foundClientFromSearch) {
       results.attempts.push({
-        method: 'GET',
-        url: `/clients/${clientId}`,
-        params: 'none (GPT format: /api/v1/clients/{client_id})',
-        success: true,
-        hasCustomFields: !!response0?.custom_fields,
-        customFieldsType: typeof response0?.custom_fields,
-        customFieldsIsArray: Array.isArray(response0?.custom_fields),
-        customFieldsKeys: response0?.custom_fields && typeof response0?.custom_fields === 'object' && !Array.isArray(response0?.custom_fields)
-          ? Object.keys(response0?.custom_fields)
-          : [],
-        response: response0,
-        allKeys: Object.keys(response0 || {}),
-        fullResponse: JSON.stringify(response0, null, 2).substring(0, 1000),
-      });
-    } catch (err) {
-      results.attempts.push({
-        method: 'GET',
-        url: `/clients/${clientId}`,
-        params: 'none (GPT format)',
+        method: 'POST',
+        url: `/company/${companyId}/clients/search`,
+        params: 'Step 1: Search',
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: `Client ${clientId} not found in first ${searchPage - 1} pages`,
+      });
+      return NextResponse.json({
+        ok: true,
+        ...results,
+        error: `Client ${clientId} not found via search`,
+      });
+    }
+    
+    // КРОК 2: Отримуємо повні дані клієнта через GET /clients/{id}
+    console.log(`[direct/test-altegio-client] Step 2: Getting full client data via GET /clients/{id}...`);
+    
+    const clientEndpoints = [
+      `/clients/${clientId}`, // GPT формат: /api/v1/clients/{id}
+      `/company/${companyId}/clients/${clientId}`, // З company_id
+    ];
+    
+    let fullClientData: any = null;
+    
+    for (const endpoint of clientEndpoints) {
+      try {
+        const detailedClient = await altegioFetch<any>(endpoint, {
+          method: 'GET',
+        });
+        
+        if (detailedClient && detailedClient.id === clientId) {
+          fullClientData = detailedClient;
+          results.attempts.push({
+            method: 'GET',
+            url: endpoint,
+            params: `Step 2: Get by ID (proper flow)`,
+            success: true,
+            hasCustomFields: !!detailedClient?.custom_fields,
+            customFieldsType: typeof detailedClient?.custom_fields,
+            customFieldsIsArray: Array.isArray(detailedClient?.custom_fields),
+            customFieldsKeys: detailedClient?.custom_fields && typeof detailedClient?.custom_fields === 'object' && !Array.isArray(detailedClient?.custom_fields)
+              ? Object.keys(detailedClient?.custom_fields)
+              : [],
+            customFieldsLength: Array.isArray(detailedClient?.custom_fields) ? detailedClient.custom_fields.length : 0,
+            response: detailedClient,
+            allKeys: Object.keys(detailedClient || {}),
+            fullResponse: JSON.stringify(detailedClient, null, 2).substring(0, 2000),
+            note: '✅ This is the proper flow: search → get by id',
+          });
+          break;
+        }
+      } catch (err) {
+        results.attempts.push({
+          method: 'GET',
+          url: endpoint,
+          params: `Step 2: Get by ID`,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    
+    if (!fullClientData) {
+      results.attempts.push({
+        method: 'GET',
+        url: 'multiple endpoints',
+        params: 'Step 2: Get by ID',
+        success: false,
+        error: 'All GET endpoints failed',
+      });
+      return NextResponse.json({
+        ok: true,
+        ...results,
+        error: 'Failed to get full client data via GET /clients/{id}',
       });
     }
 
-    // Спроба 1: GET /company/{id}/clients/{id} (множина)
+    // КРОК 3: Витягуємо Instagram з отриманих даних
+    if (fullClientData) {
+      // Використовуємо ту саму функцію, що й в sync-altegio-bulk
+      const { normalizeInstagram } = await import('@/lib/normalize');
+      
+      // Витягуємо Instagram з custom_fields (масив об'єктів з title/value)
+      if (Array.isArray(fullClientData.custom_fields)) {
+        for (const field of fullClientData.custom_fields) {
+          if (field && typeof field === 'object') {
+            const title = field.title || field.name || field.label || '';
+            const value = field.value || field.data || field.content || field.text || '';
+            
+            if (value && typeof value === 'string' && /instagram/i.test(title)) {
+              const normalized = normalizeInstagram(value.trim());
+              if (normalized && !results.instagramValues.includes(normalized)) {
+                results.instagramValues.push(normalized);
+              }
+            }
+          }
+        }
+      }
+      // Fallback: якщо custom_fields - це об'єкт
+      else if (fullClientData.custom_fields && typeof fullClientData.custom_fields === 'object' && !Array.isArray(fullClientData.custom_fields)) {
+        const checks = [
+          fullClientData.custom_fields['instagram-user-name'],
+          fullClientData.custom_fields['Instagram user name'],
+          fullClientData.custom_fields.instagram_user_name,
+          fullClientData.custom_fields.instagram,
+        ];
+        
+        for (const value of checks) {
+          if (value && typeof value === 'string' && value.trim()) {
+            const normalized = normalizeInstagram(value.trim());
+            if (normalized && !results.instagramValues.includes(normalized)) {
+              results.instagramValues.push(normalized);
+            }
+          }
+        }
+      }
+    }
+    
+    results.instagramFound = results.instagramValues.length > 0;
+
+    // Додаткові спроби (для порівняння, якщо основний flow не спрацював)
+    // Спроба: GET /clients/{client_id} напряму (без search) - для порівняння
     try {
-      const response1 = await altegioFetch<any>(`/company/${companyId}/clients/${clientId}`, {
+      const response1 = await altegioFetch<any>(`/clients/${clientId}`, {
         method: 'GET',
       });
-      results.attempts.push({
-        method: 'GET',
-        url: `/company/${companyId}/clients/${clientId}`,
-        params: 'none',
-        success: true,
-        hasCustomFields: !!response1?.custom_fields,
+      if (response1 && response1.id === clientId) {
+        results.attempts.push({
+          method: 'GET',
+          url: `/clients/${clientId}`,
+          params: 'Direct GET (without search) - for comparison',
+          success: true,
+          hasCustomFields: !!response1?.custom_fields,
         customFieldsType: typeof response1?.custom_fields,
         customFieldsIsArray: Array.isArray(response1?.custom_fields),
         customFieldsKeys: response1?.custom_fields && typeof response1?.custom_fields === 'object' && !Array.isArray(response1?.custom_fields)
@@ -580,98 +742,8 @@ export async function POST(req: NextRequest) {
       // Ігноруємо помилки
     }
 
-    // Витягуємо Instagram з усіх спроб
-    // ВАЖЛИВО: Altegio повертає custom_fields як МАСИВ об'єктів з title/value, а не як об'єкт з ключами!
-    const instagramValues: string[] = [];
-    for (const attempt of results.attempts) {
-      if (attempt.success && attempt.response) {
-        const response = attempt.response;
-        
-        // Якщо це об'єкт клієнта
-        if (response && typeof response === 'object' && !Array.isArray(response)) {
-          // ВАЖЛИВО: custom_fields - це МАСИВ об'єктів з title/value
-          if (Array.isArray(response.custom_fields)) {
-            for (const field of response.custom_fields) {
-              if (field && typeof field === 'object') {
-                const title = field.title || field.name || field.label || '';
-                const value = field.value || field.data || field.content || field.text || '';
-                
-                // Шукаємо по title "Instagram user name"
-                if (value && typeof value === 'string' && /instagram/i.test(title)) {
-                  const normalized = normalizeInstagram(value.trim());
-                  if (normalized && !instagramValues.includes(normalized)) {
-                    instagramValues.push(normalized);
-                  }
-                }
-                
-                // Також перевіряємо по id поля (76671 з метаданих)
-                if (field.id === 76671 && value && typeof value === 'string') {
-                  const normalized = normalizeInstagram(value.trim());
-                  if (normalized && !instagramValues.includes(normalized)) {
-                    instagramValues.push(normalized);
-                  }
-                }
-              }
-            }
-          }
-          
-          // Fallback: якщо custom_fields - це об'єкт (старий формат)
-          if (response.custom_fields && typeof response.custom_fields === 'object' && !Array.isArray(response.custom_fields)) {
-            const checks = [
-              response.custom_fields['instagram-user-name'],
-              response.custom_fields['Instagram user name'],
-              response.custom_fields.instagram_user_name,
-              response.custom_fields.instagram,
-            ];
-            
-            for (const value of checks) {
-              if (value && typeof value === 'string' && value.trim()) {
-                const normalized = normalizeInstagram(value.trim());
-                if (normalized && !instagramValues.includes(normalized)) {
-                  instagramValues.push(normalized);
-                }
-              }
-            }
-          }
-          
-          // Перевіряємо прямі поля
-          const directChecks = [
-            response['instagram-user-name'],
-            response.instagram_user_name,
-            response.instagram,
-          ];
-          
-          for (const value of directChecks) {
-            if (value && typeof value === 'string' && value.trim()) {
-              const normalized = normalizeInstagram(value.trim());
-              if (normalized && !instagramValues.includes(normalized)) {
-                instagramValues.push(normalized);
-              }
-            }
-          }
-        }
-        
-        // Якщо response - це масив custom_fields (якщо отримали через окремий endpoint)
-        if (Array.isArray(response)) {
-          for (const field of response) {
-            if (field && typeof field === 'object') {
-              const title = field.title || field.name || field.label || '';
-              const value = field.value || field.data || field.content || field.text || '';
-              
-              if (/instagram/i.test(title) && value && typeof value === 'string') {
-                const normalized = normalizeInstagram(value.trim());
-                if (normalized && !instagramValues.includes(normalized)) {
-                  instagramValues.push(normalized);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    results.instagramFound = instagramValues.length > 0;
-    results.instagramValues = instagramValues;
+    // Instagram вже витягнуто в КРОК 3 вище
+    // Результати вже в results.instagramValues та results.instagramFound
 
     return NextResponse.json({
       ok: true,
