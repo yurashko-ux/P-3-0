@@ -300,15 +300,19 @@ export async function POST(req: NextRequest) {
           let instagramUsername: string | null = null;
 
           try {
-            // ВАЖЛИВО: Правильний endpoint - GET /company/{company_id}/clients/{client_id}
+            // ВАЖЛИВО згідно з чек-листом:
+            // 1. Використовувати User Token, не Partner (altegioFetch використовує altegioHeaders, який перевіряє USER_TOKEN)
+            // 2. User Token має доступ до location (companyId)
+            // 3. clients/search — не очікувати custom_fields (вже зроблено)
+            // 4. custom_fields читати лише з GET /company/{location}/clients/{id}
+            // Правильний endpoint - GET /company/{company_id}/clients/{client_id}
             // /clients/{id} НЕ існує (404 був через неправильний endpoint)
-            // Також важливо мати заголовок Accept: application/json
             const correctEndpoint = `/company/${companyId}/clients/${altegioClient.id}`;
             
             const detailedClient = await altegioFetch<any>(correctEndpoint, {
               method: 'GET',
               headers: {
-                'Accept': 'application/json',
+                'Accept': 'application/json', // Важливо для Altegio API
                 'Content-Type': 'application/json',
               },
             });

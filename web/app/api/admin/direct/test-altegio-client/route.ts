@@ -165,10 +165,15 @@ export async function POST(req: NextRequest) {
     let fullClientData: any = null;
     
     try {
+      // ВАЖЛИВО згідно з чек-листом:
+      // 1. Використовувати User Token, не Partner
+      // 2. User Token має доступ до location 1169323
+      // 3. clients/search — не очікувати custom_fields (вже зроблено)
+      // 4. custom_fields читати лише з GET /company/{location}/clients/{id}
       const detailedClient = await altegioFetch<any>(correctEndpoint, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
+          'Accept': 'application/json', // Важливо для Altegio API
           'Content-Type': 'application/json',
         },
       });
