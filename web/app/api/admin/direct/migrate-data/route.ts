@@ -207,8 +207,21 @@ export async function POST(req: NextRequest) {
                 }
                 
                 if (client && typeof client === 'object' && client.id && client.instagramUsername) {
-                  await saveDirectClient(client as DirectClient);
-                  stats.clients.migrated++;
+                  try {
+                    await saveDirectClient(client as DirectClient);
+                    stats.clients.migrated++;
+                  } catch (saveErr) {
+                    // Якщо помилка про unique constraint, це означає що клієнт вже існує - це нормально
+                    const errorMsg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+                    if (errorMsg.includes('Unique constraint') || errorMsg.includes('instagramUsername')) {
+                      // Це дублікат - пропускаємо, але не вважаємо помилкою
+                      stats.clients.migrated++;
+                      console.log(`[migrate-data] Skipping duplicate client ${id} (username: ${client.instagramUsername})`);
+                    } else {
+                      stats.clients.errors++;
+                      stats.clients.errorsList.push(`Client ${id}: ${errorMsg}`);
+                    }
+                  }
                 } else {
                   stats.clients.errors++;
                   stats.clients.errorsList.push(`Invalid client ${id}`);
@@ -216,7 +229,8 @@ export async function POST(req: NextRequest) {
               }
             } catch (err) {
               stats.clients.errors++;
-              stats.clients.errorsList.push(`Client ${id}: ${err instanceof Error ? err.message : String(err)}`);
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              stats.clients.errorsList.push(`Client ${id}: ${errorMsg}`);
             }
           }
         }

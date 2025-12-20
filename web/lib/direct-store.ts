@@ -132,17 +132,52 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
 export async function saveDirectClient(client: DirectClient): Promise<void> {
   try {
     const data = directClientToPrisma(client);
+    const normalizedUsername = data.instagramUsername;
     
-    await prisma.directClient.upsert({
-      where: { id: client.id },
-      create: data,
-      update: {
-        ...data,
-        updatedAt: new Date(),
-      },
+    // Спочатку перевіряємо, чи існує клієнт з таким instagramUsername
+    const existingByUsername = await prisma.directClient.findUnique({
+      where: { instagramUsername: normalizedUsername },
     });
     
-    console.log(`[direct-store] ✅ Saved client ${client.id} to Postgres`);
+    if (existingByUsername) {
+      // Якщо існує клієнт з таким username, оновлюємо його (об'єднуємо дані)
+      // Беремо найранішу дату створення та найпізнішу дату оновлення
+      await prisma.directClient.update({
+        where: { instagramUsername: normalizedUsername },
+        data: {
+          ...data,
+          id: existingByUsername.id, // Зберігаємо існуючий ID
+          createdAt: existingByUsername.createdAt < data.firstContactDate 
+            ? existingByUsername.createdAt 
+            : new Date(data.firstContactDate),
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
+    } else {
+      // Перевіряємо, чи існує клієнт з таким ID
+      const existingById = await prisma.directClient.findUnique({
+        where: { id: client.id },
+      });
+      
+      if (existingById) {
+        // Оновлюємо існуючий запис
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: {
+            ...data,
+            updatedAt: new Date(),
+          },
+        });
+        console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
+      } else {
+        // Створюємо новий запис
+        await prisma.directClient.create({
+          data,
+        });
+        console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
+      }
+    }
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client.id}:`, err);
     throw err;
