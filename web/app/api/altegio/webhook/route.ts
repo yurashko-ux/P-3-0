@@ -375,6 +375,161 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Обробка подій по клієнтах (client) для оновлення Direct Manager
+    if (body.resource === 'client') {
+      const clientId = body.resource_id;
+      const status = body.status; // 'create', 'update', 'delete'
+      const data = body.data || {};
+      const client = data.client || data || {};
+
+      console.log('[altegio/webhook] Processing client event:', {
+        clientId,
+        status,
+        hasClient: !!client,
+        clientKeys: client ? Object.keys(client) : [],
+        hasCustomFields: !!client.custom_fields,
+        customFieldsType: typeof client.custom_fields,
+        customFieldsIsArray: Array.isArray(client.custom_fields),
+      });
+
+      // Оновлюємо клієнта в Direct Manager тільки при create/update
+      if (status === 'create' || status === 'update') {
+        try {
+          // Імпортуємо функції для роботи з Direct Manager
+          const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+          const { normalizeInstagram } = await import('@/lib/normalize');
+
+          // Витягуємо Instagram username (використовуємо ту саму логіку, що й вище)
+          let instagram: string | null = null;
+          
+          if (client.custom_fields) {
+            if (Array.isArray(client.custom_fields)) {
+              for (const field of client.custom_fields) {
+                if (field && typeof field === 'object') {
+                  const title = field.title || field.name || field.label || '';
+                  const value = field.value || field.data || field.content || field.text || '';
+                  
+                  if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                    instagram = value.trim();
+                    break;
+                  }
+                }
+              }
+            } else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+              instagram =
+                client.custom_fields['instagram-user-name'] ||
+                client.custom_fields['Instagram user name'] ||
+                client.custom_fields.instagram_user_name ||
+                client.custom_fields.instagram ||
+                null;
+            }
+          }
+
+          if (!instagram) {
+            console.log(`[altegio/webhook] ⏭️ Skipping client ${clientId} - no Instagram username in custom_fields`);
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              skipped: 'no_instagram',
+            });
+          }
+
+          const normalizedInstagram = normalizeInstagram(instagram);
+          if (!normalizedInstagram) {
+            console.log(`[altegio/webhook] ⏭️ Skipping client ${clientId} - invalid Instagram username: ${instagram}`);
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              skipped: 'invalid_instagram',
+            });
+          }
+
+          // Отримуємо існуючих клієнтів для перевірки дублікатів
+          const existingDirectClients = await getAllDirectClients();
+          const existingInstagramMap = new Map<string, string>();
+          const existingAltegioIdMap = new Map<number, string>();
+          
+          for (const dc of existingDirectClients) {
+            const normalized = normalizeInstagram(dc.instagramUsername);
+            if (normalized) {
+              existingInstagramMap.set(normalized, dc.id);
+            }
+            if (dc.altegioClientId) {
+              existingAltegioIdMap.set(dc.altegioClientId, dc.id);
+            }
+          }
+
+          // Витягуємо ім'я
+          const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+          const firstName = nameParts[0] || undefined;
+          const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+
+          // Шукаємо існуючого клієнта
+          let existingClientId = existingInstagramMap.get(normalizedInstagram);
+          if (!existingClientId && clientId) {
+            existingClientId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
+          }
+
+          if (existingClientId) {
+            // Оновлюємо існуючого клієнта
+            const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
+            if (existingClient) {
+              const updated: typeof existingClient = {
+                ...existingClient,
+                altegioClientId: parseInt(String(clientId), 10),
+                instagramUsername: normalizedInstagram,
+                ...(firstName && { firstName }),
+                ...(lastName && { lastName }),
+                updatedAt: new Date().toISOString(),
+              };
+              await saveDirectClient(updated);
+              console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from Altegio client ${clientId} (Instagram: ${normalizedInstagram})`);
+            }
+          } else {
+            // Створюємо нового клієнта
+            const now = new Date().toISOString();
+            const newClient = {
+              id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              instagramUsername: normalizedInstagram,
+              firstName,
+              lastName,
+              source: 'instagram' as const,
+              firstContactDate: now,
+              statusId: 'new',
+              visitedSalon: false,
+              signedUpForPaidService: false,
+              altegioClientId: parseInt(String(clientId), 10),
+              createdAt: now,
+              updatedAt: now,
+            };
+            await saveDirectClient(newClient);
+            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram})`);
+          }
+
+          return NextResponse.json({
+            ok: true,
+            received: true,
+            processed: true,
+            clientId,
+            instagram: normalizedInstagram,
+          });
+        } catch (err) {
+          console.error(`[altegio/webhook] ❌ Failed to process client event ${clientId}:`, err);
+          return NextResponse.json({
+            ok: true,
+            received: true,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        received: true,
+        skipped: `client_${status}`,
+      });
+    }
+
     // Повертаємо успішну відповідь
     return NextResponse.json({
       ok: true,
