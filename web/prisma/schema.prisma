@@ -1,0 +1,67 @@
+// web/prisma/schema.prisma
+// Prisma схема для Direct Manager розділу
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Статуси клієнтів (Новий, Консультація, Записався, тощо)
+model DirectStatus {
+  id        String   @id // UUID або string ID (зберігаємо як є з KV)
+  name      String   // Назва статусу (напр. "Новий", "Консультація", "Записався")
+  color     String   @default("#6b7280") // Колір для відображення (hex)
+  order     Int      @default(0) // Порядок сортування
+  isDefault Boolean  @default(false) // Чи це статус за замовчуванням для нових клієнтів
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Зв'язок з клієнтами
+  clients DirectClient[]
+
+  @@index([order])
+  @@index([isDefault])
+  @@map("direct_statuses")
+}
+
+// Клієнти Direct Manager
+model DirectClient {
+  id                    String    @id // UUID або timestamp-based ID (зберігаємо як є з KV)
+  instagramUsername      String    // Нікнейм в Instagram (унікальний)
+  firstName              String?   // Ім'я
+  lastName               String?   // Прізвище
+  source                 String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'
+  state                  String?   // Системний стан: 'lead' | 'client' | 'consultation'
+  firstContactDate       DateTime  // Дата першого контакту
+  statusId               String    // ID статусу (foreign key)
+  masterId               String?   // ID майстра (якщо статус = Консультація)
+  consultationDate       DateTime? // Дата консультації
+  visitedSalon           Boolean   @default(false) // Чи прийшов клієнт в салон на консультацію
+  visitDate              DateTime? // Дата візиту в салон
+  signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
+  paidServiceDate        DateTime? // Дата запису на платну послугу
+  signupAdmin            String?   // Хто записав (ім'я адміна)
+  comment                String?   // Коментар/нотатки
+  altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
+  lastMessageAt          DateTime? // Останнє повідомлення
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // Зв'язок зі статусом
+  status DirectStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+
+  // Індекси для швидкого пошуку
+  @@unique([instagramUsername])
+  @@index([statusId])
+  @@index([masterId])
+  @@index([altegioClientId])
+  @@index([state])
+  @@index([source])
+  @@index([firstContactDate])
+  @@index([createdAt])
+  @@map("direct_clients")
+}

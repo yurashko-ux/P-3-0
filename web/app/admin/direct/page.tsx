@@ -561,6 +561,47 @@ export default function DirectPage() {
             🔄 Відновити клієнта
           </button>
           <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/check-migration');
+                const data = await res.json();
+                if (data.ok) {
+                  const migration = data.migration;
+                  const message = `Перевірка міграції:\n\n` +
+                    `Статус: ${migration.status}\n` +
+                    `Міграція виконана: ${migration.isMigrated ? '✅' : '❌'}\n\n` +
+                    `Postgres:\n` +
+                    `  Підключено: ${migration.postgres.connected ? '✅' : '❌'}\n` +
+                    `  Клієнтів: ${migration.postgres.clientsCount}\n` +
+                    `  Статусів: ${migration.postgres.statusesCount}\n` +
+                    (migration.postgres.error ? `  Помилка: ${migration.postgres.error}\n` : '') +
+                    `\nKV (старий store):\n` +
+                    `  Клієнтів: ${migration.kv.clientsCount}\n` +
+                    `  Статусів: ${migration.kv.statusesCount}\n` +
+                    `\nStore (новий, через Postgres):\n` +
+                    `  Клієнтів: ${migration.store.clientsCount}\n` +
+                    `  Статусів: ${migration.store.statusesCount}\n` +
+                    (migration.store.error ? `  Помилка: ${migration.store.error}\n` : '') +
+                    `\nРекомендація: ${migration.recommendation}\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Перевірити стан міграції на Postgres"
+          >
+            🗄️ Перевірити міграцію
+          </button>
+          <button
             className="btn btn-sm btn-info"
             onClick={async () => {
               setIsLoading(true);
@@ -592,6 +633,48 @@ export default function DirectPage() {
             title="Тест збереження статусу"
           >
             🧪 Тест статусу
+          </button>
+          <button
+            className="btn btn-sm btn-accent"
+            onClick={async () => {
+              if (!confirm('Виконати міграцію даних з KV → Postgres?\n\nЦе перенесе всіх клієнтів та статуси з KV в Postgres.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/migrate-data', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Міграція завершена!\n\n` +
+                    `Статуси:\n` +
+                    `  Знайдено: ${data.stats.statuses.found}\n` +
+                    `  Мігровано: ${data.stats.statuses.migrated}\n` +
+                    `  Помилок: ${data.stats.statuses.errors}\n` +
+                    `  Всього в Postgres: ${data.stats.statuses.finalCount}\n\n` +
+                    `Клієнти:\n` +
+                    `  Знайдено: ${data.stats.clients.found}\n` +
+                    `  Мігровано: ${data.stats.clients.migrated}\n` +
+                    `  Помилок: ${data.stats.clients.errors}\n\n` +
+                    (data.errors.statuses.length > 0 || data.errors.clients.length > 0
+                      ? `Помилки:\n${JSON.stringify(data.errors, null, 2)}\n\n`
+                      : ''
+                    ) +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка міграції: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Мігрувати дані з KV в Postgres"
+          >
+            🚀 Мігрувати дані
           </button>
           <button
             className="btn btn-sm btn-warning"
