@@ -240,9 +240,11 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               page,
               page_size: currentPageSize,
-              // ВАЖЛИВО: Altegio API /clients/search НЕ повертає custom_fields, навіть якщо вказати їх в fields
-              // Потрібно використовувати вебхуки або звернутися до підтримки Altegio
-              // fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+              // ВАЖЛИВО: Altegio API limitation
+              // /clients/search НІКОЛИ не повертає custom_fields (це обмеження API, не баг)
+              // custom_fields доступні ТІЛЬКИ через GET /clients/{id}
+              // Потрібен flow: search → get by id
+              fields: ['id', 'name', 'phone', 'email'], // Не вказуємо custom_fields, бо вони все одно не повертаються
               order_by: 'last_visit_date',
               order_by_direction: 'desc',
             }),
@@ -272,14 +274,12 @@ export async function POST(req: NextRequest) {
         
         // Логуємо структуру першого клієнта для діагностики
         if (clients.length > 0 && page === 1) {
-          console.log(`[direct/sync-altegio-bulk] Sample client structure (first client):`, {
+          console.log(`[direct/sync-altegio-bulk] Sample client structure from search (first client):`, {
             id: clients[0].id,
             name: clients[0].name,
             allKeys: Object.keys(clients[0]),
             hasCustomFields: !!clients[0].custom_fields,
-            customFieldsType: typeof clients[0].custom_fields,
-            customFieldsIsArray: Array.isArray(clients[0].custom_fields),
-            customFieldsPreview: clients[0].custom_fields ? JSON.stringify(clients[0].custom_fields).substring(0, 200) : null,
+            note: '⚠️ /clients/search never returns custom_fields by design',
           });
         }
 
@@ -292,27 +292,63 @@ export async function POST(req: NextRequest) {
             break;
           }
 
-          // Детальне логування для проблемного клієнта
-          if (altegioClient.id === 176404915) {
-            console.log(`[direct/sync-altegio-bulk] DEBUG: Full client data for ${altegioClient.id}:`, {
-              id: altegioClient.id,
-              name: altegioClient.name,
-              allKeys: Object.keys(altegioClient),
-              custom_fields: altegioClient.custom_fields,
-              custom_fields_type: typeof altegioClient.custom_fields,
-              custom_fields_isArray: Array.isArray(altegioClient.custom_fields),
-              fullClient: JSON.stringify(altegioClient, null, 2),
-            });
+          // ВАЖЛИВО: Altegio API limitation
+          // /clients/search НІКОЛИ не повертає custom_fields (це обмеження API, не баг)
+          // custom_fields доступні ТІЛЬКИ через GET /clients/{id}
+          // Потрібен flow: search → get by id
+          let fullClientData = altegioClient;
+          let instagramUsername: string | null = null;
+
+          try {
+            // Отримуємо повні дані клієнта через GET /clients/{id}
+            // Спробуємо різні варіанти endpoint
+            const clientEndpoints = [
+              `/clients/${altegioClient.id}`, // GPT формат: /api/v1/clients/{id}
+              `/company/${companyId}/clients/${altegioClient.id}`, // З company_id
+            ];
+
+            for (const endpoint of clientEndpoints) {
+              try {
+                const detailedClient = await altegioFetch<any>(endpoint, {
+                  method: 'GET',
+                });
+                
+                if (detailedClient && detailedClient.id === altegioClient.id) {
+                  fullClientData = detailedClient;
+                  console.log(`[direct/sync-altegio-bulk] ✅ Got full client data for ${altegioClient.id} via ${endpoint}`);
+                  
+                  // Детальне логування для проблемного клієнта
+                  if (altegioClient.id === 176404915) {
+                    console.log(`[direct/sync-altegio-bulk] DEBUG: Full client data for ${altegioClient.id}:`, {
+                      id: fullClientData.id,
+                      name: fullClientData.name,
+                      allKeys: Object.keys(fullClientData),
+                      custom_fields: fullClientData.custom_fields,
+                      custom_fields_type: typeof fullClientData.custom_fields,
+                      custom_fields_isArray: Array.isArray(fullClientData.custom_fields),
+                      fullClient: JSON.stringify(fullClientData, null, 2).substring(0, 1000),
+                    });
+                  }
+                  break; // Якщо знайшли працюючий endpoint, не пробуємо інші
+                }
+              } catch (err) {
+                // Продовжуємо спроби з іншими endpoint'ами
+                if (altegioClient.id === 176404915) {
+                  console.log(`[direct/sync-altegio-bulk] DEBUG: Failed to fetch via ${endpoint}:`, err instanceof Error ? err.message : String(err));
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`[direct/sync-altegio-bulk] Failed to get full client data for ${altegioClient.id}:`, err);
           }
 
-          // Витягуємо Instagram username
-          let instagramUsername = extractInstagramFromAltegioClient(altegioClient);
+          // Витягуємо Instagram username з повних даних клієнта
+          instagramUsername = extractInstagramFromAltegioClient(fullClientData);
           
-          // ВАЖЛИВО: Altegio API /clients/search НЕ повертає custom_fields
-          // Instagram username можна отримати тільки через вебхуки або звернувшись до підтримки Altegio
           if (!instagramUsername && altegioClient.id === 176404915) {
-            console.log(`[direct/sync-altegio-bulk] ⚠️ WARNING: Instagram not found for client ${altegioClient.id}. Altegio API /clients/search does not return custom_fields.`);
-            console.log(`[direct/sync-altegio-bulk] 💡 Solution: Use Altegio webhooks to get custom_fields when clients are updated, or contact Altegio support.`);
+            console.log(`[direct/sync-altegio-bulk] ⚠️ WARNING: Instagram not found for client ${altegioClient.id} even after fetching full data.`);
+            console.log(`[direct/sync-altegio-bulk] Full client data keys:`, Object.keys(fullClientData));
+            console.log(`[direct/sync-altegio-bulk] Custom fields:`, fullClientData.custom_fields);
           }
           
           // У тестовому режимі дозволяємо збереження без Instagram username
