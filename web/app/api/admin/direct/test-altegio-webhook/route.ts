@@ -86,26 +86,26 @@ export async function POST(req: NextRequest) {
       webhookPayload,
     });
 
-    // Викликаємо реальний вебхук endpoint
-    const webhookUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}/api/altegio/webhook`
-      : 'http://localhost:3000/api/altegio/webhook';
-
+    // Викликаємо реальний вебхук endpoint напряму (внутрішній виклик)
     let webhookResponse: any = null;
     let webhookError: string | null = null;
 
     try {
-      const response = await fetch(webhookUrl, {
+      // Імпортуємо та викликаємо вебхук функцію напряму
+      const { POST: webhookPOST } = await import('@/app/api/altegio/webhook/route');
+      const mockRequest = new Request('http://localhost:3000/api/altegio/webhook', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(webhookPayload),
       });
-
+      
+      const response = await webhookPOST(mockRequest as any);
       webhookResponse = await response.json().catch(() => ({ raw: await response.text() }));
     } catch (err) {
       webhookError = err instanceof Error ? err.message : String(err);
+      console.error('[direct/test-altegio-webhook] Webhook call error:', err);
     }
 
     // Тестуємо логіку витягування Instagram (як у вебхуку)
