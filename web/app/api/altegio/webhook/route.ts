@@ -498,12 +498,13 @@ export async function POST(req: NextRequest) {
                 ...existingClient,
                 altegioClientId: parseInt(String(clientId), 10),
                 instagramUsername: normalizedInstagram,
+                state: 'client' as const, // Оновлюємо стан на "Клієнт", якщо клієнт є в Altegio
                 ...(firstName && { firstName }),
                 ...(lastName && { lastName }),
                 updatedAt: new Date().toISOString(),
               };
               await saveDirectClient(updated);
-              console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from Altegio client ${clientId} (Instagram: ${normalizedInstagram})`);
+              console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: client)`);
             }
           } else {
             // Створюємо нового клієнта
@@ -514,6 +515,7 @@ export async function POST(req: NextRequest) {
               firstName,
               lastName,
               source: 'instagram' as const,
+              state: 'client' as const, // Клієнти з Altegio мають стан "Клієнт"
               firstContactDate: now,
               statusId: 'new',
               visitedSalon: false,
@@ -523,7 +525,7 @@ export async function POST(req: NextRequest) {
               updatedAt: now,
             };
             await saveDirectClient(newClient);
-            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram})`);
+            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: client)`);
           }
 
           return NextResponse.json({

@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
         firstName,
         lastName,
         source: (source as 'instagram' | 'tiktok' | 'other') || 'instagram',
+        state: 'lead' as const, // Клієнти з ManyChat мають стан "Лід"
         firstContactDate: now,
         statusId: defaultStatus?.id || 'new',
         visitedSalon: false,
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
         updatedAt: now,
       };
     } else {
-      // Оновлюємо існуючого клієнта
+      // Оновлюємо існуючого клієнта (не змінюємо state, якщо він вже є)
       client = {
         ...client,
         ...(firstName && { firstName }),

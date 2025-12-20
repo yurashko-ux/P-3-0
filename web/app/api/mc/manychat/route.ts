@@ -484,6 +484,7 @@ export async function POST(req: NextRequest) {
           firstName: fullNameParts[0] || undefined,
           lastName: fullNameParts.slice(1).join(' ') || undefined,
           source: 'instagram',
+          state: 'lead' as const, // Клієнти з ManyChat мають стан "Лід"
           firstContactDate: now,
           statusId: defaultStatus?.id || 'new',
           visitedSalon: false,

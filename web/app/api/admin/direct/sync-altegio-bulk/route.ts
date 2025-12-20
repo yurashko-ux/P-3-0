@@ -448,6 +448,7 @@ export async function POST(req: NextRequest) {
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: altegioClient.id,
+                state: 'client' as const, // Оновлюємо стан на "Клієнт", якщо клієнт є в Altegio
                 // Оновлюємо Instagram username, якщо він змінився або був згенерований
                 ...(shouldUpdateInstagram && { instagramUsername: normalizedInstagram }),
                 ...(firstName && !existingClient.firstName && { firstName }),
@@ -478,6 +479,7 @@ export async function POST(req: NextRequest) {
               firstName,
               lastName,
               source: 'instagram' as const,
+              state: 'client' as const, // Клієнти з Altegio мають стан "Клієнт"
               firstContactDate: now,
               statusId: 'new',
               visitedSalon: false,
