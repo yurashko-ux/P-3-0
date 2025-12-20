@@ -153,48 +153,87 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    // КРОК 2: Отримуємо повні дані клієнта через GET /clients/{id}
-    console.log(`[direct/test-altegio-client] Step 2: Getting full client data via GET /clients/{id}...`);
+    // КРОК 2: Отримуємо повні дані клієнта через GET /client/{id} (як у getClient функції)
+    console.log(`[direct/test-altegio-client] Step 2: Getting full client data via GET /company/{id}/client/{id}...`);
     
+    // Використовуємо ті самі endpoint'и, що й getClient функція
     const clientEndpoints = [
-      `/clients/${clientId}`, // GPT формат: /api/v1/clients/{id}
-      `/company/${companyId}/clients/${clientId}`, // З company_id
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
+        params: 'fields[]=custom_fields',
+      },
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
+        params: 'include[]=custom_fields',
+      },
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
+        params: 'fields[]=*&include[]=*',
+      },
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/client/${clientId}`,
+        params: 'none',
+      },
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/clients/${clientId}`,
+        params: 'plural clients',
+      },
+      {
+        method: 'GET' as const,
+        url: `/clients/${clientId}`,
+        params: 'GPT format (no company_id)',
+      },
     ];
     
     let fullClientData: any = null;
     
-    for (const endpoint of clientEndpoints) {
+    for (const attempt of clientEndpoints) {
       try {
-        const detailedClient = await altegioFetch<any>(endpoint, {
-          method: 'GET',
+        const detailedClient = await altegioFetch<any>(attempt.url, {
+          method: attempt.method,
         });
         
-        if (detailedClient && detailedClient.id === clientId) {
-          fullClientData = detailedClient;
+        // Обробляємо різні формати відповіді
+        let client: any = null;
+        if (detailedClient && typeof detailedClient === 'object') {
+          if ('id' in detailedClient && detailedClient.id === clientId) {
+            client = detailedClient;
+          } else if ('data' in detailedClient && detailedClient.data && detailedClient.data.id === clientId) {
+            client = detailedClient.data;
+          }
+        }
+        
+        if (client && client.id === clientId) {
+          fullClientData = client;
           results.attempts.push({
-            method: 'GET',
-            url: endpoint,
-            params: `Step 2: Get by ID (proper flow)`,
+            method: attempt.method,
+            url: attempt.url,
+            params: `Step 2: Get by ID (${attempt.params})`,
             success: true,
-            hasCustomFields: !!detailedClient?.custom_fields,
-            customFieldsType: typeof detailedClient?.custom_fields,
-            customFieldsIsArray: Array.isArray(detailedClient?.custom_fields),
-            customFieldsKeys: detailedClient?.custom_fields && typeof detailedClient?.custom_fields === 'object' && !Array.isArray(detailedClient?.custom_fields)
-              ? Object.keys(detailedClient?.custom_fields)
+            hasCustomFields: !!client?.custom_fields,
+            customFieldsType: typeof client?.custom_fields,
+            customFieldsIsArray: Array.isArray(client?.custom_fields),
+            customFieldsKeys: client?.custom_fields && typeof client?.custom_fields === 'object' && !Array.isArray(client?.custom_fields)
+              ? Object.keys(client?.custom_fields)
               : [],
-            customFieldsLength: Array.isArray(detailedClient?.custom_fields) ? detailedClient.custom_fields.length : 0,
-            response: detailedClient,
-            allKeys: Object.keys(detailedClient || {}),
-            fullResponse: JSON.stringify(detailedClient, null, 2).substring(0, 2000),
+            customFieldsLength: Array.isArray(client?.custom_fields) ? client.custom_fields.length : 0,
+            response: client,
+            allKeys: Object.keys(client || {}),
+            fullResponse: JSON.stringify(client, null, 2).substring(0, 2000),
             note: '✅ This is the proper flow: search → get by id',
           });
-          break;
+          break; // Якщо знайшли працюючий endpoint, не пробуємо інші
         }
       } catch (err) {
         results.attempts.push({
-          method: 'GET',
-          url: endpoint,
-          params: `Step 2: Get by ID`,
+          method: attempt.method,
+          url: attempt.url,
+          params: `Step 2: Get by ID (${attempt.params})`,
           success: false,
           error: err instanceof Error ? err.message : String(err),
         });
