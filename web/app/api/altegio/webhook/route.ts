@@ -405,33 +405,56 @@ export async function POST(req: NextRequest) {
       if (status === 'create' || status === 'update') {
         try {
           // Імпортуємо функції для роботи з Direct Manager
-          const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+          const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
           const { normalizeInstagram } = await import('@/lib/normalize');
+
+          // Детальне логування структури даних
+          console.log('[altegio/webhook] 🔍 Full client data structure:', {
+            clientId,
+            status,
+            clientName: client.name || client.display_name,
+            clientKeys: Object.keys(client),
+            hasCustomFields: !!client.custom_fields,
+            customFieldsType: typeof client.custom_fields,
+            customFieldsIsArray: Array.isArray(client.custom_fields),
+            customFieldsValue: client.custom_fields,
+            fullClientData: JSON.stringify(client, null, 2),
+          });
 
           // Витягуємо Instagram username (використовуємо ту саму логіку, що й вище)
           let instagram: string | null = null;
           
           if (client.custom_fields) {
             if (Array.isArray(client.custom_fields)) {
+              console.log(`[altegio/webhook] 🔍 Processing custom_fields as array (length: ${client.custom_fields.length})`);
               for (const field of client.custom_fields) {
                 if (field && typeof field === 'object') {
                   const title = field.title || field.name || field.label || '';
                   const value = field.value || field.data || field.content || field.text || '';
                   
+                  console.log(`[altegio/webhook] 🔍 Checking field:`, { title, value, fieldKeys: Object.keys(field) });
+                  
                   if (value && typeof value === 'string' && /instagram/i.test(title)) {
                     instagram = value.trim();
+                    console.log(`[altegio/webhook] ✅ Found Instagram in array field: ${instagram} (title: ${title})`);
                     break;
                   }
                 }
               }
             } else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+              console.log(`[altegio/webhook] 🔍 Processing custom_fields as object (keys: ${Object.keys(client.custom_fields).join(', ')})`);
               instagram =
                 client.custom_fields['instagram-user-name'] ||
                 client.custom_fields['Instagram user name'] ||
                 client.custom_fields.instagram_user_name ||
                 client.custom_fields.instagram ||
                 null;
+              if (instagram) {
+                console.log(`[altegio/webhook] ✅ Found Instagram in object field: ${instagram}`);
+              }
             }
+          } else {
+            console.log(`[altegio/webhook] ⚠️ No custom_fields found in client data`);
           }
 
           if (!instagram) {
@@ -463,6 +486,20 @@ export async function POST(req: NextRequest) {
           }
 
           console.log(`[altegio/webhook] ✅ Normalized Instagram for client ${clientId}: ${normalizedInstagram}`);
+
+          // Отримуємо статус за замовчуванням
+          const allStatuses = await getAllDirectStatuses();
+          const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
+          if (!defaultStatus) {
+            console.error(`[altegio/webhook] ❌ No default status found, cannot create client`);
+            return NextResponse.json({
+              ok: true,
+              received: true,
+              error: 'No default status found',
+            });
+          }
+
+          console.log(`[altegio/webhook] ✅ Using default status: ${defaultStatus.id} (${defaultStatus.name})`);
 
           // Отримуємо існуючих клієнтів для перевірки дублікатів
           const existingDirectClients = await getAllDirectClients();
@@ -517,7 +554,7 @@ export async function POST(req: NextRequest) {
               source: 'instagram' as const,
               state: 'client' as const, // Клієнти з Altegio мають стан "Клієнт"
               firstContactDate: now,
-              statusId: 'new',
+              statusId: defaultStatus.id, // Використовуємо ID статусу за замовчуванням
               visitedSalon: false,
               signedUpForPaidService: false,
               altegioClientId: parseInt(String(clientId), 10),
@@ -525,7 +562,7 @@ export async function POST(req: NextRequest) {
               updatedAt: now,
             };
             await saveDirectClient(newClient);
-            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: client)`);
+            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: client, statusId: ${defaultStatus.id})`);
           }
 
           return NextResponse.json({
@@ -537,6 +574,7 @@ export async function POST(req: NextRequest) {
           });
         } catch (err) {
           console.error(`[altegio/webhook] ❌ Failed to process client event ${clientId}:`, err);
+          console.error(`[altegio/webhook] ❌ Error stack:`, err instanceof Error ? err.stack : 'No stack trace');
           return NextResponse.json({
             ok: true,
             received: true,
