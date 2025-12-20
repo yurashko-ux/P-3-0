@@ -174,12 +174,38 @@ export async function POST(req: NextRequest) {
             customFields: client.custom_fields,
           });
 
-          // Шукаємо Instagram username в різних місцях
-          let instagram =
-            client.custom_fields?.['instagram-user-name'] ||
-            client.custom_fields?.['instagram_username'] ||
-            client.custom_fields?.['instagram'] ||
-            null;
+          // Шукаємо Instagram username в custom_fields
+          // ВАЖЛИВО: Altegio може повертати custom_fields як масив об'єктів з title/value
+          let instagram: string | null = null;
+          
+          if (client.custom_fields) {
+            // Варіант 1: custom_fields - це масив об'єктів (як в API)
+            if (Array.isArray(client.custom_fields)) {
+              for (const field of client.custom_fields) {
+                if (field && typeof field === 'object') {
+                  const title = field.title || field.name || field.label || '';
+                  const value = field.value || field.data || field.content || field.text || '';
+                  
+                  // Шукаємо по title "Instagram user name"
+                  if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                    instagram = value.trim();
+                    break;
+                  }
+                }
+              }
+            }
+            // Варіант 2: custom_fields - це об'єкт з ключами (як в деяких вебхуках)
+            else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+              instagram =
+                client.custom_fields['instagram-user-name'] ||
+                client.custom_fields['Instagram user name'] ||
+                client.custom_fields.instagram_user_name ||
+                client.custom_fields.instagramUsername ||
+                client.custom_fields.instagram ||
+                client.custom_fields['instagram'] ||
+                null;
+            }
+          }
 
           // Якщо немає Instagram - не створюємо нагадування
           if (!instagram) {
