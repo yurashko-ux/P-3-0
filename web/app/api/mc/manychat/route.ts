@@ -16,6 +16,7 @@ import {
 } from '@/lib/manychat-routing';
 import { moveKeycrmCard } from '@/lib/keycrm-move';
 import { normalizeCampaignShape } from '@/lib/campaign-shape';
+import { normalizeInstagram } from '@/lib/normalize';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
@@ -465,10 +466,15 @@ export async function POST(req: NextRequest) {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
       const { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } = await import('@/lib/direct-store');
       
-      const instagram = message.handle.trim().toLowerCase();
-      console.log('[manychat] Processing Direct client sync for:', instagram);
-      
-      let client = await getDirectClientByInstagram(instagram);
+      // Нормалізуємо Instagram username (прибираємо @, протоколи, тощо)
+      const normalizedInstagram = normalizeInstagram(message.handle);
+      if (!normalizedInstagram) {
+        console.warn('[manychat] ⚠️ Skipping Direct sync - invalid Instagram handle:', message.handle);
+        // Продовжуємо виконання webhook, просто пропускаємо синхронізацію
+      } else {
+        console.log('[manychat] Processing Direct client sync for:', normalizedInstagram, '(original:', message.handle, ')');
+        
+        let client = await getDirectClientByInstagram(normalizedInstagram);
       
       const statuses = await getAllDirectStatuses();
       const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
@@ -480,7 +486,7 @@ export async function POST(req: NextRequest) {
         const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         client = {
           id: clientId,
-          instagramUsername: instagram,
+          instagramUsername: normalizedInstagram,
           firstName: fullNameParts[0] || undefined,
           lastName: fullNameParts.slice(1).join(' ') || undefined,
           source: 'instagram',
@@ -500,7 +506,7 @@ export async function POST(req: NextRequest) {
         client = {
           ...client,
           id: client.id,
-          instagramUsername: instagram,
+          instagramUsername: normalizedInstagram,
           ...(message.fullName && fullNameParts.length > 0 && {
             firstName: fullNameParts[0],
             lastName: fullNameParts.slice(1).join(' ') || undefined,
@@ -521,10 +527,12 @@ export async function POST(req: NextRequest) {
       } else {
         console.error('[manychat] ❌ Invalid client data:', { id: client.id, username: client.instagramUsername });
       }
+      }
     } catch (err) {
       console.error('[manychat] ❌ Error syncing with Direct:', {
         error: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
+        handle: message.handle,
       });
     }
   } else {

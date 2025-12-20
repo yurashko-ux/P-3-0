@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
 import { readManychatMessage } from '@/lib/manychat-store';
+import { normalizeInstagram } from '@/lib/normalize';
 import type { DirectClient } from '@/lib/direct-types';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -67,8 +68,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Нормалізуємо Instagram username (прибираємо @, протоколи, тощо)
+    const normalizedInstagram = normalizeInstagram(instagram);
+    if (!normalizedInstagram) {
+      return NextResponse.json(
+        { ok: false, error: 'Invalid Instagram username format' },
+        { status: 400 }
+      );
+    }
+
     // Перевіряємо, чи існує клієнт
-    let client = await getDirectClientByInstagram(instagram);
+    let client = await getDirectClientByInstagram(normalizedInstagram);
 
     const statuses = await getAllDirectStatuses();
     const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
@@ -78,7 +88,7 @@ export async function POST(req: NextRequest) {
       const now = new Date().toISOString();
       client = {
         id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        instagramUsername: instagram,
+        instagramUsername: normalizedInstagram,
         firstName,
         lastName,
         source: (source as 'instagram' | 'tiktok' | 'other') || 'instagram',
@@ -95,6 +105,7 @@ export async function POST(req: NextRequest) {
       // Оновлюємо існуючого клієнта (не змінюємо state, якщо він вже є)
       client = {
         ...client,
+        instagramUsername: normalizedInstagram, // Оновлюємо нормалізований username
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
         lastMessageAt: new Date().toISOString(),
