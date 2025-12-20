@@ -66,6 +66,8 @@ export async function POST(req: NextRequest) {
       location_id: companyId,
       attempts: [],
       flow: 'search → get by id (proper Altegio flow)',
+      instagramFound: false,
+      instagramValues: [],
     };
     
     // КРОК 1: Знаходимо клієнта через search
@@ -277,6 +279,7 @@ export async function POST(req: NextRequest) {
             : [],
           response: response1,
         });
+      }
     } catch (err) {
       results.attempts.push({
         method: 'GET',
