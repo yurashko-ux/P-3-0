@@ -426,13 +426,22 @@ export async function POST(req: NextRequest) {
           }
 
           if (!instagram) {
-            console.log(`[altegio/webhook] ⏭️ Skipping client ${clientId} - no Instagram username in custom_fields`);
+            console.log(`[altegio/webhook] ⏭️ Skipping client ${clientId} - no Instagram username in custom_fields`, {
+              customFields: client.custom_fields,
+              customFieldsType: typeof client.custom_fields,
+              customFieldsIsArray: Array.isArray(client.custom_fields),
+              customFieldsKeys: client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)
+                ? Object.keys(client.custom_fields)
+                : [],
+            });
             return NextResponse.json({
               ok: true,
               received: true,
               skipped: 'no_instagram',
             });
           }
+
+          console.log(`[altegio/webhook] ✅ Extracted Instagram for client ${clientId}: ${instagram}`);
 
           const normalizedInstagram = normalizeInstagram(instagram);
           if (!normalizedInstagram) {
@@ -443,6 +452,8 @@ export async function POST(req: NextRequest) {
               skipped: 'invalid_instagram',
             });
           }
+
+          console.log(`[altegio/webhook] ✅ Normalized Instagram for client ${clientId}: ${normalizedInstagram}`);
 
           // Отримуємо існуючих клієнтів для перевірки дублікатів
           const existingDirectClients = await getAllDirectClients();
