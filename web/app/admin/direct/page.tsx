@@ -596,6 +596,59 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
+              // Спочатку показуємо попередній перегляд
+              try {
+                const previewRes = await fetch('/api/admin/direct/cleanup-altegio-generated');
+                const previewData = await previewRes.json();
+                if (previewData.ok) {
+                  const count = previewData.stats?.toDelete || 0;
+                  if (count === 0) {
+                    alert('✅ Немає клієнтів для видалення');
+                    return;
+                  }
+                  
+                  const confirmMessage = `Знайдено ${count} клієнтів з Altegio, які мають згенерований Instagram username (починається з "altegio_").\n\nВидалити їх?`;
+                  if (!confirm(confirmMessage)) {
+                    return;
+                  }
+                  
+                  setIsLoading(true);
+                  try {
+                    const res = await fetch('/api/admin/direct/cleanup-altegio-generated', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.ok) {
+                      const message = `✅ ${data.message}\n\n` +
+                        `Всього клієнтів: ${data.stats.totalClients}\n` +
+                        `Знайдено для видалення: ${data.stats.foundToDelete}\n` +
+                        `Видалено: ${data.stats.deleted}\n` +
+                        `Помилки: ${data.stats.errors}\n\n` +
+                        `Деталі:\n${JSON.stringify(data.deletedClients?.slice(0, 10) || [], null, 2)}\n\n` +
+                        `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                      showCopyableAlert(message);
+                      await loadData();
+                    } else {
+                      showCopyableAlert(`Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                    }
+                  } catch (err) {
+                    showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                  } finally {
+                    setIsLoading(false);
+                  }
+                } else {
+                  showCopyableAlert(`Помилка перегляду: ${previewData.error || 'Невідома помилка'}\n\n${JSON.stringify(previewData, null, 2)}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+            disabled={isLoading}
+            title="Видалити клієнтів з Altegio, які мають згенерований Instagram username"
+          >
+            🗑️ Очистити згенеровані
+          </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
               if (!confirm('Відновити індекс клієнтів? Це перебудує індекс з усіх збережених клієнтів.')) {
                 return;
               }
