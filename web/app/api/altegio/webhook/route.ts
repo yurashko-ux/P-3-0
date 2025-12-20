@@ -133,6 +133,141 @@ export async function POST(req: NextRequest) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }
 
+        // ОБРОБКА КЛІЄНТА З RECORD ПОДІЇ
+        // Altegio може не надсилати окремі події client.update, тому обробляємо клієнтів тут
+        if (data.client && data.client.id) {
+          try {
+            const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
+            const { normalizeInstagram } = await import('@/lib/normalize');
+            const { getClient } = await import('@/lib/altegio/clients');
+            
+            const client = data.client;
+            let instagram: string | null = null;
+            
+            // Перевіряємо custom_fields в клієнті з record події
+            const hasCustomFieldsInWebhook = client.custom_fields && 
+              Array.isArray(client.custom_fields) && 
+              client.custom_fields.length > 0;
+            
+            if (hasCustomFieldsInWebhook) {
+              for (const field of client.custom_fields) {
+                if (field && typeof field === 'object') {
+                  const title = field.title || field.name || field.label || '';
+                  const value = field.value || field.data || field.content || field.text || '';
+                  
+                  if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                    instagram = value.trim();
+                    break;
+                  }
+                }
+              }
+            } else {
+              // Якщо в вебхуку немає custom_fields, отримуємо повні дані клієнта через API
+              console.log(`[altegio/webhook] ⚠️ No custom_fields in record webhook for client ${client.id}, fetching full client data via API...`);
+              try {
+                const companyId = data.company_id || body.company_id;
+                if (companyId) {
+                  const fullClient = await getClient(parseInt(String(companyId), 10), parseInt(String(client.id), 10));
+                  if (fullClient && fullClient.custom_fields) {
+                    console.log(`[altegio/webhook] ✅ Got full client data with custom_fields for client ${client.id}`);
+                    // Обробляємо custom_fields з повних даних
+                    if (Array.isArray(fullClient.custom_fields) && fullClient.custom_fields.length > 0) {
+                      for (const field of fullClient.custom_fields) {
+                        if (field && typeof field === 'object') {
+                          const title = field.title || field.name || field.label || '';
+                          const value = field.value || field.data || field.content || field.text || '';
+                          
+                          if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                            instagram = value.trim();
+                            console.log(`[altegio/webhook] ✅ Found Instagram in full client data: ${instagram}`);
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  } else {
+                    console.log(`[altegio/webhook] ⚠️ Full client data also has no custom_fields for client ${client.id}`);
+                  }
+                }
+              } catch (apiErr) {
+                console.error(`[altegio/webhook] ⚠️ Failed to fetch full client data for ${client.id}:`, apiErr);
+                // Продовжуємо без Instagram, якщо не вдалося отримати дані
+              }
+            }
+            
+            // Якщо знайшли Instagram в custom_fields - синхронізуємо клієнта
+            if (instagram) {
+              const normalizedInstagram = normalizeInstagram(instagram);
+              if (normalizedInstagram) {
+                const allStatuses = await getAllDirectStatuses();
+                const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
+                
+                const existingDirectClients = await getAllDirectClients();
+                const existingInstagramMap = new Map<string, string>();
+                const existingAltegioIdMap = new Map<number, string>();
+                
+                for (const dc of existingDirectClients) {
+                  const normalized = normalizeInstagram(dc.instagramUsername);
+                  if (normalized) {
+                    existingInstagramMap.set(normalized, dc.id);
+                  }
+                  if (dc.altegioClientId) {
+                    existingAltegioIdMap.set(dc.altegioClientId, dc.id);
+                  }
+                }
+                
+                const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+                const firstName = nameParts[0] || undefined;
+                const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+                
+                let existingClientId = existingInstagramMap.get(normalizedInstagram);
+                if (!existingClientId && client.id) {
+                  existingClientId = existingAltegioIdMap.get(parseInt(String(client.id), 10));
+                }
+                
+                if (existingClientId) {
+                  const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
+                  if (existingClient) {
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      altegioClientId: parseInt(String(client.id), 10),
+                      instagramUsername: normalizedInstagram,
+                      state: 'client' as const,
+                      ...(firstName && { firstName }),
+                      ...(lastName && { lastName }),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    await saveDirectClient(updated);
+                    console.log(`[altegio/webhook] ✅ Synced Direct client ${existingClientId} from record event (client ${client.id}, Instagram: ${normalizedInstagram})`);
+                  }
+                } else if (defaultStatus) {
+                  const now = new Date().toISOString();
+                  const newClient = {
+                    id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    instagramUsername: normalizedInstagram,
+                    firstName,
+                    lastName,
+                    source: 'instagram' as const,
+                    state: 'client' as const,
+                    firstContactDate: now,
+                    statusId: defaultStatus.id,
+                    visitedSalon: false,
+                    signedUpForPaidService: false,
+                    altegioClientId: parseInt(String(client.id), 10),
+                    createdAt: now,
+                    updatedAt: now,
+                  };
+                  await saveDirectClient(newClient);
+                  console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram})`);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[altegio/webhook] ⚠️ Failed to sync client from record event:`, err);
+            // Не зупиняємо обробку record події через помилку синхронізації клієнта
+          }
+        }
+
         // Оновлення або створення запису
         try {
           const datetime = data.datetime; // ISO string, наприклад "2025-11-28T17:00:00+02:00"
