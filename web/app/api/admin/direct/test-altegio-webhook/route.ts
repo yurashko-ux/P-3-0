@@ -102,7 +102,12 @@ export async function POST(req: NextRequest) {
       });
       
       const response = await webhookPOST(mockRequest as any);
-      webhookResponse = await response.json().catch(() => ({ raw: await response.text() }));
+      try {
+        webhookResponse = await response.json();
+      } catch {
+        const text = await response.text();
+        webhookResponse = { raw: text };
+      }
     } catch (err) {
       webhookError = err instanceof Error ? err.message : String(err);
       console.error('[direct/test-altegio-webhook] Webhook call error:', err);
