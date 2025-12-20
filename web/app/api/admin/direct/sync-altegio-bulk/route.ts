@@ -295,7 +295,7 @@ export async function POST(req: NextRequest) {
           // ВАЖЛИВО: Altegio API limitation
           // /clients/search НІКОЛИ не повертає custom_fields (це обмеження API, не баг)
           // custom_fields доступні ТІЛЬКИ через GET /clients/{id}
-          // Потрібен flow: search → get by id
+          // Потрібен flow: search → get by id (як роблять усі інтеграції з Altegio)
           let fullClientData = altegioClient;
           let instagramUsername: string | null = null;
 
@@ -338,6 +338,9 @@ export async function POST(req: NextRequest) {
                 }
               }
             }
+            
+            // Затримка між запитами для уникнення rate limiting (200 запитів/хвилину або 5/секунду)
+            await new Promise(resolve => setTimeout(resolve, 250)); // 250ms = 4 запити/секунду
           } catch (err) {
             console.warn(`[direct/sync-altegio-bulk] Failed to get full client data for ${altegioClient.id}:`, err);
           }
