@@ -395,35 +395,6 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-secondary"
             onClick={async () => {
-              const clientId = prompt('Введіть Altegio Client ID для синхронізації (наприклад, 168314579):');
-              if (!clientId) return;
-              
-              setIsLoading(true);
-              try {
-                const res = await fetch('/api/admin/direct/sync-altegio-client', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ altegioClientId: clientId }),
-                });
-                const data = await res.json();
-                if (data.ok) {
-                  alert(`✅ ${data.action === 'created' ? 'Створено' : 'Оновлено'} клієнта!\n\nInstagram: ${data.altegioClient.instagram}\nІм'я: ${data.altegioClient.name}`);
-                  await loadData();
-                } else {
-                  alert(`❌ Помилка: ${data.error || 'Невідома помилка'}`);
-                }
-              } catch (err) {
-                alert(`❌ Помилка: ${err instanceof Error ? err.message : String(err)}`);
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-          >
-            🔄 Синхронізувати клієнта (Altegio ID)
-          </button>
-          <button
-            className="btn btn-sm btn-secondary"
-            onClick={async () => {
               const clientId = prompt('Введіть Altegio Client ID для тестування (наприклад, 176404915):');
               if (!clientId) return;
               
