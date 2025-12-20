@@ -154,77 +154,93 @@ export async function POST(req: NextRequest) {
     }
     
     // КРОК 2: Отримуємо повні дані клієнта через GET /company/{company_id}/clients/{client_id}
-    // ВАЖЛИВО: Правильний endpoint - /company/{company_id}/clients/{client_id} (множина "clients")
-    // /clients/{id} НЕ існує (404 був через неправильний endpoint)
-    // Також важливо мати заголовок Accept: application/json
+    // ВАЖЛИВО згідно з чек-листом:
+    // 1. Використовувати User Token, не Partner (altegioFetch використовує altegioHeaders, який перевіряє USER_TOKEN)
+    // 2. User Token має доступ до location 1169323
+    // 3. clients/search — не очікувати custom_fields (вже зроблено)
+    // 4. custom_fields читати лише з GET /company/{location}/clients/{id}
     console.log(`[direct/test-altegio-client] Step 2: Getting full client data via GET /company/{company_id}/clients/{client_id}...`);
     
-    // Правильний endpoint згідно з GPT: GET /api/v1/company/{company_id}/clients/{client_id}
-    const correctEndpoint = `/company/${companyId}/clients/${clientId}`;
+    // Спробуємо всі варіанти endpoint'ів, як у getClient функції (singular "client" та plural "clients")
+    const clientEndpoints = [
+      {
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
+        params: 'singular client with fields[]',
+      },
+      {
+        url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
+        params: 'singular client with include[]',
+      },
+      {
+        url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
+        params: 'singular client with fields[]=*',
+      },
+      {
+        url: `/company/${companyId}/client/${clientId}`,
+        params: 'singular client (no params)',
+      },
+      {
+        url: `/company/${companyId}/clients/${clientId}?include[]=custom_fields`,
+        params: 'plural clients with include[]',
+      },
+      {
+        url: `/company/${companyId}/clients/${clientId}`,
+        params: 'plural clients (no params) - GPT format',
+      },
+    ];
     
     let fullClientData: any = null;
     
-    try {
-      // ВАЖЛИВО згідно з чек-листом:
-      // 1. Використовувати User Token, не Partner
-      // 2. User Token має доступ до location 1169323
-      // 3. clients/search — не очікувати custom_fields (вже зроблено)
-      // 4. custom_fields читати лише з GET /company/{location}/clients/{id}
-      const detailedClient = await altegioFetch<any>(correctEndpoint, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json', // Важливо для Altegio API
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      // Обробляємо різні формати відповіді
-      let client: any = null;
-      if (detailedClient && typeof detailedClient === 'object') {
-        if ('id' in detailedClient && detailedClient.id === clientId) {
-          client = detailedClient;
-        } else if ('data' in detailedClient && detailedClient.data && detailedClient.data.id === clientId) {
-          client = detailedClient.data;
+    for (const attempt of clientEndpoints) {
+      try {
+        const detailedClient = await altegioFetch<any>(attempt.url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json', // Важливо для Altegio API
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        // Обробляємо різні формати відповіді
+        let client: any = null;
+        if (detailedClient && typeof detailedClient === 'object') {
+          if ('id' in detailedClient && detailedClient.id === clientId) {
+            client = detailedClient;
+          } else if ('data' in detailedClient && detailedClient.data && detailedClient.data.id === clientId) {
+            client = detailedClient.data;
+          }
         }
-      }
-      
-      if (client && client.id === clientId) {
-        fullClientData = client;
+        
+        if (client && client.id === clientId) {
+          fullClientData = client;
+          results.attempts.push({
+            method: 'GET',
+            url: attempt.url,
+            params: `Step 2: Get by ID (${attempt.params})`,
+            success: true,
+            hasCustomFields: !!client?.custom_fields,
+            customFieldsType: typeof client?.custom_fields,
+            customFieldsIsArray: Array.isArray(client?.custom_fields),
+            customFieldsKeys: client?.custom_fields && typeof client?.custom_fields === 'object' && !Array.isArray(client?.custom_fields)
+              ? Object.keys(client?.custom_fields)
+              : [],
+            customFieldsLength: Array.isArray(client?.custom_fields) ? client.custom_fields.length : 0,
+            response: client,
+            allKeys: Object.keys(client || {}),
+            fullResponse: JSON.stringify(client, null, 2).substring(0, 2000),
+            note: '✅ This is the proper flow: search → get by id',
+          });
+          break; // Якщо знайшли працюючий endpoint, не пробуємо інші
+        }
+      } catch (err) {
         results.attempts.push({
           method: 'GET',
-          url: correctEndpoint,
-          params: 'Step 2: Get by ID (correct endpoint: /company/{id}/clients/{id})',
-          success: true,
-          hasCustomFields: !!client?.custom_fields,
-          customFieldsType: typeof client?.custom_fields,
-          customFieldsIsArray: Array.isArray(client?.custom_fields),
-          customFieldsKeys: client?.custom_fields && typeof client?.custom_fields === 'object' && !Array.isArray(client?.custom_fields)
-            ? Object.keys(client?.custom_fields)
-            : [],
-          customFieldsLength: Array.isArray(client?.custom_fields) ? client.custom_fields.length : 0,
-          response: client,
-          allKeys: Object.keys(client || {}),
-          fullResponse: JSON.stringify(client, null, 2).substring(0, 2000),
-          note: '✅ This is the proper flow: search → get by id. Correct endpoint: /company/{company_id}/clients/{client_id}',
-        });
-      } else {
-        results.attempts.push({
-          method: 'GET',
-          url: correctEndpoint,
-          params: 'Step 2: Get by ID',
+          url: attempt.url,
+          params: `Step 2: Get by ID (${attempt.params})`,
           success: false,
-          error: 'Client ID mismatch or invalid response structure',
-          response: detailedClient,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
-    } catch (err) {
-      results.attempts.push({
-        method: 'GET',
-        url: correctEndpoint,
-        params: 'Step 2: Get by ID',
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
     
     if (!fullClientData) {

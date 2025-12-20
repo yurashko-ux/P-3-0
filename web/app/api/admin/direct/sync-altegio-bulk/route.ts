@@ -240,9 +240,9 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               page,
               page_size: currentPageSize,
-              // ВАЖЛИВО: Altegio API limitation
-              // /clients/search НІКОЛИ не повертає custom_fields (це обмеження API, не баг)
-              // custom_fields доступні ТІЛЬКИ через GET /clients/{id}
+              // ВАЖЛИВО згідно з чек-листом:
+              // clients/search — не очікувати custom_fields (це обмеження API, не баг)
+              // custom_fields читати лише з GET /company/{location}/clients/{id}
               // Потрібен flow: search → get by id
               fields: ['id', 'name', 'phone', 'email'], // Не вказуємо custom_fields, бо вони все одно не повертаються
               order_by: 'last_visit_date',
