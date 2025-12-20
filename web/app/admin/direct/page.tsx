@@ -602,6 +602,58 @@ export default function DirectPage() {
             🗄️ Перевірити міграцію
           </button>
           <button
+            className="btn btn-sm btn-success"
+            onClick={async () => {
+              const instagram = prompt('Введіть Instagram username (наприклад, lizixxss):');
+              if (!instagram) return;
+              
+              const fullName = prompt('Введіть повне ім\'я (необов\'язково):');
+              let firstName: string | undefined;
+              let lastName: string | undefined;
+              if (fullName) {
+                const parts = fullName.trim().split(' ');
+                firstName = parts[0] || undefined;
+                lastName = parts.slice(1).join(' ') || undefined;
+              }
+              
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/add-client', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    instagramUsername: instagram,
+                    firstName,
+                    lastName,
+                    source: 'instagram',
+                  }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `${data.created ? '✅ Клієнт створено' : '✅ Клієнт оновлено'}!\n\n` +
+                    `Instagram: ${data.client.instagramUsername}\n` +
+                    `Ім'я: ${data.client.firstName || '—'} ${data.client.lastName || ''}\n` +
+                    `ID: ${data.client.id}\n` +
+                    `Статус: ${data.client.statusId}\n` +
+                    `Стан: ${data.client.state || '—'}\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Додати клієнта вручну"
+          >
+            ➕ Додати клієнта
+          </button>
+          <button
             className="btn btn-sm btn-info"
             onClick={async () => {
               setIsLoading(true);
