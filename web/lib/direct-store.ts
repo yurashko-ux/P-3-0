@@ -390,19 +390,36 @@ export async function deleteDirectClient(id: string): Promise<void> {
     const client = await getDirectClient(id);
     if (client) {
       // Видаляємо індекс по Instagram username
-      await kvWrite.setRaw(directKeys.CLIENT_BY_INSTAGRAM(client.instagramUsername), '');
+      const normalizedInstagram = client.instagramUsername?.trim().toLowerCase();
+      if (normalizedInstagram) {
+        await kvWrite.setRaw(directKeys.CLIENT_BY_INSTAGRAM(normalizedInstagram), '');
+      }
     }
 
     // Видаляємо клієнта
     await kvWrite.setRaw(directKeys.CLIENT_ITEM(id), '');
 
-    // Видаляємо з індексу
+    // Видаляємо з індексу (з unwrapKVResponse для коректної обробки)
     const indexData = await kvRead.getRaw(directKeys.CLIENT_INDEX);
     if (indexData) {
-      const clientIds: string[] = JSON.parse(indexData);
-      const filtered = clientIds.filter((cid) => cid !== id);
-      await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(filtered));
+      try {
+        const parsed = unwrapKVResponse(indexData);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((cid: any) => cid !== id && typeof cid === 'string');
+          await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify(filtered));
+          console.log(`[direct-store] ✅ Removed client ${id} from index (${parsed.length} → ${filtered.length})`);
+        } else {
+          console.warn(`[direct-store] Index is not an array when deleting client ${id}, resetting`);
+          await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
+        }
+      } catch (parseErr) {
+        console.warn(`[direct-store] Failed to parse index when deleting client ${id}:`, parseErr);
+        // Скидаємо індекс до порожнього масиву при помилці
+        await kvWrite.setRaw(directKeys.CLIENT_INDEX, JSON.stringify([]));
+      }
     }
+    
+    console.log(`[direct-store] ✅ Deleted client ${id}`);
   } catch (err) {
     console.error(`[direct-store] Failed to delete client ${id}:`, err);
     throw err;
