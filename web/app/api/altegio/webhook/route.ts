@@ -380,6 +380,9 @@ export async function POST(req: NextRequest) {
       const clientId = body.resource_id;
       const status = body.status; // 'create', 'update', 'delete'
       const data = body.data || {};
+      // ВАЖЛИВО: У реальних вебхуках структура може бути:
+      // 1. data.client.custom_fields (тестові)
+      // 2. data.custom_fields (реальні вебхуки від Altegio)
       const client = data.client || data || {};
 
       console.log('[altegio/webhook] Processing client event:', {
@@ -390,6 +393,12 @@ export async function POST(req: NextRequest) {
         hasCustomFields: !!client.custom_fields,
         customFieldsType: typeof client.custom_fields,
         customFieldsIsArray: Array.isArray(client.custom_fields),
+        customFields: client.custom_fields,
+        dataStructure: {
+          hasDataClient: !!data.client,
+          hasDataCustomFields: !!data.custom_fields,
+          dataKeys: Object.keys(data),
+        },
       });
 
       // Оновлюємо клієнта в Direct Manager тільки при create/update
