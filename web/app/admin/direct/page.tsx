@@ -421,6 +421,53 @@ export default function DirectPage() {
             🧪 Тест клієнта Altegio
           </button>
           <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              const clientId = prompt('Введіть Altegio Client ID для тестування вебхука (наприклад, 176404915):');
+              if (!clientId) return;
+              
+              const format = prompt('Виберіть формат custom_fields:\n1. array_title_value (масив з title/value)\n2. array_name_value (масив з name/value)\n3. object_keys (об\'єкт з ключами)\n4. object_camel (camelCase)\n5. object_spaces (з пробілами)\n\nВведіть номер (1-5) або залиште порожнім для array_title_value:');
+              
+              const formatMap: Record<string, string> = {
+                '1': 'array_title_value',
+                '2': 'array_name_value',
+                '3': 'object_keys',
+                '4': 'object_camel',
+                '5': 'object_spaces',
+              };
+              
+              const customFieldsFormat = format && formatMap[format] ? formatMap[format] : 'array_title_value';
+              
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/test-altegio-webhook', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ clientId, customFieldsFormat }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `Тест вебхука:\n\n` +
+                    `Клієнт ID: ${data.test.clientId}\n` +
+                    `Формат: ${data.test.customFieldsFormat}\n` +
+                    `Instagram витягнуто: ${data.extraction.instagram || '❌ НЕ ВИТЯГНУТО'}\n` +
+                    `Вебхук відповідь: ${data.webhook.response?.ok ? '✅ OK' : '❌ Помилка'}\n` +
+                    `\nДеталі витягування:\n${JSON.stringify(data.extraction.steps, null, 2)}\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+          >
+            🔗 Тест вебхука Altegio
+          </button>
+          <button
             className="btn btn-sm btn-ghost"
             onClick={async () => {
               try {
