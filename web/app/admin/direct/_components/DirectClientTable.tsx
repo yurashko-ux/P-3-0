@@ -581,13 +581,39 @@ export function DirectClientTable({
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
-                        <button
-                          className="btn btn-xs btn-ghost"
-                          onClick={() => setEditingClient(client)}
-                          title="Редагувати"
-                        >
-                          ✏️
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            className="btn btn-xs btn-ghost"
+                            onClick={() => setEditingClient(client)}
+                            title="Редагувати"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="btn btn-xs btn-ghost text-error"
+                            onClick={async () => {
+                              if (!confirm(`Видалити клієнта @${client.instagramUsername}?\n\nЦю дію неможливо скасувати.`)) {
+                                return;
+                              }
+                              try {
+                                const res = await fetch(`/api/admin/direct/clients/${client.id}`, {
+                                  method: 'DELETE',
+                                });
+                                const data = await res.json();
+                                if (data.ok) {
+                                  await onRefresh();
+                                } else {
+                                  alert(`Помилка видалення: ${data.error || 'Невідома помилка'}`);
+                                }
+                              } catch (err) {
+                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                              }
+                            }}
+                            title="Видалити"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
