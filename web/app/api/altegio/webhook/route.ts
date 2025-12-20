@@ -613,6 +613,25 @@ export async function GET(req: NextRequest) {
       console.warn('[webhook GET] Failed to read records log:', err);
     }
 
+    // Шукаємо останні події по client
+    const clientEvents = events
+      .filter((e: any) => e.body?.resource === 'client')
+      .map((e: any) => ({
+        receivedAt: e.receivedAt,
+        status: e.body?.status,
+        clientId: e.body?.resource_id,
+        clientName: e.body?.data?.client?.name || e.body?.data?.client?.display_name || e.body?.data?.name,
+        hasCustomFields: !!e.body?.data?.client?.custom_fields || !!e.body?.data?.custom_fields,
+        customFieldsType: e.body?.data?.client?.custom_fields 
+          ? typeof e.body?.data?.client?.custom_fields 
+          : e.body?.data?.custom_fields 
+            ? typeof e.body?.data?.custom_fields 
+            : 'undefined',
+        customFieldsIsArray: Array.isArray(e.body?.data?.client?.custom_fields) || Array.isArray(e.body?.data?.custom_fields),
+        customFields: e.body?.data?.client?.custom_fields || e.body?.data?.custom_fields,
+        fullBody: e.body,
+      }));
+
     // Знаходимо останній record event
     const lastRecordEvent = recordEvents.length > 0
       ? recordEvents[0]
@@ -628,15 +647,21 @@ export async function GET(req: NextRequest) {
           }
         : null;
 
+    // Знаходимо останню client event
+    const lastClientEvent = clientEvents.length > 0 ? clientEvents[0] : null;
+
     return NextResponse.json({
       ok: true,
       message: 'Altegio webhook endpoint is active',
       timestamp: new Date().toISOString(),
       eventsCount: events.length,
       recordEventsCount: recordEvents.length,
+      clientEventsCount: clientEvents.length,
       savedRecordsCount: savedRecords.length,
       lastRecordEvent: lastRecordEvent,
+      lastClientEvent: lastClientEvent,
       lastRecordEvents: recordEvents.slice(0, 10),
+      lastClientEvents: clientEvents.slice(0, 10),
       savedRecords: savedRecords.slice(0, 10),
       allEvents: events.slice(0, 5), // Перші 5 для діагностики
     });
