@@ -544,15 +544,48 @@ export async function POST(req: NextRequest) {
                 }
               }
             } else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
-              console.log(`[altegio/webhook] 🔍 Processing custom_fields as object (keys: ${Object.keys(client.custom_fields).join(', ')})`);
+              const customFieldsKeys = Object.keys(client.custom_fields);
+              console.log(`[altegio/webhook] 🔍 Processing custom_fields as object (keys: ${customFieldsKeys.join(', ')})`);
+              console.log(`[altegio/webhook] 🔍 Full custom_fields object:`, JSON.stringify(client.custom_fields, null, 2));
+              
+              // Перевіряємо різні варіанти ключів
               instagram =
                 client.custom_fields['instagram-user-name'] ||
                 client.custom_fields['Instagram user name'] ||
+                client.custom_fields['Instagram username'] ||
                 client.custom_fields.instagram_user_name ||
+                client.custom_fields.instagramUsername ||
                 client.custom_fields.instagram ||
+                client.custom_fields['instagram'] ||
                 null;
+              
+              // Якщо не знайшли по ключам, перевіряємо значення об'єкта (може бути вкладена структура)
+              if (!instagram && customFieldsKeys.length > 0) {
+                for (const key of customFieldsKeys) {
+                  const value = client.custom_fields[key];
+                  if (value && typeof value === 'string' && value.trim()) {
+                    // Якщо ключ містить "instagram", беремо значення
+                    if (/instagram/i.test(key)) {
+                      instagram = value.trim();
+                      console.log(`[altegio/webhook] ✅ Found Instagram by key "${key}": ${instagram}`);
+                      break;
+                    }
+                  } else if (value && typeof value === 'object') {
+                    // Якщо значення - об'єкт, шукаємо в ньому
+                    const nestedValue = value.value || value.data || value.content || value.text;
+                    if (nestedValue && typeof nestedValue === 'string' && /instagram/i.test(key)) {
+                      instagram = nestedValue.trim();
+                      console.log(`[altegio/webhook] ✅ Found Instagram in nested object by key "${key}": ${instagram}`);
+                      break;
+                    }
+                  }
+                }
+              }
+              
               if (instagram) {
                 console.log(`[altegio/webhook] ✅ Found Instagram in object field: ${instagram}`);
+              } else if (customFieldsKeys.length > 0) {
+                console.log(`[altegio/webhook] ⚠️ custom_fields object has keys but no Instagram found:`, customFieldsKeys);
               }
             }
           } else {
