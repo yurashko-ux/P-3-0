@@ -65,3 +65,4 @@ model DirectClient {
   @@index([createdAt])
   @@map("direct_clients")
 }
+
