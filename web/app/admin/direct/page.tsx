@@ -182,14 +182,23 @@ export default function DirectPage() {
       if (data.ok) {
         let filteredClients = data.clients;
 
-        // Пошук по Instagram username
+        // Пошук по Instagram username та Повне ім'я
         if (filters.search) {
           const searchLower = filters.search.toLowerCase();
-          filteredClients = filteredClients.filter((c: DirectClient) =>
-            c.instagramUsername.toLowerCase().includes(searchLower) ||
-            c.firstName?.toLowerCase().includes(searchLower) ||
-            c.lastName?.toLowerCase().includes(searchLower)
-          );
+          filteredClients = filteredClients.filter((c: DirectClient) => {
+            // Пошук по Instagram username
+            const matchesInstagram = c.instagramUsername.toLowerCase().includes(searchLower);
+            
+            // Пошук по окремих частинах імені
+            const matchesFirstName = c.firstName?.toLowerCase().includes(searchLower) || false;
+            const matchesLastName = c.lastName?.toLowerCase().includes(searchLower) || false;
+            
+            // Пошук по повному імені (firstName + lastName разом)
+            const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').toLowerCase();
+            const matchesFullName = fullName.includes(searchLower);
+            
+            return matchesInstagram || matchesFirstName || matchesLastName || matchesFullName;
+          });
         }
 
         setClients(filteredClients);

@@ -117,10 +117,10 @@ export function DirectClientTable({
         <div className="card-body p-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex-1 min-w-[200px]">
-              <label className="label label-text text-xs">Пошук по Instagram</label>
+              <label className="label label-text text-xs">Пошук по Instagram або Повне ім'я</label>
               <input
                 type="text"
-                placeholder="Введіть username..."
+                placeholder="Введіть username або ім'я..."
                 className="input input-bordered input-sm w-full"
                 value={filters.search}
                 onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
