@@ -442,7 +442,33 @@ export function DirectClientTable({
                           </div>
                         ) : client.state === 'consultation' ? (
                           <div className="flex items-center justify-center" title="Консультація">
-                            <span className="text-lg">💬</span>
+                            {/* Піктограма консультації - чат/розмова */}
+                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              {/* Хмара з діалогом */}
+                              <path d="M7 14 C7 10.686 9.686 8 13 8 C16.314 8 19 10.686 19 14 C19 17.314 16.314 20 13 20 L7 20 C4.791 20 3 18.209 3 16 C3 13.791 4.791 12 7 12" stroke="#10b981" strokeWidth="2" fill="none" strokeLinecap="round"/>
+                              <circle cx="10" cy="14" r="1" fill="#10b981"/>
+                              <circle cx="13" cy="14" r="1" fill="#10b981"/>
+                              <circle cx="16" cy="14" r="1" fill="#10b981"/>
+                              {/* Хвостик */}
+                              <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
+                            </svg>
+                          </div>
+                        ) : client.state === 'hair-extension' ? (
+                          <div className="flex items-center justify-center" title="Нарощування волосся">
+                            {/* Піктограма нарощування волосся - волосся/стрижка */}
+                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              {/* Голова */}
+                              <circle cx="14" cy="10" r="6" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5"/>
+                              {/* Волосся - довге */}
+                              <path d="M8 10 Q8 4 14 4 Q20 4 20 10" stroke="#8b5cf6" strokeWidth="3" fill="none" strokeLinecap="round"/>
+                              <path d="M9 10 Q9 5 14 5 Q19 5 19 10" stroke="#8b5cf6" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                              <path d="M10 10 Q10 6 14 6 Q18 6 18 10" stroke="#8b5cf6" strokeWidth="2" fill="none" strokeLinecap="round"/>
+                              {/* Очі */}
+                              <circle cx="12" cy="9" r="0.8" fill="#1f2937"/>
+                              <circle cx="16" cy="9" r="0.8" fill="#1f2937"/>
+                              {/* Рот */}
+                              <path d="M12 11 Q14 12 16 11" stroke="#1f2937" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+                            </svg>
                           </div>
                         ) : (
                           <div className="flex items-center justify-center" title="Лід">

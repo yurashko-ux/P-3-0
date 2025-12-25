@@ -714,6 +714,43 @@ export default function DirectPage() {
             🗄️ Створити таблиці
           </button>
           <button
+            className="btn btn-sm btn-success"
+            onClick={async () => {
+              if (!confirm('Оновити стани всіх клієнтів на основі записів з Altegio?\n\nЦе перевірить всі записи з Altegio і оновить стани клієнтів:\n- "Консультація" - якщо є послуга "Консультація"\n- "Нарощування волосся" - якщо є послуга з "Нарощування волосся"\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/update-states-from-records', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Оновлення станів завершено!\n\n` +
+                    `Всього клієнтів: ${data.stats.totalClients}\n` +
+                    `Оновлено: ${data.stats.updated}\n` +
+                    `Пропущено: ${data.stats.skipped}\n` +
+                    `Помилок: ${data.stats.errors}\n\n` +
+                    (data.errors.length > 0
+                      ? `Перші помилки:\n${data.errors.slice(0, 5).join('\n')}\n\n`
+                      : ''
+                    ) +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Оновити стани всіх клієнтів на основі записів з Altegio"
+          >
+            🔄 Оновити стани
+          </button>
+          <button
             className="btn btn-sm btn-accent"
             onClick={async () => {
               if (!confirm('Виконати міграцію даних з KV → Postgres?\n\nЦе перенесе всіх клієнтів та статуси з KV в Postgres.\n\nПродовжити?')) {

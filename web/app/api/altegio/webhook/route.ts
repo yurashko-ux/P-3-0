@@ -133,6 +133,64 @@ export async function POST(req: NextRequest) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }
 
+        // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES
+        // Автоматично оновлюємо стан клієнта на основі послуг у записі
+        // Це працює для ВСІХ клієнтів, навіть без custom_fields
+        if (data.client && data.client.id && Array.isArray(data.services) && data.services.length > 0) {
+          try {
+            const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+            
+            const clientId = parseInt(String(data.client.id), 10);
+            const services = data.services;
+            
+            // Визначаємо новий стан на основі послуг
+            let newState: 'consultation' | 'hair-extension' | null = null;
+            
+            // Перевіряємо, чи є послуга "Консультація"
+            const hasConsultation = services.some((s: any) => 
+              s.title && /консультація/i.test(s.title)
+            );
+            
+            // Перевіряємо, чи є послуга з "Нарощування волосся"
+            const hasHairExtension = services.some((s: any) => 
+              s.title && /нарощування.*волосся/i.test(s.title)
+            );
+            
+            if (hasConsultation) {
+              newState = 'consultation';
+            } else if (hasHairExtension) {
+              newState = 'hair-extension';
+            }
+            
+            // Якщо знайшли новий стан - оновлюємо клієнта
+            if (newState) {
+              const existingDirectClients = await getAllDirectClients();
+              
+              // Шукаємо клієнта за Altegio ID
+              const existingClient = existingDirectClients.find(
+                (c) => c.altegioClientId === clientId
+              );
+              
+              if (existingClient && existingClient.state !== newState) {
+                const updated: typeof existingClient = {
+                  ...existingClient,
+                  state: newState,
+                  updatedAt: new Date().toISOString(),
+                };
+                await saveDirectClient(updated);
+                console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
+              } else if (!existingClient) {
+                console.log(`[altegio/webhook] ⏭️ Client ${clientId} not found in Direct Manager, skipping state update`);
+              } else {
+                console.log(`[altegio/webhook] ⏭️ Client ${clientId} already has state '${existingClient.state}', no update needed`);
+              }
+            }
+          } catch (err) {
+            console.error(`[altegio/webhook] ⚠️ Failed to update client state from record event:`, err);
+            // Не зупиняємо обробку record події через помилку оновлення стану
+          }
+        }
+
         // ОБРОБКА КЛІЄНТА З RECORD ПОДІЇ (тільки якщо є custom_fields)
         // Altegio може не надсилати окремі події client.update, тому обробляємо клієнтів тут
         if (data.client && data.client.id) {
