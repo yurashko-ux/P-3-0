@@ -512,16 +512,96 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-ghost"
             onClick={async () => {
+              // Запитуємо Instagram username або ім'я клієнтки
+              const input = prompt('Введіть Instagram username (наприклад: @tania.pidgaina) або повне ім\'я клієнтки (наприклад: таня підгайна):');
+              if (!input || !input.trim()) {
+                return;
+              }
+              
               try {
-                const res = await fetch('/api/admin/direct/debug');
+                const searchTerm = input.trim();
+                // Визначаємо, чи це Instagram username чи ім'я
+                const isInstagram = searchTerm.startsWith('@') || searchTerm.includes('_') || /^[a-z0-9._]+$/i.test(searchTerm);
+                
+                const res = await fetch('/api/admin/direct/diagnose-client', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(
+                    isInstagram
+                      ? { instagramUsername: searchTerm.replace('@', '') }
+                      : { fullName: searchTerm }
+                  ),
+                });
                 const data = await res.json();
-                console.log('Direct Debug Info:', data);
-                const message = `Діагностика:\nІндекс: ${data.index?.length || 0} клієнтів\nЗавантажено: ${data.allClientsCount || 0} клієнтів\n\nДеталі в консолі (F12)\n\nJSON:\n${JSON.stringify(data, null, 2)}`;
-                showCopyableAlert(message);
+                if (data.ok) {
+                  const diagnosis = data.diagnosis;
+                  let message = `🔍 Діагностика клієнтки: ${searchTerm}\n\n`;
+                  
+                  if (diagnosis.directClient) {
+                    message += `✅ Клієнтка знайдена в Direct Manager\n`;
+                    message += `   ID: ${diagnosis.directClient.id}\n`;
+                    message += `   Instagram: ${diagnosis.directClient.instagramUsername}\n`;
+                    message += `   Ім'я: ${diagnosis.directClient.fullName || 'не вказано'}\n`;
+                    message += `   Стан: ${diagnosis.directClient.state || 'не встановлено'}\n`;
+                    message += `   Altegio ID: ${diagnosis.directClient.altegioClientId || 'немає'}\n`;
+                    message += `   Джерело: ${diagnosis.directClient.source || 'не вказано'}\n\n`;
+                  } else {
+                    message += `❌ Клієнтка не знайдена в Direct Manager\n\n`;
+                  }
+                  
+                  if (diagnosis.issues && diagnosis.issues.length > 0) {
+                    message += `Проблеми:\n${diagnosis.issues.map((i: string) => `  ${i}`).join('\n')}\n\n`;
+                  }
+                  
+                  if (diagnosis.recommendations && diagnosis.recommendations.length > 0) {
+                    message += `Рекомендації:\n${diagnosis.recommendations.map((r: string) => `  ${r}`).join('\n')}\n\n`;
+                  }
+                  
+                  if (diagnosis.records) {
+                    message += `Записи в Altegio:\n`;
+                    message += `  Всього: ${diagnosis.records.total}\n`;
+                    message += `  З "Консультація": ${diagnosis.records.withConsultation}\n`;
+                    message += `  З "Нарощування волосся": ${diagnosis.records.withHairExtension}\n`;
+                    if (diagnosis.records.latest && diagnosis.records.latest.length > 0) {
+                      message += `\n  Останні записи:\n`;
+                      diagnosis.records.latest.forEach((r: any, idx: number) => {
+                        message += `    ${idx + 1}. ${r.receivedAt} - ${r.status}\n`;
+                        message += `       Послуги: ${r.services.join(', ')}\n`;
+                        message += `       Консультація: ${r.hasConsultation ? '✅' : '❌'}\n`;
+                      });
+                    }
+                    message += `\n`;
+                  }
+                  
+                  if (diagnosis.webhooks) {
+                    message += `Вебхуки:\n`;
+                    message += `  Всього: ${diagnosis.webhooks.total}\n`;
+                    message += `  Записи: ${diagnosis.webhooks.records}\n`;
+                    message += `  Клієнти: ${diagnosis.webhooks.clients}\n`;
+                    if (diagnosis.webhooks.latest && diagnosis.webhooks.latest.length > 0) {
+                      message += `\n  Останні вебхуки:\n`;
+                      diagnosis.webhooks.latest.forEach((w: any, idx: number) => {
+                        message += `    ${idx + 1}. ${w.receivedAt} - ${w.resource} (${w.status})\n`;
+                        if (w.services && w.services.length > 0) {
+                          message += `       Послуги: ${w.services.join(', ')}\n`;
+                        }
+                      });
+                    }
+                    message += `\n`;
+                  }
+                  
+                  message += `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  
+                  showCopyableAlert(message);
+                  console.log('Client Diagnosis:', data);
+                } else {
+                  showCopyableAlert(`Помилка діагностики: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
               } catch (err) {
                 alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
               }
             }}
+            title="Діагностика конкретної клієнтки (введіть Instagram username або ім'я)"
           >
             🔍 Діагностика
           </button>
