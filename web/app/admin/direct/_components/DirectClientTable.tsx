@@ -598,6 +598,74 @@ export function DirectClientTable({
                             ✏️
                           </button>
                           <button
+                            className="btn btn-xs btn-ghost text-info"
+                            onClick={async () => {
+                              try {
+                                const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ');
+                                const res = await fetch('/api/admin/direct/diagnose-client', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    instagramUsername: client.instagramUsername,
+                                    fullName: fullName || undefined,
+                                    altegioClientId: client.altegioClientId || undefined,
+                                  }),
+                                });
+                                const data = await res.json();
+                                if (data.ok) {
+                                  const diagnosis = data.diagnosis;
+                                  let message = `🔍 Діагностика клієнтки: ${fullName || client.instagramUsername}\n\n`;
+                                  
+                                  if (diagnosis.directClient) {
+                                    message += `✅ Клієнтка знайдена в Direct Manager\n`;
+                                    message += `   ID: ${diagnosis.directClient.id}\n`;
+                                    message += `   Instagram: ${diagnosis.directClient.instagramUsername}\n`;
+                                    message += `   Стан: ${diagnosis.directClient.state || 'не встановлено'}\n`;
+                                    message += `   Altegio ID: ${diagnosis.directClient.altegioClientId || 'немає'}\n\n`;
+                                  } else {
+                                    message += `❌ Клієнтка не знайдена в Direct Manager\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.issues && diagnosis.issues.length > 0) {
+                                    message += `Проблеми:\n${diagnosis.issues.map((i: string) => `  ${i}`).join('\n')}\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.recommendations && diagnosis.recommendations.length > 0) {
+                                    message += `Рекомендації:\n${diagnosis.recommendations.map((r: string) => `  ${r}`).join('\n')}\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.records) {
+                                    message += `Записи в Altegio:\n`;
+                                    message += `  Всього: ${diagnosis.records.total}\n`;
+                                    message += `  З "Консультація": ${diagnosis.records.withConsultation}\n`;
+                                    message += `  З "Нарощування волосся": ${diagnosis.records.withHairExtension}\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.webhooks) {
+                                    message += `Вебхуки:\n`;
+                                    message += `  Всього: ${diagnosis.webhooks.total}\n`;
+                                    message += `  Записи: ${diagnosis.webhooks.records}\n`;
+                                    message += `  Клієнти: ${diagnosis.webhooks.clients}\n\n`;
+                                  }
+                                  
+                                  message += `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                                  
+                                  // Використовуємо alert з можливістю копіювання
+                                  alert(message);
+                                  // Також виводимо в консоль для детального аналізу
+                                  console.log('Client Diagnosis:', data);
+                                } else {
+                                  alert(`Помилка діагностики: ${data.error || 'Невідома помилка'}`);
+                                }
+                              } catch (err) {
+                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                              }
+                            }}
+                            title="Діагностика"
+                          >
+                            🔍
+                          </button>
+                          <button
                             className="btn btn-xs btn-ghost text-error"
                             onClick={async () => {
                               if (!confirm(`Видалити клієнта @${client.instagramUsername}?\n\nЦю дію неможливо скасувати.`)) {

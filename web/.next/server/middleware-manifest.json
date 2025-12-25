@@ -1,0 +1,86 @@
+{
+  "version": 3,
+  "middleware": {
+    "/": {
+      "files": [
+        "prerender-manifest.js",
+        "server/edge-runtime-webpack.js",
+        "server/middleware.js"
+      ],
+      "name": "middleware",
+      "page": "/",
+      "matchers": [
+        {
+          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?\\/admin(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(.json)?[\\/#\\?]?$",
+          "originalSource": "/admin/:path*"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "environments": {
+        "previewModeId": "a1413f67150ebc3279d9b19a69a0989e",
+        "previewModeSigningKey": "93fcb059f0a78a7792629f656c8dd8beec034345999a1e4ddb1c150cb4d0ea7a",
+        "previewModeEncryptionKey": "9ab95f978d4d34c7645701d58b467abd62f48d4c63166df6c638d37c70f14e34"
+      }
+    }
+  },
+  "functions": {
+    "/api/cron/sync/route": {
+      "files": [
+        "server/middleware-build-manifest.js",
+        "server/middleware-react-loadable-manifest.js",
+        "server/next-font-manifest.js",
+        "server/interception-route-rewrite-manifest.js",
+        "prerender-manifest.js",
+        "server/edge-runtime-webpack.js",
+        "server/edge-chunks/90.js",
+        "server/app/api/cron/sync/route.js"
+      ],
+      "name": "app/api/cron/sync/route",
+      "page": "/api/cron/sync/route",
+      "matchers": [
+        {
+          "regexp": "^/api/cron/sync$",
+          "originalSource": "/api/cron/sync"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "environments": {
+        "previewModeId": "a1413f67150ebc3279d9b19a69a0989e",
+        "previewModeSigningKey": "93fcb059f0a78a7792629f656c8dd8beec034345999a1e4ddb1c150cb4d0ea7a",
+        "previewModeEncryptionKey": "9ab95f978d4d34c7645701d58b467abd62f48d4c63166df6c638d37c70f14e34"
+      }
+    },
+    "/api/pipelines/route": {
+      "files": [
+        "server/middleware-build-manifest.js",
+        "server/middleware-react-loadable-manifest.js",
+        "server/next-font-manifest.js",
+        "server/interception-route-rewrite-manifest.js",
+        "prerender-manifest.js",
+        "server/edge-runtime-webpack.js",
+        "server/edge-chunks/90.js",
+        "server/app/api/pipelines/route.js"
+      ],
+      "name": "app/api/pipelines/route",
+      "page": "/api/pipelines/route",
+      "matchers": [
+        {
+          "regexp": "^/api/pipelines$",
+          "originalSource": "/api/pipelines"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "environments": {
+        "previewModeId": "a1413f67150ebc3279d9b19a69a0989e",
+        "previewModeSigningKey": "93fcb059f0a78a7792629f656c8dd8beec034345999a1e4ddb1c150cb4d0ea7a",
+        "previewModeEncryptionKey": "9ab95f978d4d34c7645701d58b467abd62f48d4c63166df6c638d37c70f14e34"
+      }
+    }
+  },
+  "sortedMiddleware": [
+    "/"
+  ]
+}
