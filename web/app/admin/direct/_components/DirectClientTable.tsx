@@ -274,6 +274,19 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
+                          "masterId",
+                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Відповідальний {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
                           "state",
                           sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
                         )
@@ -306,19 +319,6 @@ export function DirectClientTable({
                       }
                     >
                       Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "masterId",
-                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Відповідальний {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -432,8 +432,31 @@ export function DirectClientTable({
                           @{client.instagramUsername}
                         </a>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {getFullName(client)}
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[150px]">
+                        <div 
+                          className="truncate" 
+                          title={getFullName(client)}
+                        >
+                          {getFullName(client)}
+                        </div>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">
+                        {client.statusId === "consultation" ? (
+                          <select
+                            className="select select-xs select-bordered w-full max-w-[120px]"
+                            value={client.masterId || ""}
+                            onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
+                          >
+                            <option value="">-</option>
+                            {masters.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
                         {client.state === 'client' ? (
@@ -544,24 +567,6 @@ export function DirectClientTable({
                           onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
                           title={client.comment || "Коментар..."}
                         />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        {client.statusId === "consultation" ? (
-                          <select
-                            className="select select-xs select-bordered w-full max-w-[120px]"
-                            value={client.masterId || ""}
-                            onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
-                          >
-                            <option value="">-</option>
-                            {masters.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          "-"
-                        )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationDate ? (
