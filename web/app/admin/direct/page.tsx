@@ -876,6 +876,40 @@ export default function DirectPage() {
             📱 Тест нагадування
           </button>
           <button
+            className="btn btn-sm btn-info btn-outline"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/test-reminder-debug');
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `🔍 Діагностика налаштувань нагадувань\n\n` +
+                    `Токени:\n` +
+                    `  TELEGRAM_BOT_TOKEN (фото-бот): ${data.debug.tokens.TELEGRAM_BOT_TOKEN}\n` +
+                    `  TELEGRAM_HOB_CLIENT_BOT_TOKEN: ${data.debug.tokens.TELEGRAM_HOB_CLIENT_BOT_TOKEN}\n` +
+                    `  Використовується: ${data.debug.tokens.usingToken}\n\n` +
+                    `Chat IDs адміністраторів:\n` +
+                    `  З env (TELEGRAM_ADMIN_CHAT_IDS): ${data.debug.adminChatIds.fromEnv.length > 0 ? data.debug.adminChatIds.fromEnv.join(', ') : 'не встановлено'}\n` +
+                    `  З реєстру майстрів: ${data.debug.adminChatIds.fromRegistry.length > 0 ? data.debug.adminChatIds.fromRegistry.join(', ') : 'не знайдено'}\n` +
+                    `  Всього: ${data.debug.adminChatIds.total.length} (${data.debug.adminChatIds.total.join(', ')})\n\n` +
+                    `Chat ID Миколая: ${data.debug.mykolayChatId || 'не знайдено'}\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Діагностика налаштувань нагадувань"
+          >
+            🔍 Діагностика нагадувань
+          </button>
+          <button
             className="btn btn-sm btn-accent"
             onClick={async () => {
               if (!confirm('Виконати міграцію даних з KV → Postgres?\n\nЦе перенесе всіх клієнтів та статуси з KV в Postgres.\n\nПродовжити?')) {
