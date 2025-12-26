@@ -840,6 +840,42 @@ export default function DirectPage() {
             🔄 Оновити стани
           </button>
           <button
+            className="btn btn-sm btn-info"
+            onClick={async () => {
+              const type = confirm('Надіслати повторне нагадування?\n\nНатисніть OK для повторного нагадування (Недодзвон)\nНатисніть Скасувати для нового нагадування') ? 'repeat' : 'new';
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/test-reminder', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ type }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ ${data.message}\n\n` +
+                    `Тип: ${type === 'repeat' ? 'Повторне нагадування' : 'Нове нагадування'}\n` +
+                    `Клієнт: ${data.reminder.clientName}\n` +
+                    `Телефон: ${data.reminder.phone}\n` +
+                    `Instagram: @${data.reminder.instagramUsername}\n` +
+                    `Послуга: ${data.reminder.serviceName}\n\n` +
+                    `Перевірте Telegram для отримання повідомлення з кнопками.\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Протестувати надсилання нагадування в Telegram з кнопками"
+          >
+            📱 Тест нагадування
+          </button>
+          <button
             className="btn btn-sm btn-accent"
             onClick={async () => {
               if (!confirm('Виконати міграцію даних з KV → Postgres?\n\nЦе перенесе всіх клієнтів та статуси з KV в Postgres.\n\nПродовжити?')) {

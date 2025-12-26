@@ -486,6 +486,25 @@ export function DirectClientTable({
                               <circle cx="14" cy="20" r="2" stroke="#ec4899" strokeWidth="1" fill="none"/>
                             </svg>
                           </div>
+                        ) : client.state === 'all-good' ? (
+                          <div className="flex items-center justify-center" title="Все чудово">
+                            {/* Піктограма все чудово - галочка/смайлик */}
+                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <circle cx="14" cy="14" r="12" fill="#10b981" stroke="#059669" strokeWidth="1.5"/>
+                              <path d="M8 14 L12 18 L20 10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                        ) : client.state === 'too-expensive' ? (
+                          <div className="flex items-center justify-center" title="Все добре, але занадто дорого">
+                            {/* Піктограма занадто дорого - долар/гроші */}
+                            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <circle cx="14" cy="14" r="12" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5"/>
+                              <path d="M14 8 L14 20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                              <path d="M10 12 L18 12" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                              <path d="M10 16 L18 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                              <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
+                            </svg>
+                          </div>
                         ) : (
                           <div className="flex items-center justify-center" title="Лід">
                             {/* Лійка з трьома людьми */}

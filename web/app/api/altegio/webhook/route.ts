@@ -278,6 +278,70 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // СТВОРЕННЯ НАГАДУВАНЬ ДЛЯ DIRECT КЛІЄНТІВ
+        // Створюємо нагадування, якщо клієнт прийшов (attendance: 1)
+        if (data.attendance === 1 || data.visit_attendance === 1) {
+          try {
+            const { getAllDirectClients } = await import('@/lib/direct-store');
+            const { saveDirectReminder, getAllDirectReminders } = await import('@/lib/direct-reminders/store');
+            const { calculateReminderDate, generateReminderId } = await import('@/lib/direct-reminders/utils');
+            
+            const clientId = data.client?.id ? parseInt(String(data.client.id), 10) : null;
+            const visitDateTime = data.datetime;
+            
+            if (clientId && visitDateTime) {
+              const directClients = await getAllDirectClients();
+              const directClient = directClients.find(c => c.altegioClientId === clientId);
+              
+              if (directClient) {
+                // Обчислюємо дату нагадування: 2 доби після візиту о 12:00 Київського часу
+                const reminderDate = calculateReminderDate(visitDateTime);
+                
+                // Перевіряємо, чи вже є нагадування для цього візиту
+                const existingReminders = await getAllDirectReminders();
+                const existingReminder = existingReminders.find(
+                  r => r.visitId === visitId && r.altegioClientId === clientId
+                );
+                
+                if (!existingReminder) {
+                  const firstService = Array.isArray(data.services) && data.services.length > 0
+                    ? data.services[0]
+                    : data.service || null;
+                  const serviceName = firstService?.title || firstService?.name || 'Послуга';
+                  
+                  const reminder = {
+                    id: generateReminderId(visitId, recordId),
+                    directClientId: directClient.id,
+                    altegioClientId: clientId,
+                    visitId: visitId,
+                    recordId: recordId,
+                    instagramUsername: directClient.instagramUsername,
+                    phone: data.client?.phone || undefined,
+                    clientName: data.client?.display_name || data.client?.name || `${directClient.firstName || ''} ${directClient.lastName || ''}`.trim() || 'Клієнт',
+                    visitDate: visitDateTime,
+                    serviceName: serviceName,
+                    status: 'pending' as const,
+                    scheduledFor: reminderDate.toISOString(),
+                    reminderCount: 0,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  await saveDirectReminder(reminder);
+                  console.log(`[altegio/webhook] ✅ Created Direct reminder ${reminder.id} for client ${directClient.id} (visit ${visitId}, scheduled for ${reminderDate.toISOString()})`);
+                } else {
+                  console.log(`[altegio/webhook] ⏭️ Reminder already exists for visit ${visitId}, skipping`);
+                }
+              } else {
+                console.log(`[altegio/webhook] ⏭️ Direct client not found for Altegio client ${clientId}, skipping reminder creation`);
+              }
+            }
+          } catch (err) {
+            console.error(`[altegio/webhook] ⚠️ Failed to create Direct reminder:`, err);
+            // Не зупиняємо обробку record події через помилку створення нагадування
+          }
+        }
+
         // Оновлення або створення запису
         try {
           const datetime = data.datetime; // ISO string, наприклад "2025-11-28T17:00:00+02:00"

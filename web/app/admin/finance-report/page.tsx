@@ -592,7 +592,7 @@ export default async function FinanceReportPage({
               {formatDateHuman(summary.range.date_to)}
             </p>
           )}
-        </div>
+              </div>
 
         {/* Вибір місяця / року через GET-параметри */}
         <form
@@ -631,12 +631,12 @@ export default async function FinanceReportPage({
             Показати
           </button>
         </form>
-      </div>
+                  </div>
 
       {error && (
         <div className="alert alert-error max-w-xl">
           <span>Помилка при зверненні до Altegio: {error}</span>
-        </div>
+                  </div>
       )}
 
       {summary && (
@@ -688,11 +688,11 @@ export default async function FinanceReportPage({
                             <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">
                               <div className="flex items-center justify-end gap-0">
                                 <EditCostIconButton year={selectedYear} month={selectedMonth} />
-                                <EditableCostCell
-                                  year={selectedYear}
-                                  month={selectedMonth}
-                                  currentCost={goodsCostDashboard}
-                                />
+                              <EditableCostCell
+                                year={selectedYear}
+                                month={selectedMonth}
+                                currentCost={goodsCostDashboard}
+                              />
                               </div>
                             </td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
@@ -1047,7 +1047,7 @@ export default async function FinanceReportPage({
             {/* Управління та інвестиції та Прибуток */}
             <div className="flex flex-col md:flex-row gap-2">
               {/* Управління та інвестиції */}
-          {(() => {
+            {(() => {
             // Отримуємо дані з API для Управління та інвестицій
             const productPurchase = expenses?.byCategory["Product purchase"] || 0;
             const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
@@ -1264,7 +1264,7 @@ export default async function FinanceReportPage({
             );
           })()}
 
-          {/* Прибуток */}
+              {/* Прибуток */}
           {(() => {
             // Розраховуємо Доходи
             const services = summary?.totals.services || 0;
@@ -1547,8 +1547,8 @@ export default async function FinanceReportPage({
             </div>
           </section>
         </>
-      )}
-    </div>
+          )}
+        </div>
   );
 }
 

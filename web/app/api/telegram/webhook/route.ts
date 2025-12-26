@@ -152,9 +152,74 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   }
 }
 
+/**
+ * Обробка callback для Direct нагадувань
+ */
+async function handleDirectReminderCallback(
+  callbackId: string,
+  reminderId: string,
+  status: 'all-good' | 'too-expensive' | 'no-call'
+) {
+  try {
+    const { getDirectReminder, saveDirectReminder } = await import('@/lib/direct-reminders/store');
+    const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+    
+    const reminder = await getDirectReminder(reminderId);
+    if (!reminder) {
+      await answerCallbackQuery(callbackId, {
+        text: 'Нагадування не знайдено',
+        show_alert: true,
+      });
+      return;
+    }
+
+    // Оновлюємо статус нагадування
+    reminder.status = status;
+    reminder.updatedAt = new Date().toISOString();
+    
+    if (status === 'all-good' || status === 'too-expensive') {
+      reminder.status = status;
+      // Оновлюємо стан клієнта в Direct Manager
+      const directClients = await getAllDirectClients();
+      const directClient = directClients.find(c => c.id === reminder.directClientId);
+      
+      if (directClient) {
+        const clientState = status === 'all-good' ? 'all-good' : 'too-expensive';
+        const updated = {
+          ...directClient,
+          state: clientState,
+          updatedAt: new Date().toISOString(),
+        };
+        await saveDirectClient(updated);
+        console.log(`[telegram/webhook] ✅ Updated Direct client ${directClient.id} state to '${clientState}' from reminder ${reminderId}`);
+      }
+      
+      await answerCallbackQuery(callbackId, {
+        text: status === 'all-good' ? '✅ Статус оновлено: Все чудово' : '💰 Статус оновлено: Все добре, але занадто дорого',
+      });
+    } else if (status === 'no-call') {
+      reminder.status = 'no-call';
+      reminder.lastReminderAt = new Date().toISOString();
+      // Наступне нагадування буде надіслано через 2 години (обробляється в cron)
+      
+      await answerCallbackQuery(callbackId, {
+        text: '📞 Нагадування буде надіслано повторно через 2 години',
+      });
+    }
+    
+    await saveDirectReminder(reminder);
+    console.log(`[telegram/webhook] ✅ Updated reminder ${reminderId} status to '${status}'`);
+  } catch (err) {
+    console.error(`[telegram/webhook] ❌ Failed to handle Direct reminder callback:`, err);
+    await answerCallbackQuery(callbackId, {
+      text: 'Помилка обробки нагадування',
+      show_alert: true,
+    });
+  }
+}
+
 async function handleCallback(callback: NonNullable<TelegramUpdate["callback_query"]>) {
   const data = callback.data || "";
-  const [action, appointmentId] = data.split(":");
   const chatId = callback.message?.chat.id;
 
   if (!chatId) {
@@ -165,6 +230,18 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
     return;
   }
 
+  // Обробка callback для Direct нагадувань
+  if (data.startsWith('direct_reminder:')) {
+    const parts = data.split(':');
+    if (parts.length === 3) {
+      const [, reminderId, status] = parts;
+      await handleDirectReminderCallback(callback.id, reminderId, status as 'all-good' | 'too-expensive' | 'no-call');
+      return;
+    }
+  }
+
+  // Обробка callback для фото-звітів
+  const [action, appointmentId] = data.split(":");
   const pending = await getPendingRequestForChat(chatId);
   if (!pending) {
     await answerCallbackQuery(callback.id, {
