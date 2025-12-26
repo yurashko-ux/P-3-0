@@ -1057,6 +1057,51 @@ export default function DirectPage() {
             🔧 Відновити індекс
           </button>
           <button
+            className="btn btn-sm btn-success"
+            onClick={async () => {
+              if (!confirm('Відновити всі дані з KV в Postgres?\n\nЦе знайде всіх клієнтів та статуси в KV і перенесе їх в Postgres.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/recover-all-data', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Відновлення даних завершено!\n\n` +
+                    `Статуси:\n` +
+                    `  Знайдено в KV: ${data.stats.statuses.foundInKV}\n` +
+                    `  Було в Postgres: ${data.stats.statuses.foundInPostgres}\n` +
+                    `  Мігровано: ${data.stats.statuses.migrated}\n` +
+                    `  Помилок: ${data.stats.statuses.errors}\n` +
+                    `  Всього в Postgres: ${data.stats.final.statuses}\n\n` +
+                    `Клієнти:\n` +
+                    `  Знайдено в KV: ${data.stats.clients.foundInKV}\n` +
+                    `  Було в Postgres: ${data.stats.clients.foundInPostgres}\n` +
+                    `  Мігровано: ${data.stats.clients.migrated}\n` +
+                    `  Помилок: ${data.stats.clients.errors}\n` +
+                    `  Всього в Postgres: ${data.stats.final.clients}\n\n` +
+                    (data.errors.statuses.length > 0 || data.errors.clients.length > 0
+                      ? `Помилки:\n${[...data.errors.statuses, ...data.errors.clients].slice(0, 5).join('\n')}\n\n`
+                      : ''
+                    ) +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Відновити всі дані з KV в Postgres"
+          >
+            🔄 Відновити дані з KV
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Мігрувати майстрів з mock-data в базу даних?\n\nЦе перенесе всіх майстрів з фото-звітів в нову базу даних.')) {
