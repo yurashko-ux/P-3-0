@@ -9,7 +9,14 @@ import { TELEGRAM_ENV } from '@/lib/telegram/env';
  * Використовує окремий токен, якщо встановлено, інакше - основний токен
  */
 function getDirectRemindersBotToken(): string {
-  return TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+  const token = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+  console.log(`[direct-reminders] Using bot token: ${token ? `${token.substring(0, 10)}...` : 'NOT SET'}`);
+  console.log(`[direct-reminders] HOB_CLIENT_BOT_TOKEN: ${TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN ? 'SET' : 'NOT SET'}`);
+  console.log(`[direct-reminders] BOT_TOKEN (fallback): ${TELEGRAM_ENV.BOT_TOKEN ? 'SET' : 'NOT SET'}`);
+  if (!token) {
+    throw new Error('Missing Telegram bot token for Direct reminders. Set TELEGRAM_HOB_CLIENT_BOT_TOKEN or TELEGRAM_BOT_TOKEN');
+  }
+  return token;
 }
 import { getChatIdForMaster, listRegisteredChats } from '@/lib/photo-reports/master-registry';
 import { findMasterById, getMasters } from '@/lib/photo-reports/service';
@@ -65,8 +72,13 @@ export async function sendDirectReminderToAdmins(
   reminder: DirectReminder,
   isTestMode: boolean = true
 ): Promise<void> {
+  console.log(`[direct-reminders] sendDirectReminderToAdmins called for reminder ${reminder.id}, isTestMode: ${isTestMode}`);
+  
   const adminChatIds = await getAdminChatIds();
+  console.log(`[direct-reminders] Found ${adminChatIds.length} admin chat IDs from env`);
+  
   const mykolayChatId = isTestMode ? await getMykolayChatId() : null;
+  console.log(`[direct-reminders] Mykolay chat ID: ${mykolayChatId || 'not found'}`);
   
   const message = formatReminderMessage(reminder);
   
@@ -76,8 +88,11 @@ export async function sendDirectReminderToAdmins(
     allChatIds.push(mykolayChatId);
   }
   
+  console.log(`[direct-reminders] Total chat IDs to send to: ${allChatIds.length}`);
+  
   if (allChatIds.length === 0) {
     console.warn('[direct-reminders] No admin chat IDs found, skipping reminder');
+    console.warn('[direct-reminders] Check TELEGRAM_ADMIN_CHAT_IDS env variable or master registry');
     return;
   }
   
@@ -97,14 +112,21 @@ export async function sendDirectReminderToAdmins(
   
   const botToken = getDirectRemindersBotToken();
   
+  console.log(`[direct-reminders] Sending reminder ${reminder.id} to ${allChatIds.length} admin chats`);
+  
   for (const chatId of allChatIds) {
     try {
+      console.log(`[direct-reminders] Attempting to send reminder ${reminder.id} to chat ${chatId} using token ${botToken.substring(0, 10)}...`);
       await sendMessage(chatId, message, {
         reply_markup: keyboard,
       }, botToken);
       console.log(`[direct-reminders] ✅ Sent reminder ${reminder.id} to admin chat ${chatId}`);
     } catch (err) {
       console.error(`[direct-reminders] ❌ Failed to send reminder ${reminder.id} to chat ${chatId}:`, err);
+      if (err instanceof Error) {
+        console.error(`[direct-reminders] Error details: ${err.message}`);
+        console.error(`[direct-reminders] Stack: ${err.stack}`);
+      }
     }
   }
 }
@@ -171,14 +193,21 @@ export async function sendRepeatReminderToAdmins(
   
   const botToken = getDirectRemindersBotToken();
   
+  console.log(`[direct-reminders] Sending repeat reminder ${reminder.id} to ${allChatIds.length} admin chats`);
+  
   for (const chatId of allChatIds) {
     try {
+      console.log(`[direct-reminders] Attempting to send repeat reminder ${reminder.id} to chat ${chatId} using token ${botToken.substring(0, 10)}...`);
       await sendMessage(chatId, message, {
         reply_markup: keyboard,
       }, botToken);
       console.log(`[direct-reminders] ✅ Sent repeat reminder ${reminder.id} to admin chat ${chatId}`);
     } catch (err) {
       console.error(`[direct-reminders] ❌ Failed to send repeat reminder ${reminder.id} to chat ${chatId}:`, err);
+      if (err instanceof Error) {
+        console.error(`[direct-reminders] Error details: ${err.message}`);
+        console.error(`[direct-reminders] Stack: ${err.stack}`);
+      }
     }
   }
 }

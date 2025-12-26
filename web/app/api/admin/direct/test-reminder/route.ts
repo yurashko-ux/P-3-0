@@ -13,6 +13,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { type = 'new', reminderId } = body;
 
+    // Перевіряємо наявність токена
+    const { TELEGRAM_ENV } = await import('@/lib/telegram/env');
+    console.log('[test-reminder] HOB_CLIENT_BOT_TOKEN:', TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN ? 'SET' : 'NOT SET');
+    console.log('[test-reminder] BOT_TOKEN (fallback):', TELEGRAM_ENV.BOT_TOKEN ? 'SET' : 'NOT SET');
+
     // Створюємо тестове нагадування
     const testReminder: DirectReminder = {
       id: reminderId || `test_reminder_${Date.now()}`,
