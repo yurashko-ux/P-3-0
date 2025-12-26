@@ -3,6 +3,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientStateInfo } from '@/lib/direct-state-log';
+import { prisma } from '@/lib/prisma';
+import { getDirectMasterById } from '@/lib/direct-masters/store';
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,10 +19,47 @@ export async function GET(req: NextRequest) {
     }
 
     const info = await getClientStateInfo(clientId);
+    
+    // Отримуємо історію з masterId для кожного запису
+    const historyWithMasters = await Promise.all(
+      info.history.map(async (log) => {
+        let masterId: string | undefined = undefined;
+        let masterName: string | undefined = undefined;
+
+        // Спробуємо отримати masterId з метаданих (якщо він там є)
+        if (log.metadata) {
+          try {
+            const metadata = JSON.parse(log.metadata);
+            if (metadata.masterId) {
+              masterId = metadata.masterId;
+            }
+          } catch {
+            // Ігноруємо помилки парсингу
+          }
+        }
+
+        // Отримуємо ім'я майстра
+        if (masterId) {
+          const master = await getDirectMasterById(masterId);
+          if (master) {
+            masterName = master.name;
+          }
+        }
+
+        return {
+          ...log,
+          masterId,
+          masterName,
+        };
+      })
+    );
 
     return NextResponse.json({
       ok: true,
-      data: info,
+      data: {
+        ...info,
+        history: historyWithMasters,
+      },
     });
   } catch (err) {
     console.error('[admin/direct/state-history] Error:', err);

@@ -145,6 +145,7 @@ export async function POST(req: NextRequest) {
             const clientId = parseInt(String(data.client.id), 10);
             const services = data.services;
             const staffId = data.staff?.id || data.staff_id;
+            const staffName = data.staff?.name || data.staff?.display_name || null;
             
             // Визначаємо новий стан на основі послуг (з пріоритетом)
             const newState = determineStateFromServices(services);
@@ -153,6 +154,12 @@ export async function POST(req: NextRequest) {
             const hasHairExtension = services.some((s: any) => {
               const title = s.title || s.name || '';
               return /нарощування/i.test(title);
+            });
+            
+            // Перевіряємо, чи є послуга "Консультація"
+            const hasConsultation = services.some((s: any) => {
+              const title = s.title || s.name || '';
+              return /консультація/i.test(title);
             });
             
             // Якщо знайшли новий стан - оновлюємо клієнта
@@ -165,24 +172,38 @@ export async function POST(req: NextRequest) {
               );
               
               if (existingClient) {
+                const { getMasterByName } = await import('@/lib/direct-masters/store');
+                
                 const updates: Partial<typeof existingClient> = {
                   state: existingClient.state !== newState ? newState : existingClient.state,
                   updatedAt: new Date().toISOString(),
                 };
                 
                 // Автоматично призначаємо майстра, якщо:
-                // 1. Є послуга з нарощуванням
-                // 2. Є staff_id
-                // 3. Відповідальний не був вибраний вручну
-                if (hasHairExtension && staffId && !existingClient.masterManuallySet) {
+                // 1. Відповідальний не був вибраний вручну
+                if (!existingClient.masterManuallySet) {
                   try {
-                    const master = await getMasterByAltegioStaffId(staffId);
-                    if (master) {
-                      updates.masterId = master.id;
-                      console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) to client ${existingClient.id} from record event`);
+                    let master = null;
+                    
+                    // Для нарощування - знаходимо за staff_id
+                    if (hasHairExtension && staffId) {
+                      master = await getMasterByAltegioStaffId(staffId);
+                      if (master) {
+                        updates.masterId = master.id;
+                        console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) by staff_id ${staffId} to client ${existingClient.id} from record event`);
+                      }
+                    }
+                    
+                    // Для консультації - знаходимо за staffName
+                    if ((hasConsultation || newState === 'consultation') && staffName && !master) {
+                      master = await getMasterByName(staffName);
+                      if (master) {
+                        updates.masterId = master.id;
+                        console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) by staffName "${staffName}" to client ${existingClient.id} from record event`);
+                      }
                     }
                   } catch (err) {
-                    console.warn(`[altegio/webhook] Failed to auto-assign master for staff_id ${staffId}:`, err);
+                    console.warn(`[altegio/webhook] Failed to auto-assign master:`, err);
                   }
                 }
                 
@@ -195,6 +216,7 @@ export async function POST(req: NextRequest) {
                     altegioClientId: clientId,
                     visitId: data.id,
                     services: services.map((s: any) => ({ id: s.id, title: s.title })),
+                    staffName,
                   });
                   console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
                 }

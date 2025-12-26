@@ -150,6 +150,55 @@ export async function getMasterByAltegioStaffId(staffId: number): Promise<Direct
 }
 
 /**
+ * Знаходить майстра за ім'ям (staffName)
+ */
+export async function getMasterByName(staffName: string): Promise<DirectMaster | null> {
+  try {
+    if (!staffName || !staffName.trim()) {
+      return null;
+    }
+
+    // Нормалізуємо ім'я (прибираємо зайві пробіли, приводимо до нижнього регістру)
+    const normalizedName = staffName.trim().toLowerCase();
+    
+    // Спочатку пробуємо точне співпадіння
+    const dbMaster = await prisma.directMaster.findFirst({
+      where: {
+        isActive: true,
+        name: {
+          equals: normalizedName,
+          mode: 'insensitive',
+        },
+      },
+    });
+
+    if (dbMaster) {
+      return prismaMasterToDirectMaster(dbMaster);
+    }
+
+    // Якщо точного співпадіння немає, пробуємо часткове
+    const allMasters = await prisma.directMaster.findMany({
+      where: {
+        isActive: true,
+      },
+    });
+
+    // Шукаємо майстра, чиє ім'я містить staffName або навпаки
+    const matchingMaster = allMasters.find((m) => {
+      const masterName = m.name.toLowerCase().trim();
+      return masterName === normalizedName || 
+             masterName.includes(normalizedName) || 
+             normalizedName.includes(masterName);
+    });
+
+    return matchingMaster ? prismaMasterToDirectMaster(matchingMaster) : null;
+  } catch (err) {
+    console.error(`[direct-masters] Error getting master by name "${staffName}":`, err);
+    return null;
+  }
+}
+
+/**
  * Отримує відповідальних для вибору (майстри + дірект-менеджери + адміністратори, без тестових)
  */
 export async function getDirectMastersForSelection(): Promise<DirectMaster[]> {

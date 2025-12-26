@@ -102,6 +102,14 @@ export async function getClientStateInfo(clientId: string): Promise<{
     const hasLeadState = history.some(log => log.state === 'lead');
     const firstHistoryState = history.length > 0 ? history[history.length - 1] : null;
     
+    // Отримуємо початковий masterId клієнта (дірект-менеджер для лідів)
+    const clientWithMaster = await prisma.directClient.findUnique({
+      where: { id: clientId },
+      select: { masterId: true },
+    });
+    
+    const initialMasterId = clientWithMaster?.masterId;
+    
     // Якщо немає історії або перший стан не "Лід", додаємо початковий "Лід"
     if (!hasLeadState && (history.length === 0 || firstHistoryState?.previousState === null)) {
       const initialLeadLog: DirectClientStateLog = {
@@ -110,7 +118,7 @@ export async function getClientStateInfo(clientId: string): Promise<{
         state: 'lead',
         previousState: null,
         reason: 'initial',
-        metadata: undefined,
+        metadata: initialMasterId ? JSON.stringify({ masterId: initialMasterId }) : undefined,
         createdAt: client.createdAt.toISOString(),
       };
       

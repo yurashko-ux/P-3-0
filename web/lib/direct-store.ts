@@ -261,12 +261,18 @@ export async function saveDirectClient(
     
     // Логуємо зміну стану, якщо вона відбулася
     if (client.state !== previousState) {
+      // Додаємо masterId до метаданих для історії
+      const logMetadata = {
+        ...metadata,
+        masterId: client.masterId,
+      };
+      
       await logStateChange(
         clientIdForLog,
         client.state,
         previousState,
         reason || 'saveDirectClient',
-        metadata
+        logMetadata
       );
     }
   } catch (err) {
