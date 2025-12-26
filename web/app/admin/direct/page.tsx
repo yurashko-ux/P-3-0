@@ -779,7 +779,7 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-error"
             onClick={async () => {
-              if (!confirm('Створити таблиці в Postgres (Prisma міграція)?\n\nЦе створить таблиці direct_clients та direct_statuses в базі даних.\n\nПродовжити?')) {
+              if (!confirm('Створити таблиці в Postgres (Prisma міграція)?\n\nЦе створить таблиці:\n- direct_clients\n- direct_statuses\n- direct_masters\n\nПродовжити?')) {
                 return;
               }
               setIsLoading(true);
