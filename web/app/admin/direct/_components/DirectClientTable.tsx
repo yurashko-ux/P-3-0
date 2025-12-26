@@ -274,19 +274,6 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
-                          "masterId",
-                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Відповідальний {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
                           "state",
                           sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
                         )
@@ -306,6 +293,19 @@ export function DirectClientTable({
                       }
                     >
                       Статус {sortBy === "statusId" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "masterId",
+                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Відповідальний {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[200px]">
@@ -441,20 +441,6 @@ export function DirectClientTable({
                           {getFullName(client)}
                         </div>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <select
-                          className="select select-xs select-bordered w-full max-w-[120px]"
-                          value={client.masterId || ""}
-                          onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
-                        >
-                          <option value="">-</option>
-                          {masters.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
                         {client.state === 'client' ? (
                           <div className="flex items-center justify-center" title="Клієнт">
@@ -554,6 +540,20 @@ export function DirectClientTable({
                           {statuses.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">
+                        <select
+                          className="select select-xs select-bordered w-full max-w-[120px]"
+                          value={client.masterId || ""}
+                          onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
+                        >
+                          <option value="">-</option>
+                          {masters.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
                             </option>
                           ))}
                         </select>
