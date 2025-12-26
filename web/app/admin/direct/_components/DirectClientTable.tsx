@@ -413,10 +413,6 @@ export function DirectClientTable({
                   uniqueClients.map((client, index) => (
                     <tr
                       key={client.id}
-                      style={{
-                        backgroundColor: getStatusColor(client.statusId) + "20",
-                        borderLeft: `3px solid ${getStatusColor(client.statusId)}`,
-                      }}
                     >
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
@@ -550,7 +546,10 @@ export function DirectClientTable({
                           className="select select-xs select-bordered w-full min-w-[160px]"
                           value={client.statusId}
                           onChange={(e) => handleStatusChange(client, e.target.value)}
-                          style={{ borderColor: getStatusColor(client.statusId) }}
+                          style={{ 
+                            borderColor: getStatusColor(client.statusId),
+                            backgroundColor: getStatusColor(client.statusId) + "20"
+                          }}
                         >
                           {statuses.map((s) => (
                             <option key={s.id} value={s.id}>
