@@ -184,8 +184,8 @@ async function handleDirectReminderCallback(
       const directClient = directClients.find(c => c.id === reminder.directClientId);
       
       if (directClient) {
-        const clientState = status === 'all-good' ? 'all-good' : 'too-expensive';
-        const updated = {
+        const clientState: 'all-good' | 'too-expensive' = status === 'all-good' ? 'all-good' : 'too-expensive';
+        const updated: typeof directClient = {
           ...directClient,
           state: clientState,
           updatedAt: new Date().toISOString(),
