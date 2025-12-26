@@ -165,85 +165,107 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
   if (!isOpen || !client) return null;
 
   return (
-    <div className="modal modal-open">
-      <div className="modal-box max-w-2xl">
-        <h3 className="font-bold text-lg mb-4">
-          Історія змін стану: {client.firstName} {client.lastName}
-        </h3>
-        
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <span className="loading loading-spinner loading-md"></span>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 flex-shrink-0 border-b border-base-300">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg">
+              Історія змін стану: {client.firstName} {client.lastName}
+            </h3>
+            <button
+              className="btn btn-sm btn-circle btn-ghost"
+              onClick={onClose}
+            >
+              ✕
+            </button>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Поточний стан */}
-            <div className="bg-base-200 p-3 rounded-lg">
-              <div className="flex items-center gap-3">
-                <StateIcon state={currentState} />
-                <div>
-                  <div className="text-sm font-semibold">Поточний стан</div>
-                  <div className="text-xs text-base-content/70">{getStateName(currentState)}</div>
+        </div>
+        
+        <div className="p-6 overflow-y-auto flex-1">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <span className="loading loading-spinner loading-md"></span>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Поточний стан */}
+              <div className="bg-base-200 p-3 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <StateIcon state={currentState} />
+                  <div>
+                    <div className="text-sm font-semibold">Поточний стан</div>
+                    <div className="text-xs text-base-content/70">{getStateName(currentState)}</div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Історія */}
-            {history.length === 0 ? (
-              <div className="text-center py-8 text-base-content/50">
-                Історія змін стану відсутня
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {history.map((log, index) => (
-                  <div key={log.id} className="border-b border-base-300 pb-2">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1">
-                        <StateIcon state={log.state} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold text-sm">
-                            {getStateName(log.state)}
-                          </div>
-                          <div className="text-xs text-base-content/50">
-                            {formatDate(log.createdAt)}
-                          </div>
+              {/* Історія */}
+              {history.length === 0 ? (
+                <div className="text-center py-8 text-base-content/50">
+                  Історія змін стану відсутня
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {history.map((log, index) => (
+                    <div key={log.id} className="border-b border-base-300 pb-2">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1">
+                          <StateIcon state={log.state} />
                         </div>
-                        {log.previousState && (
-                          <div className="text-xs text-base-content/60 mt-1">
-                            Зміна з: <span className="font-medium">{getStateName(log.previousState)}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold text-sm">
+                              {getStateName(log.state)}
+                            </div>
+                            <div className="text-xs text-base-content/50">
+                              {formatDate(log.createdAt)}
+                            </div>
                           </div>
-                        )}
-                        <div className="text-xs text-base-content/50 mt-1">
-                          Причина: {getReasonName(log.reason)}
+                          {log.previousState && (
+                            <div className="text-xs text-base-content/60 mt-1">
+                              Зміна з: <span className="font-medium">{getStateName(log.previousState)}</span>
+                            </div>
+                          )}
+                          <div className="text-xs text-base-content/50 mt-1">
+                            Причина: {getReasonName(log.reason)}
+                          </div>
+                          {log.metadata && (
+                            <details className="mt-1">
+                              <summary className="text-xs text-base-content/50 cursor-pointer">
+                                Деталі
+                              </summary>
+                              <pre className="text-xs bg-base-200 p-2 rounded mt-1 overflow-x-auto">
+                                {JSON.stringify(JSON.parse(log.metadata), null, 2)}
+                              </pre>
+                            </details>
+                          )}
                         </div>
-                        {log.metadata && (
-                          <details className="mt-1">
-                            <summary className="text-xs text-base-content/50 cursor-pointer">
-                              Деталі
-                            </summary>
-                            <pre className="text-xs bg-base-200 p-2 rounded mt-1 overflow-x-auto">
-                              {JSON.stringify(JSON.parse(log.metadata), null, 2)}
-                            </pre>
-                          </details>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
-        <div className="modal-action">
-          <button className="btn" onClick={onClose}>
-            Закрити
-          </button>
+        <div className="p-6 flex-shrink-0 border-t border-base-300">
+          <div className="flex justify-end">
+            <button className="btn btn-primary" onClick={onClose}>
+              Закрити
+            </button>
+          </div>
         </div>
       </div>
-      <div className="modal-backdrop" onClick={onClose}></div>
     </div>
   );
 }
