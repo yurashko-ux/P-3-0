@@ -17,7 +17,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
     masterId: dbClient.masterId || undefined,
-    masterManuallySet: dbClient.masterManuallySet || false,
+    masterManuallySet: dbClient.masterManuallySet ?? false, // Використовуємо ?? для безпечної обробки null/undefined
     consultationDate: dbClient.consultationDate?.toISOString() || undefined,
     visitedSalon: dbClient.visitedSalon || false,
     visitDate: dbClient.visitDate?.toISOString() || undefined,
@@ -44,7 +44,7 @@ function directClientToPrisma(client: DirectClient) {
     firstContactDate: new Date(client.firstContactDate),
     statusId: client.statusId,
     masterId: client.masterId || null,
-    masterManuallySet: client.masterManuallySet || false,
+    masterManuallySet: client.masterManuallySet ?? false, // Використовуємо ?? для безпечної обробки
     consultationDate: client.consultationDate ? new Date(client.consultationDate) : null,
     visitedSalon: client.visitedSalon || false,
     visitDate: client.visitDate ? new Date(client.visitDate) : null,
@@ -88,9 +88,28 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     const clients = await prisma.directClient.findMany({
       orderBy: { createdAt: 'desc' },
     });
+    console.log(`[direct-store] Found ${clients.length} clients in database`);
     return clients.map(prismaClientToDirectClient);
   } catch (err) {
     console.error('[direct-store] Failed to get all clients:', err);
+    // Якщо помилка через відсутнє поле - спробуємо додати його
+    if (err instanceof Error && err.message.includes('masterManuallySet')) {
+      console.log('[direct-store] Attempting to add masterManuallySet column...');
+      try {
+        await prisma.$executeRawUnsafe(`
+          ALTER TABLE "direct_clients" 
+          ADD COLUMN IF NOT EXISTS "masterManuallySet" BOOLEAN NOT NULL DEFAULT false;
+        `);
+        // Повторна спроба після додавання колонки
+        const clients = await prisma.directClient.findMany({
+          orderBy: { createdAt: 'desc' },
+        });
+        console.log(`[direct-store] Found ${clients.length} clients after adding column`);
+        return clients.map(prismaClientToDirectClient);
+      } catch (fixErr) {
+        console.error('[direct-store] Failed to fix schema:', fixErr);
+      }
+    }
     return [];
   }
 }

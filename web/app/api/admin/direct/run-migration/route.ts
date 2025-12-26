@@ -102,7 +102,22 @@ export async function POST(req: NextRequest) {
             CREATE INDEX IF NOT EXISTS "direct_statuses_isDefault_idx" ON "direct_statuses"("isDefault")
           `);
           
-          // Створюємо таблицю клієнтів
+          // Додаємо поле masterManuallySet, якщо воно не існує
+          await prisma.$executeRawUnsafe(`
+            DO $$ 
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'direct_clients' 
+                AND column_name = 'masterManuallySet'
+              ) THEN
+                ALTER TABLE "direct_clients" 
+                ADD COLUMN "masterManuallySet" BOOLEAN NOT NULL DEFAULT false;
+              END IF;
+            END $$;
+          `);
+          
+          // Створюємо таблицю клієнтів (якщо не існує)
           await prisma.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS "direct_clients" (
               "id" TEXT NOT NULL,
@@ -114,6 +129,7 @@ export async function POST(req: NextRequest) {
               "firstContactDate" TIMESTAMP(3) NOT NULL,
               "statusId" TEXT NOT NULL,
               "masterId" TEXT,
+              "masterManuallySet" BOOLEAN NOT NULL DEFAULT false,
               "consultationDate" TIMESTAMP(3),
               "visitedSalon" BOOLEAN NOT NULL DEFAULT false,
               "visitDate" TIMESTAMP(3),
