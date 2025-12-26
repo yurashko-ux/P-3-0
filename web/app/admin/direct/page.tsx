@@ -933,6 +933,52 @@ export default function DirectPage() {
             🔍 Діагностика нагадувань
           </button>
           <button
+            className="btn btn-sm btn-info"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/check-data');
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `📊 Діагностика даних:\n\n` +
+                    `Postgres:\n` +
+                    `  Клієнти: ${data.summary.postgresClients}\n` +
+                    `  Статуси: ${data.summary.postgresStatuses}\n` +
+                    `  Відповідальні: ${data.summary.postgresMasters}\n` +
+                    `  SQL count: ${data.summary.directSqlCount}\n\n` +
+                    `KV:\n` +
+                    `  Клієнти: ${data.summary.kvClients}\n` +
+                    `  Статуси: ${data.summary.kvStatuses}\n\n` +
+                    `Рекомендація: ${data.recommendation}\n\n` +
+                    (data.details.postgres.clients.sample && data.details.postgres.clients.sample.length > 0
+                      ? `Приклади клієнтів:\n${data.details.postgres.clients.sample.map((c: any) => `  - ${c.username} (${c.name || 'без імені'})`).join('\n')}\n\n`
+                      : ''
+                    ) +
+                    (data.details.postgres.clients.error
+                      ? `Помилка клієнтів: ${data.details.postgres.clients.error}\n\n`
+                      : ''
+                    ) +
+                    (data.details.postgres.statuses.error
+                      ? `Помилка статусів: ${data.details.postgres.statuses.error}\n\n`
+                      : ''
+                    ) +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Перевірити наявність даних в Postgres та KV"
+          >
+            🔍 Перевірити дані
+          </button>
+          <button
             className="btn btn-sm btn-accent"
             onClick={async () => {
               if (!confirm('Виконати міграцію даних з KV → Postgres?\n\nЦе перенесе всіх клієнтів та статуси з KV в Postgres.\n\nПродовжити?')) {
