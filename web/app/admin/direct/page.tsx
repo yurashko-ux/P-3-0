@@ -125,9 +125,22 @@ function showCopyableAlert(message: string) {
   );
 }
 
+type DirectMaster = {
+  id: string;
+  name: string;
+  telegramUsername?: string;
+  role: 'master' | 'direct-manager' | 'admin';
+  altegioStaffId?: number;
+  isActive: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export default function DirectPage() {
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
+  const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [stats, setStats] = useState<DirectStatsType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +167,15 @@ export default function DirectPage() {
         const statusesData = await statusesRes.json();
         if (statusesData.ok) {
           setStatuses(statusesData.statuses);
+        }
+      }
+
+      // Завантажуємо відповідальних (майстрів)
+      const mastersRes = await fetch("/api/admin/direct/masters");
+      if (mastersRes.ok) {
+        const mastersData = await mastersRes.json();
+        if (mastersData.ok) {
+          setMasters(mastersData.masters);
         }
       }
 
@@ -1093,17 +1115,19 @@ export default function DirectPage() {
       {/* Статистика */}
       {stats && <DirectStats stats={stats} />}
 
-      {/* Управління статусами */}
-      <StatusManager
-        statuses={statuses}
-        onStatusCreated={handleStatusCreated}
-      />
-
-      {/* Управління відповідальними */}
-      <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-4">
-          <h2 className="card-title text-lg">Відповідальні</h2>
-          <MasterManager onMasterUpdated={handleStatusCreated} />
+      {/* Управління статусами та відповідальними */}
+      <div className="flex gap-4 items-start">
+        <div className="flex-1">
+          <StatusManager
+            statuses={statuses}
+            onStatusCreated={handleStatusCreated}
+          />
+        </div>
+        <div className="flex-1">
+          <MasterManager
+            masters={masters}
+            onMasterUpdated={handleStatusCreated}
+          />
         </div>
       </div>
 
