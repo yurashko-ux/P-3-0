@@ -280,8 +280,6 @@ async function handleSelectMasterCallback(
       }, botToken);
       return;
     }
-
-    const botToken = getDirectRemindersBotToken();
     
     const master = findMasterById(masterId);
     if (!master) {
