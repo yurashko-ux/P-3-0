@@ -15,8 +15,8 @@ export const TELEGRAM_ENV = {
 };
 
 export function assertTelegramEnv() {
-  if (!TELEGRAM_ENV.BOT_TOKEN && !TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN) {
-    throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN env variable");
+  if (!TELEGRAM_ENV.BOT_TOKEN && !TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN) {
+    throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_HOB_CLIENT_BOT_TOKEN env variable");
   }
 }
 
@@ -29,9 +29,12 @@ export function assertDirectRemindersBotToken() {
   }
 }
 
-export function telegramApiUrl(path: string) {
-  assertTelegramEnv();
+export function telegramApiUrl(path: string, botToken?: string) {
+  const token = botToken || TELEGRAM_ENV.BOT_TOKEN;
+  if (!token) {
+    throw new Error("Missing Telegram bot token");
+  }
   const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return `https://api.telegram.org/bot${TELEGRAM_ENV.BOT_TOKEN}/${normalizedPath}`;
+  return `https://api.telegram.org/bot${token}/${normalizedPath}`;
 }
 
