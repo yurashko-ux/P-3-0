@@ -45,7 +45,13 @@ export async function POST(req: NextRequest) {
     const records = recordsLogRaw
       .map((raw) => {
         try {
-          const parsed = JSON.parse(raw);
+          let parsed: any;
+          if (typeof raw === 'string') {
+            parsed = JSON.parse(raw);
+          } else {
+            parsed = raw;
+          }
+          
           // Upstash може повертати елементи як { value: "..." }
           if (
             parsed &&
@@ -54,17 +60,49 @@ export async function POST(req: NextRequest) {
             typeof parsed.value === 'string'
           ) {
             try {
-              return JSON.parse(parsed.value);
+              parsed = JSON.parse(parsed.value);
             } catch {
-              return null;
+              // Якщо не вдалося розпарсити value, залишаємо як є
             }
           }
+          
+          // Також перевіряємо, чи це не обгортка з data
+          if (parsed && typeof parsed === 'object' && 'data' in parsed && !parsed.clientId) {
+            parsed = parsed.data;
+          }
+          
           return parsed;
         } catch {
           return null;
         }
       })
-      .filter((r) => r && r.clientId && r.data && Array.isArray(r.data.services));
+      .filter((r) => {
+        if (!r || typeof r !== 'object') return false;
+        // Перевіряємо різні формати записів
+        const hasClientId = r.clientId || (r.data && r.data.client && r.data.client.id);
+        const hasServices = Array.isArray(r.services) || 
+                          (r.data && Array.isArray(r.data.services)) ||
+                          (r.data && r.data.service && typeof r.data.service === 'object');
+        return hasClientId && hasServices;
+      })
+      .map((r) => {
+        // Нормалізуємо формат запису
+        if (r.data && r.data.services) {
+          return {
+            clientId: r.clientId || (r.data.client && r.data.client.id),
+            data: r.data,
+            receivedAt: r.receivedAt || new Date().toISOString(),
+          };
+        }
+        if (r.services) {
+          return {
+            clientId: r.clientId || (r.client && r.client.id),
+            data: { services: r.services },
+            receivedAt: r.receivedAt || new Date().toISOString(),
+          };
+        }
+        return r;
+      });
 
     console.log(`[direct/update-states-from-records] Parsed ${records.length} valid records`);
 
@@ -94,12 +132,25 @@ export async function POST(req: NextRequest) {
       }
 
       const record = recordsByClient.get(client.altegioClientId);
-      if (!record || !record.data || !Array.isArray(record.data.services)) {
+      if (!record) {
         skippedCount++;
         continue;
       }
 
-      const services = record.data.services;
+      // Отримуємо services з різних можливих місць
+      let services: any[] = [];
+      if (record.data && Array.isArray(record.data.services)) {
+        services = record.data.services;
+      } else if (Array.isArray(record.services)) {
+        services = record.services;
+      } else if (record.data && record.data.service && typeof record.data.service === 'object') {
+        services = [record.data.service];
+      }
+      
+      if (services.length === 0) {
+        skippedCount++;
+        continue;
+      }
       
       // Визначаємо новий стан на основі послуг (з пріоритетом)
       const newState = determineStateFromServices(services);

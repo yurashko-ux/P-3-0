@@ -422,14 +422,19 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {formatDate(client.firstContactDate)}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[80px]">
                         <a
                           href={`https://instagram.com/${client.instagramUsername}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="link link-primary"
+                          title={client.instagramUsername}
                         >
-                          @{client.instagramUsername}
+                          <div className="truncate">
+                            {client.instagramUsername.length > 8 
+                              ? `${client.instagramUsername.substring(0, 8)}...` 
+                              : client.instagramUsername}
+                          </div>
                         </a>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[150px]">
