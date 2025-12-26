@@ -223,13 +223,13 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
                         {formatDate(log.createdAt)}
                       </div>
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-2">
                         <StateIcon state={log.state} />
                         <div className="font-semibold text-sm">
                           {getStateName(log.state)}
                         </div>
                         {log.masterName && (
-                          <div className="text-xs text-base-content/60 ml-auto">
+                          <div className="text-xs text-base-content/60 ml-2">
                             {log.masterName}
                           </div>
                         )}
