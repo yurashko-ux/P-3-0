@@ -120,7 +120,11 @@ export async function GET(req: NextRequest) {
             state: newState,
             updatedAt: new Date().toISOString(),
           };
-          await saveDirectClient(updated);
+          await saveDirectClient(updated, 'cron-update-states', {
+            altegioClientId: client.altegioClientId,
+            visitId: record.visitId,
+            services: record.data?.services?.map((s: any) => ({ id: s.id, title: s.title })) || [],
+          });
           updatedCount++;
           console.log(`[cron/update-direct-states] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
         } catch (err) {

@@ -4,6 +4,7 @@
 import { prisma } from './prisma';
 import type { DirectClient, DirectStatus } from './direct-types';
 import { normalizeInstagram } from './normalize';
+import { logStateChange } from './direct-state-log';
 
 // Конвертація з Prisma моделі в DirectClient
 function prismaClientToDirectClient(dbClient: any): DirectClient {
@@ -196,7 +197,11 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
 /**
  * Зберегти клієнта
  */
-export async function saveDirectClient(client: DirectClient): Promise<void> {
+export async function saveDirectClient(
+  client: DirectClient,
+  reason?: string,
+  metadata?: Record<string, any>
+): Promise<void> {
   try {
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
@@ -206,7 +211,13 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       where: { instagramUsername: normalizedUsername },
     });
     
+    let previousState: string | null | undefined = null;
+    let clientIdForLog = client.id;
+    
     if (existingByUsername) {
+      previousState = existingByUsername.state;
+      clientIdForLog = existingByUsername.id;
+      
       // Якщо існує клієнт з таким username, оновлюємо його (об'єднуємо дані)
       // Беремо найранішу дату створення та найпізнішу дату оновлення
       await prisma.directClient.update({
@@ -228,6 +239,8 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
       });
       
       if (existingById) {
+        previousState = existingById.state;
+        
         // Оновлюємо існуючий запис
         await prisma.directClient.update({
           where: { id: client.id },
@@ -238,12 +251,23 @@ export async function saveDirectClient(client: DirectClient): Promise<void> {
         });
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
       } else {
-        // Створюємо новий запис
+        // Створюємо новий запис (для нового клієнта previousState = null)
         await prisma.directClient.create({
           data,
         });
         console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
       }
+    }
+    
+    // Логуємо зміну стану, якщо вона відбулася
+    if (client.state !== previousState) {
+      await logStateChange(
+        clientIdForLog,
+        client.state,
+        previousState,
+        reason || 'saveDirectClient',
+        metadata
+      );
     }
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client.id}:`, err);

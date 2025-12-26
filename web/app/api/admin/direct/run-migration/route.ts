@@ -224,6 +224,41 @@ export async function POST(req: NextRequest) {
             END $$;
           `);
           
+          // Створюємо таблицю історії змін станів
+          await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "direct_client_state_logs" (
+              "id" TEXT NOT NULL,
+              "clientId" TEXT NOT NULL,
+              "state" TEXT,
+              "previousState" TEXT,
+              "reason" TEXT,
+              "metadata" TEXT,
+              "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              CONSTRAINT "direct_client_state_logs_pkey" PRIMARY KEY ("id")
+            )
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_client_state_logs_clientId_idx" ON "direct_client_state_logs"("clientId")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_client_state_logs_state_idx" ON "direct_client_state_logs"("state")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_client_state_logs_createdAt_idx" ON "direct_client_state_logs"("createdAt")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            DO $$ BEGIN
+              ALTER TABLE "direct_client_state_logs" ADD CONSTRAINT "direct_client_state_logs_clientId_fkey" 
+              FOREIGN KEY ("clientId") REFERENCES "direct_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+            EXCEPTION
+              WHEN duplicate_object THEN null;
+            END $$;
+          `);
+          
           results.push('✅ Таблиці створені через SQL');
           success = true;
         } catch (sqlErr) {
@@ -246,11 +281,26 @@ export async function POST(req: NextRequest) {
         results.push(`   - direct_clients: доступна`);
         results.push(`   - direct_statuses: доступна`);
         results.push(`   - direct_masters: доступна`);
+        results.push(`   - direct_client_state_logs: доступна`);
       } else {
         results.push(`\n⚠️ Деякі таблиці можуть бути не створені`);
         if (clientsCount < 0) results.push(`   - direct_clients: недоступна`);
         if (statusesCount < 0) results.push(`   - direct_statuses: недоступна`);
         if (mastersCount < 0) results.push(`   - direct_masters: недоступна`);
+        
+        // Перевіряємо таблицю логування станів
+        try {
+          const logsCount = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+            'SELECT COUNT(*) as count FROM "direct_client_state_logs"'
+          );
+          if (logsCount[0]?.count !== undefined) {
+            results.push(`   - direct_client_state_logs: доступна`);
+          } else {
+            results.push(`   - direct_client_state_logs: недоступна`);
+          }
+        } catch {
+          results.push(`   - direct_client_state_logs: недоступна`);
+        }
       }
     } catch (err) {
       results.push(`\n⚠️ Не вдалося перевірити таблиці: ${err instanceof Error ? err.message : String(err)}`);

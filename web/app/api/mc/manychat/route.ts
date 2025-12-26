@@ -534,7 +534,10 @@ export async function POST(req: NextRequest) {
       }
       
       if (client.id && client.instagramUsername) {
-        await saveDirectClient(client);
+        await saveDirectClient(client, 'manychat-webhook', {
+          messageId: message.id,
+          fullName: message.fullName,
+        });
         console.log('[manychat] ✅ Successfully synced Direct client:', {
           id: client.id,
           username: client.instagramUsername,

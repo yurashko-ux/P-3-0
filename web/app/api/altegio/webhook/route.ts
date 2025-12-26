@@ -191,7 +191,11 @@ export async function POST(req: NextRequest) {
                     ...existingClient,
                     ...updates,
                   };
-                  await saveDirectClient(updated);
+                  await saveDirectClient(updated, 'altegio-webhook-record', {
+                    altegioClientId: clientId,
+                    visitId: data.id,
+                    services: services.map((s: any) => ({ id: s.id, title: s.title })),
+                  });
                   console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
                 }
               } else {

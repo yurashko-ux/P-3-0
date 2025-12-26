@@ -164,7 +164,10 @@ export async function POST(req: NextRequest) {
             state: newState,
             updatedAt: new Date().toISOString(),
           };
-          await saveDirectClient(updated);
+          await saveDirectClient(updated, 'manual-update-states', {
+            altegioClientId: client.altegioClientId,
+            services: services.map((s: any) => ({ id: s.id, title: s.title })),
+          });
           updatedCount++;
           console.log(`[direct/update-states-from-records] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
         } catch (err) {

@@ -58,6 +58,9 @@ model DirectClient {
   // Зв'язок з відповідальним (майстром)
   master DirectMaster? @relation(fields: [masterId], references: [id], onDelete: SetNull)
 
+  // Зв'язок з історією станів
+  stateLogs DirectClientStateLog[]
+
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
   @@index([statusId])
@@ -89,5 +92,24 @@ model DirectMaster {
   @@index([isActive])
   @@index([order])
   @@map("direct_masters")
+}
+
+// Історія змін станів клієнтів
+model DirectClientStateLog {
+  id        String   @id @default(uuid())
+  clientId  String   // ID клієнта
+  state     String?  // Новий стан (може бути null для початкового стану)
+  previousState String? // Попередній стан
+  reason    String?  // Причина зміни (напр. "webhook", "manual", "cron", "record")
+  metadata  String?  // Додаткові дані (JSON)
+  createdAt DateTime @default(now())
+
+  // Зв'язок з клієнтом
+  client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([state])
+  @@index([createdAt])
+  @@map("direct_client_state_logs")
 }
 
