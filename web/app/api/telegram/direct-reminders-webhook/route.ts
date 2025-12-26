@@ -31,7 +31,7 @@ async function handleChangeMasterCallback(
     console.log(`[direct-reminders-webhook] Handling change master callback for reminder ${reminderId}`);
     
     const { getDirectReminder } = await import('@/lib/direct-reminders/store');
-    const { getMasters } = await import('@/lib/photo-reports/service');
+    const { getDirectMastersForSelection } = await import('@/lib/direct-masters/store');
     
     const reminder = await getDirectReminder(reminderId);
     if (!reminder) {
@@ -44,26 +44,15 @@ async function handleChangeMasterCallback(
       return;
     }
 
-    const allMasters = getMasters();
-    console.log(`[direct-reminders-webhook] Found ${allMasters.length} total masters`);
-    
-    // Фільтруємо майстрів: тільки role='master', виключаємо тестових та адміністраторів
-    const masters = allMasters.filter(m => {
-      if (m.role !== 'master') return false;
-      // Виключаємо тестових майстрів
-      if (m.id.includes('test') || m.id.includes('tester')) return false;
-      if (m.name.toLowerCase().includes('тест') || m.name.toLowerCase().includes('test')) return false;
-      // Виключаємо адміністраторів
-      if (m.role === 'admin') return false;
-      return true;
-    });
-    console.log(`[direct-reminders-webhook] Found ${masters.length} masters (excluding test and admin)`);
+    // Отримуємо відповідальних з бази даних (вже відфільтровані)
+    const masters = await getDirectMastersForSelection();
+    console.log(`[direct-reminders-webhook] Found ${masters.length} masters from database`);
     
     const botToken = getDirectRemindersBotToken();
     
     if (masters.length === 0) {
       await answerCallbackQuery(callback.id, {
-        text: 'Майстрів не знайдено',
+        text: 'Відповідальних не знайдено',
         show_alert: true,
       }, botToken);
       return;
@@ -111,7 +100,7 @@ async function handleChangeMasterCallback(
     }, botToken);
 
     await answerCallbackQuery(callback.id, {
-      text: `Оберіть майстра (${masters.length} доступно)`,
+      text: `Оберіть відповідального (${masters.length} доступно)`,
     }, botToken);
     
     console.log(`[direct-reminders-webhook] ✅ Successfully updated message with master selection`);
@@ -136,7 +125,7 @@ async function handleSelectMasterCallback(
   try {
     const { getDirectReminder, saveDirectReminder } = await import('@/lib/direct-reminders/store');
     const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
-    const { findMasterById } = await import('@/lib/photo-reports/service');
+    const { getDirectMasterById } = await import('@/lib/direct-masters/store');
     
     const botToken = getDirectRemindersBotToken();
     
@@ -149,10 +138,10 @@ async function handleSelectMasterCallback(
       return;
     }
 
-    const master = findMasterById(masterId);
+    const master = await getDirectMasterById(masterId);
     if (!master) {
       await answerCallbackQuery(callback.id, {
-        text: 'Майстра не знайдено',
+        text: 'Відповідального не знайдено',
         show_alert: true,
       }, botToken);
       return;
@@ -185,7 +174,7 @@ async function handleSelectMasterCallback(
           ],
           [
             { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminderId}:no-call` },
-            { text: '👤 Заміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
+            { text: '👤 Заміна відповідального', callback_data: `direct_reminder:${reminderId}:change-master` },
           ],
         ],
       };
@@ -196,7 +185,7 @@ async function handleSelectMasterCallback(
     }
 
     await answerCallbackQuery(callback.id, {
-      text: `✅ Майстра змінено на: ${master.name}`,
+      text: `✅ Відповідального змінено на: ${master.name}`,
     }, botToken);
   } catch (err) {
     console.error(`[direct-reminders-webhook] ❌ Failed to handle select master callback:`, err);
@@ -238,7 +227,7 @@ async function handleBackCallback(
         ],
         [
           { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminderId}:no-call` },
-          { text: '👤 Заміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
+          { text: '👤 Заміна відповідального', callback_data: `direct_reminder:${reminderId}:change-master` },
         ],
       ],
     };

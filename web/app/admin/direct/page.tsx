@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import React from "react";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
+import { MasterManager } from "./_components/MasterManager";
 import { DirectStats } from "./_components/DirectStats";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
@@ -1033,6 +1034,44 @@ export default function DirectPage() {
           >
             🔧 Відновити індекс
           </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              if (!confirm('Мігрувати майстрів з mock-data в базу даних?\n\nЦе перенесе всіх майстрів з фото-звітів в нову базу даних.')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/migrate-masters', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Міграція майстрів завершена!\n\n` +
+                    `Знайдено: ${data.stats.found}\n` +
+                    `Мігровано: ${data.stats.migrated}\n` +
+                    `Пропущено: ${data.stats.skipped}\n` +
+                    `Помилок: ${data.stats.errors}\n` +
+                    `Всього в базі: ${data.stats.finalCount}\n\n` +
+                    (data.errors.length > 0
+                      ? `Помилки:\n${data.errors.join('\n')}\n\n`
+                      : ''
+                    ) +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Мігрувати майстрів з mock-data в базу даних"
+          >
+            👥 Мігрувати майстрів
+          </button>
         </div>
       </div>
 
@@ -1059,6 +1098,14 @@ export default function DirectPage() {
         statuses={statuses}
         onStatusCreated={handleStatusCreated}
       />
+
+      {/* Управління відповідальними */}
+      <div className="card bg-base-100 shadow-sm">
+        <div className="card-body p-4">
+          <h2 className="card-title text-lg">Відповідальні</h2>
+          <MasterManager onMasterUpdated={handleStatusCreated} />
+        </div>
+      </div>
 
       {/* Таблиця клієнтів */}
       <DirectClientTable

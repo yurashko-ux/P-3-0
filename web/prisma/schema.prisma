@@ -53,6 +53,9 @@ model DirectClient {
 
   // Зв'язок зі статусом
   status DirectStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  
+  // Зв'язок з відповідальним (майстром)
+  master DirectMaster? @relation(fields: [masterId], references: [id], onDelete: SetNull)
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -64,5 +67,26 @@ model DirectClient {
   @@index([firstContactDate])
   @@index([createdAt])
   @@map("direct_clients")
+}
+
+// Відповідальні (майстри та дірект-менеджери)
+model DirectMaster {
+  id              String   @id @default(uuid())
+  name            String   // Ім'я відповідального
+  telegramUsername String? // Telegram username
+  role            String   @default("master") // 'master' | 'direct-manager' | 'admin'
+  altegioStaffId  Int?     // ID майстра в Altegio (якщо є)
+  isActive        Boolean  @default(true) // Чи активний
+  order           Int      @default(0) // Порядок сортування
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Зв'язок з клієнтами
+  clients DirectClient[]
+
+  @@index([role])
+  @@index([isActive])
+  @@index([order])
+  @@map("direct_masters")
 }
 

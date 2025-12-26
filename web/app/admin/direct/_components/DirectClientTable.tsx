@@ -38,14 +38,19 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
 
-  // Завантажуємо майстрів
+  // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
-    fetch("/api/photo-reports/masters")
+    fetch("/api/admin/direct/masters?forSelection=true")
       .then((res) => {
         if (!res.ok) {
           console.warn(`[DirectClientTable] Failed to load masters: ${res.status} ${res.statusText}`);
-          return null;
+          // Fallback на старий endpoint
+          return fetch("/api/photo-reports/masters");
         }
+        return res;
+      })
+      .then((res) => {
+        if (!res) return null;
         return res.json();
       })
       .then((data) => {
@@ -155,7 +160,7 @@ export function DirectClientTable({
               </select>
             </div>
             <div className="min-w-[150px]">
-              <label className="label label-text text-xs">Майстер</label>
+              <label className="label label-text text-xs">Відповідальний</label>
               <select
                 className="select select-bordered select-sm w-full"
                 value={filters.masterId}
@@ -313,7 +318,7 @@ export function DirectClientTable({
                         )
                       }
                     >
-                      Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Відповідальний {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">

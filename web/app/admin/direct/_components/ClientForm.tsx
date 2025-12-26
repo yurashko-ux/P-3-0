@@ -96,7 +96,7 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
 
           {formData.statusId === "consultation" && (
             <div>
-              <label className="label label-text text-xs">Майстер</label>
+              <label className="label label-text text-xs">Відповідальний</label>
               <select
                 className="select select-bordered select-sm w-full"
                 value={formData.masterId || ""}

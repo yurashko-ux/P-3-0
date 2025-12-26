@@ -52,14 +52,23 @@ export async function GET(req: NextRequest) {
     const statuses = await getAllDirectStatuses();
     const statusMap = new Map(statuses.map(s => [s.id, s.name]));
 
-    // Завантажуємо майстрів для сортування по імені (якщо потрібно)
+    // Завантажуємо відповідальних для сортування по імені (якщо потрібно)
     let masterMap = new Map<string, string>();
     if (sortBy === 'masterId') {
       try {
-        const masters = getMasters();
+        const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+        const masters = await getAllDirectMasters();
         masterMap = new Map(masters.map((m: any) => [m.id, m.name || '']));
       } catch (err) {
         console.warn('[direct/clients] Failed to load masters for sorting:', err);
+        // Fallback на старий метод
+        try {
+          const { getMasters } = await import('@/lib/photo-reports/service');
+          const masters = getMasters();
+          masterMap = new Map(masters.map((m: any) => [m.id, m.name || '']));
+        } catch (fallbackErr) {
+          console.warn('[direct/clients] Fallback to old masters also failed:', fallbackErr);
+        }
       }
     }
 
