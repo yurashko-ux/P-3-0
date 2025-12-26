@@ -124,9 +124,9 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     )) {
       console.log('[direct-store] Attempting to load clients via raw SQL (without masterManuallySet)...');
       try {
-        const rawClients = await prisma.$queryRawUnsafe<Array<any>>`
-          SELECT * FROM direct_clients ORDER BY "createdAt" DESC
-        `;
+        const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
+          'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
+        );
         console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
         // Конвертуємо вручну, додаючи masterManuallySet = false
         return rawClients.map((dbClient: any) => ({
