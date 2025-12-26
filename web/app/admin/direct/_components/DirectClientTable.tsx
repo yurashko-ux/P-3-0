@@ -236,7 +236,7 @@ export function DirectClientTable({
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-2 sm:p-4">
           <div className="overflow-x-auto">
-            <table className="table table-xs sm:table-sm w-full border-collapse min-w-[800px]">
+            <table className="table table-xs sm:table-sm w-full border-collapse">
               <thead>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">№</th>
