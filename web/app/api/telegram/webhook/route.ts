@@ -188,8 +188,17 @@ async function handleChangeMasterCallback(
     const allMasters = getMasters();
     console.log(`[telegram/webhook] Found ${allMasters.length} total masters`);
     
-    const masters = allMasters.filter(m => m.role === 'master');
-    console.log(`[telegram/webhook] Found ${masters.length} masters with role 'master'`);
+    // Фільтруємо майстрів: тільки role='master', виключаємо тестових та адміністраторів
+    const masters = allMasters.filter(m => {
+      if (m.role !== 'master') return false;
+      // Виключаємо тестових майстрів
+      if (m.id.includes('test') || m.id.includes('tester')) return false;
+      if (m.name.toLowerCase().includes('тест') || m.name.toLowerCase().includes('test')) return false;
+      // Виключаємо адміністраторів
+      if (m.role === 'admin') return false;
+      return true;
+    });
+    console.log(`[telegram/webhook] Found ${masters.length} masters (excluding test and admin)`);
     
     const botToken = getDirectRemindersBotToken();
     
