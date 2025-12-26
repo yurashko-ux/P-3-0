@@ -112,7 +112,7 @@ export async function deleteDirectMaster(id: string): Promise<void> {
 }
 
 /**
- * Отримує відповідальних для вибору (майстри + дірект-менеджери, без тестових та адміністраторів)
+ * Отримує відповідальних для вибору (майстри + дірект-менеджери + адміністратори, без тестових)
  */
 export async function getDirectMastersForSelection(): Promise<DirectMaster[]> {
   try {
@@ -120,7 +120,7 @@ export async function getDirectMastersForSelection(): Promise<DirectMaster[]> {
       where: {
         isActive: true,
         role: {
-          in: ['master', 'direct-manager'],
+          in: ['master', 'direct-manager', 'admin'],
         },
       },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
