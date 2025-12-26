@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
           r.data.services.some((s: any) => s.title && /консультація/i.test(s.title))
         ).length,
         withHairExtension: records.filter((r) =>
-          r.data.services.some((s: any) => s.title && /нарощування.*волосся/i.test(s.title))
+          r.data.services.some((s: any) => s.title && /нарощування/i.test(s.title))
         ).length,
         latest: records
           .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
             status: r.status,
             services: r.data.services.map((s: any) => s.title),
             hasConsultation: r.data.services.some((s: any) => s.title && /консультація/i.test(s.title)),
-            hasHairExtension: r.data.services.some((s: any) => s.title && /нарощування.*волосся/i.test(s.title)),
+            hasHairExtension: r.data.services.some((s: any) => s.title && /нарощування/i.test(s.title)),
           })),
       };
 
