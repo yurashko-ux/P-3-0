@@ -85,6 +85,30 @@ function directStatusToPrisma(status: DirectStatus) {
  */
 export async function getAllDirectClients(): Promise<DirectClient[]> {
   try {
+    // Спочатку перевіряємо, чи існує колонка masterManuallySet
+    try {
+      await prisma.$queryRaw`SELECT "masterManuallySet" FROM "direct_clients" LIMIT 1`;
+    } catch (columnErr) {
+      // Якщо колонки немає - додаємо її
+      if (columnErr instanceof Error && (
+        columnErr.message.includes('masterManuallySet') ||
+        columnErr.message.includes('column') ||
+        columnErr.message.includes('does not exist')
+      )) {
+        console.log('[direct-store] Column masterManuallySet missing, adding it...');
+        try {
+          await prisma.$executeRawUnsafe(`
+            ALTER TABLE "direct_clients" 
+            ADD COLUMN IF NOT EXISTS "masterManuallySet" BOOLEAN NOT NULL DEFAULT false;
+          `);
+          console.log('[direct-store] ✅ Column masterManuallySet added successfully');
+        } catch (addErr) {
+          console.error('[direct-store] Failed to add column:', addErr);
+          // Продовжуємо - спробуємо завантажити без цього поля
+        }
+      }
+    }
+
     const clients = await prisma.directClient.findMany({
       orderBy: { createdAt: 'desc' },
     });
@@ -92,22 +116,44 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     return clients.map(prismaClientToDirectClient);
   } catch (err) {
     console.error('[direct-store] Failed to get all clients:', err);
-    // Якщо помилка через відсутнє поле - спробуємо додати його
-    if (err instanceof Error && err.message.includes('masterManuallySet')) {
-      console.log('[direct-store] Attempting to add masterManuallySet column...');
+    // Якщо помилка через відсутнє поле - спробуємо завантажити через SQL без цього поля
+    if (err instanceof Error && (
+      err.message.includes('masterManuallySet') ||
+      err.message.includes('column') ||
+      err.message.includes('does not exist')
+    )) {
+      console.log('[direct-store] Attempting to load clients via raw SQL (without masterManuallySet)...');
       try {
-        await prisma.$executeRawUnsafe(`
-          ALTER TABLE "direct_clients" 
-          ADD COLUMN IF NOT EXISTS "masterManuallySet" BOOLEAN NOT NULL DEFAULT false;
-        `);
-        // Повторна спроба після додавання колонки
-        const clients = await prisma.directClient.findMany({
-          orderBy: { createdAt: 'desc' },
-        });
-        console.log(`[direct-store] Found ${clients.length} clients after adding column`);
-        return clients.map(prismaClientToDirectClient);
-      } catch (fixErr) {
-        console.error('[direct-store] Failed to fix schema:', fixErr);
+        const rawClients = await prisma.$queryRawUnsafe<Array<any>>`
+          SELECT * FROM direct_clients ORDER BY "createdAt" DESC
+        `;
+        console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
+        // Конвертуємо вручну, додаючи masterManuallySet = false
+        return rawClients.map((dbClient: any) => ({
+          id: dbClient.id,
+          instagramUsername: dbClient.instagramUsername,
+          firstName: dbClient.firstName || undefined,
+          lastName: dbClient.lastName || undefined,
+          source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
+          state: (dbClient.state as 'lead' | 'client' | 'consultation') || undefined,
+          firstContactDate: dbClient.firstContactDate.toISOString(),
+          statusId: dbClient.statusId,
+          masterId: dbClient.masterId || undefined,
+          masterManuallySet: false, // Значення за замовчуванням
+          consultationDate: dbClient.consultationDate?.toISOString() || undefined,
+          visitedSalon: dbClient.visitedSalon || false,
+          visitDate: dbClient.visitDate?.toISOString() || undefined,
+          signedUpForPaidService: dbClient.signedUpForPaidService || false,
+          paidServiceDate: dbClient.paidServiceDate?.toISOString() || undefined,
+          signupAdmin: dbClient.signupAdmin || undefined,
+          comment: dbClient.comment || undefined,
+          altegioClientId: dbClient.altegioClientId || undefined,
+          lastMessageAt: dbClient.lastMessageAt?.toISOString() || undefined,
+          createdAt: dbClient.createdAt.toISOString(),
+          updatedAt: dbClient.updatedAt.toISOString(),
+        }));
+      } catch (sqlErr) {
+        console.error('[direct-store] Raw SQL also failed:', sqlErr);
       }
     }
     return [];
