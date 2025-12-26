@@ -3,6 +3,14 @@
 
 import { sendMessage } from '@/lib/telegram/api';
 import { TELEGRAM_ENV } from '@/lib/telegram/env';
+
+/**
+ * Отримує токен бота для нагадувань Direct клієнтів
+ * Використовує окремий токен, якщо встановлено, інакше - основний токен
+ */
+function getDirectRemindersBotToken(): string {
+  return TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+}
 import { getChatIdForMaster, listRegisteredChats } from '@/lib/photo-reports/master-registry';
 import { findMasterById, getMasters } from '@/lib/photo-reports/service';
 import type { DirectReminder } from './types';
@@ -87,11 +95,13 @@ export async function sendDirectReminderToAdmins(
     ],
   };
   
+  const botToken = getDirectRemindersBotToken();
+  
   for (const chatId of allChatIds) {
     try {
       await sendMessage(chatId, message, {
         reply_markup: keyboard,
-      });
+      }, botToken);
       console.log(`[direct-reminders] ✅ Sent reminder ${reminder.id} to admin chat ${chatId}`);
     } catch (err) {
       console.error(`[direct-reminders] ❌ Failed to send reminder ${reminder.id} to chat ${chatId}:`, err);
@@ -159,11 +169,13 @@ export async function sendRepeatReminderToAdmins(
     ],
   };
   
+  const botToken = getDirectRemindersBotToken();
+  
   for (const chatId of allChatIds) {
     try {
       await sendMessage(chatId, message, {
         reply_markup: keyboard,
-      });
+      }, botToken);
       console.log(`[direct-reminders] ✅ Sent repeat reminder ${reminder.id} to admin chat ${chatId}`);
     } catch (err) {
       console.error(`[direct-reminders] ❌ Failed to send repeat reminder ${reminder.id} to chat ${chatId}:`, err);

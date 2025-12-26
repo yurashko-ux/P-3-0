@@ -1,4 +1,4 @@
-import { assertTelegramEnv, telegramApiUrl, TELEGRAM_ENV } from "./env";
+import { assertTelegramEnv, telegramApiUrl, TELEGRAM_ENV, assertDirectRemindersBotToken } from "./env";
 
 type TelegramRequestPayload = Record<string, unknown>;
 
@@ -10,11 +10,15 @@ type TelegramApiResponse<T = unknown> = {
 
 async function telegramFetch<T = any>(
   method: string,
-  payload: TelegramRequestPayload
+  payload: TelegramRequestPayload,
+  botToken?: string
 ): Promise<T> {
-  assertTelegramEnv();
+  const token = botToken || TELEGRAM_ENV.BOT_TOKEN;
+  if (!token) {
+    throw new Error("Missing Telegram bot token");
+  }
 
-  const response = await fetch(telegramApiUrl(method), {
+  const response = await fetch(telegramApiUrl(method, token), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -34,7 +38,8 @@ async function telegramFetch<T = any>(
 export function sendMessage(
   chatId: number,
   text: string,
-  extra: TelegramRequestPayload = {}
+  extra: TelegramRequestPayload = {},
+  botToken?: string
 ) {
   const payload = {
     chat_id: chatId,
@@ -43,7 +48,7 @@ export function sendMessage(
     ...extra,
   };
 
-  return telegramFetch("sendMessage", payload);
+  return telegramFetch("sendMessage", payload, botToken);
 }
 
 export function sendPhoto(
@@ -62,21 +67,23 @@ export function sendPhoto(
 
 export function answerCallbackQuery(
   callbackQueryId: string,
-  options: TelegramRequestPayload = {}
+  options: TelegramRequestPayload = {},
+  botToken?: string
 ) {
   const payload = {
     callback_query_id: callbackQueryId,
     ...options,
   };
 
-  return telegramFetch("answerCallbackQuery", payload);
+  return telegramFetch("answerCallbackQuery", payload, botToken);
 }
 
 export function editMessageText(
   chatId: number,
   messageId: number,
   text: string,
-  extra: TelegramRequestPayload = {}
+  extra: TelegramRequestPayload = {},
+  botToken?: string
 ) {
   const payload = {
     chat_id: chatId,
@@ -86,7 +93,7 @@ export function editMessageText(
     ...extra,
   };
 
-  return telegramFetch("editMessageText", payload);
+  return telegramFetch("editMessageText", payload, botToken);
 }
 
 export async function forwardPhotoToReportGroup(

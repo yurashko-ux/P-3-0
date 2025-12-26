@@ -1,5 +1,7 @@
 export const TELEGRAM_ENV = {
   BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN?.trim() || "",
+  // Токен для нагадувань Direct клієнтів (новий бот)
+  DIRECT_REMINDERS_BOT_TOKEN: process.env.TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN?.trim() || "",
   REPORT_GROUP_ID: process.env.TELEGRAM_PHOTO_GROUP_ID
     ? Number(process.env.TELEGRAM_PHOTO_GROUP_ID)
     : null,
@@ -13,8 +15,17 @@ export const TELEGRAM_ENV = {
 };
 
 export function assertTelegramEnv() {
-  if (!TELEGRAM_ENV.BOT_TOKEN) {
-    throw new Error("Missing TELEGRAM_BOT_TOKEN env variable");
+  if (!TELEGRAM_ENV.BOT_TOKEN && !TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN) {
+    throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN env variable");
+  }
+}
+
+/**
+ * Перевіряє, чи встановлено токен для нагадувань Direct клієнтів
+ */
+export function assertDirectRemindersBotToken() {
+  if (!TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN && !TELEGRAM_ENV.BOT_TOKEN) {
+    throw new Error("Missing TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN or TELEGRAM_BOT_TOKEN env variable");
   }
 }
 

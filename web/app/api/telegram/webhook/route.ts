@@ -9,6 +9,7 @@ import {
   sendMessage,
   editMessageText,
 } from "@/lib/telegram/api";
+import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import {
   rememberPendingPhotoRequest,
   getPendingRequestForChat,
@@ -154,6 +155,13 @@ async function handleMessage(message: TelegramUpdate["message"]) {
 }
 
 /**
+ * Отримує токен бота для нагадувань Direct клієнтів
+ */
+function getDirectRemindersBotToken(): string {
+  return TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+}
+
+/**
  * Обробка callback для вибору майстра
  */
 async function handleChangeMasterCallback(
@@ -169,10 +177,11 @@ async function handleChangeMasterCallback(
     const reminder = await getDirectReminder(reminderId);
     if (!reminder) {
       console.warn(`[telegram/webhook] Reminder ${reminderId} not found`);
+      const botToken = getDirectRemindersBotToken();
       await answerCallbackQuery(callback.id, {
         text: 'Нагадування не знайдено',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
@@ -182,11 +191,13 @@ async function handleChangeMasterCallback(
     const masters = allMasters.filter(m => m.role === 'master');
     console.log(`[telegram/webhook] Found ${masters.length} masters with role 'master'`);
     
+    const botToken = getDirectRemindersBotToken();
+    
     if (masters.length === 0) {
       await answerCallbackQuery(callback.id, {
         text: 'Майстрів не знайдено',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
@@ -198,7 +209,7 @@ async function handleChangeMasterCallback(
       await answerCallbackQuery(callback.id, {
         text: 'Помилка: не вдалося отримати дані повідомлення',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
@@ -229,19 +240,20 @@ async function handleChangeMasterCallback(
     // Оновлюємо повідомлення з кнопками майстрів
     await editMessageText(chatId, messageId, messageText, {
       reply_markup: keyboard,
-    });
+    }, botToken);
 
     await answerCallbackQuery(callback.id, {
       text: `Оберіть майстра (${masters.length} доступно)`,
-    });
+    }, botToken);
     
     console.log(`[telegram/webhook] ✅ Successfully updated message with master selection`);
   } catch (err) {
     console.error(`[telegram/webhook] ❌ Failed to handle change master callback:`, err);
+    const botToken = getDirectRemindersBotToken();
     await answerCallbackQuery(callback.id, {
       text: `Помилка обробки вибору майстра: ${err instanceof Error ? err.message : String(err)}`,
       show_alert: true,
-    });
+    }, botToken);
   }
 }
 
@@ -258,21 +270,25 @@ async function handleSelectMasterCallback(
     const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
     const { findMasterById } = await import('@/lib/photo-reports/service');
     
+    const botToken = getDirectRemindersBotToken();
+    
     const reminder = await getDirectReminder(reminderId);
     if (!reminder) {
       await answerCallbackQuery(callback.id, {
         text: 'Нагадування не знайдено',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
+    const botToken = getDirectRemindersBotToken();
+    
     const master = findMasterById(masterId);
     if (!master) {
       await answerCallbackQuery(callback.id, {
         text: 'Майстра не знайдено',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
@@ -310,12 +326,12 @@ async function handleSelectMasterCallback(
 
       await editMessageText(chatId, messageId, callback.message?.text || '', {
         reply_markup: keyboard,
-      });
+      }, botToken);
     }
 
     await answerCallbackQuery(callback.id, {
       text: `✅ Майстра змінено на: ${master.name}`,
-    });
+    }, botToken);
   } catch (err) {
     console.error(`[telegram/webhook] ❌ Failed to handle select master callback:`, err);
     await answerCallbackQuery(callback.id, {
@@ -336,11 +352,13 @@ async function handleBackCallback(
     const chatId = callback.message?.chat.id;
     const messageId = callback.message?.message_id;
 
+    const botToken = getDirectRemindersBotToken();
+    
     if (!chatId || !messageId) {
       await answerCallbackQuery(callback.id, {
         text: 'Помилка: не вдалося отримати дані повідомлення',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
@@ -360,11 +378,11 @@ async function handleBackCallback(
 
     await editMessageText(chatId, messageId, callback.message?.text || '', {
       reply_markup: keyboard,
-    });
+    }, botToken);
 
     await answerCallbackQuery(callback.id, {
       text: 'Повернуто до головного меню',
-    });
+    }, botToken);
   } catch (err) {
     console.error(`[telegram/webhook] ❌ Failed to handle back callback:`, err);
     await answerCallbackQuery(callback.id, {
@@ -386,12 +404,14 @@ async function handleDirectReminderCallback(
     const { getDirectReminder, saveDirectReminder } = await import('@/lib/direct-reminders/store');
     const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
     
+    const botToken = getDirectRemindersBotToken();
+    
     const reminder = await getDirectReminder(reminderId);
     if (!reminder) {
       await answerCallbackQuery(callbackId, {
         text: 'Нагадування не знайдено',
         show_alert: true,
-      });
+      }, botToken);
       return;
     }
 
@@ -418,7 +438,7 @@ async function handleDirectReminderCallback(
       
       await answerCallbackQuery(callbackId, {
         text: status === 'all-good' ? '✅ Статус оновлено: Все чудово' : '💰 Статус оновлено: За дорого',
-      });
+      }, botToken);
     } else if (status === 'no-call') {
       reminder.status = 'no-call';
       reminder.lastReminderAt = new Date().toISOString();
@@ -426,17 +446,18 @@ async function handleDirectReminderCallback(
       
       await answerCallbackQuery(callbackId, {
         text: '📞 Нагадування буде надіслано повторно через 2 години',
-      });
+      }, botToken);
     }
     
     await saveDirectReminder(reminder);
     console.log(`[telegram/webhook] ✅ Updated reminder ${reminderId} status to '${status}'`);
   } catch (err) {
     console.error(`[telegram/webhook] ❌ Failed to handle Direct reminder callback:`, err);
+    const botToken = getDirectRemindersBotToken();
     await answerCallbackQuery(callbackId, {
       text: 'Помилка обробки нагадування',
       show_alert: true,
-    });
+    }, botToken);
   }
 }
 
