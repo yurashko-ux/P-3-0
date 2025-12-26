@@ -38,10 +38,50 @@ export async function POST(req: NextRequest) {
       ...(type === 'repeat' && { lastReminderAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
     };
 
-    if (type === 'repeat') {
-      await sendRepeatReminderToAdmins(testReminder, true);
-    } else {
-      await sendDirectReminderToAdmins(testReminder, true);
+    // Отримуємо інформацію про chat IDs перед надсиланням
+    const { getAdminChatIds, getMykolayChatId } = await import('@/lib/direct-reminders/telegram');
+    const adminChatIds = await getAdminChatIds();
+    const mykolayChatId = await getMykolayChatId();
+    const allChatIds = [...adminChatIds];
+    if (mykolayChatId && !allChatIds.includes(mykolayChatId)) {
+      allChatIds.push(mykolayChatId);
+    }
+
+    console.log('[test-reminder] Chat IDs before sending:', {
+      adminChatIds,
+      mykolayChatId,
+      allChatIds,
+    });
+
+    if (allChatIds.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Не знайдено chat IDs адміністраторів. Встановіть TELEGRAM_ADMIN_CHAT_IDS або зареєструйте адміністраторів через /start в боті.',
+        debug: {
+          adminChatIds,
+          mykolayChatId,
+          totalChatIds: allChatIds.length,
+        },
+      }, { status: 400 });
+    }
+
+    try {
+      if (type === 'repeat') {
+        await sendRepeatReminderToAdmins(testReminder, true);
+      } else {
+        await sendDirectReminderToAdmins(testReminder, true);
+      }
+    } catch (err) {
+      console.error('[test-reminder] Error sending reminder:', err);
+      return NextResponse.json({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        debug: {
+          adminChatIds,
+          mykolayChatId,
+          totalChatIds: allChatIds.length,
+        },
+      }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -56,6 +96,12 @@ export async function POST(req: NextRequest) {
         instagramUsername: testReminder.instagramUsername,
         serviceName: testReminder.serviceName,
         type,
+      },
+      debug: {
+        adminChatIds,
+        mykolayChatId,
+        totalChatIds: allChatIds.length,
+        sentTo: allChatIds,
       },
     });
   } catch (err) {

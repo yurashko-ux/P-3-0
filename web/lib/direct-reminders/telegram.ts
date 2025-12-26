@@ -114,20 +114,37 @@ export async function sendDirectReminderToAdmins(
   
   console.log(`[direct-reminders] Sending reminder ${reminder.id} to ${allChatIds.length} admin chats`);
   
+  let successCount = 0;
+  let errorCount = 0;
+  const errors: string[] = [];
+
   for (const chatId of allChatIds) {
     try {
       console.log(`[direct-reminders] Attempting to send reminder ${reminder.id} to chat ${chatId} using token ${botToken.substring(0, 10)}...`);
-      await sendMessage(chatId, message, {
+      const result = await sendMessage(chatId, message, {
         reply_markup: keyboard,
       }, botToken);
-      console.log(`[direct-reminders] ✅ Sent reminder ${reminder.id} to admin chat ${chatId}`);
+      console.log(`[direct-reminders] ✅ Sent reminder ${reminder.id} to admin chat ${chatId}`, result);
+      successCount++;
     } catch (err) {
+      errorCount++;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      errors.push(`Chat ${chatId}: ${errorMsg}`);
       console.error(`[direct-reminders] ❌ Failed to send reminder ${reminder.id} to chat ${chatId}:`, err);
       if (err instanceof Error) {
         console.error(`[direct-reminders] Error details: ${err.message}`);
         console.error(`[direct-reminders] Stack: ${err.stack}`);
       }
     }
+  }
+
+  console.log(`[direct-reminders] Summary: sent to ${successCount}/${allChatIds.length} chats, errors: ${errorCount}`);
+  if (errors.length > 0) {
+    console.error(`[direct-reminders] Errors:`, errors);
+  }
+
+  if (successCount === 0 && allChatIds.length > 0) {
+    throw new Error(`Failed to send reminder to any chat. Errors: ${errors.join('; ')}`);
   }
 }
 
@@ -195,20 +212,37 @@ export async function sendRepeatReminderToAdmins(
   
   console.log(`[direct-reminders] Sending repeat reminder ${reminder.id} to ${allChatIds.length} admin chats`);
   
+  let successCount = 0;
+  let errorCount = 0;
+  const errors: string[] = [];
+
   for (const chatId of allChatIds) {
     try {
       console.log(`[direct-reminders] Attempting to send repeat reminder ${reminder.id} to chat ${chatId} using token ${botToken.substring(0, 10)}...`);
-      await sendMessage(chatId, message, {
+      const result = await sendMessage(chatId, message, {
         reply_markup: keyboard,
       }, botToken);
-      console.log(`[direct-reminders] ✅ Sent repeat reminder ${reminder.id} to admin chat ${chatId}`);
+      console.log(`[direct-reminders] ✅ Sent repeat reminder ${reminder.id} to admin chat ${chatId}`, result);
+      successCount++;
     } catch (err) {
+      errorCount++;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      errors.push(`Chat ${chatId}: ${errorMsg}`);
       console.error(`[direct-reminders] ❌ Failed to send repeat reminder ${reminder.id} to chat ${chatId}:`, err);
       if (err instanceof Error) {
         console.error(`[direct-reminders] Error details: ${err.message}`);
         console.error(`[direct-reminders] Stack: ${err.stack}`);
       }
     }
+  }
+
+  console.log(`[direct-reminders] Summary: sent to ${successCount}/${allChatIds.length} chats, errors: ${errorCount}`);
+  if (errors.length > 0) {
+    console.error(`[direct-reminders] Errors:`, errors);
+  }
+
+  if (successCount === 0 && allChatIds.length > 0) {
+    throw new Error(`Failed to send repeat reminder to any chat. Errors: ${errors.join('; ')}`);
   }
 }
 
