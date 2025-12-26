@@ -39,6 +39,7 @@ function getStateName(state: string | null): string {
 // Функція для отримання причини зміни
 function getReasonName(reason?: string): string {
   const reasonNames: Record<string, string> = {
+    'initial': 'Початковий стан',
     'altegio-webhook-record': 'Вебхук Altegio (запис)',
     'cron-update-states': 'Автоматичне оновлення',
     'manual-update-states': 'Ручне оновлення',
@@ -214,42 +215,16 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                   Історія змін стану відсутня
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {history.map((log, index) => (
-                    <div key={log.id} className="border-b border-base-300 pb-2">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-1">
-                          <StateIcon state={log.state} />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <div className="text-xs text-base-content/50 font-medium">
-                              {formatDate(log.createdAt)}
-                            </div>
-                          </div>
-                          <div className="font-semibold text-sm mt-1">
-                            {getStateName(log.state)}
-                          </div>
-                          {log.previousState && (
-                            <div className="text-xs text-base-content/60 mt-1">
-                              Зміна з: <span className="font-medium">{getStateName(log.previousState)}</span>
-                            </div>
-                          )}
-                          {log.reason && log.reason !== 'initial' && (
-                            <div className="text-xs text-base-content/50 mt-1">
-                              Причина: {getReasonName(log.reason)}
-                            </div>
-                          )}
-                          {log.metadata && (
-                            <details className="mt-1">
-                              <summary className="text-xs text-base-content/50 cursor-pointer">
-                                Деталі
-                              </summary>
-                              <pre className="text-xs bg-base-200 p-2 rounded mt-1 overflow-x-auto">
-                                {JSON.stringify(JSON.parse(log.metadata), null, 2)}
-                              </pre>
-                            </details>
-                          )}
+                    <div key={log.id} className="flex items-center gap-3 pb-2 border-b border-base-300 last:border-b-0">
+                      <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
+                        {formatDate(log.createdAt)}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StateIcon state={log.state} />
+                        <div className="font-semibold text-sm">
+                          {getStateName(log.state)}
                         </div>
                       </div>
                     </div>
