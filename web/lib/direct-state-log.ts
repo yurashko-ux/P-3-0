@@ -81,13 +81,48 @@ export async function getClientStateInfo(clientId: string): Promise<{
   try {
     const client = await prisma.directClient.findUnique({
       where: { id: clientId },
-      select: { state: true },
+      select: { 
+        state: true,
+        createdAt: true,
+        source: true,
+      },
     });
+
+    if (!client) {
+      return {
+        currentState: null,
+        history: [],
+      };
+    }
 
     const history = await getStateHistory(clientId);
 
+    // Якщо історії немає або перший запис не є "Лід", додаємо початковий стан "Лід"
+    // Клієнти з ManyChat/Instagram завжди починають зі стану "Лід"
+    const hasLeadState = history.some(log => log.state === 'lead');
+    const firstHistoryState = history.length > 0 ? history[history.length - 1] : null;
+    
+    // Якщо немає історії або перший стан не "Лід", додаємо початковий "Лід"
+    if (!hasLeadState && (history.length === 0 || firstHistoryState?.previousState === null)) {
+      const initialLeadLog: DirectClientStateLog = {
+        id: `initial-lead-${clientId}`,
+        clientId,
+        state: 'lead',
+        previousState: null,
+        reason: 'initial',
+        metadata: undefined,
+        createdAt: client.createdAt.toISOString(),
+      };
+      
+      // Додаємо на початок історії (найстаріший запис)
+      history.push(initialLeadLog);
+    }
+
+    // Сортуємо за датою (від старіших до новіших для відображення)
+    history.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
     return {
-      currentState: client?.state || null,
+      currentState: client.state || null,
       history,
     };
   } catch (err) {

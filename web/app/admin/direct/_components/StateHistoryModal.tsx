@@ -223,21 +223,23 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
-                            <div className="font-semibold text-sm">
-                              {getStateName(log.state)}
-                            </div>
-                            <div className="text-xs text-base-content/50">
+                            <div className="text-xs text-base-content/50 font-medium">
                               {formatDate(log.createdAt)}
                             </div>
+                          </div>
+                          <div className="font-semibold text-sm mt-1">
+                            {getStateName(log.state)}
                           </div>
                           {log.previousState && (
                             <div className="text-xs text-base-content/60 mt-1">
                               Зміна з: <span className="font-medium">{getStateName(log.previousState)}</span>
                             </div>
                           )}
-                          <div className="text-xs text-base-content/50 mt-1">
-                            Причина: {getReasonName(log.reason)}
-                          </div>
+                          {log.reason && log.reason !== 'initial' && (
+                            <div className="text-xs text-base-content/50 mt-1">
+                              Причина: {getReasonName(log.reason)}
+                            </div>
+                          )}
                           {log.metadata && (
                             <details className="mt-1">
                               <summary className="text-xs text-base-content/50 cursor-pointer">
