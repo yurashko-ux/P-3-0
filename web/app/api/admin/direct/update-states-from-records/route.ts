@@ -159,15 +159,62 @@ export async function POST(req: NextRequest) {
       // Якщо newState === null, залишаємо поточний стан
       if (newState && client.state !== newState) {
         try {
-          const updated: typeof client = {
-            ...client,
+          const { getMasterByName, getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
+          
+          const updates: Partial<typeof client> = {
             state: newState,
             updatedAt: new Date().toISOString(),
           };
+
+          // Автоматично призначаємо відповідального, якщо він не був вибраний вручну
+          if (!client.masterManuallySet) {
+            try {
+              const recordData = record.data || record;
+              const staffId = recordData.staff?.id || recordData.staff_id;
+              const staffName = recordData.staff?.name || recordData.staff?.display_name || null;
+              
+              let master = null;
+              
+              // Для нарощування - знаходимо за staff_id
+              const hasHairExtension = services.some((s: any) => {
+                const title = s.title || s.name || '';
+                return /нарощування/i.test(title);
+              });
+              
+              if (hasHairExtension && staffId) {
+                master = await getMasterByAltegioStaffId(staffId);
+              }
+              
+              // Для консультації - знаходимо за staffName
+              const hasConsultation = services.some((s: any) => {
+                const title = s.title || s.name || '';
+                return /консультація/i.test(title);
+              });
+              
+              if ((hasConsultation || newState === 'consultation') && staffName && !master) {
+                master = await getMasterByName(staffName);
+              }
+              
+              if (master) {
+                updates.masterId = master.id;
+                console.log(`[direct/update-states-from-records] Auto-assigned master ${master.name} (${master.id}) to client ${client.id}`);
+              }
+            } catch (err) {
+              console.warn(`[direct/update-states-from-records] Failed to auto-assign master for client ${client.id}:`, err);
+            }
+          }
+
+          const updated: typeof client = {
+            ...client,
+            ...updates,
+          };
+          
           await saveDirectClient(updated, 'manual-update-states', {
             altegioClientId: client.altegioClientId,
             services: services.map((s: any) => ({ id: s.id, title: s.title })),
+            staffName: record.data?.staff?.name || record.data?.staff?.display_name || null,
           });
+          
           updatedCount++;
           console.log(`[direct/update-states-from-records] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
         } catch (err) {
