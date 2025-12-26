@@ -139,28 +139,13 @@ export async function POST(req: NextRequest) {
         if (data.client && data.client.id && Array.isArray(data.services) && data.services.length > 0) {
           try {
             const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+            const { determineStateFromServices } = await import('@/lib/direct-state-helper');
             
             const clientId = parseInt(String(data.client.id), 10);
             const services = data.services;
             
-            // Визначаємо новий стан на основі послуг
-            let newState: 'consultation' | 'hair-extension' | null = null;
-            
-            // Перевіряємо, чи є послуга "Консультація"
-            const hasConsultation = services.some((s: any) => 
-              s.title && /консультація/i.test(s.title)
-            );
-            
-            // Перевіряємо, чи є послуга з "Нарощування волосся"
-            const hasHairExtension = services.some((s: any) => 
-              s.title && /нарощування.*волосся/i.test(s.title)
-            );
-            
-            if (hasConsultation) {
-              newState = 'consultation';
-            } else if (hasHairExtension) {
-              newState = 'hair-extension';
-            }
+            // Визначаємо новий стан на основі послуг (з пріоритетом)
+            const newState = determineStateFromServices(services);
             
             // Якщо знайшли новий стан - оновлюємо клієнта
             if (newState) {

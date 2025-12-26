@@ -6,6 +6,8 @@ import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { altegioFetch } from '@/lib/altegio/client';
 import { getEnvValue } from '@/lib/env';
 import { normalizeInstagram } from '@/lib/normalize';
+import { determineStateFromRecordsLog } from '@/lib/direct-state-helper';
+import { kvRead } from '@/lib/kv';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -413,6 +415,9 @@ export async function POST(req: NextRequest) {
           // Витягуємо ім'я
           const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
 
+          // Визначаємо стан на основі записів з altegio:records:log
+          const determinedState = await determineStateFromRecordsLog(altegioClient.id, kvRead);
+
           if (existingClientId) {
             // Оновлюємо існуючого клієнта
             const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
@@ -443,12 +448,13 @@ export async function POST(req: NextRequest) {
                 shouldUpdateInstagram,
                 altegioClientId: altegioClient.id,
                 existingAltegioClientId: existingClient.altegioClientId,
+                determinedState,
               });
               
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: altegioClient.id,
-                state: 'client' as const, // Оновлюємо стан на "Клієнт", якщо клієнт є в Altegio
+                state: determinedState || 'client', // Встановлюємо стан на основі послуг
                 // Оновлюємо Instagram username, якщо він змінився або був згенерований
                 ...(shouldUpdateInstagram && { instagramUsername: normalizedInstagram }),
                 ...(firstName && !existingClient.firstName && { firstName }),
@@ -479,7 +485,7 @@ export async function POST(req: NextRequest) {
               firstName,
               lastName,
               source: 'instagram' as const,
-              state: 'client' as const, // Клієнти з Altegio мають стан "Клієнт"
+              state: (determinedState || 'client') as 'consultation' | 'hair-extension' | 'other-services' | 'client', // Встановлюємо стан на основі послуг
               firstContactDate: now,
               statusId: 'new',
               visitedSalon: false,

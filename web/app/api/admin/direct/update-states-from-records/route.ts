@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
+import { determineStateFromServices } from '@/lib/direct-state-helper';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -100,26 +101,11 @@ export async function POST(req: NextRequest) {
 
       const services = record.data.services;
       
-      // Визначаємо новий стан на основі послуг
-      let newState: 'consultation' | 'hair-extension' | null = null;
-      
-      // Перевіряємо, чи є послуга "Консультація"
-      const hasConsultation = services.some((s: any) => 
-        s.title && /консультація/i.test(s.title)
-      );
-      
-      // Перевіряємо, чи є послуга з "Нарощування волосся"
-      const hasHairExtension = services.some((s: any) => 
-        s.title && /нарощування.*волосся/i.test(s.title)
-      );
-      
-      if (hasConsultation) {
-        newState = 'consultation';
-      } else if (hasHairExtension) {
-        newState = 'hair-extension';
-      }
+      // Визначаємо новий стан на основі послуг (з пріоритетом)
+      const newState = determineStateFromServices(services);
 
       // Якщо знайшли новий стан і він відрізняється від поточного - оновлюємо
+      // Якщо newState === null, залишаємо поточний стан
       if (newState && client.state !== newState) {
         try {
           const updated: typeof client = {
