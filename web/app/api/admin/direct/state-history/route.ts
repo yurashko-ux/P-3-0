@@ -3,7 +3,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientStateInfo } from '@/lib/direct-state-log';
-import { prisma } from '@/lib/prisma';
 import { getDirectMasterById } from '@/lib/direct-masters/store';
 
 export async function GET(req: NextRequest) {
