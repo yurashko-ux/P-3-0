@@ -161,11 +161,14 @@ async function handleChangeMasterCallback(
   reminderId: string
 ) {
   try {
+    console.log(`[telegram/webhook] Handling change master callback for reminder ${reminderId}`);
+    
     const { getDirectReminder } = await import('@/lib/direct-reminders/store');
     const { getMasters } = await import('@/lib/photo-reports/service');
     
     const reminder = await getDirectReminder(reminderId);
     if (!reminder) {
+      console.warn(`[telegram/webhook] Reminder ${reminderId} not found`);
       await answerCallbackQuery(callback.id, {
         text: 'Нагадування не знайдено',
         show_alert: true,
@@ -173,11 +176,25 @@ async function handleChangeMasterCallback(
       return;
     }
 
-    const masters = getMasters().filter(m => m.role === 'master');
+    const allMasters = getMasters();
+    console.log(`[telegram/webhook] Found ${allMasters.length} total masters`);
+    
+    const masters = allMasters.filter(m => m.role === 'master');
+    console.log(`[telegram/webhook] Found ${masters.length} masters with role 'master'`);
+    
+    if (masters.length === 0) {
+      await answerCallbackQuery(callback.id, {
+        text: 'Майстрів не знайдено',
+        show_alert: true,
+      });
+      return;
+    }
+
     const chatId = callback.message?.chat.id;
     const messageId = callback.message?.message_id;
 
     if (!chatId || !messageId) {
+      console.error(`[telegram/webhook] Missing chatId or messageId: chatId=${chatId}, messageId=${messageId}`);
       await answerCallbackQuery(callback.id, {
         text: 'Помилка: не вдалося отримати дані повідомлення',
         show_alert: true,
@@ -204,18 +221,25 @@ async function handleChangeMasterCallback(
       inline_keyboard: masterButtons,
     };
 
+    // Отримуємо текст повідомлення (може бути в text або caption)
+    const messageText = callback.message?.text || callback.message?.caption || '';
+
+    console.log(`[telegram/webhook] Updating message ${messageId} in chat ${chatId} with ${masters.length} masters`);
+
     // Оновлюємо повідомлення з кнопками майстрів
-    await editMessageText(chatId, messageId, callback.message?.text || '', {
+    await editMessageText(chatId, messageId, messageText, {
       reply_markup: keyboard,
     });
 
     await answerCallbackQuery(callback.id, {
-      text: 'Оберіть майстра',
+      text: `Оберіть майстра (${masters.length} доступно)`,
     });
+    
+    console.log(`[telegram/webhook] ✅ Successfully updated message with master selection`);
   } catch (err) {
     console.error(`[telegram/webhook] ❌ Failed to handle change master callback:`, err);
     await answerCallbackQuery(callback.id, {
-      text: 'Помилка обробки вибору майстра',
+      text: `Помилка обробки вибору майстра: ${err instanceof Error ? err.message : String(err)}`,
       show_alert: true,
     });
   }
@@ -279,7 +303,7 @@ async function handleSelectMasterCallback(
           ],
           [
             { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminderId}:no-call` },
-            { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
+            { text: '👤 Заміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
           ],
         ],
       };
@@ -329,7 +353,7 @@ async function handleBackCallback(
         ],
         [
           { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminderId}:no-call` },
-          { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
+          { text: '👤 Заміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
         ],
       ],
     };

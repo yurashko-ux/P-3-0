@@ -82,7 +82,7 @@ export async function sendDirectReminderToAdmins(
       ],
       [
         { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminder.id}:no-call` },
-        { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminder.id}:change-master` },
+        { text: '👤 Заміна майстра', callback_data: `direct_reminder:${reminder.id}:change-master` },
       ],
     ],
   };
@@ -154,7 +154,7 @@ export async function sendRepeatReminderToAdmins(
       ],
       [
         { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminder.id}:no-call` },
-        { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminder.id}:change-master` },
+        { text: '👤 Заміна майстра', callback_data: `direct_reminder:${reminder.id}:change-master` },
       ],
     ],
   };
