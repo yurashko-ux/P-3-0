@@ -7,6 +7,7 @@ import {
   forwardPhotoToReportGroup,
   forwardMultiplePhotosToReportGroup,
   sendMessage,
+  editMessageText,
 } from "@/lib/telegram/api";
 import {
   rememberPendingPhotoRequest,
@@ -153,6 +154,203 @@ async function handleMessage(message: TelegramUpdate["message"]) {
 }
 
 /**
+ * Обробка callback для вибору майстра
+ */
+async function handleChangeMasterCallback(
+  callback: NonNullable<TelegramUpdate["callback_query"]>,
+  reminderId: string
+) {
+  try {
+    const { getDirectReminder } = await import('@/lib/direct-reminders/store');
+    const { getMasters } = await import('@/lib/photo-reports/service');
+    
+    const reminder = await getDirectReminder(reminderId);
+    if (!reminder) {
+      await answerCallbackQuery(callback.id, {
+        text: 'Нагадування не знайдено',
+        show_alert: true,
+      });
+      return;
+    }
+
+    const masters = getMasters().filter(m => m.role === 'master');
+    const chatId = callback.message?.chat.id;
+    const messageId = callback.message?.message_id;
+
+    if (!chatId || !messageId) {
+      await answerCallbackQuery(callback.id, {
+        text: 'Помилка: не вдалося отримати дані повідомлення',
+        show_alert: true,
+      });
+      return;
+    }
+
+    // Створюємо кнопки з майстрами (по 2 в рядку)
+    const masterButtons: any[][] = [];
+    for (let i = 0; i < masters.length; i += 2) {
+      const row = masters.slice(i, i + 2).map(master => ({
+        text: `👤 ${master.name}`,
+        callback_data: `direct_reminder:${reminderId}:select-master-${master.id}`,
+      }));
+      masterButtons.push(row);
+    }
+    
+    // Додаємо кнопку "Назад"
+    masterButtons.push([
+      { text: '◀️ Назад', callback_data: `direct_reminder:${reminderId}:back` },
+    ]);
+
+    const keyboard = {
+      inline_keyboard: masterButtons,
+    };
+
+    // Оновлюємо повідомлення з кнопками майстрів
+    await editMessageText(chatId, messageId, callback.message?.text || '', {
+      reply_markup: keyboard,
+    });
+
+    await answerCallbackQuery(callback.id, {
+      text: 'Оберіть майстра',
+    });
+  } catch (err) {
+    console.error(`[telegram/webhook] ❌ Failed to handle change master callback:`, err);
+    await answerCallbackQuery(callback.id, {
+      text: 'Помилка обробки вибору майстра',
+      show_alert: true,
+    });
+  }
+}
+
+/**
+ * Обробка вибору конкретного майстра
+ */
+async function handleSelectMasterCallback(
+  callback: NonNullable<TelegramUpdate["callback_query"]>,
+  reminderId: string,
+  masterId: string
+) {
+  try {
+    const { getDirectReminder, saveDirectReminder } = await import('@/lib/direct-reminders/store');
+    const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+    const { findMasterById } = await import('@/lib/photo-reports/service');
+    
+    const reminder = await getDirectReminder(reminderId);
+    if (!reminder) {
+      await answerCallbackQuery(callback.id, {
+        text: 'Нагадування не знайдено',
+        show_alert: true,
+      });
+      return;
+    }
+
+    const master = findMasterById(masterId);
+    if (!master) {
+      await answerCallbackQuery(callback.id, {
+        text: 'Майстра не знайдено',
+        show_alert: true,
+      });
+      return;
+    }
+
+    // Оновлюємо майстра клієнта
+    const directClients = await getAllDirectClients();
+    const directClient = directClients.find(c => c.id === reminder.directClientId);
+    
+    if (directClient) {
+      const updated: typeof directClient = {
+        ...directClient,
+        masterId: master.id,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveDirectClient(updated);
+      console.log(`[telegram/webhook] ✅ Updated Direct client ${directClient.id} master to '${master.name}' (${master.id}) from reminder ${reminderId}`);
+    }
+
+    const chatId = callback.message?.chat.id;
+    const messageId = callback.message?.message_id;
+
+    if (chatId && messageId) {
+      // Повертаємо оригінальні кнопки
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '✅ Все чудово', callback_data: `direct_reminder:${reminderId}:all-good` },
+            { text: '💰 За дорого', callback_data: `direct_reminder:${reminderId}:too-expensive` },
+          ],
+          [
+            { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminderId}:no-call` },
+            { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
+          ],
+        ],
+      };
+
+      await editMessageText(chatId, messageId, callback.message?.text || '', {
+        reply_markup: keyboard,
+      });
+    }
+
+    await answerCallbackQuery(callback.id, {
+      text: `✅ Майстра змінено на: ${master.name}`,
+    });
+  } catch (err) {
+    console.error(`[telegram/webhook] ❌ Failed to handle select master callback:`, err);
+    await answerCallbackQuery(callback.id, {
+      text: 'Помилка обробки вибору майстра',
+      show_alert: true,
+    });
+  }
+}
+
+/**
+ * Обробка кнопки "Назад" - повертає оригінальні кнопки
+ */
+async function handleBackCallback(
+  callback: NonNullable<TelegramUpdate["callback_query"]>,
+  reminderId: string
+) {
+  try {
+    const chatId = callback.message?.chat.id;
+    const messageId = callback.message?.message_id;
+
+    if (!chatId || !messageId) {
+      await answerCallbackQuery(callback.id, {
+        text: 'Помилка: не вдалося отримати дані повідомлення',
+        show_alert: true,
+      });
+      return;
+    }
+
+    // Повертаємо оригінальні кнопки
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Все чудово', callback_data: `direct_reminder:${reminderId}:all-good` },
+          { text: '💰 За дорого', callback_data: `direct_reminder:${reminderId}:too-expensive` },
+        ],
+        [
+          { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminderId}:no-call` },
+          { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminderId}:change-master` },
+        ],
+      ],
+    };
+
+    await editMessageText(chatId, messageId, callback.message?.text || '', {
+      reply_markup: keyboard,
+    });
+
+    await answerCallbackQuery(callback.id, {
+      text: 'Повернуто до головного меню',
+    });
+  } catch (err) {
+    console.error(`[telegram/webhook] ❌ Failed to handle back callback:`, err);
+    await answerCallbackQuery(callback.id, {
+      text: 'Помилка обробки',
+      show_alert: true,
+    });
+  }
+}
+
+/**
  * Обробка callback для Direct нагадувань
  */
 async function handleDirectReminderCallback(
@@ -195,7 +393,7 @@ async function handleDirectReminderCallback(
       }
       
       await answerCallbackQuery(callbackId, {
-        text: status === 'all-good' ? '✅ Статус оновлено: Все чудово' : '💰 Статус оновлено: Все добре, але занадто дорого',
+        text: status === 'all-good' ? '✅ Статус оновлено: Все чудово' : '💰 Статус оновлено: За дорого',
       });
     } else if (status === 'no-call') {
       reminder.status = 'no-call';
@@ -234,8 +432,29 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
   if (data.startsWith('direct_reminder:')) {
     const parts = data.split(':');
     if (parts.length === 3) {
-      const [, reminderId, status] = parts;
-      await handleDirectReminderCallback(callback.id, reminderId, status as 'all-good' | 'too-expensive' | 'no-call');
+      const [, reminderId, action] = parts;
+      
+      // Обробка вибору майстра
+      if (action === 'change-master') {
+        await handleChangeMasterCallback(callback, reminderId);
+        return;
+      }
+      
+      // Обробка вибору конкретного майстра
+      if (action.startsWith('select-master-')) {
+        const masterId = action.replace('select-master-', '');
+        await handleSelectMasterCallback(callback, reminderId, masterId);
+        return;
+      }
+      
+      // Обробка кнопки "Назад"
+      if (action === 'back') {
+        await handleBackCallback(callback, reminderId);
+        return;
+      }
+      
+      // Обробка стандартних статусів
+      await handleDirectReminderCallback(callback.id, reminderId, action as 'all-good' | 'too-expensive' | 'no-call');
       return;
     }
   }

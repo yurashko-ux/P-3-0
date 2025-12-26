@@ -78,10 +78,11 @@ export async function sendDirectReminderToAdmins(
     inline_keyboard: [
       [
         { text: '✅ Все чудово', callback_data: `direct_reminder:${reminder.id}:all-good` },
-        { text: '💰 Все добре, але занадто дорого', callback_data: `direct_reminder:${reminder.id}:too-expensive` },
+        { text: '💰 За дорого', callback_data: `direct_reminder:${reminder.id}:too-expensive` },
       ],
       [
         { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminder.id}:no-call` },
+        { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminder.id}:change-master` },
       ],
     ],
   };
@@ -149,10 +150,11 @@ export async function sendRepeatReminderToAdmins(
     inline_keyboard: [
       [
         { text: '✅ Все чудово', callback_data: `direct_reminder:${reminder.id}:all-good` },
-        { text: '💰 Все добре, але занадто дорого', callback_data: `direct_reminder:${reminder.id}:too-expensive` },
+        { text: '💰 За дорого', callback_data: `direct_reminder:${reminder.id}:too-expensive` },
       ],
       [
         { text: '📞 Недодзвон', callback_data: `direct_reminder:${reminder.id}:no-call` },
+        { text: '👤 Зміна майстра', callback_data: `direct_reminder:${reminder.id}:change-master` },
       ],
     ],
   };

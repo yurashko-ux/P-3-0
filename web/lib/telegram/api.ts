@@ -72,6 +72,23 @@ export function answerCallbackQuery(
   return telegramFetch("answerCallbackQuery", payload);
 }
 
+export function editMessageText(
+  chatId: number,
+  messageId: number,
+  text: string,
+  extra: TelegramRequestPayload = {}
+) {
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: "HTML",
+    ...extra,
+  };
+
+  return telegramFetch("editMessageText", payload);
+}
+
 export async function forwardPhotoToReportGroup(
   photoFileId: string,
   caption: string
