@@ -14,10 +14,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Отримує токен бота для нагадувань Direct клієнтів
+ * Отримує токен бота для нагадувань Direct клієнтів (HOB_client_bot)
  */
 function getDirectRemindersBotToken(): string {
-  return TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+  return TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
 }
 
 /**

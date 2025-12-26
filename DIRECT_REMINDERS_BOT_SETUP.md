@@ -1,12 +1,16 @@
 # Налаштування бота для нагадувань Direct клієнтів
 
+## Бот: HOB_client_bot
+
 ## Крок 1: Додати токен бота в Vercel Environment Variables
 
 Додайте нову змінну середовища в Vercel:
 
 ```
-TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN=8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA
+TELEGRAM_HOB_CLIENT_BOT_TOKEN=8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA
 ```
+
+**Примітка:** Назва змінної містить `HOB_CLIENT_BOT` для розрізнення від `TELEGRAM_BOT_TOKEN` (фото-бот).
 
 ## Крок 2: Налаштування Webhook для нового бота
 
@@ -36,9 +40,9 @@ curl "https://api.telegram.org/bot8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA
 
 ## Як це працює
 
-- **Старий бот** (`TELEGRAM_BOT_TOKEN`) - використовується для фото-звітів
-- **Новий бот** (`TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN`) - використовується для нагадувань Direct клієнтів
-- Якщо `TELEGRAM_DIRECT_REMINDERS_BOT_TOKEN` не встановлено, використовується `TELEGRAM_BOT_TOKEN` (fallback)
+- **Фото-бот** (`TELEGRAM_BOT_TOKEN`) - використовується для фото-звітів
+- **HOB_client_bot** (`TELEGRAM_HOB_CLIENT_BOT_TOKEN`) - використовується для нагадувань Direct клієнтів
+- Якщо `TELEGRAM_HOB_CLIENT_BOT_TOKEN` не встановлено, використовується `TELEGRAM_BOT_TOKEN` (fallback)
 
 ## Webhook endpoints
 

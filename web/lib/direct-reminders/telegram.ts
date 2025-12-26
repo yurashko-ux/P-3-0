@@ -5,11 +5,11 @@ import { sendMessage } from '@/lib/telegram/api';
 import { TELEGRAM_ENV } from '@/lib/telegram/env';
 
 /**
- * Отримує токен бота для нагадувань Direct клієнтів
+ * Отримує токен бота для нагадувань Direct клієнтів (HOB_client_bot)
  * Використовує окремий токен, якщо встановлено, інакше - основний токен
  */
 function getDirectRemindersBotToken(): string {
-  return TELEGRAM_ENV.DIRECT_REMINDERS_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+  return TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
 }
 import { getChatIdForMaster, listRegisteredChats } from '@/lib/photo-reports/master-registry';
 import { findMasterById, getMasters } from '@/lib/photo-reports/service';
