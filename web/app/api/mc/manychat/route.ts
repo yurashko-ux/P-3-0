@@ -484,6 +484,20 @@ export async function POST(req: NextRequest) {
         const now = new Date().toISOString();
         const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
         const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Автоматично призначаємо дірект-менеджера для клієнтів з ManyChat
+        let masterId: string | undefined = undefined;
+        try {
+          const { getDirectManager } = await import('@/lib/direct-masters/store');
+          const directManager = await getDirectManager();
+          if (directManager) {
+            masterId = directManager.id;
+            console.log(`[manychat] Auto-assigned direct manager ${directManager.name} (${directManager.id}) to client ${clientId}`);
+          }
+        } catch (err) {
+          console.warn('[manychat] Failed to auto-assign direct manager:', err);
+        }
+        
         client = {
           id: clientId,
           instagramUsername: normalizedInstagram,
@@ -493,13 +507,15 @@ export async function POST(req: NextRequest) {
           state: 'lead' as const, // Клієнти з ManyChat мають стан "Лід"
           firstContactDate: now,
           statusId: defaultStatus?.id || 'new',
+          masterId,
+          masterManuallySet: false, // Автоматичне призначення
           visitedSalon: false,
           signedUpForPaidService: false,
           lastMessageAt: now,
           createdAt: now,
           updatedAt: now,
         };
-        console.log('[manychat] Created new Direct client:', { id: client.id, username: client.instagramUsername });
+        console.log('[manychat] Created new Direct client:', { id: client.id, username: client.instagramUsername, masterId });
       } else {
         // Оновлюємо існуючого клієнта
         const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];

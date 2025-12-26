@@ -92,7 +92,7 @@ export function DirectClientTable({
   };
 
   const handleMasterChange = async (client: DirectClient, masterId: string | undefined) => {
-    await onClientUpdate(client.id, { masterId });
+    await onClientUpdate(client.id, { masterId, masterManuallySet: true });
   };
 
   const handleFieldUpdate = async (client: DirectClient, field: keyof DirectClient, value: any) => {
@@ -441,22 +441,18 @@ export function DirectClientTable({
                         </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
-                        {client.statusId === "consultation" ? (
-                          <select
-                            className="select select-xs select-bordered w-full max-w-[120px]"
-                            value={client.masterId || ""}
-                            onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
-                          >
-                            <option value="">-</option>
-                            {masters.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          "-"
-                        )}
+                        <select
+                          className="select select-xs select-bordered w-full max-w-[120px]"
+                          value={client.masterId || ""}
+                          onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
+                        >
+                          <option value="">-</option>
+                          {masters.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
                         {client.state === 'client' ? (

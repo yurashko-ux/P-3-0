@@ -112,6 +112,44 @@ export async function deleteDirectMaster(id: string): Promise<void> {
 }
 
 /**
+ * Знаходить дірект-менеджера (першого активного)
+ */
+export async function getDirectManager(): Promise<DirectMaster | null> {
+  try {
+    const dbMaster = await prisma.directMaster.findFirst({
+      where: {
+        isActive: true,
+        role: 'direct-manager',
+      },
+      orderBy: [{ order: 'asc' }, { name: 'asc' }],
+    });
+    return dbMaster ? prismaMasterToDirectMaster(dbMaster) : null;
+  } catch (err) {
+    console.error('[direct-masters] Error getting direct manager:', err);
+    return null;
+  }
+}
+
+/**
+ * Знаходить майстра за Altegio staff_id
+ */
+export async function getMasterByAltegioStaffId(staffId: number): Promise<DirectMaster | null> {
+  try {
+    const dbMaster = await prisma.directMaster.findFirst({
+      where: {
+        isActive: true,
+        altegioStaffId: staffId,
+        role: 'master',
+      },
+    });
+    return dbMaster ? prismaMasterToDirectMaster(dbMaster) : null;
+  } catch (err) {
+    console.error(`[direct-masters] Error getting master by Altegio staff_id ${staffId}:`, err);
+    return null;
+  }
+}
+
+/**
  * Отримує відповідальних для вибору (майстри + дірект-менеджери + адміністратори, без тестових)
  */
 export async function getDirectMastersForSelection(): Promise<DirectMaster[]> {

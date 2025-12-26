@@ -38,7 +38,8 @@ model DirectClient {
   state                  String?   // Системний стан: 'lead' | 'client' | 'consultation'
   firstContactDate       DateTime  // Дата першого контакту
   statusId               String    // ID статусу (foreign key)
-  masterId               String?   // ID майстра (якщо статус = Консультація)
+  masterId               String?   // ID майстра (відповідальний)
+  masterManuallySet      Boolean   @default(false) // Чи був відповідальний вибраний вручну
   consultationDate       DateTime? // Дата консультації
   visitedSalon           Boolean   @default(false) // Чи прийшов клієнт в салон на консультацію
   visitDate              DateTime? // Дата візиту в салон

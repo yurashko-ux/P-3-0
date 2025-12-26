@@ -140,12 +140,20 @@ export async function POST(req: NextRequest) {
           try {
             const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
             const { determineStateFromServices } = await import('@/lib/direct-state-helper');
+            const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
             
             const clientId = parseInt(String(data.client.id), 10);
             const services = data.services;
+            const staffId = data.staff?.id || data.staff_id;
             
             // Визначаємо новий стан на основі послуг (з пріоритетом)
             const newState = determineStateFromServices(services);
+            
+            // Перевіряємо, чи є послуга з нарощуванням
+            const hasHairExtension = services.some((s: any) => {
+              const title = s.title || s.name || '';
+              return /нарощування/i.test(title);
+            });
             
             // Якщо знайшли новий стан - оновлюємо клієнта
             if (newState) {
@@ -156,18 +164,38 @@ export async function POST(req: NextRequest) {
                 (c) => c.altegioClientId === clientId
               );
               
-              if (existingClient && existingClient.state !== newState) {
-                const updated: typeof existingClient = {
-                  ...existingClient,
-                  state: newState,
+              if (existingClient) {
+                const updates: Partial<typeof existingClient> = {
+                  state: existingClient.state !== newState ? newState : existingClient.state,
                   updatedAt: new Date().toISOString(),
                 };
-                await saveDirectClient(updated);
-                console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
-              } else if (!existingClient) {
-                console.log(`[altegio/webhook] ⏭️ Client ${clientId} not found in Direct Manager, skipping state update`);
+                
+                // Автоматично призначаємо майстра, якщо:
+                // 1. Є послуга з нарощуванням
+                // 2. Є staff_id
+                // 3. Відповідальний не був вибраний вручну
+                if (hasHairExtension && staffId && !existingClient.masterManuallySet) {
+                  try {
+                    const master = await getMasterByAltegioStaffId(staffId);
+                    if (master) {
+                      updates.masterId = master.id;
+                      console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) to client ${existingClient.id} from record event`);
+                    }
+                  } catch (err) {
+                    console.warn(`[altegio/webhook] Failed to auto-assign master for staff_id ${staffId}:`, err);
+                  }
+                }
+                
+                if (Object.keys(updates).length > 1 || updates.state !== existingClient.state) {
+                  const updated: typeof existingClient = {
+                    ...existingClient,
+                    ...updates,
+                  };
+                  await saveDirectClient(updated);
+                  console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
+                }
               } else {
-                console.log(`[altegio/webhook] ⏭️ Client ${clientId} already has state '${existingClient.state}', no update needed`);
+                console.log(`[altegio/webhook] ⏭️ Client ${clientId} not found in Direct Manager, skipping state update`);
               }
             }
           } catch (err) {
@@ -252,6 +280,30 @@ export async function POST(req: NextRequest) {
                   }
                 } else if (defaultStatus) {
                   const now = new Date().toISOString();
+                  
+                  // Автоматично призначаємо майстра, якщо є staff_id і послуга з нарощуванням
+                  let masterId: string | undefined = undefined;
+                  const recordData = body.data?.data || body.data;
+                  const services = recordData?.services || [];
+                  const staffId = recordData?.staff?.id || recordData?.staff_id;
+                  const hasHairExtension = Array.isArray(services) && services.some((s: any) => {
+                    const title = s.title || s.name || '';
+                    return /нарощування/i.test(title);
+                  });
+                  
+                  if (hasHairExtension && staffId) {
+                    try {
+                      const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
+                      const master = await getMasterByAltegioStaffId(staffId);
+                      if (master) {
+                        masterId = master.id;
+                        console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) to new client from record event`);
+                      }
+                    } catch (err) {
+                      console.warn(`[altegio/webhook] Failed to auto-assign master for staff_id ${staffId}:`, err);
+                    }
+                  }
+                  
                   const newClient = {
                     id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     instagramUsername: normalizedInstagram,
@@ -261,6 +313,8 @@ export async function POST(req: NextRequest) {
                     state: 'client' as const,
                     firstContactDate: now,
                     statusId: defaultStatus.id,
+                    masterId,
+                    masterManuallySet: false, // Автоматичне призначення
                     visitedSalon: false,
                     signedUpForPaidService: false,
                     altegioClientId: parseInt(String(client.id), 10),
@@ -268,7 +322,7 @@ export async function POST(req: NextRequest) {
                     updatedAt: now,
                   };
                   await saveDirectClient(newClient);
-                  console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram})`);
+                  console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, masterId: ${masterId || 'none'})`);
                 }
               }
             }
