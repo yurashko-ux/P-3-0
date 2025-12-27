@@ -498,7 +498,19 @@ export async function POST(req: NextRequest) {
                       const clientName = (client.name || client.display_name || '').trim();
                       
                       // Перевіряємо, чи є ім'я (не відправляємо для клієнтів без імені)
-                      if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
+                      // Перевіряємо різні варіанти "невідомого" імені
+                      const clientNameLower = clientName.toLowerCase();
+                      const isUnknownName = 
+                        !clientName || 
+                        clientName === 'Невідоме ім\'я' || 
+                        clientName === 'Невідомий клієнт' ||
+                        clientNameLower === 'невідоме ім\'я' ||
+                        clientNameLower === 'невідомий клієнт' ||
+                        clientNameLower.startsWith('невідом') ||
+                        clientNameLower === 'unknown' ||
+                        clientNameLower === 'немає імені';
+                      
+                      if (isUnknownName) {
                         console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} - no name provided (name: "${clientName}")`);
                       } else {
                         const clientPhone = client.phone || 'не вказано';
@@ -1159,7 +1171,19 @@ export async function POST(req: NextRequest) {
                 const clientName = (client.name || client.display_name || '').trim();
                 
                 // Перевіряємо, чи є ім'я (не відправляємо для клієнтів без імені)
-                if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
+                // Перевіряємо різні варіанти "невідомого" імені
+                const clientNameLower = clientName.toLowerCase();
+                const isUnknownName = 
+                  !clientName || 
+                  clientName === 'Невідоме ім\'я' || 
+                  clientName === 'Невідомий клієнт' ||
+                  clientNameLower === 'невідоме ім\'я' ||
+                  clientNameLower === 'невідомий клієнт' ||
+                  clientNameLower.startsWith('невідом') ||
+                  clientNameLower === 'unknown' ||
+                  clientNameLower === 'немає імені';
+                
+                if (isUnknownName) {
                   console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${clientId} - no name provided (name: "${clientName}")`);
                 } else {
                   const clientPhone = client.phone || 'не вказано';

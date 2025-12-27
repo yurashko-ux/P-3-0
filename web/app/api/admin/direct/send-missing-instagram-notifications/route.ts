@@ -51,8 +51,19 @@ export async function POST(req: NextRequest) {
       
       // Перевіряємо, чи є ім'я
       const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim();
-      if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
-        console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} - no name provided`);
+      // Перевіряємо також окремо firstName і lastName, бо "Невідоме ім'я" може бути розбите на частини
+      const firstNameLower = (client.firstName || '').toLowerCase().trim();
+      const lastNameLower = (client.lastName || '').toLowerCase().trim();
+      const isUnknownName = 
+        !clientName || 
+        clientName === 'Невідоме ім\'я' || 
+        clientName === 'Невідомий клієнт' ||
+        (firstNameLower === 'невідоме' && lastNameLower === 'ім\'я') ||
+        (firstNameLower === 'невідоме' && !lastNameLower) ||
+        (!firstNameLower && !lastNameLower);
+      
+      if (isUnknownName) {
+        console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} - no name provided (firstName: "${client.firstName}", lastName: "${client.lastName}")`);
         return false;
       }
       
@@ -228,8 +239,19 @@ export async function POST(req: NextRequest) {
         const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim();
         
         // Додаткова перевірка: якщо ім'я відсутнє або невідоме - пропускаємо
-        if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
-          console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} - no name provided (additional check)`);
+        // Перевіряємо також окремо firstName і lastName, бо "Невідоме ім'я" може бути розбите на частини
+        const firstNameLower = (client.firstName || '').toLowerCase().trim();
+        const lastNameLower = (client.lastName || '').toLowerCase().trim();
+        const isUnknownName = 
+          !clientName || 
+          clientName === 'Невідоме ім\'я' || 
+          clientName === 'Невідомий клієнт' ||
+          (firstNameLower === 'невідоме' && lastNameLower === 'ім\'я') ||
+          (firstNameLower === 'невідоме' && !lastNameLower) ||
+          (!firstNameLower && !lastNameLower);
+        
+        if (isUnknownName) {
+          console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} - no name provided (additional check, firstName: "${client.firstName}", lastName: "${client.lastName}")`);
           results.skipped = (results.skipped || 0) + 1;
           continue;
         }
