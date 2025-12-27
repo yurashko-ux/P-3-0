@@ -525,9 +525,25 @@ async function handleMessage(message: TelegramUpdate["message"]) {
             console.error(`[direct-reminders-webhook] Invalid Altegio ID: ${altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3]}`);
           }
         } else {
-          console.error(`[direct-reminders-webhook] Could not extract Altegio ID from message`);
+          console.error(`[direct-reminders-webhook] ❌ Could not extract Altegio ID from message`);
+          console.error(`[direct-reminders-webhook] Replied text was:`, repliedText);
         }
+      } else {
+        console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but replied text does not contain 'Відсутній Instagram username' or 'Altegio ID:'`);
+        console.log(`[direct-reminders-webhook] Replied text preview:`, message.reply_to_message?.text?.substring(0, 200));
       }
+    } else if (message.reply_to_message) {
+      console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but reply_to_message.text is missing`);
+      console.log(`[direct-reminders-webhook] Reply structure:`, {
+        message_id: message.reply_to_message.message_id,
+        hasText: !!message.reply_to_message.text,
+        hasPhoto: !!message.reply_to_message.photo,
+        hasCaption: !!message.reply_to_message.caption,
+      });
+    } else {
+      console.log(`[direct-reminders-webhook] ℹ️ Message is not a reply (reply_to_message is null/undefined)`);
+      console.log(`[direct-reminders-webhook] ⚠️ To update Instagram, you need to REPLY to the message about missing Instagram username`);
+      console.log(`[direct-reminders-webhook] Full message structure:`, JSON.stringify(message, null, 2).substring(0, 2000));
     }
   }
 }
@@ -543,6 +559,9 @@ export async function POST(req: NextRequest) {
       messageText: update.message?.text,
       messageChatId: update.message?.chat?.id,
       replyToMessage: !!update.message?.reply_to_message,
+      replyToMessageId: update.message?.reply_to_message?.message_id,
+      replyToMessageText: update.message?.reply_to_message?.text?.substring(0, 100),
+      fullUpdate: JSON.stringify(update, null, 2).substring(0, 1000), // Перші 1000 символів для діагностики
     });
 
     // Обробляємо текстові повідомлення (відповіді на повідомлення про відсутній Instagram)
