@@ -47,6 +47,41 @@ export async function logStateChange(
 }
 
 /**
+ * Логує обидва стани (консультацію та нарощування), якщо вони є в одному візиті
+ * Використовується для відстеження конверсії
+ */
+export async function logMultipleStates(
+  clientId: string,
+  states: Array<{ state: string | null; previousState: string | null | undefined }>,
+  reason?: string,
+  metadata?: Record<string, any>
+): Promise<void> {
+  try {
+    for (const { state, previousState } of states) {
+      // Логуємо тільки якщо стан дійсно змінився
+      if (state === previousState) {
+        continue;
+      }
+
+      await prisma.directClientStateLog.create({
+        data: {
+          clientId,
+          state: state || null,
+          previousState: previousState || null,
+          reason: reason || "unknown",
+          metadata: metadata ? JSON.stringify(metadata) : null,
+        },
+      });
+
+      console.log(`[direct-state-log] ✅ Logged state change for client ${clientId}: ${previousState || 'null'} → ${state || 'null'} (reason: ${reason || 'unknown'}, multiple states)`);
+    }
+  } catch (err) {
+    console.error(`[direct-state-log] ❌ Failed to log multiple states for client ${clientId}:`, err);
+    // Не викидаємо помилку, щоб не порушити основний процес
+  }
+}
+
+/**
  * Отримує історію змін станів для клієнта
  */
 export async function getStateHistory(clientId: string): Promise<DirectClientStateLog[]> {

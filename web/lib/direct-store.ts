@@ -200,7 +200,8 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
 export async function saveDirectClient(
   client: DirectClient,
   reason?: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  skipLogging?: boolean
 ): Promise<void> {
   try {
     const data = directClientToPrisma(client);
@@ -259,8 +260,8 @@ export async function saveDirectClient(
       }
     }
     
-    // Логуємо зміну стану, якщо вона відбулася
-    if (client.state !== previousState) {
+    // Логуємо зміну стану, якщо вона відбулася (якщо не пропущено логування)
+    if (!skipLogging && client.state !== previousState) {
       // Додаємо masterId до метаданих для історії
       const logMetadata = {
         ...metadata,

@@ -152,8 +152,19 @@ export async function POST(req: NextRequest) {
         continue;
       }
       
-      // Визначаємо новий стан на основі послуг (з пріоритетом)
+      // Визначаємо новий стан на основі послуг (з пріоритетом: нарощування > консультація)
       const newState = determineStateFromServices(services);
+      
+      // Перевіряємо, чи є обидві послуги
+      const hasHairExtension = services.some((s: any) => {
+        const title = s.title || s.name || '';
+        return /нарощування/i.test(title);
+      });
+      
+      const hasConsultation = services.some((s: any) => {
+        const title = s.title || s.name || '';
+        return /консультація/i.test(title);
+      });
 
       // Оновлюємо стан або відповідального, якщо потрібно
       const needsStateUpdate = newState && client.state !== newState;
@@ -162,7 +173,9 @@ export async function POST(req: NextRequest) {
       if (needsStateUpdate || needsMasterUpdate) {
         try {
           const { getMasterByName, getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
+          const { logMultipleStates } = await import('@/lib/direct-state-log');
           
+          const previousState = client.state;
           const updates: Partial<typeof client> = {
             updatedAt: new Date().toISOString(),
           };
@@ -182,11 +195,6 @@ export async function POST(req: NextRequest) {
               let master = null;
               
               // Для нарощування - знаходимо за staff_id
-              const hasHairExtension = services.some((s: any) => {
-                const title = s.title || s.name || '';
-                return /нарощування/i.test(title);
-              });
-              
               if (hasHairExtension && staffId) {
                 master = await getMasterByAltegioStaffId(staffId);
                 if (master) {
@@ -195,11 +203,6 @@ export async function POST(req: NextRequest) {
               }
               
               // Для консультації - знаходимо за staffName
-              const hasConsultation = services.some((s: any) => {
-                const title = s.title || s.name || '';
-                return /консультація/i.test(title);
-              });
-              
               if ((hasConsultation || newState === 'consultation' || client.state === 'consultation') && staffName && !master) {
                 master = await getMasterByName(staffName);
                 if (master) {
@@ -223,11 +226,44 @@ export async function POST(req: NextRequest) {
             ...updates,
           };
           
-          await saveDirectClient(updated, 'manual-update-states', {
+          const metadata = {
             altegioClientId: client.altegioClientId,
             services: services.map((s: any) => ({ id: s.id, title: s.title })),
             staffName: record.data?.staff?.name || record.data?.staff?.display_name || null,
-          });
+            masterId: updates.masterId,
+          };
+          
+          // Якщо є і консультація, і нарощування - логуємо обидва стани для конверсії
+          if (hasConsultation && hasHairExtension && newState === 'hair-extension') {
+            // Логуємо обидва стани: спочатку консультацію, потім нарощування
+            const statesToLog: Array<{ state: string | null; previousState: string | null | undefined }> = [];
+            
+            // Якщо попередній стан не був консультацією - логуємо консультацію
+            if (previousState !== 'consultation') {
+              statesToLog.push({ state: 'consultation', previousState });
+            }
+            
+            // Логуємо нарощування (попередній стан - консультація, якщо вона була, інакше - попередній)
+            statesToLog.push({ 
+              state: 'hair-extension', 
+              previousState: previousState === 'consultation' ? 'consultation' : previousState 
+            });
+            
+            if (statesToLog.length > 0) {
+              await logMultipleStates(
+                client.id,
+                statesToLog,
+                'manual-update-states',
+                metadata
+              );
+            }
+            
+            // Зберігаємо клієнта без повторного логування (бо вже залоговано через logMultipleStates)
+            await saveDirectClient(updated, 'manual-update-states', metadata, true);
+          } else {
+            // Звичайне логування для одного стану
+            await saveDirectClient(updated, 'manual-update-states', metadata);
+          }
           
           updatedCount++;
           if (needsStateUpdate) {

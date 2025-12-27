@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
             const staffId = data.staff?.id || data.staff_id;
             const staffName = data.staff?.name || data.staff?.display_name || null;
             
-            // Визначаємо новий стан на основі послуг (з пріоритетом)
+            // Визначаємо новий стан на основі послуг (з пріоритетом: нарощування > консультація)
             const newState = determineStateFromServices(services);
             
             // Перевіряємо, чи є послуга з нарощуванням
@@ -173,7 +173,9 @@ export async function POST(req: NextRequest) {
               
               if (existingClient) {
                 const { getMasterByName } = await import('@/lib/direct-masters/store');
+                const { logMultipleStates } = await import('@/lib/direct-state-log');
                 
+                const previousState = existingClient.state;
                 const updates: Partial<typeof existingClient> = {
                   state: existingClient.state !== newState ? newState : existingClient.state,
                   updatedAt: new Date().toISOString(),
@@ -219,12 +221,47 @@ export async function POST(req: NextRequest) {
                     ...existingClient,
                     ...updates,
                   };
-                  await saveDirectClient(updated, 'altegio-webhook-record', {
+                  
+                  const metadata = {
                     altegioClientId: clientId,
                     visitId: data.id,
                     services: services.map((s: any) => ({ id: s.id, title: s.title })),
                     staffName,
-                  });
+                    masterId: updates.masterId,
+                  };
+                  
+                  // Якщо є і консультація, і нарощування - логуємо обидва стани для конверсії
+                  if (hasConsultation && hasHairExtension && newState === 'hair-extension') {
+                    // Логуємо обидва стани: спочатку консультацію, потім нарощування
+                    const statesToLog: Array<{ state: string | null; previousState: string | null | undefined }> = [];
+                    
+                    // Якщо попередній стан не був консультацією - логуємо консультацію
+                    if (previousState !== 'consultation') {
+                      statesToLog.push({ state: 'consultation', previousState });
+                    }
+                    
+                    // Логуємо нарощування (попередній стан - консультація, якщо вона була, інакше - попередній)
+                    statesToLog.push({ 
+                      state: 'hair-extension', 
+                      previousState: previousState === 'consultation' ? 'consultation' : previousState 
+                    });
+                    
+                    if (statesToLog.length > 0) {
+                      await logMultipleStates(
+                        existingClient.id,
+                        statesToLog,
+                        'altegio-webhook-record',
+                        metadata
+                      );
+                    }
+                    
+                    // Зберігаємо клієнта без повторного логування (бо вже залоговано через logMultipleStates)
+                    await saveDirectClient(updated, 'altegio-webhook-record', metadata, true);
+                  } else {
+                    // Звичайне логування для одного стану
+                    await saveDirectClient(updated, 'altegio-webhook-record', metadata);
+                  }
+                  
                   console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
                 }
               } else {
