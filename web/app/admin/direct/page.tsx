@@ -218,7 +218,13 @@ export default function DirectPage() {
       }
       
       const data = await res.json();
-      console.log('[DirectPage] Clients response:', { ok: data.ok, clientsCount: data.clients?.length, error: data.error });
+      console.log('[DirectPage] Clients response:', { 
+        ok: data.ok, 
+        clientsCount: data.clients?.length, 
+        error: data.error,
+        warning: data.warning,
+        debug: data.debug,
+      });
       
       if (data.ok && Array.isArray(data.clients)) {
         let filteredClients = data.clients;

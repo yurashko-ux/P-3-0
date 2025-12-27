@@ -49,8 +49,29 @@ export async function GET(req: NextRequest) {
     try {
       clients = await getAllDirectClients();
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
+      if (clients.length === 0) {
+        console.warn('[direct/clients] GET: WARNING - getAllDirectClients() returned empty array!');
+        // Перевіряємо, чи взагалі є клієнти в базі через прямий SQL запит
+        try {
+          const { prisma } = await import('@/lib/prisma');
+          const count = await prisma.$queryRaw<Array<{ count: bigint }>>`
+            SELECT COUNT(*) as count FROM "direct_clients"
+          `;
+          const totalCount = Number(count[0]?.count || 0);
+          console.log(`[direct/clients] GET: Direct SQL count query returned: ${totalCount} clients in database`);
+          if (totalCount > 0) {
+            console.error('[direct/clients] GET: ERROR - Database has clients but getAllDirectClients() returned empty!');
+          }
+        } catch (countErr) {
+          console.error('[direct/clients] GET: Failed to check database count:', countErr);
+        }
+      }
     } catch (fetchErr) {
       console.error('[direct/clients] GET: Error fetching clients:', fetchErr);
+      console.error('[direct/clients] GET: Error details:', {
+        message: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+        stack: fetchErr instanceof Error ? fetchErr.stack : undefined,
+      });
       // Повертаємо порожній масив замість помилки, щоб не ламати UI
       return NextResponse.json({ 
         ok: true, 
