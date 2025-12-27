@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
         client: {
           id: client.id,
           instagramUsername: client.instagramUsername,
-          fullName: client.fullName,
+          fullName: [client.firstName, client.lastName].filter(Boolean).join(' ') || 'не вказано',
           phone: client.phone,
         },
         webhooks: [],
@@ -211,16 +211,21 @@ export async function GET(req: NextRequest) {
       .filter(Boolean)
       .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
 
-    return NextResponse.json({
-      ok: true,
-      client: {
-        id: client.id,
-        instagramUsername: client.instagramUsername,
-        fullName: client.fullName,
-        phone: client.phone,
-        altegioClientId: client.altegioClientId,
-        state: client.state,
-      },
+      // Формуємо повне ім'я з firstName та lastName
+      const getFullName = (c: typeof client) => {
+        return [c.firstName, c.lastName].filter(Boolean).join(' ') || 'не вказано';
+      };
+
+      return NextResponse.json({
+        ok: true,
+        client: {
+          id: client.id,
+          instagramUsername: client.instagramUsername,
+          fullName: getFullName(client),
+          phone: client.phone,
+          altegioClientId: client.altegioClientId,
+          state: client.state,
+        },
       webhooks: webhooks,
       records: records,
       stats: {
