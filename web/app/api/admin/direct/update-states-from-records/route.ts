@@ -155,16 +155,22 @@ export async function POST(req: NextRequest) {
       // Визначаємо новий стан на основі послуг (з пріоритетом)
       const newState = determineStateFromServices(services);
 
-      // Якщо знайшли новий стан і він відрізняється від поточного - оновлюємо
-      // Якщо newState === null, залишаємо поточний стан
-      if (newState && client.state !== newState) {
+      // Оновлюємо стан або відповідального, якщо потрібно
+      const needsStateUpdate = newState && client.state !== newState;
+      const needsMasterUpdate = !client.masterManuallySet && !client.masterId;
+      
+      if (needsStateUpdate || needsMasterUpdate) {
         try {
           const { getMasterByName, getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
           
           const updates: Partial<typeof client> = {
-            state: newState,
             updatedAt: new Date().toISOString(),
           };
+
+          // Оновлюємо стан, якщо він змінився
+          if (needsStateUpdate) {
+            updates.state = newState;
+          }
 
           // Автоматично призначаємо відповідального, якщо він не був вибраний вручну
           if (!client.masterManuallySet) {
@@ -183,6 +189,9 @@ export async function POST(req: NextRequest) {
               
               if (hasHairExtension && staffId) {
                 master = await getMasterByAltegioStaffId(staffId);
+                if (master) {
+                  console.log(`[direct/update-states-from-records] Found master ${master.name} by staff_id ${staffId} for client ${client.id}`);
+                }
               }
               
               // Для консультації - знаходимо за staffName
@@ -191,8 +200,13 @@ export async function POST(req: NextRequest) {
                 return /консультація/i.test(title);
               });
               
-              if ((hasConsultation || newState === 'consultation') && staffName && !master) {
+              if ((hasConsultation || newState === 'consultation' || client.state === 'consultation') && staffName && !master) {
                 master = await getMasterByName(staffName);
+                if (master) {
+                  console.log(`[direct/update-states-from-records] Found master ${master.name} by staffName "${staffName}" for client ${client.id}`);
+                } else {
+                  console.warn(`[direct/update-states-from-records] Could not find master by name "${staffName}" for client ${client.id}`);
+                }
               }
               
               if (master) {
@@ -216,7 +230,12 @@ export async function POST(req: NextRequest) {
           });
           
           updatedCount++;
-          console.log(`[direct/update-states-from-records] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
+          if (needsStateUpdate) {
+            console.log(`[direct/update-states-from-records] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
+          }
+          if (updates.masterId) {
+            console.log(`[direct/update-states-from-records] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) master to '${updates.masterId}'`);
+          }
         } catch (err) {
           const errorMsg = `Failed to update client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
           errors.push(errorMsg);

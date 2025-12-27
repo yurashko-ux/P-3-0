@@ -181,6 +181,7 @@ export async function POST(req: NextRequest) {
                 
                 // Автоматично призначаємо майстра, якщо:
                 // 1. Відповідальний не був вибраний вручну
+                // 2. Відповідальний не встановлений або потрібно оновити
                 if (!existingClient.masterManuallySet) {
                   try {
                     let master = null;
@@ -200,6 +201,8 @@ export async function POST(req: NextRequest) {
                       if (master) {
                         updates.masterId = master.id;
                         console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) by staffName "${staffName}" to client ${existingClient.id} from record event`);
+                      } else {
+                        console.warn(`[altegio/webhook] Could not find master by name "${staffName}" for client ${existingClient.id}`);
                       }
                     }
                   } catch (err) {
@@ -207,7 +210,11 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 
-                if (Object.keys(updates).length > 1 || updates.state !== existingClient.state) {
+                // Оновлюємо клієнта, якщо є зміни стану або відповідального
+                const hasStateChange = updates.state !== existingClient.state;
+                const hasMasterChange = updates.masterId && updates.masterId !== existingClient.masterId;
+                
+                if (hasStateChange || hasMasterChange || Object.keys(updates).length > 1) {
                   const updated: typeof existingClient = {
                     ...existingClient,
                     ...updates,
