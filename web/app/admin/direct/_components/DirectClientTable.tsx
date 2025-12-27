@@ -548,11 +548,13 @@ export function DirectClientTable({
                             {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
                             {(() => {
                               const states = client.last5States || [];
+                              const currentState = client.state || 'lead';
+                              
                               // Якщо немає історії, показуємо поточний стан
                               if (states.length === 0) {
                                 return (
                                   <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
-                                    <StateIcon state={client.state || 'lead'} size={32} />
+                                    <StateIcon state={currentState} size={32} />
                                   </div>
                                 );
                               }
@@ -564,9 +566,25 @@ export function DirectClientTable({
                                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                               );
                               
+                              // Останній стан з історії
+                              const lastHistoryState = sortedStates[sortedStates.length - 1]?.state || null;
+                              
+                              // Якщо поточний стан відрізняється від останнього в історії, додаємо його
+                              const statesToShow = [...sortedStates];
+                              if (currentState !== lastHistoryState) {
+                                statesToShow.push({
+                                  id: 'current',
+                                  clientId: client.id,
+                                  state: currentState,
+                                  previousState: lastHistoryState,
+                                  reason: 'current-state',
+                                  createdAt: new Date().toISOString(),
+                                });
+                              }
+                              
                               return (
                                 <>
-                                  {sortedStates.slice(-5).map((stateLog, idx) => {
+                                  {statesToShow.slice(-5).map((stateLog, idx) => {
                                     const stateDate = new Date(stateLog.createdAt);
                                     const formattedDate = stateDate.toLocaleDateString('uk-UA', {
                                       day: '2-digit',
