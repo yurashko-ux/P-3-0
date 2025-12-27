@@ -652,7 +652,6 @@ export default function DirectPage() {
                   message += `Клієнт:\n`;
                   message += `  ID: ${client.id}\n`;
                   message += `  Ім'я: ${client.fullName || 'не вказано'}\n`;
-                  message += `  Телефон: ${client.phone || 'не вказано'}\n`;
                   message += `  Altegio ID: ${client.altegioClientId || 'немає'}\n`;
                   message += `  Стан: ${client.state || 'не встановлено'}\n\n`;
                   
