@@ -319,35 +319,6 @@ export default function DirectPage() {
     loadClients();
   }, [filters, sortBy, sortOrder]);
 
-  // Функція для завантаження статусів та майстрів
-  const loadStatusesAndMasters = async () => {
-    // Завантажуємо статуси
-    try {
-      const statusesRes = await fetch("/api/admin/direct/statuses");
-      if (statusesRes.ok) {
-        const statusesData = await statusesRes.json();
-        if (statusesData.ok && statusesData.statuses) {
-          setStatuses(statusesData.statuses);
-        }
-      }
-    } catch (err) {
-      console.warn("[DirectPage] Failed to load statuses:", err);
-    }
-
-    // Завантажуємо відповідальних (майстрів)
-    try {
-      const mastersRes = await fetch("/api/admin/direct/masters");
-      if (mastersRes.ok) {
-        const mastersData = await mastersRes.json();
-        if (mastersData.ok && mastersData.masters) {
-          setMasters(mastersData.masters);
-        }
-      }
-    } catch (mastersErr) {
-      console.warn("[DirectPage] Failed to load masters:", mastersErr);
-    }
-  };
-
   // Автоматичне оновлення даних кожні 30 секунд
   useEffect(() => {
     const interval = setInterval(() => {
