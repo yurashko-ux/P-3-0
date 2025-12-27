@@ -250,6 +250,8 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
 
     // Використовуємо window function для отримання останніх 5 станів для кожного клієнта
     // Це набагато ефективніше, ніж робити окремий запит для кожного клієнта
+    // Використовуємо Prisma $queryRaw з параметризованим запитом для безпеки
+    const placeholders = clientIds.map((_, i) => `$${i + 1}`).join(', ');
     const query = `
       WITH ranked_logs AS (
         SELECT 
@@ -262,7 +264,7 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
           "createdAt",
           ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "createdAt" DESC) as rn
         FROM "direct_client_state_logs"
-        WHERE "clientId" = ANY($1::text[])
+        WHERE "clientId" IN (${placeholders})
       )
       SELECT 
         "id",
@@ -285,7 +287,7 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       reason: string | null;
       metadata: string | null;
       createdAt: Date;
-    }>>(query, clientIds);
+    }>>(query, ...clientIds);
 
     // Групуємо по clientId
     for (const log of logs) {
