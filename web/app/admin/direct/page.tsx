@@ -1342,7 +1342,8 @@ export default function DirectPage() {
                   showCopyableAlert(`✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
                   // Оновлюємо інформацію про webhook
                   setTimeout(() => {
-                    document.querySelector('button[title="Перевірити налаштування Telegram webhook"]')?.click();
+                    const button = document.querySelector('button[title="Перевірити налаштування Telegram webhook"]') as HTMLButtonElement;
+                    button?.click();
                   }, 1000);
                 } else {
                   showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
