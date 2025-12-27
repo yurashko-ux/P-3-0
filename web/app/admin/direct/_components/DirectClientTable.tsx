@@ -536,13 +536,16 @@ export function DirectClientTable({
                           className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center w-full gap-1"
                           title="Натисніть, щоб переглянути повну історію змін стану"
                         >
-                          {/* Відображаємо останні 5 станів з історії (тільки те, що є в базі) */}
+                          {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
                           {(() => {
                             const states = client.last5States || [];
-                            
-                            // Якщо немає історії в базі - не відображаємо нічого
+                            // Якщо немає історії, показуємо поточний стан
                             if (states.length === 0) {
-                              return null;
+                              return (
+                                <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
+                                  <StateIcon state={client.state || 'lead'} size={32} />
+                                </div>
+                              );
                             }
                             
                             // Показуємо останні 5 станів (або менше)
