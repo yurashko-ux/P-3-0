@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const databaseUrl = process.env.DATABASE_URL || '';
+  // Для Prisma Postgres в Vercel використовується PRISMA_DATABASE_URL
+  const databaseUrl = process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || '';
   const diagnostics: any = {
     timestamp: new Date().toISOString(),
     databaseUrl: {
@@ -143,14 +144,28 @@ export async function GET(req: NextRequest) {
 
   const allTestsPassed = diagnostics.tests.every((t: any) => t.success);
   
+  // Додаємо рекомендації на основі результатів
+  if (!diagnostics.databaseUrl.exists) {
+    diagnostics.recommendations.push('❌ DATABASE_URL не налаштовано в environment variables');
+    diagnostics.recommendations.push('Перейдіть в Vercel Dashboard → ваш проект → Settings → Environment Variables');
+    diagnostics.recommendations.push('Переконайтеся, що DATABASE_URL встановлено для всіх environment (Production, Preview, Development)');
+  } else if (!allTestsPassed) {
+    diagnostics.recommendations.push('⚠️ База даних недоступна');
+    diagnostics.recommendations.push('Перевірте статус бази даних: Vercel Dashboard → Storage → "CRM-P-3-0"');
+    diagnostics.recommendations.push('Переконайтеся, що база активна (статус: Active/Running)');
+    diagnostics.recommendations.push('Якщо база неактивна - спробуйте перезапустити її або зверніться до підтримки Vercel');
+    
+    if (!diagnostics.databaseUrl.containsPooler && !diagnostics.databaseUrl.containsPgBouncer) {
+      diagnostics.recommendations.push('💡 Для Prisma Postgres в Vercel рекомендується використовувати connection pooler URL');
+      diagnostics.recommendations.push('Перевірте документацію Prisma Postgres для отримання pooler URL');
+    }
+  } else {
+    diagnostics.recommendations.push('✅ База даних працює нормально');
+  }
+  
   return NextResponse.json({
     ok: allTestsPassed,
     diagnostics,
-    recommendations: allTestsPassed ? [] : [
-      'Перевірте змінну оточення DATABASE_URL в Vercel',
-      'Переконайтеся, що база даних "CRM-P-3-0" активна в Vercel Storage',
-      'Можливо, потрібно перезапустити deployment після зміни змінних оточення',
-      'Перевірте, чи використовується правильний connection string для Prisma Postgres',
-    ],
+    recommendations: diagnostics.recommendations,
   });
 }
