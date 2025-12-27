@@ -167,7 +167,22 @@ export async function GET(req: NextRequest) {
     });
 
     console.log(`[direct/clients] GET: Returning ${clients.length} clients after filtering and sorting`);
-    return NextResponse.json({ ok: true, clients, debug: { totalBeforeFilter: clients.length } });
+    const response = { 
+      ok: true, 
+      clients, 
+      debug: { 
+        totalBeforeFilter: clients.length,
+        filters: { statusId, masterId, source },
+        sortBy,
+        sortOrder,
+      } 
+    };
+    console.log('[direct/clients] GET: Response summary:', {
+      ok: response.ok,
+      clientsCount: response.clients.length,
+      filters: response.debug.filters,
+    });
+    return NextResponse.json(response);
   } catch (error) {
     console.error('[direct/clients] GET error:', error);
     return NextResponse.json(
