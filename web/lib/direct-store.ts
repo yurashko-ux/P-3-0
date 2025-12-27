@@ -295,6 +295,7 @@ export async function updateInstagramForAltegioClient(
     });
 
     // Завжди оновлюємо стан з 'no-instagram' на 'client', якщо клієнт був в стані 'no-instagram'
+    const previousState = existingClient.state;
     const updateData: any = {
       instagramUsername: normalized,
       updatedAt: new Date(),
@@ -313,6 +314,22 @@ export async function updateInstagramForAltegioClient(
         where: { id: existingClient.id },
         data: updateData,
       });
+      
+      // Логуємо зміну стану, якщо вона відбулася
+      if (previousState === 'no-instagram' && updated.state === 'client') {
+        await logStateChange(
+          existingClient.id,
+          'client',
+          'no-instagram',
+          'instagram-update',
+          {
+            altegioClientId,
+            instagramUsername: normalized,
+            source: 'telegram-reply',
+          }
+        );
+      }
+      
       console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
       return prismaClientToDirectClient(updated);
     } else {
@@ -321,6 +338,22 @@ export async function updateInstagramForAltegioClient(
         where: { id: existingClient.id },
         data: updateData,
       });
+      
+      // Логуємо зміну стану, якщо вона відбулася
+      if (previousState === 'no-instagram' && updated.state === 'client') {
+        await logStateChange(
+          existingClient.id,
+          'client',
+          'no-instagram',
+          'instagram-update',
+          {
+            altegioClientId,
+            instagramUsername: normalized,
+            source: 'telegram-reply',
+          }
+        );
+      }
+      
       console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
       return prismaClientToDirectClient(updated);
     }
