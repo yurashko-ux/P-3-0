@@ -62,17 +62,18 @@ export async function POST(req: NextRequest) {
       })
       .filter(Boolean);
 
-    // Фільтруємо вебхуки за сьогоднішню дату та ті, що стосуються клієнтів
-    const todayClientEvents = events.filter((e: any) => {
+    // Фільтруємо вебхуки за сьогоднішню дату та ті, що стосуються клієнтів або записів
+    const todayEvents = events.filter((e: any) => {
       if (!e.receivedAt) return false;
       const receivedDate = new Date(e.receivedAt);
       receivedDate.setHours(0, 0, 0, 0);
       const isToday = receivedDate.getTime() === today.getTime();
       const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
-      return isToday && isClientEvent;
+      const isRecordEvent = e.body?.resource === 'record' && (e.body?.status === 'create' || e.body?.status === 'update');
+      return isToday && (isClientEvent || isRecordEvent);
     });
 
-    console.log(`[direct/sync-today-webhooks] Found ${todayClientEvents.length} client events from today`);
+    console.log(`[direct/sync-today-webhooks] Found ${todayEvents.length} events from today (client + record)`);
 
     // Імпортуємо функції для обробки вебхуків
     const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
     }
 
     const results = {
-      totalEvents: todayClientEvents.length,
+      totalEvents: todayEvents.length,
       processed: 0,
       created: 0,
       updated: 0,
@@ -114,10 +115,17 @@ export async function POST(req: NextRequest) {
     };
 
     // Обробляємо кожен вебхук
-    for (const event of todayClientEvents) {
+    for (const event of todayEvents) {
       try {
-        const clientId = event.body?.resource_id;
-        const client = event.body?.data?.client || event.body?.data;
+        // Для record events клієнт знаходиться в data.client
+        // Для client events клієнт знаходиться в data або data.client
+        const isRecordEvent = event.body?.resource === 'record';
+        const clientId = isRecordEvent 
+          ? (event.body?.data?.client?.id || event.body?.data?.client_id)
+          : event.body?.resource_id;
+        const client = isRecordEvent
+          ? event.body?.data?.client
+          : (event.body?.data?.client || event.body?.data);
         const status = event.body?.status;
 
         if (!clientId || !client) {
