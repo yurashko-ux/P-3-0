@@ -45,6 +45,21 @@ export async function POST(req: NextRequest) {
     // Отримуємо всі записи з Altegio records log
     const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
     console.log(`[direct/fix-missing-consultations] Found ${recordsLogRaw.length} records in Altegio log`);
+    
+    if (recordsLogRaw.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        message: 'No records found in Altegio log',
+        stats: {
+          totalClients: clientsWithHairExtension.length,
+          fixed: 0,
+          skipped: clientsWithHairExtension.length,
+          errors: 0,
+        },
+        errors: [],
+        warning: 'No records found in altegio:records:log. Webhooks may not be saving records.',
+      });
+    }
 
     // Парсимо записи
     const records = recordsLogRaw
@@ -158,8 +173,14 @@ export async function POST(req: NextRequest) {
             
             if (hairExtensionLog) {
               // Перевіряємо, чи вже є консультація з такою ж датою
-              const recordDate = latestRecord.receivedAt || latestRecord.data?.datetime || hairExtensionLog.createdAt;
+              const recordDate = latestRecord.receivedAt || latestRecord.data?.datetime || latestRecord.datetime || hairExtensionLog.createdAt;
               const consultationDate = new Date(recordDate);
+              
+              if (isNaN(consultationDate.getTime())) {
+                console.warn(`[fix-missing-consultations] Invalid date for client ${client.id}: ${recordDate}`);
+                skippedCount++;
+                continue;
+              }
               
               const existingConsultation = history.find(log => 
                 log.state === 'consultation' && 
@@ -184,14 +205,17 @@ export async function POST(req: NextRequest) {
                 });
                 
                 fixedCount++;
-                console.log(`[direct/fix-missing-consultations] ✅ Created consultation log for client ${client.id} (${client.instagramUsername}) at ${consultationDate.toISOString()}`);
+                console.log(`[fix-missing-consultations] ✅ Created consultation log for client ${client.id} (${client.instagramUsername}) at ${consultationDate.toISOString()}`);
               } else {
+                console.log(`[fix-missing-consultations] Consultation already exists for client ${client.id}`);
                 skippedCount++;
               }
             } else {
+              console.log(`[fix-missing-consultations] No hair-extension log found in history for client ${client.id}`);
               skippedCount++;
             }
           } else {
+            console.log(`[fix-missing-consultations] No records with both services found for client ${client.id} (Altegio ${client.altegioClientId})`);
             skippedCount++;
           }
         } else {

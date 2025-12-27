@@ -903,6 +903,39 @@ export default function DirectPage() {
           </button>
 
           <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/debug-records');
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `🔍 Діагностика записів в KV:\n\n` +
+                    `Всього записів в KV: ${data.analysis.totalRecordsInKV}\n` +
+                    `Успішно розпарсено: ${data.analysis.successfullyParsed}\n` +
+                    `Записів з послугами: ${data.analysis.totalRecordsWithServices}\n` +
+                    `Клієнтів з нарощуванням: ${data.analysis.clientsWithHairExtension}\n\n` +
+                    `Приклад запису:\n${JSON.stringify(data.analysis.sampleRecord, null, 2)}\n\n` +
+                    `Приклад клієнта:\n${JSON.stringify(data.analysis.sampleClient, null, 2)}\n\n` +
+                    `Записи з послугами (перші 5):\n${JSON.stringify(data.recordsWithServices.slice(0, 5), null, 2)}\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Діагностика структури записів в KV"
+          >
+            🔍 Діагностика записів
+          </button>
+
+          <button
             className="btn btn-sm btn-info"
             onClick={async () => {
               const type = confirm('Надіслати повторне нагадування?\n\nНатисніть OK для повторного нагадування (Недодзвон)\nНатисніть Скасувати для нового нагадування') ? 'repeat' : 'new';
