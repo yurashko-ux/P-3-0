@@ -44,12 +44,16 @@ export async function POST(req: NextRequest) {
 
     // Отримуємо всі записи з Altegio records log
     const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
-    console.log(`[direct/fix-missing-consultations] Found ${recordsLogRaw.length} records in Altegio log`);
+    console.log(`[direct/fix-missing-consultations] Found ${recordsLogRaw.length} records in altegio:records:log`);
     
-    if (recordsLogRaw.length === 0) {
+    // Також перевіряємо webhook log як резервний варіант
+    const webhookLogRaw = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    console.log(`[direct/fix-missing-consultations] Found ${webhookLogRaw.length} records in altegio:webhook:log`);
+    
+    if (recordsLogRaw.length === 0 && webhookLogRaw.length === 0) {
       return NextResponse.json({
         ok: true,
-        message: 'No records found in Altegio log',
+        message: 'No records found in Altegio logs',
         stats: {
           totalClients: clientsWithHairExtension.length,
           fixed: 0,
@@ -57,12 +61,57 @@ export async function POST(req: NextRequest) {
           errors: 0,
         },
         errors: [],
-        warning: 'No records found in altegio:records:log. Webhooks may not be saving records.',
+        warning: 'No records found in altegio:records:log or altegio:webhook:log. Webhooks may not be saving records.',
       });
     }
+    
+    // Парсимо webhook log для отримання record events
+    const webhookRecords = webhookLogRaw
+      .map((raw) => {
+        try {
+          let parsed: any;
+          if (typeof raw === 'string') {
+            parsed = JSON.parse(raw);
+          } else {
+            parsed = raw;
+          }
+          
+          if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+            try {
+              parsed = JSON.parse(parsed.value);
+            } catch {
+              return null;
+            }
+          }
+          
+          // Перевіряємо, чи це record event
+          if (parsed && parsed.body && parsed.body.resource === 'record' && parsed.body.data) {
+            const data = parsed.body.data;
+            return {
+              clientId: data.client?.id || data.client_id,
+              visitId: parsed.body.resource_id,
+              status: parsed.body.status,
+              datetime: data.datetime,
+              receivedAt: parsed.receivedAt,
+              data: {
+                services: data.services || (data.service ? [data.service] : []),
+                client: data.client,
+                staff: data.staff,
+              },
+            };
+          }
+          
+          return null;
+        } catch {
+          return null;
+        }
+      })
+      .filter((r) => r && r.clientId && Array.isArray(r.data?.services) && r.data.services.length > 0);
+    
+    console.log(`[direct/fix-missing-consultations] Found ${webhookRecords.length} record events in webhook log`);
 
-    // Парсимо записи
-    const records = recordsLogRaw
+    // Парсимо записи з records log
+    const recordsFromLog = recordsLogRaw
       .map((raw) => {
         try {
           let parsed: any;
@@ -97,6 +146,10 @@ export async function POST(req: NextRequest) {
                           (r.data && Array.isArray(r.data.services));
         return hasClientId && hasServices;
       });
+    
+    // Об'єднуємо записи з обох джерел (records log має пріоритет)
+    const records = [...recordsFromLog, ...webhookRecords];
+    console.log(`[direct/fix-missing-consultations] Total records after merge: ${records.length} (${recordsFromLog.length} from records log, ${webhookRecords.length} from webhook log)`);
 
     let fixedCount = 0;
     let skippedCount = 0;
@@ -228,6 +281,42 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Додаємо детальну діагностику
+    const diagnostics: any[] = [];
+    for (const client of clientsWithHairExtension.slice(0, 5)) { // Перші 5 для діагностики
+      const clientRecords = records.filter((r) => {
+        if (!r || typeof r !== 'object') return false;
+        const recordClientId = r.clientId || 
+                               (r.data && r.data.client && r.data.client.id) ||
+                               (r.data && r.data.client_id);
+        if (!recordClientId) return false;
+        return parseInt(String(recordClientId), 10) === client.altegioClientId;
+      });
+      
+      const recordsWithServices = clientRecords.filter((r) => {
+        const services = r.data?.services || r.services || [];
+        return Array.isArray(services) && services.length > 0;
+      });
+      
+      diagnostics.push({
+        clientId: client.id,
+        instagramUsername: client.instagramUsername,
+        altegioClientId: client.altegioClientId,
+        totalRecords: clientRecords.length,
+        recordsWithServices: recordsWithServices.length,
+        sampleRecord: recordsWithServices.length > 0 ? {
+          clientId: recordsWithServices[0].clientId,
+          hasDataServices: !!recordsWithServices[0].data?.services,
+          hasTopLevelServices: !!recordsWithServices[0].services,
+          servicesCount: (recordsWithServices[0].data?.services || recordsWithServices[0].services || []).length,
+          services: (recordsWithServices[0].data?.services || recordsWithServices[0].services || []).slice(0, 3).map((s: any) => ({
+            id: s.id,
+            title: s.title || s.name,
+          })),
+        } : null,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       message: 'Fix completed',
@@ -238,6 +327,9 @@ export async function POST(req: NextRequest) {
         errors: errors.length,
       },
       errors: errors.length > 0 ? errors.slice(0, 10) : [],
+      diagnostics: diagnostics,
+      totalRecordsInKV: recordsLogRaw.length,
+      parsedRecords: records.length,
     });
   } catch (error) {
     console.error('[direct/fix-missing-consultations] POST error:', error);
