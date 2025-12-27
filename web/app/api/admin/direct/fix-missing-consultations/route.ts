@@ -294,9 +294,15 @@ export async function POST(req: NextRequest) {
             const latestRecord = clientRecords[0];
             const hairExtensionLog = history.find(log => log.state === 'hair-extension');
             
+            console.log(`[fix-missing-consultations] Client ${client.id}: Found ${clientRecords.length} records with both services, hairExtensionLog: ${hairExtensionLog ? 'exists' : 'missing'}`);
+            
             if (hairExtensionLog) {
-              // Перевіряємо, чи вже є консультація з такою ж датою
-              const recordDate = latestRecord.receivedAt || latestRecord.data?.datetime || latestRecord.datetime || hairExtensionLog.createdAt;
+              // Використовуємо дату з запису (datetime має пріоритет над receivedAt)
+              const recordDate = latestRecord.datetime || 
+                                latestRecord.data?.datetime || 
+                                latestRecord.receivedAt || 
+                                hairExtensionLog.createdAt;
+              
               const consultationDate = new Date(recordDate);
               
               if (isNaN(consultationDate.getTime())) {
@@ -305,13 +311,18 @@ export async function POST(req: NextRequest) {
                 continue;
               }
               
-              const existingConsultation = history.find(log => 
-                log.state === 'consultation' && 
-                Math.abs(new Date(log.createdAt).getTime() - consultationDate.getTime()) < 60000
-              );
+              // Перевіряємо, чи вже є консультація (не обов'язково з такою ж датою, але взагалі в історії)
+              const existingConsultation = history.find(log => log.state === 'consultation');
               
               if (!existingConsultation) {
-                // Створюємо запис про консультацію
+                // Знаходимо попередній стан перед нарощуванням (або lead, якщо немає)
+                const previousState = hairExtensionLog.previousState || 'lead';
+                
+                // Створюємо запис про консультацію ПЕРЕД нарощуванням
+                // Консультація має бути раніше за нарощування, тому віднімаємо 1 хвилину
+                const consultationDateBeforeHair = new Date(consultationDate);
+                consultationDateBeforeHair.setMinutes(consultationDateBeforeHair.getMinutes() - 1);
+                
                 const consultationLogId = `missing-consultation-${client.id}-${Date.now()}`;
                 const metadata = hairExtensionLog.metadata || (client.masterId ? JSON.stringify({ masterId: client.masterId }) : undefined);
                 
@@ -320,21 +331,95 @@ export async function POST(req: NextRequest) {
                     id: consultationLogId,
                     clientId: client.id,
                     state: 'consultation',
-                    previousState: hairExtensionLog.previousState,
+                    previousState: previousState,
                     reason: 'retroactive-fix',
                     metadata: metadata || null,
-                    createdAt: consultationDate,
+                    createdAt: consultationDateBeforeHair,
                   },
                 });
                 
                 fixedCount++;
-                console.log(`[fix-missing-consultations] ✅ Created consultation log for client ${client.id} (${client.instagramUsername}) at ${consultationDate.toISOString()}`);
+                console.log(`[fix-missing-consultations] ✅ Created consultation log for client ${client.id} (${client.instagramUsername}) at ${consultationDateBeforeHair.toISOString()} (before hair extension at ${hairExtensionLog.createdAt})`);
               } else {
-                console.log(`[fix-missing-consultations] Consultation already exists for client ${client.id}`);
+                console.log(`[fix-missing-consultations] Consultation already exists for client ${client.id} at ${existingConsultation.createdAt}`);
                 skippedCount++;
               }
             } else {
-              console.log(`[fix-missing-consultations] No hair-extension log found in history for client ${client.id}`);
+              console.log(`[fix-missing-consultations] ⚠️ No hair-extension log found in history for client ${client.id}, but found records with both services. This is unexpected.`);
+              skippedCount++;
+            }
+          } else {
+            // Якщо не знайшли записів з обома послугами в одному записі,
+            // але є окремі записи з консультацією та нарощуванням - створюємо консультацію на основі окремих записів
+            const consultationRecords = allClientRecords.filter((r) => {
+              const services = r.data?.services || r.services || [];
+              if (!Array.isArray(services) || services.length === 0) return false;
+              return services.some((s: any) => {
+                const title = s.title || s.name || '';
+                return /консультація/i.test(title);
+              });
+            }).sort((a, b) => {
+              const dateA = new Date(a.receivedAt || a.datetime || a.data?.datetime || 0).getTime();
+              const dateB = new Date(b.receivedAt || b.datetime || b.data?.datetime || 0).getTime();
+              return dateB - dateA;
+            });
+            
+            const hairExtensionRecords = allClientRecords.filter((r) => {
+              const services = r.data?.services || r.services || [];
+              if (!Array.isArray(services) || services.length === 0) return false;
+              return services.some((s: any) => {
+                const title = s.title || s.name || '';
+                return /нарощування/i.test(title);
+              });
+            }).sort((a, b) => {
+              const dateA = new Date(a.receivedAt || a.datetime || a.data?.datetime || 0).getTime();
+              const dateB = new Date(b.receivedAt || b.datetime || b.data?.datetime || 0).getTime();
+              return dateB - dateA;
+            });
+            
+            const hairExtensionLog = history.find(log => log.state === 'hair-extension');
+            const existingConsultation = history.find(log => log.state === 'consultation');
+            
+            if (consultationRecords.length > 0 && hairExtensionRecords.length > 0 && hairExtensionLog && !existingConsultation) {
+              // Використовуємо дату з найближчої консультації до нарощування
+              const latestHairExtension = hairExtensionRecords[0];
+              const hairExtensionDate = new Date(latestHairExtension.receivedAt || latestHairExtension.datetime || latestHairExtension.data?.datetime || hairExtensionLog.createdAt);
+              
+              // Знаходимо консультацію, яка була до або в той же день
+              const relevantConsultation = consultationRecords.find((cr) => {
+                const consultationDate = new Date(cr.receivedAt || cr.datetime || cr.data?.datetime || 0);
+                return consultationDate <= hairExtensionDate;
+              });
+              
+              if (relevantConsultation) {
+                const consultationDate = new Date(relevantConsultation.receivedAt || relevantConsultation.datetime || relevantConsultation.data?.datetime || hairExtensionLog.createdAt);
+                const consultationDateBeforeHair = new Date(consultationDate);
+                consultationDateBeforeHair.setMinutes(consultationDateBeforeHair.getMinutes() - 1);
+                
+                const previousState = hairExtensionLog.previousState || 'lead';
+                const consultationLogId = `missing-consultation-${client.id}-${Date.now()}`;
+                const metadata = hairExtensionLog.metadata || (client.masterId ? JSON.stringify({ masterId: client.masterId }) : undefined);
+                
+                await prisma.directClientStateLog.create({
+                  data: {
+                    id: consultationLogId,
+                    clientId: client.id,
+                    state: 'consultation',
+                    previousState: previousState,
+                    reason: 'retroactive-fix-separate',
+                    metadata: metadata || null,
+                    createdAt: consultationDateBeforeHair,
+                  },
+                });
+                
+                fixedCount++;
+                console.log(`[fix-missing-consultations] ✅ Created consultation log from separate records for client ${client.id} (${client.instagramUsername}) at ${consultationDateBeforeHair.toISOString()}`);
+              } else {
+                console.log(`[fix-missing-consultations] No consultation record found before hair extension for client ${client.id}`);
+                skippedCount++;
+              }
+            } else {
+              console.log(`[fix-missing-consultations] Conditions not met for client ${client.id}: consultationRecords=${consultationRecords.length}, hairExtensionRecords=${hairExtensionRecords.length}, hairExtensionLog=${!!hairExtensionLog}, existingConsultation=${!!existingConsultation}`);
               skippedCount++;
             }
           } else {
