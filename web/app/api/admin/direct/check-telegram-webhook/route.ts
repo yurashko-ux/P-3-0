@@ -73,15 +73,18 @@ export async function GET(req: NextRequest) {
     }
 
     // Перевіряємо webhook для основного бота
+    let mainBotWebhookUrl = '';
     if (botToken) {
       try {
         const webhookUrl = `https://api.telegram.org/bot${botToken}/getWebhookInfo`;
         const response = await fetch(webhookUrl);
         const data = await response.json();
         
+        mainBotWebhookUrl = data.result?.url || '';
+        
         results.webhooks.BOT = {
           ok: data.ok,
-          url: data.result?.url || 'NOT SET',
+          url: mainBotWebhookUrl,
           hasCustomCertificate: data.result?.has_custom_certificate || false,
           pendingUpdateCount: data.result?.pending_update_count || 0,
           lastErrorDate: data.result?.last_error_date || null,
@@ -103,6 +106,20 @@ export async function GET(req: NextRequest) {
         error: 'BOT_TOKEN not set',
       };
     }
+    
+    // Зберігаємо значення bypass для використання в POST
+    results._bypassValue = (() => {
+      // Спробуємо витягти з URL основного бота
+      if (mainBotWebhookUrl) {
+        const urlObj = new URL(mainBotWebhookUrl);
+        const bypass = urlObj.searchParams.get('x-vercel-protection-bypass');
+        if (bypass) return bypass;
+      }
+      // Або з env змінних
+      return process.env.X_VERCEL_PROTECTION_BYPASS || 
+             process.env.VERCEL_PROTECTION_BYPASS || 
+             null;
+    })();
 
     return NextResponse.json({
       ok: true,
@@ -139,16 +156,43 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Додаємо параметр Vercel Protection Bypass, якщо він є в env або в URL основного бота
-    const bypassValue = 
-      process.env.X_VERCEL_PROTECTION_BYPASS || 
-      process.env.VERCEL_PROTECTION_BYPASS ||
-      req.headers.get('x-vercel-protection-bypass') ||
-      null;
+    // Додаємо параметр Vercel Protection Bypass
+    // Спочатку пробуємо отримати з URL основного бота
+    let bypassValue = null;
     
+    try {
+      const botToken = TELEGRAM_ENV.BOT_TOKEN;
+      if (botToken) {
+        const webhookInfoUrl = `https://api.telegram.org/bot${botToken}/getWebhookInfo`;
+        const infoResponse = await fetch(webhookInfoUrl);
+        const infoData = await infoResponse.json();
+        const mainBotUrl = infoData.result?.url || '';
+        
+        if (mainBotUrl) {
+          const urlObj = new URL(mainBotUrl);
+          bypassValue = urlObj.searchParams.get('x-vercel-protection-bypass');
+        }
+      }
+    } catch (err) {
+      console.warn('[direct/check-telegram-webhook] Failed to get bypass from main bot:', err);
+    }
+    
+    // Якщо не знайшли в URL основного бота, пробуємо env змінні
+    if (!bypassValue) {
+      bypassValue = 
+        process.env.X_VERCEL_PROTECTION_BYPASS || 
+        process.env.VERCEL_PROTECTION_BYPASS ||
+        req.headers.get('x-vercel-protection-bypass') ||
+        null;
+    }
+    
+    // Додаємо параметр до URL, якщо він є і ще не доданий
     if (bypassValue && !webhookUrl.includes('x-vercel-protection-bypass')) {
       const separator = webhookUrl.includes('?') ? '&' : '?';
-      webhookUrl = `${webhookUrl}${separator}x-vercel-protection-bypass=${bypassValue}`;
+      webhookUrl = `${webhookUrl}${separator}x-vercel-protection-bypass=${encodeURIComponent(bypassValue)}`;
+      console.log(`[direct/check-telegram-webhook] Added bypass parameter to URL: ${webhookUrl.substring(0, 100)}...`);
+    } else if (!bypassValue) {
+      console.warn('[direct/check-telegram-webhook] No bypass value found, webhook may fail with 401');
     }
 
     const hobClientBotToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN;
