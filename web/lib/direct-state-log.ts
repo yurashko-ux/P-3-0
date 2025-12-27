@@ -132,18 +132,23 @@ export async function getClientStateInfo(clientId: string): Promise<{
 
     const history = await getStateHistory(clientId);
 
+    // Отримуємо повну інформацію про клієнта для перевірки записів
+    const clientWithMaster = await prisma.directClient.findUnique({
+      where: { id: clientId },
+      select: { 
+        masterId: true,
+        state: true,
+        altegioClientId: true,
+      },
+    });
+    
+    const initialMasterId = clientWithMaster?.masterId;
+    const currentState = clientWithMaster?.state;
+    
     // Якщо історії немає або перший запис не є "Лід", додаємо початковий стан "Лід"
     // Клієнти з ManyChat/Instagram завжди починають зі стану "Лід"
     const hasLeadState = history.some(log => log.state === 'lead');
     const firstHistoryState = history.length > 0 ? history[history.length - 1] : null;
-    
-    // Отримуємо початковий masterId клієнта (дірект-менеджер для лідів)
-    const clientWithMaster = await prisma.directClient.findUnique({
-      where: { id: clientId },
-      select: { masterId: true },
-    });
-    
-    const initialMasterId = clientWithMaster?.masterId;
     
     // Якщо немає історії або перший стан не "Лід", додаємо початковий "Лід"
     if (!hasLeadState && (history.length === 0 || firstHistoryState?.previousState === null)) {
@@ -159,6 +164,87 @@ export async function getClientStateInfo(clientId: string): Promise<{
       
       // Додаємо на початок історії (найстаріший запис)
       history.push(initialLeadLog);
+    }
+
+    // Перевіряємо, чи потрібно додати пропущену консультацію для клієнтів з нарощуванням
+    if (currentState === 'hair-extension' && clientWithMaster?.altegioClientId) {
+      const hasConsultationInHistory = history.some(log => log.state === 'consultation');
+      const hasHairExtensionInHistory = history.some(log => log.state === 'hair-extension');
+      
+      // Якщо є нарощування в історії, але немає консультації - перевіряємо записи
+      if (hasHairExtensionInHistory && !hasConsultationInHistory) {
+        try {
+          const { kvRead } = await import('@/lib/kv');
+          const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
+          
+          // Шукаємо записи з обома послугами
+          const recordsWithBoth = recordsLogRaw
+            .map((raw) => {
+              try {
+                let parsed: any;
+                if (typeof raw === 'string') {
+                  parsed = JSON.parse(raw);
+                } else {
+                  parsed = raw;
+                }
+                
+                if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+                  try {
+                    parsed = JSON.parse(parsed.value);
+                  } catch {
+                    return null;
+                  }
+                }
+                
+                return parsed;
+              } catch {
+                return null;
+              }
+            })
+            .filter((r) => {
+              if (!r || typeof r !== 'object') return false;
+              const recordClientId = r.clientId || (r.data && r.data.client && r.data.client.id);
+              if (parseInt(String(recordClientId), 10) !== clientWithMaster.altegioClientId) return false;
+              
+              const services = r.data?.services || r.services || [];
+              if (!Array.isArray(services)) return false;
+              
+              const hasConsultation = services.some((s: any) => 
+                s.title && /консультація/i.test(s.title)
+              );
+              const hasHairExtension = services.some((s: any) => 
+                s.title && /нарощування/i.test(s.title)
+              );
+              
+              return hasConsultation && hasHairExtension;
+            })
+            .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
+          
+          // Якщо знайшли запис з обома послугами - додаємо консультацію в історію
+          if (recordsWithBoth.length > 0) {
+            const latestRecord = recordsWithBoth[0];
+            const hairExtensionLog = history.find(log => log.state === 'hair-extension');
+            
+            if (hairExtensionLog) {
+              // Додаємо консультацію перед нарощуванням
+              const consultationLog: DirectClientStateLog = {
+                id: `missing-consultation-${clientId}-${Date.now()}`,
+                clientId,
+                state: 'consultation',
+                previousState: hairExtensionLog.previousState,
+                reason: 'retroactive',
+                metadata: hairExtensionLog.metadata,
+                createdAt: new Date(new Date(hairExtensionLog.createdAt).getTime() - 1000).toISOString(), // На 1 секунду раніше
+              };
+              
+              history.push(consultationLog);
+              console.log(`[direct-state-log] ✅ Added missing consultation log for client ${clientId}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[direct-state-log] Failed to check for missing consultation:`, err);
+        }
+      }
     }
 
     // Сортуємо за датою (від старіших до новіших для відображення)
