@@ -25,10 +25,29 @@ function getDirectRemindersBotToken(): string {
  */
 async function processInstagramUpdate(chatId: number, altegioClientId: number, instagramText: string) {
   try {
-    console.log(`[direct-reminders-webhook] processInstagramUpdate: chatId=${chatId}, altegioClientId=${altegioClientId}, instagramText="${instagramText}"`);
+    console.log(`[direct-reminders-webhook] 🔄 processInstagramUpdate: chatId=${chatId}, altegioClientId=${altegioClientId}, instagramText="${instagramText}"`);
     
-    const { updateInstagramForAltegioClient } = await import('@/lib/direct-store');
+    const { updateInstagramForAltegioClient, getDirectClientByAltegioId } = await import('@/lib/direct-store');
     const { normalizeInstagram } = await import('@/lib/normalize');
+    
+    // Спочатку перевіряємо, чи існує клієнт з таким Altegio ID
+    const existingClient = await getDirectClientByAltegioId(altegioClientId);
+    console.log(`[direct-reminders-webhook] 🔍 Client lookup by Altegio ID ${altegioClientId}:`, existingClient ? {
+      id: existingClient.id,
+      instagramUsername: existingClient.instagramUsername,
+      state: existingClient.state,
+    } : 'NOT FOUND');
+    
+    if (!existingClient) {
+      const botToken = getDirectRemindersBotToken();
+      await sendMessage(
+        chatId,
+        `❌ Клієнт з Altegio ID ${altegioClientId} не знайдено в базі даних.\n\nМожливо, клієнт ще не був синхронізований з Altegio. Спробуйте пізніше або перевірте, чи правильно вказано Altegio ID.`,
+        {},
+        botToken
+      );
+      return;
+    }
     
     // Витягуємо Instagram username (може бути з @ або без)
     const cleanInstagram = instagramText.trim().replace(/^@/, '').split(/\s+/)[0];
@@ -49,14 +68,15 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     }
     
     const botToken = getDirectRemindersBotToken();
-    console.log(`[direct-reminders-webhook] Calling updateInstagramForAltegioClient(${altegioClientId}, "${normalized}")`);
+    console.log(`[direct-reminders-webhook] 📞 Calling updateInstagramForAltegioClient(${altegioClientId}, "${normalized}")`);
     const updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
-    console.log(`[direct-reminders-webhook] Update result:`, updatedClient ? {
+    console.log(`[direct-reminders-webhook] ✅ Update result:`, updatedClient ? {
       success: true,
       clientId: updatedClient.id,
       instagramUsername: updatedClient.instagramUsername,
       state: updatedClient.state,
-    } : { success: false });
+      altegioClientId: updatedClient.altegioClientId,
+    } : { success: false, reason: 'updateInstagramForAltegioClient returned null' });
     
     if (updatedClient) {
       await sendMessage(

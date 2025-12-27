@@ -169,6 +169,14 @@ async function handleMessage(message: TelegramUpdate["message"]) {
                   const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
                   
                   if (updatedClient) {
+                    // Перевіряємо, чи це повідомлення від HOB_client_bot (має оброблятися в direct-reminders-webhook)
+                    // Якщо токен HOB_CLIENT_BOT_TOKEN встановлено, не обробляємо тут, щоб уникнути дублювання
+                    const { TELEGRAM_ENV } = await import('@/lib/telegram/env');
+                    if (TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN) {
+                      console.log(`[telegram/webhook] ⏭️ Skipping Instagram update - should be handled by direct-reminders-webhook`);
+                      return;
+                    }
+                    
                     await sendMessage(
                       chatId,
                       `✅ Instagram username оновлено!\n\n` +
