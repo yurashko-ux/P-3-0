@@ -336,55 +336,8 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
 
-    // Додаємо початковий стан "Лід" для клієнтів без історії
-    // Отримуємо інформацію про клієнтів, які не мають історії
-    const clientsWithoutHistory = clientIds.filter(id => !result.has(id));
-    if (clientsWithoutHistory.length > 0) {
-      console.log(`[direct-state-log] Adding initial "lead" state for ${clientsWithoutHistory.length} clients without history`);
-      
-      try {
-        // Отримуємо дату створення для клієнтів без історії
-        const clientsInfo = await prisma.directClient.findMany({
-          where: { id: { in: clientsWithoutHistory } },
-          select: { id: true, createdAt: true, state: true },
-        });
-        
-        // Отримуємо дірект-менеджера для стану "Лід"
-        const { getDirectManager } = await import('@/lib/direct-masters/store');
-        const directManager = await getDirectManager();
-        const directManagerId = directManager?.id;
-        
-        for (const clientInfo of clientsInfo) {
-          const initialLeadLog: DirectClientStateLog = {
-            id: `initial-lead-${clientInfo.id}`,
-            clientId: clientInfo.id,
-            state: clientInfo.state || 'lead',
-            previousState: null,
-            reason: 'initial',
-            metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
-            createdAt: clientInfo.createdAt.toISOString(),
-          };
-          
-          result.set(clientInfo.id, [initialLeadLog]);
-        }
-      } catch (infoErr) {
-        console.warn('[direct-state-log] Failed to get client info for initial states:', infoErr);
-        // Якщо не вдалося отримати інформацію, додаємо мінімальний запис
-        for (const clientId of clientsWithoutHistory) {
-          const initialLeadLog: DirectClientStateLog = {
-            id: `initial-lead-${clientId}`,
-            clientId,
-            state: 'lead',
-            previousState: null,
-            reason: 'initial',
-            createdAt: new Date().toISOString(),
-          };
-          result.set(clientId, [initialLeadLog]);
-        }
-      }
-    }
-
-    console.log(`[direct-state-log] Returning state history for ${result.size} clients`);
+    // Не додаємо автоматично початковий стан "Лід" - відображаємо тільки те, що є в історії
+    console.log(`[direct-state-log] Returning state history for ${result.size} clients (only states from database)`);
     return result;
   } catch (err) {
     console.error(`[direct-state-log] ❌ Failed to get last 5 states for clients:`, err);
