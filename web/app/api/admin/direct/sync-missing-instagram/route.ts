@@ -164,6 +164,7 @@ export async function POST(req: NextRequest) {
 
         // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
         const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+        const originalInstagram = instagram; // Зберігаємо оригінальне значення для перевірки повідомлень
         if (instagram) {
           const lowerInstagram = instagram.toLowerCase().trim();
           if (invalidValues.includes(lowerInstagram)) {
@@ -180,6 +181,7 @@ export async function POST(req: NextRequest) {
 
         // Якщо немає Instagram, створюємо/оновлюємо клієнта зі станом "no-instagram"
         const normalizedInstagram = `missing_instagram_${clientId}`;
+        const shouldSendNotification = originalInstagram?.toLowerCase().trim() !== 'no';
 
         // Витягуємо ім'я
         const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
@@ -244,6 +246,63 @@ export async function POST(req: NextRequest) {
             action: 'created',
             state: 'no-instagram',
           });
+          
+          // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no"
+          if (shouldSendNotification) {
+            try {
+              const { sendMessage } = await import('@/lib/telegram/api');
+              const { getAdminChatIds, getMykolayChatId } = await import('@/lib/direct-reminders/telegram');
+              const { listRegisteredChats } = await import('@/lib/photo-reports/master-registry');
+              const { TELEGRAM_ENV } = await import('@/lib/telegram/env');
+
+              let mykolayChatId = await getMykolayChatId();
+              if (!mykolayChatId) {
+                const registeredChats = await listRegisteredChats();
+                const mykolayChat = registeredChats.find(
+                  chat => {
+                    const username = chat.username?.toLowerCase().replace('@', '') || '';
+                    return username === 'mykolay007';
+                  }
+                );
+                mykolayChatId = mykolayChat?.chatId;
+              }
+
+              const adminChatIds = await getAdminChatIds();
+              const clientName = (client.name || client.display_name || 'Невідомий клієнт').trim();
+              const clientPhone = client.phone || 'не вказано';
+              const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
+                `Клієнт: <b>${clientName}</b>\n` +
+                `Телефон: ${clientPhone}\n` +
+                `Altegio ID: <code>${clientId}</code>\n\n` +
+                `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
+                `(наприклад: @username або username)\n\n` +
+                `Або додайте Instagram username для цього клієнта в Altegio.`;
+
+              const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+
+              if (mykolayChatId) {
+                try {
+                  await sendMessage(mykolayChatId, message, {}, botToken);
+                  console.log(`[direct/sync-missing-instagram] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                } catch (err) {
+                  console.error(`[direct/sync-missing-instagram] ❌ Failed to send notification to mykolay007:`, err);
+                }
+              }
+
+              for (const adminChatId of adminChatIds) {
+                try {
+                  await sendMessage(adminChatId, message, {}, botToken);
+                  console.log(`[direct/sync-missing-instagram] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                } catch (err) {
+                  console.error(`[direct/sync-missing-instagram] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                }
+              }
+            } catch (notificationErr) {
+              console.error(`[direct/sync-missing-instagram] ❌ Failed to send missing Instagram notifications:`, notificationErr);
+            }
+          } else if (originalInstagram?.toLowerCase().trim() === 'no') {
+            console.log(`[direct/sync-missing-instagram] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no"`);
+          }
         }
 
         results.processed++;

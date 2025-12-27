@@ -590,18 +590,36 @@ export function DirectClientTable({
                               );
                             })()}
                           </button>
-                          {/* Червоний квадрат для клієнтів без Instagram */}
-                          {(client.instagramUsername?.startsWith('missing_instagram_') || client.state === 'no-instagram') && (
-                            <div 
-                              className="tooltip tooltip-top" 
-                              data-tip="Відсутній Instagram username. Будь ласка, додайте його в Altegio або відправте у відповідь на повідомлення."
-                            >
-                              <div 
-                                className="w-4 h-4 bg-red-500 rounded-sm border border-red-700"
-                                style={{ minWidth: '16px', minHeight: '16px' }}
-                              />
-                            </div>
-                          )}
+                          {/* Червоний квадрат для клієнтів без Instagram (показуємо тільки один раз) */}
+                          {(() => {
+                            const hasNoInstagramState = client.state === 'no-instagram';
+                            const hasMissingInstagramUsername = client.instagramUsername?.startsWith('missing_instagram_');
+                            
+                            // Показуємо червоний квадрат тільки якщо є стан no-instagram АБО missing_instagram_ username
+                            // Але не показуємо, якщо вже є піктограма стану no-instagram в історії (щоб не дублювати)
+                            if (hasNoInstagramState || hasMissingInstagramUsername) {
+                              const states = client.last5States || [];
+                              // Перевіряємо, чи вже є піктограма стану no-instagram в історії
+                              const hasNoInstagramIconInHistory = states.some(s => s.state === 'no-instagram');
+                              
+                              // Показуємо червоний квадрат тільки якщо немає піктограми стану no-instagram в історії
+                              // Або якщо немає історії взагалі, але є стан no-instagram
+                              if (!hasNoInstagramIconInHistory) {
+                                return (
+                                  <div 
+                                    className="tooltip tooltip-top" 
+                                    data-tip="Відсутній Instagram username. Будь ласка, додайте його в Altegio або відправте у відповідь на повідомлення."
+                                  >
+                                    <div 
+                                      className="w-4 h-4 bg-red-500 rounded-sm border border-red-700"
+                                      style={{ minWidth: '16px', minHeight: '16px' }}
+                                    />
+                                  </div>
+                                );
+                              }
+                            }
+                            return null;
+                          })()}
                         </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
