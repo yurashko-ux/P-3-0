@@ -21,6 +21,76 @@ function getDirectRemindersBotToken(): string {
 }
 
 /**
+ * Обробка оновлення Instagram username
+ */
+async function processInstagramUpdate(chatId: number, altegioClientId: number, instagramText: string) {
+  try {
+    console.log(`[direct-reminders-webhook] processInstagramUpdate: chatId=${chatId}, altegioClientId=${altegioClientId}, instagramText="${instagramText}"`);
+    
+    const { updateInstagramForAltegioClient } = await import('@/lib/direct-store');
+    const { normalizeInstagram } = await import('@/lib/normalize');
+    
+    // Витягуємо Instagram username (може бути з @ або без)
+    const cleanInstagram = instagramText.trim().replace(/^@/, '').split(/\s+/)[0];
+    console.log(`[direct-reminders-webhook] Clean Instagram text: "${cleanInstagram}"`);
+    
+    const normalized = normalizeInstagram(cleanInstagram);
+    console.log(`[direct-reminders-webhook] Normalized Instagram: "${normalized}"`);
+    
+    if (!normalized) {
+      const botToken = getDirectRemindersBotToken();
+      await sendMessage(
+        chatId,
+        `❌ Невірний формат Instagram username. Будь ласка, введіть правильний username (наприклад: username або @username).`,
+        {},
+        botToken
+      );
+      return;
+    }
+    
+    const botToken = getDirectRemindersBotToken();
+    console.log(`[direct-reminders-webhook] Calling updateInstagramForAltegioClient(${altegioClientId}, "${normalized}")`);
+    const updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
+    console.log(`[direct-reminders-webhook] Update result:`, updatedClient ? {
+      success: true,
+      clientId: updatedClient.id,
+      instagramUsername: updatedClient.instagramUsername,
+      state: updatedClient.state,
+    } : { success: false });
+    
+    if (updatedClient) {
+      await sendMessage(
+        chatId,
+        `✅ Instagram username оновлено!\n\n` +
+        `Altegio ID: ${altegioClientId}\n` +
+        `Instagram: ${normalized}\n\n` +
+        `Тепер всі вебхуки для цього клієнта будуть оброблятися правильно.`,
+        {},
+        botToken
+      );
+      console.log(`[direct-reminders-webhook] ✅ Updated Instagram for Altegio client ${altegioClientId} to ${normalized}`);
+    } else {
+      await sendMessage(
+        chatId,
+        `❌ Не вдалося оновити Instagram username. Перевірте, чи існує клієнт з Altegio ID ${altegioClientId}.`,
+        {},
+        botToken
+      );
+      console.error(`[direct-reminders-webhook] ❌ Failed to update Instagram - client not found or update failed`);
+    }
+  } catch (err) {
+    console.error(`[direct-reminders-webhook] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
+    const botToken = getDirectRemindersBotToken();
+    await sendMessage(
+      chatId,
+      `❌ Помилка при оновленні Instagram username: ${err instanceof Error ? err.message : String(err)}`,
+      {},
+      botToken
+    );
+  }
+}
+
+/**
  * Обробка callback для вибору майстра
  */
 async function handleChangeMasterCallback(
@@ -370,22 +440,44 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
 }
 
 async function handleMessage(message: TelegramUpdate["message"]) {
-  if (!message) return;
+  if (!message) {
+    console.log(`[direct-reminders-webhook] handleMessage: message is null/undefined`);
+    return;
+  }
   const chatId = message.chat.id;
+  console.log(`[direct-reminders-webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}`);
 
   if (message.text) {
     // Обробка відповіді на повідомлення про відсутній Instagram
     if (message.reply_to_message?.text) {
       const repliedText = message.reply_to_message.text;
-      console.log(`[direct-reminders-webhook] Processing reply message. Replied text: ${repliedText.substring(0, 200)}...`);
+      console.log(`[direct-reminders-webhook] Processing reply message. Full replied text:`, repliedText);
+      console.log(`[direct-reminders-webhook] Reply text length: ${repliedText.length}`);
       
       // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
       if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
         console.log(`[direct-reminders-webhook] Detected reply to missing Instagram notification`);
         
         // Витягуємо Altegio ID з повідомлення (пробуємо різні формати)
+        // Telegram може надсилати HTML, тому перевіряємо різні варіанти
         const altegioIdMatch = repliedText.match(/Altegio ID:\s*<code>(\d+)<\/code>|Altegio ID:\s*<code>(\d+)|Altegio ID:\s*(\d+)/);
         console.log(`[direct-reminders-webhook] Altegio ID match:`, altegioIdMatch);
+        console.log(`[direct-reminders-webhook] Searching for Altegio ID in text...`);
+        
+        // Також пробуємо знайти без HTML тегів (на випадок, якщо Telegram надсилає plain text)
+        if (!altegioIdMatch) {
+          const plainMatch = repliedText.match(/Altegio ID[:\s]+(\d+)/i);
+          console.log(`[direct-reminders-webhook] Plain text Altegio ID match:`, plainMatch);
+          if (plainMatch) {
+            const altegioClientId = parseInt(plainMatch[1], 10);
+            if (!isNaN(altegioClientId)) {
+              console.log(`[direct-reminders-webhook] Found Altegio ID via plain text: ${altegioClientId}`);
+              // Продовжуємо обробку з цим ID
+              await processInstagramUpdate(chatId, altegioClientId, message.text.trim());
+              return;
+            }
+          }
+        }
         
         if (altegioIdMatch) {
           const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3], 10);
@@ -397,59 +489,8 @@ async function handleMessage(message: TelegramUpdate["message"]) {
             console.log(`[direct-reminders-webhook] Extracted Instagram text: "${instagramText}"`);
             
             if (instagramText && instagramText.length > 0) {
-              try {
-                const { updateInstagramForAltegioClient } = await import('@/lib/direct-store');
-                const { normalizeInstagram } = await import('@/lib/normalize');
-                const normalized = normalizeInstagram(instagramText);
-                console.log(`[direct-reminders-webhook] Normalized Instagram: "${normalized}"`);
-                
-                if (normalized) {
-                  const botToken = getDirectRemindersBotToken();
-                  const updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
-                  console.log(`[direct-reminders-webhook] Update result:`, updatedClient ? 'success' : 'failed');
-                  
-                  if (updatedClient) {
-                    await sendMessage(
-                      chatId,
-                      `✅ Instagram username оновлено!\n\n` +
-                      `Altegio ID: ${altegioClientId}\n` +
-                      `Instagram: ${normalized}\n\n` +
-                      `Тепер всі вебхуки для цього клієнта будуть оброблятися правильно.`,
-                      {},
-                      botToken
-                    );
-                    console.log(`[direct-reminders-webhook] ✅ Updated Instagram for Altegio client ${altegioClientId} to ${normalized}`);
-                    return;
-                  } else {
-                    await sendMessage(
-                      chatId,
-                      `❌ Не вдалося оновити Instagram username. Перевірте, чи існує клієнт з Altegio ID ${altegioClientId}.`,
-                      {},
-                      botToken
-                    );
-                    return;
-                  }
-                } else {
-                  const botToken = getDirectRemindersBotToken();
-                  await sendMessage(
-                    chatId,
-                    `❌ Невірний формат Instagram username. Будь ласка, введіть правильний username (наприклад: username або @username).`,
-                    {},
-                    botToken
-                  );
-                  return;
-                }
-              } catch (err) {
-                console.error(`[direct-reminders-webhook] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
-                const botToken = getDirectRemindersBotToken();
-                await sendMessage(
-                  chatId,
-                  `❌ Помилка при оновленні Instagram username: ${err instanceof Error ? err.message : String(err)}`,
-                  {},
-                  botToken
-                );
-                return;
-              }
+              await processInstagramUpdate(chatId, altegioClientId, instagramText);
+              return;
             } else {
               const botToken = getDirectRemindersBotToken();
               await sendMessage(
@@ -476,14 +517,23 @@ export async function POST(req: NextRequest) {
     assertDirectRemindersBotToken();
 
     const update = (await req.json()) as TelegramUpdate;
+    console.log(`[direct-reminders-webhook] Received update:`, {
+      hasMessage: !!update.message,
+      hasCallbackQuery: !!update.callback_query,
+      messageText: update.message?.text,
+      messageChatId: update.message?.chat?.id,
+      replyToMessage: !!update.message?.reply_to_message,
+    });
 
     // Обробляємо текстові повідомлення (відповіді на повідомлення про відсутній Instagram)
     if (update.message) {
+      console.log(`[direct-reminders-webhook] Processing message from chat ${update.message.chat.id}`);
       await handleMessage(update.message);
     }
     
     // Обробляємо callback для Direct нагадувань
     if (update.callback_query) {
+      console.log(`[direct-reminders-webhook] Processing callback query`);
       await handleCallback(update.callback_query);
     }
 
