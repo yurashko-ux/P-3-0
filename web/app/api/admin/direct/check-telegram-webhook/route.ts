@@ -130,13 +130,25 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const webhookUrl = body.url;
+    let webhookUrl = body.url;
     
     if (!webhookUrl) {
       return NextResponse.json({ 
         ok: false, 
         error: 'URL is required' 
       }, { status: 400 });
+    }
+
+    // Додаємо параметр Vercel Protection Bypass, якщо він є в env або в URL основного бота
+    const bypassValue = 
+      process.env.X_VERCEL_PROTECTION_BYPASS || 
+      process.env.VERCEL_PROTECTION_BYPASS ||
+      req.headers.get('x-vercel-protection-bypass') ||
+      null;
+    
+    if (bypassValue && !webhookUrl.includes('x-vercel-protection-bypass')) {
+      const separator = webhookUrl.includes('?') ? '&' : '?';
+      webhookUrl = `${webhookUrl}${separator}x-vercel-protection-bypass=${bypassValue}`;
     }
 
     const hobClientBotToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN;
