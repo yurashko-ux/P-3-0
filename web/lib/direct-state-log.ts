@@ -145,8 +145,14 @@ export async function getClientStateInfo(clientId: string): Promise<{
     const initialMasterId = clientWithMaster?.masterId;
     const currentState = clientWithMaster?.state;
     
+    // Отримуємо дірект-менеджера для стану "Лід"
+    const { getDirectManager } = await import('@/lib/direct-masters/store');
+    const directManager = await getDirectManager();
+    const directManagerId = directManager?.id;
+    
     // Якщо історії немає або перший запис не є "Лід", додаємо початковий стан "Лід"
     // Клієнти з ManyChat/Instagram завжди починають зі стану "Лід"
+    // Для стану "Лід" завжди використовуємо дірект-менеджера
     const hasLeadState = history.some(log => log.state === 'lead');
     const firstHistoryState = history.length > 0 ? history[history.length - 1] : null;
     
@@ -158,12 +164,27 @@ export async function getClientStateInfo(clientId: string): Promise<{
         state: 'lead',
         previousState: null,
         reason: 'initial',
-        metadata: initialMasterId ? JSON.stringify({ masterId: initialMasterId }) : undefined,
+        metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
         createdAt: client.createdAt.toISOString(),
       };
       
       // Додаємо на початок історії (найстаріший запис)
       history.push(initialLeadLog);
+    }
+    
+    // Виправляємо метадані для всіх записів зі станом "Лід" - завжди встановлюємо дірект-менеджера
+    for (const log of history) {
+      if (log.state === 'lead' && directManagerId) {
+        try {
+          const metadata = log.metadata ? JSON.parse(log.metadata) : {};
+          if (metadata.masterId !== directManagerId) {
+            log.metadata = JSON.stringify({ masterId: directManagerId });
+          }
+        } catch {
+          // Якщо не вдалося розпарсити метадані, встановлюємо нові
+          log.metadata = JSON.stringify({ masterId: directManagerId });
+        }
+      }
     }
 
     // Перевіряємо, чи потрібно додати пропущену консультацію для клієнтів з нарощуванням

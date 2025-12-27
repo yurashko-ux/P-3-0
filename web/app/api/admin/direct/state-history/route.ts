@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientStateInfo } from '@/lib/direct-state-log';
-import { getDirectMasterById } from '@/lib/direct-masters/store';
+import { getDirectMasterById, getDirectManager } from '@/lib/direct-masters/store';
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,29 +19,40 @@ export async function GET(req: NextRequest) {
 
     const info = await getClientStateInfo(clientId);
     
+    // Отримуємо дірект-менеджера для стану "Лід"
+    const directManager = await getDirectManager();
+    
     // Отримуємо історію з masterId для кожного запису
     const historyWithMasters = await Promise.all(
       info.history.map(async (log) => {
         let masterId: string | undefined = undefined;
         let masterName: string | undefined = undefined;
 
-        // Спробуємо отримати masterId з метаданих (якщо він там є)
-        if (log.metadata) {
-          try {
-            const metadata = JSON.parse(log.metadata);
-            if (metadata.masterId) {
-              masterId = metadata.masterId;
-            }
-          } catch {
-            // Ігноруємо помилки парсингу
+        // Для стану "Лід" завжди використовуємо дірект-менеджера
+        if (log.state === 'lead') {
+          if (directManager) {
+            masterId = directManager.id;
+            masterName = directManager.name;
           }
-        }
+        } else {
+          // Для інших станів спробуємо отримати masterId з метаданих
+          if (log.metadata) {
+            try {
+              const metadata = JSON.parse(log.metadata);
+              if (metadata.masterId) {
+                masterId = metadata.masterId;
+              }
+            } catch {
+              // Ігноруємо помилки парсингу
+            }
+          }
 
-        // Отримуємо ім'я майстра
-        if (masterId) {
-          const master = await getDirectMasterById(masterId);
-          if (master) {
-            masterName = master.name;
+          // Отримуємо ім'я майстра
+          if (masterId) {
+            const master = await getDirectMasterById(masterId);
+            if (master) {
+              masterName = master.name;
+            }
           }
         }
 
@@ -53,11 +64,51 @@ export async function GET(req: NextRequest) {
       })
     );
 
+    // Отримуємо відповідального та дату для поточного стану
+    let currentStateMasterId: string | undefined = undefined;
+    let currentStateMasterName: string | undefined = undefined;
+    let currentStateDate: string | undefined = undefined;
+    
+    // Отримуємо інформацію про клієнта
+    const { prisma } = await import('@/lib/prisma');
+    const client = await prisma.directClient.findUnique({
+      where: { id: clientId },
+      select: { masterId: true, updatedAt: true },
+    });
+    
+    if (info.currentState === 'lead') {
+      // Для стану "Лід" завжди використовуємо дірект-менеджера
+      if (directManager) {
+        currentStateMasterId = directManager.id;
+        currentStateMasterName = directManager.name;
+      }
+    } else {
+      // Для інших станів отримуємо з клієнта
+      if (client?.masterId) {
+        currentStateMasterId = client.masterId;
+        const master = await getDirectMasterById(client.masterId);
+        if (master) {
+          currentStateMasterName = master.name;
+        }
+      }
+    }
+    
+    // Знаходимо дату останнього логу з поточним станом, або використовуємо дату оновлення клієнта
+    const currentStateLog = historyWithMasters.find(log => log.state === info.currentState);
+    if (currentStateLog) {
+      currentStateDate = currentStateLog.createdAt;
+    } else if (client?.updatedAt) {
+      currentStateDate = client.updatedAt.toISOString();
+    }
+
     return NextResponse.json({
       ok: true,
       data: {
         ...info,
         history: historyWithMasters,
+        currentStateMasterId,
+        currentStateMasterName,
+        currentStateDate,
       },
     });
   } catch (err) {

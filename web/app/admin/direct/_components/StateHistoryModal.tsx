@@ -128,6 +128,8 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
   const [history, setHistory] = useState<StateHistoryLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentState, setCurrentState] = useState<string | null>(null);
+  const [currentStateMasterName, setCurrentStateMasterName] = useState<string | undefined>(undefined);
+  const [currentStateDate, setCurrentStateDate] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (isOpen && client) {
@@ -146,6 +148,8 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
       if (data.ok) {
         setHistory(data.data.history || []);
         setCurrentState(data.data.currentState);
+        setCurrentStateMasterName(data.data.currentStateMasterName);
+        setCurrentStateDate(data.data.currentStateDate);
       }
     } catch (err) {
       console.error('Failed to load state history:', err);
@@ -200,25 +204,35 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Поточний стан */}
-              <div className="bg-base-200 p-3 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <StateIcon state={currentState} />
-                  <div>
-                    <div className="text-sm font-semibold">Поточний стан</div>
-                    <div className="text-xs text-base-content/70">{getStateName(currentState)}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Історія */}
-              {history.length === 0 ? (
+              {/* Історія (включаючи поточний стан) */}
+              {history.length === 0 && !currentState ? (
                 <div className="text-center py-8 text-base-content/50">
                   Історія змін стану відсутня
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {history.map((log, index) => (
+                  {/* Поточний стан відображається першим, якщо він не збігається з останнім записом в історії */}
+                  {currentState && (history.length === 0 || history[history.length - 1]?.state !== currentState) && (
+                    <div className="flex items-center gap-3 pb-2 border-b border-base-300">
+                      <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
+                        {currentStateDate ? formatDate(currentStateDate) : (client.updatedAt ? formatDate(client.updatedAt) : 'Поточний')}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StateIcon state={currentState} />
+                        <div className="font-semibold text-sm">
+                          {getStateName(currentState)}
+                        </div>
+                        {currentStateMasterName && (
+                          <div className="text-xs text-base-content/60 ml-2">
+                            {currentStateMasterName}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Історія (від новіших до старіших - реверсуємо масив) */}
+                  {[...history].reverse().map((log, index) => (
                     <div key={log.id} className="flex items-center gap-3 pb-2 border-b border-base-300 last:border-b-0">
                       <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
                         {formatDate(log.createdAt)}
