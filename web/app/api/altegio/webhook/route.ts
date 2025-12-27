@@ -495,6 +495,8 @@ export async function POST(req: NextRequest) {
                       }
 
                       const adminChatIds = await getAdminChatIds();
+                      // Виключаємо mykolayChatId з adminChatIds, щоб не дублювати повідомлення
+                      const uniqueAdminChatIds = adminChatIds.filter(id => id !== mykolayChatId);
                       const clientName = (client.name || client.display_name || '').trim();
                       
                       // Перевіряємо, чи є ім'я (не відправляємо для клієнтів без імені)
@@ -533,7 +535,8 @@ export async function POST(req: NextRequest) {
                           }
                         }
 
-                        for (const adminChatId of adminChatIds) {
+                        // Відправляємо адміністраторам (без mykolayChatId, щоб не дублювати)
+                        for (const adminChatId of uniqueAdminChatIds) {
                           try {
                             await sendMessage(adminChatId, message, {}, botToken);
                             console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
@@ -1166,6 +1169,8 @@ export async function POST(req: NextRequest) {
 
                 // Отримуємо chat ID адміністраторів
                 const adminChatIds = await getAdminChatIds();
+                // Виключаємо mykolayChatId з adminChatIds, щоб не дублювати повідомлення
+                const uniqueAdminChatIds = adminChatIds.filter(id => id !== mykolayChatId);
 
                 // Формуємо повідомлення
                 const clientName = (client.name || client.display_name || '').trim();
@@ -1210,8 +1215,8 @@ export async function POST(req: NextRequest) {
                     console.warn(`[altegio/webhook] ⚠️ mykolay007 chat ID not found`);
                   }
 
-                  // Відправляємо повідомлення адміністраторам
-                  for (const adminChatId of adminChatIds) {
+                  // Відправляємо повідомлення адміністраторам (без mykolayChatId, щоб не дублювати)
+                  for (const adminChatId of uniqueAdminChatIds) {
                     try {
                       await sendMessage(adminChatId, message, {}, botToken);
                       console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);

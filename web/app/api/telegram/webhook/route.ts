@@ -89,23 +89,36 @@ async function handleMessage(message: TelegramUpdate["message"]) {
     // Обробка відповіді на повідомлення про відсутній Instagram
     if (message.reply_to_message?.text) {
       const repliedText = message.reply_to_message.text;
+      console.log(`[telegram/webhook] Processing reply message. Replied text: ${repliedText.substring(0, 200)}...`);
+      
       // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
       if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
-        // Витягуємо Altegio ID з повідомлення
-        const altegioIdMatch = repliedText.match(/Altegio ID:\s*<code>(\d+)<\/code>|Altegio ID:\s*(\d+)/);
+        console.log(`[telegram/webhook] Detected reply to missing Instagram notification`);
+        
+        // Витягуємо Altegio ID з повідомлення (пробуємо різні формати)
+        const altegioIdMatch = repliedText.match(/Altegio ID:\s*<code>(\d+)<\/code>|Altegio ID:\s*<code>(\d+)|Altegio ID:\s*(\d+)/);
+        console.log(`[telegram/webhook] Altegio ID match:`, altegioIdMatch);
+        
         if (altegioIdMatch) {
-          const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2], 10);
+          const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3], 10);
+          console.log(`[telegram/webhook] Parsed Altegio ID: ${altegioClientId}`);
+          
           if (!isNaN(altegioClientId)) {
             // Витягуємо Instagram username з відповіді (може бути з @ або без)
             const instagramText = message.text.trim().replace(/^@/, '').split(/\s+/)[0];
+            console.log(`[telegram/webhook] Extracted Instagram text: "${instagramText}"`);
+            
             if (instagramText && instagramText.length > 0) {
               try {
                 const { updateInstagramForAltegioClient } = await import('@/lib/direct-store');
                 const { normalizeInstagram } = await import('@/lib/normalize');
                 const normalized = normalizeInstagram(instagramText);
+                console.log(`[telegram/webhook] Normalized Instagram: "${normalized}"`);
                 
                 if (normalized) {
                   const updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
+                  console.log(`[telegram/webhook] Update result:`, updatedClient ? 'success' : 'failed');
+                  
                   if (updatedClient) {
                     await sendMessage(
                       chatId,
@@ -145,7 +158,11 @@ async function handleMessage(message: TelegramUpdate["message"]) {
               );
               return;
             }
+          } else {
+            console.error(`[telegram/webhook] Invalid Altegio ID: ${altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3]}`);
           }
+        } else {
+          console.error(`[telegram/webhook] Could not extract Altegio ID from message`);
         }
       }
     }

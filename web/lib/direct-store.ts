@@ -284,12 +284,21 @@ export async function updateInstagramForAltegioClient(
       return prismaClientToDirectClient(updated);
     } else {
       // Просто оновлюємо Instagram username
+      // Також оновлюємо стан з 'no-instagram' на 'client', якщо був 'no-instagram'
+      const updateData: any = {
+        instagramUsername: normalized,
+        updatedAt: new Date(),
+      };
+      
+      // Якщо клієнт був в стані 'no-instagram', оновлюємо на 'client'
+      if (existingClient.state === 'no-instagram') {
+        updateData.state = 'client';
+        console.log(`[direct-store] Also updating state from 'no-instagram' to 'client' for client ${existingClient.id}`);
+      }
+      
       const updated = await prisma.directClient.update({
         where: { id: existingClient.id },
-        data: {
-          instagramUsername: normalized,
-          updatedAt: new Date(),
-        },
+        data: updateData,
       });
       console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
       return prismaClientToDirectClient(updated);
