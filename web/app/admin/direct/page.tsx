@@ -548,6 +548,38 @@ export default function DirectPage() {
           >
             ⚠️ Синхронізувати без Instagram
           </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              if (!confirm('Відправити Telegram повідомлення для всіх клієнтів без Instagram?\n\nЦе надішле повідомлення вам та адміністраторам з проханням додати Instagram username.')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/send-missing-instagram-notifications', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `Відправлено повідомлень:\n\n` +
+                    `Всього клієнтів: ${data.totalClients}\n` +
+                    `Відправлено: ${data.sent}\n` +
+                    `Не вдалося: ${data.failed}`;
+                  alert(message);
+                } else {
+                  alert(`Помилка: ${data.error || 'Невідома помилка'}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+          >
+            📨 Відправити повідомлення
+          </button>
 
           <button
             className="btn btn-sm btn-secondary"
