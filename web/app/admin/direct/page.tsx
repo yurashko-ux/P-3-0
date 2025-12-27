@@ -157,32 +157,47 @@ export default function DirectPage() {
     loadData();
   }, []);
 
+  // Функція для завантаження статусів та майстрів
+  const loadStatusesAndMasters = async () => {
+    // Завантажуємо статуси
+    try {
+      const statusesRes = await fetch("/api/admin/direct/statuses");
+      if (statusesRes.ok) {
+        const statusesData = await statusesRes.json();
+        if (statusesData.ok && statusesData.statuses) {
+          setStatuses(statusesData.statuses);
+          console.log(`[DirectPage] Loaded ${statusesData.statuses.length} statuses`);
+        }
+      } else {
+        console.warn(`[DirectPage] Failed to load statuses: ${statusesRes.status} ${statusesRes.statusText}`);
+      }
+    } catch (err) {
+      console.warn("[DirectPage] Failed to load statuses:", err);
+    }
+
+    // Завантажуємо відповідальних (майстрів)
+    try {
+      const mastersRes = await fetch("/api/admin/direct/masters");
+      if (mastersRes.ok) {
+        const mastersData = await mastersRes.json();
+        if (mastersData.ok && mastersData.masters) {
+          setMasters(mastersData.masters);
+          console.log(`[DirectPage] Loaded ${mastersData.masters.length} masters`);
+        }
+      } else {
+        console.warn(`[DirectPage] Failed to load masters: ${mastersRes.status} ${mastersRes.statusText}`);
+      }
+    } catch (mastersErr) {
+      console.warn("[DirectPage] Failed to load masters:", mastersErr);
+    }
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Завантажуємо статуси
-      const statusesRes = await fetch("/api/admin/direct/statuses");
-      if (statusesRes.ok) {
-        const statusesData = await statusesRes.json();
-        if (statusesData.ok) {
-          setStatuses(statusesData.statuses);
-        }
-      }
-
-      // Завантажуємо відповідальних (майстрів) - не критично, якщо не вдасться
-      try {
-        const mastersRes = await fetch("/api/admin/direct/masters");
-        if (mastersRes.ok) {
-          const mastersData = await mastersRes.json();
-          if (mastersData.ok) {
-            setMasters(mastersData.masters);
-          }
-        }
-      } catch (mastersErr) {
-        console.warn("[DirectPage] Failed to load masters (non-critical):", mastersErr);
-        // Не встановлюємо помилку, бо це не критично для відображення клієнтів
-      }
+      // Завантажуємо статуси та майстрів
+      await loadStatusesAndMasters();
 
       // Завантажуємо клієнтів
       await loadClients();
@@ -260,6 +275,12 @@ export default function DirectPage() {
         
         setClients(filteredClients);
         setError(null); // Очищаємо помилку при успішному завантаженні
+        
+        // Якщо клієнти завантажилися успішно, але статуси/майстри відсутні - завантажуємо їх
+        if (filteredClients.length > 0 && (statuses.length === 0 || masters.length === 0)) {
+          console.log('[DirectPage] Clients loaded but statuses/masters missing, loading them...');
+          loadStatusesAndMasters();
+        }
       } else {
         const errorMsg = data.error || "Unknown error";
         console.error('[DirectPage] Failed to load clients:', errorMsg, data);
@@ -298,20 +319,53 @@ export default function DirectPage() {
     loadClients();
   }, [filters, sortBy, sortOrder]);
 
-  // Автоматичне оновлення даних кожні 30 секунд (збільшено з 10 до 30)
+  // Функція для завантаження статусів та майстрів
+  const loadStatusesAndMasters = async () => {
+    // Завантажуємо статуси
+    try {
+      const statusesRes = await fetch("/api/admin/direct/statuses");
+      if (statusesRes.ok) {
+        const statusesData = await statusesRes.json();
+        if (statusesData.ok && statusesData.statuses) {
+          setStatuses(statusesData.statuses);
+        }
+      }
+    } catch (err) {
+      console.warn("[DirectPage] Failed to load statuses:", err);
+    }
+
+    // Завантажуємо відповідальних (майстрів)
+    try {
+      const mastersRes = await fetch("/api/admin/direct/masters");
+      if (mastersRes.ok) {
+        const mastersData = await mastersRes.json();
+        if (mastersData.ok && mastersData.masters) {
+          setMasters(mastersData.masters);
+        }
+      }
+    } catch (mastersErr) {
+      console.warn("[DirectPage] Failed to load masters:", mastersErr);
+    }
+  };
+
+  // Автоматичне оновлення даних кожні 30 секунд
   useEffect(() => {
     const interval = setInterval(() => {
-      // Оновлюємо тільки клієнтів та статистику, не перезавантажуємо все
+      // Оновлюємо клієнтів, статистику, статуси та майстрів
       loadClients().catch(err => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });
       loadStats().catch(err => {
         console.warn('[DirectPage] Auto-refresh stats error (non-critical):', err);
       });
+      // Оновлюємо статуси та майстрів, якщо вони не завантажилися
+      if (statuses.length === 0 || masters.length === 0) {
+        loadStatusesAndMasters();
+      }
     }, 30000); // 30 секунд
 
     return () => clearInterval(interval);
-  }, []);
+  }, [statuses.length, masters.length]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
     try {

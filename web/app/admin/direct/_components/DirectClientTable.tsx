@@ -115,8 +115,6 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
-  const [statesHistory, setStatesHistory] = useState<Record<string, { currentState: string | null; history: Array<{ state: string | null; createdAt: string }> }>>({});
-  const [loadingStatesHistory, setLoadingStatesHistory] = useState(false);
 
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
@@ -538,47 +536,8 @@ export function DirectClientTable({
                           className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center w-full"
                           title="Натисніть, щоб переглянути історію змін стану"
                         >
-                          {(() => {
-                            const clientHistory = statesHistory[client.id];
-                            
-                            // Якщо історія завантажується або не завантажена, показуємо поточний стан
-                            if (loadingStatesHistory && !clientHistory) {
-                              return <StateIcon state={client.state || 'lead'} size={20} />;
-                            }
-                            
-                            if (!clientHistory || !clientHistory.history || clientHistory.history.length === 0) {
-                              // Якщо історія порожня, показуємо поточний стан
-                              return <StateIcon state={client.state || 'lead'} size={20} />;
-                            }
-                            
-                            // Беремо останні 5 станів (актуальний справа)
-                            const last5States = clientHistory.history.slice(-5);
-                            
-                            // Якщо станів менше 5, додаємо поточний стан
-                            if (last5States.length < 5 && clientHistory.currentState) {
-                              const lastState = last5States[last5States.length - 1];
-                              if (!lastState || lastState.state !== clientHistory.currentState) {
-                                last5States.push({
-                                  state: clientHistory.currentState,
-                                  createdAt: new Date().toISOString(),
-                                });
-                              }
-                            }
-                            
-                            return (
-                              <div className="flex items-center justify-center gap-1">
-                                {last5States.map((log, idx) => (
-                                  <div 
-                                    key={`${client.id}-${log.state}-${idx}-${log.createdAt}`} 
-                                    className="flex items-center justify-center" 
-                                    title={log.state || 'Не встановлено'}
-                                  >
-                                    <StateIcon state={log.state} size={20} />
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
+                          {/* Показуємо тільки поточний стан - історія завантажується при відкритті модального вікна */}
+                          <StateIcon state={client.state || 'lead'} size={20} />
                         </button>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
