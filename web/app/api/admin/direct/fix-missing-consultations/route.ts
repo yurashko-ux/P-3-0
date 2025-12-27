@@ -210,15 +210,22 @@ export async function POST(req: NextRequest) {
               });
               
               if (hasConsultation && hasHairExtension) {
-                console.log(`[fix-missing-consultations] Found record with both services for client ${client.altegioClientId}:`, {
+                console.log(`[fix-missing-consultations] ✅ Found record with both services for client ${client.altegioClientId}:`, {
                   services: services.map((s: any) => s.title || s.name),
                   receivedAt: r.receivedAt,
+                  datetime: r.datetime || r.data?.datetime,
                 });
               }
               
               return hasConsultation && hasHairExtension;
             })
-            .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
+            .sort((a, b) => {
+              const dateA = new Date(a.receivedAt || a.datetime || a.data?.datetime || 0).getTime();
+              const dateB = new Date(b.receivedAt || b.datetime || b.data?.datetime || 0).getTime();
+              return dateB - dateA;
+            });
+          
+          console.log(`[fix-missing-consultations] Client ${client.altegioClientId}: Found ${recordsWithBothServices.length} records with both services`);
           
           // Якщо не знайшли запис з обома послугами в одному записі,
           // шукаємо консультацію в окремому записі, який був до нарощування
