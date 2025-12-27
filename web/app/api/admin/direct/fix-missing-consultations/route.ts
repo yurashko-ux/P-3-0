@@ -422,27 +422,6 @@ export async function POST(req: NextRequest) {
               console.log(`[fix-missing-consultations] Conditions not met for client ${client.id}: consultationRecords=${consultationRecords.length}, hairExtensionRecords=${hairExtensionRecords.length}, hairExtensionLog=${!!hairExtensionLog}, existingConsultation=${!!existingConsultation}`);
               skippedCount++;
             }
-          } else {
-            // Детальна діагностика - показуємо всі послуги для цього клієнта
-            const allServices = allClientRecords
-              .flatMap((r) => {
-                const services = r.data?.services || r.services || [];
-                return Array.isArray(services) ? services.map((s: any) => ({
-                  title: s.title || s.name || 'Unknown',
-                  id: s.id,
-                  recordDate: r.receivedAt || r.datetime,
-                })) : [];
-              })
-              .filter((s, index, self) => 
-                index === self.findIndex((t) => t.title === s.title && t.id === s.id)
-              );
-            
-            console.log(`[fix-missing-consultations] No records with both services found for client ${client.id} (Altegio ${client.altegioClientId})`);
-            console.log(`[fix-missing-consultations] All services for this client:`, allServices.map(s => s.title).join(', '));
-            console.log(`[fix-missing-consultations] Has consultation in any record:`, allServices.some(s => /консультація/i.test(s.title)));
-            console.log(`[fix-missing-consultations] Has hair extension in any record:`, allServices.some(s => /нарощування/i.test(s.title)));
-            
-            skippedCount++;
           }
         } else {
           skippedCount++;
