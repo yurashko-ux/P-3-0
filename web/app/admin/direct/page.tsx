@@ -862,6 +862,46 @@ export default function DirectPage() {
           >
             🔄 Оновити стани
           </button>
+
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              if (!confirm('Виправити пропущені консультації в історії станів для всіх клієнтів з нарощуванням?\n\nЦе знайде клієнтів зі станом "Нарощування волосся", у яких немає консультації в історії, але в записах Altegio є обидві послуги, і додасть консультацію в історію.\n\nПродовжити?')) {
+                return;
+              }
+              
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/fix-missing-consultations', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Виправлення завершено!\n\n` +
+                    `Всього клієнтів перевірено: ${data.stats.totalClients}\n` +
+                    `Виправлено: ${data.stats.fixed}\n` +
+                    `Пропущено: ${data.stats.skipped}\n` +
+                    (data.stats.errors > 0 ? `Помилок: ${data.stats.errors}\n\n` : '\n') +
+                    (data.errors.length > 0
+                      ? `Перші помилки:\n${data.errors.slice(0, 5).join('\n')}\n\n`
+                      : ''
+                    ) +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Виправити пропущені консультації в історії станів"
+          >
+            🔧 Виправити пропущені консультації
+          </button>
+
           <button
             className="btn btn-sm btn-info"
             onClick={async () => {
