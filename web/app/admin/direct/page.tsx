@@ -170,13 +170,18 @@ export default function DirectPage() {
         }
       }
 
-      // Завантажуємо відповідальних (майстрів)
-      const mastersRes = await fetch("/api/admin/direct/masters");
-      if (mastersRes.ok) {
-        const mastersData = await mastersRes.json();
-        if (mastersData.ok) {
-          setMasters(mastersData.masters);
+      // Завантажуємо відповідальних (майстрів) - не критично, якщо не вдасться
+      try {
+        const mastersRes = await fetch("/api/admin/direct/masters");
+        if (mastersRes.ok) {
+          const mastersData = await mastersRes.json();
+          if (mastersData.ok) {
+            setMasters(mastersData.masters);
+          }
         }
+      } catch (mastersErr) {
+        console.warn("[DirectPage] Failed to load masters (non-critical):", mastersErr);
+        // Не встановлюємо помилку, бо це не критично для відображення клієнтів
       }
 
       // Завантажуємо клієнтів
@@ -201,8 +206,16 @@ export default function DirectPage() {
       params.set("sortOrder", sortOrder);
 
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`);
+      
+      // Якщо помилка HTTP, не очищаємо клієнтів
+      if (!res.ok) {
+        console.warn(`[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`);
+        // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
+        return;
+      }
+      
       const data = await res.json();
-      if (data.ok) {
+      if (data.ok && data.clients) {
         let filteredClients = data.clients;
 
         // Пошук по Instagram username та Повне ім'я
@@ -226,10 +239,13 @@ export default function DirectPage() {
 
         setClients(filteredClients);
       } else {
-        setError(data.error || "Failed to load clients");
+        console.warn('[DirectPage] Failed to load clients:', data.error || "Unknown error");
+        // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      console.error('[DirectPage] Error loading clients:', err);
+      // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
+      // setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -249,12 +265,17 @@ export default function DirectPage() {
     loadClients();
   }, [filters, sortBy, sortOrder]);
 
-  // Автоматичне оновлення даних кожні 10 секунд
+  // Автоматичне оновлення даних кожні 30 секунд (збільшено з 10 до 30)
   useEffect(() => {
     const interval = setInterval(() => {
-      loadClients();
-      loadStats();
-    }, 10000); // 10 секунд
+      // Оновлюємо тільки клієнтів та статистику, не перезавантажуємо все
+      loadClients().catch(err => {
+        console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
+      });
+      loadStats().catch(err => {
+        console.warn('[DirectPage] Auto-refresh stats error (non-critical):', err);
+      });
+    }, 30000); // 30 секунд
 
     return () => clearInterval(interval);
   }, []);

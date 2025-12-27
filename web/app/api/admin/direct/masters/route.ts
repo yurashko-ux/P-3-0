@@ -23,21 +23,22 @@ export async function GET(req: NextRequest) {
     const forSelection = searchParams.get('forSelection') === 'true';
 
     if (forSelection) {
-      const masters = await getDirectMastersForSelection();
-      return NextResponse.json({ ok: true, masters });
+      try {
+        const masters = await getDirectMastersForSelection();
+        return NextResponse.json({ ok: true, masters });
+      } catch (selectionErr) {
+        console.error('[direct/masters] Error getting masters for selection:', selectionErr);
+        // Повертаємо порожній масив замість помилки, щоб не ламати UI
+        return NextResponse.json({ ok: true, masters: [] });
+      }
     }
 
     const masters = await getAllDirectMasters();
     return NextResponse.json({ ok: true, masters });
   } catch (err) {
     console.error('[direct/masters] GET error:', err);
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 }
-    );
+    // Повертаємо порожній масив замість помилки, щоб не ламати UI
+    return NextResponse.json({ ok: true, masters: [] });
   }
 }
 
