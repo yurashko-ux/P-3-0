@@ -823,35 +823,25 @@ export async function POST(req: NextRequest) {
             console.log(`[altegio/webhook] ⚠️ No custom_fields found in client data`);
           }
 
+          // Якщо немає Instagram, створюємо клієнта з тимчасовим username
+          let normalizedInstagram: string | null = null;
+          let isMissingInstagram = false;
+
           if (!instagram) {
-            console.log(`[altegio/webhook] ⏭️ Skipping client ${clientId} - no Instagram username in custom_fields`, {
-              customFields: client.custom_fields,
-              customFieldsType: typeof client.custom_fields,
-              customFieldsIsArray: Array.isArray(client.custom_fields),
-              customFieldsKeys: client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)
-                ? Object.keys(client.custom_fields)
-                : [],
-            });
-            return NextResponse.json({
-              ok: true,
-              received: true,
-              skipped: 'no_instagram',
-            });
+            console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
+            isMissingInstagram = true;
+            normalizedInstagram = `missing_instagram_${clientId}`;
+          } else {
+            console.log(`[altegio/webhook] ✅ Extracted Instagram for client ${clientId}: ${instagram}`);
+            normalizedInstagram = normalizeInstagram(instagram);
+            if (!normalizedInstagram) {
+              console.log(`[altegio/webhook] ⚠️ Invalid Instagram username for client ${clientId}: ${instagram}, creating with temporary username`);
+              isMissingInstagram = true;
+              normalizedInstagram = `missing_instagram_${clientId}`;
+            } else {
+              console.log(`[altegio/webhook] ✅ Normalized Instagram for client ${clientId}: ${normalizedInstagram}`);
+            }
           }
-
-          console.log(`[altegio/webhook] ✅ Extracted Instagram for client ${clientId}: ${instagram}`);
-
-          const normalizedInstagram = normalizeInstagram(instagram);
-          if (!normalizedInstagram) {
-            console.log(`[altegio/webhook] ⏭️ Skipping client ${clientId} - invalid Instagram username: ${instagram}`);
-            return NextResponse.json({
-              ok: true,
-              received: true,
-              skipped: 'invalid_instagram',
-            });
-          }
-
-          console.log(`[altegio/webhook] ✅ Normalized Instagram for client ${clientId}: ${normalizedInstagram}`);
 
           // Отримуємо статус за замовчуванням
           const allStatuses = await getAllDirectStatuses();
@@ -929,6 +919,66 @@ export async function POST(req: NextRequest) {
             };
             await saveDirectClient(newClient);
             console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: client, statusId: ${defaultStatus.id})`);
+
+            // Якщо створено клієнта без Instagram, відправляємо повідомлення
+            if (isMissingInstagram) {
+              try {
+                const { sendMessage } = await import('@/lib/telegram/api');
+                const { getAdminChatIds } = await import('@/lib/direct-reminders/telegram');
+                const { listRegisteredChats } = await import('@/lib/photo-reports/master-registry');
+                const { TELEGRAM_ENV } = await import('@/lib/telegram/env');
+
+                // Отримуємо chat ID для mykolay007
+                const registeredChats = await listRegisteredChats();
+                const mykolayChat = registeredChats.find(
+                  chat => {
+                    const username = chat.username?.toLowerCase().replace('@', '') || '';
+                    return username === 'mykolay007';
+                  }
+                );
+                const mykolayChatId = mykolayChat?.chatId;
+
+                // Отримуємо chat ID адміністраторів
+                const adminChatIds = await getAdminChatIds();
+
+                // Формуємо повідомлення
+                const clientName = (client.name || client.display_name || 'Невідомий клієнт').trim();
+                const clientPhone = client.phone || 'не вказано';
+                const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
+                  `Клієнт: <b>${clientName}</b>\n` +
+                  `Телефон: ${clientPhone}\n` +
+                  `Altegio ID: ${clientId}\n\n` +
+                  `Будь ласка, додайте Instagram username для цього клієнта в Altegio.`;
+
+                // Отримуємо токен бота
+                const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+
+                // Відправляємо повідомлення mykolay007
+                if (mykolayChatId) {
+                  try {
+                    await sendMessage(mykolayChatId, message, {}, botToken);
+                    console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                  } catch (err) {
+                    console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
+                  }
+                } else {
+                  console.warn(`[altegio/webhook] ⚠️ mykolay007 chat ID not found`);
+                }
+
+                // Відправляємо повідомлення адміністраторам
+                for (const adminChatId of adminChatIds) {
+                  try {
+                    await sendMessage(adminChatId, message, {}, botToken);
+                    console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                  } catch (err) {
+                    console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                  }
+                }
+              } catch (notificationErr) {
+                console.error(`[altegio/webhook] ❌ Failed to send missing Instagram notifications:`, notificationErr);
+                // Не блокуємо обробку вебхука, якщо не вдалося відправити повідомлення
+              }
+            }
           }
 
           return NextResponse.json({
@@ -937,6 +987,7 @@ export async function POST(req: NextRequest) {
             processed: true,
             clientId,
             instagram: normalizedInstagram,
+            missingInstagram: isMissingInstagram,
           });
         } catch (err) {
           console.error(`[altegio/webhook] ❌ Failed to process client event ${clientId}:`, err);

@@ -531,56 +531,70 @@ export function DirectClientTable({
                         </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
-                        <button
-                          onClick={() => setStateHistoryClient(client)}
-                          className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center w-full gap-1"
-                          title="Натисніть, щоб переглянути повну історію змін стану"
-                        >
-                          {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
-                          {(() => {
-                            const states = client.last5States || [];
-                            // Якщо немає історії, показуємо поточний стан
-                            if (states.length === 0) {
-                              return (
-                                <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
-                                  <StateIcon state={client.state || 'lead'} size={32} />
-                                </div>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => setStateHistoryClient(client)}
+                            className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center gap-1"
+                            title="Натисніть, щоб переглянути повну історію змін стану"
+                          >
+                            {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
+                            {(() => {
+                              const states = client.last5States || [];
+                              // Якщо немає історії, показуємо поточний стан
+                              if (states.length === 0) {
+                                return (
+                                  <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
+                                    <StateIcon state={client.state || 'lead'} size={32} />
+                                  </div>
+                                );
+                              }
+                              
+                              // Показуємо останні 5 станів (або менше)
+                              // Актуальний стан справа (останній в масиві)
+                              // Сортуємо від старіших до новіших для відображення (актуальний справа)
+                              const sortedStates = [...states].sort((a, b) => 
+                                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                               );
-                            }
-                            
-                            // Показуємо останні 5 станів (або менше)
-                            // Актуальний стан справа (останній в масиві)
-                            // Сортуємо від старіших до новіших для відображення (актуальний справа)
-                            const sortedStates = [...states].sort((a, b) => 
-                              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                            );
-                            
-                            return (
-                              <>
-                                {sortedStates.slice(-5).map((stateLog, idx) => {
-                                  const stateDate = new Date(stateLog.createdAt);
-                                  const formattedDate = stateDate.toLocaleDateString('uk-UA', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  });
-                                  
-                                  return (
-                                    <div
-                                      key={stateLog.id || `state-${idx}`}
-                                      className="tooltip tooltip-top"
-                                      data-tip={formattedDate}
-                                    >
-                                      <StateIcon state={stateLog.state || 'lead'} size={28} />
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            );
-                          })()}
-                        </button>
+                              
+                              return (
+                                <>
+                                  {sortedStates.slice(-5).map((stateLog, idx) => {
+                                    const stateDate = new Date(stateLog.createdAt);
+                                    const formattedDate = stateDate.toLocaleDateString('uk-UA', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    });
+                                    
+                                    return (
+                                      <div
+                                        key={stateLog.id || `state-${idx}`}
+                                        className="tooltip tooltip-top"
+                                        data-tip={formattedDate}
+                                      >
+                                        <StateIcon state={stateLog.state || 'lead'} size={28} />
+                                      </div>
+                                    );
+                                  })}
+                                </>
+                              );
+                            })()}
+                          </button>
+                          {/* Червоний квадрат для клієнтів без Instagram */}
+                          {client.instagramUsername?.startsWith('missing_instagram_') && (
+                            <div 
+                              className="tooltip tooltip-top" 
+                              data-tip="Відсутній Instagram username. Будь ласка, додайте його в Altegio."
+                            >
+                              <div 
+                                className="w-4 h-4 bg-red-500 rounded-sm border border-red-700"
+                                style={{ minWidth: '16px', minHeight: '16px' }}
+                              />
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
                         <select
