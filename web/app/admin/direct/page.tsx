@@ -629,6 +629,104 @@ export default function DirectPage() {
             🔍 Діагностика
           </button>
           <button
+            className="btn btn-sm btn-secondary"
+            onClick={async () => {
+              const input = prompt('Введіть Instagram username клієнта (без @):');
+              if (!input || !input.trim()) {
+                return;
+              }
+              
+              setIsLoading(true);
+              try {
+                const instagramUsername = input.trim().replace('@', '');
+                const res = await fetch(`/api/admin/direct/search-webhooks?instagram=${encodeURIComponent(instagramUsername)}`);
+                const data = await res.json();
+                
+                if (data.ok) {
+                  const client = data.client;
+                  const webhooks = data.webhooks || [];
+                  const records = data.records || [];
+                  const stats = data.stats || {};
+                  
+                  let message = `🔍 Пошук вебхуків для: @${instagramUsername}\n\n`;
+                  message += `Клієнт:\n`;
+                  message += `  ID: ${client.id}\n`;
+                  message += `  Ім'я: ${client.fullName || 'не вказано'}\n`;
+                  message += `  Телефон: ${client.phone || 'не вказано'}\n`;
+                  message += `  Altegio ID: ${client.altegioClientId || 'немає'}\n`;
+                  message += `  Стан: ${client.state || 'не встановлено'}\n\n`;
+                  
+                  message += `Статистика:\n`;
+                  message += `  Всього вебхуків: ${stats.totalWebhooks || 0}\n`;
+                  message += `  Вебхуки по клієнтах: ${stats.clientWebhooks || 0}\n`;
+                  message += `  Вебхуки по записах: ${stats.recordWebhooks || 0}\n`;
+                  message += `  Записи в records log: ${stats.totalRecords || 0}\n\n`;
+                  
+                  if (webhooks.length > 0) {
+                    message += `Вебхуки (останні 20):\n`;
+                    webhooks.slice(0, 20).forEach((w: any, idx: number) => {
+                      const date = w.receivedAt ? new Date(w.receivedAt).toLocaleString('uk-UA') : 'немає дати';
+                      message += `\n${idx + 1}. ${date} - ${w.type} (${w.status})\n`;
+                      if (w.type === 'record') {
+                        message += `   Visit ID: ${w.visitId || 'немає'}\n`;
+                        message += `   Дата візиту: ${w.datetime || 'немає'}\n`;
+                        message += `   Майстер: ${w.staffName || 'немає'}\n`;
+                        if (w.services && w.services.length > 0) {
+                          message += `   Послуги:\n`;
+                          w.services.forEach((s: any) => {
+                            message += `     - ${s.title} (${s.cost || 0} ₴)\n`;
+                          });
+                        }
+                        message += `   Прийшов: ${w.attendance === 1 ? '✅' : '❌'}\n`;
+                      } else if (w.type === 'client') {
+                        message += `   Клієнт: ${w.clientName || 'немає'}\n`;
+                        message += `   Custom fields: ${w.hasCustomFields ? '✅' : '❌'}\n`;
+                      }
+                    });
+                    if (webhooks.length > 20) {
+                      message += `\n... і ще ${webhooks.length - 20} вебхуків\n`;
+                    }
+                  } else {
+                    message += `❌ Вебхуків не знайдено\n`;
+                  }
+                  
+                  if (records.length > 0) {
+                    message += `\n\nЗаписи з records log (останні 10):\n`;
+                    records.slice(0, 10).forEach((r: any, idx: number) => {
+                      const date = r.receivedAt ? new Date(r.receivedAt).toLocaleString('uk-UA') : 'немає дати';
+                      message += `\n${idx + 1}. ${date} - ${r.status || 'немає статусу'}\n`;
+                      message += `   Visit ID: ${r.visitId || 'немає'}\n`;
+                      message += `   Дата візиту: ${r.datetime || 'немає'}\n`;
+                      if (r.services && r.services.length > 0) {
+                        message += `   Послуги:\n`;
+                        r.services.forEach((s: any) => {
+                          message += `     - ${s.title} (${s.cost || 0} ₴)\n`;
+                        });
+                      }
+                    });
+                    if (records.length > 10) {
+                      message += `\n... і ще ${records.length - 10} записів\n`;
+                    }
+                  }
+                  
+                  message += `\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Пошук вебхуків по Instagram username"
+          >
+            📋 Пошук вебхуків
+          </button>
+          <button
             className="btn btn-sm btn-ghost"
             onClick={async () => {
               try {
