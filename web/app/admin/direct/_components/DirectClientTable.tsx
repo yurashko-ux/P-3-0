@@ -530,14 +530,51 @@ export function DirectClientTable({
                           {getFullName(client)}
                         </div>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[120px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
                         <button
                           onClick={() => setStateHistoryClient(client)}
-                          className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center w-full"
-                          title="Натисніть, щоб переглянути історію змін стану"
+                          className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center w-full gap-1"
+                          title="Натисніть, щоб переглянути повну історію змін стану"
                         >
-                          {/* Показуємо тільки поточний стан - історія завантажується при відкритті модального вікна */}
-                          <StateIcon state={client.state || 'lead'} size={36} />
+                          {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
+                          {(() => {
+                            const states = client.last5States || [];
+                            // Якщо немає історії, показуємо поточний стан
+                            if (states.length === 0) {
+                              return (
+                                <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
+                                  <StateIcon state={client.state || 'lead'} size={32} />
+                                </div>
+                              );
+                            }
+                            
+                            // Показуємо останні 5 станів (або менше)
+                            // Актуальний стан справа (останній в масиві)
+                            return (
+                              <>
+                                {states.slice(-5).map((stateLog, idx) => {
+                                  const stateDate = new Date(stateLog.createdAt);
+                                  const formattedDate = stateDate.toLocaleDateString('uk-UA', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                  
+                                  return (
+                                    <div
+                                      key={stateLog.id || idx}
+                                      className="tooltip tooltip-top"
+                                      data-tip={formattedDate}
+                                    >
+                                      <StateIcon state={stateLog.state || 'lead'} size={28} />
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            );
+                          })()}
                         </button>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">

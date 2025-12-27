@@ -536,7 +536,7 @@ export async function POST(req: NextRequest) {
                 client.custom_fields.instagramUsername ||
                 client.custom_fields.instagram ||
                 client.custom_fields['instagram'] ||
-                null;
+            null;
             }
           }
 

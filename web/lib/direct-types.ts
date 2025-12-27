@@ -1,6 +1,8 @@
 // web/lib/direct-types.ts
 // TypeScript типи для розділу Direct Manager
 
+import type { DirectClientStateLog } from './direct-state-log';
+
 export type DirectClient = {
   id: string; // UUID або timestamp-based ID
   instagramUsername: string; // Нікнейм в Instagram
@@ -23,6 +25,7 @@ export type DirectClient = {
   lastMessageAt?: string; // ISO date - останнє повідомлення
   createdAt: string; // ISO date - коли створено запис
   updatedAt: string; // ISO date - останнє оновлення
+  last5States?: DirectClientStateLog[]; // Останні 5 станів для відображення в таблиці
 };
 
 export type DirectStatus = {

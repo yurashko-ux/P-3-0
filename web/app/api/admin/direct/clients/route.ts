@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
+import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -167,9 +168,27 @@ export async function GET(req: NextRequest) {
     });
 
     console.log(`[direct/clients] GET: Returning ${clients.length} clients after filtering and sorting`);
+    
+    // Отримуємо останні 5 станів для всіх клієнтів одним оптимізованим запитом
+    const clientIds = clients.map(c => c.id);
+    let statesMap = new Map<string, any[]>();
+    try {
+      statesMap = await getLast5StatesForClients(clientIds);
+      console.log(`[direct/clients] GET: Loaded state history for ${statesMap.size} clients`);
+    } catch (statesErr) {
+      console.warn('[direct/clients] GET: Failed to load state history (non-critical):', statesErr);
+      // Продовжуємо без історії станів
+    }
+    
+    // Додаємо останні 5 станів до кожного клієнта
+    const clientsWithStates = clients.map(client => ({
+      ...client,
+      last5States: statesMap.get(client.id) || [],
+    }));
+    
     const response = { 
       ok: true, 
-      clients, 
+      clients: clientsWithStates, 
       debug: { 
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

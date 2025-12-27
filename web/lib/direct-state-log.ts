@@ -228,6 +228,94 @@ export async function getStateHistory(clientId: string): Promise<DirectClientSta
 }
 
 /**
+ * Отримує останні 5 станів для всіх клієнтів одним оптимізованим запитом
+ * Використовує window function для ефективного отримання топ-5 записів для кожного клієнта
+ */
+export async function getLast5StatesForClients(clientIds: string[]): Promise<Map<string, DirectClientStateLog[]>> {
+  const result = new Map<string, DirectClientStateLog[]>();
+  
+  if (clientIds.length === 0) {
+    return result;
+  }
+
+  try {
+    // Перевіряємо, чи існує таблиця
+    try {
+      await prisma.$queryRaw`SELECT 1 FROM "direct_client_state_logs" LIMIT 1`;
+    } catch (tableErr) {
+      // Якщо таблиці немає - повертаємо порожній результат
+      console.warn('[direct-state-log] Table does not exist, returning empty map');
+      return result;
+    }
+
+    // Використовуємо window function для отримання останніх 5 станів для кожного клієнта
+    // Це набагато ефективніше, ніж робити окремий запит для кожного клієнта
+    const query = `
+      WITH ranked_logs AS (
+        SELECT 
+          "id",
+          "clientId",
+          "state",
+          "previousState",
+          "reason",
+          "metadata",
+          "createdAt",
+          ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "createdAt" DESC) as rn
+        FROM "direct_client_state_logs"
+        WHERE "clientId" = ANY($1::text[])
+      )
+      SELECT 
+        "id",
+        "clientId",
+        "state",
+        "previousState",
+        "reason",
+        "metadata",
+        "createdAt"
+      FROM ranked_logs
+      WHERE rn <= 5
+      ORDER BY "clientId", "createdAt" DESC
+    `;
+
+    const logs = await prisma.$queryRawUnsafe<Array<{
+      id: string;
+      clientId: string;
+      state: string | null;
+      previousState: string | null;
+      reason: string | null;
+      metadata: string | null;
+      createdAt: Date;
+    }>>(query, clientIds);
+
+    // Групуємо по clientId
+    for (const log of logs) {
+      if (!result.has(log.clientId)) {
+        result.set(log.clientId, []);
+      }
+      result.get(log.clientId)!.push({
+        id: log.id,
+        clientId: log.clientId,
+        state: log.state,
+        previousState: log.previousState,
+        reason: log.reason || undefined,
+        metadata: log.metadata || undefined,
+        createdAt: log.createdAt.toISOString(),
+      });
+    }
+
+    // Сортуємо кожен масив за датою (від новіших до старіших)
+    for (const [clientId, logs] of result.entries()) {
+      logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    return result;
+  } catch (err) {
+    console.error(`[direct-state-log] ❌ Failed to get last 5 states for clients:`, err);
+    return result; // Повертаємо порожній результат при помилці
+  }
+}
+
+/**
  * Отримує поточний стан та історію для клієнта
  */
 export async function getClientStateInfo(clientId: string): Promise<{
