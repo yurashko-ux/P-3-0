@@ -86,6 +86,19 @@ function directStatusToPrisma(status: DirectStatus) {
  */
 export async function getAllDirectClients(): Promise<DirectClient[]> {
   try {
+    // Перевіряємо підключення до бази даних
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch (connectionErr: any) {
+      // Якщо помилка підключення - повертаємо порожній масив
+      if (connectionErr?.message?.includes("Can't reach database server") || 
+          connectionErr?.name === 'PrismaClientInitializationError') {
+        console.error('[direct-store] Database connection error:', connectionErr.message);
+        return [];
+      }
+      throw connectionErr;
+    }
+    
     // Спочатку перевіряємо, чи існує колонка masterManuallySet
     try {
       await prisma.$queryRaw`SELECT "masterManuallySet" FROM "direct_clients" LIMIT 1`;

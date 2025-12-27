@@ -14,12 +14,16 @@ function createPrismaClient(): PrismaClient {
     // Для Vercel/Prisma Postgres використовуємо connection pooling
     const client = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+      // Додаємо налаштування для serverless
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL,
+        },
+      },
     });
     
-    // Додаємо обробку помилок підключення
-    client.$connect().catch((err) => {
-      console.error('[prisma] Failed to connect to database:', err);
-    });
+    // НЕ викликаємо $connect() при створенні - Prisma підключається автоматично при першому запиті
+    // Це важливо для serverless функцій, щоб уникнути проблем з cold start
     
     return client;
   } catch (err) {
@@ -34,5 +38,20 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
+}
+
+// Додаємо обробку помилок підключення при першому використанні
+let connectionChecked = false;
+export async function ensureConnection() {
+  if (connectionChecked) return;
+  
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    connectionChecked = true;
+  } catch (err) {
+    console.error('[prisma] Connection check failed:', err);
+    connectionChecked = false;
+    throw err;
+  }
 }
 
