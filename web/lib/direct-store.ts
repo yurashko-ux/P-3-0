@@ -90,10 +90,22 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     try {
       await prisma.$queryRaw`SELECT 1`;
     } catch (connectionErr: any) {
+      const connectionErrorCode = connectionErr?.code || (connectionErr as any)?.code;
+      const connectionErrorMessage = connectionErr?.message || String(connectionErr);
+      
+      // Якщо помилка досягнення ліміту плану Prisma (P6003) - повертаємо порожній масив
+      if (connectionErrorCode === 'P6003' || 
+          connectionErrorCode === 'P5000' ||
+          connectionErrorMessage?.includes('planLimitReached') ||
+          connectionErrorMessage?.includes('hold on your account')) {
+        console.error('[direct-store] ⚠️ Prisma plan limit reached:', connectionErrorMessage);
+        return [];
+      }
+      
       // Якщо помилка підключення - повертаємо порожній масив
-      if (connectionErr?.message?.includes("Can't reach database server") || 
+      if (connectionErrorMessage?.includes("Can't reach database server") || 
           connectionErr?.name === 'PrismaClientInitializationError') {
-        console.error('[direct-store] Database connection error:', connectionErr.message);
+        console.error('[direct-store] Database connection error:', connectionErrorMessage);
         return [];
       }
       throw connectionErr;
@@ -130,20 +142,33 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     const convertedClients = clients.map(prismaClientToDirectClient);
     console.log(`[direct-store] Converted ${convertedClients.length} clients`);
     return convertedClients;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[direct-store] Failed to get all clients:', err);
     // Додаємо детальну інформацію про помилку
-    if (err instanceof Error) {
+    const errorCode = err?.code || (err as any)?.code;
+    const errorMessage = err?.message || (err instanceof Error ? err.message : String(err));
+    
+    if (err instanceof Error || err) {
       console.error('[direct-store] Error details:', {
-        message: err.message,
-        stack: err.stack,
-        name: err.name,
+        message: errorMessage,
+        stack: err?.stack,
+        name: err?.name,
+        code: errorCode,
       });
       
+      // Якщо це помилка досягнення ліміту плану Prisma (P6003) - повертаємо порожній масив
+      if (errorCode === 'P6003' || 
+          errorCode === 'P5000' ||
+          errorMessage?.includes('planLimitReached') ||
+          errorMessage?.includes('hold on your account')) {
+        console.error('[direct-store] ⚠️ Prisma plan limit reached - returning empty array');
+        return [];
+      }
+      
       // Якщо це помилка підключення до бази даних - повертаємо порожній масив
-      if (err.message.includes('Can\'t reach database server') || 
-          err.message.includes('database server') ||
-          err.name === 'PrismaClientInitializationError') {
+      if (errorMessage?.includes('Can\'t reach database server') || 
+          errorMessage?.includes('database server') ||
+          err?.name === 'PrismaClientInitializationError') {
         console.error('[direct-store] ⚠️ Database connection error - returning empty array');
         return [];
       }
