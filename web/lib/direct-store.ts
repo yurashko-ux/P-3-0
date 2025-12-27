@@ -14,7 +14,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     firstName: dbClient.firstName || undefined,
     lastName: dbClient.lastName || undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-    state: (dbClient.state as 'lead' | 'client' | 'consultation') || undefined,
+    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'no-instagram') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
     masterId: dbClient.masterId || undefined,
@@ -330,8 +330,10 @@ export async function updateInstagramForAltegioClient(
         );
       }
       
+      const result = prismaClientToDirectClient(updated);
       console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
-      return prismaClientToDirectClient(updated);
+      console.log(`[direct-store] 📊 State after update: ${result.state} (was: ${previousState})`);
+      return result;
     } else {
       // Просто оновлюємо Instagram username
       const updated = await prisma.directClient.update({
@@ -354,8 +356,10 @@ export async function updateInstagramForAltegioClient(
         );
       }
       
+      const result = prismaClientToDirectClient(updated);
       console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
-      return prismaClientToDirectClient(updated);
+      console.log(`[direct-store] 📊 State after update: ${result.state} (was: ${previousState})`);
+      return result;
     }
   } catch (err) {
     console.error(`[direct-store] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
