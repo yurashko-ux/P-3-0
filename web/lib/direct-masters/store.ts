@@ -42,6 +42,15 @@ export async function getAllDirectMasters(): Promise<DirectMaster[]> {
     return dbMasters.map(prismaMasterToDirectMaster);
   } catch (err) {
     console.error('[direct-masters] Error getting all masters:', err);
+    // Якщо це помилка підключення до бази даних - повертаємо порожній масив
+    if (err instanceof Error && (
+      err.message.includes('Can\'t reach database server') || 
+      err.message.includes('database server') ||
+      err.name === 'PrismaClientInitializationError'
+    )) {
+      console.error('[direct-masters] ⚠️ Database connection error - returning empty array');
+      return [];
+    }
     throw err;
   }
 }

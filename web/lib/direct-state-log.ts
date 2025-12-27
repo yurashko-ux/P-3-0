@@ -29,8 +29,69 @@ export async function logStateChange(
       return;
     }
 
+    // Перевіряємо, чи існує таблиця, якщо ні - створюємо її
+    try {
+      await prisma.$queryRaw`SELECT 1 FROM "direct_client_state_logs" LIMIT 1`;
+    } catch (tableErr) {
+      if (tableErr instanceof Error && (
+        tableErr.message.includes('does not exist') ||
+        tableErr.message.includes('relation') ||
+        tableErr.message.includes('table')
+      )) {
+        console.log('[direct-state-log] Table direct_client_state_logs missing, creating it...');
+        try {
+          await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "direct_client_state_logs" (
+              "id" TEXT NOT NULL,
+              "clientId" TEXT NOT NULL,
+              "state" TEXT,
+              "previousState" TEXT,
+              "reason" TEXT,
+              "metadata" TEXT,
+              "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              CONSTRAINT "direct_client_state_logs_pkey" PRIMARY KEY ("id")
+            )
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_client_state_logs_clientId_idx" ON "direct_client_state_logs"("clientId")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_client_state_logs_state_idx" ON "direct_client_state_logs"("state")
+          `);
+          
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_client_state_logs_createdAt_idx" ON "direct_client_state_logs"("createdAt")
+          `);
+          
+          // Створюємо foreign key, якщо таблиця direct_clients існує
+          try {
+            await prisma.$executeRawUnsafe(`
+              DO $$ BEGIN
+                ALTER TABLE "direct_client_state_logs" ADD CONSTRAINT "direct_client_state_logs_clientId_fkey" 
+                FOREIGN KEY ("clientId") REFERENCES "direct_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+              EXCEPTION
+                WHEN duplicate_object THEN null;
+              END $$;
+            `);
+          } catch (fkErr) {
+            console.warn('[direct-state-log] Failed to create foreign key (non-critical):', fkErr);
+          }
+          
+          console.log('[direct-state-log] ✅ Table direct_client_state_logs created successfully');
+        } catch (createErr) {
+          console.error('[direct-state-log] Failed to create table:', createErr);
+          return; // Виходимо, якщо не вдалося створити таблицю
+        }
+      } else {
+        throw tableErr; // Якщо це інша помилка, викидаємо її далі
+      }
+    }
+
     await prisma.directClientStateLog.create({
       data: {
+        id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         clientId,
         state: newState || null,
         previousState: previousState || null,

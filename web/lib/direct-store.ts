@@ -126,6 +126,14 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         stack: err.stack,
         name: err.name,
       });
+      
+      // Якщо це помилка підключення до бази даних - повертаємо порожній масив
+      if (err.message.includes('Can\'t reach database server') || 
+          err.message.includes('database server') ||
+          err.name === 'PrismaClientInitializationError') {
+        console.error('[direct-store] ⚠️ Database connection error - returning empty array');
+        return [];
+      }
     }
     // Якщо помилка через відсутнє поле - спробуємо завантажити через SQL без цього поля
     if (err instanceof Error && (
