@@ -225,7 +225,15 @@ export async function POST(req: NextRequest) {
     // Відправляємо повідомлення для кожного клієнта
     for (const client of clientsWithoutInstagram) {
       try {
-        const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ') || 'Невідомий клієнт';
+        const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim();
+        
+        // Додаткова перевірка: якщо ім'я відсутнє або невідоме - пропускаємо
+        if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
+          console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} - no name provided (additional check)`);
+          results.skipped = (results.skipped || 0) + 1;
+          continue;
+        }
+        
         const clientPhone = 'не вказано'; // У клієнта немає phone в базі
         const altegioClientId = client.altegioClientId;
         
