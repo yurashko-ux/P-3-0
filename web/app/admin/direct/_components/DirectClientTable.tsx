@@ -8,6 +8,82 @@ import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 
+// Компонент для відображення піктограми стану
+function StateIcon({ state, size = 20 }: { state: string | null; size?: number }) {
+  const iconStyle = { width: `${size}px`, height: `${size}px` };
+  
+  if (state === 'client') {
+    return (
+      <img 
+        src="/assets/image-client.png" 
+        alt="Клієнт" 
+        className="object-contain"
+        style={iconStyle}
+      />
+    );
+  } else if (state === 'consultation') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <path d="M7 14 C7 10.686 9.686 8 13 8 C16.314 8 19 10.686 19 14 C19 17.314 16.314 20 13 20 L7 20 C4.791 20 3 18.209 3 16 C3 13.791 4.791 12 7 12" stroke="#10b981" strokeWidth="2" fill="none" strokeLinecap="round"/>
+        <circle cx="10" cy="14" r="1" fill="#10b981"/>
+        <circle cx="13" cy="14" r="1" fill="#10b981"/>
+        <circle cx="16" cy="14" r="1" fill="#10b981"/>
+        <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
+      </svg>
+    );
+  } else if (state === 'hair-extension') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <circle cx="14" cy="10" r="6" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5"/>
+        <path d="M8 10 Q8 4 14 4 Q20 4 20 10" stroke="#8b5cf6" strokeWidth="3" fill="none" strokeLinecap="round"/>
+        <path d="M9 10 Q9 5 14 5 Q19 5 19 10" stroke="#8b5cf6" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+        <path d="M10 10 Q10 6 14 6 Q18 6 18 10" stroke="#8b5cf6" strokeWidth="2" fill="none" strokeLinecap="round"/>
+        <circle cx="12" cy="9" r="0.8" fill="#1f2937"/>
+        <circle cx="16" cy="9" r="0.8" fill="#1f2937"/>
+        <path d="M12 11 Q14 12 16 11" stroke="#1f2937" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+      </svg>
+    );
+  } else if (state === 'other-services') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <path d="M10 6 L10 22 M18 6 L18 22" stroke="#ec4899" strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="10" cy="6" r="2" fill="#ec4899"/>
+        <circle cx="18" cy="6" r="2" fill="#ec4899"/>
+        <path d="M10 8 Q14 10 18 8" stroke="#ec4899" strokeWidth="2" fill="none" strokeLinecap="round"/>
+        <path d="M10 12 Q14 14 18 12" stroke="#ec4899" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+        <rect x="6" y="16" width="16" height="8" rx="1" stroke="#ec4899" strokeWidth="1.5" fill="none"/>
+        <circle cx="14" cy="20" r="2" stroke="#ec4899" strokeWidth="1" fill="none"/>
+      </svg>
+    );
+  } else if (state === 'all-good') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <circle cx="14" cy="14" r="12" fill="#10b981" stroke="#059669" strokeWidth="1.5"/>
+        <path d="M8 14 L12 18 L20 10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  } else if (state === 'too-expensive') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <circle cx="14" cy="14" r="12" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5"/>
+        <path d="M14 8 L14 20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M10 12 L18 12" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M10 16 L18 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
+      </svg>
+    );
+  } else {
+    return (
+      <img 
+        src="/assets/image-lead.png" 
+        alt="Лід" 
+        className="object-contain"
+        style={iconStyle}
+      />
+    );
+  }
+}
+
 type DirectClientTableProps = {
   clients: DirectClient[];
   statuses: DirectStatus[];
@@ -39,6 +115,7 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
+  const [statesHistory, setStatesHistory] = useState<Record<string, { currentState: string | null; history: Array<{ state: string | null; createdAt: string }> }>>({});
 
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
@@ -68,6 +145,72 @@ export function DirectClientTable({
         setMasters([]);
       });
   }, []);
+
+  // Завантажуємо історію станів для всіх клієнтів
+  useEffect(() => {
+    if (clients.length === 0) return;
+    
+    setLoadingStatesHistory(true);
+    const loadStatesHistory = async () => {
+      const historyMap: Record<string, { currentState: string | null; history: Array<{ state: string | null; createdAt: string }> }> = {};
+      
+      // Завантажуємо історію для кожного клієнта
+      const promises = clients.map(async (client) => {
+        try {
+          const res = await fetch(`/api/admin/direct/state-history?clientId=${client.id}`);
+          const data = await res.json();
+          
+          if (data.ok && data.data) {
+            const history = data.data.history || [];
+            const currentState = data.data.currentState;
+            
+            // Сортуємо від старіших до новіших
+            const sortedHistory = [...history].sort((a, b) => 
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+            
+            // Формуємо масив станів для відображення
+            const statesForDisplay: Array<{ state: string | null; createdAt: string }> = [];
+            
+            // Додаємо стани з історії
+            for (const log of sortedHistory) {
+              // Пропускаємо дублікати (якщо останній стан такий самий)
+              if (statesForDisplay.length === 0 || statesForDisplay[statesForDisplay.length - 1].state !== log.state) {
+                statesForDisplay.push({
+                  state: log.state,
+                  createdAt: log.createdAt,
+                });
+              }
+            }
+            
+            // Додаємо поточний стан, якщо він не збігається з останнім
+            if (currentState && (statesForDisplay.length === 0 || statesForDisplay[statesForDisplay.length - 1].state !== currentState)) {
+              statesForDisplay.push({
+                state: currentState,
+                createdAt: data.data.currentStateDate || client.updatedAt || new Date().toISOString(),
+              });
+            }
+            
+            // Беремо останні 5 станів (актуальний справа)
+            const last5States = statesForDisplay.slice(-5);
+            
+            historyMap[client.id] = {
+              currentState,
+              history: last5States,
+            };
+          }
+        } catch (err) {
+          console.warn(`[DirectClientTable] Failed to load state history for client ${client.id}:`, err);
+        }
+      });
+      
+      await Promise.all(promises);
+      setStatesHistory(historyMap);
+      setLoadingStatesHistory(false);
+    };
+    
+    loadStatesHistory();
+  }, [clients]);
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";
@@ -453,93 +596,34 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
                         <button
                           onClick={() => setStateHistoryClient(client)}
-                          className="hover:opacity-70 transition-opacity cursor-pointer"
+                          className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center"
                           title="Натисніть, щоб переглянути історію змін стану"
                         >
-                          {client.state === 'client' ? (
-                            <div className="flex items-center justify-center" title="Клієнт">
-                              {/* Дівчина з сумочкою зі знаком долара */}
-                              <img 
-                                src="/assets/image-client.png" 
-                                alt="Клієнт" 
-                                className="w-7 h-7 object-contain"
-                              />
-                            </div>
-                          ) : client.state === 'consultation' ? (
-                            <div className="flex items-center justify-center" title="Консультація">
-                              {/* Піктограма консультації - чат/розмова */}
-                              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                {/* Хмара з діалогом */}
-                                <path d="M7 14 C7 10.686 9.686 8 13 8 C16.314 8 19 10.686 19 14 C19 17.314 16.314 20 13 20 L7 20 C4.791 20 3 18.209 3 16 C3 13.791 4.791 12 7 12" stroke="#10b981" strokeWidth="2" fill="none" strokeLinecap="round"/>
-                                <circle cx="10" cy="14" r="1" fill="#10b981"/>
-                                <circle cx="13" cy="14" r="1" fill="#10b981"/>
-                                <circle cx="16" cy="14" r="1" fill="#10b981"/>
-                                {/* Хвостик */}
-                                <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
-                              </svg>
-                            </div>
-                          ) : client.state === 'hair-extension' ? (
-                            <div className="flex items-center justify-center" title="Нарощування волосся">
-                              {/* Піктограма нарощування волосся - волосся/стрижка */}
-                              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                {/* Голова */}
-                                <circle cx="14" cy="10" r="6" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5"/>
-                                {/* Волосся - довге */}
-                                <path d="M8 10 Q8 4 14 4 Q20 4 20 10" stroke="#8b5cf6" strokeWidth="3" fill="none" strokeLinecap="round"/>
-                                <path d="M9 10 Q9 5 14 5 Q19 5 19 10" stroke="#8b5cf6" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-                                <path d="M10 10 Q10 6 14 6 Q18 6 18 10" stroke="#8b5cf6" strokeWidth="2" fill="none" strokeLinecap="round"/>
-                                {/* Очі */}
-                                <circle cx="12" cy="9" r="0.8" fill="#1f2937"/>
-                                <circle cx="16" cy="9" r="0.8" fill="#1f2937"/>
-                                {/* Рот */}
-                                <path d="M12 11 Q14 12 16 11" stroke="#1f2937" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
-                              </svg>
-                            </div>
-                          ) : client.state === 'other-services' ? (
-                            <div className="flex items-center justify-center" title="Інші послуги">
-                              {/* Піктограма інших послуг - ножиці/салон */}
-                              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                {/* Ножиці */}
-                                <path d="M10 6 L10 22 M18 6 L18 22" stroke="#ec4899" strokeWidth="2" strokeLinecap="round"/>
-                                <circle cx="10" cy="6" r="2" fill="#ec4899"/>
-                                <circle cx="18" cy="6" r="2" fill="#ec4899"/>
-                                {/* Лезо */}
-                                <path d="M10 8 Q14 10 18 8" stroke="#ec4899" strokeWidth="2" fill="none" strokeLinecap="round"/>
-                                <path d="M10 12 Q14 14 18 12" stroke="#ec4899" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-                                {/* Дзеркало/салон */}
-                                <rect x="6" y="16" width="16" height="8" rx="1" stroke="#ec4899" strokeWidth="1.5" fill="none"/>
-                                <circle cx="14" cy="20" r="2" stroke="#ec4899" strokeWidth="1" fill="none"/>
-                              </svg>
-                            </div>
-                          ) : client.state === 'all-good' ? (
-                            <div className="flex items-center justify-center" title="Все чудово">
-                              {/* Піктограма все чудово - галочка/смайлик */}
-                              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="14" cy="14" r="12" fill="#10b981" stroke="#059669" strokeWidth="1.5"/>
-                                <path d="M8 14 L12 18 L20 10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            </div>
-                          ) : client.state === 'too-expensive' ? (
-                            <div className="flex items-center justify-center" title="Все добре, але занадто дорого">
-                              {/* Піктограма занадто дорого - долар/гроші */}
-                              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="14" cy="14" r="12" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5"/>
-                                <path d="M14 8 L14 20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                                <path d="M10 12 L18 12" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                                <path d="M10 16 L18 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                                <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
-                              </svg>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center" title="Лід">
-                              {/* Лійка з трьома людьми */}
-                              <img 
-                                src="/assets/image-lead.png" 
-                                alt="Лід" 
-                                className="w-7 h-7 object-contain"
-                              />
-                            </div>
-                          )}
+                          {(() => {
+                            const clientHistory = statesHistory[client.id];
+                            if (loadingStatesHistory && !clientHistory) {
+                              // Показуємо поточний стан під час завантаження
+                              return <StateIcon state={client.state || 'lead'} size={20} />;
+                            }
+                            
+                            if (!clientHistory || clientHistory.history.length === 0) {
+                              // Якщо історія ще не завантажена або порожня, показуємо поточний стан
+                              return <StateIcon state={client.state || 'lead'} size={20} />;
+                            }
+                            
+                            // Беремо останні 5 станів (актуальний справа)
+                            const last5States = clientHistory.history.slice(-5);
+                            
+                            return (
+                              <div className="flex items-center gap-0.5">
+                                {last5States.map((log, idx) => (
+                                  <div key={idx} className="flex items-center" title={log.state || 'Не встановлено'}>
+                                    <StateIcon state={log.state} size={18} />
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </button>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
