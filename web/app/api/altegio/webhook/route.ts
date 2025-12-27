@@ -303,6 +303,16 @@ export async function POST(req: NextRequest) {
               console.log(`[altegio/webhook] ⏭️ Skipping client ${client.id} from record event - no custom_fields`);
             }
             
+            // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
+            const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+            if (instagram) {
+              const lowerInstagram = instagram.toLowerCase().trim();
+              if (invalidValues.includes(lowerInstagram)) {
+                console.log(`[altegio/webhook] ⚠️ Instagram value "${instagram}" is invalid (considered as missing)`);
+                instagram = null; // Вважаємо Instagram відсутнім
+              }
+            }
+            
             // Якщо знайшли Instagram в custom_fields - синхронізуємо клієнта
             if (instagram) {
               const normalizedInstagram = normalizeInstagram(instagram);
@@ -823,6 +833,16 @@ export async function POST(req: NextRequest) {
             console.log(`[altegio/webhook] ⚠️ No custom_fields found in client data`);
           }
 
+          // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
+          const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+          if (instagram) {
+            const lowerInstagram = instagram.toLowerCase().trim();
+            if (invalidValues.includes(lowerInstagram)) {
+              console.log(`[altegio/webhook] ⚠️ Instagram value "${instagram}" is invalid (considered as missing)`);
+              instagram = null; // Вважаємо Instagram відсутнім
+            }
+          }
+
           // Спочатку перевіряємо, чи є збережений зв'язок altegio_client_id -> instagram_username
           let normalizedInstagram: string | null = null;
           let isMissingInstagram = false;
@@ -954,7 +974,9 @@ export async function POST(req: NextRequest) {
             console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState}, statusId: ${defaultStatus.id})`);
 
             // Якщо створено клієнта без Instagram, відправляємо повідомлення
-            if (isMissingInstagram) {
+            // АЛЕ: якщо Instagram = "no", не відправляємо повідомлення (бо "no" означає, що у клієнтки немає Instagram)
+            const shouldSendNotification = isMissingInstagram && instagram?.toLowerCase().trim() !== 'no';
+            if (shouldSendNotification) {
               try {
                 const { sendMessage } = await import('@/lib/telegram/api');
                 const { getAdminChatIds, getMykolayChatId } = await import('@/lib/direct-reminders/telegram');
@@ -1017,6 +1039,8 @@ export async function POST(req: NextRequest) {
                 console.error(`[altegio/webhook] ❌ Failed to send missing Instagram notifications:`, notificationErr);
                 // Не блокуємо обробку вебхука, якщо не вдалося відправити повідомлення
               }
+            } else if (isMissingInstagram && instagram?.toLowerCase().trim() === 'no') {
+              console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no" (client has no Instagram account)`);
             }
           }
 

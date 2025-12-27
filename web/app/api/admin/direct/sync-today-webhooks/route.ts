@@ -150,6 +150,15 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
+        const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+        if (instagram) {
+          const lowerInstagram = instagram.toLowerCase().trim();
+          if (invalidValues.includes(lowerInstagram)) {
+            instagram = null; // Вважаємо Instagram відсутнім
+          }
+        }
+
         // Якщо немає Instagram, перевіряємо збережений зв'язок
         let normalizedInstagram: string | null = null;
         let isMissingInstagram = false;

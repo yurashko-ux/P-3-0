@@ -153,12 +153,19 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Якщо є Instagram, пропускаємо (ми шукаємо тільки тих, хто не має Instagram)
+        // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
+        const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
         if (instagram) {
-          const normalized = normalizeInstagram(instagram);
-          if (normalized) {
-            results.skipped++;
-            continue;
+          const lowerInstagram = instagram.toLowerCase().trim();
+          if (invalidValues.includes(lowerInstagram)) {
+            instagram = null; // Вважаємо Instagram відсутнім
+          } else {
+            const normalized = normalizeInstagram(instagram);
+            if (normalized) {
+              // Якщо є валідний Instagram, пропускаємо (ми шукаємо тільки тих, хто не має Instagram)
+              results.skipped++;
+              continue;
+            }
           }
         }
 
