@@ -205,17 +205,22 @@ export default function DirectPage() {
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
 
+      console.log('[DirectPage] Loading clients...', { filters, sortBy, sortOrder });
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`);
       
       // Якщо помилка HTTP, не очищаємо клієнтів
       if (!res.ok) {
-        console.warn(`[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`);
+        const errorText = await res.text();
+        console.error(`[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`, errorText);
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
+        setError(`Помилка завантаження: ${res.status} ${res.statusText}`);
         return;
       }
       
       const data = await res.json();
-      if (data.ok && data.clients) {
+      console.log('[DirectPage] Clients response:', { ok: data.ok, clientsCount: data.clients?.length, error: data.error });
+      
+      if (data.ok && Array.isArray(data.clients)) {
         let filteredClients = data.clients;
 
         // Пошук по Instagram username та Повне ім'я
@@ -223,7 +228,7 @@ export default function DirectPage() {
           const searchLower = filters.search.toLowerCase();
           filteredClients = filteredClients.filter((c: DirectClient) => {
             // Пошук по Instagram username
-            const matchesInstagram = c.instagramUsername.toLowerCase().includes(searchLower);
+            const matchesInstagram = c.instagramUsername?.toLowerCase().includes(searchLower) || false;
             
             // Пошук по окремих частинах імені
             const matchesFirstName = c.firstName?.toLowerCase().includes(searchLower) || false;
@@ -237,15 +242,20 @@ export default function DirectPage() {
           });
         }
 
+        console.log('[DirectPage] Setting clients:', filteredClients.length);
         setClients(filteredClients);
+        setError(null); // Очищаємо помилку при успішному завантаженні
       } else {
-        console.warn('[DirectPage] Failed to load clients:', data.error || "Unknown error");
+        const errorMsg = data.error || "Unknown error";
+        console.error('[DirectPage] Failed to load clients:', errorMsg, data);
+        setError(`Помилка: ${errorMsg}`);
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
       }
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[DirectPage] Error loading clients:', err);
+      setError(`Помилка: ${errorMsg}`);
       // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
-      // setError(err instanceof Error ? err.message : String(err));
     }
   };
 

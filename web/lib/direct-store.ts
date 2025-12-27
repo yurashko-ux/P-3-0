@@ -114,9 +114,19 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
       orderBy: { createdAt: 'desc' },
     });
     console.log(`[direct-store] Found ${clients.length} clients in database`);
-    return clients.map(prismaClientToDirectClient);
+    const convertedClients = clients.map(prismaClientToDirectClient);
+    console.log(`[direct-store] Converted ${convertedClients.length} clients`);
+    return convertedClients;
   } catch (err) {
     console.error('[direct-store] Failed to get all clients:', err);
+    // Додаємо детальну інформацію про помилку
+    if (err instanceof Error) {
+      console.error('[direct-store] Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name,
+      });
+    }
     // Якщо помилка через відсутнє поле - спробуємо завантажити через SQL без цього поля
     if (err instanceof Error && (
       err.message.includes('masterManuallySet') ||

@@ -45,8 +45,20 @@ export async function GET(req: NextRequest) {
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
     console.log('[direct/clients] GET: Fetching all clients...');
-    let clients = await getAllDirectClients();
-    console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
+    let clients: DirectClient[] = [];
+    try {
+      clients = await getAllDirectClients();
+      console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
+    } catch (fetchErr) {
+      console.error('[direct/clients] GET: Error fetching clients:', fetchErr);
+      // Повертаємо порожній масив замість помилки, щоб не ламати UI
+      return NextResponse.json({ 
+        ok: true, 
+        clients: [], 
+        error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+        warning: 'Failed to fetch clients from database'
+      });
+    }
 
     // Завантажуємо статуси для сортування по назві
     const statuses = await getAllDirectStatuses();
