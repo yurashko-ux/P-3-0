@@ -113,3 +113,28 @@ model DirectClientStateLog {
   @@map("direct_client_state_logs")
 }
 
+// Записи з Altegio (для хронології послуг)
+model AltegioRecord {
+  id            String   @id @default(uuid())
+  visitId       Int?     // ID візиту в Altegio
+  recordId      Int?     // ID запису в Altegio
+  altegioClientId Int    // ID клієнта в Altegio
+  directClientId String? // ID клієнта в нашій системі (якщо знайдено)
+  status        String?  // Статус: 'create', 'update', 'delete'
+  datetime      DateTime // Дата та час візиту
+  receivedAt    DateTime @default(now()) // Коли отримали вебхук
+  staffId       Int?     // ID майстра
+  staffName     String?  // Ім'я майстра
+  services      String   // JSON масив послуг
+  attendance    Int?     // Чи прийшов (0 або 1)
+  rawData       String?  // Повні дані вебхука (JSON)
+
+  @@index([altegioClientId])
+  @@index([directClientId])
+  @@index([visitId])
+  @@index([recordId])
+  @@index([datetime])
+  @@index([receivedAt])
+  @@map("altegio_records")
+}
+
