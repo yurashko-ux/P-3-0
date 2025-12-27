@@ -251,35 +251,11 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
     // Використовуємо window function для отримання останніх 5 станів для кожного клієнта
     // Це набагато ефективніше, ніж робити окремий запит для кожного клієнта
     // Використовуємо Prisma $queryRaw з параметризованим запитом для безпеки
-    const placeholders = clientIds.map((_, i) => `$${i + 1}`).join(', ');
-    const query = `
-      WITH ranked_logs AS (
-        SELECT 
-          "id",
-          "clientId",
-          "state",
-          "previousState",
-          "reason",
-          "metadata",
-          "createdAt",
-          ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "createdAt" DESC) as rn
-        FROM "direct_client_state_logs"
-        WHERE "clientId" IN (${placeholders})
-      )
-      SELECT 
-        "id",
-        "clientId",
-        "state",
-        "previousState",
-        "reason",
-        "metadata",
-        "createdAt"
-      FROM ranked_logs
-      WHERE rn <= 5
-      ORDER BY "clientId", "createdAt" DESC
-    `;
-
-    const logs = await prisma.$queryRawUnsafe<Array<{
+    console.log(`[direct-state-log] Fetching last 5 states for ${clientIds.length} clients`);
+    
+    // Якщо клієнтів багато, розбиваємо на батчі по 100 для безпеки
+    const batchSize = 100;
+    const allLogs: Array<{
       id: string;
       clientId: string;
       state: string | null;
@@ -287,7 +263,57 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       reason: string | null;
       metadata: string | null;
       createdAt: Date;
-    }>>(query, ...clientIds);
+    }> = [];
+    
+    for (let i = 0; i < clientIds.length; i += batchSize) {
+      const batch = clientIds.slice(i, i + batchSize);
+      const placeholders = batch.map((_, idx) => `$${idx + 1}`).join(', ');
+      const query = `
+        WITH ranked_logs AS (
+          SELECT 
+            "id",
+            "clientId",
+            "state",
+            "previousState",
+            "reason",
+            "metadata",
+            "createdAt",
+            ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "createdAt" DESC) as rn
+          FROM "direct_client_state_logs"
+          WHERE "clientId" IN (${placeholders})
+        )
+        SELECT 
+          "id",
+          "clientId",
+          "state",
+          "previousState",
+          "reason",
+          "metadata",
+          "createdAt"
+        FROM ranked_logs
+        WHERE rn <= 5
+        ORDER BY "clientId", "createdAt" DESC
+      `;
+
+      try {
+        const batchLogs = await prisma.$queryRawUnsafe<Array<{
+          id: string;
+          clientId: string;
+          state: string | null;
+          previousState: string | null;
+          reason: string | null;
+          metadata: string | null;
+          createdAt: Date;
+        }>>(query, ...batch);
+        allLogs.push(...batchLogs);
+      } catch (batchErr) {
+        console.error(`[direct-state-log] Error fetching batch ${i / batchSize + 1}:`, batchErr);
+        // Продовжуємо з наступним батчем
+      }
+    }
+    
+    const logs = allLogs;
+    console.log(`[direct-state-log] Retrieved ${logs.length} state log entries`);
 
     // Групуємо по clientId
     for (const log of logs) {
@@ -310,6 +336,55 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
 
+    // Додаємо початковий стан "Лід" для клієнтів без історії
+    // Отримуємо інформацію про клієнтів, які не мають історії
+    const clientsWithoutHistory = clientIds.filter(id => !result.has(id));
+    if (clientsWithoutHistory.length > 0) {
+      console.log(`[direct-state-log] Adding initial "lead" state for ${clientsWithoutHistory.length} clients without history`);
+      
+      try {
+        // Отримуємо дату створення для клієнтів без історії
+        const clientsInfo = await prisma.directClient.findMany({
+          where: { id: { in: clientsWithoutHistory } },
+          select: { id: true, createdAt: true, state: true },
+        });
+        
+        // Отримуємо дірект-менеджера для стану "Лід"
+        const { getDirectManager } = await import('@/lib/direct-masters/store');
+        const directManager = await getDirectManager();
+        const directManagerId = directManager?.id;
+        
+        for (const clientInfo of clientsInfo) {
+          const initialLeadLog: DirectClientStateLog = {
+            id: `initial-lead-${clientInfo.id}`,
+            clientId: clientInfo.id,
+            state: clientInfo.state || 'lead',
+            previousState: null,
+            reason: 'initial',
+            metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
+            createdAt: clientInfo.createdAt.toISOString(),
+          };
+          
+          result.set(clientInfo.id, [initialLeadLog]);
+        }
+      } catch (infoErr) {
+        console.warn('[direct-state-log] Failed to get client info for initial states:', infoErr);
+        // Якщо не вдалося отримати інформацію, додаємо мінімальний запис
+        for (const clientId of clientsWithoutHistory) {
+          const initialLeadLog: DirectClientStateLog = {
+            id: `initial-lead-${clientId}`,
+            clientId,
+            state: 'lead',
+            previousState: null,
+            reason: 'initial',
+            createdAt: new Date().toISOString(),
+          };
+          result.set(clientId, [initialLeadLog]);
+        }
+      }
+    }
+
+    console.log(`[direct-state-log] Returning state history for ${result.size} clients`);
     return result;
   } catch (err) {
     console.error(`[direct-state-log] ❌ Failed to get last 5 states for clients:`, err);

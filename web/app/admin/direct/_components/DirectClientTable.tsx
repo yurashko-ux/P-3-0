@@ -550,9 +550,14 @@ export function DirectClientTable({
                             
                             // Показуємо останні 5 станів (або менше)
                             // Актуальний стан справа (останній в масиві)
+                            // Сортуємо від старіших до новіших для відображення (актуальний справа)
+                            const sortedStates = [...states].sort((a, b) => 
+                              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                            );
+                            
                             return (
                               <>
-                                {states.slice(-5).map((stateLog, idx) => {
+                                {sortedStates.slice(-5).map((stateLog, idx) => {
                                   const stateDate = new Date(stateLog.createdAt);
                                   const formattedDate = stateDate.toLocaleDateString('uk-UA', {
                                     day: '2-digit',
@@ -564,7 +569,7 @@ export function DirectClientTable({
                                   
                                   return (
                                     <div
-                                      key={stateLog.id || idx}
+                                      key={stateLog.id || `state-${idx}`}
                                       className="tooltip tooltip-top"
                                       data-tip={formattedDate}
                                     >
