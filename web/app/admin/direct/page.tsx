@@ -502,6 +502,52 @@ export default function DirectPage() {
           >
             📥 Завантажити з Altegio
           </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/sync-missing-instagram', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `Синхронізовано клієнтів без Instagram:\n\n` +
+                    `Створено: ${data.created}\n` +
+                    `Оновлено: ${data.updated}\n` +
+                    `Пропущено (вже існують з Instagram): ${data.skippedAlreadyExists}\n` +
+                    `Всього оброблено: ${data.processed} з ${data.totalEvents}`;
+                  alert(message);
+                  
+                  // Оновлюємо дані після синхронізації
+                  for (let attempt = 1; attempt <= 3; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                    await loadData();
+                    
+                    const checkRes = await fetch('/api/admin/direct/clients');
+                    const checkData = await checkRes.json();
+                    if (checkData.ok && checkData.clients && checkData.clients.length > 0) {
+                      console.log(`[direct] Clients loaded after ${attempt} attempt(s)`);
+                      break;
+                    }
+                  }
+                } else {
+                  alert(`Помилка: ${data.error || 'Невідома помилка'}`);
+                }
+              } catch (err) {
+                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+          >
+            ⚠️ Синхронізувати без Instagram
+          </button>
 
           <button
             className="btn btn-sm btn-secondary"

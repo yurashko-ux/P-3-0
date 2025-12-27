@@ -1,0 +1,351 @@
+// web/app/api/admin/direct/sync-today-webhooks/route.ts
+// Обробка сьогоднішніх вебхуків від Altegio для синхронізації клієнтів
+
+import { NextRequest, NextResponse } from 'next/server';
+import { kvRead } from '@/lib/kv';
+
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+const CRON_SECRET = process.env.CRON_SECRET || '';
+
+function isAuthorized(req: NextRequest): boolean {
+  const adminToken = req.cookies.get('admin_token')?.value || '';
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+    const secret = req.nextUrl.searchParams.get('secret');
+    if (secret === CRON_SECRET) return true;
+  }
+  if (!ADMIN_PASS && !CRON_SECRET) return true;
+  return false;
+}
+
+/**
+ * POST - обробити сьогоднішні вебхуки від Altegio
+ */
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    // Отримуємо сьогоднішню дату (початок дня)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+
+    console.log(`[direct/sync-today-webhooks] Processing webhooks from ${todayISO}`);
+
+    // Отримуємо всі вебхуки з логу
+    const rawItems = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const events = rawItems
+      .map((raw) => {
+        try {
+          const parsed = JSON.parse(raw);
+          // Upstash може повертати елементи як { value: "..." }
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            'value' in parsed &&
+            typeof parsed.value === 'string'
+          ) {
+            try {
+              return JSON.parse(parsed.value);
+            } catch {
+              return parsed;
+            }
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    // Фільтруємо вебхуки за сьогоднішню дату та ті, що стосуються клієнтів
+    const todayClientEvents = events.filter((e: any) => {
+      if (!e.receivedAt) return false;
+      const receivedDate = new Date(e.receivedAt);
+      receivedDate.setHours(0, 0, 0, 0);
+      const isToday = receivedDate.getTime() === today.getTime();
+      const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
+      return isToday && isClientEvent;
+    });
+
+    console.log(`[direct/sync-today-webhooks] Found ${todayClientEvents.length} client events from today`);
+
+    // Імпортуємо функції для обробки вебхуків
+    const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
+    const { normalizeInstagram } = await import('@/lib/normalize');
+
+    // Отримуємо існуючих клієнтів
+    const existingDirectClients = await getAllDirectClients();
+    const existingInstagramMap = new Map<string, string>();
+    const existingAltegioIdMap = new Map<number, string>();
+    
+    for (const dc of existingDirectClients) {
+      const normalized = normalizeInstagram(dc.instagramUsername);
+      if (normalized) {
+        existingInstagramMap.set(normalized, dc.id);
+      }
+      if (dc.altegioClientId) {
+        existingAltegioIdMap.set(dc.altegioClientId, dc.id);
+      }
+    }
+
+    // Отримуємо статус за замовчуванням
+    const allStatuses = await getAllDirectStatuses();
+    const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
+    if (!defaultStatus) {
+      return NextResponse.json({
+        ok: false,
+        error: 'No default status found',
+      }, { status: 500 });
+    }
+
+    const results = {
+      totalEvents: todayClientEvents.length,
+      processed: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [] as string[],
+      clients: [] as any[],
+    };
+
+    // Обробляємо кожен вебхук
+    for (const event of todayClientEvents) {
+      try {
+        const clientId = event.body?.resource_id;
+        const client = event.body?.data?.client || event.body?.data;
+        const status = event.body?.status;
+
+        if (!clientId || !client) {
+          results.skipped++;
+          continue;
+        }
+
+        // Витягуємо Instagram username (використовуємо ту саму логіку, що й в webhook route)
+        let instagram: string | null = null;
+        
+        if (client.custom_fields) {
+          if (Array.isArray(client.custom_fields)) {
+            for (const field of client.custom_fields) {
+              if (field && typeof field === 'object') {
+                const title = field.title || field.name || field.label || '';
+                const value = field.value || field.data || field.content || field.text || '';
+                if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                  instagram = value.trim();
+                  break;
+                }
+              }
+            }
+          } else if (typeof client.custom_fields === 'object') {
+            for (const [key, value] of Object.entries(client.custom_fields)) {
+              if (value && typeof value === 'string' && /instagram/i.test(key)) {
+                instagram = value.trim();
+                break;
+              }
+            }
+          }
+        }
+
+        // Якщо немає Instagram, перевіряємо збережений зв'язок
+        let normalizedInstagram: string | null = null;
+        let isMissingInstagram = false;
+
+        const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+        const existingClientByAltegioId = await getDirectClientByAltegioId(parseInt(String(clientId), 10));
+        
+        if (existingClientByAltegioId) {
+          normalizedInstagram = existingClientByAltegioId.instagramUsername;
+          if (normalizedInstagram.startsWith('missing_instagram_')) {
+            isMissingInstagram = true;
+            if (instagram) {
+              const normalizedFromWebhook = normalizeInstagram(instagram);
+              if (normalizedFromWebhook) {
+                normalizedInstagram = normalizedFromWebhook;
+                isMissingInstagram = false;
+              }
+            }
+          }
+        }
+
+        if (!normalizedInstagram || (!existingClientByAltegioId && !instagram)) {
+          if (!instagram) {
+            isMissingInstagram = true;
+            normalizedInstagram = `missing_instagram_${clientId}`;
+          } else {
+            normalizedInstagram = normalizeInstagram(instagram);
+            if (!normalizedInstagram) {
+              isMissingInstagram = true;
+              normalizedInstagram = `missing_instagram_${clientId}`;
+            }
+          }
+        }
+
+        // Витягуємо ім'я
+        const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+        const firstName = nameParts[0] || undefined;
+        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+
+        // Шукаємо існуючого клієнта
+        let existingClientId = existingInstagramMap.get(normalizedInstagram);
+        if (!existingClientId && clientId) {
+          existingClientId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
+        }
+
+        if (existingClientId) {
+          // Оновлюємо існуючого клієнта
+          const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
+          if (existingClient) {
+            const clientState = isMissingInstagram ? ('no-instagram' as const) : ('client' as const);
+            const updated = {
+              ...existingClient,
+              altegioClientId: parseInt(String(clientId), 10),
+              instagramUsername: normalizedInstagram,
+              state: clientState,
+              ...(firstName && { firstName }),
+              ...(lastName && { lastName }),
+              updatedAt: new Date().toISOString(),
+            };
+            await saveDirectClient(updated);
+            results.updated++;
+            results.clients.push({
+              id: updated.id,
+              instagramUsername: normalizedInstagram,
+              firstName,
+              lastName,
+              altegioClientId: clientId,
+              action: 'updated',
+              state: clientState,
+            });
+          }
+        } else {
+          // Створюємо нового клієнта
+          const now = new Date().toISOString();
+          const clientState = isMissingInstagram ? ('no-instagram' as const) : ('client' as const);
+          const newClient = {
+            id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            instagramUsername: normalizedInstagram,
+            firstName,
+            lastName,
+            source: 'instagram' as const,
+            state: clientState,
+            firstContactDate: now,
+            statusId: defaultStatus.id,
+            visitedSalon: false,
+            signedUpForPaidService: false,
+            altegioClientId: parseInt(String(clientId), 10),
+            createdAt: now,
+            updatedAt: now,
+          };
+          await saveDirectClient(newClient);
+          results.created++;
+          results.clients.push({
+            id: newClient.id,
+            instagramUsername: normalizedInstagram,
+            firstName,
+            lastName,
+            altegioClientId: clientId,
+            action: 'created',
+            state: clientState,
+          });
+        }
+
+        results.processed++;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        results.errors.push(errorMsg);
+        console.error(`[direct/sync-today-webhooks] Error processing event:`, err);
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      date: todayISO,
+      ...results,
+    });
+  } catch (error) {
+    console.error('[direct/sync-today-webhooks] Error:', error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET - отримати інформацію про сьогоднішні вебхуки (без обробки)
+ */
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const rawItems = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const events = rawItems
+      .map((raw) => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            'value' in parsed &&
+            typeof parsed.value === 'string'
+          ) {
+            try {
+              return JSON.parse(parsed.value);
+            } catch {
+              return parsed;
+            }
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const todayClientEvents = events
+      .filter((e: any) => {
+        if (!e.receivedAt) return false;
+        const receivedDate = new Date(e.receivedAt);
+        receivedDate.setHours(0, 0, 0, 0);
+        return receivedDate.getTime() === today.getTime();
+      })
+      .map((e: any) => ({
+        receivedAt: e.receivedAt,
+        event: e.event || e.body?.event,
+        resource: e.body?.resource,
+        status: e.body?.status,
+        resourceId: e.body?.resource_id,
+        clientName: e.body?.data?.client?.name || e.body?.data?.client?.display_name || e.body?.data?.name,
+        clientId: e.body?.data?.client?.id || e.body?.data?.id,
+      }));
+
+    return NextResponse.json({
+      ok: true,
+      date: today.toISOString(),
+      totalEvents: todayClientEvents.length,
+      events: todayClientEvents,
+    });
+  } catch (error) {
+    console.error('[direct/sync-today-webhooks] GET error:', error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
