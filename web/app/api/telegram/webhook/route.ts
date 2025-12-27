@@ -42,8 +42,35 @@ export async function POST(req: NextRequest) {
       messageFromUsername: update.message?.from?.username,
       replyToMessage: !!update.message?.reply_to_message,
       replyToMessageText: update.message?.reply_to_message?.text?.substring(0, 100),
+      updateId: update.update_id,
     });
+    
+    // Додаткова діагностика для відповідей
+    if (update.message?.reply_to_message) {
+      console.log(`[telegram/webhook] 🔍 Reply detected! Full reply context:`, {
+        replyText: update.message.reply_to_message.text,
+        replyTextLength: update.message.reply_to_message.text?.length,
+        replyHasEntities: !!update.message.reply_to_message.entities,
+        replyEntities: update.message.reply_to_message.entities,
+        messageText: update.message.text,
+        messageFromId: update.message.from?.id,
+        messageFromUsername: update.message.from?.username,
+      });
+    }
 
+    // Додаткова діагностика для відповідей
+    if (update.message?.reply_to_message) {
+      console.log(`[telegram/webhook] 🔍 Reply detected! Full reply context:`, {
+        replyText: update.message.reply_to_message.text,
+        replyTextLength: update.message.reply_to_message.text?.length,
+        replyHasEntities: !!update.message.reply_to_message.entities,
+        replyEntities: update.message.reply_to_message.entities,
+        messageText: update.message.text,
+        messageFromId: update.message.from?.id,
+        messageFromUsername: update.message.from?.username,
+      });
+    }
+    
     if (update.message) {
       console.log(`[telegram/webhook] Processing message from chat ${update.message.chat.id}`);
       await handleMessage(update.message);
@@ -104,11 +131,14 @@ async function handleMessage(message: TelegramUpdate["message"]) {
     // Обробка відповіді на повідомлення про відсутній Instagram
     if (message.reply_to_message?.text) {
       const repliedText = message.reply_to_message.text;
-      console.log(`[telegram/webhook] Processing reply message. Replied text: ${repliedText.substring(0, 200)}...`);
+      console.log(`[telegram/webhook] 🔍 Processing reply message. Full replied text length: ${repliedText.length}`);
+      console.log(`[telegram/webhook] 🔍 Replied text (first 500 chars): ${repliedText.substring(0, 500)}`);
+      console.log(`[telegram/webhook] 🔍 Checking for 'Відсутній Instagram username': ${repliedText.includes('Відсутній Instagram username')}`);
+      console.log(`[telegram/webhook] 🔍 Checking for 'Altegio ID:': ${repliedText.includes('Altegio ID:')}`);
       
       // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
       if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
-        console.log(`[telegram/webhook] Detected reply to missing Instagram notification`);
+        console.log(`[telegram/webhook] ✅ Detected reply to missing Instagram notification!`);
         console.log(`[telegram/webhook] Full replied text:`, repliedText);
         
         // Витягуємо Altegio ID з повідомлення (пробуємо різні формати)
