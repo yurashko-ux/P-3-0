@@ -116,6 +116,7 @@ export function DirectClientTable({
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [statesHistory, setStatesHistory] = useState<Record<string, { currentState: string | null; history: Array<{ state: string | null; createdAt: string }> }>>({});
+  const [loadingStatesHistory, setLoadingStatesHistory] = useState(false);
 
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
