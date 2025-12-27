@@ -25,19 +25,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const databaseUrl = process.env.DATABASE_URL || '';
   const diagnostics: any = {
     timestamp: new Date().toISOString(),
     databaseUrl: {
-      exists: !!process.env.DATABASE_URL,
-      length: process.env.DATABASE_URL?.length || 0,
-      preview: process.env.DATABASE_URL 
-        ? `${process.env.DATABASE_URL.substring(0, 20)}...${process.env.DATABASE_URL.substring(process.env.DATABASE_URL.length - 10)}`
+      exists: !!databaseUrl,
+      length: databaseUrl.length,
+      preview: databaseUrl 
+        ? `${databaseUrl.substring(0, 30)}...${databaseUrl.substring(databaseUrl.length - 15)}`
         : 'NOT SET',
-      containsPooler: process.env.DATABASE_URL?.includes('pooler') || false,
-      containsPgBouncer: process.env.DATABASE_URL?.includes('pgbouncer') || false,
-      containsPrisma: process.env.DATABASE_URL?.includes('prisma') || false,
+      containsPooler: databaseUrl.includes('pooler') || false,
+      containsPgBouncer: databaseUrl.includes('pgbouncer') || false,
+      containsPrisma: databaseUrl.includes('prisma') || false,
+      host: databaseUrl.match(/@([^:]+)/)?.[1] || 'unknown',
+      port: databaseUrl.match(/:(\d+)\//)?.[1] || 'unknown',
     },
     tests: [] as any[],
+    recommendations: [] as string[],
   };
 
   // Тест 1: Простий запит до бази
