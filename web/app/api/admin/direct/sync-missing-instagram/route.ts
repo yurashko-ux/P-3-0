@@ -58,12 +58,14 @@ export async function POST(req: NextRequest) {
       })
       .filter(Boolean);
 
-    // Фільтруємо вебхуки, які стосуються клієнтів
-    const clientEvents = events.filter((e: any) => {
-      return e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
+    // Фільтруємо вебхуки, які стосуються клієнтів або записів
+    const allEvents = events.filter((e: any) => {
+      const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
+      const isRecordEvent = e.body?.resource === 'record' && (e.body?.status === 'create' || e.body?.status === 'update');
+      return isClientEvent || isRecordEvent;
     });
 
-    console.log(`[direct/sync-missing-instagram] Found ${clientEvents.length} client events total`);
+    console.log(`[direct/sync-missing-instagram] Found ${allEvents.length} events total (client + record)`);
 
     // Імпортуємо функції для обробки вебхуків
     const { getAllDirectClients, getAllDirectStatuses, saveDirectClient, getDirectClientByAltegioId } = await import('@/lib/direct-store');
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest) {
     }
 
     const results = {
-      totalEvents: clientEvents.length,
+      totalEvents: allEvents.length,
       processed: 0,
       created: 0,
       updated: 0,
@@ -106,10 +108,17 @@ export async function POST(req: NextRequest) {
     };
 
     // Обробляємо кожен вебхук
-    for (const event of clientEvents) {
+    for (const event of allEvents) {
       try {
-        const clientId = event.body?.resource_id;
-        const client = event.body?.data?.client || event.body?.data;
+        // Для record events клієнт знаходиться в data.client
+        // Для client events клієнт знаходиться в data або data.client
+        const isRecordEvent = event.body?.resource === 'record';
+        const clientId = isRecordEvent 
+          ? (event.body?.data?.client?.id || event.body?.data?.client_id)
+          : event.body?.resource_id;
+        const client = isRecordEvent
+          ? event.body?.data?.client
+          : (event.body?.data?.client || event.body?.data);
 
         if (!clientId || !client) {
           results.skipped++;
