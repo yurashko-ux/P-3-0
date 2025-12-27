@@ -120,3 +120,69 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/**
+ * POST - налаштувати webhook для HOB_client_bot
+ */
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const webhookUrl = body.url;
+    
+    if (!webhookUrl) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'URL is required' 
+      }, { status: 400 });
+    }
+
+    const hobClientBotToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN;
+    
+    if (!hobClientBotToken) {
+      return NextResponse.json({
+        ok: false,
+        error: 'HOB_CLIENT_BOT_TOKEN not set',
+      }, { status: 400 });
+    }
+
+    // Налаштовуємо webhook
+    const setWebhookUrl = `https://api.telegram.org/bot${hobClientBotToken}/setWebhook`;
+    const response = await fetch(setWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: webhookUrl,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.ok) {
+      return NextResponse.json({
+        ok: true,
+        message: 'Webhook налаштовано успішно',
+        webhookUrl,
+        result: data.result,
+      });
+    } else {
+      return NextResponse.json({
+        ok: false,
+        error: data.description || 'Failed to set webhook',
+        errorCode: data.error_code,
+      }, { status: 400 });
+    }
+  } catch (error) {
+    console.error('[direct/check-telegram-webhook] Error setting webhook:', error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+

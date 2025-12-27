@@ -1319,6 +1319,46 @@ export default function DirectPage() {
             🔗 Перевірити webhook
           </button>
           <button
+            className="btn btn-sm btn-success btn-outline"
+            onClick={async () => {
+              if (!confirm('Налаштувати webhook для HOB_client_bot на основний endpoint (/api/telegram/webhook)?\n\nЦе дозволить обробляти повідомлення від HOB_client_bot.')) {
+                return;
+              }
+              
+              setIsLoading(true);
+              try {
+                // Отримуємо поточний URL
+                const currentUrl = window.location.origin;
+                const webhookUrl = `${currentUrl}/api/telegram/webhook`;
+                
+                const res = await fetch('/api/admin/direct/check-telegram-webhook', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: webhookUrl }),
+                });
+                const data = await res.json();
+                
+                if (data.ok) {
+                  showCopyableAlert(`✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
+                  // Оновлюємо інформацію про webhook
+                  setTimeout(() => {
+                    document.querySelector('button[title="Перевірити налаштування Telegram webhook"]')?.click();
+                  }, 1000);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Налаштувати webhook для HOB_client_bot на основний endpoint"
+          >
+            ⚙️ Налаштувати webhook
+          </button>
+          <button
             className="btn btn-sm btn-info"
             onClick={async () => {
               setIsLoading(true);
