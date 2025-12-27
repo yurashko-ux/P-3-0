@@ -242,7 +242,16 @@ export default function DirectPage() {
           });
         }
 
-        console.log('[DirectPage] Setting clients:', filteredClients.length);
+        console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length);
+        
+        // Захист: не очищаємо клієнтів, якщо новий запит повертає 0, але у нас вже є клієнти
+        // (це може бути помилка API або тимчасовий збій)
+        if (filteredClients.length === 0 && clients.length > 0) {
+          console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
+          setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
+          return; // Не оновлюємо клієнтів
+        }
+        
         setClients(filteredClients);
         setError(null); // Очищаємо помилку при успішному завантаженні
       } else {
@@ -271,7 +280,15 @@ export default function DirectPage() {
     }
   };
 
+  // Завантажуємо клієнтів при зміні фільтрів/сортування
+  // Використовуємо useRef, щоб уникнути зайвих викликів під час ініціалізації
+  const isInitialMount = useRef(true);
   useEffect(() => {
+    // Пропускаємо перший виклик, бо він вже відбувається в loadData()
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     loadClients();
   }, [filters, sortBy, sortOrder]);
 
