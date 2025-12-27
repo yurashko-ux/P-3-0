@@ -14,12 +14,15 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
   
   if (state === 'client') {
     return (
-      <img 
-        src="/assets/image-client.png" 
-        alt="Клієнт" 
-        className="object-contain"
-        style={iconStyle}
-      />
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <circle cx="14" cy="10" r="6" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5"/>
+        <path d="M8 10 Q8 4 14 4 Q20 4 20 10" stroke="#8b5cf6" strokeWidth="3" fill="none" strokeLinecap="round"/>
+        <path d="M9 10 Q9 5 14 5 Q19 5 19 10" stroke="#8b5cf6" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+        <path d="M10 10 Q10 6 14 6 Q18 6 18 10" stroke="#8b5cf6" strokeWidth="2" fill="none" strokeLinecap="round"/>
+        <circle cx="12" cy="9" r="0.8" fill="#1f2937"/>
+        <circle cx="16" cy="9" r="0.8" fill="#1f2937"/>
+        <path d="M12 11 Q14 12 16 11" stroke="#1f2937" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+      </svg>
     );
   } else if (state === 'consultation') {
     return (
@@ -33,15 +36,12 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
     );
   } else if (state === 'hair-extension') {
     return (
-      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
-        <circle cx="14" cy="10" r="6" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5"/>
-        <path d="M8 10 Q8 4 14 4 Q20 4 20 10" stroke="#8b5cf6" strokeWidth="3" fill="none" strokeLinecap="round"/>
-        <path d="M9 10 Q9 5 14 5 Q19 5 19 10" stroke="#8b5cf6" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-        <path d="M10 10 Q10 6 14 6 Q18 6 18 10" stroke="#8b5cf6" strokeWidth="2" fill="none" strokeLinecap="round"/>
-        <circle cx="12" cy="9" r="0.8" fill="#1f2937"/>
-        <circle cx="16" cy="9" r="0.8" fill="#1f2937"/>
-        <path d="M12 11 Q14 12 16 11" stroke="#1f2937" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
-      </svg>
+      <img 
+        src="/assets/image-client.png" 
+        alt="Нарощування волосся" 
+        className="object-contain"
+        style={iconStyle}
+      />
     );
   } else if (state === 'other-services') {
     return (
