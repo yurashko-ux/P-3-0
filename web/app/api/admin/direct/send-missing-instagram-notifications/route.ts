@@ -35,13 +35,31 @@ export async function POST(req: NextRequest) {
     const allClients = await getAllDirectClients();
     
     // Фільтруємо клієнтів без Instagram
+    // Але виключаємо тих, де Instagram = "no" (це означає, що у клієнтки немає Instagram)
+    // Також виключаємо тих, у кого немає імені (немає по чому ідентифікувати)
     const clientsWithoutInstagram = allClients.filter(client => {
       const hasNoInstagramState = client.state === 'no-instagram';
       const hasMissingInstagramUsername = client.instagramUsername?.startsWith('missing_instagram_');
-      return hasNoInstagramState || hasMissingInstagramUsername;
+      
+      // Перевіряємо, чи Instagram не був явно встановлений в "no"
+      // Витягуємо altegioClientId з username, якщо це missing_instagram_{id}
+      const missingIdMatch = client.instagramUsername?.match(/^missing_instagram_(\d+)$/);
+      // Якщо це не missing_instagram_ формат, пропускаємо
+      if (!hasNoInstagramState && !hasMissingInstagramUsername) {
+        return false;
+      }
+      
+      // Перевіряємо, чи є ім'я
+      const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim();
+      if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
+        console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} - no name provided`);
+        return false;
+      }
+      
+      return true;
     });
 
-    console.log(`[direct/send-missing-instagram-notifications] Found ${clientsWithoutInstagram.length} clients without Instagram`);
+    console.log(`[direct/send-missing-instagram-notifications] Found ${clientsWithoutInstagram.length} clients without Instagram (after filtering)`);
 
     if (clientsWithoutInstagram.length === 0) {
       return NextResponse.json({
@@ -73,27 +91,158 @@ export async function POST(req: NextRequest) {
 
     // Отримуємо chat ID адміністраторів
     const adminChatIds = await getAdminChatIds();
+    // Виключаємо mykolayChatId з adminChatIds, щоб не дублювати повідомлення
+    const uniqueAdminChatIds = adminChatIds.filter(id => id !== mykolayChatId);
     const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+
+    // Імпортуємо KV store для перевірки оригінального значення Instagram
+    const { kvRead } = await import('@/lib/kv');
 
     const results = {
       totalClients: clientsWithoutInstagram.length,
       sent: 0,
       failed: 0,
+      skipped: 0,
       errors: [] as string[],
       clients: [] as any[],
     };
+
+    // Функція для перевірки, чи був Instagram = "no" в останньому webhook
+    async function wasInstagramSetToNo(altegioClientId: number | undefined): Promise<boolean> {
+      if (!altegioClientId) return false;
+      
+      try {
+        // Отримуємо останні webhook події
+        const webhookLogRaw = await kvRead.lrange('altegio:webhook:log', 0, 999);
+        const webhooks = webhookLogRaw
+          .map((raw: string) => {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+                try {
+                  return JSON.parse(parsed.value);
+                } catch {
+                  return parsed;
+                }
+              }
+              return parsed;
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
+
+        // Шукаємо останній (найновіший) webhook для цього клієнта
+        // Сортуємо webhooks по receivedAt (найновіші спочатку)
+        const sortedWebhooks = webhooks
+          .filter(w => w.receivedAt)
+          .sort((a, b) => {
+            const dateA = new Date(a.receivedAt).getTime();
+            const dateB = new Date(b.receivedAt).getTime();
+            return dateB - dateA; // Найновіші спочатку
+          });
+        
+        for (const webhook of sortedWebhooks) {
+          const body = webhook.body || webhook;
+          const resource = body.resource;
+          const data = body.data || {};
+          
+          let clientId: number | null = null;
+          let instagram: string | null = null;
+          
+          if (resource === 'client') {
+            clientId = body.resource_id || data.id;
+            const client = data.client || data;
+            if (client?.custom_fields) {
+              if (Array.isArray(client.custom_fields)) {
+                for (const field of client.custom_fields) {
+                  if (field && typeof field === 'object') {
+                    const title = field.title || field.name || field.label || '';
+                    const value = field.value || field.data || field.content || field.text || '';
+                    if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                      instagram = value.trim();
+                      break;
+                    }
+                  }
+                }
+              } else if (typeof client.custom_fields === 'object') {
+                for (const [key, value] of Object.entries(client.custom_fields)) {
+                  if (value && typeof value === 'string' && /instagram/i.test(key)) {
+                    instagram = value.trim();
+                    break;
+                  }
+                }
+              }
+            }
+          } else if (resource === 'record') {
+            const recordClient = data.client;
+            if (recordClient?.id) {
+              clientId = recordClient.id;
+              if (recordClient.custom_fields) {
+                if (Array.isArray(recordClient.custom_fields)) {
+                  for (const field of recordClient.custom_fields) {
+                    if (field && typeof field === 'object') {
+                      const title = field.title || field.name || field.label || '';
+                      const value = field.value || field.data || field.content || field.text || '';
+                      if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                        instagram = value.trim();
+                        break;
+                      }
+                    }
+                  }
+                } else if (typeof recordClient.custom_fields === 'object') {
+                  for (const [key, value] of Object.entries(recordClient.custom_fields)) {
+                    if (value && typeof value === 'string' && /instagram/i.test(key)) {
+                      instagram = value.trim();
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
+          if (clientId && parseInt(String(clientId), 10) === parseInt(String(altegioClientId), 10)) {
+            // Знайшли webhook для цього клієнта - перевіряємо Instagram
+            // Якщо Instagram = "no", повертаємо true
+            if (instagram && instagram.toLowerCase().trim() === 'no') {
+              return true;
+            }
+            // Якщо знайшли webhook для цього клієнта і Instagram вказано (не "no"), повертаємо false
+            // Якщо Instagram не вказано взагалі, продовжуємо пошук (можливо, в старіших webhooks було "no")
+            if (instagram !== null) {
+              return false;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[direct/send-missing-instagram-notifications] Error checking Instagram "no" for client ${altegioClientId}:`, err);
+      }
+      
+      return false;
+    }
 
     // Відправляємо повідомлення для кожного клієнта
     for (const client of clientsWithoutInstagram) {
       try {
         const clientName = [client.firstName, client.lastName].filter(Boolean).join(' ') || 'Невідомий клієнт';
         const clientPhone = 'не вказано'; // У клієнта немає phone в базі
-        const altegioClientId = client.altegioClientId || 'не вказано';
+        const altegioClientId = client.altegioClientId;
+        
+        // Перевіряємо, чи був Instagram = "no" в останньому webhook
+        if (altegioClientId) {
+          const wasNo = await wasInstagramSetToNo(altegioClientId);
+          if (wasNo) {
+            console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} (Altegio ID: ${altegioClientId}) - Instagram was explicitly set to "no"`);
+            results.skipped = (results.skipped || 0) + 1;
+            continue;
+          }
+        }
         
         const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
           `Клієнт: <b>${clientName}</b>\n` +
           `Instagram: ${client.instagramUsername}\n` +
-          `Altegio ID: <code>${altegioClientId}</code>\n\n` +
+          `Altegio ID: <code>${altegioClientId || 'не вказано'}</code>\n\n` +
           `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
           `(наприклад: @username або username)\n\n` +
           `Або додайте Instagram username для цього клієнта в Altegio.`;
@@ -112,8 +261,8 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Відправляємо адміністраторам
-        for (const adminChatId of adminChatIds) {
+        // Відправляємо адміністраторам (без mykolayChatId, щоб не дублювати)
+        for (const adminChatId of uniqueAdminChatIds) {
           try {
             await sendMessage(adminChatId, message, {}, botToken);
             sentToAdmins++;
