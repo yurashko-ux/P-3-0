@@ -147,69 +147,94 @@ export function DirectClientTable({
       });
   }, []);
 
-  // Завантажуємо історію станів для всіх клієнтів
+  // Завантажуємо історію станів для всіх клієнтів (опціонально, не блокує відображення)
   useEffect(() => {
     if (clients.length === 0) return;
     
-    setLoadingStatesHistory(true);
+    // Завантажуємо історію в фоні, не блокуємо відображення клієнтів
     const loadStatesHistory = async () => {
-      const historyMap: Record<string, { currentState: string | null; history: Array<{ state: string | null; createdAt: string }> }> = {};
-      
-      // Завантажуємо історію для кожного клієнта
-      const promises = clients.map(async (client) => {
-        try {
-          const res = await fetch(`/api/admin/direct/state-history?clientId=${client.id}`);
-          const data = await res.json();
-          
-          if (data.ok && data.data) {
-            const history = data.data.history || [];
-            const currentState = data.data.currentState;
+      try {
+        setLoadingStatesHistory(true);
+        const historyMap: Record<string, { currentState: string | null; history: Array<{ state: string | null; createdAt: string }> }> = {};
+        
+        // Завантажуємо історію для кожного клієнта з затримкою, щоб не перевантажувати API
+        for (let i = 0; i < clients.length; i++) {
+          const client = clients[i];
+          try {
+            // Додаємо невелику затримку між запитами (тільки після першого)
+            if (i > 0 && i % 10 === 0) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
             
-            // Сортуємо від старіших до новіших
-            const sortedHistory = [...history].sort((a, b) => 
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-            );
+            const res = await fetch(`/api/admin/direct/state-history?clientId=${client.id}`, {
+              // Додаємо timeout, щоб не чекати довго
+              signal: AbortSignal.timeout(5000),
+            });
             
-            // Формуємо масив станів для відображення
-            const statesForDisplay: Array<{ state: string | null; createdAt: string }> = [];
+            if (!res.ok) {
+              // Якщо помилка - просто пропускаємо цього клієнта
+              continue;
+            }
             
-            // Додаємо стани з історії
-            for (const log of sortedHistory) {
-              // Пропускаємо дублікати (якщо останній стан такий самий)
-              if (statesForDisplay.length === 0 || statesForDisplay[statesForDisplay.length - 1].state !== log.state) {
+            const data = await res.json();
+            
+            if (data.ok && data.data) {
+              const history = data.data.history || [];
+              const currentState = data.data.currentState;
+              
+              // Сортуємо від старіших до новіших
+              const sortedHistory = [...history].sort((a, b) => 
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              
+              // Формуємо масив станів для відображення
+              const statesForDisplay: Array<{ state: string | null; createdAt: string }> = [];
+              
+              // Додаємо стани з історії
+              for (const log of sortedHistory) {
+                // Пропускаємо дублікати (якщо останній стан такий самий)
+                if (statesForDisplay.length === 0 || statesForDisplay[statesForDisplay.length - 1].state !== log.state) {
+                  statesForDisplay.push({
+                    state: log.state,
+                    createdAt: log.createdAt,
+                  });
+                }
+              }
+              
+              // Додаємо поточний стан, якщо він не збігається з останнім
+              if (currentState && (statesForDisplay.length === 0 || statesForDisplay[statesForDisplay.length - 1].state !== currentState)) {
                 statesForDisplay.push({
-                  state: log.state,
-                  createdAt: log.createdAt,
+                  state: currentState,
+                  createdAt: data.data.currentStateDate || client.updatedAt || new Date().toISOString(),
                 });
               }
+              
+              // Беремо останні 5 станів (актуальний справа)
+              const last5States = statesForDisplay.slice(-5);
+              
+              historyMap[client.id] = {
+                currentState,
+                history: last5States,
+              };
             }
-            
-            // Додаємо поточний стан, якщо він не збігається з останнім
-            if (currentState && (statesForDisplay.length === 0 || statesForDisplay[statesForDisplay.length - 1].state !== currentState)) {
-              statesForDisplay.push({
-                state: currentState,
-                createdAt: data.data.currentStateDate || client.updatedAt || new Date().toISOString(),
-              });
+          } catch (err: any) {
+            // Ігноруємо помилки - просто не завантажуємо історію для цього клієнта
+            if (err.name !== 'AbortError') {
+              // Логуємо тільки не-timeout помилки
+              console.warn(`[DirectClientTable] Failed to load state history for client ${client.id}:`, err.message);
             }
-            
-            // Беремо останні 5 станів (актуальний справа)
-            const last5States = statesForDisplay.slice(-5);
-            
-            historyMap[client.id] = {
-              currentState,
-              history: last5States,
-            };
           }
-        } catch (err) {
-          console.warn(`[DirectClientTable] Failed to load state history for client ${client.id}:`, err);
         }
-      });
-      
-      await Promise.all(promises);
-      setStatesHistory(historyMap);
-      setLoadingStatesHistory(false);
+        
+        setStatesHistory(historyMap);
+      } catch (err) {
+        console.warn('[DirectClientTable] Failed to load states history:', err);
+      } finally {
+        setLoadingStatesHistory(false);
+      }
     };
     
+    // Запускаємо в фоні, не блокуємо рендер
     loadStatesHistory();
   }, [clients]);
 
