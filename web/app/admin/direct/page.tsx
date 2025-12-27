@@ -1321,7 +1321,7 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-success btn-outline"
             onClick={async () => {
-              if (!confirm('Налаштувати webhook для HOB_client_bot на основний endpoint (/api/telegram/webhook)?\n\nЦе дозволить обробляти повідомлення від HOB_client_bot.')) {
+              if (!confirm('Налаштувати webhook для HOB_client_bot на спеціальний endpoint (/api/telegram/direct-reminders-webhook)?\n\nЦе дозволить обробляти повідомлення від HOB_client_bot без помилок авторизації.')) {
                 return;
               }
               
@@ -1329,7 +1329,8 @@ export default function DirectPage() {
               try {
                 // Отримуємо поточний URL
                 const currentUrl = window.location.origin;
-                const webhookUrl = `${currentUrl}/api/telegram/webhook`;
+                // Використовуємо спеціальний endpoint для HOB_client_bot
+                const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
                 
                 const res = await fetch('/api/admin/direct/check-telegram-webhook', {
                   method: 'POST',
@@ -1339,7 +1340,7 @@ export default function DirectPage() {
                 const data = await res.json();
                 
                 if (data.ok) {
-                  showCopyableAlert(`✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
+                  showCopyableAlert(`✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися через спеціальний endpoint.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
                   // Оновлюємо інформацію про webhook
                   setTimeout(() => {
                     const button = document.querySelector('button[title="Перевірити налаштування Telegram webhook"]') as HTMLButtonElement;
@@ -1355,7 +1356,7 @@ export default function DirectPage() {
               }
             }}
             disabled={isLoading}
-            title="Налаштувати webhook для HOB_client_bot на основний endpoint"
+            title="Налаштувати webhook для HOB_client_bot на спеціальний endpoint"
           >
             ⚙️ Налаштувати webhook
           </button>
