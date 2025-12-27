@@ -34,10 +34,21 @@ export async function POST(req: NextRequest) {
     assertTelegramEnv();
 
     const update = (await req.json()) as TelegramUpdate;
+    console.log(`[telegram/webhook] Received update:`, {
+      hasMessage: !!update.message,
+      hasCallbackQuery: !!update.callback_query,
+      messageText: update.message?.text,
+      messageChatId: update.message?.chat?.id,
+      messageFromUsername: update.message?.from?.username,
+      replyToMessage: !!update.message?.reply_to_message,
+      replyToMessageText: update.message?.reply_to_message?.text?.substring(0, 100),
+    });
 
     if (update.message) {
+      console.log(`[telegram/webhook] Processing message from chat ${update.message.chat.id}`);
       await handleMessage(update.message);
     } else if (update.callback_query) {
+      console.log(`[telegram/webhook] Processing callback query`);
       await handleCallback(update.callback_query);
     }
 
@@ -49,9 +60,13 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleMessage(message: TelegramUpdate["message"]) {
-  if (!message) return;
+  if (!message) {
+    console.log(`[telegram/webhook] handleMessage: message is null/undefined`);
+    return;
+  }
   const chatId = message.chat.id;
   const fromUser = message.from;
+  console.log(`[telegram/webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, text="${message.text?.substring(0, 50)}", hasReply=${!!message.reply_to_message}, fromUsername=${fromUser?.username}`);
 
   if (message.text?.startsWith("/start")) {
     const registration = await registerChatForMaster(
