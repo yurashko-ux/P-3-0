@@ -86,6 +86,70 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   }
 
   if (message.text) {
+    // Обробка відповіді на повідомлення про відсутній Instagram
+    if (message.reply_to_message?.text) {
+      const repliedText = message.reply_to_message.text;
+      // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
+      if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
+        // Витягуємо Altegio ID з повідомлення
+        const altegioIdMatch = repliedText.match(/Altegio ID:\s*<code>(\d+)<\/code>|Altegio ID:\s*(\d+)/);
+        if (altegioIdMatch) {
+          const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2], 10);
+          if (!isNaN(altegioClientId)) {
+            // Витягуємо Instagram username з відповіді (може бути з @ або без)
+            const instagramText = message.text.trim().replace(/^@/, '').split(/\s+/)[0];
+            if (instagramText && instagramText.length > 0) {
+              try {
+                const { updateInstagramForAltegioClient } = await import('@/lib/direct-store');
+                const { normalizeInstagram } = await import('@/lib/normalize');
+                const normalized = normalizeInstagram(instagramText);
+                
+                if (normalized) {
+                  const updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
+                  if (updatedClient) {
+                    await sendMessage(
+                      chatId,
+                      `✅ Instagram username оновлено!\n\n` +
+                      `Altegio ID: ${altegioClientId}\n` +
+                      `Instagram: ${normalized}\n\n` +
+                      `Тепер всі вебхуки для цього клієнта будуть оброблятися правильно.`
+                    );
+                    console.log(`[telegram/webhook] ✅ Updated Instagram for Altegio client ${altegioClientId} to ${normalized}`);
+                    return;
+                  } else {
+                    await sendMessage(
+                      chatId,
+                      `❌ Не вдалося оновити Instagram username. Перевірте, чи існує клієнт з Altegio ID ${altegioClientId}.`
+                    );
+                    return;
+                  }
+                } else {
+                  await sendMessage(
+                    chatId,
+                    `❌ Невірний формат Instagram username. Будь ласка, введіть правильний username (наприклад: username або @username).`
+                  );
+                  return;
+                }
+              } catch (err) {
+                console.error(`[telegram/webhook] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
+                await sendMessage(
+                  chatId,
+                  `❌ Помилка при оновленні Instagram username: ${err instanceof Error ? err.message : String(err)}`
+                );
+                return;
+              }
+            } else {
+              await sendMessage(
+                chatId,
+                `❌ Будь ласка, введіть Instagram username у відповідь (наприклад: username або @username).`
+              );
+              return;
+            }
+          }
+        }
+      }
+    }
+
     // Обробка кнопки "📸 Зробити фото"
     if (message.text === "📸 Зробити фото" || message.text.includes("📸 Зробити фото")) {
       const pending = await getPendingRequestForChat(chatId);

@@ -72,6 +72,14 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
         <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
       </svg>
     );
+  } else if (state === 'no-instagram') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <rect x="4" y="4" width="20" height="20" rx="2" fill="#ef4444" stroke="#dc2626" strokeWidth="1.5"/>
+        <path d="M10 10 L18 18 M18 10 L10 18" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
+      </svg>
+    );
   } else {
     return (
       <img 
@@ -583,10 +591,10 @@ export function DirectClientTable({
                             })()}
                           </button>
                           {/* Червоний квадрат для клієнтів без Instagram */}
-                          {client.instagramUsername?.startsWith('missing_instagram_') && (
+                          {(client.instagramUsername?.startsWith('missing_instagram_') || client.state === 'no-instagram') && (
                             <div 
                               className="tooltip tooltip-top" 
-                              data-tip="Відсутній Instagram username. Будь ласка, додайте його в Altegio."
+                              data-tip="Відсутній Instagram username. Будь ласка, додайте його в Altegio або відправте у відповідь на повідомлення."
                             >
                               <div 
                                 className="w-4 h-4 bg-red-500 rounded-sm border border-red-700"

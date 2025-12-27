@@ -9,7 +9,7 @@ export type DirectClient = {
   firstName?: string;
   lastName?: string;
   source: 'instagram' | 'tiktok' | 'other'; // Джерело реклами
-  state?: 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive'; // Системний стан: Лід, Клієнт, Консультація, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого
+  state?: 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'no-instagram'; // Системний стан: Лід, Клієнт, Консультація, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого, Без Instagram
   firstContactDate: string; // ISO date - дата першого контакту
   statusId: string; // ID статусу зі списку статусів
   masterId?: string; // ID майстра (відповідальний)

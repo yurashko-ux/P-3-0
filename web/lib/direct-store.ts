@@ -226,6 +226,81 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
 }
 
 /**
+ * Отримати клієнта за Altegio client ID
+ */
+export async function getDirectClientByAltegioId(altegioClientId: number): Promise<DirectClient | null> {
+  try {
+    const client = await prisma.directClient.findFirst({
+      where: { altegioClientId },
+    });
+    return client ? prismaClientToDirectClient(client) : null;
+  } catch (err) {
+    console.error(`[direct-store] Failed to get client by Altegio ID ${altegioClientId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Оновити Instagram username для клієнта з відомим Altegio client ID
+ */
+export async function updateInstagramForAltegioClient(
+  altegioClientId: number,
+  instagramUsername: string
+): Promise<DirectClient | null> {
+  try {
+    const normalized = normalizeInstagram(instagramUsername);
+    if (!normalized) {
+      console.error(`[direct-store] Invalid Instagram username: ${instagramUsername}`);
+      return null;
+    }
+
+    // Знаходимо клієнта за altegioClientId
+    const existingClient = await prisma.directClient.findFirst({
+      where: { altegioClientId },
+    });
+
+    if (!existingClient) {
+      console.error(`[direct-store] Client with Altegio ID ${altegioClientId} not found`);
+      return null;
+    }
+
+    // Перевіряємо, чи не існує вже клієнт з таким Instagram username
+    const existingByInstagram = await prisma.directClient.findUnique({
+      where: { instagramUsername: normalized },
+    });
+
+    if (existingByInstagram && existingByInstagram.id !== existingClient.id) {
+      // Якщо існує інший клієнт з таким Instagram, об'єднуємо їх
+      // Оновлюємо існуючого клієнта з правильним Instagram
+      const updated = await prisma.directClient.update({
+        where: { id: existingClient.id },
+        data: {
+          instagramUsername: normalized,
+          altegioClientId,
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
+      return prismaClientToDirectClient(updated);
+    } else {
+      // Просто оновлюємо Instagram username
+      const updated = await prisma.directClient.update({
+        where: { id: existingClient.id },
+        data: {
+          instagramUsername: normalized,
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
+      return prismaClientToDirectClient(updated);
+    }
+  } catch (err) {
+    console.error(`[direct-store] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
+    return null;
+  }
+}
+
+/**
  * Зберегти клієнта
  */
 export async function saveDirectClient(
