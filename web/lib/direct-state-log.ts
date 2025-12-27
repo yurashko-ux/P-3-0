@@ -226,19 +226,62 @@ export async function getClientStateInfo(clientId: string): Promise<{
             const hairExtensionLog = history.find(log => log.state === 'hair-extension');
             
             if (hairExtensionLog) {
-              // Додаємо консультацію перед нарощуванням
-              const consultationLog: DirectClientStateLog = {
-                id: `missing-consultation-${clientId}-${Date.now()}`,
-                clientId,
-                state: 'consultation',
-                previousState: hairExtensionLog.previousState,
-                reason: 'retroactive',
-                metadata: hairExtensionLog.metadata,
-                createdAt: new Date(new Date(hairExtensionLog.createdAt).getTime() - 1000).toISOString(), // На 1 секунду раніше
-              };
+              // Перевіряємо, чи вже є консультація з такою ж датою (щоб не дублювати)
+              const recordDate = latestRecord.receivedAt || latestRecord.data?.datetime || hairExtensionLog.createdAt;
+              const consultationDate = new Date(recordDate);
               
-              history.push(consultationLog);
-              console.log(`[direct-state-log] ✅ Added missing consultation log for client ${clientId}`);
+              // Перевіряємо, чи немає вже консультації з такою ж датою
+              const existingConsultation = history.find(log => 
+                log.state === 'consultation' && 
+                Math.abs(new Date(log.createdAt).getTime() - consultationDate.getTime()) < 60000 // В межах 1 хвилини
+              );
+              
+              if (!existingConsultation) {
+                // Створюємо запис про консультацію в базі
+                try {
+                  const consultationLogId = `missing-consultation-${clientId}-${Date.now()}`;
+                  const metadata = hairExtensionLog.metadata || (initialMasterId ? JSON.stringify({ masterId: initialMasterId }) : undefined);
+                  
+                  await prisma.directClientStateLog.create({
+                    data: {
+                      id: consultationLogId,
+                      clientId,
+                      state: 'consultation',
+                      previousState: hairExtensionLog.previousState,
+                      reason: 'retroactive',
+                      metadata: metadata || null,
+                      createdAt: consultationDate,
+                    },
+                  });
+                  
+                  // Додаємо до історії для відображення
+                  const consultationLog: DirectClientStateLog = {
+                    id: consultationLogId,
+                    clientId,
+                    state: 'consultation',
+                    previousState: hairExtensionLog.previousState,
+                    reason: 'retroactive',
+                    metadata: metadata || undefined,
+                    createdAt: consultationDate.toISOString(),
+                  };
+                  
+                  history.push(consultationLog);
+                  console.log(`[direct-state-log] ✅ Created missing consultation log for client ${clientId} at ${consultationDate.toISOString()}`);
+                } catch (err) {
+                  console.warn(`[direct-state-log] Failed to create consultation log:`, err);
+                  // Якщо не вдалося зберегти в базу, додаємо тільки для відображення
+                  const consultationLog: DirectClientStateLog = {
+                    id: `missing-consultation-${clientId}-${Date.now()}`,
+                    clientId,
+                    state: 'consultation',
+                    previousState: hairExtensionLog.previousState,
+                    reason: 'retroactive',
+                    metadata: hairExtensionLog.metadata,
+                    createdAt: consultationDate.toISOString(),
+                  };
+                  history.push(consultationLog);
+                }
+              }
             }
           }
         } catch (err) {
