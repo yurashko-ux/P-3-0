@@ -60,11 +60,12 @@ export async function POST(req: NextRequest) {
 
     // Додаткова діагностика для відповідей
     if (update.message?.reply_to_message) {
+      const replyMsg = update.message.reply_to_message as any; // Telegram API може містити додаткові поля
       console.log(`[telegram/webhook] 🔍 Reply detected! Full reply context:`, {
-        replyText: update.message.reply_to_message.text,
-        replyTextLength: update.message.reply_to_message.text?.length,
-        replyHasEntities: !!update.message.reply_to_message.entities,
-        replyEntities: update.message.reply_to_message.entities,
+        replyText: replyMsg.text,
+        replyTextLength: replyMsg.text?.length,
+        replyHasEntities: !!replyMsg.entities,
+        replyEntities: replyMsg.entities,
         messageText: update.message.text,
         messageFromId: update.message.from?.id,
         messageFromUsername: update.message.from?.username,
