@@ -186,8 +186,8 @@ export async function POST(req: NextRequest) {
           
           console.log(`[fix-missing-consultations] Found ${allClientRecords.length} records for client ${client.altegioClientId}`);
           
-          // Шукаємо записи з обома послугами
-          const clientRecords = allClientRecords
+          // Шукаємо записи з обома послугами в ОДНОМУ записі
+          const recordsWithBothServices = allClientRecords
             .filter((r) => {
               // Перевіряємо services в різних місцях
               const services = r.data?.services || 
@@ -219,6 +219,69 @@ export async function POST(req: NextRequest) {
               return hasConsultation && hasHairExtension;
             })
             .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
+          
+          // Якщо не знайшли запис з обома послугами в одному записі,
+          // шукаємо консультацію в окремому записі, який був до нарощування
+          let clientRecords = recordsWithBothServices;
+          
+          if (recordsWithBothServices.length === 0) {
+            console.log(`[fix-missing-consultations] No record with both services in one visit for client ${client.altegioClientId}, checking separate records...`);
+            
+            // Знаходимо всі записи з консультацією
+            const consultationRecords = allClientRecords
+              .filter((r) => {
+                const services = r.data?.services || r.services || [];
+                if (!Array.isArray(services) || services.length === 0) return false;
+                return services.some((s: any) => {
+                  const title = s.title || s.name || '';
+                  return /консультація/i.test(title);
+                });
+              })
+              .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
+            
+            // Знаходимо всі записи з нарощуванням
+            const hairExtensionRecords = allClientRecords
+              .filter((r) => {
+                const services = r.data?.services || r.services || [];
+                if (!Array.isArray(services) || services.length === 0) return false;
+                return services.some((s: any) => {
+                  const title = s.title || s.name || '';
+                  return /нарощування/i.test(title);
+                });
+              })
+              .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
+            
+            console.log(`[fix-missing-consultations] Client ${client.altegioClientId}: ${consultationRecords.length} consultation records, ${hairExtensionRecords.length} hair extension records`);
+            
+            // Якщо є і консультація, і нарощування в різних записах,
+            // використовуємо найближчу консультацію до нарощування
+            if (consultationRecords.length > 0 && hairExtensionRecords.length > 0) {
+              const latestHairExtension = hairExtensionRecords[0];
+              const hairExtensionDate = new Date(latestHairExtension.receivedAt || latestHairExtension.datetime || 0);
+              
+              // Знаходимо консультацію, яка була до або в той же день, що і нарощування
+              const relevantConsultation = consultationRecords.find((cr) => {
+                const consultationDate = new Date(cr.receivedAt || cr.datetime || 0);
+                return consultationDate <= hairExtensionDate;
+              });
+              
+              if (relevantConsultation) {
+                console.log(`[fix-missing-consultations] Found consultation record before/on hair extension date for client ${client.altegioClientId}`);
+                // Створюємо "віртуальний" запис з обома послугами
+                clientRecords = [{
+                  ...latestHairExtension,
+                  data: {
+                    ...latestHairExtension.data,
+                    services: [
+                      ...(relevantConsultation.data?.services || relevantConsultation.services || []),
+                      ...(latestHairExtension.data?.services || latestHairExtension.services || []),
+                    ],
+                  },
+                  receivedAt: latestHairExtension.receivedAt || latestHairExtension.datetime,
+                }];
+              }
+            }
+          }
 
           if (clientRecords.length > 0) {
             const latestRecord = clientRecords[0];
