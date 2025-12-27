@@ -221,7 +221,12 @@ export default function DirectPage() {
       params.set("sortOrder", sortOrder);
 
       console.log('[DirectPage] Loading clients...', { filters, sortBy, sortOrder });
-      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`);
+      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       
       // Якщо помилка HTTP, не очищаємо клієнтів
       if (!res.ok) {
