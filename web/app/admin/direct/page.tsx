@@ -1324,6 +1324,47 @@ export default function DirectPage() {
             🔗 Перевірити webhook
           </button>
           <button
+            className="btn btn-sm btn-info btn-outline"
+            onClick={async () => {
+              const altegioId = prompt('Введіть Altegio ID клієнта для перевірки стану:');
+              if (!altegioId) return;
+              
+              setIsLoading(true);
+              try {
+                const res = await fetch(`/api/admin/direct/check-client-state?altegioClientId=${altegioId}`);
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `🔍 Перевірка стану клієнта (Altegio ID: ${altegioId})\n\n` +
+                    `Клієнт з direct-store:\n` +
+                    `  ID: ${data.clientFromStore?.id || 'не знайдено'}\n` +
+                    `  Instagram: ${data.clientFromStore?.instagramUsername || 'не вказано'}\n` +
+                    `  Стан: ${data.clientFromStore?.state || 'не вказано'}\n\n` +
+                    `Клієнт з бази даних:\n` +
+                    `  ID: ${data.clientFromDB?.id || 'не знайдено'}\n` +
+                    `  Instagram: ${data.clientFromDB?.instagramUsername || 'не вказано'}\n` +
+                    `  Стан: ${data.clientFromDB?.state || 'не вказано'}\n` +
+                    `  Оновлено: ${data.clientFromDB?.updatedAt || 'не вказано'}\n\n` +
+                    `Співпадіння: ${data.match ? '✅ Так' : '❌ Ні'}\n\n` +
+                    `Останні зміни стану:\n${data.stateLogs?.map((log: any, i: number) => 
+                      `${i + 1}. ${log.createdAt} - ${log.previousState || 'null'} → ${log.state || 'null'} (${log.reason || 'без причини'})`
+                    ).join('\n') || 'немає'}\n\n` +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Перевірити стан клієнта в базі даних"
+          >
+            🔍 Перевірити стан клієнта
+          </button>
+          <button
             className="btn btn-sm btn-success btn-outline"
             onClick={async () => {
               if (!confirm('Налаштувати webhook для HOB_client_bot на спеціальний endpoint (/api/telegram/direct-reminders-webhook)?\n\nЦе дозволить обробляти повідомлення від HOB_client_bot без помилок авторизації.')) {
