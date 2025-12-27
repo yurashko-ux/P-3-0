@@ -1260,6 +1260,65 @@ export default function DirectPage() {
             🔍 Діагностика нагадувань
           </button>
           <button
+            className="btn btn-sm btn-info btn-outline"
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/check-telegram-webhook');
+                const data = await res.json();
+                if (data.ok) {
+                  const hobWebhook = data.webhooks.HOB_CLIENT_BOT;
+                  const botWebhook = data.webhooks.BOT;
+                  
+                  let message = `🔍 Перевірка налаштування Telegram webhook\n\n`;
+                  
+                  message += `Токени:\n`;
+                  message += `  HOB_CLIENT_BOT_TOKEN: ${data.tokens.HOB_CLIENT_BOT_TOKEN}\n`;
+                  message += `  BOT_TOKEN: ${data.tokens.BOT_TOKEN}\n\n`;
+                  
+                  message += `HOB_client_bot webhook:\n`;
+                  if (hobWebhook.error) {
+                    message += `  ❌ Помилка: ${hobWebhook.error}\n`;
+                  } else if (hobWebhook.error?.code) {
+                    message += `  ❌ Помилка API: ${hobWebhook.error.code} - ${hobWebhook.error.description}\n`;
+                  } else {
+                    message += `  ✅ URL: ${hobWebhook.url || 'NOT SET'}\n`;
+                    message += `  Pending updates: ${hobWebhook.pendingUpdateCount}\n`;
+                    if (hobWebhook.lastErrorMessage) {
+                      message += `  ⚠️ Last error: ${hobWebhook.lastErrorMessage}\n`;
+                    }
+                  }
+                  
+                  message += `\nОсновний бот webhook:\n`;
+                  if (botWebhook.error) {
+                    message += `  ❌ Помилка: ${botWebhook.error}\n`;
+                  } else if (botWebhook.error?.code) {
+                    message += `  ❌ Помилка API: ${botWebhook.error.code} - ${botWebhook.error.description}\n`;
+                  } else {
+                    message += `  ✅ URL: ${botWebhook.url || 'NOT SET'}\n`;
+                    message += `  Pending updates: ${botWebhook.pendingUpdateCount}\n`;
+                    if (botWebhook.lastErrorMessage) {
+                      message += `  ⚠️ Last error: ${botWebhook.lastErrorMessage}\n`;
+                    }
+                  }
+                  
+                  message += `\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Перевірити налаштування Telegram webhook"
+          >
+            🔗 Перевірити webhook
+          </button>
+          <button
             className="btn btn-sm btn-info"
             onClick={async () => {
               setIsLoading(true);
