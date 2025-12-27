@@ -97,22 +97,56 @@ export async function POST(req: NextRequest) {
 
         // Якщо є нарощування, але немає консультації - шукаємо записи
         if (hasHairExtension && !hasConsultation) {
-          // Шукаємо записи для цього клієнта з обома послугами
-          const clientRecords = records
+          console.log(`[fix-missing-consultations] Checking client ${client.id} (Altegio ${client.altegioClientId}, Instagram: ${client.instagramUsername})`);
+          
+          // Шукаємо записи для цього клієнта
+          const allClientRecords = records.filter((r) => {
+            if (!r || typeof r !== 'object') return false;
+            
+            // Перевіряємо різні формати clientId
+            const recordClientId = r.clientId || 
+                                 (r.data && r.data.client && r.data.client.id) ||
+                                 (r.data && r.data.client_id);
+            
+            if (!recordClientId) return false;
+            
+            const parsedClientId = parseInt(String(recordClientId), 10);
+            const targetClientId = client.altegioClientId;
+            
+            return !isNaN(parsedClientId) && parsedClientId === targetClientId;
+          });
+          
+          console.log(`[fix-missing-consultations] Found ${allClientRecords.length} records for client ${client.altegioClientId}`);
+          
+          // Шукаємо записи з обома послугами
+          const clientRecords = allClientRecords
             .filter((r) => {
-              const recordClientId = parseInt(String(r.clientId || (r.data && r.data.client && r.data.client.id)), 10);
-              return recordClientId === client.altegioClientId;
-            })
-            .filter((r) => {
-              const services = r.data?.services || r.services || [];
-              if (!Array.isArray(services)) return false;
+              // Перевіряємо services в різних місцях
+              const services = r.data?.services || 
+                              r.services || 
+                              (r.data && Array.isArray(r.data.service) ? r.data.service : [r.data?.service].filter(Boolean)) ||
+                              [];
               
-              const hasConsultation = services.some((s: any) => 
-                s.title && /консультація/i.test(s.title)
-              );
-              const hasHairExtension = services.some((s: any) => 
-                s.title && /нарощування/i.test(s.title)
-              );
+              if (!Array.isArray(services) || services.length === 0) {
+                return false;
+              }
+              
+              const hasConsultation = services.some((s: any) => {
+                const title = s.title || s.name || '';
+                return /консультація/i.test(title);
+              });
+              
+              const hasHairExtension = services.some((s: any) => {
+                const title = s.title || s.name || '';
+                return /нарощування/i.test(title);
+              });
+              
+              if (hasConsultation && hasHairExtension) {
+                console.log(`[fix-missing-consultations] Found record with both services for client ${client.altegioClientId}:`, {
+                  services: services.map((s: any) => s.title || s.name),
+                  receivedAt: r.receivedAt,
+                });
+              }
               
               return hasConsultation && hasHairExtension;
             })
