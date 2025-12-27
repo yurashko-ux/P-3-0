@@ -285,7 +285,6 @@ export async function POST(req: NextRequest) {
             let instagram: string | null = null;
             
             // Перевіряємо custom_fields в клієнті з record події
-            // Якщо custom_fields немає - не робимо нічого
             if (client.custom_fields && Array.isArray(client.custom_fields) && client.custom_fields.length > 0) {
               for (const field of client.custom_fields) {
                 if (field && typeof field === 'object') {
@@ -298,13 +297,12 @@ export async function POST(req: NextRequest) {
                   }
                 }
               }
-            } else {
-              // Якщо custom_fields немає - не робимо нічого
-              console.log(`[altegio/webhook] ⏭️ Skipping client ${client.id} from record event - no custom_fields`);
             }
+            // Якщо custom_fields порожній або відсутній - instagram залишається null
             
             // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
             const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+            const originalInstagram = instagram; // Зберігаємо оригінальне значення для перевірки повідомлень
             if (instagram) {
               const lowerInstagram = instagram.toLowerCase().trim();
               if (invalidValues.includes(lowerInstagram)) {
@@ -313,7 +311,10 @@ export async function POST(req: NextRequest) {
               }
             }
             
-            // Якщо знайшли Instagram в custom_fields - синхронізуємо клієнта
+            // Синхронізуємо клієнта в будь-якому випадку (з Instagram або без)
+            const isMissingInstagram = !instagram;
+            const shouldSendNotification = isMissingInstagram && originalInstagram?.toLowerCase().trim() !== 'no';
+            
             if (instagram) {
               const normalizedInstagram = normalizeInstagram(instagram);
               if (normalizedInstagram) {
@@ -403,6 +404,154 @@ export async function POST(req: NextRequest) {
                   };
                   await saveDirectClient(newClient);
                   console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, masterId: ${masterId || 'none'})`);
+                }
+              }
+            } else if (isMissingInstagram) {
+              // Якщо Instagram відсутній, створюємо клієнта зі станом "no-instagram"
+              const allStatuses = await getAllDirectStatuses();
+              const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
+              
+              if (defaultStatus) {
+                const existingDirectClients = await getAllDirectClients();
+                const existingAltegioIdMap = new Map<number, string>();
+                
+                for (const dc of existingDirectClients) {
+                  if (dc.altegioClientId) {
+                    existingAltegioIdMap.set(dc.altegioClientId, dc.id);
+                  }
+                }
+                
+                const altegioClientId = parseInt(String(client.id), 10);
+                const existingClientId = existingAltegioIdMap.get(altegioClientId);
+                
+                if (!existingClientId) {
+                  const now = new Date().toISOString();
+                  const normalizedInstagram = `missing_instagram_${client.id}`;
+                  const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+                  const firstName = nameParts[0] || undefined;
+                  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+                  
+                  // Автоматично призначаємо майстра, якщо є staff_id і послуга з нарощуванням
+                  let masterId: string | undefined = undefined;
+                  const recordData = body.data?.data || body.data;
+                  const services = recordData?.services || [];
+                  const staffId = recordData?.staff?.id || recordData?.staff_id;
+                  const hasHairExtension = Array.isArray(services) && services.some((s: any) => {
+                    const title = s.title || s.name || '';
+                    return /нарощування/i.test(title);
+                  });
+                  
+                  if (hasHairExtension && staffId) {
+                    try {
+                      const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
+                      const master = await getMasterByAltegioStaffId(staffId);
+                      if (master) {
+                        masterId = master.id;
+                        console.log(`[altegio/webhook] Auto-assigned master ${master.name} (${master.id}) to new client from record event`);
+                      }
+                    } catch (err) {
+                      console.warn(`[altegio/webhook] Failed to auto-assign master for staff_id ${staffId}:`, err);
+                    }
+                  }
+                  
+                  const newClient = {
+                    id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    instagramUsername: normalizedInstagram,
+                    firstName,
+                    lastName,
+                    source: 'instagram' as const,
+                    state: 'no-instagram' as const,
+                    firstContactDate: now,
+                    statusId: defaultStatus.id,
+                    masterId,
+                    masterManuallySet: false,
+                    visitedSalon: false,
+                    signedUpForPaidService: false,
+                    altegioClientId: altegioClientId,
+                    createdAt: now,
+                    updatedAt: now,
+                  };
+                  await saveDirectClient(newClient);
+                  console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event without Instagram (client ${client.id}, state: no-instagram, masterId: ${masterId || 'none'})`);
+                  
+                  // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no"
+                  if (shouldSendNotification) {
+                    try {
+                      const { sendMessage } = await import('@/lib/telegram/api');
+                      const { getAdminChatIds, getMykolayChatId } = await import('@/lib/direct-reminders/telegram');
+                      const { listRegisteredChats } = await import('@/lib/photo-reports/master-registry');
+                      const { TELEGRAM_ENV } = await import('@/lib/telegram/env');
+
+                      let mykolayChatId = await getMykolayChatId();
+                      if (!mykolayChatId) {
+                        const registeredChats = await listRegisteredChats();
+                        const mykolayChat = registeredChats.find(
+                          chat => {
+                            const username = chat.username?.toLowerCase().replace('@', '') || '';
+                            return username === 'mykolay007';
+                          }
+                        );
+                        mykolayChatId = mykolayChat?.chatId;
+                      }
+
+                      const adminChatIds = await getAdminChatIds();
+                      const clientName = (client.name || client.display_name || 'Невідомий клієнт').trim();
+                      const clientPhone = client.phone || 'не вказано';
+                      const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
+                        `Клієнт: <b>${clientName}</b>\n` +
+                        `Телефон: ${clientPhone}\n` +
+                        `Altegio ID: <code>${client.id}</code>\n\n` +
+                        `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
+                        `(наприклад: @username або username)\n\n` +
+                        `Або додайте Instagram username для цього клієнта в Altegio.`;
+
+                      const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+
+                      if (mykolayChatId) {
+                        try {
+                          await sendMessage(mykolayChatId, message, {}, botToken);
+                          console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                        } catch (err) {
+                          console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
+                        }
+                      }
+
+                      for (const adminChatId of adminChatIds) {
+                        try {
+                          await sendMessage(adminChatId, message, {}, botToken);
+                          console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                        } catch (err) {
+                          console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                        }
+                      }
+                    } catch (notificationErr) {
+                      console.error(`[altegio/webhook] ❌ Failed to send missing Instagram notifications:`, notificationErr);
+                    }
+                  } else if (originalInstagram?.toLowerCase().trim() === 'no') {
+                    console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to "no"`);
+                  }
+                } else {
+                  // Оновлюємо існуючого клієнта
+                  const { getDirectClient } = await import('@/lib/direct-store');
+                  const existingClient = await getDirectClient(existingClientId);
+                  if (existingClient) {
+                    const normalizedInstagram = `missing_instagram_${client.id}`;
+                    const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+                    const firstName = nameParts[0] || undefined;
+                    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+                    
+                    const updated = {
+                      ...existingClient,
+                      altegioClientId: altegioClientId,
+                      instagramUsername: normalizedInstagram,
+                      state: 'no-instagram' as const,
+                      ...(firstName && { firstName }),
+                      ...(lastName && { lastName }),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    await saveDirectClient(updated);
+                    console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from record event without Instagram (client ${client.id}, state: no-instagram)`);
+                  }
                 }
               }
             }
