@@ -495,33 +495,39 @@ export async function POST(req: NextRequest) {
                       }
 
                       const adminChatIds = await getAdminChatIds();
-                      const clientName = (client.name || client.display_name || 'Невідомий клієнт').trim();
-                      const clientPhone = client.phone || 'не вказано';
-                      const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
-                        `Клієнт: <b>${clientName}</b>\n` +
-                        `Телефон: ${clientPhone}\n` +
-                        `Altegio ID: <code>${client.id}</code>\n\n` +
-                        `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
-                        `(наприклад: @username або username)\n\n` +
-                        `Або додайте Instagram username для цього клієнта в Altegio.`;
+                      const clientName = (client.name || client.display_name || '').trim();
+                      
+                      // Перевіряємо, чи є ім'я (не відправляємо для клієнтів без імені)
+                      if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
+                        console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} - no name provided (name: "${clientName}")`);
+                      } else {
+                        const clientPhone = client.phone || 'не вказано';
+                        const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
+                          `Клієнт: <b>${clientName}</b>\n` +
+                          `Телефон: ${clientPhone}\n` +
+                          `Altegio ID: <code>${client.id}</code>\n\n` +
+                          `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
+                          `(наприклад: @username або username)\n\n` +
+                          `Або додайте Instagram username для цього клієнта в Altegio.`;
 
-                      const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+                        const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
 
-                      if (mykolayChatId) {
-                        try {
-                          await sendMessage(mykolayChatId, message, {}, botToken);
-                          console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
-                        } catch (err) {
-                          console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
+                        if (mykolayChatId) {
+                          try {
+                            await sendMessage(mykolayChatId, message, {}, botToken);
+                            console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                          } catch (err) {
+                            console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
+                          }
                         }
-                      }
 
-                      for (const adminChatId of adminChatIds) {
-                        try {
-                          await sendMessage(adminChatId, message, {}, botToken);
-                          console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
-                        } catch (err) {
-                          console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                        for (const adminChatId of adminChatIds) {
+                          try {
+                            await sendMessage(adminChatId, message, {}, botToken);
+                            console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                          } catch (err) {
+                            console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                          }
                         }
                       }
                     } catch (notificationErr) {
@@ -1150,38 +1156,44 @@ export async function POST(req: NextRequest) {
                 const adminChatIds = await getAdminChatIds();
 
                 // Формуємо повідомлення
-                const clientName = (client.name || client.display_name || 'Невідомий клієнт').trim();
-                const clientPhone = client.phone || 'не вказано';
-                const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
-                  `Клієнт: <b>${clientName}</b>\n` +
-                  `Телефон: ${clientPhone}\n` +
-                  `Altegio ID: <code>${clientId}</code>\n\n` +
-                  `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
-                  `(наприклад: @username або username)\n\n` +
-                  `Або додайте Instagram username для цього клієнта в Altegio.`;
-
-                // Отримуємо токен бота
-                const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
-
-                // Відправляємо повідомлення mykolay007
-                if (mykolayChatId) {
-                  try {
-                    await sendMessage(mykolayChatId, message, {}, botToken);
-                    console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
-                  } catch (err) {
-                    console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
-                  }
+                const clientName = (client.name || client.display_name || '').trim();
+                
+                // Перевіряємо, чи є ім'я (не відправляємо для клієнтів без імені)
+                if (!clientName || clientName === 'Невідоме ім\'я' || clientName === 'Невідомий клієнт') {
+                  console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${clientId} - no name provided (name: "${clientName}")`);
                 } else {
-                  console.warn(`[altegio/webhook] ⚠️ mykolay007 chat ID not found`);
-                }
+                  const clientPhone = client.phone || 'не вказано';
+                  const message = `⚠️ <b>Відсутній Instagram username</b>\n\n` +
+                    `Клієнт: <b>${clientName}</b>\n` +
+                    `Телефон: ${clientPhone}\n` +
+                    `Altegio ID: <code>${clientId}</code>\n\n` +
+                    `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
+                    `(наприклад: @username або username)\n\n` +
+                    `Або додайте Instagram username для цього клієнта в Altegio.`;
 
-                // Відправляємо повідомлення адміністраторам
-                for (const adminChatId of adminChatIds) {
-                  try {
-                    await sendMessage(adminChatId, message, {}, botToken);
-                    console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
-                  } catch (err) {
-                    console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                  // Отримуємо токен бота
+                  const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
+
+                  // Відправляємо повідомлення mykolay007
+                  if (mykolayChatId) {
+                    try {
+                      await sendMessage(mykolayChatId, message, {}, botToken);
+                      console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                    } catch (err) {
+                      console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
+                    }
+                  } else {
+                    console.warn(`[altegio/webhook] ⚠️ mykolay007 chat ID not found`);
+                  }
+
+                  // Відправляємо повідомлення адміністраторам
+                  for (const adminChatId of adminChatIds) {
+                    try {
+                      await sendMessage(adminChatId, message, {}, botToken);
+                      console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                    } catch (err) {
+                      console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                    }
                   }
                 }
               } catch (notificationErr) {
