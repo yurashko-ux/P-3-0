@@ -16,9 +16,10 @@ function createPrismaClient(): PrismaClient {
       log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
       // Додаємо налаштування для serverless
       // Для Prisma Postgres в Vercel використовується PRISMA_DATABASE_URL
+      // Якщо PRISMA_DATABASE_URL не встановлено, використовуємо DATABASE_URL як fallback
       datasources: {
         db: {
-          url: process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL,
+          url: process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || undefined,
         },
       },
     });

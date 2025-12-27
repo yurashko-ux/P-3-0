@@ -146,9 +146,10 @@ export async function GET(req: NextRequest) {
   
   // Додаємо рекомендації на основі результатів
   if (!diagnostics.databaseUrl.exists) {
-    diagnostics.recommendations.push('❌ DATABASE_URL не налаштовано в environment variables');
-    diagnostics.recommendations.push('Перейдіть в Vercel Dashboard → ваш проект → Settings → Environment Variables');
-    diagnostics.recommendations.push('Переконайтеся, що DATABASE_URL встановлено для всіх environment (Production, Preview, Development)');
+    diagnostics.recommendations.push('❌ PRISMA_DATABASE_URL або DATABASE_URL не налаштовано');
+    diagnostics.recommendations.push('Для Prisma Postgres в Vercel автоматично створюється PRISMA_DATABASE_URL');
+    diagnostics.recommendations.push('Перевірте: Vercel Dashboard → ваш проект → Settings → Environment Variables');
+    diagnostics.recommendations.push('Якщо PRISMA_DATABASE_URL відсутній, переконайтеся, що база "CRM-P-3-0" підключена до проекту');
   } else if (!allTestsPassed) {
     diagnostics.recommendations.push('⚠️ База даних недоступна');
     diagnostics.recommendations.push('Перевірте статус бази даних: Vercel Dashboard → Storage → "CRM-P-3-0"');
