@@ -9,7 +9,7 @@ import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 
 // Компонент для відображення піктограми стану
-function StateIcon({ state, size = 20 }: { state: string | null; size?: number }) {
+function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const iconStyle = { width: `${size}px`, height: `${size}px` };
   
   if (state === 'client') {
@@ -537,7 +537,7 @@ export function DirectClientTable({
                           title="Натисніть, щоб переглянути історію змін стану"
                         >
                           {/* Показуємо тільки поточний стан - історія завантажується при відкритті модального вікна */}
-                          <StateIcon state={client.state || 'lead'} size={20} />
+                          <StateIcon state={client.state || 'lead'} size={36} />
                         </button>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
