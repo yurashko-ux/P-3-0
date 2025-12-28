@@ -10,6 +10,7 @@ import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 import { DirectStats } from "./_components/DirectStats";
+import WebhooksTable from "./_components/WebhooksTable";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
@@ -1749,6 +1750,9 @@ export default function DirectPage() {
 
       {/* Статистика */}
       {stats && <DirectStats stats={stats} />}
+
+      {/* Таблиця webhook-ів */}
+      <WebhooksTable />
 
       {/* Управління статусами та відповідальними */}
       <div className="flex gap-4 items-start">
