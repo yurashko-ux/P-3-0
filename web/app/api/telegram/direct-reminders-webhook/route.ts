@@ -460,9 +460,9 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
 }
 
 async function handleMessage(message: TelegramUpdate["message"]) {
-  console.log(`[direct-reminders-webhook] handleMessage: FUNCTION CALLED`);
+  console.log(`[direct-reminders-webhook] handleMessage: FUNCTION CALLED - VERSION 2025-12-28-1127`);
   try {
-    console.log(`[direct-reminders-webhook] handleMessage: INSIDE TRY BLOCK`);
+    console.log(`[direct-reminders-webhook] handleMessage: INSIDE TRY BLOCK - VERSION 2025-12-28-1127`);
     if (!message) {
       console.log(`[direct-reminders-webhook] handleMessage: message is null/undefined`);
       return;
