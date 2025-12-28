@@ -123,6 +123,7 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
+  const [searchInput, setSearchInput] = useState<string>(filters.search);
 
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
@@ -213,13 +214,26 @@ export function DirectClientTable({
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex-1 min-w-[200px]">
               <label className="label label-text text-xs">Пошук по Instagram або Повне ім'я</label>
-              <input
-                type="text"
-                placeholder="Введіть username або ім'я..."
-                className="input input-bordered input-sm w-full"
-                value={filters.search}
-                onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Введіть username або ім'я..."
+                  className="input input-bordered input-sm flex-1"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onFiltersChange({ ...filters, search: searchInput });
+                    }
+                  }}
+                />
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => onFiltersChange({ ...filters, search: searchInput })}
+                >
+                  Знайти
+                </button>
+              </div>
             </div>
             <div className="min-w-[150px]">
               <label className="label label-text text-xs">Статус</label>
@@ -268,6 +282,7 @@ export function DirectClientTable({
               <button
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
+                  setSearchInput("");
                   onFiltersChange({ statusId: "", masterId: "", source: "", search: "" });
                 }}
               >
