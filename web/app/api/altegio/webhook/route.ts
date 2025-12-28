@@ -181,6 +181,23 @@ export async function POST(req: NextRequest) {
                   updatedAt: new Date().toISOString(),
                 };
                 
+                          // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
+                if (data.datetime) {
+                  const appointmentDate = new Date(data.datetime);
+                  const now = new Date();
+                  // Встановлюємо paidServiceDate для майбутніх записів або якщо вона новіша за існуючу
+                  if (appointmentDate > now) {
+                    updates.paidServiceDate = data.datetime;
+                    updates.signedUpForPaidService = true;
+                    console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (future) for client ${existingClient.id}`);
+                  } else if (!existingClient.paidServiceDate || new Date(existingClient.paidServiceDate) < appointmentDate) {
+                    // Для минулих дат встановлюємо тільки якщо paidServiceDate не встановлено або новіша
+                    updates.paidServiceDate = data.datetime;
+                    updates.signedUpForPaidService = true;
+                    console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing) for client ${existingClient.id}`);
+                  }
+                }
+                
                 // Автоматично призначаємо майстра, якщо:
                 // 1. Відповідальний не був вибраний вручну
                 // 2. Відповідальний не встановлений або потрібно оновити
@@ -347,6 +364,21 @@ export async function POST(req: NextRequest) {
                 if (existingClientId) {
                   const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
                   if (existingClient) {
+                    // Оновлюємо дату запису з data.datetime, якщо вона є
+                    const recordData = body.data?.data || body.data;
+                    const appointmentDateTime = recordData?.datetime || data.datetime;
+                    let paidServiceDate = existingClient.paidServiceDate;
+                    let signedUpForPaidService = existingClient.signedUpForPaidService;
+                    
+                    if (appointmentDateTime) {
+                      const appointmentDate = new Date(appointmentDateTime);
+                      const now = new Date();
+                      if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
+                        paidServiceDate = appointmentDateTime;
+                        signedUpForPaidService = true;
+                      }
+                    }
+                    
                     const updated: typeof existingClient = {
                       ...existingClient,
                       altegioClientId: parseInt(String(client.id), 10),
@@ -354,6 +386,8 @@ export async function POST(req: NextRequest) {
                       state: 'client' as const,
                       ...(firstName && { firstName }),
                       ...(lastName && { lastName }),
+                      ...(paidServiceDate && { paidServiceDate }),
+                      signedUpForPaidService,
                       updatedAt: new Date().toISOString(),
                     };
                     await saveDirectClient(updated);
@@ -385,6 +419,21 @@ export async function POST(req: NextRequest) {
                     }
                   }
                   
+                  // Встановлюємо дату запису з data.datetime, якщо вона є і є майбутньою
+                  const recordData = body.data?.data || body.data;
+                  const appointmentDateTime = recordData?.datetime || data.datetime;
+                  let paidServiceDate: string | undefined = undefined;
+                  let signedUpForPaidService = false;
+                  
+                  if (appointmentDateTime) {
+                    const appointmentDate = new Date(appointmentDateTime);
+                    const nowDate = new Date();
+                    if (appointmentDate > nowDate) {
+                      paidServiceDate = appointmentDateTime;
+                      signedUpForPaidService = true;
+                    }
+                  }
+                  
                   const newClient = {
                     id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     instagramUsername: normalizedInstagram,
@@ -397,7 +446,8 @@ export async function POST(req: NextRequest) {
                     masterId,
                     masterManuallySet: false, // Автоматичне призначення
                     visitedSalon: false,
-                    signedUpForPaidService: false,
+                    signedUpForPaidService,
+                    ...(paidServiceDate && { paidServiceDate }),
                     altegioClientId: parseInt(String(client.id), 10),
                     createdAt: now,
                     updatedAt: now,
@@ -561,6 +611,21 @@ export async function POST(req: NextRequest) {
                     const firstName = nameParts[0] || undefined;
                     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
                     
+                    // Оновлюємо дату запису з data.datetime, якщо вона є
+                    const recordData = body.data?.data || body.data;
+                    const appointmentDateTime = recordData?.datetime || data.datetime;
+                    let paidServiceDate = existingClient.paidServiceDate;
+                    let signedUpForPaidService = existingClient.signedUpForPaidService;
+                    
+                    if (appointmentDateTime) {
+                      const appointmentDate = new Date(appointmentDateTime);
+                      const now = new Date();
+                      if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
+                        paidServiceDate = appointmentDateTime;
+                        signedUpForPaidService = true;
+                      }
+                    }
+                    
                     const updated = {
                       ...existingClient,
                       altegioClientId: altegioClientId,
@@ -568,6 +633,8 @@ export async function POST(req: NextRequest) {
                       state: 'no-instagram' as const,
                       ...(firstName && { firstName }),
                       ...(lastName && { lastName }),
+                      ...(paidServiceDate && { paidServiceDate }),
+                      signedUpForPaidService,
                       updatedAt: new Date().toISOString(),
                     };
                     await saveDirectClient(updated);
@@ -1046,84 +1113,9 @@ export async function POST(req: NextRequest) {
           // Якщо не знайшли збережений зв'язок, обробляємо Instagram з вебхука
           if (!normalizedInstagram || (!usingSavedLink && !instagram)) {
             if (!instagram) {
-              // Якщо Instagram не витягнувся з webhook, спробуємо отримати повні дані з Altegio API
-              console.log(`[altegio/webhook] ⚠️ No Instagram in webhook for client ${clientId}, trying to fetch full client data from Altegio API...`);
-              
-              try {
-                const { getClient } = await import('@/lib/altegio/clients');
-                const companyId = parseInt(String(data.company_id || data.company?.id || process.env.ALTEGIO_COMPANY_ID), 10);
-                
-                if (companyId) {
-                  const fullClientData = await getClient(companyId, parseInt(String(clientId), 10));
-                  if (fullClientData && fullClientData.custom_fields) {
-                    // Використовуємо ту саму логіку для витягування Instagram
-                    let extractedInstagram: string | null = null;
-                    
-                    if (Array.isArray(fullClientData.custom_fields)) {
-                      for (const field of fullClientData.custom_fields) {
-                        if (field && typeof field === 'object') {
-                          const title = field.title || field.name || field.label || '';
-                          const value = field.value || field.data || field.content || field.text || '';
-                          if (value && typeof value === 'string' && /instagram/i.test(title)) {
-                            extractedInstagram = value.trim();
-                            break;
-                          }
-                        }
-                      }
-                    } else if (typeof fullClientData.custom_fields === 'object') {
-                      extractedInstagram =
-                        fullClientData.custom_fields['instagram-user-name'] ||
-                        fullClientData.custom_fields['Instagram user name'] ||
-                        fullClientData.custom_fields['Instagram username'] ||
-                        fullClientData.custom_fields.instagram_user_name ||
-                        fullClientData.custom_fields.instagramUsername ||
-                        fullClientData.custom_fields.instagram ||
-                        fullClientData.custom_fields['instagram'] ||
-                        null;
-                      
-                      // Якщо не знайшли по ключам, перевіряємо всі ключі
-                      if (!extractedInstagram) {
-                        for (const key of Object.keys(fullClientData.custom_fields)) {
-                          const value = fullClientData.custom_fields[key];
-                          if (value && typeof value === 'string' && value.trim() && /instagram/i.test(key)) {
-                            extractedInstagram = value.trim();
-                            break;
-                          }
-                        }
-                      }
-                    }
-                    
-                    // Перевіряємо, чи Instagram валідний
-                    if (extractedInstagram) {
-                      const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
-                      const lowerInstagram = extractedInstagram.toLowerCase().trim();
-                      if (!invalidValues.includes(lowerInstagram)) {
-                        instagram = extractedInstagram;
-                        console.log(`[altegio/webhook] ✅ Found Instagram in full client data from API: ${extractedInstagram}`);
-                      }
-                    }
-                  }
-                }
-              } catch (fetchErr) {
-                console.warn(`[altegio/webhook] ⚠️ Failed to fetch full client data from Altegio API:`, fetchErr);
-              }
-              
-              if (!instagram) {
-                console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
-                isMissingInstagram = true;
-                normalizedInstagram = `missing_instagram_${clientId}`;
-              } else {
-                // Якщо знайшли Instagram через API, нормалізуємо його
-                normalizedInstagram = normalizeInstagram(instagram);
-                if (!normalizedInstagram) {
-                  console.log(`[altegio/webhook] ⚠️ Invalid Instagram username for client ${clientId}: ${instagram}, creating with temporary username`);
-                  isMissingInstagram = true;
-                  normalizedInstagram = `missing_instagram_${clientId}`;
-                } else {
-                  isMissingInstagram = false;
-                  console.log(`[altegio/webhook] ✅ Normalized Instagram from API for client ${clientId}: ${normalizedInstagram}`);
-                }
-              }
+              console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
+              isMissingInstagram = true;
+              normalizedInstagram = `missing_instagram_${clientId}`;
             } else {
               console.log(`[altegio/webhook] ✅ Extracted Instagram for client ${clientId}: ${instagram}`);
               normalizedInstagram = normalizeInstagram(instagram);
