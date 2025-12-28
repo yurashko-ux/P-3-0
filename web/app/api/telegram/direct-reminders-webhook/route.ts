@@ -467,17 +467,12 @@ async function handleMessage(message: TelegramUpdate["message"]) {
     }
     const chatId = message.chat.id;
     const fromUser = message.from;
-    console.log(`[direct-reminders-webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}, fromUsername=${fromUser?.username}, fromUserId=${fromUser?.id}`);
-    
-    // Додаткова перевірка та логування
-    try {
-      console.log(`[direct-reminders-webhook] handleMessage: fromUser exists=${!!fromUser}, username=${fromUser?.username}, id=${fromUser?.id}, firstName=${fromUser?.first_name}`);
-    } catch (err) {
-      console.error(`[direct-reminders-webhook] Error logging fromUser:`, err);
-    }
+    console.log(`[direct-reminders-webhook] handleMessage STEP 1: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}`);
+    console.log(`[direct-reminders-webhook] handleMessage STEP 2: fromUsername=${fromUser?.username}, fromUserId=${fromUser?.id}`);
+    console.log(`[direct-reminders-webhook] handleMessage STEP 3: before messageText assignment`);
     
     const messageText = message.text;
-    console.log(`[direct-reminders-webhook] handleMessage: message.text type=${typeof messageText}, value="${messageText}", startsWith("/start")=${messageText?.startsWith("/start")}`);
+    console.log(`[direct-reminders-webhook] handleMessage STEP 4: messageText="${messageText}", type=${typeof messageText}, startsWith="/start"=${messageText?.startsWith("/start")}`);
 
     // Обробка команди /start - реєстрація та автоматичне оновлення chatId в DirectMaster
     if (messageText?.startsWith("/start")) {
