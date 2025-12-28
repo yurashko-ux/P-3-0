@@ -1087,20 +1087,25 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
-              if (!confirm('Додати колонку telegramChatId до таблиці direct_masters?\n\nЦе додасть поле для зберігання Telegram Chat ID відповідальних.\n\nПродовжити?')) {
+              if (!confirm('Синхронізувати Prisma схему з базою даних?\n\nЦе додасть колонку telegramChatId до таблиці direct_masters (якщо її ще немає).\n\nПродовжити?')) {
                 return;
               }
               setIsLoading(true);
               try {
-                const res = await fetch('/api/admin/direct/add-telegram-chat-id-column', { method: 'POST' });
+                const res = await fetch('/api/admin/direct/sync-schema', { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
-                  const message = `✅ Колонка додана!\n\n${data.results}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  const message = `✅ Схема синхронізована!\n\n${data.results}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
                   showCopyableAlert(message);
                   // Оновлюємо список майстрів
                   await loadStatusesAndMasters();
                 } else {
-                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${data.results || ''}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
+                  let errorMessage = `❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${data.results || ''}`;
+                  if (data.sql) {
+                    errorMessage += `\n\n📝 SQL для виконання вручну:\n${data.sql}`;
+                  }
+                  errorMessage += `\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(errorMessage);
                 }
               } catch (err) {
                 showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
@@ -1109,9 +1114,9 @@ export default function DirectPage() {
               }
             }}
             disabled={isLoading}
-            title="Додати колонку telegramChatId до таблиці direct_masters"
+            title="Синхронізувати Prisma схему з базою даних (додати telegramChatId)"
           >
-            ➕ Додати telegramChatId
+            🔄 Синхронізувати схему
           </button>
           <button
             className="btn btn-sm btn-success"
