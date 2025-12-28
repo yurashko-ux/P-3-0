@@ -39,6 +39,17 @@ export async function POST(req: NextRequest) {
     try {
       results.push('Додавання колонки telegramChatId...');
       
+      // Спочатку пробуємо надати права (якщо можливо)
+      try {
+        await prisma.$executeRawUnsafe(`
+          GRANT ALL ON TABLE "direct_masters" TO CURRENT_USER;
+        `);
+        results.push('✅ Права надано (або вже були)');
+      } catch (grantErr: any) {
+        // Якщо не вдалося надати права - це нормально, продовжуємо
+        results.push(`⚠️ Не вдалося надати права (це нормально): ${grantErr?.message?.substring(0, 100) || 'unknown'}`);
+      }
+      
       // Використовуємо $executeRawUnsafe, оскільки IF NOT EXISTS не підтримується в параметризованих запитах
       await prisma.$executeRawUnsafe(`
         ALTER TABLE "direct_masters" 
