@@ -1085,6 +1085,35 @@ export default function DirectPage() {
             🗄️ Створити таблиці
           </button>
           <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              if (!confirm('Додати колонку telegramChatId до таблиці direct_masters?\n\nЦе додасть поле для зберігання Telegram Chat ID відповідальних.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/add-telegram-chat-id-column', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Колонка додана!\n\n${data.results}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  // Оновлюємо список майстрів
+                  await loadMasters();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${data.results || ''}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Додати колонку telegramChatId до таблиці direct_masters"
+          >
+            ➕ Додати telegramChatId
+          </button>
+          <button
             className="btn btn-sm btn-success"
             onClick={async () => {
               if (!confirm('Оновити стани всіх клієнтів на основі записів з Altegio?\n\nЦе перевірить всі записи з Altegio і оновить стани клієнтів:\n- "Консультація" - якщо є послуга "Консультація"\n- "Нарощування волосся" - якщо є послуга з "Нарощування волосся"\n\nПродовжити?')) {
