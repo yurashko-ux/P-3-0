@@ -120,9 +120,7 @@ export async function GET(req: NextRequest) {
     if (hasAppointment === 'true') {
       // Фільтруємо клієнтів з активною датою запису
       clients = clients.filter((c) => {
-        if (!c.paidServiceDate) return false;
-        const dateStr = c.paidServiceDate.trim();
-        return dateStr !== '' && dateStr !== 'undefined' && dateStr !== 'null';
+        return c.paidServiceDate && c.paidServiceDate.trim() !== '';
       });
     }
 
