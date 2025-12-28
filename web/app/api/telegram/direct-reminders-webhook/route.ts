@@ -470,14 +470,22 @@ async function handleMessage(message: TelegramUpdate["message"]) {
 
   // Обробка команди /start - реєстрація та автоматичне оновлення chatId в DirectMaster
   if (message.text?.startsWith("/start")) {
-    console.log(`[direct-reminders-webhook] Processing /start command from chatId=${chatId}, username=${fromUser?.username}`);
+    console.log(`[direct-reminders-webhook] 🔵 Processing /start command from chatId=${chatId}, username=${fromUser?.username}, userId=${fromUser?.id}`);
+    console.log(`[direct-reminders-webhook] Full user object:`, JSON.stringify(fromUser, null, 2));
     
     try {
       const { getMasterByTelegramUsername, getAllDirectMasters, saveDirectMaster } = await import('@/lib/direct-masters/store');
       
       // Шукаємо майстра за Telegram username
       if (fromUser?.username) {
+        console.log(`[direct-reminders-webhook] 🔍 Searching for master with username: "${fromUser.username}"`);
         const directMaster = await getMasterByTelegramUsername(fromUser.username);
+        console.log(`[direct-reminders-webhook] 🔍 Search result:`, directMaster ? {
+          id: directMaster.id,
+          name: directMaster.name,
+          telegramUsername: directMaster.telegramUsername,
+          telegramChatId: directMaster.telegramChatId,
+        } : 'NOT FOUND');
         
         if (directMaster) {
           // Оновлюємо chatId в DirectMaster

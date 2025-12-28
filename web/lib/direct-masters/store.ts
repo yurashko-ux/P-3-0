@@ -200,13 +200,16 @@ export async function getMasterByAltegioStaffId(staffId: number): Promise<Direct
 export async function getMasterByTelegramUsername(username: string): Promise<DirectMaster | null> {
   try {
     if (!username || !username.trim()) {
+      console.log(`[direct-masters] getMasterByTelegramUsername: empty username`);
       return null;
     }
 
     // Нормалізуємо username (прибираємо @, приводимо до нижнього регістру)
     const normalizedUsername = username.trim().toLowerCase().replace(/^@/, '');
+    console.log(`[direct-masters] getMasterByTelegramUsername: searching for username="${normalizedUsername}" (original: "${username}")`);
     
-    const dbMaster = await prisma.directMaster.findFirst({
+    // Спочатку пробуємо точне співпадіння (case-insensitive)
+    let dbMaster = await prisma.directMaster.findFirst({
       where: {
         isActive: true,
         telegramUsername: {
@@ -215,6 +218,27 @@ export async function getMasterByTelegramUsername(username: string): Promise<Dir
         },
       },
     });
+    
+    // Якщо не знайшли, пробуємо знайти всіх активних і порівняти вручну
+    if (!dbMaster) {
+      console.log(`[direct-masters] getMasterByTelegramUsername: not found with equals, trying manual search`);
+      const allMasters = await prisma.directMaster.findMany({
+        where: { isActive: true },
+      });
+      
+      dbMaster = allMasters.find(m => {
+        const masterUsername = (m.telegramUsername || '').trim().toLowerCase().replace(/^@/, '');
+        return masterUsername === normalizedUsername;
+      }) || null;
+      
+      if (dbMaster) {
+        console.log(`[direct-masters] getMasterByTelegramUsername: found via manual search: ${dbMaster.name} (${dbMaster.telegramUsername})`);
+      } else {
+        console.log(`[direct-masters] getMasterByTelegramUsername: not found. Available usernames: ${allMasters.map(m => m.telegramUsername).filter(Boolean).join(', ')}`);
+      }
+    } else {
+      console.log(`[direct-masters] getMasterByTelegramUsername: found via database query: ${dbMaster.name} (${dbMaster.telegramUsername})`);
+    }
 
     return dbMaster ? prismaMasterToDirectMaster(dbMaster) : null;
   } catch (err) {
