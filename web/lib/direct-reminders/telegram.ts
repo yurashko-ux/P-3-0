@@ -31,19 +31,45 @@ export async function getAdminChatIds(): Promise<number[]> {
   // Додаємо chat_id з env (TELEGRAM_ADMIN_CHAT_IDS)
   if (TELEGRAM_ENV.ADMIN_CHAT_IDS && TELEGRAM_ENV.ADMIN_CHAT_IDS.length > 0) {
     adminChatIds.push(...TELEGRAM_ENV.ADMIN_CHAT_IDS);
+    console.log(`[direct-reminders] Added ${TELEGRAM_ENV.ADMIN_CHAT_IDS.length} admin chat IDs from env`);
   }
   
   // Додаємо chat_id адміністраторів з реєстру майстрів
   const masters = getMasters();
   const admins = masters.filter(m => m.role === 'admin');
+  console.log(`[direct-reminders] Found ${admins.length} admins in masters list:`, admins.map(a => ({ id: a.id, name: a.name, username: a.telegramUsername })));
+  
+  // Також шукаємо через зареєстровані чати по username
+  const { listRegisteredChats } = await import('@/lib/photo-reports/master-registry');
+  const registeredChats = await listRegisteredChats();
+  console.log(`[direct-reminders] Found ${registeredChats.length} registered chats`);
   
   for (const admin of admins) {
-    const chatId = await getChatIdForMaster(admin.id);
+    // Спочатку пробуємо знайти через masterId
+    let chatId = await getChatIdForMaster(admin.id);
+    
+    // Якщо не знайдено через masterId, пробуємо знайти через username в зареєстрованих чатах
+    if (!chatId && admin.telegramUsername) {
+      const usernameLower = admin.telegramUsername.toLowerCase().replace('@', '');
+      const chatEntry = registeredChats.find(chat => {
+        const chatUsername = chat.username?.toLowerCase().replace('@', '');
+        return chatUsername === usernameLower;
+      });
+      if (chatEntry) {
+        chatId = chatEntry.chatId;
+        console.log(`[direct-reminders] Found chatId for admin ${admin.name} (@${admin.telegramUsername}) via username: ${chatId}`);
+      }
+    }
+    
     if (chatId && !adminChatIds.includes(chatId)) {
       adminChatIds.push(chatId);
+      console.log(`[direct-reminders] ✅ Added admin ${admin.name} (@${admin.telegramUsername}) with chatId: ${chatId}`);
+    } else {
+      console.warn(`[direct-reminders] ⚠️ Could not find chatId for admin ${admin.name} (@${admin.telegramUsername}) - admin needs to register via /start`);
     }
   }
   
+  console.log(`[direct-reminders] Total admin chat IDs: ${adminChatIds.length}`, adminChatIds);
   return adminChatIds;
 }
 
