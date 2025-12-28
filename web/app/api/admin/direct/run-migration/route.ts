@@ -205,6 +205,26 @@ export async function POST(req: NextRequest) {
             CREATE INDEX IF NOT EXISTS "direct_masters_order_idx" ON "direct_masters"("order")
           `);
           
+          // Додаємо поле telegramChatId, якщо воно не існує
+          await prisma.$executeRawUnsafe(`
+            DO $$ 
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'direct_masters' 
+                AND column_name = 'telegramChatId'
+              ) THEN
+                ALTER TABLE "direct_masters" 
+                ADD COLUMN "telegramChatId" INTEGER;
+              END IF;
+            END $$;
+          `);
+          
+          // Створюємо індекс для telegramChatId, якщо він не існує
+          await prisma.$executeRawUnsafe(`
+            CREATE INDEX IF NOT EXISTS "direct_masters_telegramChatId_idx" ON "direct_masters"("telegramChatId")
+          `);
+          
           // Створюємо foreign keys
           await prisma.$executeRawUnsafe(`
             DO $$ BEGIN

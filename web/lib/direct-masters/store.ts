@@ -50,19 +50,27 @@ export async function getAllDirectMasters(): Promise<DirectMaster[]> {
     const converted = dbMasters.map(prismaMasterToDirectMaster);
     console.log(`[direct-masters] Successfully converted ${converted.length} masters`);
     return converted;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[direct-masters] Error getting all masters:', err);
     // Детальне логування помилки
     if (err instanceof Error) {
       console.error('[direct-masters] Error details:', {
         name: err.name,
         message: err.message,
+        code: (err as any).code,
         stack: err.stack?.substring(0, 500),
       });
       
       // Перевіряємо, чи це помилка через відсутнє поле (міграція не виконана)
-      if (err.message.includes('telegramChatId') || err.message.includes('Unknown column') || err.message.includes('column') && err.message.includes('does not exist')) {
-        console.error('[direct-masters] ⚠️ Database schema error - telegramChatId field may be missing. Please run Prisma migration.');
+      // P2022 - Column does not exist
+      if (
+        (err as any).code === 'P2022' ||
+        err.message.includes('telegramChatId') || 
+        err.message.includes('Unknown column') || 
+        (err.message.includes('column') && err.message.includes('does not exist'))
+      ) {
+        console.error('[direct-masters] ⚠️ Database schema error - telegramChatId field is missing. Please run Prisma migration.');
+        console.error('[direct-masters] ⚠️ Migration needed: Add telegramChatId column to direct_masters table');
         return [];
       }
       
