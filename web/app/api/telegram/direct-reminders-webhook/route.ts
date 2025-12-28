@@ -465,7 +465,99 @@ async function handleMessage(message: TelegramUpdate["message"]) {
     return;
   }
   const chatId = message.chat.id;
-  console.log(`[direct-reminders-webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}`);
+  const fromUser = message.from;
+  console.log(`[direct-reminders-webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}, fromUsername=${fromUser?.username}`);
+
+  // Обробка команди /start - реєстрація та автоматичне оновлення chatId в DirectMaster
+  if (message.text?.startsWith("/start")) {
+    console.log(`[direct-reminders-webhook] Processing /start command from chatId=${chatId}, username=${fromUser?.username}`);
+    
+    try {
+      const { getMasterByTelegramUsername, getAllDirectMasters, saveDirectMaster } = await import('@/lib/direct-masters/store');
+      
+      // Шукаємо майстра за Telegram username
+      if (fromUser?.username) {
+        const directMaster = await getMasterByTelegramUsername(fromUser.username);
+        
+        if (directMaster) {
+          // Оновлюємо chatId в DirectMaster
+          const updated = {
+            ...directMaster,
+            telegramChatId: chatId,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveDirectMaster(updated);
+          console.log(`[direct-reminders-webhook] ✅ Updated DirectMaster ${directMaster.name} (@${fromUser.username}) with chatId: ${chatId}`);
+          
+          const botToken = getDirectRemindersBotToken();
+          await sendMessage(
+            chatId,
+            `Привіт, ${directMaster.name}!\n\n` +
+            `Ваш Telegram Chat ID (${chatId}) було автоматично збережено в системі.\n\n` +
+            `Тепер ви будете отримувати повідомлення про відсутній Instagram username для клієнтів.`,
+            {},
+            botToken
+          );
+        } else {
+          // Якщо не знайдено в DirectMaster, перевіряємо всіх майстрів
+          const allMasters = await getAllDirectMasters();
+          const masterByUsername = allMasters.find(m => 
+            m.telegramUsername?.toLowerCase().replace(/^@/, '') === fromUser.username.toLowerCase()
+          );
+          
+          if (masterByUsername) {
+            // Оновлюємо chatId
+            const updated = {
+              ...masterByUsername,
+              telegramChatId: chatId,
+              updatedAt: new Date().toISOString(),
+            };
+            await saveDirectMaster(updated);
+            console.log(`[direct-reminders-webhook] ✅ Updated DirectMaster ${masterByUsername.name} (@${fromUser.username}) with chatId: ${chatId}`);
+            
+            const botToken = getDirectRemindersBotToken();
+            await sendMessage(
+              chatId,
+              `Привіт, ${masterByUsername.name}!\n\n` +
+              `Ваш Telegram Chat ID (${chatId}) було автоматично збережено в системі.\n\n` +
+              `Тепер ви будете отримувати повідомлення про відсутній Instagram username для клієнтів.`,
+              {},
+              botToken
+            );
+          } else {
+            console.log(`[direct-reminders-webhook] ⚠️ No DirectMaster found for username @${fromUser.username}`);
+            const botToken = getDirectRemindersBotToken();
+            await sendMessage(
+              chatId,
+              `Привіт! Я не знайшов ваш профіль у системі Direct Manager.\n\n` +
+              `Якщо ви адміністратор або майстер, будь ласка, повідомте адміністратору для додавання вашого профілю.`,
+              {},
+              botToken
+            );
+          }
+        }
+      } else {
+        console.log(`[direct-reminders-webhook] ⚠️ /start command received but username is missing`);
+        const botToken = getDirectRemindersBotToken();
+        await sendMessage(
+          chatId,
+          `Привіт! Для реєстрації потрібен ваш Telegram username. Будь ласка, встановіть username в налаштуваннях Telegram.`,
+          {},
+          botToken
+        );
+      }
+    } catch (err) {
+      console.error(`[direct-reminders-webhook] Error processing /start command:`, err);
+      const botToken = getDirectRemindersBotToken();
+      await sendMessage(
+        chatId,
+        `Помилка при реєстрації. Будь ласка, спробуйте пізніше або зверніться до адміністратора.`,
+        {},
+        botToken
+      );
+    }
+    return;
+  }
 
   if (message.text) {
     // Обробка відповіді на повідомлення про відсутній Instagram

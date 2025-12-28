@@ -163,6 +163,35 @@ export async function getMasterByAltegioStaffId(staffId: number): Promise<Direct
 }
 
 /**
+ * Знаходить майстра за Telegram username
+ */
+export async function getMasterByTelegramUsername(username: string): Promise<DirectMaster | null> {
+  try {
+    if (!username || !username.trim()) {
+      return null;
+    }
+
+    // Нормалізуємо username (прибираємо @, приводимо до нижнього регістру)
+    const normalizedUsername = username.trim().toLowerCase().replace(/^@/, '');
+    
+    const dbMaster = await prisma.directMaster.findFirst({
+      where: {
+        isActive: true,
+        telegramUsername: {
+          equals: normalizedUsername,
+          mode: 'insensitive',
+        },
+      },
+    });
+
+    return dbMaster ? prismaMasterToDirectMaster(dbMaster) : null;
+  } catch (err) {
+    console.error(`[direct-masters] Error getting master by Telegram username "${username}":`, err);
+    return null;
+  }
+}
+
+/**
  * Знаходить майстра за ім'ям (staffName)
  */
 export async function getMasterByName(staffName: string): Promise<DirectMaster | null> {
