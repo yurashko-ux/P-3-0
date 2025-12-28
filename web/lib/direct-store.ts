@@ -308,34 +308,61 @@ export async function updateInstagramForAltegioClient(
     }
     
     if (existingByInstagram && existingByInstagram.id !== existingClient.id) {
-      // Якщо існує інший клієнт з таким Instagram, об'єднуємо їх
+      // Якщо існує інший клієнт з таким Instagram, об'єднуємо їх:
+      // Оновлюємо Altegio ID в існуючому клієнті з правильним Instagram (якщо його немає)
+      // Видаляємо поточного клієнта з неправильним Instagram
+      console.log(`[direct-store] ⚠️ Instagram ${normalized} already exists for client ${existingByInstagram.id}, merging clients...`);
+      
+      // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
+      const mergeUpdateData: any = {
+        updatedAt: new Date(),
+      };
+      
+      if (!existingByInstagram.altegioClientId && altegioClientId) {
+        mergeUpdateData.altegioClientId = altegioClientId;
+        console.log(`[direct-store] Adding Altegio ID ${altegioClientId} to existing client ${existingByInstagram.id}`);
+      }
+      
+      // Якщо клієнт з правильним Instagram мав стан 'no-instagram', оновлюємо його
+      if (existingByInstagram.state === 'no-instagram') {
+        mergeUpdateData.state = 'client';
+        console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for merged client ${existingByInstagram.id}`);
+      }
+      
       // Оновлюємо існуючого клієнта з правильним Instagram
       const updated = await prisma.directClient.update({
+        where: { id: existingByInstagram.id },
+        data: mergeUpdateData,
+      });
+      
+      // Видаляємо поточного клієнта з неправильним Instagram (той, що був створений з 'missing_instagram_*')
+      console.log(`[direct-store] Deleting duplicate client ${existingClient.id} (had missing_instagram_* username)`);
+      await prisma.directClient.delete({
         where: { id: existingClient.id },
-        data: updateData,
       });
       
       // Логуємо зміну стану, якщо вона відбулася
-      if (previousState === 'no-instagram' && updated.state === 'client') {
+      if (existingByInstagram.state === 'no-instagram' && updated.state === 'client') {
         await logStateChange(
-          existingClient.id,
+          existingByInstagram.id,
           'client',
           'no-instagram',
-          'instagram-update',
+          'instagram-update-merge',
           {
             altegioClientId,
             instagramUsername: normalized,
             source: 'telegram-reply',
+            mergedClientId: existingClient.id,
           }
         );
       }
       
       const result = prismaClientToDirectClient(updated);
-      console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
-      console.log(`[direct-store] 📊 State after update: ${result.state} (was: ${previousState})`);
+      console.log(`[direct-store] ✅ Merged clients: kept ${existingByInstagram.id}, deleted ${existingClient.id}`);
+      console.log(`[direct-store] 📊 Final state: ${result.state}`);
       return result;
     } else {
-      // Просто оновлюємо Instagram username
+      // Просто оновлюємо Instagram username (немає конфлікту)
       const updated = await prisma.directClient.update({
         where: { id: existingClient.id },
         data: updateData,
