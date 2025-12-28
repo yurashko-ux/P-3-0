@@ -460,11 +460,14 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
 }
 
 async function handleMessage(message: TelegramUpdate["message"]) {
+  console.log(`[direct-reminders-webhook] handleMessage: FUNCTION CALLED`);
   try {
+    console.log(`[direct-reminders-webhook] handleMessage: INSIDE TRY BLOCK`);
     if (!message) {
       console.log(`[direct-reminders-webhook] handleMessage: message is null/undefined`);
       return;
     }
+    console.log(`[direct-reminders-webhook] handleMessage: message exists, getting chatId`);
     const chatId = message.chat.id;
     const fromUser = message.from;
     console.log(`[direct-reminders-webhook] handleMessage STEP 1: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}`);
