@@ -69,6 +69,9 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     
     const botToken = getDirectRemindersBotToken();
     
+    // 🔥🔥🔥 VERSION 2025-12-28-1735 - Check BEFORE update 🔥🔥🔥
+    console.log(`[direct-reminders-webhook] 🔥🔥🔥 VERSION 2025-12-28-1735 - Starting pre-check for Instagram "${normalized}" 🔥🔥🔥`);
+    
     // Спочатку перевіряємо, чи існує клієнт з таким Instagram username
     // Якщо так, об'єднуємо їх ПЕРЕД спробою оновлення (щоб уникнути unique constraint error)
     const { getDirectClientByInstagram } = await import('@/lib/direct-store');
