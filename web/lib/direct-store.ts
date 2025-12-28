@@ -310,17 +310,9 @@ export async function updateInstagramForAltegioClient(
 
     // Завжди оновлюємо стан з 'no-instagram' на 'client', якщо клієнт був в стані 'no-instagram'
     const previousState = existingClient.state;
-    const updateData: any = {
-      instagramUsername: normalized,
-      updatedAt: new Date(),
-    };
     
-    // Якщо клієнт був в стані 'no-instagram', оновлюємо на 'client'
-    if (existingClient.state === 'no-instagram') {
-      updateData.state = 'client';
-      console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for client ${existingClient.id}`);
-    }
-    
+    // ВАЖЛИВО: Спочатку перевіряємо, чи існує клієнт з таким Instagram username
+    // Якщо так, об'єднуємо їх ПЕРЕД спробою оновлення
     if (existingByInstagram && existingByInstagram.id !== existingClient.id) {
       // Якщо існує інший клієнт з таким Instagram, об'єднуємо їх:
       // Оновлюємо Altegio ID в існуючому клієнті з правильним Instagram (якщо його немає)
@@ -383,6 +375,17 @@ export async function updateInstagramForAltegioClient(
       return result;
     } else {
       // Просто оновлюємо Instagram username (немає конфлікту)
+      const updateData: any = {
+        instagramUsername: normalized,
+        updatedAt: new Date(),
+      };
+      
+      // Якщо клієнт був в стані 'no-instagram', оновлюємо на 'client'
+      if (existingClient.state === 'no-instagram') {
+        updateData.state = 'client';
+        console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for client ${existingClient.id}`);
+      }
+      
       const updated = await prisma.directClient.update({
         where: { id: existingClient.id },
         data: updateData,
