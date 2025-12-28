@@ -672,7 +672,9 @@ async function handleMessage(message: TelegramUpdate["message"]) {
 }
 
 export async function POST(req: NextRequest) {
-  console.log(`[direct-reminders-webhook] 🔵 POST FUNCTION CALLED - VERSION 2025-12-28-1138`);
+  console.log(`[direct-reminders-webhook] ==========================================`);
+  console.log(`[direct-reminders-webhook] NEW CODE VERSION - 2025-12-28-1145`);
+  console.log(`[direct-reminders-webhook] ==========================================`);
   try {
     console.log(`[direct-reminders-webhook] 🔵 Inside POST try block - VERSION 2025-12-28-1138`);
     assertDirectRemindersBotToken();
