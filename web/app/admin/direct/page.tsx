@@ -172,15 +172,23 @@ export default function DirectPage() {
   }, []);
 
   // Автоматична зміна сортування при зміні режиму
+  // Використовуємо useRef, щоб відстежувати попередній режим і не встановлювати сортування зайвий раз
+  const prevViewModeRef = useRef<'passive' | 'active'>(viewMode);
   useEffect(() => {
-    if (viewMode === 'passive') {
-      // Пасивний режим: сортування за датою першого контакту
-      setSortBy('firstContactDate');
-      setSortOrder('desc');
-    } else {
-      // Активний режим: сортування за останнім оновленням
-      setSortBy('updatedAt');
-      setSortOrder('desc');
+    // Встановлюємо сортування тільки при зміні режиму (не при кожному рендері)
+    const viewModeChanged = prevViewModeRef.current !== viewMode;
+    
+    if (viewModeChanged) {
+      if (viewMode === 'passive') {
+        // Пасивний режим: сортування за датою першого контакту
+        setSortBy('firstContactDate');
+        setSortOrder('desc');
+      } else {
+        // Активний режим: сортування за останнім оновленням
+        setSortBy('updatedAt');
+        setSortOrder('desc');
+      }
+      prevViewModeRef.current = viewMode;
     }
     
     // Зберігаємо вибір в localStorage
