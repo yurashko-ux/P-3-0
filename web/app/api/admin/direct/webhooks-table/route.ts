@@ -4,6 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
