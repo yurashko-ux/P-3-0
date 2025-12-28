@@ -1046,9 +1046,84 @@ export async function POST(req: NextRequest) {
           // Якщо не знайшли збережений зв'язок, обробляємо Instagram з вебхука
           if (!normalizedInstagram || (!usingSavedLink && !instagram)) {
             if (!instagram) {
-              console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
-              isMissingInstagram = true;
-              normalizedInstagram = `missing_instagram_${clientId}`;
+              // Якщо Instagram не витягнувся з webhook, спробуємо отримати повні дані з Altegio API
+              console.log(`[altegio/webhook] ⚠️ No Instagram in webhook for client ${clientId}, trying to fetch full client data from Altegio API...`);
+              
+              try {
+                const { getClient } = await import('@/lib/altegio/clients');
+                const companyId = parseInt(String(data.company_id || data.company?.id || process.env.ALTEGIO_COMPANY_ID), 10);
+                
+                if (companyId) {
+                  const fullClientData = await getClient(companyId, parseInt(String(clientId), 10));
+                  if (fullClientData && fullClientData.custom_fields) {
+                    // Використовуємо ту саму логіку для витягування Instagram
+                    let extractedInstagram: string | null = null;
+                    
+                    if (Array.isArray(fullClientData.custom_fields)) {
+                      for (const field of fullClientData.custom_fields) {
+                        if (field && typeof field === 'object') {
+                          const title = field.title || field.name || field.label || '';
+                          const value = field.value || field.data || field.content || field.text || '';
+                          if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                            extractedInstagram = value.trim();
+                            break;
+                          }
+                        }
+                      }
+                    } else if (typeof fullClientData.custom_fields === 'object') {
+                      extractedInstagram =
+                        fullClientData.custom_fields['instagram-user-name'] ||
+                        fullClientData.custom_fields['Instagram user name'] ||
+                        fullClientData.custom_fields['Instagram username'] ||
+                        fullClientData.custom_fields.instagram_user_name ||
+                        fullClientData.custom_fields.instagramUsername ||
+                        fullClientData.custom_fields.instagram ||
+                        fullClientData.custom_fields['instagram'] ||
+                        null;
+                      
+                      // Якщо не знайшли по ключам, перевіряємо всі ключі
+                      if (!extractedInstagram) {
+                        for (const key of Object.keys(fullClientData.custom_fields)) {
+                          const value = fullClientData.custom_fields[key];
+                          if (value && typeof value === 'string' && value.trim() && /instagram/i.test(key)) {
+                            extractedInstagram = value.trim();
+                            break;
+                          }
+                        }
+                      }
+                    }
+                    
+                    // Перевіряємо, чи Instagram валідний
+                    if (extractedInstagram) {
+                      const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+                      const lowerInstagram = extractedInstagram.toLowerCase().trim();
+                      if (!invalidValues.includes(lowerInstagram)) {
+                        instagram = extractedInstagram;
+                        console.log(`[altegio/webhook] ✅ Found Instagram in full client data from API: ${extractedInstagram}`);
+                      }
+                    }
+                  }
+                }
+              } catch (fetchErr) {
+                console.warn(`[altegio/webhook] ⚠️ Failed to fetch full client data from Altegio API:`, fetchErr);
+              }
+              
+              if (!instagram) {
+                console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
+                isMissingInstagram = true;
+                normalizedInstagram = `missing_instagram_${clientId}`;
+              } else {
+                // Якщо знайшли Instagram через API, нормалізуємо його
+                normalizedInstagram = normalizeInstagram(instagram);
+                if (!normalizedInstagram) {
+                  console.log(`[altegio/webhook] ⚠️ Invalid Instagram username for client ${clientId}: ${instagram}, creating with temporary username`);
+                  isMissingInstagram = true;
+                  normalizedInstagram = `missing_instagram_${clientId}`;
+                } else {
+                  isMissingInstagram = false;
+                  console.log(`[altegio/webhook] ✅ Normalized Instagram from API for client ${clientId}: ${normalizedInstagram}`);
+                }
+              }
             } else {
               console.log(`[altegio/webhook] ✅ Extracted Instagram for client ${clientId}: ${instagram}`);
               normalizedInstagram = normalizeInstagram(instagram);
