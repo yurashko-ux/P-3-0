@@ -406,6 +406,19 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
+                          "updatedAt",
+                          sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Останнє оновлення {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
                           "instagramUsername",
                           sortBy === "instagramUsername" && sortOrder === "desc" ? "asc" : "desc"
                         )
@@ -553,7 +566,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={15} className="text-center py-8 text-gray-500">
+                    <td colSpan={16} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -565,6 +578,11 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {formatDate(client.firstContactDate)}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {client.updatedAt
+                          ? formatDate(client.updatedAt)
+                          : '-'}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         <a

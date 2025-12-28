@@ -155,10 +155,38 @@ export default function DirectPage() {
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   const [sortBy, setSortBy] = useState<string>("firstContactDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  
+  // Режим відображення: 'passive' | 'active'
+  const [viewMode, setViewMode] = useState<'passive' | 'active'>(() => {
+    // Завантажуємо з localStorage при ініціалізації
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('direct-view-mode');
+      return (saved === 'active' || saved === 'passive') ? saved : 'passive';
+    }
+    return 'passive';
+  });
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Автоматична зміна сортування при зміні режиму
+  useEffect(() => {
+    if (viewMode === 'passive') {
+      // Пасивний режим: сортування за датою першого контакту
+      setSortBy('firstContactDate');
+      setSortOrder('desc');
+    } else {
+      // Активний режим: сортування за останнім оновленням
+      setSortBy('updatedAt');
+      setSortOrder('desc');
+    }
+    
+    // Зберігаємо вибір в localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('direct-view-mode', viewMode);
+    }
+  }, [viewMode]);
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
@@ -1792,6 +1820,34 @@ export default function DirectPage() {
             masters={masters}
             onMasterUpdated={handleStatusCreated}
           />
+        </div>
+      </div>
+
+      {/* Перемикач режимів відображення */}
+      <div className="card bg-base-100 shadow-sm mb-4">
+        <div className="card-body p-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="label-text font-semibold">Режим відображення:</span>
+            <div className="tabs tabs-boxed">
+              <button
+                className={`tab ${viewMode === 'passive' ? 'tab-active' : ''}`}
+                onClick={() => setViewMode('passive')}
+              >
+                Пасивний
+              </button>
+              <button
+                className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
+                onClick={() => setViewMode('active')}
+              >
+                Активний
+              </button>
+            </div>
+            {viewMode === 'active' && (
+              <span className="text-xs text-gray-500">
+                Клієнти з останніми оновленнями зверху
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
