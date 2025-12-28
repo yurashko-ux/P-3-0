@@ -1799,8 +1799,15 @@ export default function DirectPage() {
         statuses={statuses}
         filters={filters}
         onFiltersChange={(newFilters) => {
-          // Якщо змінився search, розблоковуємо пошук для автоматичного оновлення
-          if (newFilters.search !== filters.search) {
+          // Якщо очищено search (стало порожнім), розблоковуємо пошук
+          if (newFilters.search === "" && filters.search !== "") {
+            setIsSearchLocked(false);
+          }
+          // Якщо змінився інший фільтр (не search), розблоковуємо пошук
+          if (newFilters.search === filters.search && 
+              (newFilters.statusId !== filters.statusId || 
+               newFilters.masterId !== filters.masterId || 
+               newFilters.source !== filters.source)) {
             setIsSearchLocked(false);
           }
           setFilters(newFilters);
