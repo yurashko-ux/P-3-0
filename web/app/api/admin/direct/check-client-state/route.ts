@@ -54,19 +54,46 @@ export async function GET(req: NextRequest) {
     });
 
     // Отримуємо останні зміни стану
-    const stateLogs = await prisma.$queryRaw<Array<{
+    let stateLogs: Array<{
       id: string;
       clientId: string;
       state: string | null;
       previousState: string | null;
       reason: string | null;
       createdAt: Date;
-    }>>`
-      SELECT * FROM "direct_client_state_logs"
-      WHERE "clientId" = ${dbClient?.id || ''}
-      ORDER BY "createdAt" DESC
-      LIMIT 10
-    `;
+    }> = [];
+    
+    if (dbClient?.id) {
+      try {
+        stateLogs = await prisma.$queryRaw<Array<{
+          id: string;
+          clientId: string;
+          state: string | null;
+          previousState: string | null;
+          reason: string | null;
+          createdAt: Date;
+        }>>`
+          SELECT * FROM "direct_client_state_logs"
+          WHERE "clientId" = ${dbClient.id}
+          ORDER BY "createdAt" DESC
+          LIMIT 10
+        `;
+      } catch (err) {
+        console.error('[direct/check-client-state] Failed to get state logs:', err);
+      }
+    }
+    
+    // Також перевіряємо через getLast5StatesForClients
+    let last5StatesFromFunction: any[] = [];
+    if (dbClient?.id) {
+      try {
+        const { getLast5StatesForClients } = await import('@/lib/direct-state-log');
+        const statesMap = await getLast5StatesForClients([dbClient.id]);
+        last5StatesFromFunction = statesMap.get(dbClient.id) || [];
+      } catch (err) {
+        console.error('[direct/check-client-state] Failed to get last5States:', err);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -91,7 +118,19 @@ export async function GET(req: NextRequest) {
         reason: log.reason,
         createdAt: log.createdAt.toISOString(),
       })),
+      last5StatesFromFunction: last5StatesFromFunction.map(log => ({
+        id: log.id,
+        state: log.state,
+        previousState: log.previousState,
+        reason: log.reason,
+        createdAt: log.createdAt,
+      })),
       match: client?.state === dbClient?.state,
+      statesMatch: stateLogs.length === last5StatesFromFunction.length && 
+        stateLogs.every((log, idx) => {
+          const funcLog = last5StatesFromFunction[idx];
+          return log.id === funcLog?.id && log.state === funcLog?.state;
+        }),
     });
   } catch (error) {
     console.error('[direct/check-client-state] Error:', error);
