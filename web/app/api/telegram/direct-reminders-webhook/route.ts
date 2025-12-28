@@ -468,9 +468,14 @@ async function handleMessage(message: TelegramUpdate["message"]) {
     const chatId = message.chat.id;
     const fromUser = message.from;
     console.log(`[direct-reminders-webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}, fromUsername=${fromUser?.username}, fromUserId=${fromUser?.id}`);
-    console.log(`[direct-reminders-webhook] handleMessage: fromUser object:`, fromUser ? JSON.stringify(fromUser, null, 2) : 'null/undefined');
     
     // Додаткова перевірка та логування
+    try {
+      console.log(`[direct-reminders-webhook] handleMessage: fromUser exists=${!!fromUser}, username=${fromUser?.username}, id=${fromUser?.id}, firstName=${fromUser?.first_name}`);
+    } catch (err) {
+      console.error(`[direct-reminders-webhook] Error logging fromUser:`, err);
+    }
+    
     const messageText = message.text;
     console.log(`[direct-reminders-webhook] handleMessage: message.text type=${typeof messageText}, value="${messageText}", startsWith("/start")=${messageText?.startsWith("/start")}`);
 
