@@ -1098,7 +1098,7 @@ export default function DirectPage() {
                   const message = `✅ Колонка додана!\n\n${data.results}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
                   showCopyableAlert(message);
                   // Оновлюємо список майстрів
-                  await loadMasters();
+                  await loadStatusesAndMasters();
                 } else {
                   showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${data.results || ''}\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`);
                 }
