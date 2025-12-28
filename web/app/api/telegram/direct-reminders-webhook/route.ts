@@ -467,6 +467,7 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   const chatId = message.chat.id;
   const fromUser = message.from;
   console.log(`[direct-reminders-webhook] handleMessage: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}, fromUsername=${fromUser?.username}`);
+  console.log(`[direct-reminders-webhook] handleMessage: message.text type=${typeof message.text}, value="${message.text}", startsWith("/start")=${message.text?.startsWith("/start")}`);
 
   // Обробка команди /start - реєстрація та автоматичне оновлення chatId в DirectMaster
   if (message.text?.startsWith("/start")) {
