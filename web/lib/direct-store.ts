@@ -290,7 +290,8 @@ export async function updateInstagramForAltegioClient(
     }
 
     // Перевіряємо, чи не існує вже клієнт з таким Instagram username
-    const existingByInstagram = await prisma.directClient.findUnique({
+    // Використовуємо findFirst, бо findUnique може не спрацювати через проблеми з індексом
+    const existingByInstagram = await prisma.directClient.findFirst({
       where: { instagramUsername: normalized },
     });
     
