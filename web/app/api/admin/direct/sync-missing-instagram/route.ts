@@ -268,6 +268,8 @@ export async function POST(req: NextRequest) {
               }
 
               const adminChatIds = await getAdminChatIds();
+              // Виключаємо mykolayChatId з adminChatIds, щоб не дублювати повідомлення
+              const uniqueAdminChatIds = adminChatIds.filter(id => id !== mykolayChatId);
               const clientName = (client.name || client.display_name || '').trim();
               
               // Перевіряємо, чи є ім'я (не відправляємо для клієнтів без імені)
@@ -306,7 +308,8 @@ export async function POST(req: NextRequest) {
                   }
                 }
 
-                for (const adminChatId of adminChatIds) {
+                // Відправляємо адміністраторам (без mykolayChatId, щоб не дублювати)
+                for (const adminChatId of uniqueAdminChatIds) {
                   try {
                     await sendMessage(adminChatId, message, {}, botToken);
                     console.log(`[direct/sync-missing-instagram] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
