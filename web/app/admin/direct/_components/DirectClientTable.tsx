@@ -249,7 +249,8 @@ export function DirectClientTable({
                       onClick={() => {
                         setSearchInput("");
                         onFiltersChange({ ...filters, search: "" });
-                        onSearchClick?.(); // Розблоковуємо пошук
+                        // При очищенні розблоковуємо пошук, щоб показати всіх клієнтів
+                        // onSearchClick?.() тут не потрібен, бо onFiltersChange вже розблоковує при зміні search
                       }}
                       title="Очистити"
                     >
