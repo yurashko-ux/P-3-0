@@ -34,10 +34,28 @@ export async function getAdminChatIds(): Promise<number[]> {
     console.log(`[direct-reminders] Added ${TELEGRAM_ENV.ADMIN_CHAT_IDS.length} admin chat IDs from env`);
   }
   
-  // Додаємо chat_id адміністраторів з реєстру майстрів
+  // Додаємо chat_id адміністраторів з бази даних DirectMaster
+  const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+  try {
+    const directMasters = await getAllDirectMasters();
+    const directAdmins = directMasters.filter(m => m.role === 'admin');
+    console.log(`[direct-reminders] Found ${directAdmins.length} admins in DirectMaster database:`, directAdmins.map(a => ({ id: a.id, name: a.name, username: a.telegramUsername, chatId: a.telegramChatId })));
+    
+    for (const admin of directAdmins) {
+      // Спочатку перевіряємо chatId з бази даних
+      if (admin.telegramChatId && !adminChatIds.includes(admin.telegramChatId)) {
+        adminChatIds.push(admin.telegramChatId);
+        console.log(`[direct-reminders] ✅ Added admin ${admin.name} (@${admin.telegramUsername}) with chatId from database: ${admin.telegramChatId}`);
+      }
+    }
+  } catch (err) {
+    console.error('[direct-reminders] Error getting admins from DirectMaster database:', err);
+  }
+  
+  // Також додаємо chat_id адміністраторів з реєстру майстрів (photo-reports)
   const masters = getMasters();
   const admins = masters.filter(m => m.role === 'admin');
-  console.log(`[direct-reminders] Found ${admins.length} admins in masters list:`, admins.map(a => ({ id: a.id, name: a.name, username: a.telegramUsername })));
+  console.log(`[direct-reminders] Found ${admins.length} admins in photo-reports masters list:`, admins.map(a => ({ id: a.id, name: a.name, username: a.telegramUsername })));
   
   // Також шукаємо через зареєстровані чати по username
   const { listRegisteredChats } = await import('@/lib/photo-reports/master-registry');
@@ -64,8 +82,8 @@ export async function getAdminChatIds(): Promise<number[]> {
     if (chatId && !adminChatIds.includes(chatId)) {
       adminChatIds.push(chatId);
       console.log(`[direct-reminders] ✅ Added admin ${admin.name} (@${admin.telegramUsername}) with chatId: ${chatId}`);
-    } else {
-      console.warn(`[direct-reminders] ⚠️ Could not find chatId for admin ${admin.name} (@${admin.telegramUsername}) - admin needs to register via /start`);
+    } else if (!chatId) {
+      console.warn(`[direct-reminders] ⚠️ Could not find chatId for admin ${admin.name} (@${admin.telegramUsername}) - add chatId in DirectMaster form or register via /start`);
     }
   }
   

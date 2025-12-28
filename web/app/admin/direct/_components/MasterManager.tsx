@@ -9,6 +9,7 @@ type DirectMaster = {
   id: string;
   name: string;
   telegramUsername?: string;
+  telegramChatId?: number;
   role: 'master' | 'direct-manager' | 'admin';
   altegioStaffId?: number;
   isActive: boolean;
@@ -29,6 +30,7 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
   const [formData, setFormData] = useState({
     name: "",
     telegramUsername: "",
+    telegramChatId: "",
     role: "master" as 'master' | 'direct-manager' | 'admin',
     altegioStaffId: "",
     order: masters.length + 1,
@@ -59,6 +61,7 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
         setFormData({
           name: "",
           telegramUsername: "",
+          telegramChatId: "",
           role: "master",
           altegioStaffId: "",
           order: masters.length + 2,
@@ -95,6 +98,7 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
         setFormData({
           name: "",
           telegramUsername: "",
+          telegramChatId: "",
           role: "master",
           altegioStaffId: "",
           order: masters.length + 1,
@@ -132,6 +136,7 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
     setFormData({
       name: master.name,
       telegramUsername: master.telegramUsername || "",
+      telegramChatId: master.telegramChatId ? String(master.telegramChatId) : "",
       role: master.role,
       altegioStaffId: master.altegioStaffId ? String(master.altegioStaffId) : "",
       order: master.order,
@@ -161,6 +166,7 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
             setFormData({
               name: "",
               telegramUsername: "",
+              telegramChatId: "",
               role: "master",
               altegioStaffId: "",
               order: masters.length + 1,
@@ -241,6 +247,19 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
                           value={formData.telegramUsername}
                           onChange={(e) => setFormData({ ...formData, telegramUsername: e.target.value })}
                         />
+                      </div>
+                      <div>
+                        <label className="label label-text text-xs">Telegram Chat ID</label>
+                        <input
+                          type="number"
+                          className="input input-bordered input-sm w-full"
+                          placeholder="Наприклад: 123456789"
+                          value={formData.telegramChatId}
+                          onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          Для отримання повідомлень про відсутній Instagram
+                        </div>
                       </div>
                       <div>
                         <label className="label label-text text-xs">Роль</label>

@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, telegramUsername, role = 'master', altegioStaffId, order = 0 } = body;
+    const { name, telegramUsername, telegramChatId, role = 'master', altegioStaffId, order = 0 } = body;
 
     if (!name) {
       return NextResponse.json(
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       id: randomUUID(),
       name,
       telegramUsername: telegramUsername || undefined,
+      telegramChatId: telegramChatId ? parseInt(String(telegramChatId), 10) : undefined,
       role: (role as 'master' | 'direct-manager' | 'admin') || 'master',
       altegioStaffId: altegioStaffId ? parseInt(String(altegioStaffId), 10) : undefined,
       isActive: true,

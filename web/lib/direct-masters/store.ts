@@ -7,6 +7,7 @@ export type DirectMaster = {
   id: string;
   name: string;
   telegramUsername?: string;
+  telegramChatId?: number;
   role: 'master' | 'direct-manager' | 'admin';
   altegioStaffId?: number;
   isActive: boolean;
@@ -21,6 +22,7 @@ function prismaMasterToDirectMaster(dbMaster: any): DirectMaster {
     id: dbMaster.id,
     name: dbMaster.name,
     telegramUsername: dbMaster.telegramUsername || undefined,
+    telegramChatId: dbMaster.telegramChatId || undefined,
     role: (dbMaster.role as 'master' | 'direct-manager' | 'admin') || 'master',
     altegioStaffId: dbMaster.altegioStaffId || undefined,
     isActive: dbMaster.isActive ?? true,
@@ -80,6 +82,7 @@ export async function saveDirectMaster(master: DirectMaster): Promise<DirectMast
       update: {
         name: master.name,
         telegramUsername: master.telegramUsername || null,
+        telegramChatId: master.telegramChatId || null,
         role: master.role,
         altegioStaffId: master.altegioStaffId || null,
         isActive: master.isActive,
@@ -90,6 +93,7 @@ export async function saveDirectMaster(master: DirectMaster): Promise<DirectMast
         id: master.id,
         name: master.name,
         telegramUsername: master.telegramUsername || null,
+        telegramChatId: master.telegramChatId || null,
         role: master.role,
         altegioStaffId: master.altegioStaffId || null,
         isActive: master.isActive,
