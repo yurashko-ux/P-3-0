@@ -69,7 +69,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     
     const botToken = getDirectRemindersBotToken();
     console.log(`[direct-reminders-webhook] 📞 Calling updateInstagramForAltegioClient(${altegioClientId}, "${normalized}")`);
-    const updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
+    let updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
     console.log(`[direct-reminders-webhook] ✅ Update result:`, updatedClient ? {
       success: true,
       clientId: updatedClient.id,
@@ -77,6 +77,56 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
       state: updatedClient.state,
       altegioClientId: updatedClient.altegioClientId,
     } : { success: false, reason: 'updateInstagramForAltegioClient returned null' });
+    
+    // Якщо оновлення не вдалося через unique constraint, спробуємо об'єднати клієнтів вручну
+    if (!updatedClient) {
+      console.log(`[direct-reminders-webhook] ⚠️ updateInstagramForAltegioClient returned null, trying to merge clients manually...`);
+      const { getDirectClientByInstagram, prisma } = await import('@/lib/direct-store');
+      
+      // Шукаємо клієнта з таким Instagram username
+      const clientByInstagram = await getDirectClientByInstagram(normalized);
+      
+      if (clientByInstagram && clientByInstagram.id !== existingClient.id) {
+        console.log(`[direct-reminders-webhook] ⚠️ Found existing client ${clientByInstagram.id} with Instagram "${normalized}", merging...`);
+        
+        try {
+          // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
+          const mergeUpdateData: any = {
+            updatedAt: new Date(),
+          };
+          
+          if (!clientByInstagram.altegioClientId && altegioClientId) {
+            mergeUpdateData.altegioClientId = altegioClientId;
+            console.log(`[direct-reminders-webhook] Adding Altegio ID ${altegioClientId} to existing client ${clientByInstagram.id}`);
+          }
+          
+          if (clientByInstagram.state === 'no-instagram') {
+            mergeUpdateData.state = 'client';
+            console.log(`[direct-reminders-webhook] Updating state from 'no-instagram' to 'client' for merged client ${clientByInstagram.id}`);
+          } else if (clientByInstagram.state === 'lead' && mergeUpdateData.altegioClientId) {
+            mergeUpdateData.state = 'client';
+            console.log(`[direct-reminders-webhook] Updating state from 'lead' to 'client' for merged client ${clientByInstagram.id} (added Altegio ID)`);
+          }
+          
+          const { prisma } = await import('@/lib/prisma');
+          const mergedClient = await prisma.directClient.update({
+            where: { id: clientByInstagram.id },
+            data: mergeUpdateData,
+          });
+          
+          console.log(`[direct-reminders-webhook] Deleting duplicate client ${existingClient.id} (had missing_instagram_* username)`);
+          await prisma.directClient.delete({
+            where: { id: existingClient.id },
+          });
+          
+          const { prismaClientToDirectClient } = await import('@/lib/direct-store');
+          updatedClient = prismaClientToDirectClient(mergedClient);
+          console.log(`[direct-reminders-webhook] ✅ Merged clients: kept ${clientByInstagram.id}, deleted ${existingClient.id}`);
+        } catch (mergeErr) {
+          console.error(`[direct-reminders-webhook] ❌ Failed to merge clients:`, mergeErr);
+        }
+      }
+    }
     
     if (updatedClient) {
       await sendMessage(
