@@ -100,6 +100,7 @@ type DirectClientTableProps = {
     masterId: string;
     source: string;
     search: string;
+    hasAppointment: string;
   };
   onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
   onSearchClick?: () => void;
@@ -314,12 +315,28 @@ export function DirectClientTable({
                 ))}
               </select>
             </div>
+            <div className="form-control">
+              <label className="label cursor-pointer gap-2">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm"
+                  checked={filters.hasAppointment === "true"}
+                  onChange={(e) =>
+                    onFiltersChange({
+                      ...filters,
+                      hasAppointment: e.target.checked ? "true" : "",
+                    })
+                  }
+                />
+                <span className="label-text text-xs">Запис</span>
+              </label>
+            </div>
             <div>
               <button
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
                   setSearchInput("");
-                  onFiltersChange({ statusId: "", masterId: "", source: "", search: "" });
+                  onFiltersChange({ statusId: "", masterId: "", source: "", search: "", hasAppointment: "" });
                 }}
               >
                 Скинути
@@ -487,12 +504,12 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
-                          "consultationDate",
-                          sortBy === "consultationDate" && sortOrder === "desc" ? "asc" : "desc"
+                          "paidServiceDate",
+                          sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
-                      Дата консультації {sortBy === "consultationDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -747,23 +764,26 @@ export function DirectClientTable({
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.consultationDate ? (
-                          <input
-                            type="date"
-                            className="input input-xs input-bordered w-full max-w-[120px]"
-                            value={client.consultationDate.split("T")[0]}
-                            onChange={(e) =>
-                              handleFieldUpdate(client, "consultationDate", e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined)
-                            }
-                          />
+                        {client.paidServiceDate ? (
+                          (() => {
+                            const appointmentDate = new Date(client.paidServiceDate);
+                            const now = new Date();
+                            now.setHours(0, 0, 0, 0); // Порівнюємо тільки дати, без часу
+                            appointmentDate.setHours(0, 0, 0, 0);
+                            const isPast = appointmentDate < now;
+                            const dateStr = formatDate(client.paidServiceDate);
+                            
+                            return (
+                              <span
+                                className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
+                                title={isPast ? "Минулий запис" : "Майбутній запис"}
+                              >
+                                {dateStr}
+                              </span>
+                            );
+                          })()
                         ) : (
-                          <input
-                            type="date"
-                            className="input input-xs input-bordered w-full max-w-[120px]"
-                            onChange={(e) =>
-                              handleFieldUpdate(client, "consultationDate", e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined)
-                            }
-                          />
+                          ""
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">

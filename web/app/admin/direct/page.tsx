@@ -151,6 +151,7 @@ export default function DirectPage() {
     masterId: "",
     source: "",
     search: "",
+    hasAppointment: "",
   });
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   const [sortBy, setSortBy] = useState<string>("firstContactDate");
@@ -248,6 +249,7 @@ export default function DirectPage() {
       if (filters.statusId) params.set("statusId", filters.statusId);
       if (filters.masterId) params.set("masterId", filters.masterId);
       if (filters.source) params.set("source", filters.source);
+      if (filters.hasAppointment === "true") params.set("hasAppointment", "true");
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
 

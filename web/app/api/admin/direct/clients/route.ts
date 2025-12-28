@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     const statusId = searchParams.get('statusId');
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
+    const hasAppointment = searchParams.get('hasAppointment');
     const sortBy = searchParams.get('sortBy') || 'firstContactDate';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
@@ -115,6 +116,14 @@ export async function GET(req: NextRequest) {
     }
     if (source) {
       clients = clients.filter((c) => c.source === source);
+    }
+    if (hasAppointment === 'true') {
+      // Фільтруємо клієнтів з активною датою запису
+      clients = clients.filter((c) => {
+        if (!c.paidServiceDate) return false;
+        const dateStr = c.paidServiceDate.trim();
+        return dateStr !== '' && dateStr !== 'undefined' && dateStr !== 'null';
+      });
     }
 
     // Сортування
