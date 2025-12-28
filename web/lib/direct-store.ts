@@ -272,6 +272,7 @@ export async function updateInstagramForAltegioClient(
   altegioClientId: number,
   instagramUsername: string
 ): Promise<DirectClient | null> {
+  console.log(`[direct-store] 🔥🔥🔥 updateInstagramForAltegioClient CALLED - VERSION 2025-12-28-1635 🔥🔥🔥`);
   try {
     const normalized = normalizeInstagram(instagramUsername);
     if (!normalized) {
