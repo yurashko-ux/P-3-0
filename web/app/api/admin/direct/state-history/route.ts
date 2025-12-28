@@ -7,7 +7,7 @@ import { getDirectMasterById, getDirectManager } from '@/lib/direct-masters/stor
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = req.nextUrl;
     const clientId = searchParams.get('clientId');
 
     if (!clientId) {
