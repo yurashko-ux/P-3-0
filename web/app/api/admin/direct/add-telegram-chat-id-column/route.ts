@@ -39,11 +39,11 @@ export async function POST(req: NextRequest) {
     try {
       results.push('Додавання колонки telegramChatId...');
       
-      // Використовуємо $executeRaw з параметризованим запитом
-      await prisma.$executeRaw`
+      // Використовуємо $executeRawUnsafe, оскільки IF NOT EXISTS не підтримується в параметризованих запитах
+      await prisma.$executeRawUnsafe(`
         ALTER TABLE "direct_masters" 
         ADD COLUMN IF NOT EXISTS "telegramChatId" INTEGER
-      `;
+      `);
       
       results.push('✅ Колонка telegramChatId додана успішно');
     } catch (alterErr: any) {
