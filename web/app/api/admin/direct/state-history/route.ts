@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getClientStateInfo } from '@/lib/direct-state-log';
 import { getDirectMasterById, getDirectManager } from '@/lib/direct-masters/store';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
