@@ -133,10 +133,12 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           where: { id: existingClient.id },
         });
         
-        // Конвертуємо в DirectClient формат
+        // Конвертуємо в DirectClient формат - використовуємо дані з mergedClientDb (вже оновлені в БД)
         const updatedClient: any = {
           ...clientByInstagram,
           instagramUsername: mergedClientDb.instagramUsername,
+          firstName: mergedClientDb.firstName || clientByInstagram.firstName,
+          lastName: mergedClientDb.lastName || clientByInstagram.lastName,
           state: mergedClientDb.state as any,
           altegioClientId: mergedClientDb.altegioClientId || undefined,
           firstContactDate: mergedClientDb.firstContactDate.toISOString(),
@@ -235,11 +237,13 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
             where: { id: existingClient.id },
           });
           
-          // Конвертуємо в DirectClient формат
+          // Конвертуємо в DirectClient формат - використовуємо дані з mergedClientDb (вже оновлені в БД)
           updatedClient = {
             ...clientByInstagram,
             ...mergedClientDb,
             instagramUsername: mergedClientDb.instagramUsername,
+            firstName: mergedClientDb.firstName || clientByInstagram.firstName,
+            lastName: mergedClientDb.lastName || clientByInstagram.lastName,
             state: mergedClientDb.state as any,
             altegioClientId: mergedClientDb.altegioClientId || undefined,
             firstContactDate: mergedClientDb.firstContactDate.toISOString(),
