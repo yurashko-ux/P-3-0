@@ -219,27 +219,44 @@ export function DirectClientTable({
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-4">
           <div className="flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-[200px]">
-              <label className="label label-text text-xs">Пошук по Instagram або Повне ім'я</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Введіть username або ім'я..."
-                  className="input input-bordered input-sm flex-1"
-                  value={searchInput}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    setSearchInput(newValue);
-                    // Автоматично оновлюємо фільтр при введенні
-                    onFiltersChange({ ...filters, search: newValue });
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      // При натисканні Enter також оновлюємо фільтр
-                      onFiltersChange({ ...filters, search: searchInput });
-                    }
-                  }}
-                />
+            <div className="min-w-[250px]">
+              <label className="label label-text text-xs">Пошук</label>
+              <div className="flex gap-1 items-center">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Instagram або ім'я..."
+                    className="input input-bordered input-sm w-full pr-8"
+                    value={searchInput}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setSearchInput(newValue);
+                      // Автоматично оновлюємо фільтр при введенні
+                      onFiltersChange({ ...filters, search: newValue });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        // При натисканні Enter також оновлюємо фільтр
+                        onFiltersChange({ ...filters, search: searchInput });
+                        onSearchClick?.();
+                      }
+                    }}
+                  />
+                  {searchInput && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+                      onClick={() => {
+                        setSearchInput("");
+                        onFiltersChange({ ...filters, search: "" });
+                        onSearchClick?.(); // Розблоковуємо пошук
+                      }}
+                      title="Очистити"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
                 <button
                   className="btn btn-sm btn-primary"
                   onClick={() => {
