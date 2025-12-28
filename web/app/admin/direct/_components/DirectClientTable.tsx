@@ -219,7 +219,7 @@ export function DirectClientTable({
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-4">
           <div className="flex flex-wrap gap-4 items-end">
-            <div className="min-w-[250px]">
+            <div className="min-w-[500px]">
               <label className="label label-text text-xs">Пошук</label>
               <div className="flex gap-1 items-center">
                 <div className="relative flex-1">
