@@ -80,7 +80,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     
     // Якщо оновлення не вдалося через unique constraint, спробуємо об'єднати клієнтів вручну
     if (!updatedClient) {
-      console.log(`[direct-reminders-webhook] ⚠️ updateInstagramForAltegioClient returned null, trying to merge clients manually...`);
+      console.log(`[direct-reminders-webhook] 🔥🔥🔥 FALLBACK TRIGGERED - updateInstagramForAltegioClient returned null, trying to merge clients manually... 🔥🔥🔥`);
       const { getDirectClientByInstagram } = await import('@/lib/direct-store');
       const { prisma } = await import('@/lib/prisma');
       
