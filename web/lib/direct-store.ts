@@ -293,6 +293,20 @@ export async function updateInstagramForAltegioClient(
     const existingByInstagram = await prisma.directClient.findUnique({
       where: { instagramUsername: normalized },
     });
+    
+    console.log(`[direct-store] 🔍 Checking for existing client with Instagram "${normalized}":`, existingByInstagram ? {
+      id: existingByInstagram.id,
+      instagramUsername: existingByInstagram.instagramUsername,
+      altegioClientId: existingByInstagram.altegioClientId,
+      state: existingByInstagram.state,
+    } : 'NOT FOUND');
+    console.log(`[direct-store] 🔍 Current client (by Altegio ID):`, {
+      id: existingClient.id,
+      instagramUsername: existingClient.instagramUsername,
+      altegioClientId: existingClient.altegioClientId,
+      state: existingClient.state,
+    });
+    console.log(`[direct-store] 🔍 Are they different? ${existingByInstagram ? (existingByInstagram.id !== existingClient.id) : 'N/A'}`);
 
     // Завжди оновлюємо стан з 'no-instagram' на 'client', якщо клієнт був в стані 'no-instagram'
     const previousState = existingClient.state;
