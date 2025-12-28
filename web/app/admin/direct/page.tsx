@@ -318,18 +318,23 @@ export default function DirectPage() {
   // Завантажуємо клієнтів при зміні фільтрів/сортування
   // Використовуємо useRef, щоб уникнути зайвих викликів під час ініціалізації
   const isInitialMount = useRef(true);
+  const prevFiltersRef = useRef(filters);
   useEffect(() => {
     // Пропускаємо перший виклик, бо він вже відбувається в loadData()
     if (isInitialMount.current) {
       isInitialMount.current = false;
+      prevFiltersRef.current = filters;
       return;
     }
     // Якщо пошук заблокований і змінився тільки search фільтр, не оновлюємо
-    if (isSearchLocked) {
+    const searchChanged = prevFiltersRef.current.search !== filters.search;
+    if (isSearchLocked && searchChanged) {
+      prevFiltersRef.current = filters;
       return;
     }
+    prevFiltersRef.current = filters;
     loadClients();
-  }, [filters, sortBy, sortOrder, isSearchLocked]);
+  }, [filters, sortBy, sortOrder]);
 
   // Автоматичне оновлення даних кожні 30 секунд
   useEffect(() => {
