@@ -332,6 +332,21 @@ export async function updateInstagramForAltegioClient(
         console.log(`[direct-store] Adding Altegio ID ${altegioClientId} to existing client ${existingByInstagram.id}`);
       }
       
+      // Переносимо firstName/lastName з клієнта з Altegio (existingClient) до клієнта з Manychat (existingByInstagram)
+      // Завжди віддаємо перевагу даним з Altegio - якщо в Altegio клієнта є ім'я, використовуємо його
+      if (existingClient.firstName && existingClient.firstName.trim() !== '') {
+        mergeUpdateData.firstName = existingClient.firstName;
+        if (existingClient.firstName !== existingByInstagram.firstName) {
+          console.log(`[direct-store] Merging: overriding firstName with Altegio value "${existingClient.firstName}" (was: "${existingByInstagram.firstName || 'empty'}")`);
+        }
+      }
+      if (existingClient.lastName && existingClient.lastName.trim() !== '') {
+        mergeUpdateData.lastName = existingClient.lastName;
+        if (existingClient.lastName !== existingByInstagram.lastName) {
+          console.log(`[direct-store] Merging: overriding lastName with Altegio value "${existingClient.lastName}" (was: "${existingByInstagram.lastName || 'empty'}")`);
+        }
+      }
+      
       // Оновлюємо стан:
       // 1. Якщо клієнт мав стан 'no-instagram' → 'client'
       // 2. Якщо клієнт мав стан 'lead' і ми додаємо Altegio ID → 'client' (бо клієнт тепер в Altegio)
@@ -435,6 +450,21 @@ export async function updateInstagramForAltegioClient(
             if (wasAddingAltegioId) {
               mergeUpdateData.altegioClientId = altegioClientId;
               console.log(`[direct-store] Adding Altegio ID ${altegioClientId} to existing client ${existingByInstagramRetry.id}`);
+            }
+            
+            // Переносимо firstName/lastName з клієнта з Altegio (existingClient) до клієнта з Manychat (existingByInstagramRetry)
+            // Завжди віддаємо перевагу даним з Altegio
+            if (existingClient.firstName && existingClient.firstName.trim() !== '') {
+              mergeUpdateData.firstName = existingClient.firstName;
+              if (existingClient.firstName !== existingByInstagramRetry.firstName) {
+                console.log(`[direct-store] Merging (fallback): overriding firstName with Altegio value "${existingClient.firstName}" (was: "${existingByInstagramRetry.firstName || 'empty'}")`);
+              }
+            }
+            if (existingClient.lastName && existingClient.lastName.trim() !== '') {
+              mergeUpdateData.lastName = existingClient.lastName;
+              if (existingClient.lastName !== existingByInstagramRetry.lastName) {
+                console.log(`[direct-store] Merging (fallback): overriding lastName with Altegio value "${existingClient.lastName}" (was: "${existingByInstagramRetry.lastName || 'empty'}")`);
+              }
             }
             
             if (existingByInstagramRetry.state === 'no-instagram') {
