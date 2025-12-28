@@ -339,12 +339,7 @@ export default function DirectPage() {
   // Автоматичне оновлення даних кожні 30 секунд
   useEffect(() => {
     const interval = setInterval(() => {
-      // Оновлюємо клієнтів, статистику, статуси та майстрів
-      // Якщо пошук заблокований, все одно оновлюємо (для отримання нових даних),
-      // але фільтрація по пошуку залишиться стабільною
-      loadClients().catch(err => {
-        console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
-      });
+      // Оновлюємо статистику та статуси/майстрів
       loadStats().catch(err => {
         console.warn('[DirectPage] Auto-refresh stats error (non-critical):', err);
       });
@@ -352,10 +347,17 @@ export default function DirectPage() {
       if (statuses.length === 0 || masters.length === 0) {
         loadStatusesAndMasters();
       }
+      // Оновлюємо клієнтів тільки якщо пошук не заблокований
+      // Якщо пошук заблокований, не оновлюємо клієнтів, щоб зберегти результати пошуку
+      if (!isSearchLocked) {
+        loadClients().catch(err => {
+          console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
+        });
+      }
     }, 30000); // 30 секунд
 
     return () => clearInterval(interval);
-  }, [statuses.length, masters.length]);
+  }, [statuses.length, masters.length, isSearchLocked]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
     try {
