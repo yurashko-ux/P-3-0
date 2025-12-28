@@ -318,15 +318,21 @@ export async function updateInstagramForAltegioClient(
         updatedAt: new Date(),
       };
       
-      if (!existingByInstagram.altegioClientId && altegioClientId) {
+      const wasAddingAltegioId = !existingByInstagram.altegioClientId && altegioClientId;
+      if (wasAddingAltegioId) {
         mergeUpdateData.altegioClientId = altegioClientId;
         console.log(`[direct-store] Adding Altegio ID ${altegioClientId} to existing client ${existingByInstagram.id}`);
       }
       
-      // Якщо клієнт з правильним Instagram мав стан 'no-instagram', оновлюємо його
+      // Оновлюємо стан:
+      // 1. Якщо клієнт мав стан 'no-instagram' → 'client'
+      // 2. Якщо клієнт мав стан 'lead' і ми додаємо Altegio ID → 'client' (бо клієнт тепер в Altegio)
       if (existingByInstagram.state === 'no-instagram') {
         mergeUpdateData.state = 'client';
         console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for merged client ${existingByInstagram.id}`);
+      } else if (existingByInstagram.state === 'lead' && wasAddingAltegioId) {
+        mergeUpdateData.state = 'client';
+        console.log(`[direct-store] Updating state from 'lead' to 'client' for merged client ${existingByInstagram.id} (added Altegio ID)`);
       }
       
       // Оновлюємо існуючого клієнта з правильним Instagram
