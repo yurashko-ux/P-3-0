@@ -18,18 +18,23 @@ export type DirectMaster = {
 
 // Конвертація з Prisma моделі в DirectMaster
 function prismaMasterToDirectMaster(dbMaster: any): DirectMaster {
-  return {
-    id: dbMaster.id,
-    name: dbMaster.name,
-    telegramUsername: dbMaster.telegramUsername || undefined,
-    telegramChatId: dbMaster.telegramChatId || undefined,
-    role: (dbMaster.role as 'master' | 'direct-manager' | 'admin') || 'master',
-    altegioStaffId: dbMaster.altegioStaffId || undefined,
-    isActive: dbMaster.isActive ?? true,
-    order: dbMaster.order || 0,
-    createdAt: dbMaster.createdAt.toISOString(),
-    updatedAt: dbMaster.updatedAt.toISOString(),
-  };
+  try {
+    return {
+      id: dbMaster.id,
+      name: dbMaster.name,
+      telegramUsername: dbMaster.telegramUsername || undefined,
+      telegramChatId: dbMaster.telegramChatId ?? undefined, // Використовуємо ?? для коректної обробки null
+      role: (dbMaster.role as 'master' | 'direct-manager' | 'admin') || 'master',
+      altegioStaffId: dbMaster.altegioStaffId ?? undefined,
+      isActive: dbMaster.isActive ?? true,
+      order: dbMaster.order || 0,
+      createdAt: dbMaster.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: dbMaster.updatedAt?.toISOString() || new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error('[direct-masters] Error converting Prisma master to DirectMaster:', err, dbMaster);
+    throw err;
+  }
 }
 
 /**
@@ -41,17 +46,36 @@ export async function getAllDirectMasters(): Promise<DirectMaster[]> {
       where: { isActive: true },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
     });
-    return dbMasters.map(prismaMasterToDirectMaster);
+    console.log(`[direct-masters] Found ${dbMasters.length} active masters in database`);
+    const converted = dbMasters.map(prismaMasterToDirectMaster);
+    console.log(`[direct-masters] Successfully converted ${converted.length} masters`);
+    return converted;
   } catch (err) {
     console.error('[direct-masters] Error getting all masters:', err);
-    // Якщо це помилка підключення до бази даних - повертаємо порожній масив
-    if (err instanceof Error && (
-      err.message.includes('Can\'t reach database server') || 
-      err.message.includes('database server') ||
-      err.name === 'PrismaClientInitializationError'
-    )) {
-      console.error('[direct-masters] ⚠️ Database connection error - returning empty array');
-      return [];
+    // Детальне логування помилки
+    if (err instanceof Error) {
+      console.error('[direct-masters] Error details:', {
+        name: err.name,
+        message: err.message,
+        stack: err.stack?.substring(0, 500),
+      });
+      
+      // Перевіряємо, чи це помилка через відсутнє поле (міграція не виконана)
+      if (err.message.includes('telegramChatId') || err.message.includes('Unknown column') || err.message.includes('column') && err.message.includes('does not exist')) {
+        console.error('[direct-masters] ⚠️ Database schema error - telegramChatId field may be missing. Please run Prisma migration.');
+        return [];
+      }
+      
+      // Якщо це помилка підключення до бази даних - повертаємо порожній масив
+      if (
+        err.message.includes('Can\'t reach database server') || 
+        err.message.includes('database server') ||
+        err.name === 'PrismaClientInitializationError' ||
+        err.message.includes('P1001') // Prisma connection error code
+      ) {
+        console.error('[direct-masters] ⚠️ Database connection error - returning empty array');
+        return [];
+      }
     }
     throw err;
   }
