@@ -1360,6 +1360,42 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-info btn-outline"
             onClick={async () => {
+              const username = prompt('Введіть Telegram username для перевірки (наприклад: kolachnykv):', 'kolachnykv');
+              if (!username) return;
+              
+              setIsLoading(true);
+              try {
+                const res = await fetch(`/api/admin/direct/test-start-command?username=${encodeURIComponent(username)}`);
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `🔍 Перевірка пошуку адміністратора (username: ${username})\n\n` +
+                    `Пошук через функцію:\n` +
+                    `${data.results.searchResults.byFunction ? `  ✅ Знайдено: ${data.results.searchResults.byFunction.name} (ID: ${data.results.searchResults.byFunction.id})\n  Chat ID: ${data.results.searchResults.byFunction.telegramChatId || 'не встановлено'}` : '  ❌ Не знайдено'}\n\n` +
+                    `Пошук через масив:\n` +
+                    `${data.results.searchResults.byArray ? `  ✅ Знайдено: ${data.results.searchResults.byArray.name} (ID: ${data.results.searchResults.byArray.id})\n  Chat ID: ${data.results.searchResults.byArray.telegramChatId || 'не встановлено'}` : '  ❌ Не знайдено'}\n\n` +
+                    `Пошук в базі даних:\n` +
+                    `${data.results.searchResults.byDatabase ? `  ✅ Знайдено: ${data.results.searchResults.byDatabase.name} (ID: ${data.results.searchResults.byDatabase.id})\n  Chat ID: ${data.results.searchResults.byDatabase.telegramChatId || 'не встановлено'}` : '  ❌ Не знайдено'}\n\n` +
+                    `Всі відповідальні (${data.results.allMasters?.length || 0}):\n` +
+                    (data.results.allMasters?.map((m: any) => `  - ${m.name} (@${m.telegramUsername || 'немає'}) [${m.role}] Chat ID: ${m.telegramChatId || 'немає'}`).join('\n') || 'немає') +
+                    `\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Перевірити пошук адміністратора за Telegram username"
+          >
+            🔍 Тест пошуку адміна
+          </button>
+          <button
+            className="btn btn-sm btn-info btn-outline"
+            onClick={async () => {
               const altegioId = prompt('Введіть Altegio ID клієнта для перевірки стану:');
               if (!altegioId) return;
               
