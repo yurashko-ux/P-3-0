@@ -102,6 +102,7 @@ type DirectClientTableProps = {
     search: string;
   };
   onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
+  onSearchClick?: () => void;
   sortBy: string;
   sortOrder: "asc" | "desc";
   onSortChange: (by: string, order: "asc" | "desc") => void;
