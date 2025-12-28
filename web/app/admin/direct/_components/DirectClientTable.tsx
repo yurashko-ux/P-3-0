@@ -125,6 +125,11 @@ export function DirectClientTable({
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [searchInput, setSearchInput] = useState<string>(filters.search);
 
+  // Синхронізуємо searchInput з filters.search коли filters змінюється ззовні (наприклад, при скиданні)
+  useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
+
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
     fetch("/api/admin/direct/masters?forSelection=true")
