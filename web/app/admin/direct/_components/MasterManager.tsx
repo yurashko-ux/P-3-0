@@ -308,6 +308,7 @@ export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) 
                             setFormData({
                               name: "",
                               telegramUsername: "",
+                              telegramChatId: "",
                               role: "master",
                               altegioStaffId: "",
                               order: masters.length + 1,
