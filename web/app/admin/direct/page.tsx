@@ -152,6 +152,7 @@ export default function DirectPage() {
     source: "",
     search: "",
   });
+  const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   const [sortBy, setSortBy] = useState<string>("firstContactDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
@@ -323,13 +324,19 @@ export default function DirectPage() {
       isInitialMount.current = false;
       return;
     }
+    // Якщо пошук заблокований і змінився тільки search фільтр, не оновлюємо
+    if (isSearchLocked) {
+      return;
+    }
     loadClients();
-  }, [filters, sortBy, sortOrder]);
+  }, [filters, sortBy, sortOrder, isSearchLocked]);
 
   // Автоматичне оновлення даних кожні 30 секунд
   useEffect(() => {
     const interval = setInterval(() => {
       // Оновлюємо клієнтів, статистику, статуси та майстрів
+      // Якщо пошук заблокований, все одно оновлюємо (для отримання нових даних),
+      // але фільтрація по пошуку залишиться стабільною
       loadClients().catch(err => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });
@@ -1786,7 +1793,17 @@ export default function DirectPage() {
         clients={clients}
         statuses={statuses}
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={(newFilters) => {
+          // Якщо змінився search, розблоковуємо пошук для автоматичного оновлення
+          if (newFilters.search !== filters.search) {
+            setIsSearchLocked(false);
+          }
+          setFilters(newFilters);
+        }}
+        onSearchClick={() => {
+          // При натисканні "Знайти" блокуємо автоматичне оновлення пошуку
+          setIsSearchLocked(true);
+        }}
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {

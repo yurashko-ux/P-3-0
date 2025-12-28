@@ -114,6 +114,7 @@ export function DirectClientTable({
   statuses,
   filters,
   onFiltersChange,
+  onSearchClick,
   sortBy,
   sortOrder,
   onSortChange,
@@ -243,6 +244,8 @@ export function DirectClientTable({
                   onClick={() => {
                     // При натисканні кнопки "Знайти" явно зафіксовуємо пошук
                     onFiltersChange({ ...filters, search: searchInput });
+                    // Викликаємо callback для блокування автоматичного оновлення
+                    onSearchClick?.();
                   }}
                 >
                   Знайти
