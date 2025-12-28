@@ -645,15 +645,19 @@ export async function POST(req: NextRequest) {
     assertDirectRemindersBotToken();
 
     const update = (await req.json()) as TelegramUpdate;
-    console.log(`[direct-reminders-webhook] Received update:`, {
+    console.log(`[direct-reminders-webhook] ✅ Received update:`, {
+      updateId: update.update_id,
       hasMessage: !!update.message,
       hasCallbackQuery: !!update.callback_query,
       messageText: update.message?.text,
       messageChatId: update.message?.chat?.id,
+      messageFromUsername: update.message?.from?.username,
+      messageFromId: update.message?.from?.id,
       replyToMessage: !!update.message?.reply_to_message,
       replyToMessageId: update.message?.reply_to_message?.message_id,
       replyToMessageText: update.message?.reply_to_message?.text?.substring(0, 100),
-      fullUpdate: JSON.stringify(update, null, 2).substring(0, 1000), // Перші 1000 символів для діагностики
+      isStartCommand: update.message?.text?.startsWith('/start'),
+      fullUpdate: JSON.stringify(update, null, 2).substring(0, 2000), // Перші 2000 символів для діагностики
     });
 
     // Обробляємо текстові повідомлення (відповіді на повідомлення про відсутній Instagram)
