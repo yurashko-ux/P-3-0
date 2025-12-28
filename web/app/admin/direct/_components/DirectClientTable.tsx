@@ -225,16 +225,25 @@ export function DirectClientTable({
                   placeholder="Введіть username або ім'я..."
                   className="input input-bordered input-sm flex-1"
                   value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
+                  onChange={(e) => {
+                    const newValue = e.target.value;
+                    setSearchInput(newValue);
+                    // Автоматично оновлюємо фільтр при введенні
+                    onFiltersChange({ ...filters, search: newValue });
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
+                      // При натисканні Enter також оновлюємо фільтр
                       onFiltersChange({ ...filters, search: searchInput });
                     }
                   }}
                 />
                 <button
                   className="btn btn-sm btn-primary"
-                  onClick={() => onFiltersChange({ ...filters, search: searchInput })}
+                  onClick={() => {
+                    // При натисканні кнопки "Знайти" явно зафіксовуємо пошук
+                    onFiltersChange({ ...filters, search: searchInput });
+                  }}
                 >
                   Знайти
                 </button>
