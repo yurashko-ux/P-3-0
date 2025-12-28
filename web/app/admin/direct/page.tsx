@@ -145,6 +145,7 @@ export default function DirectPage() {
   const [stats, setStats] = useState<DirectStatsType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     statusId: "",
     masterId: "",
