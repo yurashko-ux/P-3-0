@@ -664,36 +664,10 @@ export default function DirectPage() {
           </button>
           <button
             className="btn btn-sm btn-ghost"
-            onClick={async () => {
-              try {
-                const res = await fetch('/api/altegio/webhook?limit=20');
-                const data = await res.json();
-                if (data.ok) {
-                  const clientEvents = data.lastClientEvents || [];
-                  const message = `Останні вебхуки Altegio:\n\n` +
-                    `Всього подій: ${data.eventsCount}\n` +
-                    `Події по клієнтах: ${data.clientEventsCount || 0}\n` +
-                    `Події по записах: ${data.recordEventsCount || 0}\n\n` +
-                    (clientEvents.length > 0 
-                      ? `Останні події по клієнтах:\n${clientEvents.map((e: any, i: number) => 
-                          `${i + 1}. ${e.status} - Client ID: ${e.clientId}, Name: ${e.clientName || '—'}\n` +
-                          `   Custom fields: ${e.hasCustomFields ? '✅' : '❌'}, Type: ${e.customFieldsType}, IsArray: ${e.customFieldsIsArray}\n` +
-                          `   Received: ${new Date(e.receivedAt).toLocaleString('uk-UA')}`
-                        ).join('\n\n')}\n\n`
-                      : '❌ Немає подій по клієнтах\n\n'
-                    ) +
-                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
-                  showCopyableAlert(message);
-                } else {
-                  showCopyableAlert(`Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
-                }
-              } catch (err) {
-                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-              }
-            }}
-            title="Переглянути останні події вебхука від Altegio"
+            onClick={() => setIsWebhooksModalOpen(true)}
+            title="Переглянути таблицю webhook-ів Altegio"
           >
-            📋 Останні вебхуки
+            📋 Таблиця вебхуків
           </button>
           <button
             className="btn btn-sm btn-ghost"
