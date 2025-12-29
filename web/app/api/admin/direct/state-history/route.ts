@@ -25,8 +25,11 @@ export async function GET(req: NextRequest) {
     const directManager = await getDirectManager();
     
     // Отримуємо історію з masterId для кожного запису
+    // Фільтруємо записи зі станом "no-instagram" (видалений стан)
+    const filteredHistory = info.history.filter(log => log.state !== 'no-instagram');
+    
     const historyWithMasters = await Promise.all(
-      info.history.map(async (log) => {
+      filteredHistory.map(async (log) => {
         let masterId: string | undefined = undefined;
         let masterName: string | undefined = undefined;
 
@@ -103,10 +106,14 @@ export async function GET(req: NextRequest) {
       currentStateDate = client.updatedAt.toISOString();
     }
 
+    // Якщо поточний стан - "no-instagram", не повертаємо його
+    const currentStateValue = info.currentState === 'no-instagram' ? null : info.currentState;
+    
     return NextResponse.json({
       ok: true,
       data: {
         ...info,
+        currentState: currentStateValue,
         history: historyWithMasters,
         currentStateMasterId,
         currentStateMasterName,
