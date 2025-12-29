@@ -163,24 +163,34 @@ export default function DirectPage() {
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   
   // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
-  const [sortBy, setSortBy] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-sort-by');
-      const stack = new Error().stack;
-      console.log('[DirectPage] 🔍 Initializing sortBy from localStorage:', { 
-        saved, 
-        allKeys: Object.keys(localStorage).filter(k => k.includes('direct')),
-        stack: stack?.split('\n').slice(1, 6).join('\n')
-      });
-      if (saved === 'updatedAt' || saved === 'firstContactDate') {
-        console.log('[DirectPage] ✅ Using saved sortBy:', saved);
-        return saved;
-      } else {
-        console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: firstContactDate');
+  const sortByInitializer = useRef<(() => string) | null>(null);
+  if (!sortByInitializer.current) {
+    sortByInitializer.current = () => {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('direct-sort-by');
+        const stack = new Error().stack;
+        console.log('[DirectPage] 🔍 Initializing sortBy from localStorage:', { 
+          saved, 
+          allKeys: Object.keys(localStorage).filter(k => k.includes('direct')),
+          stack: stack?.split('\n').slice(1, 6).join('\n')
+        });
+        if (saved === 'updatedAt' || saved === 'firstContactDate') {
+          console.log('[DirectPage] ✅ Using saved sortBy:', saved);
+          return saved;
+        } else {
+          console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: firstContactDate');
+        }
       }
-    }
-    console.log('[DirectPage] ⚠️ Window undefined, using default: firstContactDate');
-    return 'firstContactDate';
+      console.log('[DirectPage] ⚠️ Window undefined, using default: firstContactDate');
+      return 'firstContactDate';
+    };
+  }
+  
+  const [sortBy, setSortBy] = useState<string>(sortByInitializer.current);
+  
+  // Логуємо sortBy при кожному ре-рендері
+  useEffect(() => {
+    console.log('[DirectPage] 🔍 sortBy value in render:', { sortBy, viewMode, timestamp: new Date().toISOString() });
   });
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
     if (typeof window !== 'undefined') {
