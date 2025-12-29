@@ -646,12 +646,37 @@ export function DirectClientTable({
                                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                               );
                               
+                              // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
+                              // Всі інші записи "lead" приховуємо
+                              let firstLeadFound = false;
+                              const filteredStates = sortedStates.filter((log) => {
+                                if (log.state === 'lead') {
+                                  if (!firstLeadFound) {
+                                    firstLeadFound = true;
+                                    return true; // Показуємо перший "lead"
+                                  }
+                                  return false; // Приховуємо всі інші "lead"
+                                }
+                                return true; // Показуємо всі інші стани
+                              });
+                              
                               // Останній стан з історії
-                              const lastHistoryState = sortedStates[sortedStates.length - 1]?.state || null;
+                              const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
                               
                               // Якщо поточний стан відрізняється від останнього в історії, додаємо його
-                              const statesToShow = [...sortedStates];
-                              if (currentState !== lastHistoryState) {
+                              const statesToShow = [...filteredStates];
+                              if (currentState !== lastHistoryState && currentState !== 'lead') {
+                                // Додаємо поточний стан, якщо він не "lead" (бо "lead" вже не може бути поточним для клієнтів з Altegio)
+                                statesToShow.push({
+                                  id: 'current',
+                                  clientId: client.id,
+                                  state: currentState,
+                                  previousState: lastHistoryState,
+                                  reason: 'current-state',
+                                  createdAt: new Date().toISOString(),
+                                });
+                              } else if (currentState === 'lead' && !firstLeadFound) {
+                                // Якщо поточний стан "lead" і ми ще не знайшли "lead" в історії, додаємо його
                                 statesToShow.push({
                                   id: 'current',
                                   clientId: client.id,

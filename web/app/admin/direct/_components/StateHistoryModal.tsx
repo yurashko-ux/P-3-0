@@ -238,10 +238,28 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                   )}
                   
                   {/* Історія (від новіших до старіших - реверсуємо масив) */}
-                  {[...history]
-                    .filter((log) => log.state !== 'no-instagram') // Додаткова фільтрація на випадок, якщо щось пропустили
-                    .reverse()
-                    .map((log, index) => (
+                  {(() => {
+                    // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
+                    // Всі інші записи "lead" приховуємо
+                    let firstLeadFound = false;
+                    const filteredHistory = history
+                      .filter((log) => {
+                        // Спочатку фільтруємо "no-instagram"
+                        if (log.state === 'no-instagram') return false;
+                        
+                        // Потім фільтруємо дублікати "lead"
+                        if (log.state === 'lead') {
+                          if (!firstLeadFound) {
+                            firstLeadFound = true;
+                            return true; // Показуємо перший "lead"
+                          }
+                          return false; // Приховуємо всі інші "lead"
+                        }
+                        return true; // Показуємо всі інші стани
+                      })
+                      .reverse();
+                    
+                    return filteredHistory.map((log, index) => (
                     <div key={log.id} className="flex items-center gap-3 pb-2 border-b border-base-300 last:border-b-0">
                       <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
                         {formatDate(log.createdAt)}
@@ -258,7 +276,8 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                         )}
                       </div>
                     </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               )}
             </div>
