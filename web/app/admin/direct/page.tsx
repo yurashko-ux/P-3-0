@@ -155,86 +155,55 @@ export default function DirectPage() {
   });
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   
-  // Режим відображення: 'passive' | 'active'
-  // Використовуємо useSyncExternalStore для синхронізації з localStorage
-  // Це гарантує, що viewMode завжди читається з localStorage і не може бути втрачений
-  const [viewModeTrigger, setViewModeTrigger] = useState(0);
-  
-  // Функція для читання viewMode з localStorage
-  const getViewMode = (): 'passive' | 'active' => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-view-mode');
-      return (saved === 'active' || saved === 'passive') ? saved : 'passive';
-    }
-    return 'passive';
-  };
-  
-  // Завжди читаємо viewMode з localStorage (не зберігаємо в стані)
-  const viewMode = getViewMode();
-  
-  // Обгортка для setViewMode, яка завжди зберігає в localStorage і тригерить ре-рендер
-  const setViewMode = (newMode: 'passive' | 'active') => {
-    if (typeof window !== 'undefined') {
-      const currentMode = getViewMode();
-      localStorage.setItem('direct-view-mode', newMode);
-      console.log('[DirectPage] viewMode changed:', currentMode, '->', newMode);
-      // Тригеримо ре-рендер
-      setViewModeTrigger(prev => prev + 1);
-    }
-  };
-  
-  // Слухаємо зміни localStorage (на випадок зміни з іншої вкладки або іншого джерела)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'direct-view-mode') {
-        console.log('[DirectPage] localStorage changed externally, triggering re-render');
-        setViewModeTrigger(prev => prev + 1);
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-  
-  
-  
-  // Відстежуємо всі зміни viewMode для діагностики
-  useEffect(() => {
-    console.log('[DirectPage] viewMode state changed to:', viewMode);
-  }, [viewMode]);
-
-  // Ініціалізуємо сортування на основі viewMode
+  // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
   const [sortBy, setSortBy] = useState<string>(() => {
-    // Завантажуємо viewMode з localStorage для правильної ініціалізації сортування
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-view-mode');
-      return saved === 'active' ? 'updatedAt' : 'firstContactDate';
+      const saved = localStorage.getItem('direct-sort-by');
+      if (saved === 'updatedAt' || saved === 'firstContactDate') {
+        return saved;
+      }
     }
     return 'firstContactDate';
   });
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-
-  // Агресивний захист: перевіряємо localStorage кожну секунду і оновлюємо sortBy якщо потрібно
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const currentViewMode = getViewMode();
-      
-      // Оновлюємо sortBy відповідно до поточного viewMode
-      if (currentViewMode === 'active' && sortBy !== 'updatedAt') {
-        console.log('[DirectPage] Interval check: Active mode detected, updating sortBy to updatedAt');
-        setSortBy('updatedAt');
-        setSortOrder('desc');
-      } else if (currentViewMode === 'passive' && sortBy !== 'firstContactDate') {
-        console.log('[DirectPage] Interval check: Passive mode detected, updating sortBy to firstContactDate');
-        setSortBy('firstContactDate');
-        setSortOrder('desc');
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('direct-sort-order');
+      if (saved === 'asc' || saved === 'desc') {
+        return saved;
       }
-    }, 1000); // Перевіряємо кожну секунду
-    
-    return () => clearInterval(interval);
-  }, [sortBy]);
+    }
+    return 'desc';
+  });
+
+  // Визначаємо режим на основі сортування
+  const viewMode: 'passive' | 'active' = sortBy === 'updatedAt' && sortOrder === 'desc' ? 'active' : 'passive';
+  
+  // Функція для встановлення режиму через сортування
+  const setViewMode = (mode: 'passive' | 'active') => {
+    if (mode === 'active') {
+      setSortBy('updatedAt');
+      setSortOrder('desc');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('direct-sort-by', 'updatedAt');
+        localStorage.setItem('direct-sort-order', 'desc');
+      }
+    } else {
+      setSortBy('firstContactDate');
+      setSortOrder('desc');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('direct-sort-by', 'firstContactDate');
+        localStorage.setItem('direct-sort-order', 'desc');
+      }
+    }
+  };
+  
+  // Зберігаємо sortBy і sortOrder в localStorage при зміні
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('direct-sort-by', sortBy);
+      localStorage.setItem('direct-sort-order', sortOrder);
+    }
+  }, [sortBy, sortOrder]);
 
   useEffect(() => {
     loadData();
@@ -263,32 +232,8 @@ export default function DirectPage() {
     }
   }, [viewModeTrigger, viewMode]); // Залежність від viewModeTrigger і viewMode
 
-  // Захищаємо активний режим: перевіряємо, чи sortBy відповідає viewMode
-  // Використовуємо useRef, щоб відстежувати, чи зміна сортування ініційована користувачем
+  // Захищаємо активний режим: якщо viewMode = 'active', не дозволяємо змінювати сортування
   const userSortChangeRef = useRef(false);
-  const lastSortByRef = useRef<string>(sortBy);
-  
-  useEffect(() => {
-    // Якщо сортування не змінилося, нічого не робимо
-    if (lastSortByRef.current === sortBy) {
-      return;
-    }
-    lastSortByRef.current = sortBy;
-    
-    // Якщо користувач змінив сортування, не перезаписуємо його
-    if (userSortChangeRef.current) {
-      userSortChangeRef.current = false;
-      return;
-    }
-    
-    // Перевіряємо, чи sortBy відповідає поточному viewMode
-    if (viewMode === 'active' && sortBy !== 'updatedAt') {
-      console.log('[DirectPage] Active mode protection: resetting sortBy to updatedAt (was:', sortBy, ')');
-      lastSortByRef.current = 'updatedAt';
-      setSortBy('updatedAt');
-      setSortOrder('desc');
-    }
-  }, [viewMode, sortBy]);
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
@@ -1997,8 +1942,8 @@ export default function DirectPage() {
           // Позначаємо, що користувач змінює сортування
           userSortChangeRef.current = true;
           
-          // В активному режимі не дозволяємо змінювати сортування
-          if (viewMode === 'active') {
+          // В активному режимі не дозволяємо змінювати сортування (тільки через кнопку режиму)
+          if (viewMode === 'active' && (by !== 'updatedAt' || order !== 'desc')) {
             console.log('[DirectPage] Sort change blocked in active mode');
             return;
           }
