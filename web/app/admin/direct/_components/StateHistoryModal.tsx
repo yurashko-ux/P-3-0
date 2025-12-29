@@ -218,24 +218,33 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
               ) : (
                 <div className="space-y-3">
                   {/* Поточний стан відображається першим, якщо він не збігається з останнім записом в історії */}
-                  {currentState && (history.length === 0 || history[history.length - 1]?.state !== currentState) && (
-                    <div className="flex items-center gap-3 pb-2 border-b border-base-300">
-                      <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
-                        {currentStateDate ? formatDate(currentStateDate) : (client.updatedAt ? formatDate(client.updatedAt) : 'Поточний')}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StateIcon state={currentState} />
-                        <div className="font-semibold text-sm">
-                          {getStateName(currentState)}
+                  {/* Але не показуємо поточний стан, якщо він "lead" і в історії вже є "lead" */}
+                  {(() => {
+                    // Перевіряємо, чи є "lead" в історії
+                    const hasLeadInHistory = history.some(log => log.state === 'lead');
+                    // Не показуємо поточний стан "lead", якщо в історії вже є "lead"
+                    if (currentState === 'lead' && hasLeadInHistory) {
+                      return null;
+                    }
+                    return currentState && (history.length === 0 || history[history.length - 1]?.state !== currentState) ? (
+                      <div className="flex items-center gap-3 pb-2 border-b border-base-300">
+                        <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
+                          {currentStateDate ? formatDate(currentStateDate) : (client.updatedAt ? formatDate(client.updatedAt) : 'Поточний')}
                         </div>
-                        {currentStateMasterName && (
-                          <div className="text-xs text-base-content/60 ml-2">
-                            {currentStateMasterName}
+                        <div className="flex items-center gap-2">
+                          <StateIcon state={currentState} />
+                          <div className="font-semibold text-sm">
+                            {getStateName(currentState)}
                           </div>
-                        )}
+                          {currentStateMasterName && (
+                            <div className="text-xs text-base-content/60 ml-2">
+                              {currentStateMasterName}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    ) : null;
+                  })()}
                   
                   {/* Історія (від новіших до старіших - реверсуємо масив) */}
                   {(() => {
