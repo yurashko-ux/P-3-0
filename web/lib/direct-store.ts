@@ -310,7 +310,7 @@ export async function updateInstagramForAltegioClient(
     });
     console.log(`[direct-store] 🔍 Are they different? ${existingByInstagram ? (existingByInstagram.id !== existingClient.id) : 'N/A'}`);
 
-    // Завжди оновлюємо стан з 'no-instagram' на 'client', якщо клієнт був в стані 'no-instagram'
+    // Завжди оновлюємо стан на 'client', якщо клієнт мав missing_instagram_* username
     const previousState = existingClient.state;
     
     // ВАЖЛИВО: Спочатку перевіряємо, чи існує клієнт з таким Instagram username

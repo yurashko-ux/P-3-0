@@ -113,14 +113,6 @@ function StateIcon({ state }: { state: string | null }) {
         <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
       </svg>
     );
-  } else if (state === 'no-instagram') {
-    return (
-      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="4" y="4" width="20" height="20" rx="2" fill="#ef4444" stroke="#dc2626" strokeWidth="1.5"/>
-        <path d="M10 10 L18 18 M18 10 L10 18" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-        <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
-      </svg>
-    );
   } else {
     return (
       <img 
