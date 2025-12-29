@@ -356,16 +356,14 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       // РАДИКАЛЬНЕ ФІЛЬТРУВАННЯ:
       // 1. Видаляємо всі "no-instagram"
       // 2. Для Altegio клієнтів - видаляємо ВСІ "lead"
-      // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+      // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
       const filteredLogs: DirectClientStateLog[] = [];
       
-      // Сортуємо від старіших до новіших для знаходження найстарішого "lead"
-      const sortedForFilter = [...logs].sort((a, b) => 
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
+      // Спочатку видаляємо "no-instagram" та розділяємо на "lead" та інші
+      const leadLogs: DirectClientStateLog[] = [];
+      const otherLogs: DirectClientStateLog[] = [];
       
-      let firstLeadAdded = false;
-      for (const log of sortedForFilter) {
+      for (const log of logs) {
         // Видаляємо "no-instagram"
         if (log.state === 'no-instagram') {
           continue;
@@ -376,20 +374,40 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
           continue;
         }
         
-        // Для Manychat клієнтів - залишаємо тільки перший (найстаріший) "lead"
+        // Для Manychat клієнтів - збираємо "lead" окремо
         if (log.state === 'lead' && isManychatClient) {
-          if (!firstLeadAdded) {
-            filteredLogs.push(log);
-            firstLeadAdded = true;
-          }
+          leadLogs.push(log);
           continue;
         }
         
-        // Всі інші стани залишаємо
-        filteredLogs.push(log);
+        // Всі інші стани збираємо окремо
+        otherLogs.push(log);
       }
       
-      // Сортуємо назад від новіших до старіших
+      // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
+      if (isManychatClient && leadLogs.length > 0) {
+        // Сортуємо "lead" від старіших до новіших
+        leadLogs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        const oldestLead = leadLogs[0]; // Найстаріший "lead"
+        
+        // Перевіряємо, чи є стани старіші за "lead"
+        const olderThanLead = otherLogs.filter(log => 
+          new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
+        );
+        
+        // Якщо "lead" найстаріший - залишаємо його (він початковий стан)
+        // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
+        if (olderThanLead.length === 0) {
+          // "lead" найстаріший - додаємо його
+          filteredLogs.push(oldestLead);
+        }
+        // Якщо є стани старіші - не додаємо "lead"
+      }
+      
+      // Додаємо всі інші стани
+      filteredLogs.push(...otherLogs);
+      
+      // Сортуємо від новіших до старіших
       filteredLogs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
       // Замінюємо в result

@@ -264,29 +264,35 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                     );
                     
-                    // Знаходимо найстаріший "lead" запис
-                    const firstLeadIndex = sortedHistory.findIndex(log => log.state === 'lead');
+                    // Розділяємо на "lead" та інші стани
+                    const leadLogs = sortedHistory.filter(log => log.state === 'lead');
+                    const otherLogs = sortedHistory.filter(log => log.state !== 'lead' && log.state !== 'no-instagram');
                     
                     // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
-                    // для Manychat клієнтів - залишаємо тільки найстаріший "lead"
-                    const filteredHistory = sortedHistory
-                      .filter((log, index) => {
-                        // Спочатку фільтруємо "no-instagram"
-                        if (log.state === 'no-instagram') return false;
-                        
-                        // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
-                        if (log.state === 'lead' && !isManychatClient) {
-                          return false;
-                        }
-                        
-                        // Для Manychat клієнтів - показуємо тільки найстаріший "lead"
-                        if (log.state === 'lead' && isManychatClient) {
-                          return index === firstLeadIndex;
-                        }
-                        
-                        return true; // Показуємо всі інші стани
-                      })
-                      .reverse(); // Реверсуємо для відображення від новіших до старіших
+                    // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
+                    let filteredHistory: typeof sortedHistory = [];
+                    
+                    if (isManychatClient && leadLogs.length > 0) {
+                      // Знаходимо найстаріший "lead"
+                      const oldestLead = leadLogs[0]; // Вже відсортовано від старіших до новіших
+                      
+                      // Перевіряємо, чи є стани старіші за "lead"
+                      const olderThanLead = otherLogs.filter(log => 
+                        new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
+                      );
+                      
+                      // Якщо "lead" найстаріший - залишаємо його
+                      if (olderThanLead.length === 0) {
+                        filteredHistory.push(oldestLead);
+                      }
+                      // Якщо є стани старіші - не показуємо "lead"
+                    }
+                    
+                    // Додаємо всі інші стани (без "no-instagram")
+                    filteredHistory.push(...otherLogs);
+                    
+                    // Сортуємо назад від новіших до старіших для відображення
+                    filteredHistory.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                     
                     return filteredHistory.map((log, index) => (
                     <div key={log.id} className="flex items-center gap-3 pb-2 border-b border-base-300 last:border-b-0">
