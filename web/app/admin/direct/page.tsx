@@ -206,6 +206,24 @@ export default function DirectPage() {
     }
   }, [viewMode]); // Залежність тільки від viewMode, щоб уникнути циклічних оновлень
 
+  // Захищаємо активний режим: перевіряємо, чи sortBy відповідає viewMode
+  // Використовуємо useRef, щоб відстежувати, чи зміна сортування ініційована користувачем
+  const userSortChangeRef = useRef(false);
+  useEffect(() => {
+    // Якщо користувач змінив сортування, не перезаписуємо його
+    if (userSortChangeRef.current) {
+      userSortChangeRef.current = false;
+      return;
+    }
+    
+    // Перевіряємо, чи sortBy відповідає поточному viewMode
+    if (viewMode === 'active' && sortBy !== 'updatedAt') {
+      console.log('[DirectPage] Active mode protection: resetting sortBy to updatedAt');
+      setSortBy('updatedAt');
+      setSortOrder('desc');
+    }
+  }, [viewMode, sortBy]);
+
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
     // Завантажуємо статуси
@@ -1896,6 +1914,15 @@ export default function DirectPage() {
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {
+          // Позначаємо, що користувач змінює сортування
+          userSortChangeRef.current = true;
+          
+          // В активному режимі не дозволяємо змінювати сортування
+          if (viewMode === 'active') {
+            console.log('[DirectPage] Sort change blocked in active mode');
+            return;
+          }
+          
           setSortBy(by);
           setSortOrder(order);
         }}
