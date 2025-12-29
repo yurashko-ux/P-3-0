@@ -220,13 +220,14 @@ export async function POST(req: NextRequest) {
         } else {
           // Створюємо нового клієнта
           const now = new Date().toISOString();
+          // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
           const newClient = {
             id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             instagramUsername: normalizedInstagram,
             firstName,
             lastName,
             source: 'instagram' as const,
-            state: 'lead' as const,
+            state: 'client' as const,
             firstContactDate: now,
             statusId: defaultStatus.id,
             visitedSalon: false,

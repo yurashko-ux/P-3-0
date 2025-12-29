@@ -216,7 +216,8 @@ export async function POST(req: NextRequest) {
           // Оновлюємо існуючого клієнта
           const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
           if (existingClient) {
-            const clientState = isMissingInstagram ? ('lead' as const) : ('client' as const);
+            // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
+            const clientState = 'client' as const;
             const updated = {
               ...existingClient,
               altegioClientId: parseInt(String(clientId), 10),
@@ -241,7 +242,8 @@ export async function POST(req: NextRequest) {
         } else {
           // Створюємо нового клієнта
           const now = new Date().toISOString();
-          const clientState = isMissingInstagram ? ('lead' as const) : ('client' as const);
+          // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
+          const clientState = 'client' as const;
           const newClient = {
             id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             instagramUsername: normalizedInstagram,

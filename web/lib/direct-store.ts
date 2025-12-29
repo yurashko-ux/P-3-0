@@ -521,6 +521,20 @@ export async function updateInstagramForAltegioClient(
 }
 
 /**
+ * Перевіряє, чи клієнт вже мав стан "lead" в історії
+ */
+async function hasLeadStateInHistory(clientId: string): Promise<boolean> {
+  try {
+    const { getStateHistory } = await import('@/lib/direct-state-log');
+    const history = await getStateHistory(clientId);
+    return history.some(log => log.state === 'lead');
+  } catch (err) {
+    console.warn(`[direct-store] Failed to check lead state history for ${clientId}:`, err);
+    return false; // У разі помилки дозволяємо встановлення "lead"
+  }
+}
+
+/**
  * Зберегти клієнта
  */
 export async function saveDirectClient(
@@ -532,6 +546,44 @@ export async function saveDirectClient(
   try {
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
+    
+    // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
+    // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу
+    let finalState = client.state;
+    if (finalState === 'lead') {
+      // Перевіряємо, чи клієнт має altegioClientId
+      const existingClient = await prisma.directClient.findFirst({
+        where: {
+          OR: [
+            { id: client.id },
+            { instagramUsername: normalizedUsername },
+          ],
+        },
+        select: { id: true, altegioClientId: true },
+      });
+      
+      if (existingClient?.altegioClientId) {
+        // Клієнт з Altegio не може бути "lead"
+        finalState = 'client';
+        console.log(`[direct-store] ⚠️ Client ${existingClient.id} has altegioClientId, changing state from 'lead' to 'client'`);
+      } else if (existingClient) {
+        // Перевіряємо, чи клієнт вже мав стан "lead" в історії
+        const hadLeadBefore = await hasLeadStateInHistory(existingClient.id);
+        if (hadLeadBefore) {
+          // Клієнт вже мав стан "lead", не дозволяємо встановити його знову
+          finalState = existingClient.id ? (await prisma.directClient.findUnique({ where: { id: existingClient.id }, select: { state: true } }))?.state || 'client' : 'client';
+          console.log(`[direct-store] ⚠️ Client ${existingClient.id} already had 'lead' state in history, keeping current state: ${finalState}`);
+        }
+      } else if (data.altegioClientId) {
+        // Новий клієнт з Altegio не може бути "lead"
+        finalState = 'client';
+        console.log(`[direct-store] ⚠️ New client with altegioClientId cannot be 'lead', setting to 'client'`);
+      }
+    }
+    
+    // Оновлюємо стан клієнта
+    const clientWithCorrectState = { ...client, state: finalState };
+    const dataWithCorrectState = directClientToPrisma(clientWithCorrectState);
     
     // Спочатку перевіряємо, чи існує клієнт з таким instagramUsername
     const existingByUsername = await prisma.directClient.findUnique({
@@ -550,7 +602,7 @@ export async function saveDirectClient(
       await prisma.directClient.update({
         where: { instagramUsername: normalizedUsername },
         data: {
-          ...data,
+          ...dataWithCorrectState,
           id: existingByUsername.id, // Зберігаємо існуючий ID
           createdAt: existingByUsername.createdAt < data.firstContactDate 
             ? existingByUsername.createdAt 
@@ -572,7 +624,7 @@ export async function saveDirectClient(
         await prisma.directClient.update({
           where: { id: client.id },
           data: {
-            ...data,
+            ...dataWithCorrectState,
             updatedAt: new Date(),
           },
         });
@@ -580,14 +632,14 @@ export async function saveDirectClient(
       } else {
         // Створюємо новий запис (для нового клієнта previousState = null)
         await prisma.directClient.create({
-          data,
+          data: dataWithCorrectState,
         });
         console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
       }
     }
     
     // Логуємо зміну стану, якщо вона відбулася (якщо не пропущено логування)
-    if (!skipLogging && client.state !== previousState) {
+    if (!skipLogging && finalState !== previousState) {
       // Додаємо masterId до метаданих для історії
       const logMetadata = {
         ...metadata,
@@ -596,7 +648,7 @@ export async function saveDirectClient(
       
       await logStateChange(
         clientIdForLog,
-        client.state,
+        finalState,
         previousState,
         reason || 'saveDirectClient',
         logMetadata
