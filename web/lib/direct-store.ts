@@ -549,7 +549,8 @@ export async function saveDirectClient(
     
     // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
     // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу
-    let finalState = client.state;
+    type DirectClientState = 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive';
+    let finalState: DirectClientState | undefined = client.state;
     if (finalState === 'lead') {
       // Перевіряємо, чи клієнт має altegioClientId
       const existingClient = await prisma.directClient.findFirst({
@@ -571,7 +572,14 @@ export async function saveDirectClient(
         const hadLeadBefore = await hasLeadStateInHistory(existingClient.id);
         if (hadLeadBefore) {
           // Клієнт вже мав стан "lead", не дозволяємо встановити його знову
-          finalState = existingClient.id ? (await prisma.directClient.findUnique({ where: { id: existingClient.id }, select: { state: true } }))?.state || 'client' : 'client';
+          const currentClient = await prisma.directClient.findUnique({ 
+            where: { id: existingClient.id }, 
+            select: { state: true } 
+          });
+          const currentState = currentClient?.state as DirectClientState | null;
+          finalState = (currentState && ['lead', 'client', 'consultation', 'hair-extension', 'other-services', 'all-good', 'too-expensive'].includes(currentState)) 
+            ? currentState 
+            : 'client';
           console.log(`[direct-store] ⚠️ Client ${existingClient.id} already had 'lead' state in history, keeping current state: ${finalState}`);
         }
       } else if (data.altegioClientId) {
