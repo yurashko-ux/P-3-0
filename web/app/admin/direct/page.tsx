@@ -393,6 +393,23 @@ export default function DirectPage() {
   const isInitialMount = useRef(true);
   const prevFiltersRef = useRef(filters);
   useEffect(() => {
+    // Перевіряємо, чи не змінився sortBy перед оновленням
+    if (typeof window !== 'undefined') {
+      const savedSortBy = localStorage.getItem('direct-sort-by');
+      const savedSortOrder = localStorage.getItem('direct-sort-order');
+      
+      // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
+      if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
+        if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
+          console.warn('[DirectPage] Filter change useEffect: restoring active mode before loadClients');
+          setSortBy('updatedAt');
+          setSortOrder('desc');
+          // Не продовжуємо оновлення, щоб не викликати конфлікт стану
+          return;
+        }
+      }
+    }
+    
     // Пропускаємо перший виклик, бо він вже відбувається в loadData()
     if (isInitialMount.current) {
       isInitialMount.current = false;
