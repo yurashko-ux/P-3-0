@@ -218,14 +218,22 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
               ) : (
                 <div className="space-y-3">
                   {/* Поточний стан відображається першим, якщо він не збігається з останнім записом в історії */}
-                  {/* Але не показуємо поточний стан, якщо він "lead" і в історії вже є "lead" */}
+                  {/* РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId) */}
                   {(() => {
-                    // Перевіряємо, чи є "lead" в історії
-                    const hasLeadInHistory = history.some(log => log.state === 'lead');
-                    // Не показуємо поточний стан "lead", якщо в історії вже є "lead"
-                    if (currentState === 'lead' && hasLeadInHistory) {
+                    const isManychatClient = !client.altegioClientId;
+                    
+                    // Для Altegio клієнтів - НЕ показуємо поточний стан, якщо він "lead"
+                    if (!isManychatClient && currentState === 'lead') {
                       return null;
                     }
+                    
+                    // Для Manychat клієнтів - перевіряємо, чи є "lead" в історії
+                    const hasLeadInHistory = history.some(log => log.state === 'lead');
+                    // Не показуємо поточний стан "lead", якщо в історії вже є "lead"
+                    if (isManychatClient && currentState === 'lead' && hasLeadInHistory) {
+                      return null;
+                    }
+                    
                     return currentState && (history.length === 0 || history[history.length - 1]?.state !== currentState) ? (
                       <div className="flex items-center gap-3 pb-2 border-b border-base-300">
                         <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
@@ -248,6 +256,9 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                   
                   {/* Історія (від новіших до старіших - реверсуємо масив) */}
                   {(() => {
+                    // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
+                    const isManychatClient = !client.altegioClientId;
+                    
                     // Спочатку сортуємо за датою (від старіших до новіших), щоб знайти найстаріший "lead"
                     const sortedHistory = [...history].sort((a, b) => 
                       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -256,17 +267,23 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     // Знаходимо найстаріший "lead" запис
                     const firstLeadIndex = sortedHistory.findIndex(log => log.state === 'lead');
                     
-                    // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
-                    // Всі інші записи "lead" приховуємо
+                    // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
+                    // для Manychat клієнтів - залишаємо тільки найстаріший "lead"
                     const filteredHistory = sortedHistory
                       .filter((log, index) => {
                         // Спочатку фільтруємо "no-instagram"
                         if (log.state === 'no-instagram') return false;
                         
-                        // Потім фільтруємо дублікати "lead" - показуємо тільки той, що знайдений першим
-                        if (log.state === 'lead') {
+                        // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
+                        if (log.state === 'lead' && !isManychatClient) {
+                          return false;
+                        }
+                        
+                        // Для Manychat клієнтів - показуємо тільки найстаріший "lead"
+                        if (log.state === 'lead' && isManychatClient) {
                           return index === firstLeadIndex;
                         }
+                        
                         return true; // Показуємо всі інші стани
                       })
                       .reverse(); // Реверсуємо для відображення від новіших до старіших

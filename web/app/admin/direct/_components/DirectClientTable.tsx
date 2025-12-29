@@ -630,8 +630,14 @@ export function DirectClientTable({
                               const states = client.last5States || [];
                               const currentState = client.state || 'lead';
                               
-                              // Якщо немає історії, показуємо поточний стан
+                              // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
+                              const isManychatClient = !client.altegioClientId;
+                              
+                              // Якщо немає історії, показуємо поточний стан (якщо це не "lead" для Altegio клієнта)
                               if (states.length === 0) {
+                                if (!isManychatClient && currentState === 'lead') {
+                                  return null; // Не показуємо "lead" для Altegio клієнтів
+                                }
                                 return (
                                   <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
                                     <StateIcon state={currentState} size={32} />
@@ -644,51 +650,42 @@ export function DirectClientTable({
                                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                               );
                               
-                              // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
-                              // Використовуємо Set для відстеження ID записів "lead", які вже показані
+                              // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
+                              // для Manychat клієнтів - залишаємо тільки найстаріший "lead"
                               const filteredStates: typeof sortedStates = [];
                               let firstLeadAdded = false;
                               
                               for (let i = 0; i < sortedStates.length; i++) {
                                 const log = sortedStates[i];
                                 if (log.state === 'lead') {
-                                  // Показуємо тільки перший (найстаріший) "lead"
+                                  // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
+                                  if (!isManychatClient) {
+                                    continue; // Пропускаємо всі "lead" для Altegio клієнтів
+                                  }
+                                  // Для Manychat клієнтів - показуємо тільки перший (найстаріший) "lead"
                                   if (!firstLeadAdded) {
                                     filteredStates.push(log);
                                     firstLeadAdded = true;
                                   }
-                                  // Всі інші "lead" пропускаємо (приховуємо)
+                                  // Всі інші "lead" для Manychat також пропускаємо
                                 } else {
                                   // Всі інші стани показуємо
                                   filteredStates.push(log);
                                 }
                               }
                               
-                              // Додаткова перевірка: якщо все ще є кілька "lead" після фільтрації, залишаємо тільки перший
-                              let finalLeadCount = 0;
-                              const finalFilteredStates = filteredStates.filter(log => {
-                                if (log.state === 'lead') {
-                                  finalLeadCount++;
-                                  return finalLeadCount === 1; // Залишаємо тільки перший
-                                }
-                                return true;
-                              });
-                              
-                              // Використовуємо остаточно відфільтрований масив
-                              const filteredStatesFinal = finalFilteredStates;
-                              
                               // Останній стан з історії
-                              const lastHistoryState = filteredStatesFinal[filteredStatesFinal.length - 1]?.state || null;
+                              const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
                               
                               // Додаємо поточний стан, якщо він відрізняється
-                              const statesToShow = [...filteredStatesFinal];
-                              
-                              // Перевіряємо, чи є "lead" в відфільтрованих станах
-                              const hasLeadInFiltered = filteredStatesFinal.some(log => log.state === 'lead');
+                              const statesToShow = [...filteredStates];
                               
                               if (currentState !== lastHistoryState) {
-                                // Якщо поточний стан - "lead", додаємо його тільки якщо в історії немає "lead"
-                                if (currentState === 'lead' && !hasLeadInFiltered) {
+                                // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
+                                if (!isManychatClient && currentState === 'lead') {
+                                  // Не додаємо "lead" для Altegio клієнтів
+                                } else if (currentState === 'lead' && !firstLeadAdded) {
+                                  // Для Manychat клієнтів - додаємо "lead" тільки якщо його немає в історії
                                   statesToShow.push({
                                     id: 'current',
                                     clientId: client.id,
@@ -710,9 +707,14 @@ export function DirectClientTable({
                                 }
                               }
                               
+                              // Фінальна перевірка: якщо все ще є "lead" для Altegio клієнта - видаляємо
+                              const finalStatesToShow = isManychatClient 
+                                ? statesToShow 
+                                : statesToShow.filter(log => log.state !== 'lead');
+                              
                               return (
                                 <>
-                                  {statesToShow.slice(-5).map((stateLog, idx) => {
+                                  {finalStatesToShow.slice(-5).map((stateLog, idx) => {
                                     const stateDate = new Date(stateLog.createdAt);
                                     const formattedDate = stateDate.toLocaleDateString('uk-UA', {
                                       day: '2-digit',

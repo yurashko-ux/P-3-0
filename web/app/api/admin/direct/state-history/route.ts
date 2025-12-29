@@ -24,9 +24,45 @@ export async function GET(req: NextRequest) {
     // Отримуємо дірект-менеджера для стану "Лід"
     const directManager = await getDirectManager();
     
-    // Отримуємо історію з masterId для кожного запису
-    // Фільтруємо записи зі станом "no-instagram" (видалений стан)
-    const filteredHistory = info.history.filter(log => log.state !== 'no-instagram');
+    // Отримуємо інформацію про клієнта для перевірки, чи це клієнт з Manychat
+    const { prisma } = await import('@/lib/prisma');
+    const clientInfo = await prisma.directClient.findUnique({
+      where: { id: clientId },
+      select: { altegioClientId: true },
+    });
+    
+    // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
+    const isManychatClient = !clientInfo?.altegioClientId;
+    
+    // Фільтруємо записи: "no-instagram" + "lead" для Altegio клієнтів
+    const filteredHistory = info.history.filter(log => {
+      if (log.state === 'no-instagram') return false;
+      // Для Altegio клієнтів - видаляємо ВСІ "lead"
+      if (log.state === 'lead' && !isManychatClient) return false;
+      return true;
+    });
+    
+    // Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+    if (isManychatClient) {
+      const sortedHistory = [...filteredHistory].sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const firstLeadIndex = sortedHistory.findIndex(log => log.state === 'lead');
+      const finalFilteredHistory = sortedHistory.filter((log, index) => {
+        if (log.state === 'lead') {
+          return index === firstLeadIndex; // Залишаємо тільки найстаріший "lead"
+        }
+        return true;
+      });
+      // Пересортовуємо назад за датою (від новіших до старіших)
+      finalFilteredHistory.sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      // Використовуємо відфільтровану історію
+      const tempFiltered = finalFilteredHistory;
+      // Замінюємо filteredHistory на відфільтровану версію
+      // (продовжуємо з filteredHistory, але замінимо її пізніше)
+    }
     
     const historyWithMasters = await Promise.all(
       filteredHistory.map(async (log) => {
@@ -75,7 +111,6 @@ export async function GET(req: NextRequest) {
     let currentStateDate: string | undefined = undefined;
     
     // Отримуємо інформацію про клієнта
-    const { prisma } = await import('@/lib/prisma');
     const client = await prisma.directClient.findUnique({
       where: { id: clientId },
       select: { masterId: true, updatedAt: true },
@@ -106,8 +141,11 @@ export async function GET(req: NextRequest) {
       currentStateDate = client.updatedAt.toISOString();
     }
 
-    // Якщо поточний стан - "no-instagram", не повертаємо його
-    const currentStateValue = info.currentState === 'no-instagram' ? null : info.currentState;
+    // РАДИКАЛЬНЕ ПРАВИЛО: для Altegio клієнтів - не повертаємо поточний стан "lead"
+    let currentStateValue = info.currentState === 'no-instagram' ? null : info.currentState;
+    if (!isManychatClient && currentStateValue === 'lead') {
+      currentStateValue = null; // Не показуємо "lead" для Altegio клієнтів
+    }
     
     return NextResponse.json({
       ok: true,
