@@ -248,25 +248,28 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                   
                   {/* Історія (від новіших до старіших - реверсуємо масив) */}
                   {(() => {
+                    // Спочатку сортуємо за датою (від старіших до новіших), щоб знайти найстаріший "lead"
+                    const sortedHistory = [...history].sort((a, b) => 
+                      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                    );
+                    
+                    // Знаходимо найстаріший "lead" запис
+                    const firstLeadIndex = sortedHistory.findIndex(log => log.state === 'lead');
+                    
                     // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
                     // Всі інші записи "lead" приховуємо
-                    let firstLeadFound = false;
-                    const filteredHistory = history
-                      .filter((log) => {
+                    const filteredHistory = sortedHistory
+                      .filter((log, index) => {
                         // Спочатку фільтруємо "no-instagram"
                         if (log.state === 'no-instagram') return false;
                         
-                        // Потім фільтруємо дублікати "lead"
+                        // Потім фільтруємо дублікати "lead" - показуємо тільки той, що знайдений першим
                         if (log.state === 'lead') {
-                          if (!firstLeadFound) {
-                            firstLeadFound = true;
-                            return true; // Показуємо перший "lead"
-                          }
-                          return false; // Приховуємо всі інші "lead"
+                          return index === firstLeadIndex;
                         }
                         return true; // Показуємо всі інші стани
                       })
-                      .reverse();
+                      .reverse(); // Реверсуємо для відображення від новіших до старіших
                     
                     return filteredHistory.map((log, index) => (
                     <div key={log.id} className="flex items-center gap-3 pb-2 border-b border-base-300 last:border-b-0">

@@ -648,14 +648,12 @@ export function DirectClientTable({
                               
                               // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
                               // Всі інші записи "lead" приховуємо
-                              let firstLeadFound = false;
-                              const filteredStates = sortedStates.filter((log) => {
+                              // Знаходимо індекс найстарішого "lead" в відсортованому масиві
+                              const firstLeadIndex = sortedStates.findIndex(log => log.state === 'lead');
+                              const filteredStates = sortedStates.filter((log, index) => {
                                 if (log.state === 'lead') {
-                                  if (!firstLeadFound) {
-                                    firstLeadFound = true;
-                                    return true; // Показуємо перший "lead"
-                                  }
-                                  return false; // Приховуємо всі інші "lead"
+                                  // Показуємо тільки найстаріший "lead" (перший в відсортованому масиві)
+                                  return index === firstLeadIndex;
                                 }
                                 return true; // Показуємо всі інші стани
                               });
@@ -665,8 +663,10 @@ export function DirectClientTable({
                               
                               // Якщо поточний стан відрізняється від останнього в історії, додаємо його
                               const statesToShow = [...filteredStates];
+                              const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
+                              
                               if (currentState !== lastHistoryState && currentState !== 'lead') {
-                                // Додаємо поточний стан, якщо він не "lead" (бо "lead" вже не може бути поточним для клієнтів з Altegio)
+                                // Додаємо поточний стан, якщо він не "lead"
                                 statesToShow.push({
                                   id: 'current',
                                   clientId: client.id,
@@ -675,8 +675,8 @@ export function DirectClientTable({
                                   reason: 'current-state',
                                   createdAt: new Date().toISOString(),
                                 });
-                              } else if (currentState === 'lead' && !firstLeadFound) {
-                                // Якщо поточний стан "lead" і ми ще не знайшли "lead" в історії, додаємо його
+                              } else if (currentState === 'lead' && firstLeadIndex === -1) {
+                                // Якщо поточний стан "lead" і в історії немає "lead", додаємо його
                                 statesToShow.push({
                                   id: 'current',
                                   clientId: client.id,
