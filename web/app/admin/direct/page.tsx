@@ -214,7 +214,15 @@ export default function DirectPage() {
   // Захищаємо активний режим: перевіряємо, чи sortBy відповідає viewMode
   // Використовуємо useRef, щоб відстежувати, чи зміна сортування ініційована користувачем
   const userSortChangeRef = useRef(false);
+  const lastSortByRef = useRef<string>(sortBy);
+  
   useEffect(() => {
+    // Якщо сортування не змінилося, нічого не робимо
+    if (lastSortByRef.current === sortBy) {
+      return;
+    }
+    lastSortByRef.current = sortBy;
+    
     // Якщо користувач змінив сортування, не перезаписуємо його
     if (userSortChangeRef.current) {
       userSortChangeRef.current = false;
@@ -223,7 +231,8 @@ export default function DirectPage() {
     
     // Перевіряємо, чи sortBy відповідає поточному viewMode
     if (viewMode === 'active' && sortBy !== 'updatedAt') {
-      console.log('[DirectPage] Active mode protection: resetting sortBy to updatedAt');
+      console.log('[DirectPage] Active mode protection: resetting sortBy to updatedAt (was:', sortBy, ')');
+      lastSortByRef.current = 'updatedAt';
       setSortBy('updatedAt');
       setSortOrder('desc');
     }
