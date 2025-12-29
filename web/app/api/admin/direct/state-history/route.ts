@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
     let currentStateMasterName: string | undefined = undefined;
     let currentStateDate: string | undefined = undefined;
     
-    // Отримуємо інформацію про клієнта
+    // Отримуємо інформацію про клієнта (використовуємо той самий prisma, що вже імпортований)
     const client = await prisma.directClient.findUnique({
       where: { id: clientId },
       select: { masterId: true, updatedAt: true },
