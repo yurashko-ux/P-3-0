@@ -244,12 +244,13 @@ export default function DirectPage() {
   // Використовуємо useRef, щоб відстежувати попередній режим і не встановлювати сортування зайвий раз
   const prevViewModeRef = useRef<'passive' | 'active' | null>(null);
   useEffect(() => {
-    // Встановлюємо сортування тільки при зміні режиму
-    const viewModeChanged = prevViewModeRef.current !== null && prevViewModeRef.current !== viewMode;
+    // Завжди читаємо viewMode з localStorage
+    const currentViewMode = getViewMode();
+    const viewModeChanged = prevViewModeRef.current !== null && prevViewModeRef.current !== currentViewMode;
     
     if (viewModeChanged || prevViewModeRef.current === null) {
-      console.log('[DirectPage] viewMode changed, updating sortBy. Old:', prevViewModeRef.current, 'New:', viewMode);
-      if (viewMode === 'passive') {
+      console.log('[DirectPage] viewMode changed, updating sortBy. Old:', prevViewModeRef.current, 'New:', currentViewMode);
+      if (currentViewMode === 'passive') {
         // Пасивний режим: сортування за датою першого контакту
         setSortBy('firstContactDate');
         setSortOrder('desc');
@@ -258,9 +259,9 @@ export default function DirectPage() {
         setSortBy('updatedAt');
         setSortOrder('desc');
       }
-      prevViewModeRef.current = viewMode;
+      prevViewModeRef.current = currentViewMode;
     }
-  }, [viewMode]); // Залежність тільки від viewMode, щоб уникнути циклічних оновлень
+  }, [viewModeTrigger, viewMode]); // Залежність від viewModeTrigger і viewMode
 
   // Захищаємо активний режим: перевіряємо, чи sortBy відповідає viewMode
   // Використовуємо useRef, щоб відстежувати, чи зміна сортування ініційована користувачем
