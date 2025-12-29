@@ -446,23 +446,53 @@ export default function DirectPage() {
   // Використовуємо useRef, щоб уникнути зайвих викликів під час ініціалізації
   const isInitialMount = useRef(true);
   const prevFiltersRef = useRef(filters);
+  const prevSortByRef = useRef(sortBy);
+  const prevSortOrderRef = useRef(sortOrder);
+  
   useEffect(() => {
+    const stack = new Error().stack;
+    const sortByChanged = prevSortByRef.current !== sortBy;
+    const sortOrderChanged = prevSortOrderRef.current !== sortOrder;
+    
+    console.log('[DirectPage] 🔄 Filter/Sort useEffect triggered:', {
+      sortBy,
+      sortOrder,
+      viewMode,
+      sortByChanged,
+      sortOrderChanged,
+      prevSortBy: prevSortByRef.current,
+      prevSortOrder: prevSortOrderRef.current,
+      isInitialMount: isInitialMount.current,
+      timestamp: new Date().toISOString(),
+      stack: stack?.split('\n').slice(1, 6).join('\n')
+    });
+    
     // Перевіряємо, чи не змінився sortBy перед оновленням
     if (typeof window !== 'undefined') {
       const savedSortBy = localStorage.getItem('direct-sort-by');
       const savedSortOrder = localStorage.getItem('direct-sort-order');
+      
+      console.log('[DirectPage] 🔄 Checking localStorage in useEffect:', {
+        savedSortBy,
+        savedSortOrder,
+        currentSortBy: sortBy,
+        currentSortOrder: sortOrder
+      });
       
       // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
       if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
         if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
           console.warn('[DirectPage] 🛡️ Filter change useEffect: restoring active mode before loadClients', {
             was: { sortBy, sortOrder },
+            saved: { savedSortBy, savedSortOrder },
             restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
             timestamp: new Date().toISOString()
           });
           setSortBy('updatedAt');
           setSortOrder('desc');
           // Не продовжуємо оновлення, щоб не викликати конфлікт стану
+          prevSortByRef.current = 'updatedAt';
+          prevSortOrderRef.current = 'desc';
           return;
         }
       }
@@ -470,17 +500,28 @@ export default function DirectPage() {
     
     // Пропускаємо перший виклик, бо він вже відбувається в loadData()
     if (isInitialMount.current) {
+      console.log('[DirectPage] ⏭️ Skipping initial mount');
       isInitialMount.current = false;
       prevFiltersRef.current = filters;
+      prevSortByRef.current = sortBy;
+      prevSortOrderRef.current = sortOrder;
       return;
     }
     // Якщо пошук заблокований і змінився тільки search фільтр, не оновлюємо
     const searchChanged = prevFiltersRef.current.search !== filters.search;
     if (isSearchLocked && searchChanged) {
+      console.log('[DirectPage] ⏭️ Skipping due to locked search');
       prevFiltersRef.current = filters;
+      prevSortByRef.current = sortBy;
+      prevSortOrderRef.current = sortOrder;
       return;
     }
+    
     prevFiltersRef.current = filters;
+    prevSortByRef.current = sortBy;
+    prevSortOrderRef.current = sortOrder;
+    
+    console.log('[DirectPage] ✅ Calling loadClients from useEffect');
     loadClients();
   }, [filters, sortBy, sortOrder]);
 
