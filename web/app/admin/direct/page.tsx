@@ -202,6 +202,20 @@ export default function DirectPage() {
     }
   }, [viewMode]);
   
+  // Додатковий захист: перевіряємо viewMode перед кожним завантаженням клієнтів
+  const loadClientsProtected = async () => {
+    // Перевіряємо і відновлюємо viewMode перед завантаженням
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('direct-view-mode');
+      const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
+      if (viewMode !== expectedMode) {
+        console.warn('[DirectPage] loadClients: viewMode mismatch, restoring:', viewMode, '->', expectedMode);
+        setViewModeState(expectedMode);
+      }
+    }
+    return loadClients();
+  };
+  
   // Відстежуємо всі зміни viewMode для діагностики
   useEffect(() => {
     console.log('[DirectPage] viewMode state changed to:', viewMode);
@@ -326,6 +340,24 @@ export default function DirectPage() {
   };
 
   const loadClients = async () => {
+    // Захист: перевіряємо viewMode перед завантаженням
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('direct-view-mode');
+      const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
+      if (viewMode !== expectedMode) {
+        console.warn('[DirectPage] loadClients: viewMode mismatch detected! Restoring:', viewMode, '->', expectedMode);
+        setViewModeState(expectedMode);
+        // Якщо режим змінився, оновлюємо sortBy відповідно
+        if (expectedMode === 'active' && sortBy !== 'updatedAt') {
+          setSortBy('updatedAt');
+          setSortOrder('desc');
+        } else if (expectedMode === 'passive' && sortBy !== 'firstContactDate') {
+          setSortBy('firstContactDate');
+          setSortOrder('desc');
+        }
+      }
+    }
+    
     try {
       const params = new URLSearchParams();
       if (filters.statusId) params.set("statusId", filters.statusId);
@@ -335,7 +367,7 @@ export default function DirectPage() {
       params.set("sortBy", sortBy);
       params.set("sortOrder", sortOrder);
 
-      console.log('[DirectPage] Loading clients...', { filters, sortBy, sortOrder });
+      console.log('[DirectPage] Loading clients...', { filters, sortBy, sortOrder, viewMode });
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
         cache: 'no-store',
         headers: {
