@@ -209,20 +209,38 @@ export async function GET(req: NextRequest) {
       });
       
       // Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+      // АЛЕ: "lead" має бути найстарішим - якщо після нього є інші стани, то "lead" не є початковим
       if (isManychatClient) {
         const sortedForLead = [...filteredStates].sort((a, b) => 
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
-        const firstLeadIndex = sortedForLead.findIndex(log => log.state === 'lead');
-        const finalFiltered = sortedForLead.filter((log, index) => {
-          if (log.state === 'lead') {
-            return index === firstLeadIndex; // Залишаємо тільки найстаріший
+        const leadLogs = sortedForLead.filter(log => log.state === 'lead');
+        const otherLogs = sortedForLead.filter(log => log.state !== 'lead');
+        
+        // Якщо є "lead", перевіряємо, чи він найстаріший
+        if (leadLogs.length > 0) {
+          const oldestLead = leadLogs[0]; // Найстаріший "lead"
+          
+          // Перевіряємо, чи є стани старіші за "lead"
+          const olderThanLead = otherLogs.filter(log => 
+            new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
+          );
+          
+          // Якщо "lead" найстаріший - залишаємо його
+          // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
+          if (olderThanLead.length === 0) {
+            // "lead" найстаріший - залишаємо його
+            clientStates = [...otherLogs, oldestLead];
+          } else {
+            // "lead" не найстаріший - не показуємо його
+            clientStates = otherLogs;
           }
-          return true;
-        });
-        // Сортуємо назад від новіших до старіших
-        finalFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        clientStates = finalFiltered;
+        } else {
+          clientStates = otherLogs;
+        }
+        
+        // Сортуємо від новіших до старіших
+        clientStates.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       } else {
         clientStates = filteredStates;
       }

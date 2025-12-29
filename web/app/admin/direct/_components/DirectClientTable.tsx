@@ -651,9 +651,10 @@ export function DirectClientTable({
                               );
                               
                               // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
-                              // для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+                              // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
                               const filteredStates: typeof sortedStates = [];
-                              let firstLeadAdded = false;
+                              const leadLogs: typeof sortedStates = [];
+                              const otherLogs: typeof sortedStates = [];
                               
                               for (let i = 0; i < sortedStates.length; i++) {
                                 const log = sortedStates[i];
@@ -662,17 +663,39 @@ export function DirectClientTable({
                                   if (!isManychatClient) {
                                     continue; // Пропускаємо всі "lead" для Altegio клієнтів
                                   }
-                                  // Для Manychat клієнтів - показуємо тільки перший (найстаріший) "lead"
-                                  if (!firstLeadAdded) {
-                                    filteredStates.push(log);
-                                    firstLeadAdded = true;
-                                  }
-                                  // Всі інші "lead" для Manychat також пропускаємо
+                                  // Для Manychat клієнтів - збираємо "lead" окремо
+                                  leadLogs.push(log);
                                 } else {
-                                  // Всі інші стани показуємо
-                                  filteredStates.push(log);
+                                  // Всі інші стани збираємо окремо
+                                  otherLogs.push(log);
                                 }
                               }
+                              
+                              // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
+                              if (isManychatClient && leadLogs.length > 0) {
+                                const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
+                                
+                                // Перевіряємо, чи є стани старіші за "lead"
+                                const olderThanLead = otherLogs.filter(log => 
+                                  new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
+                                );
+                                
+                                // Якщо "lead" найстаріший - залишаємо його (він початковий стан)
+                                // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
+                                if (olderThanLead.length === 0) {
+                                  // "lead" найстаріший - додаємо його першим
+                                  filteredStates.push(oldestLead);
+                                }
+                                // Якщо є стани старіші - не додаємо "lead"
+                              }
+                              
+                              // Додаємо всі інші стани
+                              filteredStates.push(...otherLogs);
+                              
+                              // Сортуємо від старіших до новіших для подальшої обробки
+                              filteredStates.sort((a, b) => 
+                                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                              );
                               
                               // Останній стан з історії
                               const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
