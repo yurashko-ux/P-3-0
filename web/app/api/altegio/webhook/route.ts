@@ -420,7 +420,6 @@ export async function POST(req: NextRequest) {
                   }
                   
                   // Встановлюємо дату запису з data.datetime, якщо вона є і є майбутньою
-                  const recordData = body.data?.data || body.data;
                   const appointmentDateTime = recordData?.datetime || data.datetime;
                   let paidServiceDate: string | undefined = undefined;
                   let signedUpForPaidService = false;
