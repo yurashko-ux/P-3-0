@@ -371,12 +371,12 @@ export async function updateInstagramForAltegioClient(
         where: { id: existingClient.id },
       });
       
-      // Логуємо зміну стану, якщо вона відбулася
-      if (existingByInstagram.state === 'no-instagram' && updated.state === 'client') {
+      // Логуємо зміну стану, якщо вона відбулася (якщо клієнт мав missing_instagram_* і тепер має реальний Instagram)
+      if (hadMissingInstagram && updated.state === 'client') {
         await logStateChange(
           existingByInstagram.id,
           'client',
-          'no-instagram',
+          existingByInstagram.state || 'lead',
           'instagram-update-merge',
           {
             altegioClientId,
