@@ -645,20 +645,17 @@ export function DirectClientTable({
                               );
                               
                               // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
-                              // Знаходимо найстаріший "lead" запис
-                              const firstLeadIndex = sortedStates.findIndex(log => log.state === 'lead');
-                              
-                              // Фільтруємо стани: приховуємо всі "lead", окрім найстарішого
+                              // Використовуємо Set для відстеження ID записів "lead", які вже показані
                               const filteredStates: typeof sortedStates = [];
-                              let leadCount = 0;
+                              let firstLeadAdded = false;
                               
                               for (let i = 0; i < sortedStates.length; i++) {
                                 const log = sortedStates[i];
                                 if (log.state === 'lead') {
-                                  leadCount++;
                                   // Показуємо тільки перший (найстаріший) "lead"
-                                  if (leadCount === 1) {
+                                  if (!firstLeadAdded) {
                                     filteredStates.push(log);
+                                    firstLeadAdded = true;
                                   }
                                   // Всі інші "lead" пропускаємо (приховуємо)
                                 } else {
@@ -667,14 +664,27 @@ export function DirectClientTable({
                                 }
                               }
                               
+                              // Додаткова перевірка: якщо все ще є кілька "lead" після фільтрації, залишаємо тільки перший
+                              let finalLeadCount = 0;
+                              const finalFilteredStates = filteredStates.filter(log => {
+                                if (log.state === 'lead') {
+                                  finalLeadCount++;
+                                  return finalLeadCount === 1; // Залишаємо тільки перший
+                                }
+                                return true;
+                              });
+                              
+                              // Використовуємо остаточно відфільтрований масив
+                              const filteredStatesFinal = finalFilteredStates;
+                              
                               // Останній стан з історії
-                              const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
+                              const lastHistoryState = filteredStatesFinal[filteredStatesFinal.length - 1]?.state || null;
                               
                               // Додаємо поточний стан, якщо він відрізняється
-                              const statesToShow = [...filteredStates];
+                              const statesToShow = [...filteredStatesFinal];
                               
                               // Перевіряємо, чи є "lead" в відфільтрованих станах
-                              const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
+                              const hasLeadInFiltered = filteredStatesFinal.some(log => log.state === 'lead');
                               
                               if (currentState !== lastHistoryState) {
                                 // Якщо поточний стан - "lead", додаємо його тільки якщо в історії немає "lead"
