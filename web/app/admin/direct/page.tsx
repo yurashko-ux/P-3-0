@@ -164,6 +164,11 @@ export default function DirectPage() {
     }
     return 'passive';
   });
+  
+  // Відстежуємо всі зміни viewMode для діагностики
+  useEffect(() => {
+    console.log('[DirectPage] viewMode state changed to:', viewMode);
+  }, [viewMode]);
 
   // Ініціалізуємо сортування на основі viewMode
   const [sortBy, setSortBy] = useState<string>(() => {
