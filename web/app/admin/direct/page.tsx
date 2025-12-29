@@ -139,6 +139,13 @@ type DirectMaster = {
 };
 
 export default function DirectPage() {
+  // Логуємо кожен ре-рендер компонента
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  console.log(`[DirectPage] 🎨 Component render #${renderCountRef.current}`, {
+    timestamp: new Date().toISOString()
+  });
+  
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
@@ -159,7 +166,12 @@ export default function DirectPage() {
   const [sortBy, setSortBy] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('direct-sort-by');
-      console.log('[DirectPage] 🔍 Initializing sortBy from localStorage:', { saved, allKeys: Object.keys(localStorage).filter(k => k.includes('direct')) });
+      const stack = new Error().stack;
+      console.log('[DirectPage] 🔍 Initializing sortBy from localStorage:', { 
+        saved, 
+        allKeys: Object.keys(localStorage).filter(k => k.includes('direct')),
+        stack: stack?.split('\n').slice(1, 6).join('\n')
+      });
       if (saved === 'updatedAt' || saved === 'firstContactDate') {
         console.log('[DirectPage] ✅ Using saved sortBy:', saved);
         return saved;
@@ -167,6 +179,7 @@ export default function DirectPage() {
         console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: firstContactDate');
       }
     }
+    console.log('[DirectPage] ⚠️ Window undefined, using default: firstContactDate');
     return 'firstContactDate';
   });
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
