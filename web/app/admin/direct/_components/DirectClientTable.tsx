@@ -703,11 +703,14 @@ export function DirectClientTable({
                               // Додаємо поточний стан, якщо він відрізняється
                               const statesToShow = [...filteredStates];
                               
+                              // Перевіряємо, чи є "lead" в відфільтрованих станах
+                              const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
+                              
                               if (currentState !== lastHistoryState) {
                                 // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
                                 if (!isManychatClient && currentState === 'lead') {
                                   // Не додаємо "lead" для Altegio клієнтів
-                                } else if (currentState === 'lead' && !firstLeadAdded) {
+                                } else if (currentState === 'lead' && !hasLeadInFiltered) {
                                   // Для Manychat клієнтів - додаємо "lead" тільки якщо його немає в історії
                                   statesToShow.push({
                                     id: 'current',
