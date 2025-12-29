@@ -264,19 +264,6 @@ export default function DirectPage() {
   };
 
   const loadClients = async () => {
-    // Завжди читаємо viewMode з localStorage перед завантаженням
-    const currentViewMode = getViewMode();
-    
-    // Якщо режим змінився, оновлюємо sortBy відповідно
-    if (currentViewMode === 'active' && sortBy !== 'updatedAt') {
-      console.log('[DirectPage] loadClients: Active mode detected, updating sortBy to updatedAt');
-      setSortBy('updatedAt');
-      setSortOrder('desc');
-    } else if (currentViewMode === 'passive' && sortBy !== 'firstContactDate') {
-      console.log('[DirectPage] loadClients: Passive mode detected, updating sortBy to firstContactDate');
-      setSortBy('firstContactDate');
-      setSortOrder('desc');
-    }
     
     try {
       const params = new URLSearchParams();
