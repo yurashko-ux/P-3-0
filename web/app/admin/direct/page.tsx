@@ -1929,13 +1929,25 @@ export default function DirectPage() {
             <div className="tabs tabs-boxed">
               <button
                 className={`tab ${viewMode === 'passive' ? 'tab-active' : ''}`}
-                onClick={() => setViewMode('passive')}
+                onClick={() => {
+                  // Не викликаємо setViewMode, якщо режим вже пасивний
+                  if (viewMode !== 'passive') {
+                    setViewMode('passive');
+                  }
+                }}
+                disabled={viewMode === 'passive'}
               >
                 Пасивний
               </button>
               <button
                 className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
-                onClick={() => setViewMode('active')}
+                onClick={() => {
+                  // Не викликаємо setViewMode, якщо режим вже активний
+                  if (viewMode !== 'active') {
+                    setViewMode('active');
+                  }
+                }}
+                disabled={viewMode === 'active'}
               >
                 Активний
               </button>
