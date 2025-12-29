@@ -14,7 +14,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     firstName: dbClient.firstName || undefined,
     lastName: dbClient.lastName || undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'no-instagram') || undefined,
+    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
     masterId: dbClient.masterId || undefined,
@@ -348,11 +348,12 @@ export async function updateInstagramForAltegioClient(
       }
       
       // Оновлюємо стан:
-      // 1. Якщо клієнт мав стан 'no-instagram' → 'client'
+      // 1. Якщо клієнт мав missing_instagram_* username і ми додаємо реальний Instagram → 'client'
       // 2. Якщо клієнт мав стан 'lead' і ми додаємо Altegio ID → 'client' (бо клієнт тепер в Altegio)
-      if (existingByInstagram.state === 'no-instagram') {
+      const hadMissingInstagram = existingByInstagram.instagramUsername?.startsWith('missing_instagram_');
+      if (hadMissingInstagram) {
         mergeUpdateData.state = 'client';
-        console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for merged client ${existingByInstagram.id}`);
+        console.log(`[direct-store] Updating state to 'client' for merged client ${existingByInstagram.id} (had missing_instagram_*, now has real Instagram)`);
       } else if (existingByInstagram.state === 'lead' && wasAddingAltegioId) {
         mergeUpdateData.state = 'client';
         console.log(`[direct-store] Updating state from 'lead' to 'client' for merged client ${existingByInstagram.id} (added Altegio ID)`);
@@ -397,10 +398,11 @@ export async function updateInstagramForAltegioClient(
         updatedAt: new Date(),
       };
       
-      // Якщо клієнт був в стані 'no-instagram', оновлюємо на 'client'
-      if (existingClient.state === 'no-instagram') {
+      // Якщо клієнт мав missing_instagram_* username і ми оновлюємо на реальний Instagram, оновлюємо стан на 'client'
+      const hadMissingInstagram = existingClient.instagramUsername?.startsWith('missing_instagram_');
+      if (hadMissingInstagram) {
         updateData.state = 'client';
-        console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for client ${existingClient.id}`);
+        console.log(`[direct-store] Updating state to 'client' for client ${existingClient.id} (had missing_instagram_*, now has real Instagram)`);
       }
       
       try {
@@ -410,11 +412,11 @@ export async function updateInstagramForAltegioClient(
         });
         
         // Логуємо зміну стану, якщо вона відбулася
-        if (previousState === 'no-instagram' && updated.state === 'client') {
+        if (hadMissingInstagram && updated.state === 'client') {
           await logStateChange(
             existingClient.id,
             'client',
-            'no-instagram',
+            previousState || 'lead',
             'instagram-update',
             {
               altegioClientId,
@@ -467,9 +469,10 @@ export async function updateInstagramForAltegioClient(
               }
             }
             
-            if (existingByInstagramRetry.state === 'no-instagram') {
+            const hadMissingInstagramRetry = existingByInstagramRetry.instagramUsername?.startsWith('missing_instagram_');
+            if (hadMissingInstagramRetry) {
               mergeUpdateData.state = 'client';
-              console.log(`[direct-store] Updating state from 'no-instagram' to 'client' for merged client ${existingByInstagramRetry.id}`);
+              console.log(`[direct-store] Updating state to 'client' for merged client ${existingByInstagramRetry.id} (had missing_instagram_*, now has real Instagram)`);
             } else if (existingByInstagramRetry.state === 'lead' && wasAddingAltegioId) {
               mergeUpdateData.state = 'client';
               console.log(`[direct-store] Updating state from 'lead' to 'client' for merged client ${existingByInstagramRetry.id} (added Altegio ID)`);
@@ -485,11 +488,11 @@ export async function updateInstagramForAltegioClient(
               where: { id: existingClient.id },
             });
             
-            if (existingByInstagramRetry.state === 'no-instagram' && updated.state === 'client') {
+            if (hadMissingInstagramRetry && updated.state === 'client') {
               await logStateChange(
                 existingByInstagramRetry.id,
                 'client',
-                'no-instagram',
+                existingByInstagramRetry.state || 'lead',
                 'instagram-update-merge',
                 {
                   altegioClientId,

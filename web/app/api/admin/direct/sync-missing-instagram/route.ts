@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Якщо немає Instagram, створюємо/оновлюємо клієнта зі станом "no-instagram"
+        // Якщо немає Instagram, створюємо/оновлюємо клієнта зі станом "lead"
         const normalizedInstagram = `missing_instagram_${clientId}`;
         const shouldSendNotification = originalInstagram?.toLowerCase().trim() !== 'no';
 
@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
               ...existingClient,
               altegioClientId: altegioClientId,
               instagramUsername: normalizedInstagram,
-              state: 'no-instagram' as const,
+              state: 'lead' as const,
               ...(firstName && { firstName }),
               ...(lastName && { lastName }),
               updatedAt: new Date().toISOString(),
@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
               lastName,
               altegioClientId: clientId,
               action: 'updated',
-              state: 'no-instagram',
+              state: 'lead',
             });
           }
         } else {
@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
             firstName,
             lastName,
             source: 'instagram' as const,
-            state: 'no-instagram' as const,
+            state: 'lead' as const,
             firstContactDate: now,
             statusId: defaultStatus.id,
             visitedSalon: false,
@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
             lastName,
             altegioClientId: clientId,
             action: 'created',
-            state: 'no-instagram',
+            state: 'lead',
           });
           
           // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no"

@@ -72,14 +72,6 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
         <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
       </svg>
     );
-  } else if (state === 'no-instagram') {
-    return (
-      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
-        <rect x="4" y="4" width="20" height="20" rx="2" fill="#ef4444" stroke="#dc2626" strokeWidth="1.5"/>
-        <path d="M10 10 L18 18 M18 10 L10 18" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-        <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
-      </svg>
-    );
   } else {
     return (
       <img 
@@ -602,15 +594,21 @@ export function DirectClientTable({
                           : '-'}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        <a
-                          href={`https://instagram.com/${client.instagramUsername}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link link-primary"
-                          title={client.instagramUsername}
-                        >
-                          {client.instagramUsername}
-                        </a>
+                        {client.instagramUsername?.startsWith('missing_instagram_') ? (
+                          <span className="text-red-600 font-semibold" title="Відсутній Instagram username">
+                            {client.instagramUsername}
+                          </span>
+                        ) : (
+                          <a
+                            href={`https://instagram.com/${client.instagramUsername}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link link-primary"
+                            title={client.instagramUsername}
+                          >
+                            {client.instagramUsername}
+                          </a>
+                        )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[150px]">
                         <div 
@@ -690,36 +688,6 @@ export function DirectClientTable({
                               );
                             })()}
                           </button>
-                          {/* Червоний квадрат для клієнтів без Instagram (показуємо тільки один раз) */}
-                          {(() => {
-                            const hasNoInstagramState = client.state === 'no-instagram';
-                            const hasMissingInstagramUsername = client.instagramUsername?.startsWith('missing_instagram_');
-                            
-                            // Показуємо червоний квадрат тільки якщо є стан no-instagram АБО missing_instagram_ username
-                            // Але не показуємо, якщо вже є піктограма стану no-instagram в історії (щоб не дублювати)
-                            if (hasNoInstagramState || hasMissingInstagramUsername) {
-                              const states = client.last5States || [];
-                              // Перевіряємо, чи вже є піктограма стану no-instagram в історії
-                              const hasNoInstagramIconInHistory = states.some(s => s.state === 'no-instagram');
-                              
-                              // Показуємо червоний квадрат тільки якщо немає піктограми стану no-instagram в історії
-                              // Або якщо немає історії взагалі, але є стан no-instagram
-                              if (!hasNoInstagramIconInHistory) {
-                                return (
-                                  <div 
-                                    className="tooltip tooltip-top" 
-                                    data-tip="Відсутній Instagram username. Будь ласка, додайте його в Altegio або відправте у відповідь на повідомлення."
-                                  >
-                                    <div 
-                                      className="w-4 h-4 bg-red-500 rounded-sm border border-red-700"
-                                      style={{ minWidth: '16px', minHeight: '16px' }}
-                                    />
-                                  </div>
-                                );
-                              }
-                            }
-                            return null;
-                          })()}
                         </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">

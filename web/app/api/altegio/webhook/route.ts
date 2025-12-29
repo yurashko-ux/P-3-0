@@ -456,7 +456,7 @@ export async function POST(req: NextRequest) {
                 }
               }
             } else if (isMissingInstagram) {
-              // Якщо Instagram відсутній, створюємо клієнта зі станом "no-instagram"
+              // Якщо Instagram відсутній, створюємо клієнта зі станом "lead"
               const allStatuses = await getAllDirectStatuses();
               const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
               
@@ -509,7 +509,7 @@ export async function POST(req: NextRequest) {
                     firstName,
                     lastName,
                     source: 'instagram' as const,
-                    state: 'no-instagram' as const,
+                    state: 'lead' as const,
                     firstContactDate: now,
                     statusId: defaultStatus.id,
                     masterId,
@@ -521,7 +521,7 @@ export async function POST(req: NextRequest) {
                     updatedAt: now,
                   };
                   await saveDirectClient(newClient);
-                  console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event without Instagram (client ${client.id}, state: no-instagram, masterId: ${masterId || 'none'})`);
+                  console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event without Instagram (client ${client.id}, state: lead, masterId: ${masterId || 'none'})`);
                   
                   // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no"
                   if (shouldSendNotification) {
@@ -629,7 +629,7 @@ export async function POST(req: NextRequest) {
                       ...existingClient,
                       altegioClientId: altegioClientId,
                       instagramUsername: normalizedInstagram,
-                      state: 'no-instagram' as const,
+                      state: 'lead' as const,
                       ...(firstName && { firstName }),
                       ...(lastName && { lastName }),
                       ...(paidServiceDate && { paidServiceDate }),
@@ -637,7 +637,7 @@ export async function POST(req: NextRequest) {
                       updatedAt: new Date().toISOString(),
                     };
                     await saveDirectClient(updated);
-                    console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from record event without Instagram (client ${client.id}, state: no-instagram)`);
+                    console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from record event without Instagram (client ${client.id}, state: lead)`);
                   }
                 }
               }
@@ -1172,8 +1172,8 @@ export async function POST(req: NextRequest) {
             // Оновлюємо існуючого клієнта
             const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
             if (existingClient) {
-              // Встановлюємо стан "no-instagram" якщо Instagram відсутній, інакше "client"
-              const clientState = isMissingInstagram ? ('no-instagram' as const) : ('client' as const);
+              // Встановлюємо стан "lead" якщо Instagram відсутній, інакше "client"
+              const clientState = isMissingInstagram ? ('lead' as const) : ('client' as const);
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: parseInt(String(clientId), 10),
@@ -1189,8 +1189,8 @@ export async function POST(req: NextRequest) {
           } else {
             // Створюємо нового клієнта
             const now = new Date().toISOString();
-            // Встановлюємо стан "no-instagram" якщо Instagram відсутній, інакше "client"
-            const clientState = isMissingInstagram ? ('no-instagram' as const) : ('client' as const);
+            // Встановлюємо стан "lead" якщо Instagram відсутній, інакше "client"
+            const clientState = isMissingInstagram ? ('lead' as const) : ('client' as const);
             const newClient = {
               id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               instagramUsername: normalizedInstagram,

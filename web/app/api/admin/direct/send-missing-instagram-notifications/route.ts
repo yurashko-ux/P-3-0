@@ -38,14 +38,13 @@ export async function POST(req: NextRequest) {
     // Але виключаємо тих, де Instagram = "no" (це означає, що у клієнтки немає Instagram)
     // Також виключаємо тих, у кого немає імені (немає по чому ідентифікувати)
     const clientsWithoutInstagram = allClients.filter(client => {
-      const hasNoInstagramState = client.state === 'no-instagram';
       const hasMissingInstagramUsername = client.instagramUsername?.startsWith('missing_instagram_');
       
       // Перевіряємо, чи Instagram не був явно встановлений в "no"
       // Витягуємо altegioClientId з username, якщо це missing_instagram_{id}
       const missingIdMatch = client.instagramUsername?.match(/^missing_instagram_(\d+)$/);
       // Якщо це не missing_instagram_ формат, пропускаємо
-      if (!hasNoInstagramState && !hasMissingInstagramUsername) {
+      if (!hasMissingInstagramUsername) {
         return false;
       }
       

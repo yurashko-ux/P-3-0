@@ -115,9 +115,10 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           }
         }
         
-        if (clientByInstagram.state === 'no-instagram') {
+        const hadMissingInstagram = clientByInstagram.instagramUsername?.startsWith('missing_instagram_');
+        if (hadMissingInstagram) {
           mergeUpdateData.state = 'client';
-          console.log(`[direct-reminders-webhook] Updating state from 'no-instagram' to 'client' for merged client ${clientByInstagram.id}`);
+          console.log(`[direct-reminders-webhook] Updating state to 'client' for merged client ${clientByInstagram.id} (had missing_instagram_*, now has real Instagram)`);
         } else if (clientByInstagram.state === 'lead' && wasAddingAltegioId) {
           mergeUpdateData.state = 'client';
           console.log(`[direct-reminders-webhook] Updating state from 'lead' to 'client' for merged client ${clientByInstagram.id} (added Altegio ID)`);
@@ -219,9 +220,10 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
             }
           }
           
-          if (clientByInstagram.state === 'no-instagram') {
+          const hadMissingInstagram = clientByInstagram.instagramUsername?.startsWith('missing_instagram_');
+          if (hadMissingInstagram) {
             mergeUpdateData.state = 'client';
-            console.log(`[direct-reminders-webhook] Updating state from 'no-instagram' to 'client' for merged client ${clientByInstagram.id}`);
+            console.log(`[direct-reminders-webhook] Updating state to 'client' for merged client ${clientByInstagram.id} (had missing_instagram_*, now has real Instagram)`);
           } else if (clientByInstagram.state === 'lead' && wasAddingAltegioId) {
             mergeUpdateData.state = 'client';
             console.log(`[direct-reminders-webhook] Updating state from 'lead' to 'client' for merged client ${clientByInstagram.id} (added Altegio ID)`);
