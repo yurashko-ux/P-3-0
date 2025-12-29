@@ -180,7 +180,18 @@ export default function DirectPage() {
   
   // Функція для встановлення режиму через сортування
   const setViewMode = (mode: 'passive' | 'active') => {
+    const stack = new Error().stack;
+    console.log('[DirectPage] 🎚️ setViewMode called:', { 
+      mode, 
+      currentViewMode: viewMode,
+      currentSortBy: sortBy,
+      currentSortOrder: sortOrder,
+      timestamp: new Date().toISOString(),
+      stack: stack?.split('\n').slice(1, 4).join('\n')
+    });
+    
     if (mode === 'active') {
+      console.log('[DirectPage] ✅ Setting active mode: updatedAt desc');
       setSortBy('updatedAt');
       setSortOrder('desc');
       if (typeof window !== 'undefined') {
@@ -188,6 +199,7 @@ export default function DirectPage() {
         localStorage.setItem('direct-sort-order', 'desc');
       }
     } else {
+      console.log('[DirectPage] ✅ Setting passive mode: firstContactDate desc');
       setSortBy('firstContactDate');
       setSortOrder('desc');
       if (typeof window !== 'undefined') {
@@ -200,11 +212,18 @@ export default function DirectPage() {
   // Зберігаємо sortBy і sortOrder в localStorage при зміні
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const stack = new Error().stack;
+      console.log('[DirectPage] 🔄 sortBy/sortOrder changed:', { 
+        sortBy, 
+        sortOrder, 
+        viewMode,
+        timestamp: new Date().toISOString(),
+        stack: stack?.split('\n').slice(1, 4).join('\n') // Перші 3 рядки stack trace
+      });
       localStorage.setItem('direct-sort-by', sortBy);
       localStorage.setItem('direct-sort-order', sortOrder);
-      console.log('[DirectPage] sortBy/sortOrder saved to localStorage:', sortBy, sortOrder);
     }
-  }, [sortBy, sortOrder]);
+  }, [sortBy, sortOrder, viewMode]);
   
   // Захист активного режиму: перевіряємо localStorage кожні 500мс і відновлюємо sortBy якщо потрібно
   useEffect(() => {
@@ -216,7 +235,11 @@ export default function DirectPage() {
         // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
         if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
           if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-            console.warn('[DirectPage] Active mode protection: restoring sortBy to updatedAt (was:', sortBy, sortOrder, ')');
+            console.warn('[DirectPage] 🛡️ Active mode protection: restoring sortBy to updatedAt', {
+              was: { sortBy, sortOrder },
+              restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
+              timestamp: new Date().toISOString()
+            });
             setSortBy('updatedAt');
             setSortOrder('desc');
           }
@@ -401,7 +424,11 @@ export default function DirectPage() {
       // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
       if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
         if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-          console.warn('[DirectPage] Filter change useEffect: restoring active mode before loadClients');
+          console.warn('[DirectPage] 🛡️ Filter change useEffect: restoring active mode before loadClients', {
+            was: { sortBy, sortOrder },
+            restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
+            timestamp: new Date().toISOString()
+          });
           setSortBy('updatedAt');
           setSortOrder('desc');
           // Не продовжуємо оновлення, щоб не викликати конфлікт стану
@@ -1939,12 +1966,24 @@ export default function DirectPage() {
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {
+          const stack = new Error().stack;
+          console.log('[DirectPage] 🎯 onSortChange called:', { 
+            by, 
+            order, 
+            currentSortBy: sortBy, 
+            currentSortOrder: sortOrder, 
+            viewMode,
+            timestamp: new Date().toISOString(),
+            stack: stack?.split('\n').slice(1, 4).join('\n')
+          });
+          
           // В активному режимі не дозволяємо змінювати сортування (тільки через кнопку режиму)
           if (viewMode === 'active' && (by !== 'updatedAt' || order !== 'desc')) {
-            console.log('[DirectPage] Sort change blocked in active mode');
+            console.warn('[DirectPage] ⛔ Sort change blocked in active mode');
             return;
           }
           
+          console.log('[DirectPage] ✅ Setting sortBy:', by, order);
           setSortBy(by);
           setSortOrder(order);
         }}
