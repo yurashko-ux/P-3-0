@@ -652,12 +652,19 @@ export function DirectClientTable({
                               
                               // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
                               // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
+                              // ВИДАЛЯЄМО ВСІ "no-instagram" (це були червоні квадрати, які потім стали чорними лійками)
                               const filteredStates: typeof sortedStates = [];
                               const leadLogs: typeof sortedStates = [];
                               const otherLogs: typeof sortedStates = [];
                               
                               for (let i = 0; i < sortedStates.length; i++) {
                                 const log = sortedStates[i];
+                                
+                                // ВИДАЛЯЄМО "no-instagram" (це були червоні квадрати)
+                                if (log.state === 'no-instagram') {
+                                  continue; // Пропускаємо всі "no-instagram"
+                                }
+                                
                                 if (log.state === 'lead') {
                                   // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
                                   if (!isManychatClient) {
