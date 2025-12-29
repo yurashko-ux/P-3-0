@@ -193,6 +193,7 @@ export default function DirectPage() {
     const viewModeChanged = prevViewModeRef.current !== null && prevViewModeRef.current !== viewMode;
     
     if (viewModeChanged || prevViewModeRef.current === null) {
+      console.log('[DirectPage] viewMode changed, updating sortBy. Old:', prevViewModeRef.current, 'New:', viewMode);
       if (viewMode === 'passive') {
         // Пасивний режим: сортування за датою першого контакту
         setSortBy('firstContactDate');
@@ -203,11 +204,6 @@ export default function DirectPage() {
         setSortOrder('desc');
       }
       prevViewModeRef.current = viewMode;
-    }
-    
-    // Зберігаємо вибір в localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('direct-view-mode', viewMode);
     }
   }, [viewMode]); // Залежність тільки від viewMode, щоб уникнути циклічних оновлень
 
