@@ -331,22 +331,82 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       });
     }
 
-    // Сортуємо кожен масив за датою (від новіших до старіших)
-    for (const [clientId, logs] of result.entries()) {
-      logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Отримуємо інформацію про клієнтів для перевірки, чи вони з Manychat
+    const clientsInfoMap = new Map<string, { altegioClientId: number | null }>();
+    try {
+      const clientsInfo = await prisma.directClient.findMany({
+        where: { id: { in: clientIds } },
+        select: { id: true, altegioClientId: true },
+      });
+      for (const clientInfo of clientsInfo) {
+        clientsInfoMap.set(clientInfo.id, { altegioClientId: clientInfo.altegioClientId });
+      }
+    } catch (infoErr) {
+      console.warn('[direct-state-log] Failed to get clients info for filtering:', infoErr);
     }
 
-    // Додаємо початковий стан "Лід" для клієнтів без історії
+    // Сортуємо кожен масив за датою (від новіших до старіших) та фільтруємо
+    for (const [clientId, logs] of result.entries()) {
+      const clientInfo = clientsInfoMap.get(clientId);
+      const isManychatClient = !clientInfo?.altegioClientId;
+      
+      // Спочатку сортуємо
+      logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      // РАДИКАЛЬНЕ ФІЛЬТРУВАННЯ:
+      // 1. Видаляємо всі "no-instagram"
+      // 2. Для Altegio клієнтів - видаляємо ВСІ "lead"
+      // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+      const filteredLogs: DirectClientStateLog[] = [];
+      
+      // Сортуємо від старіших до новіших для знаходження найстарішого "lead"
+      const sortedForFilter = [...logs].sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      
+      let firstLeadAdded = false;
+      for (const log of sortedForFilter) {
+        // Видаляємо "no-instagram"
+        if (log.state === 'no-instagram') {
+          continue;
+        }
+        
+        // Для Altegio клієнтів - видаляємо ВСІ "lead"
+        if (log.state === 'lead' && !isManychatClient) {
+          continue;
+        }
+        
+        // Для Manychat клієнтів - залишаємо тільки перший (найстаріший) "lead"
+        if (log.state === 'lead' && isManychatClient) {
+          if (!firstLeadAdded) {
+            filteredLogs.push(log);
+            firstLeadAdded = true;
+          }
+          continue;
+        }
+        
+        // Всі інші стани залишаємо
+        filteredLogs.push(log);
+      }
+      
+      // Сортуємо назад від новіших до старіших
+      filteredLogs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      // Замінюємо в result
+      result.set(clientId, filteredLogs);
+    }
+
+    // Додаємо початковий стан "Лід" ТІЛЬКИ для Manychat клієнтів без історії
     // Отримуємо інформацію про клієнтів, які не мають історії
-    const clientsWithoutHistory = clientIds.filter(id => !result.has(id));
+    const clientsWithoutHistory = clientIds.filter(id => !result.has(id) || result.get(id)?.length === 0);
     if (clientsWithoutHistory.length > 0) {
-      console.log(`[direct-state-log] Adding initial "lead" state for ${clientsWithoutHistory.length} clients without history`);
+      console.log(`[direct-state-log] Checking ${clientsWithoutHistory.length} clients without history`);
       
       try {
-        // Отримуємо дату створення для клієнтів без історії
+        // Отримуємо дату створення та altegioClientId для клієнтів без історії
         const clientsInfo = await prisma.directClient.findMany({
           where: { id: { in: clientsWithoutHistory } },
-          select: { id: true, createdAt: true, state: true },
+          select: { id: true, createdAt: true, state: true, altegioClientId: true },
         });
         
         // Отримуємо дірект-менеджера для стану "Лід"
@@ -355,36 +415,28 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
         const directManagerId = directManager?.id;
         
         for (const clientInfo of clientsInfo) {
-          const initialLeadLog: DirectClientStateLog = {
-            id: `initial-lead-${clientInfo.id}`,
-            clientId: clientInfo.id,
-            state: clientInfo.state || 'lead',
-            previousState: null,
-            reason: 'initial',
-            metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
-            createdAt: clientInfo.createdAt.toISOString(),
-          };
-          
-          result.set(clientInfo.id, [initialLeadLog]);
+          // Додаємо початковий "lead" ТІЛЬКИ для Manychat клієнтів
+          const isManychatClient = !clientInfo.altegioClientId;
+          if (isManychatClient && (clientInfo.state === 'lead' || !clientInfo.state)) {
+            const initialLeadLog: DirectClientStateLog = {
+              id: `initial-lead-${clientInfo.id}`,
+              clientId: clientInfo.id,
+              state: 'lead',
+              previousState: null,
+              reason: 'initial',
+              metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
+              createdAt: clientInfo.createdAt.toISOString(),
+            };
+            
+            result.set(clientInfo.id, [initialLeadLog]);
+          }
         }
       } catch (infoErr) {
         console.warn('[direct-state-log] Failed to get client info for initial states:', infoErr);
-        // Якщо не вдалося отримати інформацію, додаємо мінімальний запис
-        for (const clientId of clientsWithoutHistory) {
-          const initialLeadLog: DirectClientStateLog = {
-            id: `initial-lead-${clientId}`,
-            clientId,
-            state: 'lead',
-            previousState: null,
-            reason: 'initial',
-            createdAt: new Date().toISOString(),
-          };
-          result.set(clientId, [initialLeadLog]);
-        }
       }
     }
 
-    console.log(`[direct-state-log] Returning state history for ${result.size} clients`);
+    console.log(`[direct-state-log] Returning filtered state history for ${result.size} clients`);
     return result;
   } catch (err) {
     console.error(`[direct-state-log] ❌ Failed to get last 5 states for clients:`, err);

@@ -187,11 +187,51 @@ export async function GET(req: NextRequest) {
       // Продовжуємо без історії станів
     }
     
-    // Додаємо останні 5 станів до кожного клієнта
-    const clientsWithStates = clients.map(client => ({
-      ...client,
-      last5States: statesMap.get(client.id) || [],
-    }));
+    // Додаємо останні 5 станів до кожного клієнта з додатковою фільтрацією
+    const clientsWithStates = clients.map(client => {
+      let clientStates = statesMap.get(client.id) || [];
+      
+      // РАДИКАЛЬНЕ ФІЛЬТРУВАННЯ на рівні API:
+      // 1. Видаляємо всі "no-instagram"
+      // 2. Для Altegio клієнтів - видаляємо ВСІ "lead"
+      // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+      const isManychatClient = !client.altegioClientId;
+      
+      // Фільтруємо
+      const filteredStates = clientStates.filter(log => {
+        // Видаляємо "no-instagram"
+        if (log.state === 'no-instagram') return false;
+        
+        // Для Altegio клієнтів - видаляємо ВСІ "lead"
+        if (log.state === 'lead' && !isManychatClient) return false;
+        
+        return true;
+      });
+      
+      // Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+      if (isManychatClient) {
+        const sortedForLead = [...filteredStates].sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        const firstLeadIndex = sortedForLead.findIndex(log => log.state === 'lead');
+        const finalFiltered = sortedForLead.filter((log, index) => {
+          if (log.state === 'lead') {
+            return index === firstLeadIndex; // Залишаємо тільки найстаріший
+          }
+          return true;
+        });
+        // Сортуємо назад від новіших до старіших
+        finalFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        clientStates = finalFiltered;
+      } else {
+        clientStates = filteredStates;
+      }
+      
+      return {
+        ...client,
+        last5States: clientStates,
+      };
+    });
     
     const response = { 
       ok: true, 
