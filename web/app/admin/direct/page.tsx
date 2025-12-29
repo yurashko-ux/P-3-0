@@ -187,8 +187,17 @@ export default function DirectPage() {
       currentSortBy: sortBy,
       currentSortOrder: sortOrder,
       timestamp: new Date().toISOString(),
-      stack: stack?.split('\n').slice(1, 4).join('\n')
+      stack: stack?.split('\n').slice(1, 6).join('\n') // Більше рядків для кращого трейсу
     });
+    
+    // Перевіряємо, чи режим вже встановлений - якщо так, не робимо нічого
+    const expectedSortBy = mode === 'active' ? 'updatedAt' : 'firstContactDate';
+    const expectedSortOrder = 'desc';
+    
+    if (sortBy === expectedSortBy && sortOrder === expectedSortOrder) {
+      console.log('[DirectPage] ⏭️ setViewMode: mode already set, skipping');
+      return;
+    }
     
     if (mode === 'active') {
       console.log('[DirectPage] ✅ Setting active mode: updatedAt desc');
