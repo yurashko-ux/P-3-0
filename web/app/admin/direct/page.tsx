@@ -408,8 +408,20 @@ export default function DirectPage() {
           return; // Не оновлюємо клієнтів
         }
         
+        console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode });
         setClients(filteredClients);
+        console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні
+        
+        // Перевіряємо sortBy після setClients
+        setTimeout(() => {
+          console.log('[DirectPage] 🔄 After setClients (next tick):', { sortBy, sortOrder, viewMode });
+          if (typeof window !== 'undefined') {
+            const savedSortBy = localStorage.getItem('direct-sort-by');
+            const savedSortOrder = localStorage.getItem('direct-sort-order');
+            console.log('[DirectPage] 🔄 localStorage after setClients:', { savedSortBy, savedSortOrder });
+          }
+        }, 0);
         
         // Якщо клієнти завантажилися успішно, але статуси/майстри відсутні - завантажуємо їх
         if (filteredClients.length > 0 && (statuses.length === 0 || masters.length === 0)) {
