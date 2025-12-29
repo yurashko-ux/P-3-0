@@ -209,32 +209,6 @@ export default function DirectPage() {
     loadData();
   }, []);
 
-  // Автоматична зміна сортування при зміні режиму
-  // Використовуємо useRef, щоб відстежувати попередній режим і не встановлювати сортування зайвий раз
-  const prevViewModeRef = useRef<'passive' | 'active' | null>(null);
-  useEffect(() => {
-    // Завжди читаємо viewMode з localStorage
-    const currentViewMode = getViewMode();
-    const viewModeChanged = prevViewModeRef.current !== null && prevViewModeRef.current !== currentViewMode;
-    
-    if (viewModeChanged || prevViewModeRef.current === null) {
-      console.log('[DirectPage] viewMode changed, updating sortBy. Old:', prevViewModeRef.current, 'New:', currentViewMode);
-      if (currentViewMode === 'passive') {
-        // Пасивний режим: сортування за датою першого контакту
-        setSortBy('firstContactDate');
-        setSortOrder('desc');
-      } else {
-        // Активний режим: сортування за останнім оновленням
-        setSortBy('updatedAt');
-        setSortOrder('desc');
-      }
-      prevViewModeRef.current = currentViewMode;
-    }
-  }, [viewModeTrigger, viewMode]); // Залежність від viewModeTrigger і viewMode
-
-  // Захищаємо активний режим: якщо viewMode = 'active', не дозволяємо змінювати сортування
-  const userSortChangeRef = useRef(false);
-
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
     // Завантажуємо статуси
@@ -1939,9 +1913,6 @@ export default function DirectPage() {
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {
-          // Позначаємо, що користувач змінює сортування
-          userSortChangeRef.current = true;
-          
           // В активному режимі не дозволяємо змінювати сортування (тільки через кнопку режиму)
           if (viewMode === 'active' && (by !== 'updatedAt' || order !== 'desc')) {
             console.log('[DirectPage] Sort change blocked in active mode');
