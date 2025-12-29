@@ -238,7 +238,10 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                   )}
                   
                   {/* Історія (від новіших до старіших - реверсуємо масив) */}
-                  {[...history].reverse().map((log, index) => (
+                  {[...history]
+                    .filter((log) => log.state !== 'no-instagram') // Додаткова фільтрація на випадок, якщо щось пропустили
+                    .reverse()
+                    .map((log, index) => (
                     <div key={log.id} className="flex items-center gap-3 pb-2 border-b border-base-300 last:border-b-0">
                       <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
                         {formatDate(log.createdAt)}
