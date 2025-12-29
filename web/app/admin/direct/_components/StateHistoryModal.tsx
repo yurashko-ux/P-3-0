@@ -151,7 +151,9 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
           (log: StateHistoryLog) => log.state !== 'no-instagram'
         );
         setHistory(filteredHistory);
-        setCurrentState(data.data.currentState);
+        // Якщо поточний стан - "no-instagram", не показуємо його
+        const currentStateValue = data.data.currentState === 'no-instagram' ? null : data.data.currentState;
+        setCurrentState(currentStateValue);
         setCurrentStateMasterName(data.data.currentStateMasterName);
         setCurrentStateDate(data.data.currentStateDate);
       }
