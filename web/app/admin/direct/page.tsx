@@ -156,51 +156,47 @@ export default function DirectPage() {
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   
   // Режим відображення: 'passive' | 'active'
-  // Використовуємо функцію-обгортку для setViewMode, щоб завжди зберігати в localStorage
-  const [viewMode, setViewModeState] = useState<'passive' | 'active'>(() => {
-    // Завантажуємо з localStorage при ініціалізації
+  // Використовуємо useSyncExternalStore для синхронізації з localStorage
+  // Це гарантує, що viewMode завжди читається з localStorage і не може бути втрачений
+  const [viewModeTrigger, setViewModeTrigger] = useState(0);
+  
+  // Функція для читання viewMode з localStorage
+  const getViewMode = (): 'passive' | 'active' => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('direct-view-mode');
-      const mode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
-      console.log('[DirectPage] Initializing viewMode from localStorage:', saved, '->', mode);
-      return mode;
+      return (saved === 'active' || saved === 'passive') ? saved : 'passive';
     }
     return 'passive';
-  });
+  };
   
-  // Обгортка для setViewMode, яка завжди зберігає в localStorage
-  const setViewMode = (newMode: 'passive' | 'active' | ((prev: 'passive' | 'active') => 'passive' | 'active')) => {
-    if (typeof newMode === 'function') {
-      setViewModeState((prev) => {
-        const result = newMode(prev);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('direct-view-mode', result);
-          console.log('[DirectPage] viewMode changed via function:', prev, '->', result);
-        }
-        return result;
-      });
-    } else {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('direct-view-mode', newMode);
-        console.log('[DirectPage] viewMode changed directly:', viewMode, '->', newMode);
-      }
-      setViewModeState(newMode);
+  // Завжди читаємо viewMode з localStorage (не зберігаємо в стані)
+  const viewMode = getViewMode();
+  
+  // Обгортка для setViewMode, яка завжди зберігає в localStorage і тригерить ре-рендер
+  const setViewMode = (newMode: 'passive' | 'active') => {
+    if (typeof window !== 'undefined') {
+      const currentMode = getViewMode();
+      localStorage.setItem('direct-view-mode', newMode);
+      console.log('[DirectPage] viewMode changed:', currentMode, '->', newMode);
+      // Тригеримо ре-рендер
+      setViewModeTrigger(prev => prev + 1);
     }
   };
   
-  // Захист: перевіряємо localStorage при кожному рендері, щоб переконатися, що viewMode синхронізований
+  // Слухаємо зміни localStorage (на випадок зміни з іншої вкладки або іншого джерела)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-view-mode');
-      const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
-      
-      // Якщо viewMode не відповідає localStorage, відновлюємо його
-      if (viewMode !== expectedMode) {
-        console.warn('[DirectPage] viewMode mismatch detected! State:', viewMode, 'localStorage:', expectedMode, '- restoring from localStorage');
-        setViewModeState(expectedMode);
+    if (typeof window === 'undefined') return;
+    
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'direct-view-mode') {
+        console.log('[DirectPage] localStorage changed externally, triggering re-render');
+        setViewModeTrigger(prev => prev + 1);
       }
-    }
-  }, [viewMode]);
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
   
   
   // Додатковий захист: перевіряємо viewMode перед кожним завантаженням клієнтів
@@ -233,31 +229,25 @@ export default function DirectPage() {
   });
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-  // Агресивний захист: перевіряємо localStorage кожну секунду і відновлюємо viewMode якщо потрібно
+  // Агресивний захист: перевіряємо localStorage кожну секунду і оновлюємо sortBy якщо потрібно
   useEffect(() => {
     const interval = setInterval(() => {
-      if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('direct-view-mode');
-        const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
-        
-        // Якщо viewMode не відповідає localStorage, відновлюємо його
-        if (viewMode !== expectedMode) {
-          console.warn('[DirectPage] Interval check: viewMode mismatch! State:', viewMode, 'localStorage:', expectedMode, '- restoring');
-          setViewModeState(expectedMode);
-          // Також оновлюємо sortBy відповідно
-          if (expectedMode === 'active' && sortBy !== 'updatedAt') {
-            setSortBy('updatedAt');
-            setSortOrder('desc');
-          } else if (expectedMode === 'passive' && sortBy !== 'firstContactDate') {
-            setSortBy('firstContactDate');
-            setSortOrder('desc');
-          }
-        }
+      const currentViewMode = getViewMode();
+      
+      // Оновлюємо sortBy відповідно до поточного viewMode
+      if (currentViewMode === 'active' && sortBy !== 'updatedAt') {
+        console.log('[DirectPage] Interval check: Active mode detected, updating sortBy to updatedAt');
+        setSortBy('updatedAt');
+        setSortOrder('desc');
+      } else if (currentViewMode === 'passive' && sortBy !== 'firstContactDate') {
+        console.log('[DirectPage] Interval check: Passive mode detected, updating sortBy to firstContactDate');
+        setSortBy('firstContactDate');
+        setSortOrder('desc');
       }
     }, 1000); // Перевіряємо кожну секунду
     
     return () => clearInterval(interval);
-  }, [viewMode, sortBy]);
+  }, [sortBy]);
 
   useEffect(() => {
     loadData();
