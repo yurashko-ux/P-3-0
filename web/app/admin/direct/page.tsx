@@ -184,22 +184,18 @@ export default function DirectPage() {
   // Використовуємо useRef, щоб відстежувати попередній режим і не встановлювати сортування зайвий раз
   const prevViewModeRef = useRef<'passive' | 'active' | null>(null);
   useEffect(() => {
-    // Встановлюємо сортування тільки при зміні режиму (не при кожному рендері)
+    // Встановлюємо сортування тільки при зміні режиму
     const viewModeChanged = prevViewModeRef.current !== null && prevViewModeRef.current !== viewMode;
     
     if (viewModeChanged || prevViewModeRef.current === null) {
       if (viewMode === 'passive') {
         // Пасивний режим: сортування за датою першого контакту
-        if (sortBy !== 'firstContactDate' || sortOrder !== 'desc') {
-          setSortBy('firstContactDate');
-          setSortOrder('desc');
-        }
+        setSortBy('firstContactDate');
+        setSortOrder('desc');
       } else {
         // Активний режим: сортування за останнім оновленням
-        if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-          setSortBy('updatedAt');
-          setSortOrder('desc');
-        }
+        setSortBy('updatedAt');
+        setSortOrder('desc');
       }
       prevViewModeRef.current = viewMode;
     }
@@ -208,7 +204,7 @@ export default function DirectPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('direct-view-mode', viewMode);
     }
-  }, [viewMode, sortBy, sortOrder]);
+  }, [viewMode]); // Залежність тільки від viewMode, щоб уникнути циклічних оновлень
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
