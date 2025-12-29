@@ -639,52 +639,65 @@ export function DirectClientTable({
                                 );
                               }
                               
-                              // Показуємо останні 5 станів (або менше)
-                              // Актуальний стан справа (останній в масиві)
-                              // Сортуємо від старіших до новіших для відображення (актуальний справа)
+                              // Спочатку сортуємо від старіших до новіших для правильної фільтрації
                               const sortedStates = [...states].sort((a, b) => 
                                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                               );
                               
                               // Фільтруємо: показуємо тільки перший запис "lead" (найстаріший)
-                              // Всі інші записи "lead" приховуємо
-                              // Знаходимо індекс найстарішого "lead" в відсортованому масиві
+                              // Знаходимо найстаріший "lead" запис
                               const firstLeadIndex = sortedStates.findIndex(log => log.state === 'lead');
-                              const filteredStates = sortedStates.filter((log, index) => {
+                              
+                              // Фільтруємо стани: приховуємо всі "lead", окрім найстарішого
+                              const filteredStates: typeof sortedStates = [];
+                              let leadCount = 0;
+                              
+                              for (let i = 0; i < sortedStates.length; i++) {
+                                const log = sortedStates[i];
                                 if (log.state === 'lead') {
-                                  // Показуємо тільки найстаріший "lead" (перший в відсортованому масиві)
-                                  return index === firstLeadIndex;
+                                  leadCount++;
+                                  // Показуємо тільки перший (найстаріший) "lead"
+                                  if (leadCount === 1) {
+                                    filteredStates.push(log);
+                                  }
+                                  // Всі інші "lead" пропускаємо (приховуємо)
+                                } else {
+                                  // Всі інші стани показуємо
+                                  filteredStates.push(log);
                                 }
-                                return true; // Показуємо всі інші стани
-                              });
+                              }
                               
                               // Останній стан з історії
                               const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
                               
-                              // Якщо поточний стан відрізняється від останнього в історії, додаємо його
+                              // Додаємо поточний стан, якщо він відрізняється
                               const statesToShow = [...filteredStates];
+                              
+                              // Перевіряємо, чи є "lead" в відфільтрованих станах
                               const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
                               
-                              if (currentState !== lastHistoryState && currentState !== 'lead') {
-                                // Додаємо поточний стан, якщо він не "lead"
-                                statesToShow.push({
-                                  id: 'current',
-                                  clientId: client.id,
-                                  state: currentState,
-                                  previousState: lastHistoryState,
-                                  reason: 'current-state',
-                                  createdAt: new Date().toISOString(),
-                                });
-                              } else if (currentState === 'lead' && firstLeadIndex === -1) {
-                                // Якщо поточний стан "lead" і в історії немає "lead", додаємо його
-                                statesToShow.push({
-                                  id: 'current',
-                                  clientId: client.id,
-                                  state: currentState,
-                                  previousState: lastHistoryState,
-                                  reason: 'current-state',
-                                  createdAt: new Date().toISOString(),
-                                });
+                              if (currentState !== lastHistoryState) {
+                                // Якщо поточний стан - "lead", додаємо його тільки якщо в історії немає "lead"
+                                if (currentState === 'lead' && !hasLeadInFiltered) {
+                                  statesToShow.push({
+                                    id: 'current',
+                                    clientId: client.id,
+                                    state: currentState,
+                                    previousState: lastHistoryState,
+                                    reason: 'current-state',
+                                    createdAt: new Date().toISOString(),
+                                  });
+                                } else if (currentState !== 'lead') {
+                                  // Для всіх інших станів - завжди додаємо
+                                  statesToShow.push({
+                                    id: 'current',
+                                    clientId: client.id,
+                                    state: currentState,
+                                    previousState: lastHistoryState,
+                                    reason: 'current-state',
+                                    createdAt: new Date().toISOString(),
+                                  });
+                                }
                               }
                               
                               return (
