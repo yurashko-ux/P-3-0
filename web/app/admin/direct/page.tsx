@@ -202,6 +202,32 @@ export default function DirectPage() {
     }
   }, [viewMode]);
   
+  // Агресивний захист: перевіряємо localStorage кожну секунду і відновлюємо viewMode якщо потрібно
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('direct-view-mode');
+        const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
+        
+        // Якщо viewMode не відповідає localStorage, відновлюємо його
+        if (viewMode !== expectedMode) {
+          console.warn('[DirectPage] Interval check: viewMode mismatch! State:', viewMode, 'localStorage:', expectedMode, '- restoring');
+          setViewModeState(expectedMode);
+          // Також оновлюємо sortBy відповідно
+          if (expectedMode === 'active' && sortBy !== 'updatedAt') {
+            setSortBy('updatedAt');
+            setSortOrder('desc');
+          } else if (expectedMode === 'passive' && sortBy !== 'firstContactDate') {
+            setSortBy('firstContactDate');
+            setSortOrder('desc');
+          }
+        }
+      }
+    }, 1000); // Перевіряємо кожну секунду
+    
+    return () => clearInterval(interval);
+  }, [viewMode, sortBy]);
+  
   // Додатковий захист: перевіряємо viewMode перед кожним завантаженням клієнтів
   const loadClientsProtected = async () => {
     // Перевіряємо і відновлюємо viewMode перед завантаженням
