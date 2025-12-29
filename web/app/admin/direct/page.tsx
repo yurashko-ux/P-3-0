@@ -204,6 +204,27 @@ export default function DirectPage() {
       localStorage.setItem('direct-sort-order', sortOrder);
     }
   }, [sortBy, sortOrder]);
+  
+  // Захист активного режиму: перевіряємо localStorage кожну секунду і відновлюємо sortBy якщо потрібно
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof window !== 'undefined') {
+        const savedSortBy = localStorage.getItem('direct-sort-by');
+        const savedSortOrder = localStorage.getItem('direct-sort-order');
+        
+        // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
+        if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
+          if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
+            console.log('[DirectPage] Active mode protection: restoring sortBy to updatedAt');
+            setSortBy('updatedAt');
+            setSortOrder('desc');
+          }
+        }
+      }
+    }, 1000); // Перевіряємо кожну секунду
+    
+    return () => clearInterval(interval);
+  }, [sortBy, sortOrder]);
 
   useEffect(() => {
     loadData();
