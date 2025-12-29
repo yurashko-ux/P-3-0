@@ -199,19 +199,6 @@ export default function DirectPage() {
   }, []);
   
   
-  // Додатковий захист: перевіряємо viewMode перед кожним завантаженням клієнтів
-  const loadClientsProtected = async () => {
-    // Перевіряємо і відновлюємо viewMode перед завантаженням
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-view-mode');
-      const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
-      if (viewMode !== expectedMode) {
-        console.warn('[DirectPage] loadClients: viewMode mismatch, restoring:', viewMode, '->', expectedMode);
-        setViewModeState(expectedMode);
-      }
-    }
-    return loadClients();
-  };
   
   // Відстежуємо всі зміни viewMode для діагностики
   useEffect(() => {
@@ -357,22 +344,18 @@ export default function DirectPage() {
   };
 
   const loadClients = async () => {
-    // Захист: перевіряємо viewMode перед завантаженням
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-view-mode');
-      const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
-      if (viewMode !== expectedMode) {
-        console.warn('[DirectPage] loadClients: viewMode mismatch detected! Restoring:', viewMode, '->', expectedMode);
-        setViewModeState(expectedMode);
-        // Якщо режим змінився, оновлюємо sortBy відповідно
-        if (expectedMode === 'active' && sortBy !== 'updatedAt') {
-          setSortBy('updatedAt');
-          setSortOrder('desc');
-        } else if (expectedMode === 'passive' && sortBy !== 'firstContactDate') {
-          setSortBy('firstContactDate');
-          setSortOrder('desc');
-        }
-      }
+    // Завжди читаємо viewMode з localStorage перед завантаженням
+    const currentViewMode = getViewMode();
+    
+    // Якщо режим змінився, оновлюємо sortBy відповідно
+    if (currentViewMode === 'active' && sortBy !== 'updatedAt') {
+      console.log('[DirectPage] loadClients: Active mode detected, updating sortBy to updatedAt');
+      setSortBy('updatedAt');
+      setSortOrder('desc');
+    } else if (currentViewMode === 'passive' && sortBy !== 'firstContactDate') {
+      console.log('[DirectPage] loadClients: Passive mode detected, updating sortBy to firstContactDate');
+      setSortBy('firstContactDate');
+      setSortOrder('desc');
     }
     
     try {
