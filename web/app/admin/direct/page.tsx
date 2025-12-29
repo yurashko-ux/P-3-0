@@ -379,6 +379,28 @@ export default function DirectPage() {
   };
 
   const loadClients = async () => {
+    // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
+    let currentSortBy = sortBy;
+    let currentSortOrder = sortOrder;
+    
+    if (typeof window !== 'undefined') {
+      const savedSortBy = localStorage.getItem('direct-sort-by');
+      const savedSortOrder = localStorage.getItem('direct-sort-order');
+      
+      // Якщо в localStorage збережено інше значення, використовуємо його
+      if (savedSortBy === 'updatedAt' || savedSortBy === 'firstContactDate') {
+        if (savedSortBy !== currentSortBy) {
+          console.warn('[DirectPage] ⚠️ loadClients: sortBy mismatch! State:', currentSortBy, 'localStorage:', savedSortBy, '- using localStorage');
+          currentSortBy = savedSortBy;
+        }
+      }
+      if (savedSortOrder === 'asc' || savedSortOrder === 'desc') {
+        if (savedSortOrder !== currentSortOrder) {
+          console.warn('[DirectPage] ⚠️ loadClients: sortOrder mismatch! State:', currentSortOrder, 'localStorage:', savedSortOrder, '- using localStorage');
+          currentSortOrder = savedSortOrder;
+        }
+      }
+    }
     
     try {
       const params = new URLSearchParams();
@@ -386,10 +408,18 @@ export default function DirectPage() {
       if (filters.masterId) params.set("masterId", filters.masterId);
       if (filters.source) params.set("source", filters.source);
       if (filters.hasAppointment === "true") params.set("hasAppointment", "true");
-      params.set("sortBy", sortBy);
-      params.set("sortOrder", sortOrder);
+      params.set("sortBy", currentSortBy);
+      params.set("sortOrder", currentSortOrder);
 
-      console.log('[DirectPage] Loading clients...', { filters, sortBy, sortOrder, viewMode });
+      const currentViewMode = currentSortBy === 'updatedAt' && currentSortOrder === 'desc' ? 'active' : 'passive';
+      console.log('[DirectPage] Loading clients...', { 
+        filters, 
+        sortBy: currentSortBy, 
+        sortOrder: currentSortOrder, 
+        viewMode: currentViewMode,
+        stateSortBy: sortBy,
+        stateSortOrder: sortOrder
+      });
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
         cache: 'no-store',
         headers: {
