@@ -202,10 +202,11 @@ export default function DirectPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('direct-sort-by', sortBy);
       localStorage.setItem('direct-sort-order', sortOrder);
+      console.log('[DirectPage] sortBy/sortOrder saved to localStorage:', sortBy, sortOrder);
     }
   }, [sortBy, sortOrder]);
   
-  // Захист активного режиму: перевіряємо localStorage кожну секунду і відновлюємо sortBy якщо потрібно
+  // Захист активного режиму: перевіряємо localStorage кожні 500мс і відновлюємо sortBy якщо потрібно
   useEffect(() => {
     const interval = setInterval(() => {
       if (typeof window !== 'undefined') {
@@ -215,13 +216,13 @@ export default function DirectPage() {
         // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
         if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
           if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-            console.log('[DirectPage] Active mode protection: restoring sortBy to updatedAt');
+            console.warn('[DirectPage] Active mode protection: restoring sortBy to updatedAt (was:', sortBy, sortOrder, ')');
             setSortBy('updatedAt');
             setSortOrder('desc');
           }
         }
       }
-    }, 1000); // Перевіряємо кожну секунду
+    }, 500); // Перевіряємо кожні 500мс (частіше для кращого захисту)
     
     return () => clearInterval(interval);
   }, [sortBy, sortOrder]);
