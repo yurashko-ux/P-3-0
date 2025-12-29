@@ -14,7 +14,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     firstName: dbClient.firstName || undefined,
     lastName: dbClient.lastName || undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive') || undefined,
+    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
     masterId: dbClient.masterId || undefined,
@@ -549,7 +549,7 @@ export async function saveDirectClient(
     
     // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
     // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу
-    type DirectClientState = 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive';
+    type DirectClientState = 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
     let finalState: DirectClientState | undefined = client.state;
     if (finalState === 'lead') {
       // Перевіряємо, чи клієнт має altegioClientId

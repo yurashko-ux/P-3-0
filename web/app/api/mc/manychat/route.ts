@@ -519,6 +519,32 @@ export async function POST(req: NextRequest) {
       } else {
         // Оновлюємо існуючого клієнта
         const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
+        
+        // Перевіряємо, чи потрібно встановити стан 'message'
+        // Стан 'message' встановлюється тільки якщо минуло більше 24 годин з останнього встановлення
+        let newState = client.state;
+        try {
+          const { getStateHistory } = await import('@/lib/direct-state-log');
+          const history = await getStateHistory(client.id);
+          
+          // Знаходимо останній раз коли встановлювався стан 'message'
+          const lastMessageState = history
+            .filter(log => log.state === 'message')
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          
+          const now = new Date();
+          const shouldSetMessageState = !lastMessageState || 
+            (now.getTime() - new Date(lastMessageState.createdAt).getTime()) >= 24 * 60 * 60 * 1000; // 24 години в мілісекундах
+          
+          if (shouldSetMessageState && (client.state === 'lead' || client.state === 'client')) {
+            newState = 'message';
+            console.log(`[manychat] Setting state to 'message' for client ${client.id} (last message state was ${lastMessageState ? new Date(lastMessageState.createdAt).toISOString() : 'never'})`);
+          }
+        } catch (stateErr) {
+          console.warn('[manychat] Failed to check message state history:', stateErr);
+          // Продовжуємо з поточним станом
+        }
+        
         client = {
           ...client,
           id: client.id,
@@ -527,10 +553,11 @@ export async function POST(req: NextRequest) {
             firstName: fullNameParts[0],
             lastName: fullNameParts.slice(1).join(' ') || undefined,
           }),
+          state: newState,
           lastMessageAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        console.log('[manychat] Updated existing Direct client:', { id: client.id, username: client.instagramUsername });
+        console.log('[manychat] Updated existing Direct client:', { id: client.id, username: client.instagramUsername, state: client.state });
       }
       
       if (client.id && client.instagramUsername) {
