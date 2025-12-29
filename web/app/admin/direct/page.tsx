@@ -230,13 +230,29 @@ export default function DirectPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const stack = new Error().stack;
+      const prevSaved = localStorage.getItem('direct-sort-by');
       console.log('[DirectPage] 🔄 sortBy/sortOrder changed:', { 
         sortBy, 
         sortOrder, 
         viewMode,
+        prevSaved,
         timestamp: new Date().toISOString(),
-        stack: stack?.split('\n').slice(1, 4).join('\n') // Перші 3 рядки stack trace
+        stack: stack?.split('\n').slice(1, 8).join('\n') // Більше рядків для кращого трейсу
       });
+      
+      // Якщо sortBy змінюється на firstContactDate, але в localStorage збережено updatedAt - не зберігаємо
+      if (sortBy === 'firstContactDate' && prevSaved === 'updatedAt') {
+        console.error('[DirectPage] 🚨 BLOCKED: Attempt to change sortBy from updatedAt to firstContactDate!', {
+          sortBy,
+          prevSaved,
+          stack: stack?.split('\n').slice(1, 10).join('\n')
+        });
+        // Відновлюємо активний режим
+        setSortBy('updatedAt');
+        setSortOrder('desc');
+        return; // Не зберігаємо зміну
+      }
+      
       localStorage.setItem('direct-sort-by', sortBy);
       localStorage.setItem('direct-sort-order', sortOrder);
     }
