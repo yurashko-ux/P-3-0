@@ -740,10 +740,20 @@ export function DirectClientTable({
                                 }
                               }
                               
-                              // Фінальна перевірка: якщо все ще є "lead" для Altegio клієнта - видаляємо
-                              const finalStatesToShow = isManychatClient 
-                                ? statesToShow 
-                                : statesToShow.filter(log => log.state !== 'lead');
+                              // Фінальна перевірка: видаляємо всі "lead" для Altegio клієнтів та "no-instagram" для всіх
+                              // Також приховуємо невідомі стани, які можуть показуватись як чорні лійки (image-lead.png)
+                              const finalStatesToShow = statesToShow.filter(log => {
+                                // Видаляємо "no-instagram"
+                                if (log.state === 'no-instagram') return false;
+                                
+                                // Видаляємо "lead" для Altegio клієнтів
+                                if (!isManychatClient && log.state === 'lead') return false;
+                                
+                                // Приховуємо null/undefined стани (вони показуються як "lead")
+                                if (!log.state || log.state.trim() === '') return false;
+                                
+                                return true;
+                              });
                               
                               return (
                                 <>
@@ -757,13 +767,21 @@ export function DirectClientTable({
                                       minute: '2-digit',
                                     });
                                     
+                                    // Гарантуємо, що state не є "no-instagram" або "lead" для Altegio клієнтів
+                                    const stateToShow = (!isManychatClient && stateLog.state === 'lead') || stateLog.state === 'no-instagram'
+                                      ? null
+                                      : (stateLog.state || null);
+                                    
+                                    // Якщо state null після фільтрації, не показуємо іконку
+                                    if (!stateToShow) return null;
+                                    
                                     return (
                                       <div
                                         key={stateLog.id || `state-${idx}`}
                                         className="tooltip tooltip-top"
                                         data-tip={formattedDate}
                                       >
-                                        <StateIcon state={stateLog.state || 'lead'} size={28} />
+                                        <StateIcon state={stateToShow} size={28} />
                                       </div>
                                     );
                                   })}
