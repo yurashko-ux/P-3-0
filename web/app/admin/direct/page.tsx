@@ -159,8 +159,12 @@ export default function DirectPage() {
   const [sortBy, setSortBy] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('direct-sort-by');
+      console.log('[DirectPage] 🔍 Initializing sortBy from localStorage:', { saved, allKeys: Object.keys(localStorage).filter(k => k.includes('direct')) });
       if (saved === 'updatedAt' || saved === 'firstContactDate') {
+        console.log('[DirectPage] ✅ Using saved sortBy:', saved);
         return saved;
+      } else {
+        console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: firstContactDate');
       }
     }
     return 'firstContactDate';
@@ -168,8 +172,12 @@ export default function DirectPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('direct-sort-order');
+      console.log('[DirectPage] 🔍 Initializing sortOrder from localStorage:', { saved });
       if (saved === 'asc' || saved === 'desc') {
+        console.log('[DirectPage] ✅ Using saved sortOrder:', saved);
         return saved;
+      } else {
+        console.log('[DirectPage] ⚠️ Invalid or missing sortOrder in localStorage, using default: desc');
       }
     }
     return 'desc';
@@ -236,6 +244,7 @@ export default function DirectPage() {
   
   // Захист активного режиму: перевіряємо localStorage кожні 500мс і відновлюємо sortBy якщо потрібно
   useEffect(() => {
+    console.log('[DirectPage] 🛡️ Setting up active mode protection interval');
     const interval = setInterval(() => {
       if (typeof window !== 'undefined') {
         const savedSortBy = localStorage.getItem('direct-sort-by');
@@ -246,17 +255,30 @@ export default function DirectPage() {
           if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
             console.warn('[DirectPage] 🛡️ Active mode protection: restoring sortBy to updatedAt', {
               was: { sortBy, sortOrder },
+              saved: { savedSortBy, savedSortOrder },
               restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
               timestamp: new Date().toISOString()
             });
             setSortBy('updatedAt');
             setSortOrder('desc');
           }
+        } else if (savedSortBy === 'updatedAt' && savedSortOrder !== 'desc') {
+          // Якщо sortBy правильний, але sortOrder неправильний - виправляємо
+          console.warn('[DirectPage] 🛡️ Active mode protection: fixing sortOrder', {
+            was: { sortBy, sortOrder },
+            saved: { savedSortBy, savedSortOrder },
+            fixing: { sortOrder: 'desc' },
+            timestamp: new Date().toISOString()
+          });
+          setSortOrder('desc');
         }
       }
     }, 500); // Перевіряємо кожні 500мс (частіше для кращого захисту)
     
-    return () => clearInterval(interval);
+    return () => {
+      console.log('[DirectPage] 🛡️ Clearing active mode protection interval');
+      clearInterval(interval);
+    };
   }, [sortBy, sortOrder]);
 
   useEffect(() => {
