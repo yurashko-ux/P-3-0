@@ -146,7 +146,11 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
       const data = await res.json();
       
       if (data.ok) {
-        setHistory(data.data.history || []);
+        // Фільтруємо записи зі станом "no-instagram" (видалений стан)
+        const filteredHistory = (data.data.history || []).filter(
+          (log: StateHistoryLog) => log.state !== 'no-instagram'
+        );
+        setHistory(filteredHistory);
         setCurrentState(data.data.currentState);
         setCurrentStateMasterName(data.data.currentStateMasterName);
         setCurrentStateDate(data.data.currentStateDate);
