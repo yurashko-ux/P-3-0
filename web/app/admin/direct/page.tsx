@@ -154,8 +154,6 @@ export default function DirectPage() {
     hasAppointment: "",
   });
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
-  const [sortBy, setSortBy] = useState<string>("firstContactDate");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   
   // Режим відображення: 'passive' | 'active'
   const [viewMode, setViewMode] = useState<'passive' | 'active'>(() => {
@@ -167,26 +165,41 @@ export default function DirectPage() {
     return 'passive';
   });
 
+  // Ініціалізуємо сортування на основі viewMode
+  const [sortBy, setSortBy] = useState<string>(() => {
+    // Завантажуємо viewMode з localStorage для правильної ініціалізації сортування
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('direct-view-mode');
+      return saved === 'active' ? 'updatedAt' : 'firstContactDate';
+    }
+    return 'firstContactDate';
+  });
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
   useEffect(() => {
     loadData();
   }, []);
 
   // Автоматична зміна сортування при зміні режиму
   // Використовуємо useRef, щоб відстежувати попередній режим і не встановлювати сортування зайвий раз
-  const prevViewModeRef = useRef<'passive' | 'active'>(viewMode);
+  const prevViewModeRef = useRef<'passive' | 'active' | null>(null);
   useEffect(() => {
     // Встановлюємо сортування тільки при зміні режиму (не при кожному рендері)
-    const viewModeChanged = prevViewModeRef.current !== viewMode;
+    const viewModeChanged = prevViewModeRef.current !== null && prevViewModeRef.current !== viewMode;
     
-    if (viewModeChanged) {
+    if (viewModeChanged || prevViewModeRef.current === null) {
       if (viewMode === 'passive') {
         // Пасивний режим: сортування за датою першого контакту
-        setSortBy('firstContactDate');
-        setSortOrder('desc');
+        if (sortBy !== 'firstContactDate' || sortOrder !== 'desc') {
+          setSortBy('firstContactDate');
+          setSortOrder('desc');
+        }
       } else {
         // Активний режим: сортування за останнім оновленням
-        setSortBy('updatedAt');
-        setSortOrder('desc');
+        if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
+          setSortBy('updatedAt');
+          setSortOrder('desc');
+        }
       }
       prevViewModeRef.current = viewMode;
     }
@@ -195,7 +208,7 @@ export default function DirectPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('direct-view-mode', viewMode);
     }
-  }, [viewMode]);
+  }, [viewMode, sortBy, sortOrder]);
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
