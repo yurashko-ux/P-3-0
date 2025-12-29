@@ -156,14 +156,51 @@ export default function DirectPage() {
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   
   // Режим відображення: 'passive' | 'active'
-  const [viewMode, setViewMode] = useState<'passive' | 'active'>(() => {
+  // Використовуємо функцію-обгортку для setViewMode, щоб завжди зберігати в localStorage
+  const [viewMode, setViewModeState] = useState<'passive' | 'active'>(() => {
     // Завантажуємо з localStorage при ініціалізації
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('direct-view-mode');
-      return (saved === 'active' || saved === 'passive') ? saved : 'passive';
+      const mode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
+      console.log('[DirectPage] Initializing viewMode from localStorage:', saved, '->', mode);
+      return mode;
     }
     return 'passive';
   });
+  
+  // Обгортка для setViewMode, яка завжди зберігає в localStorage
+  const setViewMode = (newMode: 'passive' | 'active' | ((prev: 'passive' | 'active') => 'passive' | 'active')) => {
+    if (typeof newMode === 'function') {
+      setViewModeState((prev) => {
+        const result = newMode(prev);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('direct-view-mode', result);
+          console.log('[DirectPage] viewMode changed via function:', prev, '->', result);
+        }
+        return result;
+      });
+    } else {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('direct-view-mode', newMode);
+        console.log('[DirectPage] viewMode changed directly:', viewMode, '->', newMode);
+      }
+      setViewModeState(newMode);
+    }
+  };
+  
+  // Захист: перевіряємо localStorage при кожному рендері, щоб переконатися, що viewMode синхронізований
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('direct-view-mode');
+      const expectedMode = (saved === 'active' || saved === 'passive') ? saved : 'passive';
+      
+      // Якщо viewMode не відповідає localStorage, відновлюємо його
+      if (viewMode !== expectedMode) {
+        console.warn('[DirectPage] viewMode mismatch detected! State:', viewMode, 'localStorage:', expectedMode, '- restoring from localStorage');
+        setViewModeState(expectedMode);
+      }
+    }
+  }, [viewMode]);
   
   // Відстежуємо всі зміни viewMode для діагностики
   useEffect(() => {
