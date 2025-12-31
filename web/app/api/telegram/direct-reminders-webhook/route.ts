@@ -866,6 +866,34 @@ export async function POST(req: NextRequest) {
     assertDirectRemindersBotToken();
 
     const update = (await req.json()) as TelegramUpdate;
+    
+    // Зберігаємо повідомлення в KV для перегляду в адмін-панелі
+    try {
+      const { kvWrite } = await import('@/lib/kv');
+      const logEntry = {
+        receivedAt: new Date().toISOString(),
+        updateId: update.update_id,
+        hasMessage: !!update.message,
+        hasCallbackQuery: !!update.callback_query,
+        messageText: update.message?.text,
+        messageChatId: update.message?.chat?.id,
+        messageFromUsername: update.message?.from?.username,
+        messageFromId: update.message?.from?.id,
+        messageFromFirstName: update.message?.from?.first_name,
+        messageFromLastName: update.message?.from?.last_name,
+        replyToMessage: !!update.message?.reply_to_message,
+        replyToMessageId: update.message?.reply_to_message?.message_id,
+        replyToMessageText: update.message?.reply_to_message?.text?.substring(0, 500),
+        callbackData: update.callback_query?.data,
+        fullUpdate: JSON.stringify(update, null, 2),
+      };
+      const payload = JSON.stringify(logEntry);
+      await kvWrite.lpush('telegram:direct-reminders:log', payload);
+      // Зберігаємо останні 1000 повідомлень
+      await kvWrite.ltrim('telegram:direct-reminders:log', 0, 999);
+    } catch (logErr) {
+      console.warn('[direct-reminders-webhook] Failed to save message log to KV:', logErr);
+    }
     console.log(`[direct-reminders-webhook] ✅ Received update - VERSION 2025-12-28-1138:`, {
       updateId: update.update_id,
       hasMessage: !!update.message,

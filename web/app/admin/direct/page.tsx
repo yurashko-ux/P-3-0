@@ -11,6 +11,7 @@ import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 import { DirectStats } from "./_components/DirectStats";
 import { WebhooksTableModal } from "./_components/WebhooksTableModal";
+import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
@@ -153,6 +154,7 @@ export default function DirectPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
+  const [isTelegramMessagesModalOpen, setIsTelegramMessagesModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     statusId: "",
     masterId: "",
@@ -986,6 +988,13 @@ export default function DirectPage() {
             title="Переглянути таблицю webhook-ів Altegio"
           >
             📊 Таблиця вебхуків
+          </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() => setIsTelegramMessagesModalOpen(true)}
+            title="Переглянути повідомлення з Telegram бота (HOB_client_bot)"
+          >
+            💬 Повідомлення Telegram бота
           </button>
           <button
             className="btn btn-sm btn-ghost"
@@ -2047,6 +2056,12 @@ export default function DirectPage() {
       <WebhooksTableModal
         isOpen={isWebhooksModalOpen}
         onClose={() => setIsWebhooksModalOpen(false)}
+      />
+
+      {/* Модальне вікно повідомлень Telegram бота */}
+      <TelegramMessagesModal
+        isOpen={isTelegramMessagesModalOpen}
+        onClose={() => setIsTelegramMessagesModalOpen(false)}
       />
 
       {/* Управління статусами та відповідальними */}
