@@ -9,7 +9,7 @@ export type DirectClient = {
   firstName?: string;
   lastName?: string;
   source: 'instagram' | 'tiktok' | 'other'; // Джерело реклами
-  state?: 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message'; // Системний стан: Лід, Клієнт, Консультація, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого, Повідомлення
+  state?: 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message'; // Системний стан: Лід, Клієнт, Консультація, Запис на консультацію, Клієнт не з'явився, Перенос дати запису на консультацію, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого, Повідомлення
   firstContactDate: string; // ISO date - дата першого контакту
   statusId: string; // ID статусу зі списку статусів
   masterId?: string; // ID майстра (відповідальний)
@@ -21,6 +21,11 @@ export type DirectClient = {
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
   signupAdmin?: string; // Хто записав (ім'я адміна)
   comment?: string; // Коментар/нотатки
+  consultationBookingDate?: string; // ISO date - дата запису на консультацію
+  consultationAttended?: boolean; // Чи прийшов на консультацію
+  consultationMasterId?: string; // ID майстра, який провів консультацію
+  consultationMasterName?: string; // Ім'я майстра, який провів консультацію
+  signedUpForPaidServiceAfterConsultation?: boolean; // Записалась на послугу після консультації
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt?: string; // ISO date - останнє повідомлення
   createdAt: string; // ISO date - коли створено запис

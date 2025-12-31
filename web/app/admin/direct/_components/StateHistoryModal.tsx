@@ -84,6 +84,35 @@ function StateIcon({ state }: { state: string | null }) {
         <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
       </svg>
     );
+  } else if (state === 'consultation-booked') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#2563eb" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  } else if (state === 'consultation-no-show') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#ef4444" stroke="#dc2626" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#dc2626" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#dc2626" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M11 18 L17 18" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"/>
+      </svg>
+    );
+  } else if (state === 'consultation-rescheduled') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#d97706" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#d97706" strokeWidth="1.5"/>
+        <path d="M11 17 L14 14 L17 17 M17 17 L14 20 L11 17" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
   } else if (state === 'hair-extension') {
     return (
       <img 

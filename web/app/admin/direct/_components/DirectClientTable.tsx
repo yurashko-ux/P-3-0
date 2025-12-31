@@ -43,6 +43,35 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
         <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
       </svg>
     );
+  } else if (state === 'consultation-booked') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#2563eb" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  } else if (state === 'consultation-no-show') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#ef4444" stroke="#dc2626" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#dc2626" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#dc2626" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M11 18 L17 18" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"/>
+      </svg>
+    );
+  } else if (state === 'consultation-rescheduled') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#d97706" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#d97706" strokeWidth="1.5"/>
+        <path d="M11 17 L14 14 L17 17 M17 17 L14 20 L11 17" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
   } else if (state === 'hair-extension') {
     return (
       <img 
@@ -518,12 +547,54 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
+                          "consultationBookingDate",
+                          sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Запис на консультацію {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "consultationAttended",
+                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Прийшов {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    Консультував
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "signedUpForPaidServiceAfterConsultation",
+                          sortBy === "signedUpForPaidServiceAfterConsultation" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Записалась на послугу {sortBy === "signedUpForPaidServiceAfterConsultation" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
                           "visitedSalon",
                           sortBy === "visitedSalon" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
-                      Прийшов {sortBy === "visitedSalon" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Прийшов (старий) {sortBy === "visitedSalon" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -584,7 +655,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={16} className="text-center py-8 text-gray-500">
+                    <td colSpan={20} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -863,6 +934,50 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {client.consultationBookingDate ? (
+                          (() => {
+                            const appointmentDate = new Date(client.consultationBookingDate);
+                            const now = new Date();
+                            now.setHours(0, 0, 0, 0);
+                            appointmentDate.setHours(0, 0, 0, 0);
+                            const isPast = appointmentDate < now;
+                            const dateStr = formatDate(client.consultationBookingDate);
+                            
+                            return (
+                              <span
+                                className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
+                                title={isPast ? "Минулий запис на консультацію" : "Майбутній запис на консультацію"}
+                              >
+                                {dateStr} 📅
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          ""
+                        )}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs"
+                          checked={client.consultationAttended || false}
+                          disabled
+                          title={client.consultationAttended ? "Клієнт прийшов на консультацію" : "Клієнт не прийшов на консультацію"}
+                        />
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {client.consultationMasterName || "-"}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs"
+                          checked={client.signedUpForPaidServiceAfterConsultation || false}
+                          disabled
+                          title={client.signedUpForPaidServiceAfterConsultation ? "Записалась на платну послугу після консультації" : "Не записалась на платну послугу після консультації"}
+                        />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <input

@@ -14,6 +14,138 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
+ * Перевіряє, чи є послуга "Консультація"
+ */
+function isConsultationService(services: any[]): boolean {
+  if (!Array.isArray(services) || services.length === 0) {
+    return false;
+  }
+  return services.some((s: any) => {
+    const title = s.title || s.name || '';
+    return /консультація/i.test(title);
+  });
+}
+
+/**
+ * Перевіряє, чи staffName є адміністратором (role = 'admin' або 'direct-manager')
+ */
+async function isAdminStaff(staffName: string | null | undefined): Promise<boolean> {
+  if (!staffName) {
+    return false;
+  }
+  try {
+    const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+    const masters = await getAllDirectMasters();
+    const adminMaster = masters.find(m => 
+      m.name === staffName && (m.role === 'admin' || m.role === 'direct-manager')
+    );
+    return !!adminMaster;
+  } catch (err) {
+    console.warn(`[altegio/webhook] Failed to check if staff "${staffName}" is admin:`, err);
+    return false;
+  }
+}
+
+/**
+ * Перевіряє, чи в історії станів клієнта вже є консультації
+ */
+async function hasConsultationInHistory(clientId: string): Promise<boolean> {
+  try {
+    const { getStateHistory } = await import('@/lib/direct-state-log');
+    const history = await getStateHistory(clientId);
+    const consultationStates = ['consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+    return history.some(log => consultationStates.includes(log.state || ''));
+  } catch (err) {
+    console.warn(`[altegio/webhook] Failed to check consultation history for client ${clientId}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Перевіряє, чи до першої платної послуги клієнт мав тільки консультації
+ * Повертає true, якщо в історії послуг до першої платної послуги були тільки консультації
+ */
+async function hadOnlyConsultationsBeforePaidService(altegioClientId: number, currentDateTime: string): Promise<boolean> {
+  try {
+    const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
+    const clientRecords = recordsLogRaw
+      .map((raw) => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+            try {
+              return JSON.parse(parsed.value);
+            } catch {
+              return null;
+            }
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
+      })
+      .filter((r) => {
+        if (!r || typeof r !== 'object') return false;
+        const recordClientId = r.clientId || (r.data && r.data.client && r.data.client.id) || (r.data && r.data.client_id);
+        if (!recordClientId) return false;
+        const parsedClientId = parseInt(String(recordClientId), 10);
+        return !isNaN(parsedClientId) && parsedClientId === altegioClientId;
+      })
+      .filter((r) => {
+        // Перевіряємо, що запис має services
+        if (!r.data || !Array.isArray(r.data.services)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        // Сортуємо за датою (від старіших до новіших)
+        const dateA = a.datetime || a.receivedAt || '';
+        const dateB = b.datetime || b.receivedAt || '';
+        return new Date(dateA).getTime() - new Date(dateB).getTime();
+      });
+    
+    // Знаходимо першу платну послугу (не консультацію)
+    let firstPaidServiceIndex = -1;
+    for (let i = 0; i < clientRecords.length; i++) {
+      const record = clientRecords[i];
+      const services = record.data?.services || [];
+      const hasConsultation = services.some((s: any) => {
+        const title = s.title || s.name || '';
+        return /консультація/i.test(title);
+      });
+      if (!hasConsultation) {
+        firstPaidServiceIndex = i;
+        break;
+      }
+    }
+    
+    // Якщо платної послуги немає - повертаємо false
+    if (firstPaidServiceIndex === -1) {
+      return false;
+    }
+    
+    // Перевіряємо, чи до першої платної послуги були тільки консультації
+    for (let i = 0; i < firstPaidServiceIndex; i++) {
+      const record = clientRecords[i];
+      const services = record.data?.services || [];
+      const hasConsultation = services.some((s: any) => {
+        const title = s.title || s.name || '';
+        return /консультація/i.test(title);
+      });
+      if (!hasConsultation) {
+        // Знайдено неконсультаційну послугу до першої платної
+        return false;
+      }
+    }
+    
+    // Якщо до першої платної послуги були тільки консультації
+    return firstPaidServiceIndex > 0;
+  } catch (err) {
+    console.warn(`[altegio/webhook] Failed to check consultation history before paid service for client ${altegioClientId}:`, err);
+    return false;
+  }
+}
+
+/**
  * Webhook endpoint для Altegio
  * Отримує сповіщення про події в Altegio (appointments, clients, etc.)
  */
@@ -133,6 +265,166 @@ export async function POST(req: NextRequest) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }
 
+        // ОБРОБКА КОНСУЛЬТАЦІЙ (consultation-booked, consultation-rescheduled, consultation-no-show, consultation)
+        if (data.client && data.client.id && Array.isArray(data.services) && data.services.length > 0) {
+          try {
+            const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
+            const { getMasterByName } = await import('@/lib/direct-masters/store');
+            
+            const clientId = parseInt(String(data.client.id), 10);
+            const services = data.services;
+            const staffName = data.staff?.name || data.staff?.display_name || null;
+            const attendance = data.attendance; // -1 = не з'явився, 1 = прийшов, undefined/null = не відмічено
+            const datetime = data.datetime;
+            
+            const hasConsultation = isConsultationService(services);
+            
+            if (hasConsultation) {
+              const existingDirectClients = await getAllDirectClients();
+              const existingClient = existingDirectClients.find(
+                (c) => c.altegioClientId === clientId
+              );
+              
+              if (existingClient) {
+                const wasAdminStaff = await isAdminStaff(staffName);
+                const hadConsultationBefore = await hasConsultationInHistory(existingClient.id);
+                
+                // 2.2 Обробка запису на консультацію (ПЕРША консультація)
+                if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
+                  const updates: Partial<typeof existingClient> = {
+                    state: 'consultation-booked',
+                    consultationBookingDate: datetime,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  const updated: typeof existingClient = {
+                    ...existingClient,
+                    ...updates,
+                  };
+                  
+                  await saveDirectClient(updated, 'altegio-webhook-consultation-booked', {
+                    altegioClientId: clientId,
+                    staffName,
+                    datetime,
+                  });
+                  
+                  console.log(`[altegio/webhook] ✅ Set consultation-booked state for client ${existingClient.id}`);
+                }
+                // 2.3 Обробка переносу дати
+                else if (status === 'update' && wasAdminStaff && hadConsultationBefore) {
+                  // Перевіряємо чи дата змінилась
+                  const oldBookingDate = existingClient.consultationBookingDate;
+                  if (oldBookingDate && datetime && oldBookingDate !== datetime) {
+                    const updates: Partial<typeof existingClient> = {
+                      state: 'consultation-rescheduled',
+                      consultationBookingDate: datetime,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      ...updates,
+                    };
+                    
+                    await saveDirectClient(updated, 'altegio-webhook-consultation-rescheduled', {
+                      altegioClientId: clientId,
+                      staffName,
+                      datetime,
+                      oldDate: oldBookingDate,
+                    });
+                    
+                    console.log(`[altegio/webhook] ✅ Set consultation-rescheduled state for client ${existingClient.id}`);
+                  }
+                }
+                // 2.4 Обробка неявки клієнта
+                else if (attendance === -1) {
+                  const updates: Partial<typeof existingClient> = {
+                    state: 'consultation-no-show',
+                    consultationAttended: false,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  const updated: typeof existingClient = {
+                    ...existingClient,
+                    ...updates,
+                  };
+                  
+                  await saveDirectClient(updated, 'altegio-webhook-consultation-no-show', {
+                    altegioClientId: clientId,
+                    staffName,
+                    datetime,
+                  });
+                  
+                  console.log(`[altegio/webhook] ✅ Set consultation-no-show state for client ${existingClient.id}`);
+                }
+                // Якщо після no-show приходить update з новою датою - це перенос
+                else if (attendance === -1 && hadConsultationBefore && status === 'update' && wasAdminStaff) {
+                  const oldBookingDate = existingClient.consultationBookingDate;
+                  if (oldBookingDate && datetime && oldBookingDate !== datetime) {
+                    const updates: Partial<typeof existingClient> = {
+                      state: 'consultation-rescheduled',
+                      consultationBookingDate: datetime,
+                      consultationAttended: false, // Зберігаємо false, бо клієнт не з'явився
+                      updatedAt: new Date().toISOString(),
+                    };
+                    
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      ...updates,
+                    };
+                    
+                    await saveDirectClient(updated, 'altegio-webhook-consultation-rescheduled-after-no-show', {
+                      altegioClientId: clientId,
+                      staffName,
+                      datetime,
+                      oldDate: oldBookingDate,
+                    });
+                    
+                    console.log(`[altegio/webhook] ✅ Set consultation-rescheduled state (after no-show) for client ${existingClient.id}`);
+                  }
+                }
+                // 2.5 Обробка приходу клієнта на консультацію (ПЕРША консультація)
+                else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
+                  // Знаходимо майстра
+                  const master = await getMasterByName(staffName);
+                  if (master) {
+                    const updates: Partial<typeof existingClient> = {
+                      state: 'consultation',
+                      consultationAttended: true,
+                      consultationMasterId: master.id,
+                      consultationMasterName: master.name,
+                      consultationDate: datetime, // Дата фактичної консультації
+                      masterId: master.id, // Оновлюємо відповідального
+                      masterManuallySet: false, // Автоматичне призначення
+                      updatedAt: new Date().toISOString(),
+                    };
+                    
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      ...updates,
+                    };
+                    
+                    await saveDirectClient(updated, 'altegio-webhook-consultation-attended', {
+                      altegioClientId: clientId,
+                      staffName,
+                      masterId: master.id,
+                      masterName: master.name,
+                      datetime,
+                    });
+                    
+                    console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
+                  } else {
+                    console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[altegio/webhook] ⚠️ Failed to process consultation logic:`, err);
+            // Не зупиняємо обробку через помилку
+          }
+        }
+
         // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES
         // Автоматично оновлюємо стан клієнта на основі послуг у записі
         // Це працює для ВСІХ клієнтів, навіть без custom_fields
@@ -195,6 +487,16 @@ export async function POST(req: NextRequest) {
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing) for client ${existingClient.id}`);
+                  }
+                  
+                  // 2.6 Визначення конверсії в платну послугу після консультації
+                  // Перевіряємо тільки якщо це платна послуга (не консультація) і клієнт мав консультацію
+                  if (!hasConsultation && existingClient.consultationDate) {
+                    const hadOnlyConsultations = await hadOnlyConsultationsBeforePaidService(clientId, data.datetime);
+                    if (hadOnlyConsultations) {
+                      updates.signedUpForPaidServiceAfterConsultation = true;
+                      console.log(`[altegio/webhook] Setting signedUpForPaidServiceAfterConsultation = true for client ${existingClient.id} (had only consultations before paid service)`);
+                    }
                   }
                 }
                 

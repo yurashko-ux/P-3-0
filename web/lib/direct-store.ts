@@ -14,7 +14,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     firstName: dbClient.firstName || undefined,
     lastName: dbClient.lastName || undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
+    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
     masterId: dbClient.masterId || undefined,
@@ -28,6 +28,11 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     comment: dbClient.comment || undefined,
     altegioClientId: dbClient.altegioClientId || undefined,
     lastMessageAt: dbClient.lastMessageAt?.toISOString() || undefined,
+    consultationBookingDate: dbClient.consultationBookingDate?.toISOString() || undefined,
+    consultationAttended: dbClient.consultationAttended || false,
+    consultationMasterId: dbClient.consultationMasterId || undefined,
+    consultationMasterName: dbClient.consultationMasterName || undefined,
+    signedUpForPaidServiceAfterConsultation: dbClient.signedUpForPaidServiceAfterConsultation || false,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -55,6 +60,11 @@ function directClientToPrisma(client: DirectClient) {
     comment: client.comment || null,
     altegioClientId: client.altegioClientId || null,
     lastMessageAt: client.lastMessageAt ? new Date(client.lastMessageAt) : null,
+    consultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate) : null,
+    consultationAttended: client.consultationAttended || false,
+    consultationMasterId: client.consultationMasterId || null,
+    consultationMasterName: client.consultationMasterName || null,
+    signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation || false,
   };
 }
 
@@ -549,7 +559,7 @@ export async function saveDirectClient(
     
     // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
     // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу
-    type DirectClientState = 'lead' | 'client' | 'consultation' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
+    type DirectClientState = 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
     let finalState: DirectClientState | undefined = client.state;
     if (finalState === 'lead') {
       // Перевіряємо, чи клієнт має altegioClientId

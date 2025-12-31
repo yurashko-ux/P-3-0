@@ -144,12 +144,12 @@ export async function GET(req: NextRequest) {
         bVal = String(bVal).toLowerCase();
       }
       // Обробка дат
-      else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate' || sortBy === 'updatedAt' || sortBy === 'createdAt') {
+      else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate' || sortBy === 'consultationBookingDate' || sortBy === 'updatedAt' || sortBy === 'createdAt') {
         aVal = aVal ? new Date(aVal).getTime() : 0;
         bVal = bVal ? new Date(bVal).getTime() : 0;
       }
       // Обробка boolean
-      else if (sortBy === 'visitedSalon' || sortBy === 'signedUpForPaidService') {
+      else if (sortBy === 'visitedSalon' || sortBy === 'signedUpForPaidService' || sortBy === 'consultationAttended' || sortBy === 'signedUpForPaidServiceAfterConsultation') {
         aVal = aVal ? 1 : 0;
         bVal = bVal ? 1 : 0;
       }
