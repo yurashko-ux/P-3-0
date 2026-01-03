@@ -214,30 +214,54 @@ export async function POST(req: NextRequest) {
         const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
 
         // Шукаємо існуючого клієнта
-        let existingClientId = existingInstagramMap.get(normalizedInstagram);
-        let foundByInstagram = !!existingClientId;
+        let existingClientIdByInstagram = normalizedInstagram && !normalizedInstagram.startsWith('missing_instagram_')
+          ? existingInstagramMap.get(normalizedInstagram)
+          : null;
+        let existingClientIdByAltegio = clientId
+          ? existingAltegioIdMap.get(parseInt(String(clientId), 10))
+          : null;
         
-        // Якщо не знайдено по Instagram, шукаємо по altegioClientId
-        if (!existingClientId && clientId) {
-          existingClientId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
-        }
-        
-        // Перевіряємо на дублікати: якщо знайдено по одному критерію, перевіряємо інший
+        // Визначаємо, який клієнт залишити при об'єднанні
+        // Пріоритет: клієнт з правильним Instagram, а не з missing_instagram_*
+        let existingClientId: string | null = null;
         let duplicateClientId: string | null = null;
-        if (foundByInstagram && existingClientId && clientId) {
-          // Знайшли по Instagram, перевіряємо чи є інший клієнт з таким Altegio ID
-          const clientByAltegioId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
-          if (clientByAltegioId && clientByAltegioId !== existingClientId) {
-            duplicateClientId = clientByAltegioId;
-            console.log(`[sync-today-webhooks] ⚠️ Found duplicate: client ${existingClientId} (by Instagram) and ${duplicateClientId} (by Altegio ID ${clientId})`);
+        
+        if (existingClientIdByInstagram && existingClientIdByAltegio) {
+          if (existingClientIdByInstagram === existingClientIdByAltegio) {
+            // Це той самий клієнт - просто оновлюємо
+            existingClientId = existingClientIdByInstagram;
+          } else {
+            // Різні клієнти - потрібно об'єднати
+            const clientByInstagram = existingDirectClients.find((c) => c.id === existingClientIdByInstagram);
+            const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
+            
+            // Перевіряємо, який має missing_instagram_*
+            const instagramHasMissing = clientByInstagram?.instagramUsername?.startsWith('missing_instagram_');
+            const altegioHasMissing = clientByAltegio?.instagramUsername?.startsWith('missing_instagram_');
+            
+            if (instagramHasMissing && !altegioHasMissing) {
+              // Клієнт по Instagram має missing_instagram_*, клієнт по Altegio ID має правильний Instagram
+              // Залишаємо клієнта по Altegio ID (з правильним Instagram)
+              existingClientId = existingClientIdByAltegio;
+              duplicateClientId = existingClientIdByInstagram;
+              console.log(`[sync-today-webhooks] ⚠️ Found duplicate: keeping client ${existingClientId} (has real Instagram), deleting ${duplicateClientId} (has missing_instagram_*)`);
+            } else if (!instagramHasMissing && altegioHasMissing) {
+              // Клієнт по Altegio ID має missing_instagram_*, клієнт по Instagram має правильний Instagram
+              // Залишаємо клієнта по Instagram (з правильним Instagram)
+              existingClientId = existingClientIdByInstagram;
+              duplicateClientId = existingClientIdByAltegio;
+              console.log(`[sync-today-webhooks] ⚠️ Found duplicate: keeping client ${existingClientId} (has real Instagram), deleting ${duplicateClientId} (has missing_instagram_*)`);
+            } else {
+              // Обидва мають або не мають missing_instagram_* - залишаємо клієнта по Instagram (новіший)
+              existingClientId = existingClientIdByInstagram;
+              duplicateClientId = existingClientIdByAltegio;
+              console.log(`[sync-today-webhooks] ⚠️ Found duplicate: keeping client ${existingClientId} (by Instagram), deleting ${duplicateClientId} (by Altegio ID)`);
+            }
           }
-        } else if (!foundByInstagram && existingClientId && normalizedInstagram && !normalizedInstagram.startsWith('missing_instagram_')) {
-          // Знайшли по Altegio ID, перевіряємо чи є інший клієнт з таким Instagram
-          const clientByInstagram = existingInstagramMap.get(normalizedInstagram);
-          if (clientByInstagram && clientByInstagram !== existingClientId) {
-            duplicateClientId = clientByInstagram;
-            console.log(`[sync-today-webhooks] ⚠️ Found duplicate: client ${existingClientId} (by Altegio ID) and ${duplicateClientId} (by Instagram ${normalizedInstagram})`);
-          }
+        } else if (existingClientIdByInstagram) {
+          existingClientId = existingClientIdByInstagram;
+        } else if (existingClientIdByAltegio) {
+          existingClientId = existingClientIdByAltegio;
         }
 
         if (existingClientId) {
