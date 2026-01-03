@@ -215,8 +215,29 @@ export async function POST(req: NextRequest) {
 
         // Шукаємо існуючого клієнта
         let existingClientId = existingInstagramMap.get(normalizedInstagram);
+        let foundByInstagram = !!existingClientId;
+        
+        // Якщо не знайдено по Instagram, шукаємо по altegioClientId
         if (!existingClientId && clientId) {
           existingClientId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
+        }
+        
+        // Перевіряємо на дублікати: якщо знайдено по одному критерію, перевіряємо інший
+        let duplicateClientId: string | null = null;
+        if (foundByInstagram && existingClientId && clientId) {
+          // Знайшли по Instagram, перевіряємо чи є інший клієнт з таким Altegio ID
+          const clientByAltegioId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
+          if (clientByAltegioId && clientByAltegioId !== existingClientId) {
+            duplicateClientId = clientByAltegioId;
+            console.log(`[sync-today-webhooks] ⚠️ Found duplicate: client ${existingClientId} (by Instagram) and ${duplicateClientId} (by Altegio ID ${clientId})`);
+          }
+        } else if (!foundByInstagram && existingClientId && normalizedInstagram && !normalizedInstagram.startsWith('missing_instagram_')) {
+          // Знайшли по Altegio ID, перевіряємо чи є інший клієнт з таким Instagram
+          const clientByInstagram = existingInstagramMap.get(normalizedInstagram);
+          if (clientByInstagram && clientByInstagram !== existingClientId) {
+            duplicateClientId = clientByInstagram;
+            console.log(`[sync-today-webhooks] ⚠️ Found duplicate: client ${existingClientId} (by Altegio ID) and ${duplicateClientId} (by Instagram ${normalizedInstagram})`);
+          }
         }
 
         if (existingClientId) {
@@ -245,6 +266,24 @@ export async function POST(req: NextRequest) {
               action: 'updated',
               state: clientState,
             });
+            
+            // Якщо знайдено дублікат, видаляємо його
+            if (duplicateClientId) {
+              try {
+                const { deleteDirectClient } = await import('@/lib/direct-store');
+                await deleteDirectClient(duplicateClientId);
+                console.log(`[sync-today-webhooks] ✅ Deleted duplicate client ${duplicateClientId}`);
+                results.clients.push({
+                  id: duplicateClientId,
+                  instagramUsername: 'DELETED_DUPLICATE',
+                  action: 'deleted',
+                  state: 'deleted',
+                });
+              } catch (deleteErr) {
+                console.error(`[sync-today-webhooks] ❌ Failed to delete duplicate client ${duplicateClientId}:`, deleteErr);
+                results.errors.push(`Failed to delete duplicate client ${duplicateClientId}: ${deleteErr instanceof Error ? deleteErr.message : String(deleteErr)}`);
+              }
+            }
           }
         } else {
           // Створюємо нового клієнта
