@@ -604,16 +604,35 @@ export async function POST(req: NextRequest) {
             let instagram: string | null = null;
             
             // Перевіряємо custom_fields в клієнті з record події
-            if (client.custom_fields && Array.isArray(client.custom_fields) && client.custom_fields.length > 0) {
-              for (const field of client.custom_fields) {
-                if (field && typeof field === 'object') {
-                  const title = field.title || field.name || field.label || '';
-                  const value = field.value || field.data || field.content || field.text || '';
-                  
-                  if (value && typeof value === 'string' && /instagram/i.test(title)) {
-                    instagram = value.trim();
-                    break;
+            if (client.custom_fields) {
+              // Варіант 1: custom_fields - це масив об'єктів (як в API)
+              if (Array.isArray(client.custom_fields) && client.custom_fields.length > 0) {
+                for (const field of client.custom_fields) {
+                  if (field && typeof field === 'object') {
+                    const title = field.title || field.name || field.label || '';
+                    const value = field.value || field.data || field.content || field.text || '';
+                    
+                    if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                      instagram = value.trim();
+                      break;
+                    }
                   }
+                }
+              }
+              // Варіант 2: custom_fields - це об'єкт з ключами (як в webhook'ах)
+              else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+                instagram =
+                  client.custom_fields['instagram-user-name'] ||
+                  client.custom_fields['Instagram user name'] ||
+                  client.custom_fields['Instagram username'] ||
+                  client.custom_fields.instagram_user_name ||
+                  client.custom_fields.instagramUsername ||
+                  client.custom_fields.instagram ||
+                  client.custom_fields['instagram'] ||
+                  null;
+                
+                if (instagram && typeof instagram === 'string') {
+                  instagram = instagram.trim();
                 }
               }
             }
