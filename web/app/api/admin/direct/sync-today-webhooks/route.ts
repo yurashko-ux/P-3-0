@@ -175,20 +175,25 @@ export async function POST(req: NextRequest) {
         const existingClientByAltegioId = await getDirectClientByAltegioId(parseInt(String(clientId), 10));
         
         if (existingClientByAltegioId) {
-          normalizedInstagram = existingClientByAltegioId.instagramUsername;
-          if (normalizedInstagram.startsWith('missing_instagram_')) {
-            isMissingInstagram = true;
-            if (instagram) {
-              const normalizedFromWebhook = normalizeInstagram(instagram);
-              if (normalizedFromWebhook) {
-                normalizedInstagram = normalizedFromWebhook;
-                isMissingInstagram = false;
-              }
+          // Якщо клієнт існує, але в webhook є новий Instagram - використовуємо його (пріоритет webhook'у)
+          if (instagram) {
+            const normalizedFromWebhook = normalizeInstagram(instagram);
+            if (normalizedFromWebhook) {
+              normalizedInstagram = normalizedFromWebhook;
+              isMissingInstagram = false;
+              console.log(`[sync-today-webhooks] ✅ Found Instagram in webhook for existing client ${clientId}: ${normalizedInstagram} (updating from ${existingClientByAltegioId.instagramUsername})`);
+            } else {
+              // Якщо Instagram з webhook'а невалідний, використовуємо старий
+              normalizedInstagram = existingClientByAltegioId.instagramUsername;
+              isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
             }
+          } else {
+            // Якщо в webhook немає Instagram, використовуємо існуючий
+            normalizedInstagram = existingClientByAltegioId.instagramUsername;
+            isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
           }
-        }
-
-        if (!normalizedInstagram || (!existingClientByAltegioId && !instagram)) {
+        } else {
+          // Клієнта не знайдено - обробляємо Instagram з вебхука
           if (!instagram) {
             isMissingInstagram = true;
             normalizedInstagram = `missing_instagram_${clientId}`;
@@ -197,6 +202,8 @@ export async function POST(req: NextRequest) {
             if (!normalizedInstagram) {
               isMissingInstagram = true;
               normalizedInstagram = `missing_instagram_${clientId}`;
+            } else {
+              isMissingInstagram = false;
             }
           }
         }

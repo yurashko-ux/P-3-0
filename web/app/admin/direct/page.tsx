@@ -796,6 +796,47 @@ export default function DirectPage() {
             📥 Завантажити з Altegio
           </button>
           <button
+            className="btn btn-sm btn-info"
+            onClick={async () => {
+              if (!confirm('Синхронізувати клієнтів з сьогоднішніх вебхуків?\n\nБудуть оброблені всі вебхуки за сьогодні (client та record events).\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/sync-today-webhooks', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Синхронізація завершена!\n\n` +
+                    `Оброблено: ${data.processed}\n` +
+                    `Оновлено: ${data.updated}\n` +
+                    `Створено: ${data.created}\n` +
+                    `Пропущено: ${data.skipped}\n` +
+                    `Помилок: ${data.errors?.length || 0}\n\n` +
+                    (data.clients && data.clients.length > 0 
+                      ? `Клієнти:\n${data.clients.map((c: any) => 
+                          `  ${c.action === 'updated' ? '🔄' : '➕'} ${c.instagramUsername} - ${c.firstName || ''} ${c.lastName || ''} (${c.action})`
+                        ).join('\n')}\n\n`
+                      : '') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Синхронізувати клієнтів з сьогоднішніх вебхуків Altegio"
+          >
+            🔄 Синхронізувати сьогоднішні вебхуки
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
