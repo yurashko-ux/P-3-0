@@ -291,21 +291,78 @@ export async function POST(req: NextRequest) {
               state: clientState,
             });
             
-            // Якщо знайдено дублікат, видаляємо його
+            // Якщо знайдено дублікат, перевіряємо, чи можна його видалити
             if (duplicateClientId) {
               try {
-                const { deleteDirectClient } = await import('@/lib/direct-store');
-                await deleteDirectClient(duplicateClientId);
-                console.log(`[sync-today-webhooks] ✅ Deleted duplicate client ${duplicateClientId}`);
-                results.clients.push({
-                  id: duplicateClientId,
-                  instagramUsername: 'DELETED_DUPLICATE',
-                  action: 'deleted',
-                  state: 'deleted',
-                });
+                const duplicateClient = existingDirectClients.find((c) => c.id === duplicateClientId);
+                if (duplicateClient) {
+                  // Перевіряємо, чи є у дубліката записи (state logs, дати візитів тощо)
+                  const { getStateHistory } = await import('@/lib/direct-state-log');
+                  const duplicateHistory = await getStateHistory(duplicateClientId);
+                  const hasRecords = 
+                    duplicateHistory.length > 1 || // Є записи в історії (більше ніж поточний стан)
+                    duplicateClient.paidServiceDate ||
+                    duplicateClient.consultationBookingDate ||
+                    duplicateClient.consultationDate ||
+                    duplicateClient.visitDate ||
+                    duplicateClient.lastMessageAt;
+                  
+                  if (hasRecords) {
+                    // У дубліката є записи - не видаляємо, а оновлюємо його замість основного клієнта
+                    console.log(`[sync-today-webhooks] ⚠️ Duplicate client ${duplicateClientId} has records, keeping it instead of ${existingClientId}`);
+                    
+                    // Видаляємо "основного" клієнта і залишаємо дубліката
+                    const { deleteDirectClient } = await import('@/lib/direct-store');
+                    await deleteDirectClient(existingClientId);
+                    console.log(`[sync-today-webhooks] ✅ Deleted client ${existingClientId} (no records), kept ${duplicateClientId} (has records)`);
+                    
+                    // Оновлюємо дубліката з новими даними
+                    const clientState = 'client' as const;
+                    const updatedDuplicate = {
+                      ...duplicateClient,
+                      altegioClientId: parseInt(String(clientId), 10),
+                      instagramUsername: normalizedInstagram,
+                      state: clientState,
+                      ...(firstName && { firstName }),
+                      ...(lastName && { lastName }),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    const { saveDirectClient } = await import('@/lib/direct-store');
+                    await saveDirectClient(updatedDuplicate);
+                    
+                    // Оновлюємо results - замінюємо updated на правильний ID
+                    results.clients = results.clients.filter((c: any) => c.id !== existingClientId);
+                    results.clients.push({
+                      id: updatedDuplicate.id,
+                      instagramUsername: normalizedInstagram,
+                      firstName,
+                      lastName,
+                      altegioClientId: clientId,
+                      action: 'updated',
+                      state: clientState,
+                    });
+                    results.clients.push({
+                      id: existingClientId,
+                      instagramUsername: 'DELETED_NO_RECORDS',
+                      action: 'deleted',
+                      state: 'deleted',
+                    });
+                  } else {
+                    // У дубліката немає записів - можна видалити
+                    const { deleteDirectClient } = await import('@/lib/direct-store');
+                    await deleteDirectClient(duplicateClientId);
+                    console.log(`[sync-today-webhooks] ✅ Deleted duplicate client ${duplicateClientId} (no records)`);
+                    results.clients.push({
+                      id: duplicateClientId,
+                      instagramUsername: 'DELETED_DUPLICATE',
+                      action: 'deleted',
+                      state: 'deleted',
+                    });
+                  }
+                }
               } catch (deleteErr) {
-                console.error(`[sync-today-webhooks] ❌ Failed to delete duplicate client ${duplicateClientId}:`, deleteErr);
-                results.errors.push(`Failed to delete duplicate client ${duplicateClientId}: ${deleteErr instanceof Error ? deleteErr.message : String(deleteErr)}`);
+                console.error(`[sync-today-webhooks] ❌ Failed to process duplicate client ${duplicateClientId}:`, deleteErr);
+                results.errors.push(`Failed to process duplicate client ${duplicateClientId}: ${deleteErr instanceof Error ? deleteErr.message : String(deleteErr)}`);
               }
             }
           }
