@@ -1410,41 +1410,42 @@ export async function POST(req: NextRequest) {
           const existingClientByAltegioId = await getDirectClientByAltegioId(parseInt(String(clientId), 10));
           
           if (existingClientByAltegioId) {
-            // Якщо клієнт існує, використовуємо його Instagram username
-            normalizedInstagram = existingClientByAltegioId.instagramUsername;
-            // Якщо це тимчасовий username, все одно вважаємо, що Instagram відсутній
-            if (normalizedInstagram.startsWith('missing_instagram_')) {
-              isMissingInstagram = true;
-              // Але якщо в вебхуку є Instagram, використовуємо його
-              if (instagram) {
-                const normalizedFromWebhook = normalizeInstagram(instagram);
-                if (normalizedFromWebhook) {
-                  normalizedInstagram = normalizedFromWebhook;
-                  isMissingInstagram = false;
-                  console.log(`[altegio/webhook] ✅ Found Instagram in webhook for client ${clientId}: ${normalizedInstagram}`);
-                }
+            // Якщо клієнт існує, але в webhook є новий Instagram - використовуємо його (пріоритет webhook'у)
+            if (instagram) {
+              const normalizedFromWebhook = normalizeInstagram(instagram);
+              if (normalizedFromWebhook) {
+                normalizedInstagram = normalizedFromWebhook;
+                isMissingInstagram = false;
+                console.log(`[altegio/webhook] ✅ Found Instagram in webhook for existing client ${clientId}: ${normalizedInstagram} (updating from ${existingClientByAltegioId.instagramUsername})`);
+              } else {
+                // Якщо Instagram з webhook'а невалідний, використовуємо старий
+                normalizedInstagram = existingClientByAltegioId.instagramUsername;
+                isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
+                console.log(`[altegio/webhook] ⚠️ Invalid Instagram in webhook for client ${clientId}, keeping existing: ${normalizedInstagram}`);
               }
             } else {
+              // Якщо в webhook немає Instagram, використовуємо існуючий
+              normalizedInstagram = existingClientByAltegioId.instagramUsername;
+              isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
               usingSavedLink = true;
               console.log(`[altegio/webhook] ✅ Using saved Instagram link for client ${clientId}: ${normalizedInstagram}`);
             }
-          }
-
-          // Якщо не знайшли збережений зв'язок, обробляємо Instagram з вебхука
-          if (!normalizedInstagram || (!usingSavedLink && !instagram)) {
+          } else {
+            // Клієнта не знайдено - обробляємо Instagram з вебхука
             if (!instagram) {
               console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
               isMissingInstagram = true;
               normalizedInstagram = `missing_instagram_${clientId}`;
             } else {
-              console.log(`[altegio/webhook] ✅ Extracted Instagram for client ${clientId}: ${instagram}`);
+              console.log(`[altegio/webhook] ✅ Extracted Instagram for new client ${clientId}: ${instagram}`);
               normalizedInstagram = normalizeInstagram(instagram);
               if (!normalizedInstagram) {
                 console.log(`[altegio/webhook] ⚠️ Invalid Instagram username for client ${clientId}: ${instagram}, creating with temporary username`);
                 isMissingInstagram = true;
                 normalizedInstagram = `missing_instagram_${clientId}`;
               } else {
-                console.log(`[altegio/webhook] ✅ Normalized Instagram for client ${clientId}: ${normalizedInstagram}`);
+                isMissingInstagram = false;
+                console.log(`[altegio/webhook] ✅ Normalized Instagram for new client ${clientId}: ${normalizedInstagram}`);
               }
             }
           }
