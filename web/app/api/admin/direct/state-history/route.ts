@@ -34,35 +34,50 @@ export async function GET(req: NextRequest) {
     // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
     const isManychatClient = !clientInfo?.altegioClientId;
     
-    // Фільтруємо записи: "no-instagram" + "lead" для Altegio клієнтів
-    const filteredHistory = info.history.filter(log => {
-      if (log.state === 'no-instagram') return false;
-      // Для Altegio клієнтів - видаляємо ВСІ "lead"
-      if (log.state === 'lead' && !isManychatClient) return false;
-      return true;
-    });
+    // Спочатку видаляємо "no-instagram"
+    let filteredHistory = info.history.filter(log => log.state !== 'no-instagram');
+    
+    // Фільтруємо "lead" та "client" - залишаємо тільки найстаріші
+    const sortedHistory = [...filteredHistory].sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    
+    // Розділяємо на категорії
+    const leadLogs = sortedHistory.filter(log => log.state === 'lead');
+    const clientLogs = sortedHistory.filter(log => log.state === 'client');
+    const otherLogs = sortedHistory.filter(log => 
+      log.state !== 'lead' && log.state !== 'client'
+    );
+    
+    const finalFilteredHistory: typeof sortedHistory = [];
     
     // Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
-    if (isManychatClient) {
-      const sortedHistory = [...filteredHistory].sort((a, b) => 
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    if (isManychatClient && leadLogs.length > 0) {
+      const oldestLead = leadLogs[0]; // Найстаріший "lead"
+      // Перевіряємо, чи є стани старіші за "lead"
+      const olderThanLead = otherLogs.filter(log => 
+        new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
       );
-      const firstLeadIndex = sortedHistory.findIndex(log => log.state === 'lead');
-      const finalFilteredHistory = sortedHistory.filter((log, index) => {
-        if (log.state === 'lead') {
-          return index === firstLeadIndex; // Залишаємо тільки найстаріший "lead"
-        }
-        return true;
-      });
-      // Пересортовуємо назад за датою (від новіших до старіших)
-      finalFilteredHistory.sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      // Використовуємо відфільтровану історію
-      const tempFiltered = finalFilteredHistory;
-      // Замінюємо filteredHistory на відфільтровану версію
-      // (продовжуємо з filteredHistory, але замінимо її пізніше)
+      // Якщо "lead" найстаріший - додаємо його
+      if (olderThanLead.length === 0) {
+        finalFilteredHistory.push(oldestLead);
+      }
     }
+    
+    // Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
+    if (clientLogs.length > 0) {
+      finalFilteredHistory.push(clientLogs[0]); // Тільки найстаріший "client"
+    }
+    
+    // Додаємо всі інші стани
+    finalFilteredHistory.push(...otherLogs);
+    
+    // Пересортовуємо назад за датою (від новіших до старіших)
+    finalFilteredHistory.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    
+    filteredHistory = finalFilteredHistory;
     
     const historyWithMasters = await Promise.all(
       filteredHistory.map(async (log) => {

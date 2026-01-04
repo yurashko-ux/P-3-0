@@ -301,12 +301,16 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                     );
                     
-                    // Розділяємо на "lead" та інші стани
+                    // Розділяємо на "lead", "client" та інші стани
                     const leadLogs = sortedHistory.filter(log => log.state === 'lead');
-                    const otherLogs = sortedHistory.filter(log => log.state !== 'lead' && log.state !== 'no-instagram');
+                    const clientLogs = sortedHistory.filter(log => log.state === 'client');
+                    const otherLogs = sortedHistory.filter(log => 
+                      log.state !== 'lead' && log.state !== 'client' && log.state !== 'no-instagram'
+                    );
                     
                     // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
                     // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
+                    // для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
                     let filteredHistory: typeof sortedHistory = [];
                     
                     if (isManychatClient && leadLogs.length > 0) {
@@ -323,6 +327,11 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                         filteredHistory.push(oldestLead);
                       }
                       // Якщо є стани старіші - не показуємо "lead"
+                    }
+                    
+                    // Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
+                    if (clientLogs.length > 0) {
+                      filteredHistory.push(clientLogs[0]); // Тільки найстаріший "client"
                     }
                     
                     // Додаємо всі інші стани (без "no-instagram")
