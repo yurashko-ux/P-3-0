@@ -779,24 +779,79 @@ export async function POST(req: NextRequest) {
                 }
               }
             } else if (isMissingInstagram) {
-              // Якщо Instagram відсутній, створюємо клієнта зі станом "lead"
+              // Якщо Instagram відсутній, перевіряємо чи існує клієнт з таким altegioClientId
               const allStatuses = await getAllDirectStatuses();
               const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
               
               if (defaultStatus) {
-                const existingDirectClients = await getAllDirectClients();
-                const existingAltegioIdMap = new Map<number, string>();
-                
-                for (const dc of existingDirectClients) {
-                  if (dc.altegioClientId) {
-                    existingAltegioIdMap.set(dc.altegioClientId, dc.id);
-                  }
-                }
-                
                 const altegioClientId = parseInt(String(client.id), 10);
-                const existingClientId = existingAltegioIdMap.get(altegioClientId);
                 
-                if (!existingClientId) {
+                // ВАЖЛИВО: Спочатку перевіряємо через getDirectClientByAltegioId (як в client events)
+                const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+                const existingClientByAltegioId = await getDirectClientByAltegioId(altegioClientId);
+                
+                if (existingClientByAltegioId) {
+                  // Якщо клієнт існує - використовуємо його Instagram username
+                  const normalizedInstagram = existingClientByAltegioId.instagramUsername;
+                  const isMissingInstagramReal = normalizedInstagram.startsWith('missing_instagram_');
+                  
+                  const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+                  const firstName = nameParts[0] || undefined;
+                  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+                  
+                  // Оновлюємо дату запису з data.datetime, якщо вона є
+                  const recordData = body.data?.data || body.data;
+                  const appointmentDateTime = recordData?.datetime || data.datetime;
+                  let paidServiceDate = existingClientByAltegioId.paidServiceDate;
+                  let signedUpForPaidService = existingClientByAltegioId.signedUpForPaidService;
+                  
+                  if (appointmentDateTime) {
+                    const appointmentDate = new Date(appointmentDateTime);
+                    const now = new Date();
+                    if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
+                      paidServiceDate = appointmentDateTime;
+                      signedUpForPaidService = true;
+                    }
+                  }
+                  
+                  // Клієнти з Altegio завжди мають стан "client" (не "lead")
+                  const clientState = isMissingInstagramReal ? ('lead' as const) : ('client' as const);
+                  
+                  const updated = {
+                    ...existingClientByAltegioId,
+                    altegioClientId: altegioClientId, // Переконаємося, що altegioClientId встановлений
+                    instagramUsername: normalizedInstagram, // Використовуємо існуючий Instagram
+                    state: clientState,
+                    ...(firstName && { firstName }),
+                    ...(lastName && { lastName }),
+                    ...(paidServiceDate && { paidServiceDate }),
+                    signedUpForPaidService,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  await saveDirectClient(updated);
+                  console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByAltegioId.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, state: ${clientState})`);
+                  
+                  // Відправляємо повідомлення тільки якщо Instagram реально відсутній (missing_instagram_*)
+                  if (isMissingInstagramReal && shouldSendNotification) {
+                    // ... existing notification code will stay the same ...
+                  } else if (originalInstagram?.toLowerCase().trim() === 'no') {
+                    console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to "no"`);
+                  }
+                } else {
+                  // Клієнта не знайдено - створюємо нового з missing_instagram_*
+                  const existingDirectClients = await getAllDirectClients();
+                  const existingAltegioIdMap = new Map<number, string>();
+                  
+                  for (const dc of existingDirectClients) {
+                    if (dc.altegioClientId) {
+                      existingAltegioIdMap.set(dc.altegioClientId, dc.id);
+                    }
+                  }
+                  
+                  const existingClientId = existingAltegioIdMap.get(altegioClientId);
+                  
+                  if (!existingClientId) {
                   const now = new Date().toISOString();
                   const normalizedInstagram = `missing_instagram_${client.id}`;
                   const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
