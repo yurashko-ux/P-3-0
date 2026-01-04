@@ -891,20 +891,23 @@ export async function POST(req: NextRequest) {
                       await saveDirectClient(updated);
                       console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByName.id} from record event (found by name, client ${client.id}, Instagram: ${normalizedInstagram}, altegioClientId: ${altegioClientId}, state: ${clientState})`);
                       // Вихід - клієнта оновлено, не створюємо нового
-                    } else {
-                      // Якщо клієнта не знайдено ні по altegioClientId, ні по імені - створюємо нового
-                      const existingDirectClients = await getAllDirectClients();
-                      const existingAltegioIdMap = new Map<number, string>();
-                      
-                      for (const dc of existingDirectClients) {
-                        if (dc.altegioClientId) {
-                          existingAltegioIdMap.set(dc.altegioClientId, dc.id);
-                        }
+                    }
+                  }
+                  
+                  // Якщо клієнта не знайдено ні по altegioClientId, ні по імені - створюємо нового
+                  if (!existingClientByName) {
+                    const existingDirectClients = await getAllDirectClients();
+                    const existingAltegioIdMap = new Map<number, string>();
+                    
+                    for (const dc of existingDirectClients) {
+                      if (dc.altegioClientId) {
+                        existingAltegioIdMap.set(dc.altegioClientId, dc.id);
                       }
-                      
-                      const existingClientId = existingAltegioIdMap.get(altegioClientId);
-                      
-                      if (!existingClientId) {
+                    }
+                    
+                    const existingClientId = existingAltegioIdMap.get(altegioClientId);
+                    
+                    if (!existingClientId) {
                   const now = new Date().toISOString();
                   const normalizedInstagram = `missing_instagram_${client.id}`;
                   const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
