@@ -832,19 +832,79 @@ export async function POST(req: NextRequest) {
                   await saveDirectClient(updated);
                   console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByAltegioId.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, state: ${clientState})`);
                 } else {
-                  // Клієнта не знайдено - створюємо нового з missing_instagram_*
-                  const existingDirectClients = await getAllDirectClients();
-                  const existingAltegioIdMap = new Map<number, string>();
+                  // Клієнта не знайдено по altegioClientId - перевіряємо по імені та Instagram
+                  const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+                  const firstName = nameParts[0] || '';
+                  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
                   
-                  for (const dc of existingDirectClients) {
-                    if (dc.altegioClientId) {
-                      existingAltegioIdMap.set(dc.altegioClientId, dc.id);
-                    }
-                  }
-                  
-                  const existingClientId = existingAltegioIdMap.get(altegioClientId);
-                  
-                  if (!existingClientId) {
+                  // Шукаємо клієнта по імені (якщо воно вказане)
+                  let existingClientByName: typeof existingClientByAltegioId = null;
+                  if (firstName && lastName) {
+                    const existingDirectClients = await getAllDirectClients();
+                    // Шукаємо клієнта з таким самим іменем та прізвищем
+                    existingClientByName = existingDirectClients.find((dc) => {
+                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                      const searchFirstName = firstName.trim().toLowerCase();
+                      const searchLastName = lastName.trim().toLowerCase();
+                      
+                      return dcFirstName === searchFirstName && dcLastName === searchLastName;
+                    }) || null;
+                    
+                    if (existingClientByName) {
+                      console.log(`[altegio/webhook] 🔍 Found existing client by name "${firstName} ${lastName}": ${existingClientByName.id}, Instagram: ${existingClientByName.instagramUsername}, altegioClientId: ${existingClientByName.altegioClientId || 'none'}`);
+                      
+                      // Якщо знайдено клієнта по імені - використовуємо його Instagram username
+                      const normalizedInstagram = existingClientByName.instagramUsername;
+                      const isMissingInstagramReal = normalizedInstagram.startsWith('missing_instagram_');
+                      
+                      // Оновлюємо дату запису з data.datetime, якщо вона є
+                      const recordData = body.data?.data || body.data;
+                      const appointmentDateTime = recordData?.datetime || data.datetime;
+                      let paidServiceDate = existingClientByName.paidServiceDate;
+                      let signedUpForPaidService = existingClientByName.signedUpForPaidService;
+                      
+                      if (appointmentDateTime) {
+                        const appointmentDate = new Date(appointmentDateTime);
+                        const now = new Date();
+                        if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
+                          paidServiceDate = appointmentDateTime;
+                          signedUpForPaidService = true;
+                        }
+                      }
+                      
+                      // Встановлюємо altegioClientId, якщо його ще немає
+                      const clientState = isMissingInstagramReal ? ('lead' as const) : ('client' as const);
+                      
+                      const updated = {
+                        ...existingClientByName,
+                        altegioClientId: altegioClientId, // Встановлюємо altegioClientId
+                        instagramUsername: normalizedInstagram, // Використовуємо існуючий Instagram
+                        state: clientState,
+                        ...(firstName && { firstName }),
+                        ...(lastName && { lastName }),
+                        ...(paidServiceDate && { paidServiceDate }),
+                        signedUpForPaidService,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      
+                      await saveDirectClient(updated);
+                      console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByName.id} from record event (found by name, client ${client.id}, Instagram: ${normalizedInstagram}, altegioClientId: ${altegioClientId}, state: ${clientState})`);
+                      // Вихід - клієнта оновлено, не створюємо нового
+                    } else {
+                      // Якщо клієнта не знайдено ні по altegioClientId, ні по імені - створюємо нового
+                      const existingDirectClients = await getAllDirectClients();
+                      const existingAltegioIdMap = new Map<number, string>();
+                      
+                      for (const dc of existingDirectClients) {
+                        if (dc.altegioClientId) {
+                          existingAltegioIdMap.set(dc.altegioClientId, dc.id);
+                        }
+                      }
+                      
+                      const existingClientId = existingAltegioIdMap.get(altegioClientId);
+                      
+                      if (!existingClientId) {
                   const now = new Date().toISOString();
                   const normalizedInstagram = `missing_instagram_${client.id}`;
                   const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
