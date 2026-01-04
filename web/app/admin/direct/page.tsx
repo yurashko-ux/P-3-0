@@ -918,6 +918,46 @@ export default function DirectPage() {
           </button>
           <button
             className="btn btn-sm btn-warning"
+            disabled={isLoading}
+            onClick={async () => {
+              if (!confirm('Об\'єднати дублікати клієнтів по імені?\n\nЦе знайде всіх клієнтів з однаковим іменем та прізвищем і об\'єднає їх в один запис.\n\nКлієнта з правильним Instagram (не missing_instagram_*) та з записами буде залишено.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/merge-duplicates-by-name', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Об'єднання дублікатів завершено!\n\n` +
+                    `Груп оброблено: ${data.totalGroups || 0}\n` +
+                    `Дублікатів об'єднано: ${data.totalMerged || 0}\n\n` +
+                    (data.results && data.results.length > 0
+                      ? `Об'єднані клієнти:\n${data.results.map((r: any) => 
+                          `${r.name}:\n${r.duplicates.map((d: any) => 
+                            `  ${d.kept ? '✅ Залишено' : '🗑️ Видалено'}: ${d.instagramUsername} (${d.altegioClientId || 'N/A'})`
+                          ).join('\n')}`
+                        ).join('\n\n')}\n\n`
+                      : '') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            title="Об'єднати дублікати клієнтів з однаковим іменем та прізвищем"
+          >
+            🔗 Об'єднати дублікати по імені
+          </button>
+          <button
+            className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
                 return;
