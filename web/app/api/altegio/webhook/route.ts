@@ -831,13 +831,6 @@ export async function POST(req: NextRequest) {
                   
                   await saveDirectClient(updated);
                   console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByAltegioId.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, state: ${clientState})`);
-                  
-                  // Відправляємо повідомлення тільки якщо Instagram реально відсутній (missing_instagram_*)
-                  if (isMissingInstagramReal && shouldSendNotification) {
-                    // ... existing notification code will stay the same ...
-                  } else if (originalInstagram?.toLowerCase().trim() === 'no') {
-                    console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to "no"`);
-                  }
                 } else {
                   // Клієнта не знайдено - створюємо нового з missing_instagram_*
                   const existingDirectClients = await getAllDirectClients();
