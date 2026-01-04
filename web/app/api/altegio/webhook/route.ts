@@ -394,6 +394,8 @@ export async function POST(req: NextRequest) {
                       consultationMasterId: master.id,
                       consultationMasterName: master.name,
                       consultationDate: datetime, // Дата фактичної консультації
+                      // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
+                      consultationBookingDate: existingClient.consultationBookingDate || datetime,
                       masterId: master.id, // Оновлюємо відповідального
                       masterManuallySet: false, // Автоматичне призначення
                       updatedAt: new Date().toISOString(),
