@@ -325,7 +325,14 @@ export async function POST(req: NextRequest) {
                   
                   // Обробка запису на консультацію (ПЕРША консультація)
                   if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
-                    const { DirectClient } = await import('@/lib/direct-types');
+                    type DirectClient = typeof updated & {
+                      state?: 'consultation-booked' | 'consultation' | 'consultation-no-show' | 'consultation-rescheduled';
+                      consultationBookingDate?: string;
+                      consultationAttended?: boolean;
+                      consultationMasterId?: string;
+                      consultationMasterName?: string;
+                      consultationDate?: string;
+                    };
                     const consultationUpdates: Partial<DirectClient> = {
                       state: 'consultation-booked',
                       consultationBookingDate: datetime,
@@ -349,7 +356,14 @@ export async function POST(req: NextRequest) {
                   else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
                     const master = await getMasterByName(staffName);
                     if (master) {
-                      const { DirectClient } = await import('@/lib/direct-types');
+                      type DirectClient = typeof updated & {
+                        state?: 'consultation-booked' | 'consultation' | 'consultation-no-show' | 'consultation-rescheduled';
+                        consultationBookingDate?: string;
+                        consultationAttended?: boolean;
+                        consultationMasterId?: string;
+                        consultationMasterName?: string;
+                        consultationDate?: string;
+                      };
                       const consultationUpdates: Partial<DirectClient> = {
                         state: 'consultation',
                         consultationAttended: true,
