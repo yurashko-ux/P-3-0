@@ -971,6 +971,7 @@ export async function POST(req: NextRequest) {
                   } else if (originalInstagram?.toLowerCase().trim() === 'no') {
                     console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to "no"`);
                   }
+                  }
                 }
               }
             }
