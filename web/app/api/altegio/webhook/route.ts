@@ -971,45 +971,6 @@ export async function POST(req: NextRequest) {
                   } else if (originalInstagram?.toLowerCase().trim() === 'no') {
                     console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to "no"`);
                   }
-                } else {
-                  // Оновлюємо існуючого клієнта
-                  const { getDirectClient } = await import('@/lib/direct-store');
-                  const existingClient = await getDirectClient(existingClientId);
-                  if (existingClient) {
-                    const normalizedInstagram = `missing_instagram_${client.id}`;
-                    const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
-                    const firstName = nameParts[0] || undefined;
-                    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
-                    
-                    // Оновлюємо дату запису з data.datetime, якщо вона є
-                    const recordData = body.data?.data || body.data;
-                    const appointmentDateTime = recordData?.datetime || data.datetime;
-                    let paidServiceDate = existingClient.paidServiceDate;
-                    let signedUpForPaidService = existingClient.signedUpForPaidService;
-                    
-                    if (appointmentDateTime) {
-                      const appointmentDate = new Date(appointmentDateTime);
-                      const now = new Date();
-                      if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
-                        paidServiceDate = appointmentDateTime;
-                        signedUpForPaidService = true;
-                      }
-                    }
-                    
-                    const updated = {
-                      ...existingClient,
-                      altegioClientId: altegioClientId,
-                      instagramUsername: normalizedInstagram,
-                      state: 'lead' as const,
-                      ...(firstName && { firstName }),
-                      ...(lastName && { lastName }),
-                      ...(paidServiceDate && { paidServiceDate }),
-                      signedUpForPaidService,
-                      updatedAt: new Date().toISOString(),
-                    };
-                    await saveDirectClient(updated);
-                    console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from record event without Instagram (client ${client.id}, state: lead)`);
-                  }
                 }
               }
             }
