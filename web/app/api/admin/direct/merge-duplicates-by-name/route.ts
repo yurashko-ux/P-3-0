@@ -2,7 +2,6 @@
 // Об'єднання дублікатів клієнтів по імені та прізвищу
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
 
