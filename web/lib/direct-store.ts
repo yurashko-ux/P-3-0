@@ -545,6 +545,20 @@ async function hasLeadStateInHistory(clientId: string): Promise<boolean> {
 }
 
 /**
+ * Перевіряє, чи клієнт вже мав стан "client" в історії
+ */
+async function hasClientStateInHistory(clientId: string): Promise<boolean> {
+  try {
+    const { getStateHistory } = await import('@/lib/direct-state-log');
+    const history = await getStateHistory(clientId);
+    return history.some(log => log.state === 'client');
+  } catch (err) {
+    console.warn(`[direct-store] Failed to check client state history for ${clientId}:`, err);
+    return false; // У разі помилки дозволяємо встановлення "client"
+  }
+}
+
+/**
  * Зберегти клієнта
  */
 export async function saveDirectClient(
@@ -559,43 +573,53 @@ export async function saveDirectClient(
     
     // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
     // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу
+    // ПРАВИЛО 3: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
     type DirectClientState = 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
     let finalState: DirectClientState | undefined = client.state;
+    
+    // Перевіряємо, чи клієнт має altegioClientId (поточний або в базі)
+    const existingClientCheck = await prisma.directClient.findFirst({
+      where: {
+        OR: [
+          { id: client.id },
+          { instagramUsername: normalizedUsername },
+        ],
+      },
+      select: { id: true, altegioClientId: true, state: true },
+    });
+    
+    const hasAltegioId = existingClientCheck?.altegioClientId || data.altegioClientId;
+    
     if (finalState === 'lead') {
-      // Перевіряємо, чи клієнт має altegioClientId
-      const existingClient = await prisma.directClient.findFirst({
-        where: {
-          OR: [
-            { id: client.id },
-            { instagramUsername: normalizedUsername },
-          ],
-        },
-        select: { id: true, altegioClientId: true },
-      });
-      
-      if (existingClient?.altegioClientId) {
+      if (hasAltegioId) {
         // Клієнт з Altegio не може бути "lead"
         finalState = 'client';
-        console.log(`[direct-store] ⚠️ Client ${existingClient.id} has altegioClientId, changing state from 'lead' to 'client'`);
-      } else if (existingClient) {
+        console.log(`[direct-store] ⚠️ Client ${existingClientCheck?.id || client.id} has altegioClientId, changing state from 'lead' to 'client'`);
+      } else if (existingClientCheck) {
         // Перевіряємо, чи клієнт вже мав стан "lead" в історії
-        const hadLeadBefore = await hasLeadStateInHistory(existingClient.id);
+        const hadLeadBefore = await hasLeadStateInHistory(existingClientCheck.id);
         if (hadLeadBefore) {
           // Клієнт вже мав стан "lead", не дозволяємо встановити його знову
-          const currentClient = await prisma.directClient.findUnique({ 
-            where: { id: existingClient.id }, 
-            select: { state: true } 
-          });
-          const currentState = currentClient?.state as DirectClientState | null;
+          const currentState = existingClientCheck.state as DirectClientState | null;
           finalState = (currentState && ['lead', 'client', 'consultation', 'hair-extension', 'other-services', 'all-good', 'too-expensive'].includes(currentState)) 
             ? currentState 
             : 'client';
-          console.log(`[direct-store] ⚠️ Client ${existingClient.id} already had 'lead' state in history, keeping current state: ${finalState}`);
+          console.log(`[direct-store] ⚠️ Client ${existingClientCheck.id} already had 'lead' state in history, keeping current state: ${finalState}`);
         }
-      } else if (data.altegioClientId) {
-        // Новий клієнт з Altegio не може бути "lead"
-        finalState = 'client';
-        console.log(`[direct-store] ⚠️ New client with altegioClientId cannot be 'lead', setting to 'client'`);
+      }
+    } else if (finalState === 'client' && hasAltegioId) {
+      // Для Altegio клієнтів: стан "client" встановлюється тільки один раз
+      if (existingClientCheck) {
+        const hadClientBefore = await hasClientStateInHistory(existingClientCheck.id);
+        if (hadClientBefore) {
+          // Клієнт вже мав стан "client", не встановлюємо його знову
+          // Зберігаємо поточний стан клієнта
+          const currentState = existingClientCheck.state as DirectClientState | null;
+          finalState = (currentState && ['client', 'consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled', 'hair-extension', 'other-services', 'all-good', 'too-expensive', 'message'].includes(currentState)) 
+            ? currentState 
+            : 'client';
+          console.log(`[direct-store] ⚠️ Client ${existingClientCheck.id} already had 'client' state in history (Altegio client), keeping current state: ${finalState}`);
+        }
       }
     }
     
