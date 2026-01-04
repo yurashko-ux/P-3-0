@@ -837,6 +837,45 @@ export default function DirectPage() {
             🔄 Синхронізувати сьогоднішні вебхуки
           </button>
           <button
+            className="btn btn-sm btn-error"
+            onClick={async () => {
+              if (!confirm('Видалити дублікати стану "client" з історії?\n\nЦе видалить всі дублікати стану "client" для Altegio клієнтів, залишивши тільки перший (найстаріший) запис.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/remove-duplicate-client-states', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Видалення дублікатів завершено!\n\n` +
+                    `Всього клієнтів: ${data.summary.totalClients}\n` +
+                    `Клієнтів з дублікатами: ${data.summary.clientsWithDuplicates}\n` +
+                    `Всього видалено записів: ${data.summary.totalDeletedLogs}\n\n` +
+                    (data.results && data.results.length > 0
+                      ? `Клієнти з видаленими дублікатами:\n${data.results.map((r: any) => 
+                          `  ${r.instagramUsername}: видалено ${r.deletedCount} запис(ів), залишено log ${r.keptLogId}`
+                        ).join('\n')}\n\n`
+                      : '') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData(); // Перезавантажуємо дані таблиці
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Видалити дублікати стану 'client' з історії для Altegio клієнтів"
+          >
+            🗑️ Видалити дублікати стану "client"
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
