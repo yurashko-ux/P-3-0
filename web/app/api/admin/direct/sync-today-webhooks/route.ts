@@ -325,16 +325,17 @@ export async function POST(req: NextRequest) {
                   
                   // Обробка запису на консультацію (ПЕРША консультація)
                   if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
-                    const consultationUpdates: Partial<typeof updated> = {
+                    const { DirectClient } = await import('@/lib/direct-types');
+                    const consultationUpdates: Partial<DirectClient> = {
                       state: 'consultation-booked',
                       consultationBookingDate: datetime,
                       updatedAt: new Date().toISOString(),
                     };
                     
-                    const consultationUpdated: typeof updated = {
+                    const consultationUpdated: DirectClient = {
                       ...updated,
                       ...consultationUpdates,
-                    };
+                    } as DirectClient;
                     
                     await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
                       altegioClientId: clientId,
@@ -348,7 +349,8 @@ export async function POST(req: NextRequest) {
                   else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
                     const master = await getMasterByName(staffName);
                     if (master) {
-                      const consultationUpdates: Partial<typeof updated> = {
+                      const { DirectClient } = await import('@/lib/direct-types');
+                      const consultationUpdates: Partial<DirectClient> = {
                         state: 'consultation',
                         consultationAttended: true,
                         consultationMasterId: master.id,
@@ -360,10 +362,10 @@ export async function POST(req: NextRequest) {
                         updatedAt: new Date().toISOString(),
                       };
                       
-                      const consultationUpdated: typeof updated = {
+                      const consultationUpdated: DirectClient = {
                         ...updated,
                         ...consultationUpdates,
-                      };
+                      } as DirectClient;
                       
                       await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
                         altegioClientId: clientId,
