@@ -357,10 +357,12 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       // 1. Видаляємо всі "no-instagram"
       // 2. Для Altegio клієнтів - видаляємо ВСІ "lead"
       // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
+      // 4. Для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (подібно до "lead")
       const filteredLogs: DirectClientStateLog[] = [];
       
-      // Спочатку видаляємо "no-instagram" та розділяємо на "lead" та інші
+      // Спочатку видаляємо "no-instagram" та розділяємо на "lead", "client" та інші
       const leadLogs: DirectClientStateLog[] = [];
+      const clientLogs: DirectClientStateLog[] = [];
       const otherLogs: DirectClientStateLog[] = [];
       
       for (const log of logs) {
@@ -377,6 +379,12 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
         // Для Manychat клієнтів - збираємо "lead" окремо
         if (log.state === 'lead' && isManychatClient) {
           leadLogs.push(log);
+          continue;
+        }
+        
+        // Збираємо "client" окремо (для фільтрації дублікатів)
+        if (log.state === 'client') {
+          clientLogs.push(log);
           continue;
         }
         
@@ -402,6 +410,15 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
           filteredLogs.push(oldestLead);
         }
         // Якщо є стани старіші - не додаємо "lead"
+      }
+      
+      // Для ВСІХ клієнтів: залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
+      if (clientLogs.length > 0) {
+        // Сортуємо "client" від старіших до новіших
+        clientLogs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        const oldestClient = clientLogs[0]; // Найстаріший "client"
+        // Залишаємо тільки найстаріший "client"
+        filteredLogs.push(oldestClient);
       }
       
       // Додаємо всі інші стани

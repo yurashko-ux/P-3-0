@@ -195,55 +195,53 @@ export async function GET(req: NextRequest) {
       // 1. Видаляємо всі "no-instagram"
       // 2. Для Altegio клієнтів - видаляємо ВСІ "lead"
       // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
+      // 4. Для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
       const isManychatClient = !client.altegioClientId;
       
-      // Фільтруємо
-      const filteredStates = clientStates.filter(log => {
-        // Видаляємо "no-instagram"
-        if (log.state === 'no-instagram') return false;
-        
-        // Для Altegio клієнтів - видаляємо ВСІ "lead"
-        if (log.state === 'lead' && !isManychatClient) return false;
-        
-        return true;
-      });
+      // Спочатку розділяємо на категорії
+      const noInstagramLogs = clientStates.filter(log => log.state === 'no-instagram');
+      const leadLogs = clientStates.filter(log => log.state === 'lead');
+      const clientStateLogs = clientStates.filter(log => log.state === 'client');
+      const otherLogs = clientStates.filter(log => 
+        log.state !== 'no-instagram' && log.state !== 'lead' && log.state !== 'client'
+      );
       
+      // Видаляємо "no-instagram" (не використовуємо noInstagramLogs)
+      
+      // Для Altegio клієнтів - видаляємо ВСІ "lead" (не використовуємо leadLogs для Altegio)
       // Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
-      // АЛЕ: "lead" має бути найстарішим - якщо після нього є інші стани, то "lead" не є початковим
-      if (isManychatClient) {
-        const sortedForLead = [...filteredStates].sort((a, b) => 
+      let filteredLeadLogs: typeof leadLogs = [];
+      if (isManychatClient && leadLogs.length > 0) {
+        const sortedLeads = [...leadLogs].sort((a, b) => 
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
-        const leadLogs = sortedForLead.filter(log => log.state === 'lead');
-        const otherLogs = sortedForLead.filter(log => log.state !== 'lead');
+        const oldestLead = sortedLeads[0];
         
-        // Якщо є "lead", перевіряємо, чи він найстаріший
-        if (leadLogs.length > 0) {
-          const oldestLead = leadLogs[0]; // Найстаріший "lead"
-          
-          // Перевіряємо, чи є стани старіші за "lead"
-          const olderThanLead = otherLogs.filter(log => 
-            new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
-          );
-          
-          // Якщо "lead" найстаріший - залишаємо його
-          // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
-          if (olderThanLead.length === 0) {
-            // "lead" найстаріший - залишаємо його
-            clientStates = [...otherLogs, oldestLead];
-          } else {
-            // "lead" не найстаріший - не показуємо його
-            clientStates = otherLogs;
-          }
-        } else {
-          clientStates = otherLogs;
+        // Перевіряємо, чи є стани старіші за "lead"
+        const olderThanLead = otherLogs.filter(log => 
+          new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
+        );
+        
+        // Якщо "lead" найстаріший - залишаємо його
+        if (olderThanLead.length === 0) {
+          filteredLeadLogs = [oldestLead];
         }
-        
-        // Сортуємо від новіших до старіших
-        clientStates.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      } else {
-        clientStates = filteredStates;
       }
+      
+      // Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
+      let filteredClientLogs: typeof clientStateLogs = [];
+      if (clientStateLogs.length > 0) {
+        const sortedClients = [...clientStateLogs].sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        filteredClientLogs = [sortedClients[0]]; // Тільки найстаріший "client"
+      }
+      
+      // Об'єднуємо всі відфільтровані логи
+      clientStates = [...filteredLeadLogs, ...filteredClientLogs, ...otherLogs];
+      
+      // Сортуємо від новіших до старіших
+      clientStates.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
       return {
         ...client,
