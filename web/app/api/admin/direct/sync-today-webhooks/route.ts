@@ -291,6 +291,98 @@ export async function POST(req: NextRequest) {
               state: clientState,
             });
             
+            // ОБРОБКА КОНСУЛЬТАЦІЙ для record events (якщо це record event)
+            if (isRecordEvent && event.body?.data?.services && Array.isArray(event.body.data.services)) {
+              try {
+                const data = event.body.data;
+                const services = data.services;
+                const staffName = data.staff?.name || data.staff?.display_name || null;
+                const attendance = data.attendance;
+                const datetime = data.datetime;
+                
+                // Перевіряємо, чи є послуга "Консультація"
+                const hasConsultation = services.some((s: any) => {
+                  const title = s.title || s.name || '';
+                  return /консультація/i.test(title);
+                });
+                
+                if (hasConsultation && datetime) {
+                  // Імпортуємо функції для обробки консультацій
+                  const { getMasterByName } = await import('@/lib/direct-masters/store');
+                  
+                  // Перевіряємо, чи staffName є адміністратором
+                  const getAllDirectMasters = (await import('@/lib/direct-masters/store')).getAllDirectMasters;
+                  const masters = await getAllDirectMasters();
+                  const wasAdminStaff = staffName ? !!masters.find(m => 
+                    m.name === staffName && (m.role === 'admin' || m.role === 'direct-manager')
+                  ) : false;
+                  
+                  // Перевіряємо, чи в історії станів клієнта вже є консультації
+                  const { getStateHistory } = await import('@/lib/direct-state-log');
+                  const history = await getStateHistory(updated.id);
+                  const consultationStates = ['consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+                  const hadConsultationBefore = history.some(log => consultationStates.includes(log.state || ''));
+                  
+                  // Обробка запису на консультацію (ПЕРША консультація)
+                  if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
+                    const consultationUpdates: Partial<typeof updated> = {
+                      state: 'consultation-booked',
+                      consultationBookingDate: datetime,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    
+                    const consultationUpdated: typeof updated = {
+                      ...updated,
+                      ...consultationUpdates,
+                    };
+                    
+                    await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
+                      altegioClientId: clientId,
+                      staffName,
+                      datetime,
+                    });
+                    
+                    console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id}`);
+                  }
+                  // Обробка приходу клієнта на консультацію (ПЕРША консультація)
+                  else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
+                    const master = await getMasterByName(staffName);
+                    if (master) {
+                      const consultationUpdates: Partial<typeof updated> = {
+                        state: 'consultation',
+                        consultationAttended: true,
+                        consultationMasterId: master.id,
+                        consultationMasterName: master.name,
+                        consultationDate: datetime,
+                        consultationBookingDate: updated.consultationBookingDate || datetime,
+                        masterId: master.id,
+                        masterManuallySet: false,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      
+                      const consultationUpdated: typeof updated = {
+                        ...updated,
+                        ...consultationUpdates,
+                      };
+                      
+                      await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
+                        altegioClientId: clientId,
+                        staffName,
+                        masterId: master.id,
+                        masterName: master.name,
+                        datetime,
+                      });
+                      
+                      console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
+                    }
+                  }
+                }
+              } catch (consultationErr) {
+                console.error(`[sync-today-webhooks] ⚠️ Failed to process consultation logic:`, consultationErr);
+                // Не зупиняємо обробку через помилку
+              }
+            }
+            
             // Якщо знайдено дублікат, перевіряємо, чи можна його видалити
             if (duplicateClientId) {
               try {
