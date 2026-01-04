@@ -325,24 +325,16 @@ export async function POST(req: NextRequest) {
                   
                   // Обробка запису на консультацію (ПЕРША консультація)
                   if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
-                    type DirectClient = typeof updated & {
-                      state?: 'consultation-booked' | 'consultation' | 'consultation-no-show' | 'consultation-rescheduled';
-                      consultationBookingDate?: string;
-                      consultationAttended?: boolean;
-                      consultationMasterId?: string;
-                      consultationMasterName?: string;
-                      consultationDate?: string;
-                    };
-                    const consultationUpdates: Partial<DirectClient> = {
-                      state: 'consultation-booked',
+                    const consultationUpdates = {
+                      state: 'consultation-booked' as const,
                       consultationBookingDate: datetime,
                       updatedAt: new Date().toISOString(),
                     };
                     
-                    const consultationUpdated: DirectClient = {
+                    const consultationUpdated = {
                       ...updated,
                       ...consultationUpdates,
-                    } as DirectClient;
+                    };
                     
                     await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
                       altegioClientId: clientId,
@@ -356,16 +348,8 @@ export async function POST(req: NextRequest) {
                   else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
                     const master = await getMasterByName(staffName);
                     if (master) {
-                      type DirectClient = typeof updated & {
-                        state?: 'consultation-booked' | 'consultation' | 'consultation-no-show' | 'consultation-rescheduled';
-                        consultationBookingDate?: string;
-                        consultationAttended?: boolean;
-                        consultationMasterId?: string;
-                        consultationMasterName?: string;
-                        consultationDate?: string;
-                      };
-                      const consultationUpdates: Partial<DirectClient> = {
-                        state: 'consultation',
+                      const consultationUpdates = {
+                        state: 'consultation' as const,
                         consultationAttended: true,
                         consultationMasterId: master.id,
                         consultationMasterName: master.name,
@@ -376,10 +360,10 @@ export async function POST(req: NextRequest) {
                         updatedAt: new Date().toISOString(),
                       };
                       
-                      const consultationUpdated: DirectClient = {
+                      const consultationUpdated = {
                         ...updated,
                         ...consultationUpdates,
-                      } as DirectClient;
+                      };
                       
                       await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
                         altegioClientId: clientId,
