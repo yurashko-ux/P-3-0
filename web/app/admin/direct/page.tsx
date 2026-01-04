@@ -878,6 +878,47 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/diagnose-duplicate-client-states');
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `🔍 Діагностика дублікатів стану "client":\n\n` +
+                    `Всього клієнтів: ${data.totalClients}\n` +
+                    `Клієнтів з дублікатами: ${data.clientsWithDuplicateClientStates}\n\n` +
+                    (data.duplicates && data.duplicates.length > 0
+                      ? `Клієнти з дублікатами:\n${data.duplicates.map((d: any) => 
+                          `\n${d.instagramUsername} (${d.name})\n` +
+                          `  Altegio ID: ${d.altegioClientId || 'N/A'}\n` +
+                          `  Поточний стан: ${d.currentState}\n` +
+                          `  Дублікатів "client": ${d.duplicateCount}\n` +
+                          `  Логи:\n${d.duplicateLogs.map((log: any) => 
+                            `    - ${log.createdAt} (${log.reason || 'N/A'}) ID: ${log.id}`
+                          ).join('\n')}\n` +
+                          `  Всі стани:\n${d.allStates.map((s: any) => 
+                            `    - ${s.state} (${s.createdAt}) [${s.reason || 'N/A'}]`
+                          ).join('\n')}`
+                        ).join('\n\n')}\n\n`
+                      : 'Дублікатів не знайдено.\n\n') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Діагностика дублікатів стану 'client' в базі даних"
+          >
+            🔍 Діагностика дублікатів "client"
+          </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
                 return;
               }
