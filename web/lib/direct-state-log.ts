@@ -89,6 +89,41 @@ export async function logStateChange(
       }
     }
 
+    // ПРАВИЛО: Запобігаємо дублікатам станів "client" та "lead"
+    // Перевіряємо ПІСЛЯ перевірки існування таблиці
+    if (newState === 'client' || newState === 'lead') {
+      // Отримуємо інформацію про клієнта
+      const client = await prisma.directClient.findUnique({
+        where: { id: clientId },
+        select: { altegioClientId: true },
+      });
+
+      const isManychatClient = !client?.altegioClientId;
+
+      // Перевіряємо, чи клієнт вже має такий стан в історії
+      const existingHistory = await prisma.directClientStateLog.findMany({
+        where: {
+          clientId,
+          state: newState,
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      });
+
+      if (existingHistory.length > 0) {
+        // Клієнт вже має такий стан в історії
+        if (newState === 'client') {
+          console.log(`[direct-state-log] ⚠️ Skipping duplicate 'client' state log for client ${clientId} (already exists in history)`);
+          return;
+        } else if (newState === 'lead' && isManychatClient) {
+          // Для Manychat клієнтів: "lead" може бути тільки один раз
+          console.log(`[direct-state-log] ⚠️ Skipping duplicate 'lead' state log for Manychat client ${clientId} (already exists in history)`);
+          return;
+        }
+        // Для Altegio клієнтів "lead" не повинно бути взагалі, але це вже перевіряється в saveDirectClient
+      }
+    }
+
     await prisma.directClientStateLog.create({
       data: {
         id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
