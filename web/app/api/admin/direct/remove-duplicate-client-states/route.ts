@@ -83,14 +83,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const altegioClientsCount = results.filter(r => r.isAltegioClient).length;
+    
     return NextResponse.json({
       ok: true,
-      message: `Processed ${altegioClients.length} Altegio clients`,
+      message: `Processed ${allClients.length} clients`,
       clientsWithDuplicates: results.length,
       results,
       summary: {
-        totalClients: altegioClients.length,
+        totalClients: allClients.length,
         clientsWithDuplicates: results.length,
+        altegioClientsWithDuplicates: altegioClientsCount,
         totalDeletedLogs: results.reduce((sum, r) => sum + r.deletedCount, 0),
       },
     });
