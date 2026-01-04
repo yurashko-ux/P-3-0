@@ -383,40 +383,52 @@ export async function POST(req: NextRequest) {
                     console.log(`[altegio/webhook] ✅ Set consultation-rescheduled state (after no-show) for client ${existingClient.id}`);
                   }
                 }
-                // 2.5 Обробка приходу клієнта на консультацію (ПЕРША консультація)
-                else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
-                  // Знаходимо майстра
-                  const master = await getMasterByName(staffName);
-                  if (master) {
-                    const updates: Partial<typeof existingClient> = {
-                      state: 'consultation',
-                      consultationAttended: true,
-                      consultationMasterId: master.id,
-                      consultationMasterName: master.name,
-                      consultationDate: datetime, // Дата фактичної консультації
-                      // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
-                      consultationBookingDate: existingClient.consultationBookingDate || datetime,
-                      masterId: master.id, // Оновлюємо відповідального
-                      masterManuallySet: false, // Автоматичне призначення
-                      updatedAt: new Date().toISOString(),
-                    };
-                    
-                    const updated: typeof existingClient = {
-                      ...existingClient,
-                      ...updates,
-                    };
-                    
-                    await saveDirectClient(updated, 'altegio-webhook-consultation-attended', {
-                      altegioClientId: clientId,
-                      staffName,
-                      masterId: master.id,
-                      masterName: master.name,
-                      datetime,
-                    });
-                    
-                    console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
+                // 2.5 Обробка приходу клієнта на консультацію
+                // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
+                // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
+                else if (attendance === 1 && !wasAdminStaff && staffName) {
+                  // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
+                  const { getStateHistory } = await import('@/lib/direct-state-log');
+                  const history = await getStateHistory(existingClient.id);
+                  const hasActualConsultation = history.some(log => log.state === 'consultation');
+                  
+                  // Якщо ще немає фактичної консультації в історії, встановлюємо
+                  if (!hasActualConsultation) {
+                    // Знаходимо майстра
+                    const master = await getMasterByName(staffName);
+                    if (master) {
+                      const updates: Partial<typeof existingClient> = {
+                        state: 'consultation',
+                        consultationAttended: true,
+                        consultationMasterId: master.id,
+                        consultationMasterName: master.name,
+                        consultationDate: datetime, // Дата фактичної консультації
+                        // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
+                        consultationBookingDate: existingClient.consultationBookingDate || datetime,
+                        masterId: master.id, // Оновлюємо відповідального
+                        masterManuallySet: false, // Автоматичне призначення
+                        updatedAt: new Date().toISOString(),
+                      };
+                      
+                      const updated: typeof existingClient = {
+                        ...existingClient,
+                        ...updates,
+                      };
+                      
+                      await saveDirectClient(updated, 'altegio-webhook-consultation-attended', {
+                        altegioClientId: clientId,
+                        staffName,
+                        masterId: master.id,
+                        masterName: master.name,
+                        datetime,
+                      });
+                      
+                      console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
+                    } else {
+                      console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
+                    }
                   } else {
-                    console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
+                    console.log(`[altegio/webhook] ⏭️ Client ${existingClient.id} already has consultation state in history, skipping`);
                   }
                 }
               }

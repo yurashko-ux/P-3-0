@@ -344,36 +344,48 @@ export async function POST(req: NextRequest) {
                     
                     console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id}`);
                   }
-                  // Обробка приходу клієнта на консультацію (ПЕРША консультація)
-                  else if (attendance === 1 && !wasAdminStaff && !hadConsultationBefore && staffName) {
-                    const master = await getMasterByName(staffName);
-                    if (master) {
-                      const consultationUpdates = {
-                        state: 'consultation' as const,
-                        consultationAttended: true,
-                        consultationMasterId: master.id,
-                        consultationMasterName: master.name,
-                        consultationDate: datetime,
-                        consultationBookingDate: updated.consultationBookingDate || datetime,
-                        masterId: master.id,
-                        masterManuallySet: false,
-                        updatedAt: new Date().toISOString(),
-                      };
-                      
-                      const consultationUpdated = {
-                        ...updated,
-                        ...consultationUpdates,
-                      };
-                      
-                      await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
-                        altegioClientId: clientId,
-                        staffName,
-                        masterId: master.id,
-                        masterName: master.name,
-                        datetime,
-                      });
-                      
-                      console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
+                  // Обробка приходу клієнта на консультацію
+                  // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
+                  // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
+                  else if (attendance === 1 && !wasAdminStaff && staffName) {
+                    // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
+                    const { getStateHistory } = await import('@/lib/direct-state-log');
+                    const history = await getStateHistory(updated.id);
+                    const hasActualConsultation = history.some(log => log.state === 'consultation');
+                    
+                    // Якщо ще немає фактичної консультації в історії, встановлюємо
+                    if (!hasActualConsultation) {
+                      const master = await getMasterByName(staffName);
+                      if (master) {
+                        const consultationUpdates = {
+                          state: 'consultation' as const,
+                          consultationAttended: true,
+                          consultationMasterId: master.id,
+                          consultationMasterName: master.name,
+                          consultationDate: datetime,
+                          consultationBookingDate: updated.consultationBookingDate || datetime,
+                          masterId: master.id,
+                          masterManuallySet: false,
+                          updatedAt: new Date().toISOString(),
+                        };
+                        
+                        const consultationUpdated = {
+                          ...updated,
+                          ...consultationUpdates,
+                        };
+                        
+                        await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
+                          altegioClientId: clientId,
+                          staffName,
+                          masterId: master.id,
+                          masterName: master.name,
+                          datetime,
+                        });
+                        
+                        console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
+                      }
+                    } else {
+                      console.log(`[sync-today-webhooks] ⏭️ Client ${updated.id} already has consultation state in history, skipping`);
                     }
                   }
                 }
