@@ -732,9 +732,11 @@ export function DirectClientTable({
                               
                               // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
                               // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
+                              // для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
                               // ВИДАЛЯЄМО ВСІ "no-instagram" (це були червоні квадрати, які потім стали чорними лійками)
                               const filteredStates: typeof sortedStates = [];
                               const leadLogs: typeof sortedStates = [];
+                              const clientLogs: typeof sortedStates = [];
                               const otherLogs: typeof sortedStates = [];
                               
                               for (let i = 0; i < sortedStates.length; i++) {
@@ -752,6 +754,9 @@ export function DirectClientTable({
                                   }
                                   // Для Manychat клієнтів - збираємо "lead" окремо
                                   leadLogs.push(log);
+                                } else if (log.state === 'client') {
+                                  // Збираємо "client" окремо для фільтрації дублікатів
+                                  clientLogs.push(log);
                                 } else {
                                   // Всі інші стани збираємо окремо
                                   otherLogs.push(log);
@@ -774,6 +779,11 @@ export function DirectClientTable({
                                   filteredStates.push(oldestLead);
                                 }
                                 // Якщо є стани старіші - не додаємо "lead"
+                              }
+                              
+                              // Для ВСІХ клієнтів: залишаємо тільки найстаріший "client"
+                              if (clientLogs.length > 0) {
+                                filteredStates.push(clientLogs[0]); // Тільки найстаріший "client"
                               }
                               
                               // Додаємо всі інші стани
