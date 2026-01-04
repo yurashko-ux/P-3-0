@@ -800,8 +800,9 @@ export function DirectClientTable({
                               // Додаємо поточний стан, якщо він відрізняється
                               const statesToShow = [...filteredStates];
                               
-                              // Перевіряємо, чи є "lead" в відфільтрованих станах
+                              // Перевіряємо, чи є "lead" та "client" в відфільтрованих станах
                               const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
+                              const hasClientInFiltered = filteredStates.some(log => log.state === 'client');
                               
                               if (currentState !== lastHistoryState) {
                                 // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
@@ -817,7 +818,17 @@ export function DirectClientTable({
                                     reason: 'current-state',
                                     createdAt: new Date().toISOString(),
                                   });
-                                } else if (currentState !== 'lead') {
+                                } else if (currentState === 'client' && !hasClientInFiltered) {
+                                  // Для "client" - додаємо тільки якщо його немає в історії (стан "client" має бути тільки один раз)
+                                  statesToShow.push({
+                                    id: 'current',
+                                    clientId: client.id,
+                                    state: currentState,
+                                    previousState: lastHistoryState,
+                                    reason: 'current-state',
+                                    createdAt: new Date().toISOString(),
+                                  });
+                                } else if (currentState !== 'lead' && currentState !== 'client') {
                                   // Для всіх інших станів - завжди додаємо
                                   statesToShow.push({
                                     id: 'current',
