@@ -28,11 +28,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Отримуємо всіх клієнтів з Altegio
-    const altegioClients = await prisma.directClient.findMany({
-      where: {
-        altegioClientId: { not: null },
-      },
+    // Отримуємо ВСІХ клієнтів (не тільки з Altegio, бо можуть бути клієнти, які отримали altegioClientId пізніше)
+    const allClients = await prisma.directClient.findMany({
       select: {
         id: true,
         altegioClientId: true,
@@ -42,16 +39,17 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[remove-duplicate-client-states] Found ${altegioClients.length} Altegio clients`);
+    console.log(`[remove-duplicate-client-states] Found ${allClients.length} total clients`);
 
     const results: Array<{
       clientId: string;
       instagramUsername: string;
       deletedCount: number;
       keptLogId: string | null;
+      isAltegioClient: boolean;
     }> = [];
 
-    for (const client of altegioClients) {
+    for (const client of allClients) {
       // Отримуємо всю історію для клієнта
       const allLogs = await prisma.directClientStateLog.findMany({
         where: { clientId: client.id },
@@ -78,9 +76,10 @@ export async function POST(req: NextRequest) {
           instagramUsername: client.instagramUsername,
           deletedCount: duplicateLogs.length,
           keptLogId: firstLog.id,
+          isAltegioClient: !!client.altegioClientId,
         });
 
-        console.log(`[remove-duplicate-client-states] ✅ Client ${client.instagramUsername}: deleted ${duplicateLogs.length} duplicate "client" state logs, kept log ${firstLog.id}`);
+        console.log(`[remove-duplicate-client-states] ✅ Client ${client.instagramUsername} (Altegio: ${!!client.altegioClientId}): deleted ${duplicateLogs.length} duplicate "client" state logs, kept log ${firstLog.id}`);
       }
     }
 
