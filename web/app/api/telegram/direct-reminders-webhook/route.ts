@@ -649,13 +649,13 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   console.log(`[direct-reminders-webhook] handleMessage: FUNCTION CALLED - VERSION 2025-12-28-1127`);
   try {
     console.log(`[direct-reminders-webhook] handleMessage: INSIDE TRY BLOCK - VERSION 2025-12-28-1127`);
-    if (!message) {
-      console.log(`[direct-reminders-webhook] handleMessage: message is null/undefined`);
-      return;
-    }
+  if (!message) {
+    console.log(`[direct-reminders-webhook] handleMessage: message is null/undefined`);
+    return;
+  }
     console.log(`[direct-reminders-webhook] handleMessage: message exists, getting chatId`);
-    const chatId = message.chat.id;
-    const fromUser = message.from;
+  const chatId = message.chat.id;
+  const fromUser = message.from;
     console.log(`[direct-reminders-webhook] handleMessage STEP 1: chatId=${chatId}, hasText=${!!message.text}, hasReply=${!!message.reply_to_message}`);
     console.log(`[direct-reminders-webhook] handleMessage STEP 2: fromUsername=${fromUser?.username}, fromUserId=${fromUser?.id}`);
     console.log(`[direct-reminders-webhook] handleMessage STEP 3: before messageText assignment`);
@@ -663,12 +663,12 @@ async function handleMessage(message: TelegramUpdate["message"]) {
     const messageText = message.text;
     console.log(`[direct-reminders-webhook] handleMessage STEP 4: messageText="${messageText}", type=${typeof messageText}, startsWith="/start"=${messageText?.startsWith("/start")}`);
 
-    // Обробка команди /start - реєстрація та автоматичне оновлення chatId в DirectMaster
+  // Обробка команди /start - реєстрація та автоматичне оновлення chatId в DirectMaster
     if (messageText?.startsWith("/start")) {
-      console.log(`[direct-reminders-webhook] 🔵 Processing /start command from chatId=${chatId}, username=${fromUser?.username}, userId=${fromUser?.id}`);
-      console.log(`[direct-reminders-webhook] Full user object:`, JSON.stringify(fromUser, null, 2));
-      
-      try {
+    console.log(`[direct-reminders-webhook] 🔵 Processing /start command from chatId=${chatId}, username=${fromUser?.username}, userId=${fromUser?.id}`);
+    console.log(`[direct-reminders-webhook] Full user object:`, JSON.stringify(fromUser, null, 2));
+    
+    try {
       const { getMasterByTelegramUsername, getAllDirectMasters, saveDirectMaster } = await import('@/lib/direct-masters/store');
       
       // Шукаємо майстра за Telegram username
@@ -750,95 +750,107 @@ async function handleMessage(message: TelegramUpdate["message"]) {
         );
       }
     } catch (err) {
-      console.error(`[direct-reminders-webhook] Error processing /start command:`, err);
-      const botToken = getDirectRemindersBotToken();
-      await sendMessage(
+      console.error(`[direct-reminders-webhook] ❌ Error processing /start command:`, err);
+      console.error(`[direct-reminders-webhook] ❌ Error details:`, {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
         chatId,
-        `Помилка при реєстрації. Будь ласка, спробуйте пізніше або зверніться до адміністратора.`,
-        {},
-        botToken
-      );
+        username: fromUser?.username,
+        userId: fromUser?.id,
+      });
+      const botToken = getDirectRemindersBotToken();
+      try {
+        await sendMessage(
+          chatId,
+          `Помилка при реєстрації. Будь ласка, спробуйте пізніше або зверніться до адміністратора.\n\n` +
+          `Деталі помилки: ${err instanceof Error ? err.message : String(err)}`,
+          {},
+          botToken
+        );
+      } catch (sendErr) {
+        console.error(`[direct-reminders-webhook] ❌ Failed to send error message:`, sendErr);
       }
-      return;
     }
+    return;
+  }
 
     if (messageText) {
-      // Обробка відповіді на повідомлення про відсутній Instagram
-      if (message.reply_to_message?.text) {
-        const repliedText = message.reply_to_message.text;
-        console.log(`[direct-reminders-webhook] Processing reply message. Full replied text:`, repliedText);
-        console.log(`[direct-reminders-webhook] Reply text length: ${repliedText.length}`);
+    // Обробка відповіді на повідомлення про відсутній Instagram
+    if (message.reply_to_message?.text) {
+      const repliedText = message.reply_to_message.text;
+      console.log(`[direct-reminders-webhook] Processing reply message. Full replied text:`, repliedText);
+      console.log(`[direct-reminders-webhook] Reply text length: ${repliedText.length}`);
+      
+      // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
+      if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
+        console.log(`[direct-reminders-webhook] Detected reply to missing Instagram notification`);
         
-        // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
-        if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
-          console.log(`[direct-reminders-webhook] Detected reply to missing Instagram notification`);
-          
-          // Витягуємо Altegio ID з повідомлення (пробуємо різні формати)
-          // Telegram може надсилати HTML, тому перевіряємо різні варіанти
-          const altegioIdMatch = repliedText.match(/Altegio ID:\s*<code>(\d+)<\/code>|Altegio ID:\s*<code>(\d+)|Altegio ID:\s*(\d+)/);
-          console.log(`[direct-reminders-webhook] Altegio ID match:`, altegioIdMatch);
-          console.log(`[direct-reminders-webhook] Searching for Altegio ID in text...`);
-          
-          // Також пробуємо знайти без HTML тегів (на випадок, якщо Telegram надсилає plain text)
-          if (!altegioIdMatch) {
-            const plainMatch = repliedText.match(/Altegio ID[:\s]+(\d+)/i);
-            console.log(`[direct-reminders-webhook] Plain text Altegio ID match:`, plainMatch);
-            if (plainMatch) {
-              const altegioClientId = parseInt(plainMatch[1], 10);
-              if (!isNaN(altegioClientId)) {
-                console.log(`[direct-reminders-webhook] Found Altegio ID via plain text: ${altegioClientId}`);
-                // Продовжуємо обробку з цим ID
+        // Витягуємо Altegio ID з повідомлення (пробуємо різні формати)
+        // Telegram може надсилати HTML, тому перевіряємо різні варіанти
+        const altegioIdMatch = repliedText.match(/Altegio ID:\s*<code>(\d+)<\/code>|Altegio ID:\s*<code>(\d+)|Altegio ID:\s*(\d+)/);
+        console.log(`[direct-reminders-webhook] Altegio ID match:`, altegioIdMatch);
+        console.log(`[direct-reminders-webhook] Searching for Altegio ID in text...`);
+        
+        // Також пробуємо знайти без HTML тегів (на випадок, якщо Telegram надсилає plain text)
+        if (!altegioIdMatch) {
+          const plainMatch = repliedText.match(/Altegio ID[:\s]+(\d+)/i);
+          console.log(`[direct-reminders-webhook] Plain text Altegio ID match:`, plainMatch);
+          if (plainMatch) {
+            const altegioClientId = parseInt(plainMatch[1], 10);
+            if (!isNaN(altegioClientId)) {
+              console.log(`[direct-reminders-webhook] Found Altegio ID via plain text: ${altegioClientId}`);
+              // Продовжуємо обробку з цим ID
                 await processInstagramUpdate(chatId, altegioClientId, messageText.trim());
-                return;
-              }
+              return;
             }
           }
+        }
+        
+        if (altegioIdMatch) {
+          const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3], 10);
+          console.log(`[direct-reminders-webhook] Parsed Altegio ID: ${altegioClientId}`);
           
-          if (altegioIdMatch) {
-            const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3], 10);
-            console.log(`[direct-reminders-webhook] Parsed Altegio ID: ${altegioClientId}`);
-            
-            if (!isNaN(altegioClientId)) {
-              // Витягуємо Instagram username з відповіді (може бути з @ або без)
+          if (!isNaN(altegioClientId)) {
+            // Витягуємо Instagram username з відповіді (може бути з @ або без)
               const instagramText = messageText.trim().replace(/^@/, '').split(/\s+/)[0];
-              console.log(`[direct-reminders-webhook] Extracted Instagram text: "${instagramText}"`);
-              
-              if (instagramText && instagramText.length > 0) {
-                await processInstagramUpdate(chatId, altegioClientId, instagramText);
-                return;
-              } else {
-                const botToken = getDirectRemindersBotToken();
-                await sendMessage(
-                  chatId,
-                  `❌ Будь ласка, введіть Instagram username у відповідь (наприклад: username або @username).`,
-                  {},
-                  botToken
-                );
-                return;
-              }
+            console.log(`[direct-reminders-webhook] Extracted Instagram text: "${instagramText}"`);
+            
+            if (instagramText && instagramText.length > 0) {
+              await processInstagramUpdate(chatId, altegioClientId, instagramText);
+              return;
             } else {
-              console.error(`[direct-reminders-webhook] Invalid Altegio ID: ${altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3]}`);
+              const botToken = getDirectRemindersBotToken();
+              await sendMessage(
+                chatId,
+                `❌ Будь ласка, введіть Instagram username у відповідь (наприклад: username або @username).`,
+                {},
+                botToken
+              );
+              return;
             }
           } else {
-            console.error(`[direct-reminders-webhook] ❌ Could not extract Altegio ID from message`);
-            console.error(`[direct-reminders-webhook] Replied text was:`, repliedText);
+            console.error(`[direct-reminders-webhook] Invalid Altegio ID: ${altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3]}`);
           }
         } else {
-          console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but replied text does not contain 'Відсутній Instagram username' or 'Altegio ID:'`);
-          console.log(`[direct-reminders-webhook] Replied text preview:`, message.reply_to_message?.text?.substring(0, 200));
+          console.error(`[direct-reminders-webhook] ❌ Could not extract Altegio ID from message`);
+          console.error(`[direct-reminders-webhook] Replied text was:`, repliedText);
         }
-      } else if (message.reply_to_message) {
-        console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but reply_to_message.text is missing`);
-        console.log(`[direct-reminders-webhook] Reply structure:`, {
-          message_id: message.reply_to_message.message_id,
-          hasText: !!message.reply_to_message.text,
-          hasPhoto: !!message.reply_to_message.photo,
-          hasCaption: !!message.reply_to_message.caption,
-        });
       } else {
-        console.log(`[direct-reminders-webhook] ℹ️ Message is not a reply (reply_to_message is null/undefined)`);
-        console.log(`[direct-reminders-webhook] ⚠️ To update Instagram, you need to REPLY to the message about missing Instagram username`);
-        console.log(`[direct-reminders-webhook] Full message structure:`, JSON.stringify(message, null, 2).substring(0, 2000));
+        console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but replied text does not contain 'Відсутній Instagram username' or 'Altegio ID:'`);
+        console.log(`[direct-reminders-webhook] Replied text preview:`, message.reply_to_message?.text?.substring(0, 200));
+      }
+    } else if (message.reply_to_message) {
+      console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but reply_to_message.text is missing`);
+      console.log(`[direct-reminders-webhook] Reply structure:`, {
+        message_id: message.reply_to_message.message_id,
+        hasText: !!message.reply_to_message.text,
+        hasPhoto: !!message.reply_to_message.photo,
+        hasCaption: !!message.reply_to_message.caption,
+      });
+    } else {
+      console.log(`[direct-reminders-webhook] ℹ️ Message is not a reply (reply_to_message is null/undefined)`);
+      console.log(`[direct-reminders-webhook] ⚠️ To update Instagram, you need to REPLY to the message about missing Instagram username`);
+      console.log(`[direct-reminders-webhook] Full message structure:`, JSON.stringify(message, null, 2).substring(0, 2000));
       }
     }
   } catch (err) {
