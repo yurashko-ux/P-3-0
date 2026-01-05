@@ -1043,6 +1043,34 @@ export default function DirectPage() {
             🧹 Очистити paidServiceDate для консультацій
           </button>
           <button
+            className="btn btn-sm btn-info"
+            onClick={async () => {
+              if (!confirm('Виконати міграцію зміни типу telegramChatId з Int на BigInt?\n\nЦе дозволить зберігати великі Telegram Chat ID (наприклад, 5987285517).\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/run-telegram-chat-id-migration', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  showCopyableAlert(`✅ Міграція виконана успішно!\n\n${data.results}`);
+                } else {
+                  showCopyableAlert(`❌ Помилка міграції:\n\n${data.error || data.results || JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`❌ Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Виконати міграцію зміни типу telegramChatId з Int на BigInt"
+          >
+            🔧 Міграція telegramChatId → BigInt
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
