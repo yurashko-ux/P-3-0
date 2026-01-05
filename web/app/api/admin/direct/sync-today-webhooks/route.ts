@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
               services: services,
               staff: staff,
               client: record.data?.client || (record.clientId ? { id: record.clientId } : null),
-              attendance: record.attendance,
+              attendance: record.data?.attendance ?? record.attendance,
               visit_id: record.visitId,
             },
           },
