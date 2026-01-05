@@ -412,6 +412,7 @@ export async function POST(req: NextRequest) {
                 // 2.3.2 Встановлення consultationBookingDate для ВСІХ клієнтів з консультацією
                 // Якщо consultationBookingDate відсутній або змінився, встановлюємо його незалежно від стану
                 // Це fallback логіка, яка спрацьовує, якщо попередні блоки не спрацювали
+                // ВАЖЛИВО: Цей блок має спрацювати для ВСІХ консультацій, навіть якщо попередні блоки не спрацювали
                 if ((status === 'create' || status === 'update') && 
                     datetime && 
                     attendance !== 1 &&
@@ -449,6 +450,33 @@ export async function POST(req: NextRequest) {
                   });
                   
                   console.log(`[altegio/webhook] ✅ Set consultationBookingDate (fallback) for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
+                } else if ((status === 'create' || status === 'update') && datetime && attendance !== 1 && !existingClient.consultationBookingDate) {
+                  // ДОДАТКОВА ПЕРЕВІРКА: Якщо consultationBookingDate все ще відсутній після всіх блоків
+                  // (навіть якщо він не змінився, але його взагалі немає) - встановлюємо його
+                  console.log(`[altegio/webhook] ⚠️ consultationBookingDate is missing for client ${existingClient.id}, setting it now (datetime: ${datetime}, attendance: ${attendance}, state: ${existingClient.state})`);
+                  const updates: Partial<typeof existingClient> = {
+                    consultationBookingDate: datetime,
+                    paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
+                    signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  const updated: typeof existingClient = {
+                    ...existingClient,
+                    ...updates,
+                  };
+                  
+                  await saveDirectClient(updated, 'altegio-webhook-set-consultation-booking-date-missing', {
+                    altegioClientId: clientId,
+                    staffName,
+                    datetime,
+                    currentState: existingClient.state,
+                    hadConsultationBefore,
+                    attendance,
+                    reason: 'consultationBookingDate was missing after all blocks',
+                  });
+                  
+                  console.log(`[altegio/webhook] ✅ Set missing consultationBookingDate for client ${existingClient.id} (${datetime})`);
                 }
                 // 2.4 Обробка неявки клієнта
                 else if (attendance === -1) {
