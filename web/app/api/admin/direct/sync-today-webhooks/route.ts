@@ -472,24 +472,24 @@ export async function POST(req: NextRequest) {
                 
                 if (hasServices) {
                   const data = event.body.data;
-                const staffName = data.staff?.name || 
-                                data.staff?.display_name || 
-                                (event.isFromRecordsLog && event.originalRecord?.staffName) ||
-                                null;
-                const attendance = data.attendance || 
-                                 (event.isFromRecordsLog && event.originalRecord?.attendance) ||
-                                 undefined;
-                const datetime = data.datetime || 
-                               (event.isFromRecordsLog && event.originalRecord?.datetime) ||
-                               null;
-                
-                // Перевіряємо, чи є послуга "Консультація"
-                const hasConsultation = servicesArray.some((s: any) => {
-                  const title = s.title || s.name || '';
-                  return /консультація/i.test(title);
-                });
-                
-                if (hasConsultation && datetime) {
+                  const staffName = data.staff?.name || 
+                                  data.staff?.display_name || 
+                                  (event.isFromRecordsLog && event.originalRecord?.staffName) ||
+                                  null;
+                  const attendance = data.attendance || 
+                                   (event.isFromRecordsLog && event.originalRecord?.attendance) ||
+                                   undefined;
+                  const datetime = data.datetime || 
+                                 (event.isFromRecordsLog && event.originalRecord?.datetime) ||
+                                 null;
+                  
+                  // Перевіряємо, чи є послуга "Консультація"
+                  const hasConsultation = servicesArray.some((s: any) => {
+                    const title = s.title || s.name || '';
+                    return /консультація/i.test(title);
+                  });
+                  
+                  if (hasConsultation && datetime) {
                   console.log(`[sync-today-webhooks] 🔍 Processing consultation for client ${updated.id} (${updated.instagramUsername}):`, {
                     staffName,
                     attendance,
@@ -546,12 +546,12 @@ export async function POST(req: NextRequest) {
                       datetime,
                     });
                     
-                    console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id}`);
-                  }
-                  // Обробка приходу клієнта на консультацію
-                  // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
-                  // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
-                  else if (attendance === 1 && !wasAdminStaff && staffName) {
+                      console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id}`);
+                    }
+                    // Обробка приходу клієнта на консультацію
+                    // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
+                    // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
+                    else if (attendance === 1 && !wasAdminStaff && staffName) {
                     console.log(`[sync-today-webhooks] 🔍 Processing consultation attendance for ${updated.id}:`, {
                       attendance,
                       wasAdminStaff,
@@ -611,12 +611,13 @@ export async function POST(req: NextRequest) {
                       console.log(`[sync-today-webhooks] ⏭️ Client ${updated.id} already has consultation state in history, skipping`);
                     }
                   } else {
-                    console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}:`, {
-                      attendance,
-                      wasAdminStaff,
-                      hasStaffName: !!staffName,
-                      reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : 'unknown',
-                    });
+                      console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}:`, {
+                        attendance,
+                        wasAdminStaff,
+                        hasStaffName: !!staffName,
+                        reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : 'unknown',
+                      });
+                    }
                   }
                 }
               } catch (consultationErr) {
