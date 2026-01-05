@@ -105,23 +105,30 @@ export async function POST(req: NextRequest) {
         .filter((r) => r && r.receivedAt);
 
       // Конвертуємо record events у формат вебхуків
-      const convertedRecordEvents = recordEvents.map((record: any) => ({
-        receivedAt: record.receivedAt,
-        event: 'record',
-        body: {
-          resource: 'record',
-          status: record.status || 'create',
-          resource_id: record.recordId || record.visitId,
-          data: {
-            datetime: record.datetime,
-            services: record.data?.services || (record.serviceName ? [{ title: record.serviceName, name: record.serviceName, id: record.serviceId }] : []),
-            staff: record.data?.staff || (record.staffId ? { id: record.staffId } : null),
-            client: record.data?.client || (record.clientId ? { id: record.clientId } : null),
-            attendance: record.attendance,
-            visit_id: record.visitId,
+      const convertedRecordEvents = recordEvents.map((record: any) => {
+        // Використовуємо datetime як receivedAt, якщо receivedAt відсутній
+        const receivedAt = record.receivedAt || record.datetime || new Date().toISOString();
+        
+        return {
+          receivedAt,
+          event: 'record',
+          isFromRecordsLog: true, // Позначаємо, що це з records log
+          originalRecord: record, // Зберігаємо оригінальний запис для діагностики
+          body: {
+            resource: 'record',
+            status: record.status || 'create',
+            resource_id: record.recordId || record.visitId,
+            data: {
+              datetime: record.datetime,
+              services: record.data?.services || (record.serviceName ? [{ title: record.serviceName, name: record.serviceName, id: record.serviceId }] : []),
+              staff: record.data?.staff || (record.staffId ? { id: record.staffId, name: record.staffName } : null),
+              client: record.data?.client || (record.clientId ? { id: record.clientId } : null),
+              attendance: record.attendance,
+              visit_id: record.visitId,
+            },
           },
-        },
-      }));
+        };
+      });
 
       events = [...events, ...convertedRecordEvents];
     } catch (err) {
