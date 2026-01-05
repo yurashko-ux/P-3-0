@@ -32,8 +32,13 @@ export async function POST(req: NextRequest) {
     
     // Перевіряємо поточний тип колонки
     results.push('Перевірка поточного типу колонки telegramChatId...');
+    let currentDataType: string | null = null;
     try {
-      const columnInfo = await prisma.$queryRawUnsafe(`
+      const columnInfo = await prisma.$queryRawUnsafe<Array<{
+        column_name: string;
+        data_type: string;
+        character_maximum_length: number | null;
+      }>>(`
         SELECT 
           column_name, 
           data_type, 
@@ -43,7 +48,24 @@ export async function POST(req: NextRequest) {
         AND column_name = 'telegramChatId'
       `);
       
-      results.push(`Поточний стан колонки: ${JSON.stringify(columnInfo, null, 2)}`);
+      if (columnInfo && columnInfo.length > 0) {
+        currentDataType = columnInfo[0].data_type;
+        results.push(`Поточний тип колонки: ${currentDataType}`);
+        results.push(`Повна інформація: ${JSON.stringify(columnInfo, null, 2)}`);
+        
+        // Якщо колонка вже має тип BIGINT, міграція не потрібна
+        if (currentDataType === 'bigint' || currentDataType === 'BIGINT') {
+          results.push('\n✅ Колонка вже має тип BIGINT! Міграція не потрібна.');
+          return NextResponse.json({
+            ok: true,
+            message: 'Міграція не потрібна - колонка вже має тип BIGINT',
+            results: results.join('\n'),
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } else {
+        results.push('⚠️ Колонка telegramChatId не знайдена в таблиці direct_masters');
+      }
     } catch (err) {
       results.push(`⚠️ Не вдалося перевірити колонку: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -92,11 +114,29 @@ export async function POST(req: NextRequest) {
         } catch (pushErr) {
           const pushErrorMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
           results.push(`❌ Помилка db push: ${pushErrorMsg}`);
+          
+          // Показуємо інструкції для ручного виконання
+          results.push('\n\n📋 ІНСТРУКЦІЇ ДЛЯ РУЧНОГО ВИКОНАННЯ МІГРАЦІЇ:');
+          results.push('\nВаріант 1: Через Prisma CLI (рекомендовано)');
+          results.push('  npx prisma migrate deploy');
+          results.push('\nВаріант 2: Через Prisma db push');
+          results.push('  npx prisma db push');
+          results.push('\nВаріант 3: Через SQL напряму (якщо є права власника таблиці)');
+          results.push('  ALTER TABLE "direct_masters" ALTER COLUMN "telegramChatId" TYPE BIGINT USING "telegramChatId"::BIGINT;');
+          results.push('\nВаріант 4: Через Vercel CLI (якщо використовується Vercel)');
+          results.push('  vercel env pull');
+          results.push('  npx prisma migrate deploy');
+          
           return NextResponse.json({
             ok: false,
-            error: 'Не вдалося виконати міграцію. Можливо, потрібні права власника таблиці або виконати міграцію вручну через Prisma CLI.',
+            error: 'Не вдалося виконати міграцію автоматично. Дивіться інструкції нижче.',
             results: results.join('\n'),
-            recommendation: 'Спробуйте виконати вручну: npx prisma migrate deploy або npx prisma db push',
+            recommendation: 'Виконайте міграцію вручну через один з варіантів, описаних вище.',
+            manualInstructions: {
+              prismaMigrate: 'npx prisma migrate deploy',
+              prismaDbPush: 'npx prisma db push',
+              sql: 'ALTER TABLE "direct_masters" ALTER COLUMN "telegramChatId" TYPE BIGINT USING "telegramChatId"::BIGINT;',
+            },
           }, { status: 500 });
         }
       }
