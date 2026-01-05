@@ -1066,6 +1066,15 @@ export function DirectClientTable({
                           >
                             ✏️
                           </button>
+                          {client.altegioClientId && (
+                            <button
+                              className="btn btn-xs btn-ghost text-info"
+                              onClick={() => setWebhooksClient(client)}
+                              title="Переглянути вебхуки клієнта"
+                            >
+                              🔗
+                            </button>
+                          )}
                           <button
                             className="btn btn-xs btn-ghost text-info"
                             onClick={async () => {
