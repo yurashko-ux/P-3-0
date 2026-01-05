@@ -577,6 +577,34 @@ export async function POST(req: NextRequest) {
                       
                       console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id} (status: ${status}, attendance: ${attendance})`);
                     }
+                    // Оновлення consultationBookingDate для клієнтів зі станом consultation-booked
+                    // Якщо клієнт вже має стан consultation-booked, але дата оновилась або не була встановлена
+                    else if ((status === 'create' || status === 'update') && 
+                             updated.state === 'consultation-booked' && 
+                             attendance !== 1 && 
+                             datetime) {
+                      // Оновлюємо consultationBookingDate, якщо він відсутній або змінився
+                      if (!updated.consultationBookingDate || updated.consultationBookingDate !== datetime) {
+                        const consultationDateUpdates = {
+                          consultationBookingDate: datetime,
+                          updatedAt: new Date().toISOString(),
+                        };
+                        
+                        const consultationDateUpdated = {
+                          ...updated,
+                          ...consultationDateUpdates,
+                        };
+                        
+                        await saveDirectClient(consultationDateUpdated, 'sync-today-webhooks-update-consultation-booking-date', {
+                          altegioClientId: clientId,
+                          staffName,
+                          datetime,
+                          oldDate: updated.consultationBookingDate,
+                        });
+                        
+                        console.log(`[sync-today-webhooks] ✅ Updated consultationBookingDate for client ${updated.id} (${updated.consultationBookingDate} -> ${datetime})`);
+                      }
+                    }
                     // Обробка приходу клієнта на консультацію
                     // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
                     // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation

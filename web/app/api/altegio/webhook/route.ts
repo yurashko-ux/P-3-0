@@ -347,6 +347,34 @@ export async function POST(req: NextRequest) {
                     console.log(`[altegio/webhook] ✅ Set consultation-rescheduled state for client ${existingClient.id}`);
                   }
                 }
+                // 2.3.1 Оновлення consultationBookingDate для клієнтів зі станом consultation-booked
+                // Якщо клієнт вже має стан consultation-booked, але дата оновилась або не була встановлена
+                else if ((status === 'create' || status === 'update') && 
+                         existingClient.state === 'consultation-booked' && 
+                         attendance !== 1 && 
+                         datetime) {
+                  // Оновлюємо consultationBookingDate, якщо він відсутній або змінився
+                  if (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime) {
+                    const updates: Partial<typeof existingClient> = {
+                      consultationBookingDate: datetime,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      ...updates,
+                    };
+                    
+                    await saveDirectClient(updated, 'altegio-webhook-update-consultation-booking-date', {
+                      altegioClientId: clientId,
+                      staffName,
+                      datetime,
+                      oldDate: existingClient.consultationBookingDate,
+                    });
+                    
+                    console.log(`[altegio/webhook] ✅ Updated consultationBookingDate for client ${existingClient.id} (${existingClient.consultationBookingDate} -> ${datetime})`);
+                  }
+                }
                 // 2.4 Обробка неявки клієнта
                 else if (attendance === -1) {
                   const updates: Partial<typeof existingClient> = {
