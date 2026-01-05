@@ -104,12 +104,18 @@ export async function GET(req: NextRequest) {
     const tableRows = events
       .filter((e: any) => {
         // Перевіряємо, чи це record event
-        if (e.body?.resource !== 'record') return false;
+        // Може бути e.body?.resource === 'record' або e.isFromRecordsLog === true
+        const isRecordEvent = e.body?.resource === 'record' || e.isFromRecordsLog;
+        if (!isRecordEvent) return false;
         
         // Перевіряємо, чи це вебхук для нашого клієнта
         // client.id може бути в різних форматах: число, рядок, або вкладений об'єкт
-        const clientId = e.body?.data?.client?.id;
-        const clientIdFromData = e.body?.data?.client_id;
+        // Також може бути в e.originalRecord.clientId (для конвертованих events)
+        const data = e.body?.data || {};
+        const originalRecord = e.originalRecord || {};
+        
+        const clientId = data.client?.id || originalRecord.clientId;
+        const clientIdFromData = data.client_id || originalRecord.client_id;
         
         // Спробуємо різні способи отримання clientId
         let foundClientId: number | null = null;
@@ -132,6 +138,7 @@ export async function GET(req: NextRequest) {
         // Обробляємо як звичайні webhook events, так і events з records:log
         const body = e.body || {};
         const data = body.data || e.data || {};
+        const originalRecord = e.originalRecord || {};
         
         // Витягуємо services (може бути масив або один об'єкт)
         let services: string[] = [];
@@ -139,24 +146,24 @@ export async function GET(req: NextRequest) {
           services = data.services.map((s: any) => s.title || s.name || 'Невідома послуга');
         } else if (data.service) {
           services = [data.service.title || data.service.name || 'Невідома послуга'];
-        } else if (data.service_id || data.serviceName) {
-          services = [data.serviceName || 'Невідома послуга'];
+        } else if (data.service_id || data.serviceName || originalRecord.serviceName) {
+          services = [data.serviceName || originalRecord.serviceName || 'Невідома послуга'];
         }
         
         // Дата вебхука
-        const receivedAt = e.receivedAt ? new Date(e.receivedAt).toISOString() : null;
+        const receivedAt = (e.receivedAt || originalRecord.receivedAt) ? new Date(e.receivedAt || originalRecord.receivedAt).toISOString() : null;
         
         // Дата послуг
-        const datetime = data.datetime ? new Date(data.datetime).toISOString() : null;
+        const datetime = (data.datetime || originalRecord.datetime) ? new Date(data.datetime || originalRecord.datetime).toISOString() : null;
         
         // Client name
-        const clientName = data.client?.display_name || data.client?.name || 'Невідомий клієнт';
+        const clientName = data.client?.display_name || data.client?.name || originalRecord.clientName || 'Невідомий клієнт';
         
         // Staff name
-        const staffName = data.staff?.name || data.staff?.display_name || 'Невідомий майстер';
+        const staffName = data.staff?.name || data.staff?.display_name || originalRecord.staffName || 'Невідомий майстер';
         
         // Attendance
-        const attendance = data.attendance ?? data.visit_attendance ?? null;
+        const attendance = data.attendance ?? data.visit_attendance ?? originalRecord.attendance ?? originalRecord.visit_attendance ?? null;
         
         return {
           receivedAt,
@@ -164,8 +171,8 @@ export async function GET(req: NextRequest) {
           clientName,
           staffName,
           services: services.length > 0 ? services : ['Невідома послуга'],
-          visitId: body.resource_id,
-          status: body.status,
+          visitId: body.resource_id || originalRecord.visitId,
+          status: body.status || originalRecord.status || 'create',
           attendance,
           fullBody: body,
         };
