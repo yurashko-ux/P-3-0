@@ -382,6 +382,11 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     }
                     
                     // Додаємо всі інші стани (без "no-instagram")
+                    // Якщо перше повідомлення вже відображено як "Лід", не додаємо інші "message" стани
+                    const remainingMessageLogs = oldestMessageAsLead 
+                      ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
+                      : messageLogs;
+                    filteredHistory.push(...remainingMessageLogs);
                     filteredHistory.push(...otherLogs);
                     
                     // Сортуємо назад від новіших до старіших для відображення
