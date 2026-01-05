@@ -12,7 +12,8 @@
     "lint": "next lint",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "migrate:telegram-chat-id": "node ./scripts/migrate-telegram-chat-id.js"
   },
   "dependencies": {
     "next": "14.2.7",
