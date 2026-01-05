@@ -384,6 +384,8 @@ export async function POST(req: NextRequest) {
         const isRecordEvent = event.body?.resource === 'record';
         
         // Діагностика: перевіряємо всі можливі місця для clientId для цільового клієнта
+        // Перевіряємо спочатку event.clientId (додається під час фільтрації)
+        const eventClientId = (event as any).clientId;
         const possibleClientId1 = isRecordEvent 
           ? event.body?.data?.client?.id 
           : event.body?.resource_id;
@@ -398,13 +400,15 @@ export async function POST(req: NextRequest) {
           : null;
         
         // Перевіряємо, чи це може бути вебхук для цільового клієнта
-        const mightBeTargetClient = possibleClientId1 === TARGET_CLIENT_ID || 
+        const mightBeTargetClient = eventClientId === TARGET_CLIENT_ID ||
+                                     possibleClientId1 === TARGET_CLIENT_ID || 
                                      possibleClientId2 === TARGET_CLIENT_ID || 
                                      possibleClientId3 === TARGET_CLIENT_ID;
         
         if (mightBeTargetClient) {
           console.log(`[sync-today-webhooks] 🔍 BEFORE extraction for target client ${TARGET_CLIENT_ID}:`, {
             isRecordEvent,
+            eventClientId,
             possibleClientId1,
             possibleClientId2,
             possibleClientId3,
@@ -418,7 +422,8 @@ export async function POST(req: NextRequest) {
         }
         
         // Витягуємо clientId, враховуючи структуру для конвертованих вебхуків з records:log
-        let clientId = possibleClientId1 || possibleClientId2;
+        // Використовуємо event.clientId як першочергове джерело (додається під час фільтрації)
+        let clientId = eventClientId || possibleClientId1 || possibleClientId2;
         
         // Якщо clientId не знайдено і це конвертований вебхук з records:log, шукаємо в originalRecord
         if (!clientId && event.isFromRecordsLog && event.originalRecord) {
