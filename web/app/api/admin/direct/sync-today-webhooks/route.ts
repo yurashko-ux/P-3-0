@@ -494,6 +494,17 @@ export async function POST(req: NextRequest) {
                 const servicesArray = servicesFromBody || servicesFromRecord || [];
                 const hasServices = Array.isArray(servicesArray) && servicesArray.length > 0;
                 
+                // Визначаємо змінні для обробки record events (використовуються в обох блоках: консультації та services)
+                const data = event.body?.data || {};
+                const staffName = data.staff?.name || 
+                                data.staff?.display_name || 
+                                (event.isFromRecordsLog && event.originalRecord?.staffName) ||
+                                null;
+                const staffId = data.staff?.id || data.staff_id || null;
+                const datetime = data.datetime || 
+                               (event.isFromRecordsLog && event.originalRecord?.datetime) ||
+                               null;
+                
                 console.log(`[sync-today-webhooks] 🔍 Record event for client ${clientId}:`, {
                   isFromRecordsLog: event.isFromRecordsLog,
                   hasServices,
@@ -504,11 +515,6 @@ export async function POST(req: NextRequest) {
                 });
                 
                 if (hasServices) {
-                  const data = event.body.data;
-                  const staffName = data.staff?.name || 
-                                  data.staff?.display_name || 
-                                  (event.isFromRecordsLog && event.originalRecord?.staffName) ||
-                                  null;
                   // attendance / visit_attendance:
                   //  0   – подія ще не настала (запис існує, але не відбулася)
                   //  1   – клієнт прийшов (фактична консультація)
@@ -521,9 +527,6 @@ export async function POST(req: NextRequest) {
                       ((event.originalRecord?.data as any)?.attendance ??
                         (event.originalRecord as any)?.attendance)) ??
                     undefined;
-                  const datetime = data.datetime || 
-                                 (event.isFromRecordsLog && event.originalRecord?.datetime) ||
-                                 null;
                   
                   console.log(`[sync-today-webhooks] 🔍 Record event data for client ${clientId}:`, {
                     staffName,
