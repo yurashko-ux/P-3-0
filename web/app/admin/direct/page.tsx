@@ -968,6 +968,45 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
+              if (!confirm('Очистити помилково встановлені paidServiceDate для клієнтів з консультаціями?\n\nЦе знайде всіх клієнтів, які мають paidServiceDate, але мають тільки консультації (без платних послуг), і очистить цю дату.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/cleanup-paid-service-dates', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Очищення завершено!\n\n` +
+                    `Всього клієнтів: ${data.total}\n` +
+                    `Очищено: ${data.cleaned}\n\n` +
+                    (data.cleanedClients && data.cleanedClients.length > 0
+                      ? `Очищені клієнти:\n${data.cleanedClients.map((c: string) => `  - ${c}`).join('\n')}\n\n`
+                      : '') +
+                    (data.errors && data.errors.length > 0
+                      ? `Помилки:\n${data.errors.map((e: string) => `  - ${e}`).join('\n')}\n\n`
+                      : '') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Очистити помилково встановлені paidServiceDate для клієнтів з консультаціями"
+          >
+            🧹 Очистити paidServiceDate для консультацій
+          </button>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
                 return;
               }
