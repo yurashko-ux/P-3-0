@@ -666,9 +666,49 @@ export async function POST(req: NextRequest) {
               const existingDirectClients = await getAllDirectClients();
               
               // Шукаємо клієнта за Altegio ID
-              const existingClient = existingDirectClients.find(
+              let existingClient = existingDirectClients.find(
                 (c) => c.altegioClientId === clientId
               );
+              
+              // Якщо клієнта не знайдено за altegioClientId, шукаємо за іменем
+              if (!existingClient && data.client) {
+                const clientName = data.client.name || data.client.display_name || '';
+                const nameParts = clientName.trim().split(/\s+/);
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+                
+                if (firstName && lastName) {
+                  existingClient = existingDirectClients.find((dc) => {
+                    const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                    const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                    const searchFirstName = firstName.trim().toLowerCase();
+                    const searchLastName = lastName.trim().toLowerCase();
+                    
+                    return dcFirstName === searchFirstName && dcLastName === searchLastName;
+                  }) || undefined;
+                  
+                  if (existingClient) {
+                    console.log(`[altegio/webhook] 🔍 Found client by name "${firstName} ${lastName}" for state update: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
+                    
+                    // Встановлюємо altegioClientId, якщо його ще немає
+                    if (!existingClient.altegioClientId) {
+                      const updated = {
+                        ...existingClient,
+                        altegioClientId: clientId,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      await saveDirectClient(updated, 'altegio-webhook-set-altegio-client-id-from-services', {
+                        altegioClientId: clientId,
+                        staffName,
+                        datetime: data.datetime,
+                        reason: 'found by name, setting altegioClientId',
+                      });
+                      existingClient = updated;
+                      console.log(`[altegio/webhook] ✅ Set altegioClientId for client ${existingClient.id} from services webhook`);
+                    }
+                  }
+                }
+              }
               
               if (existingClient) {
                 const { getMasterByName } = await import('@/lib/direct-masters/store');
