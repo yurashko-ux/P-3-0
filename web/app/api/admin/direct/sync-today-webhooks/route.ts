@@ -780,16 +780,10 @@ export async function POST(req: NextRequest) {
                       });
                     }
                   }
-                }
-              } catch (consultationErr) {
-                console.error(`[sync-today-webhooks] ⚠️ Failed to process consultation logic:`, consultationErr);
-                // Не зупиняємо обробку через помилку
-              }
-              
-              // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES (нарощування, інші послуги)
-              // Встановлюємо стан на основі послуг, якщо це не консультація
-              try {
-                if (!hasConsultation) {
+                  
+                  // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES (нарощування, інші послуги)
+                  // Встановлюємо стан на основі послуг, якщо це не консультація
+                  if (!hasConsultation) {
                   const { determineStateFromServices } = await import('@/lib/direct-state-helper');
                   const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
                   
@@ -857,6 +851,9 @@ export async function POST(req: NextRequest) {
                     }
                   }
                 }
+              } catch (consultationErr) {
+                console.error(`[sync-today-webhooks] ⚠️ Failed to process consultation logic:`, consultationErr);
+                // Не зупиняємо обробку через помилку
               } catch (stateErr) {
                 console.error(`[sync-today-webhooks] ⚠️ Failed to process state from services:`, stateErr);
                 // Не зупиняємо обробку через помилку
