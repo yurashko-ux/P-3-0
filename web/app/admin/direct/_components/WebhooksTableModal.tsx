@@ -36,7 +36,7 @@ export function WebhooksTableModal({ isOpen, onClose }: WebhooksTableModalProps)
       setLoading(true);
       setError(null);
       
-      const response = await fetch('/api/admin/direct/webhooks-table?limit=200');
+      const response = await fetch('/api/admin/direct/webhooks-table?limit=100');
       const data = await response.json();
       
       if (data.ok) {
