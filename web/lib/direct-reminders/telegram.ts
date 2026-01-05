@@ -43,9 +43,13 @@ export async function getAdminChatIds(): Promise<number[]> {
     
     for (const admin of directAdmins) {
       // Спочатку перевіряємо chatId з бази даних
-      if (admin.telegramChatId && !adminChatIds.includes(admin.telegramChatId)) {
-        adminChatIds.push(admin.telegramChatId);
-        console.log(`[direct-reminders] ✅ Added admin ${admin.name} (@${admin.telegramUsername}) with chatId from database: ${admin.telegramChatId}`);
+      if (admin.telegramChatId) {
+        // Конвертуємо bigint в number для сумісності з масивом number[]
+        const chatId = Number(admin.telegramChatId);
+        if (!adminChatIds.includes(chatId)) {
+          adminChatIds.push(chatId);
+          console.log(`[direct-reminders] ✅ Added admin ${admin.name} (@${admin.telegramUsername}) with chatId from database: ${chatId}`);
+        }
       }
     }
   } catch (err) {
