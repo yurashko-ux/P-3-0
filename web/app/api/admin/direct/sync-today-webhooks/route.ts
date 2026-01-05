@@ -591,21 +591,19 @@ export async function POST(req: NextRequest) {
                       // Якщо дата ще не настала, не встановлюємо стан 'consultation'
                       if (!isPastOrToday) {
                         console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}: consultation date ${datetime} is in the future`);
-                        return; // Виходимо з блоку, не встановлюємо стан
-                      }
-                      
-                      // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
-                      const { getStateHistory } = await import('@/lib/direct-state-log');
-                      const history = await getStateHistory(updated.id);
-                      const hasActualConsultation = history.some(log => log.state === 'consultation');
-                      
-                      console.log(`[sync-today-webhooks] 🔍 Consultation attendance check for ${updated.id}:`, {
-                        hasActualConsultation,
-                        historyStates: history.map(h => h.state),
-                      });
-                      
-                      // Якщо ще немає фактичної консультації в історії, встановлюємо
-                      if (!hasActualConsultation) {
+                      } else {
+                        // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
+                        const { getStateHistory } = await import('@/lib/direct-state-log');
+                        const history = await getStateHistory(updated.id);
+                        const hasActualConsultation = history.some(log => log.state === 'consultation');
+                        
+                        console.log(`[sync-today-webhooks] 🔍 Consultation attendance check for ${updated.id}:`, {
+                          hasActualConsultation,
+                          historyStates: history.map(h => h.state),
+                        });
+                        
+                        // Якщо ще немає фактичної консультації в історії, встановлюємо
+                        if (!hasActualConsultation) {
                       const master = await getMasterByName(staffName);
                       console.log(`[sync-today-webhooks] 🔍 Master lookup for "${staffName}":`, {
                         found: !!master,
