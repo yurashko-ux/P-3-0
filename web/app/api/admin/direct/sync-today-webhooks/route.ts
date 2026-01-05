@@ -157,10 +157,33 @@ export async function POST(req: NextRequest) {
 
     // Фільтруємо вебхуки за вказаний період та ті, що стосуються клієнтів або записів
     let sampleCount = 0;
+    const TARGET_CLIENT_ID = 172203711; // Аліна - для діагностики
     const filteredEvents = events.filter((e: any) => {
       // Перевіряємо, чи це client або record event
       const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
       const isRecordEvent = e.body?.resource === 'record' && (e.body?.status === 'create' || e.body?.status === 'update');
+      
+      // Витягуємо clientId для перевірки
+      const eventClientId = e.body?.data?.client?.id || 
+                           e.body?.data?.client_id || 
+                           (e.isFromRecordsLog && e.originalRecord?.clientId) ||
+                           null;
+      
+      // Діагностика для цільового клієнта (Аліна)
+      if (eventClientId === TARGET_CLIENT_ID) {
+        console.log(`[sync-today-webhooks] 🔍 Found event for target client ${TARGET_CLIENT_ID}:`, {
+          resource: e.body?.resource,
+          status: e.body?.status,
+          isClientEvent,
+          isRecordEvent,
+          receivedAt: e.receivedAt,
+          datetime: e.body?.data?.datetime,
+          isFromRecordsLog: e.isFromRecordsLog,
+          hasServices: !!e.body?.data?.services,
+          services: e.body?.data?.services || (e.isFromRecordsLog ? e.originalRecord?.data?.services : null),
+          serviceName: e.isFromRecordsLog ? e.originalRecord?.serviceName : null,
+        });
+      }
       
       if (!isClientEvent && !isRecordEvent) {
         // Логуємо перші кілька прикладів для діагностики
@@ -171,6 +194,9 @@ export async function POST(req: NextRequest) {
             hasBody: !!e.body,
           });
           sampleCount++;
+        }
+        if (eventClientId === TARGET_CLIENT_ID) {
+          console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: not client/record event`);
         }
         return false;
       }
@@ -199,6 +225,14 @@ export async function POST(req: NextRequest) {
           });
           sampleCount++;
         }
+        if (eventClientId === TARGET_CLIENT_ID) {
+          console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: no valid date`, {
+            receivedAt: e.receivedAt,
+            datetime: e.body?.data?.datetime,
+            isFromRecordsLog: e.isFromRecordsLog,
+            originalRecordDatetime: e.isFromRecordsLog ? e.originalRecord?.datetime : null,
+          });
+        }
         return false;
       }
       
@@ -215,6 +249,21 @@ export async function POST(req: NextRequest) {
           datetime: e.body?.data?.datetime,
         });
         sampleCount++;
+      }
+      
+      if (eventClientId === TARGET_CLIENT_ID && !isInRange) {
+        console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: date out of range`, {
+          checkDate: checkDate.toISOString(),
+          targetDate: targetDate.toISOString(),
+          endDate: endDate.toISOString(),
+          resource: e.body?.resource,
+          receivedAt: e.receivedAt,
+          datetime: e.body?.data?.datetime,
+        });
+      }
+      
+      if (eventClientId === TARGET_CLIENT_ID && isInRange) {
+        console.log(`[sync-today-webhooks] ✅ Target client ${TARGET_CLIENT_ID} event WILL BE PROCESSED`);
       }
       
       return isInRange;
