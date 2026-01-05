@@ -109,6 +109,26 @@ export async function POST(req: NextRequest) {
         // Використовуємо datetime як receivedAt, якщо receivedAt відсутній
         const receivedAt = record.receivedAt || record.datetime || new Date().toISOString();
         
+        // Формуємо services масив
+        let services: any[] = [];
+        if (record.data?.services && Array.isArray(record.data.services)) {
+          services = record.data.services;
+        } else if (record.serviceName) {
+          services = [{ title: record.serviceName, name: record.serviceName, id: record.serviceId }];
+        }
+        
+        // Формуємо staff об'єкт
+        let staff: any = null;
+        if (record.data?.staff) {
+          staff = record.data.staff;
+        } else if (record.staffId || record.staffName) {
+          staff = {
+            id: record.staffId,
+            name: record.staffName,
+            display_name: record.staffName,
+          };
+        }
+        
         return {
           receivedAt,
           event: 'record',
@@ -120,8 +140,8 @@ export async function POST(req: NextRequest) {
             resource_id: record.recordId || record.visitId,
             data: {
               datetime: record.datetime,
-              services: record.data?.services || (record.serviceName ? [{ title: record.serviceName, name: record.serviceName, id: record.serviceId }] : []),
-              staff: record.data?.staff || (record.staffId ? { id: record.staffId, name: record.staffName } : null),
+              services: services,
+              staff: staff,
               client: record.data?.client || (record.clientId ? { id: record.clientId } : null),
               attendance: record.attendance,
               visit_id: record.visitId,
@@ -442,13 +462,24 @@ export async function POST(req: NextRequest) {
             if (isRecordEvent && event.body?.data?.services && Array.isArray(event.body.data.services)) {
               try {
                 const data = event.body.data;
-                const services = data.services;
-                const staffName = data.staff?.name || data.staff?.display_name || null;
-                const attendance = data.attendance;
-                const datetime = data.datetime;
+                // Використовуємо services з різних джерел для сумісності
+                const servicesArray = data.services || 
+                                     (event.isFromRecordsLog && event.originalRecord?.data?.services) ||
+                                     (event.isFromRecordsLog && event.originalRecord?.serviceName ? 
+                                       [{ title: event.originalRecord.serviceName, name: event.originalRecord.serviceName }] : []);
+                const staffName = data.staff?.name || 
+                                data.staff?.display_name || 
+                                (event.isFromRecordsLog && event.originalRecord?.staffName) ||
+                                null;
+                const attendance = data.attendance || 
+                                 (event.isFromRecordsLog && event.originalRecord?.attendance) ||
+                                 undefined;
+                const datetime = data.datetime || 
+                               (event.isFromRecordsLog && event.originalRecord?.datetime) ||
+                               null;
                 
                 // Перевіряємо, чи є послуга "Консультація"
-                const hasConsultation = services.some((s: any) => {
+                const hasConsultation = servicesArray.some((s: any) => {
                   const title = s.title || s.name || '';
                   return /консультація/i.test(title);
                 });
