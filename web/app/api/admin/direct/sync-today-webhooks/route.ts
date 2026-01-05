@@ -628,9 +628,17 @@ export async function POST(req: NextRequest) {
                                (event.isFromRecordsLog && event.originalRecord?.datetime) ||
                                null;
                 
+                // Перевіряємо, чи є послуга "Консультація" (використовується в обох блоках)
+                // ВАЖЛИВО: Визначаємо hasConsultation назовні блоку if (hasServices), щоб він був доступний для обробки services
+                const hasConsultation = servicesArray.some((s: any) => {
+                  const title = s.title || s.name || '';
+                  return /консультація/i.test(title);
+                });
+                
                 console.log(`[sync-today-webhooks] 🔍 Record event for client ${clientId}:`, {
                   isFromRecordsLog: event.isFromRecordsLog,
                   hasServices,
+                  hasConsultation,
                   servicesFromBody: !!servicesFromBody,
                   servicesFromRecord: !!servicesFromRecord,
                   servicesArrayLength: servicesArray.length,
@@ -657,12 +665,6 @@ export async function POST(req: NextRequest) {
                     datetime,
                     hasDataStaff: !!data.staff,
                     originalRecordStaffName: event.isFromRecordsLog ? event.originalRecord?.staffName : undefined,
-                  });
-                  
-                  // Перевіряємо, чи є послуга "Консультація" (використовується в обох блоках)
-                  const hasConsultation = servicesArray.some((s: any) => {
-                    const title = s.title || s.name || '';
-                    return /консультація/i.test(title);
                   });
                   
                   if (hasConsultation && datetime) {
@@ -906,7 +908,9 @@ export async function POST(req: NextRequest) {
                   
                   // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES (нарощування, інші послуги)
                   // Встановлюємо стан на основі послуг, якщо це не консультація
-                  if (!hasConsultation) {
+                  // ВАЖЛИВО: Виконуємо для всіх record events, навіть якщо hasServices false
+                  // (services можуть бути в різних місцях структури вебхука)
+                  if (isRecordEvent && !hasConsultation && servicesArray.length > 0) {
                     try {
                       const { determineStateFromServices } = await import('@/lib/direct-state-helper');
                       const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
