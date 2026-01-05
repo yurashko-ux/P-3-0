@@ -604,55 +604,56 @@ export async function POST(req: NextRequest) {
                         
                         // Якщо ще немає фактичної консультації в історії, встановлюємо
                         if (!hasActualConsultation) {
-                      const master = await getMasterByName(staffName);
-                      console.log(`[sync-today-webhooks] 🔍 Master lookup for "${staffName}":`, {
-                        found: !!master,
-                        masterId: master?.id,
-                        masterName: master?.name,
-                      });
-                      
-                      if (master) {
-                        const consultationUpdates = {
-                          state: 'consultation' as const,
-                          consultationAttended: true,
-                          consultationMasterId: master.id,
-                          consultationMasterName: master.name,
-                          consultationDate: datetime,
-                          consultationBookingDate: updated.consultationBookingDate || datetime,
-                          masterId: master.id,
-                          masterManuallySet: false,
-                          updatedAt: new Date().toISOString(),
-                        };
-                        
-                        const consultationUpdated = {
-                          ...updated,
-                          ...consultationUpdates,
-                        };
-                        
-                        await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
-                          altegioClientId: clientId,
-                          staffName,
-                          masterId: master.id,
-                          masterName: master.name,
-                          datetime,
-                        });
-                        
-                        console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
-                      } else {
-                        console.warn(`[sync-today-webhooks] ⚠️ Master not found for "${staffName}" for client ${updated.id}`);
+                          const master = await getMasterByName(staffName);
+                          console.log(`[sync-today-webhooks] 🔍 Master lookup for "${staffName}":`, {
+                            found: !!master,
+                            masterId: master?.id,
+                            masterName: master?.name,
+                          });
+                          
+                          if (master) {
+                            const consultationUpdates = {
+                              state: 'consultation' as const,
+                              consultationAttended: true,
+                              consultationMasterId: master.id,
+                              consultationMasterName: master.name,
+                              consultationDate: datetime,
+                              consultationBookingDate: updated.consultationBookingDate || datetime,
+                              masterId: master.id,
+                              masterManuallySet: false,
+                              updatedAt: new Date().toISOString(),
+                            };
+                            
+                            const consultationUpdated = {
+                              ...updated,
+                              ...consultationUpdates,
+                            };
+                            
+                            await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-attended', {
+                              altegioClientId: clientId,
+                              staffName,
+                              masterId: master.id,
+                              masterName: master.name,
+                              datetime,
+                            });
+                            
+                            console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
+                          } else {
+                            console.warn(`[sync-today-webhooks] ⚠️ Master not found for "${staffName}" for client ${updated.id}`);
+                          }
+                        } else {
+                          console.log(`[sync-today-webhooks] ⏭️ Client ${updated.id} already has consultation state in history, skipping`);
+                        }
                       }
                     } else {
-                      console.log(`[sync-today-webhooks] ⏭️ Client ${updated.id} already has consultation state in history, skipping`);
-                    }
-                  } else {
                       console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}:`, {
                         attendance,
                         wasAdminStaff,
                         hasStaffName: !!staffName,
-                        reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : 'unknown',
+                        hasDatetime: !!datetime,
+                        reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : !datetime ? 'no datetime' : 'unknown',
                       });
                     }
-                  }
                 }
               } catch (consultationErr) {
                 console.error(`[sync-today-webhooks] ⚠️ Failed to process consultation logic:`, consultationErr);
