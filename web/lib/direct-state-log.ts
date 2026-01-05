@@ -337,19 +337,7 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       `;
 
       try {
-        const batchLogs = await prisma.$queryRawUnsafe(`
-          SELECT 
-            "id",
-            "clientId",
-            "state",
-            "previousState",
-            "reason",
-            "metadata",
-            "createdAt"
-          FROM ranked_logs
-          WHERE rn <= 5
-          ORDER BY "clientId", "createdAt" DESC
-        `) as Array<{
+        const batchLogs = await prisma.$queryRawUnsafe(query, ...batch) as Array<{
           id: string;
           clientId: string;
           state: string | null;
@@ -357,7 +345,7 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
           reason: string | null;
           metadata: string | null;
           createdAt: Date;
-        }>>(query, ...batch);
+        }>;
         allLogs.push(...batchLogs);
       } catch (batchErr) {
         console.error(`[direct-state-log] Error fetching batch ${i / batchSize + 1}:`, batchErr);
