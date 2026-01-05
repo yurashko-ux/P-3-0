@@ -580,7 +580,7 @@ export async function POST(req: NextRequest) {
                     // Оновлення consultationBookingDate для клієнтів зі станом consultation-booked
                     // Якщо клієнт вже має стан consultation-booked, але дата оновилась або не була встановлена
                     else if ((status === 'create' || status === 'update') && 
-                             updated.state === 'consultation-booked' && 
+                             (updated.state === 'consultation-booked' as any) && 
                              attendance !== 1 && 
                              datetime) {
                       // Оновлюємо consultationBookingDate, якщо він відсутній або змінився
