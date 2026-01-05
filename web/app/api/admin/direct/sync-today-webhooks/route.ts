@@ -410,11 +410,54 @@ export async function POST(req: NextRequest) {
         let existingClientId: string | null = null;
         let duplicateClientId: string | null = null;
         
+        // ДОДАТКОВА ПЕРЕВІРКА: Якщо знайдено клієнта за Instagram, але також існує клієнт з missing_instagram_* та тим самим altegioClientId
+        // (або навпаки), потрібно об'єднати їх
+        if (existingClientIdByInstagram && clientId) {
+          const clientByInstagram = existingDirectClients.find((c) => c.id === existingClientIdByInstagram);
+          const hasRealInstagram = clientByInstagram && !clientByInstagram.instagramUsername.startsWith('missing_instagram_');
+          
+          if (hasRealInstagram) {
+            // Перевіряємо, чи є інший клієнт з missing_instagram_* та тим самим altegioClientId
+            const clientWithMissingInstagram = existingDirectClients.find((c) => 
+              c.altegioClientId === parseInt(String(clientId), 10) &&
+              c.id !== existingClientIdByInstagram &&
+              c.instagramUsername.startsWith('missing_instagram_')
+            );
+            
+            if (clientWithMissingInstagram) {
+              console.log(`[sync-today-webhooks] 🔄 Found duplicate: client ${existingClientIdByInstagram} (has real Instagram ${clientByInstagram.instagramUsername}) and ${clientWithMissingInstagram.id} (has missing_instagram_*), merging...`);
+              duplicateClientId = clientWithMissingInstagram.id;
+            }
+          }
+        }
+        
+        // Аналогічно, якщо знайдено клієнта за altegioClientId з missing_instagram_*, але також існує клієнт з реальним Instagram
+        if (existingClientIdByAltegio && normalizedInstagram && !normalizedInstagram.startsWith('missing_instagram_')) {
+          const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
+          const hasMissingInstagram = clientByAltegio && clientByAltegio.instagramUsername.startsWith('missing_instagram_');
+          
+          if (hasMissingInstagram) {
+            // Перевіряємо, чи є інший клієнт з реальним Instagram username
+            const clientWithRealInstagram = existingDirectClients.find((c) => 
+              c.instagramUsername === normalizedInstagram &&
+              c.id !== existingClientIdByAltegio
+            );
+            
+            if (clientWithRealInstagram) {
+              console.log(`[sync-today-webhooks] 🔄 Found duplicate: client ${clientWithRealInstagram.id} (has real Instagram ${normalizedInstagram}) and ${existingClientIdByAltegio} (has missing_instagram_*), merging...`);
+              existingClientId = clientWithRealInstagram.id;
+              duplicateClientId = existingClientIdByAltegio;
+            }
+          }
+        }
+        
         if (existingClientIdByInstagram && existingClientIdByAltegio) {
           if (existingClientIdByInstagram === existingClientIdByAltegio) {
             // Це той самий клієнт - просто оновлюємо
-            existingClientId = existingClientIdByInstagram;
-          } else {
+            if (!existingClientId) {
+              existingClientId = existingClientIdByInstagram;
+            }
+          } else if (!existingClientId) {
             // Різні клієнти - потрібно об'єднати
             const clientByInstagram = existingDirectClients.find((c) => c.id === existingClientIdByInstagram);
             const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
@@ -442,11 +485,11 @@ export async function POST(req: NextRequest) {
               console.log(`[sync-today-webhooks] ⚠️ Found duplicate: keeping client ${existingClientId} (by Instagram), deleting ${duplicateClientId} (by Altegio ID)`);
             }
           }
-        } else if (existingClientIdByInstagram) {
+        } else if (existingClientIdByInstagram && !existingClientId) {
           existingClientId = existingClientIdByInstagram;
-        } else if (existingClientIdByAltegio) {
+        } else if (existingClientIdByAltegio && !existingClientId) {
           existingClientId = existingClientIdByAltegio;
-        } else if (existingClientIdByName) {
+        } else if (existingClientIdByName && !existingClientId) {
           existingClientId = existingClientIdByName;
         }
 
