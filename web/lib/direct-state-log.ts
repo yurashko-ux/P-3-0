@@ -91,7 +91,7 @@ export async function logStateChange(
 
     // ПРАВИЛО: Запобігаємо дублікатам станів "client", "lead" та consultation-related станів
     // Перевіряємо ПІСЛЯ перевірки існування таблиці
-    const singleOccurrenceStates = ['client', 'lead', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+    const singleOccurrenceStates = ['client', 'lead', 'consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
     
     if (singleOccurrenceStates.includes(newState || '')) {
       // Отримуємо інформацію про клієнта
@@ -121,7 +121,7 @@ export async function logStateChange(
           // Для Manychat клієнтів: "lead" може бути тільки один раз
           console.log(`[direct-state-log] ⚠️ Skipping duplicate 'lead' state log for Manychat client ${clientId} (already exists in history)`);
           return;
-        } else if (newState === 'consultation-booked' || newState === 'consultation-no-show' || newState === 'consultation-rescheduled') {
+        } else if (newState === 'consultation' || newState === 'consultation-booked' || newState === 'consultation-no-show' || newState === 'consultation-rescheduled') {
           // Consultation-related стани можуть бути тільки один раз
           console.log(`[direct-state-log] ⚠️ Skipping duplicate '${newState}' state log for client ${clientId} (already exists in history)`);
           return;

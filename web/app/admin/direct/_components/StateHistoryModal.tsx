@@ -305,6 +305,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     const leadLogs = sortedHistory.filter(log => log.state === 'lead');
                     const clientLogs = sortedHistory.filter(log => log.state === 'client');
                     const messageLogs = sortedHistory.filter(log => log.state === 'message');
+                    const consultationLogs = sortedHistory.filter(log => log.state === 'consultation');
                     const consultationBookedLogs = sortedHistory.filter(log => log.state === 'consultation-booked');
                     const consultationNoShowLogs = sortedHistory.filter(log => log.state === 'consultation-no-show');
                     const consultationRescheduledLogs = sortedHistory.filter(log => log.state === 'consultation-rescheduled');
@@ -313,6 +314,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       log.state !== 'client' && 
                       log.state !== 'message' &&
                       log.state !== 'no-instagram' &&
+                      log.state !== 'consultation' &&
                       log.state !== 'consultation-booked' &&
                       log.state !== 'consultation-no-show' &&
                       log.state !== 'consultation-rescheduled'
@@ -327,7 +329,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
                       
                       // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                      const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                      const allOtherStates = [...clientLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                       const olderThanMessage = allOtherStates.filter(log => 
                         new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
                       );
@@ -355,7 +357,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       const oldestLead = leadLogs[0]; // Вже відсортовано від старіших до новіших
                       
                       // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з consultation та message)
-                      const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                      const allOtherStates = [...clientLogs, ...messageLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                       const olderThanLead = allOtherStates.filter(log => 
                         new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
                       );
@@ -373,6 +375,9 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     }
                     
                     // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
+                    if (consultationLogs.length > 0) {
+                      filteredHistory.push(consultationLogs[0]); // Тільки найстаріший "consultation"
+                    }
                     if (consultationBookedLogs.length > 0) {
                       filteredHistory.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
                     }

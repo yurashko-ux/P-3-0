@@ -751,6 +751,7 @@ export function DirectClientTable({
                               const leadLogs: typeof sortedStates = [];
                               const messageLogs: typeof sortedStates = [];
                               const clientLogs: typeof sortedStates = [];
+                              const consultationLogs: typeof sortedStates = [];
                               const consultationBookedLogs: typeof sortedStates = [];
                               const consultationNoShowLogs: typeof sortedStates = [];
                               const consultationRescheduledLogs: typeof sortedStates = [];
@@ -777,6 +778,8 @@ export function DirectClientTable({
                                 } else if (log.state === 'client') {
                                   // Збираємо "client" окремо для фільтрації дублікатів
                                   clientLogs.push(log);
+                                } else if (log.state === 'consultation') {
+                                  consultationLogs.push(log);
                                 } else if (log.state === 'consultation-booked') {
                                   consultationBookedLogs.push(log);
                                 } else if (log.state === 'consultation-no-show') {
@@ -798,7 +801,7 @@ export function DirectClientTable({
                                 const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
                                 
                                 // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                                const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                                const allOtherStates = [...clientLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                                 const olderThanMessage = allOtherStates.filter(log => 
                                   new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
                                 );
@@ -820,7 +823,7 @@ export function DirectClientTable({
                                 const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
                                 
                                 // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з message)
-                                const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                                const allOtherStates = [...clientLogs, ...messageLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                                 const olderThanLead = allOtherStates.filter(log => 
                                   new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
                                 );
@@ -840,6 +843,9 @@ export function DirectClientTable({
                               }
                               
                               // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
+                              if (consultationLogs.length > 0) {
+                                filteredStates.push(consultationLogs[0]); // Тільки найстаріший "consultation"
+                              }
                               if (consultationBookedLogs.length > 0) {
                                 filteredStates.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
                               }

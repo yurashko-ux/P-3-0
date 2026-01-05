@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     console.log(`[remove-duplicate-consultation-states] Found ${allClients.length} total clients`);
 
-    const consultationStates = ['consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+    const consultationStates = ['consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
     const results: Array<{
       clientId: string;
       instagramUsername: string;
