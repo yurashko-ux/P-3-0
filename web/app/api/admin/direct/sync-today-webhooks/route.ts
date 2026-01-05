@@ -383,7 +383,9 @@ export async function POST(req: NextRequest) {
 
     // Обробляємо кожен вебхук
     const TARGET_CLIENT_ID_LOOP = 172203711; // Аліна - для діагностики в циклі
+    let loopIndex = 0;
     for (const event of todayEvents) {
+      loopIndex++;
       try {
         // Для record events клієнт знаходиться в data.client
         // Для client events клієнт знаходиться в data або data.client
@@ -392,17 +394,6 @@ export async function POST(req: NextRequest) {
         // Діагностика: перевіряємо всі можливі місця для clientId для цільового клієнта
         // Перевіряємо спочатку event.clientId (додається під час фільтрації)
         const eventClientId = (event as any).clientId;
-        
-        // Додаткове логування на самому початку для цільового клієнта
-        if (eventClientId === TARGET_CLIENT_ID_LOOP) {
-          console.log(`[sync-today-webhooks] 🎯 STARTING LOOP for target client ${TARGET_CLIENT_ID_LOOP}:`, {
-            eventClientId,
-            hasBody: !!event.body,
-            resource: event.body?.resource,
-            receivedAt: event.receivedAt,
-            isFromRecordsLog: event.isFromRecordsLog,
-          });
-        }
         const possibleClientId1 = isRecordEvent 
           ? event.body?.data?.client?.id 
           : event.body?.resource_id;
@@ -416,11 +407,29 @@ export async function POST(req: NextRequest) {
              null)
           : null;
         
+        // Додаткове логування на самому початку для цільового клієнта
+        const mightBeTargetAtStart = eventClientId === TARGET_CLIENT_ID_LOOP ||
+                                      possibleClientId1 === TARGET_CLIENT_ID_LOOP || 
+                                      possibleClientId2 === TARGET_CLIENT_ID_LOOP || 
+                                      possibleClientId3 === TARGET_CLIENT_ID_LOOP;
+        
+        if (mightBeTargetAtStart) {
+          console.log(`[sync-today-webhooks] 🎯 STARTING LOOP [${loopIndex}/${todayEvents.length}] for target client ${TARGET_CLIENT_ID_LOOP}:`, {
+            eventClientId,
+            possibleClientId1,
+            possibleClientId2,
+            possibleClientId3,
+            hasBody: !!event.body,
+            resource: event.body?.resource,
+            receivedAt: event.receivedAt,
+            isFromRecordsLog: event.isFromRecordsLog,
+            hasOriginalRecord: !!event.originalRecord,
+          });
+        }
+        
         // Перевіряємо, чи це може бути вебхук для цільового клієнта
-        const mightBeTargetClient = eventClientId === TARGET_CLIENT_ID_LOOP ||
-                                     possibleClientId1 === TARGET_CLIENT_ID_LOOP || 
-                                     possibleClientId2 === TARGET_CLIENT_ID_LOOP || 
-                                     possibleClientId3 === TARGET_CLIENT_ID_LOOP;
+        // (використовуємо значення, які вже обчислені вище)
+        const mightBeTargetClient = mightBeTargetAtStart;
         
         if (mightBeTargetClient) {
           console.log(`[sync-today-webhooks] 🔍 BEFORE extraction for target client ${TARGET_CLIENT_ID_LOOP}:`, {
