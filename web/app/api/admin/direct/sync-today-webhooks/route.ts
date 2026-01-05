@@ -237,7 +237,25 @@ export async function POST(req: NextRequest) {
       }
       
       // Перевіряємо, чи дата в межах діапазону
-      const isInRange = checkDate >= targetDate && checkDate <= endDate;
+      // ВАЖЛИВО: Для record events з майбутніми датами (наприклад, запис на 19 січня)
+      // ми також обробляємо їх, якщо receivedAt (дата отримання вебхука) в діапазоні
+      // Це дозволяє обробляти записи на майбутнє, які були створені сьогодні
+      let isInRange = checkDate >= targetDate && checkDate <= endDate;
+      
+      // Якщо це record event і дата запису поза діапазоном, але receivedAt в діапазоні - обробляємо
+      if (!isInRange && isRecordEvent && e.receivedAt) {
+        const receivedDate = new Date(e.receivedAt);
+        if (!isNaN(receivedDate.getTime()) && receivedDate >= targetDate && receivedDate <= endDate) {
+          isInRange = true;
+          console.log(`[sync-today-webhooks] 📅 Record event with future datetime will be processed (receivedAt in range):`, {
+            checkDate: checkDate.toISOString(),
+            receivedAt: receivedDate.toISOString(),
+            targetDate: targetDate.toISOString(),
+            endDate: endDate.toISOString(),
+            clientId: eventClientId,
+          });
+        }
+      }
       
       if (!isInRange && sampleCount < 3) {
         console.log(`[sync-today-webhooks] Sample skipped event (date out of range):`, {
@@ -254,10 +272,10 @@ export async function POST(req: NextRequest) {
       if (eventClientId === TARGET_CLIENT_ID && !isInRange) {
         console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: date out of range`, {
           checkDate: checkDate.toISOString(),
+          receivedAt: e.receivedAt ? new Date(e.receivedAt).toISOString() : null,
           targetDate: targetDate.toISOString(),
           endDate: endDate.toISOString(),
           resource: e.body?.resource,
-          receivedAt: e.receivedAt,
           datetime: e.body?.data?.datetime,
         });
       }
