@@ -155,22 +155,27 @@ export async function POST(req: NextRequest) {
         return false;
       }
       
-      // Для record events перевіряємо також datetime з даних (може бути більш точною)
+      // Для record events використовуємо datetime з даних (це дата запису, більш точно)
+      // Для client events використовуємо receivedAt
       let checkDate: Date | null = null;
       
-      if (e.receivedAt) {
-        checkDate = new Date(e.receivedAt);
-      } else if (e.body?.data?.datetime) {
-        // Якщо немає receivedAt, використовуємо datetime з даних запису
+      if (e.body?.resource === 'record' && e.body?.data?.datetime) {
+        // Для record events використовуємо datetime з даних (це дата запису, а не отримання вебхука)
         checkDate = new Date(e.body.data.datetime);
+      } else if (e.receivedAt) {
+        // Для client events або якщо немає datetime - використовуємо receivedAt
+        checkDate = new Date(e.receivedAt);
       }
       
-      if (!checkDate) {
+      if (!checkDate || isNaN(checkDate.getTime())) {
         if (sampleCount < 3) {
-          console.log(`[sync-today-webhooks] Sample skipped event (no date):`, {
+          console.log(`[sync-today-webhooks] Sample skipped event (no valid date):`, {
             hasReceivedAt: !!e.receivedAt,
+            receivedAt: e.receivedAt,
             hasDatetime: !!e.body?.data?.datetime,
+            datetime: e.body?.data?.datetime,
             resource: e.body?.resource,
+            isFromRecordsLog: e.isFromRecordsLog,
           });
           sampleCount++;
         }
