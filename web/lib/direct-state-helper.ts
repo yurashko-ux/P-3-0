@@ -17,18 +17,20 @@ export function determineStateFromServices(services: any[]): 'consultation' | 'h
   // Перевіряємо, чи є послуга з "Нарощування" (будь-яка послуга, що містить слово "нарощування")
   // Нарощування має пріоритет, навіть якщо є консультація
   // До нарощування відносяться: "Капсульне нарощування", "Нарощування волосся", тощо
-  const hasHairExtension = services.some((s: any) => 
-    s.title && /нарощування/i.test(s.title)
-  );
+  const hasHairExtension = services.some((s: any) => {
+    const title = s.title || s.name || '';
+    return /нарощування/i.test(title);
+  });
 
   if (hasHairExtension) {
     return 'hair-extension';
   }
 
   // Перевіряємо, чи є послуга "Консультація" (тільки якщо немає нарощування)
-  const hasConsultation = services.some((s: any) => 
-    s.title && /консультація/i.test(s.title)
-  );
+  const hasConsultation = services.some((s: any) => {
+    const title = s.title || s.name || '';
+    return /консультація/i.test(title);
+  });
 
   if (hasConsultation) {
     return 'consultation';
@@ -37,11 +39,12 @@ export function determineStateFromServices(services: any[]): 'consultation' | 'h
   // Перевіряємо, чи є інші платні послуги (не консультація, не нарощування)
   // Послуга вважається платною, якщо cost > 0 або якщо немає поля cost (припускаємо, що це платна послуга)
   const hasOtherPaidServices = services.some((s: any) => {
-    if (!s.title) return false;
+    const title = s.title || s.name || '';
+    if (!title) return false;
     
     // Пропускаємо консультацію та нарощування (будь-яке нарощування)
-    if (/консультація/i.test(s.title)) return false;
-    if (/нарощування/i.test(s.title)) return false;
+    if (/консультація/i.test(title)) return false;
+    if (/нарощування/i.test(title)) return false;
     
     // Перевіряємо, чи це платна послуга
     const cost = s.cost || s.cost_to_pay || s.manual_cost || 0;

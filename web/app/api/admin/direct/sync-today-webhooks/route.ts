@@ -926,22 +926,32 @@ export async function POST(req: NextRequest) {
                         
                         const previousState = currentClient.state;
                         
-                        // Оновлюємо стан, якщо він змінився
-                        if (previousState !== newState) {
+                        // Оновлюємо стан, якщо він змінився АБО якщо є нарощування і потрібно встановити paidServiceDate
+                        const needsStateUpdate = previousState !== newState;
+                        const needsPaidServiceDate = hasHairExtension && datetime && !hasConsultation && 
+                          (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < new Date(datetime));
+                        
+                        if (needsStateUpdate || needsPaidServiceDate) {
                           const stateUpdates: Partial<typeof currentClient> = {
-                            state: newState,
                             updatedAt: new Date().toISOString(),
                           };
                           
-                          // Оновлюємо дату запису (paidServiceDate) для платних послуг
+                          // Оновлюємо стан, якщо він змінився
+                          if (needsStateUpdate && newState) {
+                            stateUpdates.state = newState;
+                          }
+                          
+                          // Оновлюємо дату запису (paidServiceDate) для платних послуг (нарощування)
                           if (datetime && !hasConsultation) {
                             const appointmentDate = new Date(datetime);
                             const now = new Date();
                             
                             if (appointmentDate > now) {
+                              // Запис в майбутньому - встановлюємо paidServiceDate
                               stateUpdates.paidServiceDate = datetime;
                               stateUpdates.signedUpForPaidService = true;
                             } else if (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < appointmentDate) {
+                              // Запис в минулому або поточному - встановлюємо paidServiceDate, якщо його немає або він старіший
                               stateUpdates.paidServiceDate = datetime;
                               stateUpdates.signedUpForPaidService = true;
                             }
@@ -967,11 +977,20 @@ export async function POST(req: NextRequest) {
                             services: servicesArray.map((s: any) => ({ id: s.id, title: s.title || s.name })),
                             staffName,
                             masterId: stateUpdates.masterId,
+                            previousState,
+                            newState: newState || previousState,
+                            needsStateUpdate,
+                            needsPaidServiceDate,
                           };
                           
                           await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata);
                           
-                          console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${newState}' based on services`);
+                          if (needsStateUpdate && newState) {
+                            console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${newState}' based on services`);
+                          }
+                          if (needsPaidServiceDate) {
+                            console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} paidServiceDate to ${datetime} for hair extension service`);
+                          }
                         }
                       }
                     } catch (stateErr) {
