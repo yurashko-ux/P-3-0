@@ -388,6 +388,23 @@ export async function POST(req: NextRequest) {
           ? existingAltegioIdMap.get(parseInt(String(clientId), 10))
           : null;
         
+        // Якщо клієнта не знайдено за altegioClientId або Instagram, шукаємо за іменем
+        let existingClientIdByName: string | null = null;
+        if (!existingClientIdByInstagram && !existingClientIdByAltegio && firstName && lastName) {
+          existingClientIdByName = existingDirectClients.find((dc) => {
+            const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+            const dcLastName = (dc.lastName || '').trim().toLowerCase();
+            const searchFirstName = firstName.trim().toLowerCase();
+            const searchLastName = lastName.trim().toLowerCase();
+            
+            return dcFirstName === searchFirstName && dcLastName === searchLastName;
+          })?.id || null;
+          
+          if (existingClientIdByName) {
+            console.log(`[sync-today-webhooks] 🔍 Found client by name "${firstName} ${lastName}": ${existingClientIdByName}`);
+          }
+        }
+        
         // Визначаємо, який клієнт залишити при об'єднанні
         // Пріоритет: клієнт з правильним Instagram, а не з missing_instagram_*
         let existingClientId: string | null = null;
@@ -429,6 +446,8 @@ export async function POST(req: NextRequest) {
           existingClientId = existingClientIdByInstagram;
         } else if (existingClientIdByAltegio) {
           existingClientId = existingClientIdByAltegio;
+        } else if (existingClientIdByName) {
+          existingClientId = existingClientIdByName;
         }
 
         if (existingClientId) {
