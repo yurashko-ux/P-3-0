@@ -911,34 +911,57 @@ export async function POST(req: NextRequest) {
                       const { determineStateFromServices } = await import('@/lib/direct-state-helper');
                       const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
                       
+                      // Перевіряємо нарощування ПЕРЕД визначенням стану
+                      const hasHairExtension = servicesArray.some((s: any) => {
+                        const title = s.title || s.name || '';
+                        return /нарощування/i.test(title);
+                      });
+                      
                       const newState = determineStateFromServices(servicesArray);
                       
-                      if (newState) {
-                        const hasHairExtension = servicesArray.some((s: any) => {
-                          const title = s.title || s.name || '';
-                          return /нарощування/i.test(title);
-                        });
-                        
-                        // Отримуємо актуальний стан клієнта (може бути оновлено після консультації)
-                        const currentClient = existingDirectClients.find(
-                          (c) => c.id === updated.id
-                        ) || updated;
-                        
-                        const previousState = currentClient.state;
-                        
-                        // Оновлюємо стан, якщо він змінився АБО якщо є нарощування і потрібно встановити paidServiceDate
-                        const needsStateUpdate = previousState !== newState;
-                        const needsPaidServiceDate = hasHairExtension && datetime && !hasConsultation && 
-                          (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < new Date(datetime));
-                        
-                        if (needsStateUpdate || needsPaidServiceDate) {
+                      console.log(`[sync-today-webhooks] 🔍 Processing services for client ${updated.id}:`, {
+                        hasHairExtension,
+                        newState,
+                        servicesCount: servicesArray.length,
+                        services: servicesArray.map((s: any) => ({ title: s.title || s.name, name: s.name })),
+                        hasConsultation,
+                        datetime,
+                      });
+                      
+                      // Отримуємо актуальний стан клієнта (може бути оновлено після консультації)
+                      const currentClient = existingDirectClients.find(
+                        (c) => c.id === updated.id
+                      ) || updated;
+                      
+                      const previousState = currentClient.state;
+                      
+                      // Визначаємо фінальний стан: якщо newState null, але є нарощування, встановлюємо 'hair-extension'
+                      const finalState = newState || (hasHairExtension ? 'hair-extension' : null);
+                      
+                      // Оновлюємо стан, якщо він змінився АБО якщо є нарощування і потрібно встановити paidServiceDate
+                      const needsStateUpdate = finalState && previousState !== finalState;
+                      const needsPaidServiceDate = hasHairExtension && datetime && 
+                        (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < new Date(datetime));
+                      
+                      console.log(`[sync-today-webhooks] 🔍 State update check for client ${updated.id}:`, {
+                        previousState,
+                        newState,
+                        finalState,
+                        needsStateUpdate,
+                        needsPaidServiceDate,
+                        hasHairExtension,
+                        datetime,
+                        currentPaidServiceDate: currentClient.paidServiceDate,
+                      });
+                      
+                      if (needsStateUpdate || needsPaidServiceDate) {
                           const stateUpdates: Partial<typeof currentClient> = {
                             updatedAt: new Date().toISOString(),
                           };
                           
                           // Оновлюємо стан, якщо він змінився
-                          if (needsStateUpdate && newState) {
-                            stateUpdates.state = newState;
+                          if (needsStateUpdate && finalState) {
+                            stateUpdates.state = finalState;
                           }
                           
                           // Оновлюємо дату запису (paidServiceDate) для платних послуг (нарощування)
@@ -978,20 +1001,34 @@ export async function POST(req: NextRequest) {
                             staffName,
                             masterId: stateUpdates.masterId,
                             previousState,
-                            newState: newState || previousState,
+                            newState: finalState || previousState,
                             needsStateUpdate,
                             needsPaidServiceDate,
                           };
                           
                           await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata);
                           
-                          if (needsStateUpdate && newState) {
-                            console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${newState}' based on services`);
+                          if (needsStateUpdate && finalState) {
+                            console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${finalState}' based on services`);
                           }
                           if (needsPaidServiceDate) {
                             console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} paidServiceDate to ${datetime} for hair extension service`);
                           }
+                        } else {
+                          console.log(`[sync-today-webhooks] ⏭️ Skipping state update for client ${updated.id}:`, {
+                            previousState,
+                            finalState,
+                            needsStateUpdate,
+                            needsPaidServiceDate,
+                            hasHairExtension,
+                          });
                         }
+                      } else {
+                        console.log(`[sync-today-webhooks] ⏭️ Skipping services processing for client ${updated.id}:`, {
+                          hasConsultation,
+                          hasServices,
+                          servicesArrayLength: servicesArray.length,
+                        });
                       }
                     } catch (stateErr) {
                       console.error(`[sync-today-webhooks] ⚠️ Failed to process state from services:`, stateErr);
