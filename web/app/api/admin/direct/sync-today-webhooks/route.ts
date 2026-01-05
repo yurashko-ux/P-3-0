@@ -311,6 +311,30 @@ export async function POST(req: NextRequest) {
       return dateA - dateB;
     });
 
+    // Діагностика для цільового клієнта
+    const targetEventsInToday = todayEvents.filter((e: any) => {
+      const eventClientId = e.body?.data?.client?.id || 
+                           e.body?.data?.client_id || 
+                           (e.isFromRecordsLog && e.originalRecord?.clientId) ||
+                           null;
+      return eventClientId === TARGET_CLIENT_ID;
+    });
+    
+    if (targetEventsInToday.length > 0) {
+      console.log(`[sync-today-webhooks] 🔍 Found ${targetEventsInToday.length} target client ${TARGET_CLIENT_ID} events in todayEvents:`, 
+        targetEventsInToday.map((e: any) => ({
+          receivedAt: e.receivedAt,
+          resource: e.body?.resource,
+          status: e.body?.status,
+          clientId: e.body?.data?.client?.id || (e.isFromRecordsLog && e.originalRecord?.clientId),
+          isFromRecordsLog: e.isFromRecordsLog,
+        }))
+      );
+    } else {
+      console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} events NOT found in todayEvents after sorting!`);
+      console.log(`[sync-today-webhooks] 🔍 Filtered events count: ${filteredEvents.length}, Today events count: ${todayEvents.length}`);
+    }
+
     console.log(`[direct/sync-today-webhooks] Processing ${todayEvents.length} events sorted by date`);
 
     // Імпортуємо функції для обробки вебхуків
@@ -358,9 +382,27 @@ export async function POST(req: NextRequest) {
         // Для record events клієнт знаходиться в data.client
         // Для client events клієнт знаходиться в data або data.client
         const isRecordEvent = event.body?.resource === 'record';
-        const clientId = isRecordEvent 
+        
+        // Витягуємо clientId, враховуючи структуру для конвертованих вебхуків з records:log
+        let clientId = isRecordEvent 
           ? (event.body?.data?.client?.id || event.body?.data?.client_id)
           : event.body?.resource_id;
+        
+        // Якщо clientId не знайдено і це конвертований вебхук з records:log, шукаємо в originalRecord
+        if (!clientId && event.isFromRecordsLog && event.originalRecord) {
+          clientId = event.originalRecord.clientId || 
+                     event.originalRecord.data?.client?.id ||
+                     event.originalRecord.data?.client_id ||
+                     null;
+          
+          // Якщо знайшли clientId в originalRecord, додаємо його до body.data.client для подальшої обробки
+          if (clientId && isRecordEvent && !event.body?.data?.client?.id) {
+            if (!event.body.data) event.body.data = {};
+            if (!event.body.data.client) event.body.data.client = {};
+            event.body.data.client.id = clientId;
+          }
+        }
+        
         const client = isRecordEvent
           ? event.body?.data?.client
           : (event.body?.data?.client || event.body?.data);
@@ -373,6 +415,8 @@ export async function POST(req: NextRequest) {
             clientId,
             hasClient: !!client,
             status,
+            isFromRecordsLog: event.isFromRecordsLog,
+            originalRecordClientId: event.isFromRecordsLog ? event.originalRecord?.clientId : undefined,
             clientKeys: client ? Object.keys(client) : [],
             hasServices: isRecordEvent ? !!event.body?.data?.services : false,
             services: isRecordEvent ? event.body?.data?.services : null,
@@ -381,8 +425,14 @@ export async function POST(req: NextRequest) {
         }
 
         if (!clientId || !client) {
-          if (clientId === TARGET_CLIENT_ID) {
-            console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: no clientId or client object`);
+          if (clientId === TARGET_CLIENT_ID || (event.isFromRecordsLog && event.originalRecord?.clientId === TARGET_CLIENT_ID)) {
+            console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: no clientId or client object`, {
+              clientId,
+              hasClient: !!client,
+              isFromRecordsLog: event.isFromRecordsLog,
+              originalRecordClientId: event.isFromRecordsLog ? event.originalRecord?.clientId : undefined,
+              bodyDataClient: event.body?.data?.client,
+            });
           }
           results.skipped++;
           continue;
