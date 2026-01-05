@@ -798,13 +798,22 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-info"
             onClick={async () => {
-              if (!confirm('Синхронізувати клієнтів з сьогоднішніх вебхуків?\n\nБудуть оброблені всі вебхуки за сьогодні (client та record events).\n\nПродовжити?')) {
+              const days = prompt('Синхронізувати клієнтів з вебхуків.\n\nВведіть кількість днів назад (1 = сьогодні, 2 = сьогодні + вчора, тощо):', '2');
+              if (days === null) return;
+              const daysNum = parseInt(days, 10);
+              if (isNaN(daysNum) || daysNum < 1 || daysNum > 30) {
+                alert('Введіть число від 1 до 30');
+                return;
+              }
+              if (!confirm(`Синхронізувати клієнтів з вебхуків за останні ${daysNum} днів?\n\nБудуть оброблені всі вебхуки (client та record events) за останні ${daysNum} днів.\n\nПродовжити?`)) {
                 return;
               }
               setIsLoading(true);
               try {
                 const res = await fetch('/api/admin/direct/sync-today-webhooks', {
                   method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ days: daysNum }),
                 });
                 const data = await res.json();
                 if (data.ok) {

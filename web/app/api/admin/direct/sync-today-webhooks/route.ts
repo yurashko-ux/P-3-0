@@ -21,7 +21,10 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
- * POST - обробити сьогоднішні вебхуки від Altegio
+ * POST - обробити вебхуки від Altegio за вказану дату або останні N днів
+ * Параметри в body:
+ *   - date (опціонально): дата в форматі YYYY-MM-DD, за замовчуванням - сьогодні
+ *   - days (опціонально): кількість днів назад (1 = сьогодні, 2 = сьогодні + вчора, тощо)
  */
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -29,16 +32,29 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Отримуємо сьогоднішню дату (початок дня)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
+    const body = await req.json().catch(() => ({}));
+    const targetDateStr = body.date; // YYYY-MM-DD
+    const days = body.days ? parseInt(String(body.days), 10) : 1; // За замовчуванням 1 день (сьогодні)
 
-    console.log(`[direct/sync-today-webhooks] Processing webhooks from ${todayISO}`);
+    let targetDate: Date;
+    if (targetDateStr) {
+      // Якщо вказана конкретна дата
+      targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
+    } else {
+      // За замовчуванням - сьогодні
+      targetDate = new Date();
+      targetDate.setHours(0, 0, 0, 0);
+    }
 
-    // Отримуємо всі вебхуки з логу
+    const endDate = new Date(targetDate);
+    endDate.setDate(endDate.getDate() + days - 1); // Якщо days=1, то endDate = targetDate
+    endDate.setHours(23, 59, 59, 999);
+
+    console.log(`[direct/sync-today-webhooks] Processing webhooks from ${targetDate.toISOString()} to ${endDate.toISOString()} (${days} day(s))`);
+
+    // Отримуємо всі вебхуки з логу (останні 50, але також перевіряємо records:log)
     const rawItems = await kvRead.lrange('altegio:webhook:log', 0, 999);
-    const events = rawItems
+    let events = rawItems
       .map((raw) => {
         try {
           const parsed = JSON.parse(raw);
@@ -62,18 +78,76 @@ export async function POST(req: NextRequest) {
       })
       .filter(Boolean);
 
-    // Фільтруємо вебхуки за сьогоднішню дату та ті, що стосуються клієнтів або записів
-    const todayEvents = events.filter((e: any) => {
+    // Також отримуємо record events з records:log (там більше даних)
+    try {
+      const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const recordEvents = recordsLogRaw
+        .map((raw) => {
+          try {
+            const parsed = JSON.parse(raw);
+            if (
+              parsed &&
+              typeof parsed === 'object' &&
+              'value' in parsed &&
+              typeof parsed.value === 'string'
+            ) {
+              try {
+                return JSON.parse(parsed.value);
+              } catch {
+                return parsed;
+              }
+            }
+            return parsed;
+          } catch {
+            return null;
+          }
+        })
+        .filter((r) => r && r.receivedAt);
+
+      // Конвертуємо record events у формат вебхуків
+      const convertedRecordEvents = recordEvents.map((record: any) => ({
+        receivedAt: record.receivedAt,
+        event: 'record',
+        body: {
+          resource: 'record',
+          status: record.status || 'create',
+          resource_id: record.recordId || record.visitId,
+          data: {
+            datetime: record.datetime,
+            services: record.data?.services || (record.serviceName ? [{ title: record.serviceName, name: record.serviceName, id: record.serviceId }] : []),
+            staff: record.data?.staff || (record.staffId ? { id: record.staffId } : null),
+            client: record.data?.client || (record.clientId ? { id: record.clientId } : null),
+            attendance: record.attendance,
+            visit_id: record.visitId,
+          },
+        },
+      }));
+
+      events = [...events, ...convertedRecordEvents];
+    } catch (err) {
+      console.warn('[sync-today-webhooks] Failed to read records log:', err);
+    }
+
+    // Фільтруємо вебхуки за вказаний період та ті, що стосуються клієнтів або записів
+    const filteredEvents = events.filter((e: any) => {
       if (!e.receivedAt) return false;
       const receivedDate = new Date(e.receivedAt);
-      receivedDate.setHours(0, 0, 0, 0);
-      const isToday = receivedDate.getTime() === today.getTime();
+      const isInRange = receivedDate >= targetDate && receivedDate <= endDate;
       const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
       const isRecordEvent = e.body?.resource === 'record' && (e.body?.status === 'create' || e.body?.status === 'update');
-      return isToday && (isClientEvent || isRecordEvent);
+      return isInRange && (isClientEvent || isRecordEvent);
     });
 
-    console.log(`[direct/sync-today-webhooks] Found ${todayEvents.length} events from today (client + record)`);
+    console.log(`[direct/sync-today-webhooks] Found ${filteredEvents.length} events in range (client + record)`);
+
+    // Сортуємо за датою отримання (найстаріші першими)
+    const todayEvents = filteredEvents.sort((a: any, b: any) => {
+      const dateA = new Date(a.receivedAt || 0).getTime();
+      const dateB = new Date(b.receivedAt || 0).getTime();
+      return dateA - dateB;
+    });
+
+    console.log(`[direct/sync-today-webhooks] Processing ${todayEvents.length} events sorted by date`);
 
     // Імпортуємо функції для обробки вебхуків
     const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
