@@ -320,12 +320,14 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     
                     // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
                     // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
+                    // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
                     let oldestMessageAsLead: typeof sortedHistory[0] | null = null;
-                    if (messageLogs.length > 0) {
+                    if (messageLogs.length > 0 && leadLogs.length === 0) {
+                      // Перевіряємо, чи "message" найстаріший стан тільки якщо немає справжнього "lead"
                       const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
                       
                       // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                      const allOtherStates = [...leadLogs, ...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                      const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                       const olderThanMessage = allOtherStates.filter(log => 
                         new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
                       );
