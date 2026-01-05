@@ -587,8 +587,20 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      date: todayISO,
-      ...results,
+      date: targetDate.toISOString().split('T')[0],
+      dateRange: {
+        from: targetDate.toISOString(),
+        to: endDate.toISOString(),
+        days,
+      },
+      totalEvents: events.length,
+      filteredEvents: filteredEvents.length,
+      processed: results.processed,
+      created: results.created,
+      updated: results.updated,
+      skipped: results.skipped,
+      errors: results.errors,
+      clients: results.clients,
     });
   } catch (error) {
     console.error('[direct/sync-today-webhooks] Error:', error);
