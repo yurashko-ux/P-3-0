@@ -408,14 +408,20 @@ export async function POST(req: NextRequest) {
                     (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime)) {
                   // Перевіряємо, чи не встановили consultationBookingDate в попередніх блоках
                   // Якщо ні - встановлюємо його тут
-                  // Також очищаємо paidServiceDate для консультацій
+                  // ВАЖЛИВО: для консультацій ЗАВЖДИ очищаємо paidServiceDate, якщо signedUpForPaidService = false
                   const updates: Partial<typeof existingClient> = {
                     consultationBookingDate: datetime,
-                    // Очищаємо paidServiceDate для консультацій
+                    // Очищаємо paidServiceDate для консультацій, якщо клієнт не має платних послуг
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
+                  
+                  // Якщо paidServiceDate встановлений, але signedUpForPaidService = false - це помилка, очищаємо
+                  if (existingClient.paidServiceDate && !existingClient.signedUpForPaidService) {
+                    updates.paidServiceDate = undefined;
+                    console.log(`[altegio/webhook] 🧹 Cleaning up paidServiceDate for consultation client ${existingClient.id} (signedUpForPaidService is false)`);
+                  }
                   
                   const updated: typeof existingClient = {
                     ...existingClient,
