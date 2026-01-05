@@ -485,6 +485,15 @@ export async function POST(req: NextRequest) {
                 });
                 
                 if (hasConsultation && datetime) {
+                  console.log(`[sync-today-webhooks] 🔍 Processing consultation for client ${updated.id} (${updated.instagramUsername}):`, {
+                    staffName,
+                    attendance,
+                    datetime,
+                    status,
+                    clientId,
+                    isFromRecordsLog: event.isFromRecordsLog,
+                  });
+                  
                   // Імпортуємо функції для обробки консультацій
                   const { getMasterByName } = await import('@/lib/direct-masters/store');
                   
@@ -495,11 +504,23 @@ export async function POST(req: NextRequest) {
                     m.name === staffName && (m.role === 'admin' || m.role === 'direct-manager')
                   ) : false;
                   
+                  console.log(`[sync-today-webhooks] 🔍 Consultation check for ${updated.id}:`, {
+                    wasAdminStaff,
+                    staffName,
+                    attendance,
+                    status,
+                  });
+                  
                   // Перевіряємо, чи в історії станів клієнта вже є консультації
                   const { getStateHistory } = await import('@/lib/direct-state-log');
                   const history = await getStateHistory(updated.id);
                   const consultationStates = ['consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
                   const hadConsultationBefore = history.some(log => consultationStates.includes(log.state || ''));
+                  
+                  console.log(`[sync-today-webhooks] 🔍 Consultation history for ${updated.id}:`, {
+                    hadConsultationBefore,
+                    historyStates: history.map(h => h.state),
+                  });
                   
                   // Обробка запису на консультацію (ПЕРША консультація)
                   if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
@@ -526,14 +547,31 @@ export async function POST(req: NextRequest) {
                   // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
                   // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
                   else if (attendance === 1 && !wasAdminStaff && staffName) {
+                    console.log(`[sync-today-webhooks] 🔍 Processing consultation attendance for ${updated.id}:`, {
+                      attendance,
+                      wasAdminStaff,
+                      staffName,
+                    });
+                    
                     // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
                     const { getStateHistory } = await import('@/lib/direct-state-log');
                     const history = await getStateHistory(updated.id);
                     const hasActualConsultation = history.some(log => log.state === 'consultation');
                     
+                    console.log(`[sync-today-webhooks] 🔍 Consultation attendance check for ${updated.id}:`, {
+                      hasActualConsultation,
+                      historyStates: history.map(h => h.state),
+                    });
+                    
                     // Якщо ще немає фактичної консультації в історії, встановлюємо
                     if (!hasActualConsultation) {
                       const master = await getMasterByName(staffName);
+                      console.log(`[sync-today-webhooks] 🔍 Master lookup for "${staffName}":`, {
+                        found: !!master,
+                        masterId: master?.id,
+                        masterName: master?.name,
+                      });
+                      
                       if (master) {
                         const consultationUpdates = {
                           state: 'consultation' as const,
@@ -561,10 +599,19 @@ export async function POST(req: NextRequest) {
                         });
                         
                         console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
+                      } else {
+                        console.warn(`[sync-today-webhooks] ⚠️ Master not found for "${staffName}" for client ${updated.id}`);
                       }
                     } else {
                       console.log(`[sync-today-webhooks] ⏭️ Client ${updated.id} already has consultation state in history, skipping`);
                     }
+                  } else {
+                    console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}:`, {
+                      attendance,
+                      wasAdminStaff,
+                      hasStaffName: !!staffName,
+                      reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : 'unknown',
+                    });
                   }
                 }
               } catch (consultationErr) {
