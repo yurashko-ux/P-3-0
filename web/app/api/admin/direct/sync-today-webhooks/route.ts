@@ -571,25 +571,41 @@ export async function POST(req: NextRequest) {
                     // Обробка приходу клієнта на консультацію
                     // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
                     // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
-                    else if (attendance === 1 && !wasAdminStaff && staffName) {
-                    console.log(`[sync-today-webhooks] 🔍 Processing consultation attendance for ${updated.id}:`, {
-                      attendance,
-                      wasAdminStaff,
-                      staffName,
-                    });
-                    
-                    // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
-                    const { getStateHistory } = await import('@/lib/direct-state-log');
-                    const history = await getStateHistory(updated.id);
-                    const hasActualConsultation = history.some(log => log.state === 'consultation');
-                    
-                    console.log(`[sync-today-webhooks] 🔍 Consultation attendance check for ${updated.id}:`, {
-                      hasActualConsultation,
-                      historyStates: history.map(h => h.state),
-                    });
-                    
-                    // Якщо ще немає фактичної консультації в історії, встановлюємо
-                    if (!hasActualConsultation) {
+                    // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
+                    else if (attendance === 1 && !wasAdminStaff && staffName && datetime) {
+                      // Перевіряємо, чи дата консультації вже настала
+                      const consultationDate = new Date(datetime);
+                      const now = new Date();
+                      const isPastOrToday = consultationDate <= now;
+                      
+                      console.log(`[sync-today-webhooks] 🔍 Processing consultation attendance for ${updated.id}:`, {
+                        attendance,
+                        wasAdminStaff,
+                        staffName,
+                        datetime,
+                        consultationDate: consultationDate.toISOString(),
+                        now: now.toISOString(),
+                        isPastOrToday,
+                      });
+                      
+                      // Якщо дата ще не настала, не встановлюємо стан 'consultation'
+                      if (!isPastOrToday) {
+                        console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}: consultation date ${datetime} is in the future`);
+                        return; // Виходимо з блоку, не встановлюємо стан
+                      }
+                      
+                      // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
+                      const { getStateHistory } = await import('@/lib/direct-state-log');
+                      const history = await getStateHistory(updated.id);
+                      const hasActualConsultation = history.some(log => log.state === 'consultation');
+                      
+                      console.log(`[sync-today-webhooks] 🔍 Consultation attendance check for ${updated.id}:`, {
+                        hasActualConsultation,
+                        historyStates: history.map(h => h.state),
+                      });
+                      
+                      // Якщо ще немає фактичної консультації в історії, встановлюємо
+                      if (!hasActualConsultation) {
                       const master = await getMasterByName(staffName);
                       console.log(`[sync-today-webhooks] 🔍 Master lookup for "${staffName}":`, {
                         found: !!master,

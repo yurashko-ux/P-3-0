@@ -389,14 +389,24 @@ export async function POST(req: NextRequest) {
                 // 2.5 Обробка приходу клієнта на консультацію
                 // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
                 // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
-                else if (attendance === 1 && !wasAdminStaff && staffName) {
-                  // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
-                  const { getStateHistory } = await import('@/lib/direct-state-log');
-                  const history = await getStateHistory(existingClient.id);
-                  const hasActualConsultation = history.some(log => log.state === 'consultation');
+                // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
+                else if (attendance === 1 && !wasAdminStaff && staffName && datetime) {
+                  // Перевіряємо, чи дата консультації вже настала
+                  const consultationDate = new Date(datetime);
+                  const now = new Date();
+                  const isPastOrToday = consultationDate <= now;
                   
-                  // Якщо ще немає фактичної консультації в історії, встановлюємо
-                  if (!hasActualConsultation) {
+                  // Якщо дата ще не настала, не встановлюємо стан 'consultation'
+                  if (!isPastOrToday) {
+                    console.log(`[altegio/webhook] ⏭️ Skipping consultation attendance for ${existingClient.id}: consultation date ${datetime} is in the future`);
+                  } else {
+                    // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
+                    const { getStateHistory } = await import('@/lib/direct-state-log');
+                    const history = await getStateHistory(existingClient.id);
+                    const hasActualConsultation = history.some(log => log.state === 'consultation');
+                    
+                    // Якщо ще немає фактичної консультації в історії, встановлюємо
+                    if (!hasActualConsultation) {
                     // Знаходимо майстра
                     const master = await getMasterByName(staffName);
                     if (master) {
