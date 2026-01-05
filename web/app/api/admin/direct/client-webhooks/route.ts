@@ -44,7 +44,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Отримуємо всі webhook events (до 1000 для пошуку)
-    const rawItems = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    // Перевіряємо обидва джерела: webhook:log та records:log
+    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 999);
+    
+    // Об'єднуємо обидва джерела
+    const rawItems = [...rawItemsWebhook, ...rawItemsRecords];
     const events = rawItems
       .map((raw) => {
         try {
@@ -99,8 +104,9 @@ export async function GET(req: NextRequest) {
         return foundClientId === altegioClientId;
       })
       .map((e: any) => {
+        // Обробляємо як звичайні webhook events, так і events з records:log
         const body = e.body || {};
-        const data = body.data || {};
+        const data = body.data || e.data || {};
         
         // Витягуємо services (може бути масив або один об'єкт)
         let services: string[] = [];
