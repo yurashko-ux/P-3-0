@@ -343,12 +343,26 @@ export async function POST(req: NextRequest) {
         
         if (existingClientByAltegioId) {
           // Якщо клієнт існує, але в webhook є новий Instagram - використовуємо його (пріоритет webhook'у)
-          if (instagram) {
-            const normalizedFromWebhook = normalizeInstagram(instagram);
-            if (normalizedFromWebhook) {
-              normalizedInstagram = normalizedFromWebhook;
-              isMissingInstagram = false;
+            if (instagram) {
+              const normalizedFromWebhook = normalizeInstagram(instagram);
+              if (normalizedFromWebhook) {
+                normalizedInstagram = normalizedFromWebhook;
+                isMissingInstagram = false;
               console.log(`[sync-today-webhooks] ✅ Found Instagram in webhook for existing client ${clientId}: ${normalizedInstagram} (updating from ${existingClientByAltegioId.instagramUsername})`);
+              
+              // ВАЖЛИВО: Якщо існуючий клієнт має missing_instagram_*, а вебхук містить правильний Instagram,
+              // перевіряємо, чи є інший клієнт з цим правильним Instagram (можливо, створений з Manychat)
+              if (existingClientByAltegioId.instagramUsername.startsWith('missing_instagram_')) {
+                const clientWithRealInstagram = existingDirectClients.find((c) => 
+                  c.instagramUsername === normalizedInstagram &&
+                  c.id !== existingClientByAltegioId.id
+                );
+                
+                if (clientWithRealInstagram) {
+                  console.log(`[sync-today-webhooks] 🔄 Found client with real Instagram ${normalizedInstagram} (${clientWithRealInstagram.id}) while existing client ${existingClientByAltegioId.id} has missing_instagram_*. Will merge them.`);
+                  // Це буде оброблено далі в логіці об'єднання
+                }
+              }
             } else {
               // Якщо Instagram з webhook'а невалідний, використовуємо старий
               normalizedInstagram = existingClientByAltegioId.instagramUsername;
@@ -531,7 +545,30 @@ export async function POST(req: NextRequest) {
         } else if (existingClientIdByInstagram && !existingClientId) {
           existingClientId = existingClientIdByInstagram;
         } else if (existingClientIdByAltegio && !existingClientId) {
-          existingClientId = existingClientIdByAltegio;
+          // ВАЖЛИВО: Якщо клієнт знайдений за altegioClientId має missing_instagram_*, 
+          // а вебхук містить правильний Instagram, перевіряємо, чи є інший клієнт з цим Instagram
+          const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
+          if (clientByAltegio && 
+              clientByAltegio.instagramUsername.startsWith('missing_instagram_') &&
+              normalizedInstagram && 
+              !normalizedInstagram.startsWith('missing_instagram_')) {
+            // Шукаємо клієнта з правильним Instagram
+            const clientWithRealInstagram = existingDirectClients.find((c) => 
+              c.instagramUsername === normalizedInstagram &&
+              c.id !== existingClientIdByAltegio
+            );
+            
+            if (clientWithRealInstagram) {
+              console.log(`[sync-today-webhooks] 🔄 Found client with real Instagram ${normalizedInstagram} (${clientWithRealInstagram.id}) while client by Altegio ID ${existingClientIdByAltegio} has missing_instagram_*. Using client with real Instagram.`);
+              existingClientId = clientWithRealInstagram.id;
+              duplicateClientId = existingClientIdByAltegio;
+            } else {
+              // Клієнта з правильним Instagram не знайдено - оновлюємо існуючого
+              existingClientId = existingClientIdByAltegio;
+            }
+          } else {
+            existingClientId = existingClientIdByAltegio;
+          }
         } else if (existingClientIdByName && !existingClientId) {
           existingClientId = existingClientIdByName;
         }
