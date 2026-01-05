@@ -1808,8 +1808,37 @@ export async function POST(req: NextRequest) {
 
           // Шукаємо існуючого клієнта
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
-          if (!existingClientId && clientId) {
-            existingClientId = existingAltegioIdMap.get(parseInt(String(clientId), 10));
+          let existingClientIdByAltegio = clientId ? existingAltegioIdMap.get(parseInt(String(clientId), 10)) : null;
+          
+          // Перевіряємо, чи потрібно об'єднати два записи:
+          // 1. Запис з real Instagram username (можливо без altegioClientId)
+          // 2. Запис з missing_instagram_* та altegioClientId
+          let duplicateClientId: string | null = null;
+          
+          if (existingClientId && existingClientIdByAltegio && existingClientId !== existingClientIdByAltegio) {
+            // Знайдено два різні записи - потрібно об'єднати
+            const clientByInstagram = existingDirectClients.find((c) => c.id === existingClientId);
+            const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
+            
+            if (clientByInstagram && clientByAltegio) {
+              const hasRealInstagram = !clientByInstagram.instagramUsername.startsWith('missing_instagram_');
+              const hasMissingInstagram = clientByAltegio.instagramUsername.startsWith('missing_instagram_');
+              
+              if (hasRealInstagram && hasMissingInstagram) {
+                // Об'єднуємо: залишаємо клієнта з реальним Instagram, видаляємо з missing_instagram_*
+                console.log(`[altegio/webhook] 🔄 Found duplicate clients: ${existingClientId} (real Instagram) and ${existingClientIdByAltegio} (missing_instagram_*), merging...`);
+                duplicateClientId = existingClientIdByAltegio;
+                existingClientId = existingClientId; // Використовуємо клієнта з реальним Instagram
+              } else if (!hasRealInstagram && hasMissingInstagram) {
+                // Об'єднуємо: залишаємо клієнта з altegioClientId, видаляємо інший
+                console.log(`[altegio/webhook] 🔄 Found duplicate clients: ${existingClientIdByAltegio} (has altegioClientId) and ${existingClientId} (no altegioClientId), merging...`);
+                duplicateClientId = existingClientId;
+                existingClientId = existingClientIdByAltegio;
+              }
+            }
+          } else if (!existingClientId && existingClientIdByAltegio) {
+            // Знайдено тільки за altegioClientId
+            existingClientId = existingClientIdByAltegio;
           }
 
           if (existingClientId) {
@@ -1829,6 +1858,17 @@ export async function POST(req: NextRequest) {
               };
               await saveDirectClient(updated);
               console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState})`);
+              
+              // Видаляємо дублікат, якщо він є
+              if (duplicateClientId) {
+                try {
+                  const { deleteDirectClient } = await import('@/lib/direct-store');
+                  await deleteDirectClient(duplicateClientId);
+                  console.log(`[altegio/webhook] ✅ Deleted duplicate client ${duplicateClientId} after merging`);
+                } catch (deleteErr) {
+                  console.error(`[altegio/webhook] ❌ Failed to delete duplicate client ${duplicateClientId}:`, deleteErr);
+                }
+              }
             }
           } else {
             // Створюємо нового клієнта
