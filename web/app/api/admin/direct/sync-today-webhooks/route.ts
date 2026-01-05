@@ -507,67 +507,67 @@ export async function POST(req: NextRequest) {
                   });
                   
                   if (hasConsultation && datetime) {
-                  console.log(`[sync-today-webhooks] 🔍 Processing consultation for client ${updated.id} (${updated.instagramUsername}):`, {
-                    staffName,
-                    attendance,
-                    datetime,
-                    status,
-                    clientId,
-                    isFromRecordsLog: event.isFromRecordsLog,
-                  });
-                  
-                  // Імпортуємо функції для обробки консультацій
-                  const { getMasterByName } = await import('@/lib/direct-masters/store');
-                  
-                  // Перевіряємо, чи staffName є адміністратором
-                  const getAllDirectMasters = (await import('@/lib/direct-masters/store')).getAllDirectMasters;
-                  const masters = await getAllDirectMasters();
-                  const wasAdminStaff = staffName ? !!masters.find(m => 
-                    m.name === staffName && (m.role === 'admin' || m.role === 'direct-manager')
-                  ) : false;
-                  
-                  console.log(`[sync-today-webhooks] 🔍 Consultation check for ${updated.id}:`, {
-                    wasAdminStaff,
-                    staffName,
-                    attendance,
-                    status,
-                  });
-                  
-                  // Перевіряємо, чи в історії станів клієнта вже є консультації
-                  const { getStateHistory } = await import('@/lib/direct-state-log');
-                  const history = await getStateHistory(updated.id);
-                  const consultationStates = ['consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
-                  const hadConsultationBefore = history.some(log => consultationStates.includes(log.state || ''));
-                  
-                  console.log(`[sync-today-webhooks] 🔍 Consultation history for ${updated.id}:`, {
-                    hadConsultationBefore,
-                    historyStates: history.map(h => h.state),
-                  });
-                  
-                  // Обробка запису на консультацію (ПЕРША консультація)
-                  // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
-                  // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
-                  // Якщо клієнт прийшов (attendance === 1) - це обробляється нижче в блоці attendance === 1
-                  if ((status === 'create' || status === 'update') && !hadConsultationBefore && attendance !== 1) {
-                    const consultationUpdates = {
-                      state: 'consultation-booked' as const,
-                      consultationBookingDate: datetime,
-                      updatedAt: new Date().toISOString(),
-                    };
-                    
-                    const consultationUpdated = {
-                      ...updated,
-                      ...consultationUpdates,
-                    };
-                    
-                    await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
-                      altegioClientId: clientId,
+                    console.log(`[sync-today-webhooks] 🔍 Processing consultation for client ${updated.id} (${updated.instagramUsername}):`, {
                       staffName,
+                      attendance,
                       datetime,
+                      status,
+                      clientId,
+                      isFromRecordsLog: event.isFromRecordsLog,
                     });
                     
-                    console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id} (status: ${status}, attendance: ${attendance})`);
-                  }
+                    // Імпортуємо функції для обробки консультацій
+                    const { getMasterByName } = await import('@/lib/direct-masters/store');
+                    
+                    // Перевіряємо, чи staffName є адміністратором
+                    const getAllDirectMasters = (await import('@/lib/direct-masters/store')).getAllDirectMasters;
+                    const masters = await getAllDirectMasters();
+                    const wasAdminStaff = staffName ? !!masters.find(m => 
+                      m.name === staffName && (m.role === 'admin' || m.role === 'direct-manager')
+                    ) : false;
+                    
+                    console.log(`[sync-today-webhooks] 🔍 Consultation check for ${updated.id}:`, {
+                      wasAdminStaff,
+                      staffName,
+                      attendance,
+                      status,
+                    });
+                    
+                    // Перевіряємо, чи в історії станів клієнта вже є консультації
+                    const { getStateHistory } = await import('@/lib/direct-state-log');
+                    const history = await getStateHistory(updated.id);
+                    const consultationStates = ['consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+                    const hadConsultationBefore = history.some(log => consultationStates.includes(log.state || ''));
+                    
+                    console.log(`[sync-today-webhooks] 🔍 Consultation history for ${updated.id}:`, {
+                      hadConsultationBefore,
+                      historyStates: history.map(h => h.state),
+                    });
+                    
+                    // Обробка запису на консультацію (ПЕРША консультація)
+                    // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
+                    // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
+                    // Якщо клієнт прийшов (attendance === 1) - це обробляється нижче в блоці attendance === 1
+                    if ((status === 'create' || status === 'update') && !hadConsultationBefore && attendance !== 1) {
+                      const consultationUpdates = {
+                        state: 'consultation-booked' as const,
+                        consultationBookingDate: datetime,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      
+                      const consultationUpdated = {
+                        ...updated,
+                        ...consultationUpdates,
+                      };
+                      
+                      await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
+                        altegioClientId: clientId,
+                        staffName,
+                        datetime,
+                      });
+                      
+                      console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id} (status: ${status}, attendance: ${attendance})`);
+                    }
                     // Обробка приходу клієнта на консультацію
                     // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
                     // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
