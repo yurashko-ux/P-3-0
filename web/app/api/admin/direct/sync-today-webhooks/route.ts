@@ -388,18 +388,41 @@ export async function POST(req: NextRequest) {
           ? (event.body?.data?.client?.id || event.body?.data?.client_id)
           : event.body?.resource_id;
         
+        // Діагностика ДО перевірки originalRecord
+        const originalRecordClientId = event.isFromRecordsLog && event.originalRecord 
+          ? (event.originalRecord.clientId || 
+             event.originalRecord.data?.client?.id ||
+             event.originalRecord.data?.client_id ||
+             null)
+          : null;
+        
+        // Перевіряємо, чи це вебхук для цільового клієнта (навіть якщо clientId ще не витягнуто)
+        const mightBeTargetClient = clientId === TARGET_CLIENT_ID || originalRecordClientId === TARGET_CLIENT_ID;
+        
+        if (mightBeTargetClient) {
+          console.log(`[sync-today-webhooks] 🔍 BEFORE extraction for target client ${TARGET_CLIENT_ID}:`, {
+            isRecordEvent,
+            clientIdFromBody: clientId,
+            originalRecordClientId,
+            isFromRecordsLog: event.isFromRecordsLog,
+            bodyDataClient: event.body?.data?.client,
+            bodyDataClientId: event.body?.data?.client_id,
+          });
+        }
+        
         // Якщо clientId не знайдено і це конвертований вебхук з records:log, шукаємо в originalRecord
         if (!clientId && event.isFromRecordsLog && event.originalRecord) {
-          clientId = event.originalRecord.clientId || 
-                     event.originalRecord.data?.client?.id ||
-                     event.originalRecord.data?.client_id ||
-                     null;
+          clientId = originalRecordClientId;
           
           // Якщо знайшли clientId в originalRecord, додаємо його до body.data.client для подальшої обробки
           if (clientId && isRecordEvent && !event.body?.data?.client?.id) {
             if (!event.body.data) event.body.data = {};
             if (!event.body.data.client) event.body.data.client = {};
             event.body.data.client.id = clientId;
+            
+            if (mightBeTargetClient) {
+              console.log(`[sync-today-webhooks] ✅ Extracted clientId ${clientId} from originalRecord and added to body.data.client`);
+            }
           }
         }
         
