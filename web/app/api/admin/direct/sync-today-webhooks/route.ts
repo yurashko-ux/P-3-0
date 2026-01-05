@@ -460,23 +460,18 @@ export async function POST(req: NextRequest) {
             
             // ОБРОБКА КОНСУЛЬТАЦІЙ для record events (якщо це record event)
             if (isRecordEvent) {
-              // Перевіряємо services в різних місцях для сумісності з конвертованими подіями
-              const servicesFromBody = event.body?.data?.services;
-              const servicesFromRecord = event.isFromRecordsLog ? 
-                (event.originalRecord?.data?.services || 
-                 (event.originalRecord?.serviceName ? 
-                   [{ title: event.originalRecord.serviceName, name: event.originalRecord.serviceName }] : null)) : null;
-              const services = servicesFromBody || servicesFromRecord || [];
-              const hasServices = Array.isArray(services) && services.length > 0;
-              
-              if (hasServices) {
               try {
-                const data = event.body.data;
-                // Використовуємо services з різних джерел для сумісності
-                const servicesArray = data.services || 
-                                     (event.isFromRecordsLog && event.originalRecord?.data?.services) ||
-                                     (event.isFromRecordsLog && event.originalRecord?.serviceName ? 
-                                       [{ title: event.originalRecord.serviceName, name: event.originalRecord.serviceName }] : []);
+                // Перевіряємо services в різних місцях для сумісності з конвертованими подіями
+                const servicesFromBody = event.body?.data?.services;
+                const servicesFromRecord = event.isFromRecordsLog ? 
+                  (event.originalRecord?.data?.services || 
+                   (event.originalRecord?.serviceName ? 
+                     [{ title: event.originalRecord.serviceName, name: event.originalRecord.serviceName }] : null)) : null;
+                const servicesArray = servicesFromBody || servicesFromRecord || [];
+                const hasServices = Array.isArray(servicesArray) && servicesArray.length > 0;
+                
+                if (hasServices) {
+                  const data = event.body.data;
                 const staffName = data.staff?.name || 
                                 data.staff?.display_name || 
                                 (event.isFromRecordsLog && event.originalRecord?.staffName) ||
