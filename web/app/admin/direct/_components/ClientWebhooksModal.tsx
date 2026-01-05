@@ -14,6 +14,7 @@ interface ClientWebhookRow {
   visitId: number;
   status: string;
   attendance: number | null;
+  instagramUsername: string | null;
   fullBody: any;
 }
 
@@ -144,6 +145,7 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
                   <tr>
                     <th className="text-xs">Дата вебхука</th>
                     <th className="text-xs">Майстер</th>
+                    <th className="text-xs">Instagram</th>
                     <th className="text-xs">Послуги</th>
                     <th className="text-xs">Дата послуг</th>
                     <th className="text-xs">Статус</th>
@@ -158,6 +160,13 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
                       </td>
                       <td className="text-xs">
                         {webhook.staffName}
+                      </td>
+                      <td className="text-xs">
+                        {webhook.instagramUsername ? (
+                          <span className="badge badge-sm badge-success">@{webhook.instagramUsername}</span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </td>
                       <td className="text-xs">
                         {webhook.services.length > 0 ? (

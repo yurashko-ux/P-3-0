@@ -13,6 +13,7 @@ interface WebhookRow {
   services: string[];
   visitId: number;
   status: string;
+  instagramUsername: string | null;
 }
 
 interface WebhooksTableModalProps {
@@ -115,6 +116,7 @@ export function WebhooksTableModal({ isOpen, onClose }: WebhooksTableModalProps)
                   <tr>
                     <th className="text-xs">Дата вебхука</th>
                     <th className="text-xs">Клієнт</th>
+                    <th className="text-xs">Instagram</th>
                     <th className="text-xs">Майстер</th>
                     <th className="text-xs">Послуги</th>
                     <th className="text-xs">Дата послуг</th>
@@ -129,6 +131,13 @@ export function WebhooksTableModal({ isOpen, onClose }: WebhooksTableModalProps)
                       </td>
                       <td className="text-xs">
                         {webhook.clientName}
+                      </td>
+                      <td className="text-xs">
+                        {webhook.instagramUsername ? (
+                          <span className="badge badge-sm badge-success">@{webhook.instagramUsername}</span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </td>
                       <td className="text-xs">
                         {webhook.staffName}

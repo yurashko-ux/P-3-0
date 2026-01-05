@@ -165,6 +165,41 @@ export async function GET(req: NextRequest) {
         // Attendance
         const attendance = data.attendance ?? data.visit_attendance ?? originalRecord.attendance ?? originalRecord.visit_attendance ?? null;
         
+        // Instagram username з custom_fields
+        let instagramUsername: string | null = null;
+        const client = data.client || originalRecord.client || {};
+        if (client.custom_fields) {
+          // Варіант 1: custom_fields - це масив об'єктів
+          if (Array.isArray(client.custom_fields)) {
+            for (const field of client.custom_fields) {
+              if (field && typeof field === 'object') {
+                const title = field.title || field.name || field.label || '';
+                const value = field.value || field.data || field.content || field.text || '';
+                
+                if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                  instagramUsername = value.trim();
+                  break;
+                }
+              }
+            }
+          }
+          // Варіант 2: custom_fields - це об'єкт з ключами
+          else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+            instagramUsername =
+              client.custom_fields['instagram-user-name'] ||
+              client.custom_fields['Instagram user name'] ||
+              client.custom_fields.instagram_user_name ||
+              client.custom_fields.instagramUsername ||
+              client.custom_fields.instagram ||
+              client.custom_fields['instagram'] ||
+              null;
+            
+            if (instagramUsername && typeof instagramUsername === 'string') {
+              instagramUsername = instagramUsername.trim();
+            }
+          }
+        }
+        
         return {
           receivedAt,
           datetime,
@@ -174,6 +209,7 @@ export async function GET(req: NextRequest) {
           visitId: body.resource_id || originalRecord.visitId,
           status: body.status || originalRecord.status || 'create',
           attendance,
+          instagramUsername: instagramUsername || null,
           fullBody: body,
         };
       })

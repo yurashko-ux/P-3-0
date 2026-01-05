@@ -91,6 +91,41 @@ export async function GET(req: NextRequest) {
         // Staff name
         const staffName = data.staff?.name || data.staff?.display_name || 'Невідомий майстер';
         
+        // Instagram username з custom_fields
+        let instagramUsername: string | null = null;
+        const client = data.client || {};
+        if (client.custom_fields) {
+          // Варіант 1: custom_fields - це масив об'єктів
+          if (Array.isArray(client.custom_fields)) {
+            for (const field of client.custom_fields) {
+              if (field && typeof field === 'object') {
+                const title = field.title || field.name || field.label || '';
+                const value = field.value || field.data || field.content || field.text || '';
+                
+                if (value && typeof value === 'string' && /instagram/i.test(title)) {
+                  instagramUsername = value.trim();
+                  break;
+                }
+              }
+            }
+          }
+          // Варіант 2: custom_fields - це об'єкт з ключами
+          else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+            instagramUsername =
+              client.custom_fields['instagram-user-name'] ||
+              client.custom_fields['Instagram user name'] ||
+              client.custom_fields.instagram_user_name ||
+              client.custom_fields.instagramUsername ||
+              client.custom_fields.instagram ||
+              client.custom_fields['instagram'] ||
+              null;
+            
+            if (instagramUsername && typeof instagramUsername === 'string') {
+              instagramUsername = instagramUsername.trim();
+            }
+          }
+        }
+        
         return {
           receivedAt,
           datetime,
@@ -99,6 +134,7 @@ export async function GET(req: NextRequest) {
           services: services.length > 0 ? services : ['Невідома послуга'],
           visitId: body.resource_id,
           status: body.status,
+          instagramUsername: instagramUsername || null,
         };
       })
       .filter((row: any) => row.receivedAt) // Фільтруємо записи без дати
