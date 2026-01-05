@@ -77,8 +77,26 @@ export async function GET(req: NextRequest) {
         if (e.body?.resource !== 'record') return false;
         
         // Перевіряємо, чи це вебхук для нашого клієнта
+        // client.id може бути в різних форматах: число, рядок, або вкладений об'єкт
         const clientId = e.body?.data?.client?.id;
-        return clientId && parseInt(String(clientId), 10) === altegioClientId;
+        const clientIdFromData = e.body?.data?.client_id;
+        
+        // Спробуємо різні способи отримання clientId
+        let foundClientId: number | null = null;
+        
+        if (clientId) {
+          const parsed = parseInt(String(clientId), 10);
+          if (!isNaN(parsed)) {
+            foundClientId = parsed;
+          }
+        } else if (clientIdFromData) {
+          const parsed = parseInt(String(clientIdFromData), 10);
+          if (!isNaN(parsed)) {
+            foundClientId = parsed;
+          }
+        }
+        
+        return foundClientId === altegioClientId;
       })
       .map((e: any) => {
         const body = e.body || {};
