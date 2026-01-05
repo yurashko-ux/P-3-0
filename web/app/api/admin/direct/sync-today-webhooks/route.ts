@@ -607,31 +607,34 @@ export async function POST(req: NextRequest) {
                     }
                     // Встановлення consultationBookingDate для ВСІХ клієнтів з консультацією
                     // Якщо consultationBookingDate відсутній або змінився, встановлюємо його незалежно від стану
-                    else if ((status === 'create' || status === 'update') && 
-                             datetime && 
-                             attendance !== 1) {
-                      // Встановлюємо consultationBookingDate, якщо він відсутній або змінився
-                      if (!updated.consultationBookingDate || updated.consultationBookingDate !== datetime) {
-                        const consultationDateUpdates = {
-                          consultationBookingDate: datetime,
-                          updatedAt: new Date().toISOString(),
-                        };
-                        
-                        const consultationDateUpdated = {
-                          ...updated,
-                          ...consultationDateUpdates,
-                        };
-                        
-                        await saveDirectClient(consultationDateUpdated, 'sync-today-webhooks-set-consultation-booking-date', {
-                          altegioClientId: clientId,
-                          staffName,
-                          datetime,
-                          oldDate: updated.consultationBookingDate,
-                          currentState: updated.state,
-                        });
-                        
-                        console.log(`[sync-today-webhooks] ✅ Set consultationBookingDate for client ${updated.id} (state: ${updated.state}, ${updated.consultationBookingDate || 'null'} -> ${datetime})`);
-                      }
+                    // Це fallback логіка, яка спрацьовує, якщо попередні блоки не спрацювали
+                    if ((status === 'create' || status === 'update') && 
+                        datetime && 
+                        attendance !== 1 &&
+                        (!updated.consultationBookingDate || updated.consultationBookingDate !== datetime)) {
+                      // Перевіряємо, чи не встановили consultationBookingDate в попередніх блоках
+                      // Якщо ні - встановлюємо його тут
+                      const consultationDateUpdates = {
+                        consultationBookingDate: datetime,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      
+                      const consultationDateUpdated = {
+                        ...updated,
+                        ...consultationDateUpdates,
+                      };
+                      
+                      await saveDirectClient(consultationDateUpdated, 'sync-today-webhooks-set-consultation-booking-date', {
+                        altegioClientId: clientId,
+                        staffName,
+                        datetime,
+                        oldDate: updated.consultationBookingDate,
+                        currentState: updated.state,
+                        hadConsultationBefore,
+                        attendance,
+                      });
+                      
+                      console.log(`[sync-today-webhooks] ✅ Set consultationBookingDate (fallback) for client ${updated.id} (state: ${updated.state}, ${updated.consultationBookingDate || 'null'} -> ${datetime})`);
                     }
                     // Обробка приходу клієнта на консультацію
                     // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
