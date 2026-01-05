@@ -147,11 +147,29 @@ export async function GET(req: NextRequest) {
         return new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime();
       });
 
+    // Діагностична інформація для дебагу
+    const recordEvents = events.filter((e: any) => e.body?.resource === 'record');
+    const debugInfo = {
+      totalEvents: events.length,
+      recordEvents: recordEvents.length,
+      matchedEvents: tableRows.length,
+      searchedClientId: altegioClientId,
+      sampleClientIds: recordEvents
+        .slice(0, 10)
+        .map((e: any) => ({
+          clientId: e.body?.data?.client?.id,
+          clientIdType: typeof e.body?.data?.client?.id,
+          clientIdFromData: e.body?.data?.client_id,
+          clientName: e.body?.data?.client?.display_name || e.body?.data?.client?.name,
+        })),
+    };
+
     return NextResponse.json({
       ok: true,
       altegioClientId,
       total: tableRows.length,
       rows: tableRows,
+      debug: debugInfo, // Додаємо для діагностики
     });
   } catch (error) {
     console.error('[direct/client-webhooks] GET error:', error);

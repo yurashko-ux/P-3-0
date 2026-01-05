@@ -50,6 +50,14 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
       
       if (data.ok) {
         setWebhooks(data.rows || []);
+        
+        // Діагностична інформація (тільки в консолі для дебагу)
+        if (data.debug) {
+          console.log('[ClientWebhooksModal] Debug info:', data.debug);
+          if (data.total === 0 && data.debug.recordEvents > 0) {
+            console.warn('[ClientWebhooksModal] No webhooks found but record events exist. Sample client IDs:', data.debug.sampleClientIds);
+          }
+        }
       } else {
         setError(data.error || 'Помилка завантаження webhook-ів');
       }
