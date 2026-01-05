@@ -654,6 +654,7 @@ export async function POST(req: NextRequest) {
                         reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : !datetime ? 'no datetime' : 'unknown',
                       });
                     }
+                  }
                 }
               } catch (consultationErr) {
                 console.error(`[sync-today-webhooks] ⚠️ Failed to process consultation logic:`, consultationErr);
