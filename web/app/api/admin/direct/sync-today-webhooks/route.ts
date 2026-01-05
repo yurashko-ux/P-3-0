@@ -366,7 +366,24 @@ export async function POST(req: NextRequest) {
           : (event.body?.data?.client || event.body?.data);
         const status = event.body?.status;
 
+        // Діагностика для цільового клієнта
+        if (clientId === TARGET_CLIENT_ID) {
+          console.log(`[sync-today-webhooks] 🔍 Processing webhook for target client ${TARGET_CLIENT_ID}:`, {
+            isRecordEvent,
+            clientId,
+            hasClient: !!client,
+            status,
+            clientKeys: client ? Object.keys(client) : [],
+            hasServices: isRecordEvent ? !!event.body?.data?.services : false,
+            services: isRecordEvent ? event.body?.data?.services : null,
+            datetime: isRecordEvent ? event.body?.data?.datetime : null,
+          });
+        }
+
         if (!clientId || !client) {
+          if (clientId === TARGET_CLIENT_ID) {
+            console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} event skipped: no clientId or client object`);
+          }
           results.skipped++;
           continue;
         }
@@ -644,9 +661,36 @@ export async function POST(req: NextRequest) {
           existingClientId = existingClientIdByName;
         }
 
+        // Діагностика для цільового клієнта
+        if (clientId === TARGET_CLIENT_ID) {
+          console.log(`[sync-today-webhooks] 🔍 Client lookup for target client ${TARGET_CLIENT_ID}:`, {
+            existingClientId,
+            existingClientIdByAltegio: existingAltegioIdMap.get(parseInt(String(clientId), 10)),
+            existingClientIdByInstagram: normalizedInstagram ? existingInstagramMap.get(normalizedInstagram) : null,
+            normalizedInstagram,
+            instagram,
+            firstName,
+            lastName,
+            existingDirectClientsCount: existingDirectClients.length,
+            foundInDb: !!existingClientId,
+          });
+        }
+
         if (existingClientId) {
           // Оновлюємо існуючого клієнта
           const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
+          
+          // Діагностика для цільового клієнта
+          if (clientId === TARGET_CLIENT_ID) {
+            console.log(`[sync-today-webhooks] 🔍 Found existing client for target ${TARGET_CLIENT_ID}:`, {
+              existingClientId,
+              hasExistingClient: !!existingClient,
+              existingClientState: existingClient?.state,
+              existingClientInstagram: existingClient?.instagramUsername,
+              existingClientAltegioId: existingClient?.altegioClientId,
+            });
+          }
+          
           if (existingClient) {
             // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
             const clientState = 'client' as const;
@@ -660,6 +704,16 @@ export async function POST(req: NextRequest) {
               updatedAt: new Date().toISOString(),
             };
             await saveDirectClient(updated);
+            
+            // Діагностика для цільового клієнта
+            if (clientId === TARGET_CLIENT_ID) {
+              console.log(`[sync-today-webhooks] ✅ Updated target client ${TARGET_CLIENT_ID} (${updated.id}):`, {
+                instagramUsername: updated.instagramUsername,
+                state: updated.state,
+                firstName: updated.firstName,
+                lastName: updated.lastName,
+              });
+            }
             
             // Якщо клієнт знайдений за іменем, логуємо це
             if (existingClientIdByName && existingClientId === existingClientIdByName) {
@@ -679,6 +733,11 @@ export async function POST(req: NextRequest) {
             // ОБРОБКА КОНСУЛЬТАЦІЙ для record events (якщо це record event)
             if (isRecordEvent) {
               try {
+                // Діагностика для цільового клієнта
+                if (clientId === TARGET_CLIENT_ID) {
+                  console.log(`[sync-today-webhooks] 🔍 Starting record event processing for target client ${TARGET_CLIENT_ID}`);
+                }
+                
                 // Перевіряємо services в різних місцях для сумісності з конвертованими подіями
                 const servicesFromBody = event.body?.data?.services;
                 const servicesFromRecord = event.isFromRecordsLog ? 
@@ -687,6 +746,18 @@ export async function POST(req: NextRequest) {
                      [{ title: event.originalRecord.serviceName, name: event.originalRecord.serviceName }] : null)) : null;
                 const servicesArray = servicesFromBody || servicesFromRecord || [];
                 const hasServices = Array.isArray(servicesArray) && servicesArray.length > 0;
+                
+                // Діагностика для цільового клієнта
+                if (clientId === TARGET_CLIENT_ID) {
+                  console.log(`[sync-today-webhooks] 🔍 Services extraction for target client ${TARGET_CLIENT_ID}:`, {
+                    hasServices,
+                    servicesFromBody: !!servicesFromBody,
+                    servicesFromRecord: !!servicesFromRecord,
+                    servicesArrayLength: servicesArray.length,
+                    servicesArray: servicesArray.map((s: any) => ({ title: s.title || s.name, name: s.name })),
+                    isFromRecordsLog: event.isFromRecordsLog,
+                  });
+                }
                 
                 // Визначаємо змінні для обробки record events (використовуються в обох блоках: консультації та services)
                 const data = event.body?.data || {};
