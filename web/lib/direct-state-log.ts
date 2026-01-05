@@ -337,7 +337,19 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       `;
 
       try {
-        const batchLogs = await prisma.$queryRawUnsafe<Array<{
+        const batchLogs = await prisma.$queryRawUnsafe(`
+          SELECT 
+            "id",
+            "clientId",
+            "state",
+            "previousState",
+            "reason",
+            "metadata",
+            "createdAt"
+          FROM ranked_logs
+          WHERE rn <= 5
+          ORDER BY "clientId", "createdAt" DESC
+        `) as Array<{
           id: string;
           clientId: string;
           state: string | null;
