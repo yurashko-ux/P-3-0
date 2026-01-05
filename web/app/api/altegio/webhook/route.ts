@@ -297,6 +297,30 @@ export async function POST(req: NextRequest) {
                 const wasAdminStaff = await isAdminStaff(staffName);
                 const hadConsultationBefore = await hasConsultationInHistory(existingClient.id);
                 
+                // Очищаємо paidServiceDate для консультацій, якщо він був встановлений помилково
+                // Це може статися, якщо раніше вебхук обробив консультацію як платну послугу
+                if (existingClient.paidServiceDate && !existingClient.signedUpForPaidService) {
+                  // Якщо signedUpForPaidService = false, значить це помилка - очищаємо
+                  const cleanupUpdates: Partial<typeof existingClient> = {
+                    paidServiceDate: undefined,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  const cleanupUpdated: typeof existingClient = {
+                    ...existingClient,
+                    ...cleanupUpdates,
+                  };
+                  
+                  await saveDirectClient(cleanupUpdated, 'altegio-webhook-cleanup-paid-service-date-for-consultation', {
+                    altegioClientId: clientId,
+                    staffName,
+                    datetime,
+                    reason: 'consultation webhook - clearing incorrectly set paidServiceDate',
+                  });
+                  
+                  console.log(`[altegio/webhook] 🧹 Cleaned up paidServiceDate for consultation client ${existingClient.id}`);
+                }
+                
                 // 2.2 Обробка запису на консультацію (ПЕРША консультація)
                 // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
                 // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
@@ -384,8 +408,12 @@ export async function POST(req: NextRequest) {
                     (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime)) {
                   // Перевіряємо, чи не встановили consultationBookingDate в попередніх блоках
                   // Якщо ні - встановлюємо його тут
+                  // Також очищаємо paidServiceDate для консультацій
                   const updates: Partial<typeof existingClient> = {
                     consultationBookingDate: datetime,
+                    // Очищаємо paidServiceDate для консультацій
+                    paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
+                    signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
                   
