@@ -451,6 +451,49 @@ export async function POST(req: NextRequest) {
           }
         }
         
+        // ДОДАТКОВА ПЕРЕВІРКА: Якщо знайдено клієнта за іменем, але він має missing_instagram_*, 
+        // а вебхук містить правильний Instagram, шукаємо клієнта з правильним Instagram за іменем
+        if (existingClientIdByName && normalizedInstagram && !normalizedInstagram.startsWith('missing_instagram_')) {
+          const clientByName = existingDirectClients.find((c) => c.id === existingClientIdByName);
+          const hasMissingInstagram = clientByName && clientByName.instagramUsername.startsWith('missing_instagram_');
+          
+          if (hasMissingInstagram) {
+            // Шукаємо клієнта з правильним Instagram та тим самим іменем
+            const clientWithRealInstagram = existingDirectClients.find((c) => {
+              const cFirstName = (c.firstName || '').trim().toLowerCase();
+              const cLastName = (c.lastName || '').trim().toLowerCase();
+              const searchFirstName = firstName.trim().toLowerCase();
+              const searchLastName = lastName.trim().toLowerCase();
+              
+              return c.instagramUsername === normalizedInstagram &&
+                     c.id !== existingClientIdByName &&
+                     cFirstName === searchFirstName &&
+                     cLastName === searchLastName;
+            });
+            
+            if (clientWithRealInstagram) {
+              console.log(`[sync-today-webhooks] 🔄 Found duplicate by name: client ${clientWithRealInstagram.id} (has real Instagram ${normalizedInstagram}, name: ${firstName} ${lastName}) and ${existingClientIdByName} (has missing_instagram_*), merging...`);
+              existingClientId = clientWithRealInstagram.id;
+              duplicateClientId = existingClientIdByName;
+              existingClientIdByName = null; // Очищаємо, щоб не використовувати далі
+            }
+          }
+        }
+        
+        // Якщо знайдено клієнта за іменем з правильним Instagram, але вебхук містить missing_instagram_*,
+        // залишаємо клієнта з правильним Instagram
+        if (existingClientIdByName && isMissingInstagram && normalizedInstagram.startsWith('missing_instagram_')) {
+          const clientByName = existingDirectClients.find((c) => c.id === existingClientIdByName);
+          const hasRealInstagram = clientByName && !clientByName.instagramUsername.startsWith('missing_instagram_');
+          
+          if (hasRealInstagram) {
+            console.log(`[sync-today-webhooks] 🔄 Keeping client ${existingClientIdByName} (has real Instagram ${clientByName.instagramUsername}) instead of creating new with missing_instagram_*`);
+            existingClientId = existingClientIdByName;
+            isMissingInstagram = false;
+            normalizedInstagram = clientByName.instagramUsername;
+          }
+        }
+        
         if (existingClientIdByInstagram && existingClientIdByAltegio) {
           if (existingClientIdByInstagram === existingClientIdByAltegio) {
             // Це той самий клієнт - просто оновлюємо
