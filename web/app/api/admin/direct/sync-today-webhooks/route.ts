@@ -470,6 +470,15 @@ export async function POST(req: NextRequest) {
                 const servicesArray = servicesFromBody || servicesFromRecord || [];
                 const hasServices = Array.isArray(servicesArray) && servicesArray.length > 0;
                 
+                console.log(`[sync-today-webhooks] 🔍 Record event for client ${clientId}:`, {
+                  isFromRecordsLog: event.isFromRecordsLog,
+                  hasServices,
+                  servicesFromBody: !!servicesFromBody,
+                  servicesFromRecord: !!servicesFromRecord,
+                  servicesArrayLength: servicesArray.length,
+                  servicesArray: servicesArray.map((s: any) => ({ title: s.title || s.name, name: s.name })),
+                });
+                
                 if (hasServices) {
                   const data = event.body.data;
                   const staffName = data.staff?.name || 
@@ -482,6 +491,14 @@ export async function POST(req: NextRequest) {
                   const datetime = data.datetime || 
                                  (event.isFromRecordsLog && event.originalRecord?.datetime) ||
                                  null;
+                  
+                  console.log(`[sync-today-webhooks] 🔍 Record event data for client ${clientId}:`, {
+                    staffName,
+                    attendance,
+                    datetime,
+                    hasDataStaff: !!data.staff,
+                    originalRecordStaffName: event.isFromRecordsLog ? event.originalRecord?.staffName : undefined,
+                  });
                   
                   // Перевіряємо, чи є послуга "Консультація"
                   const hasConsultation = servicesArray.some((s: any) => {
