@@ -466,6 +466,11 @@ export async function POST(req: NextRequest) {
               updatedAt: new Date().toISOString(),
             };
             await saveDirectClient(updated);
+            
+            // Якщо клієнт знайдений за іменем, логуємо це
+            if (existingClientIdByName && existingClientId === existingClientIdByName) {
+              console.log(`[sync-today-webhooks] ✅ Found and updated client by name "${firstName} ${lastName}": ${updated.id}, set altegioClientId: ${clientId}`);
+            }
             results.updated++;
             results.clients.push({
               id: updated.id,
