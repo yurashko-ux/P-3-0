@@ -746,9 +746,14 @@ export function DirectClientTable({
                               // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
                               // для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
                               // ВИДАЛЯЄМО ВСІ "no-instagram" (це були червоні квадрати, які потім стали чорними лійками)
+                              // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
                               const filteredStates: typeof sortedStates = [];
                               const leadLogs: typeof sortedStates = [];
+                              const messageLogs: typeof sortedStates = [];
                               const clientLogs: typeof sortedStates = [];
+                              const consultationBookedLogs: typeof sortedStates = [];
+                              const consultationNoShowLogs: typeof sortedStates = [];
+                              const consultationRescheduledLogs: typeof sortedStates = [];
                               const otherLogs: typeof sortedStates = [];
                               
                               for (let i = 0; i < sortedStates.length; i++) {
@@ -766,21 +771,57 @@ export function DirectClientTable({
                                   }
                                   // Для Manychat клієнтів - збираємо "lead" окремо
                                   leadLogs.push(log);
+                                } else if (log.state === 'message') {
+                                  // Збираємо "message" окремо для перевірки, чи це перше повідомлення
+                                  messageLogs.push(log);
                                 } else if (log.state === 'client') {
                                   // Збираємо "client" окремо для фільтрації дублікатів
                                   clientLogs.push(log);
+                                } else if (log.state === 'consultation-booked') {
+                                  consultationBookedLogs.push(log);
+                                } else if (log.state === 'consultation-no-show') {
+                                  consultationNoShowLogs.push(log);
+                                } else if (log.state === 'consultation-rescheduled') {
+                                  consultationRescheduledLogs.push(log);
                                 } else {
                                   // Всі інші стани збираємо окремо
                                   otherLogs.push(log);
                                 }
                               }
                               
-                              // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
-                              if (isManychatClient && leadLogs.length > 0) {
+                              // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
+                              // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
+                              // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
+                              let oldestMessageAsLead: typeof sortedStates[0] | null = null;
+                              if (messageLogs.length > 0 && leadLogs.length === 0) {
+                                // Перевіряємо, чи "message" найстаріший стан тільки якщо немає справжнього "lead"
+                                const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
+                                
+                                // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
+                                const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                                const olderThanMessage = allOtherStates.filter(log => 
+                                  new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
+                                );
+                                
+                                // Якщо "message" найстаріший - відображаємо його як "Лід"
+                                if (olderThanMessage.length === 0) {
+                                  oldestMessageAsLead = {
+                                    ...oldestMessage,
+                                    state: 'lead', // Відображаємо як "Лід"
+                                  };
+                                }
+                              }
+                              
+                              // Якщо перше повідомлення має відображатися як "Лід" - додаємо його
+                              if (oldestMessageAsLead) {
+                                filteredStates.push(oldestMessageAsLead);
+                              } else if (isManychatClient && leadLogs.length > 0) {
+                                // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
                                 const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
                                 
-                                // Перевіряємо, чи є стани старіші за "lead"
-                                const olderThanLead = otherLogs.filter(log => 
+                                // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з message)
+                                const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                                const olderThanLead = allOtherStates.filter(log => 
                                   new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
                                 );
                                 
@@ -797,6 +838,24 @@ export function DirectClientTable({
                               if (clientLogs.length > 0) {
                                 filteredStates.push(clientLogs[0]); // Тільки найстаріший "client"
                               }
+                              
+                              // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
+                              if (consultationBookedLogs.length > 0) {
+                                filteredStates.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
+                              }
+                              if (consultationNoShowLogs.length > 0) {
+                                filteredStates.push(consultationNoShowLogs[0]); // Тільки найстаріший "consultation-no-show"
+                              }
+                              if (consultationRescheduledLogs.length > 0) {
+                                filteredStates.push(consultationRescheduledLogs[0]); // Тільки найстаріший "consultation-rescheduled"
+                              }
+                              
+                              // Додаємо всі інші стани (без "no-instagram")
+                              // Якщо перше повідомлення вже відображено як "Лід", не додаємо інші "message" стани
+                              const remainingMessageLogs = oldestMessageAsLead 
+                                ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
+                                : messageLogs;
+                              filteredStates.push(...remainingMessageLogs);
                               
                               // Додаємо всі інші стани
                               filteredStates.push(...otherLogs);

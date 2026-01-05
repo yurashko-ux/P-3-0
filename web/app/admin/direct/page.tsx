@@ -885,6 +885,45 @@ export default function DirectPage() {
             🗑️ Видалити дублікати стану "client"
           </button>
           <button
+            className="btn btn-sm btn-error"
+            onClick={async () => {
+              if (!confirm('Видалити дублікати consultation-related станів з історії?\n\nЦе видалить всі дублікати станів "consultation-booked", "consultation-no-show", "consultation-rescheduled", залишивши тільки перший (найстаріший) запис для кожного стану.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/remove-duplicate-consultation-states', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Видалення дублікатів consultation-related станів завершено!\n\n` +
+                    `Всього клієнтів перевірено: ${data.summary.totalClients}\n` +
+                    `Клієнтів з дублікатами: ${data.summary.clientsWithDuplicates}\n` +
+                    `Всього видалено записів: ${data.summary.totalDeletedLogs}\n\n` +
+                    `По станах:\n` +
+                    Object.entries(data.summary.byState).map(([state, stats]: [string, any]) =>
+                      `  - ${state}: ${stats.clientsWithDuplicates} клієнтів, ${stats.totalDeletedLogs} записів`
+                    ).join('\n') +
+                    `\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  setDiagnosticMessage(message);
+                  setShowDiagnostic(true);
+                  await loadClients(); // Оновлюємо список клієнтів
+                } else {
+                  alert(`❌ Помилка: ${data.error || 'Невідома помилка'}`);
+                }
+              } catch (err) {
+                alert(`❌ Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Видалити дублікати consultation-related станів з історії"
+          >
+            🗑️ Видалити дублікати consultation-станів
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               setIsLoading(true);
