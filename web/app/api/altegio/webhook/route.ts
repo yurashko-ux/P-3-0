@@ -326,11 +326,21 @@ export async function POST(req: NextRequest) {
                 // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
                 // Якщо клієнт прийшов (attendance === 1) - це обробляється нижче в блоці attendance === 1
                 if ((status === 'create' || status === 'update') && !hadConsultationBefore && attendance !== 1) {
+                  // ВАЖЛИВО: для консультацій ЗАВЖДИ очищаємо paidServiceDate
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-booked',
                     consultationBookingDate: datetime,
+                    // Очищаємо paidServiceDate для консультацій, якщо клієнт не має платних послуг
+                    paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
+                    signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
+                  
+                  // Якщо paidServiceDate встановлений, але signedUpForPaidService = false - це помилка, очищаємо
+                  if (existingClient.paidServiceDate && !existingClient.signedUpForPaidService) {
+                    updates.paidServiceDate = undefined;
+                    console.log(`[altegio/webhook] 🧹 Cleaning up paidServiceDate in consultation-booked block for client ${existingClient.id}`);
+                  }
                   
                   const updated: typeof existingClient = {
                     ...existingClient,
