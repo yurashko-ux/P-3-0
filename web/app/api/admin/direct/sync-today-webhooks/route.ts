@@ -561,6 +561,9 @@ export async function POST(req: NextRequest) {
                       const consultationUpdates = {
                         state: 'consultation-booked' as const,
                         consultationBookingDate: datetime,
+                        // Очищаємо paidServiceDate для консультацій
+                        paidServiceDate: undefined,
+                        signedUpForPaidService: false,
                         updatedAt: new Date().toISOString(),
                       };
                       
