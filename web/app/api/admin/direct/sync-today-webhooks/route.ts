@@ -789,7 +789,7 @@ export async function POST(req: NextRequest) {
               // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES (нарощування, інші послуги)
               // Встановлюємо стан на основі послуг, якщо це не консультація
               try {
-                if (hasServices && !hasConsultation) {
+                if (!hasConsultation) {
                   const { determineStateFromServices } = await import('@/lib/direct-state-helper');
                   const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
                   
