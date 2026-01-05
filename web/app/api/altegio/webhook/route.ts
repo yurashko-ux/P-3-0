@@ -375,6 +375,34 @@ export async function POST(req: NextRequest) {
                     console.log(`[altegio/webhook] ✅ Updated consultationBookingDate for client ${existingClient.id} (${existingClient.consultationBookingDate} -> ${datetime})`);
                   }
                 }
+                // 2.3.2 Встановлення consultationBookingDate для ВСІХ клієнтів з консультацією
+                // Якщо consultationBookingDate відсутній або змінився, встановлюємо його незалежно від стану
+                else if ((status === 'create' || status === 'update') && 
+                         datetime && 
+                         attendance !== 1) {
+                  // Встановлюємо consultationBookingDate, якщо він відсутній або змінився
+                  if (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime) {
+                    const updates: Partial<typeof existingClient> = {
+                      consultationBookingDate: datetime,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      ...updates,
+                    };
+                    
+                    await saveDirectClient(updated, 'altegio-webhook-set-consultation-booking-date', {
+                      altegioClientId: clientId,
+                      staffName,
+                      datetime,
+                      oldDate: existingClient.consultationBookingDate,
+                      currentState: existingClient.state,
+                    });
+                    
+                    console.log(`[altegio/webhook] ✅ Set consultationBookingDate for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
+                  }
+                }
                 // 2.4 Обробка неявки клієнта
                 else if (attendance === -1) {
                   const updates: Partial<typeof existingClient> = {
