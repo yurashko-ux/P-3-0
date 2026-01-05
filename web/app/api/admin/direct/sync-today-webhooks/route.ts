@@ -485,9 +485,18 @@ export async function POST(req: NextRequest) {
                                   data.staff?.display_name || 
                                   (event.isFromRecordsLog && event.originalRecord?.staffName) ||
                                   null;
-                  const attendance = data.attendance ?? 
-                                   (event.isFromRecordsLog && (event.originalRecord?.data?.attendance ?? event.originalRecord?.attendance)) ??
-                                   undefined;
+                  // attendance / visit_attendance:
+                  //  0   – подія ще не настала (запис існує, але не відбулася)
+                  //  1   – клієнт прийшов (фактична консультація)
+                  // -1   – клієнт не з'явився
+                  // null/undefined – ще не відмічено
+                  const attendance =
+                    (data as any).attendance ??
+                    (data as any).visit_attendance ??
+                    (event.isFromRecordsLog &&
+                      ((event.originalRecord?.data as any)?.attendance ??
+                        (event.originalRecord as any)?.attendance)) ??
+                    undefined;
                   const datetime = data.datetime || 
                                  (event.isFromRecordsLog && event.originalRecord?.datetime) ||
                                  null;

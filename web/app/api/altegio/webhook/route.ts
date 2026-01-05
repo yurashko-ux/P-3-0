@@ -274,7 +274,15 @@ export async function POST(req: NextRequest) {
             const clientId = parseInt(String(data.client.id), 10);
             const services = data.services;
             const staffName = data.staff?.name || data.staff?.display_name || null;
-            const attendance = data.attendance; // -1 = не з'явився, 1 = прийшов, undefined/null = не відмічено
+            // attendance / visit_attendance:
+            //  0   – подія ще не настала (запис існує, але не відбулася)
+            //  1   – клієнт прийшов (фактична консультація)
+            // -1   – клієнт не з'явився
+            // null/undefined – ще не відмічено
+            const attendance =
+              (data as any).attendance ??
+              (data as any).visit_attendance ??
+              undefined;
             const datetime = data.datetime;
             
             const hasConsultation = isConsultationService(services);
