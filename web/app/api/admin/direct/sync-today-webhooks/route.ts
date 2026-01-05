@@ -536,7 +536,7 @@ export async function POST(req: NextRequest) {
                     originalRecordStaffName: event.isFromRecordsLog ? event.originalRecord?.staffName : undefined,
                   });
                   
-                  // Перевіряємо, чи є послуга "Консультація"
+                  // Перевіряємо, чи є послуга "Консультація" (використовується в обох блоках)
                   const hasConsultation = servicesArray.some((s: any) => {
                     const title = s.title || s.name || '';
                     return /консультація/i.test(title);
