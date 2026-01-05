@@ -638,6 +638,33 @@ export async function POST(req: NextRequest) {
                       });
                       
                       console.log(`[sync-today-webhooks] ✅ Set consultationBookingDate (fallback) for client ${updated.id} (state: ${updated.state}, ${updated.consultationBookingDate || 'null'} -> ${datetime})`);
+                    } else if ((status === 'create' || status === 'update') && datetime && attendance !== 1 && !updated.consultationBookingDate) {
+                      // ДОДАТКОВА ПЕРЕВІРКА: Якщо consultationBookingDate все ще відсутній після всіх блоків
+                      // (навіть якщо він не змінився, але його взагалі немає) - встановлюємо його
+                      console.log(`[sync-today-webhooks] ⚠️ consultationBookingDate is missing for client ${updated.id}, setting it now (datetime: ${datetime}, attendance: ${attendance}, state: ${updated.state})`);
+                      const consultationDateUpdates = {
+                        consultationBookingDate: datetime,
+                        paidServiceDate: updated.signedUpForPaidService ? updated.paidServiceDate : undefined,
+                        signedUpForPaidService: updated.signedUpForPaidService ? updated.signedUpForPaidService : false,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      
+                      const consultationDateUpdated = {
+                        ...updated,
+                        ...consultationDateUpdates,
+                      };
+                      
+                      await saveDirectClient(consultationDateUpdated, 'sync-today-webhooks-set-consultation-booking-date-missing', {
+                        altegioClientId: clientId,
+                        staffName,
+                        datetime,
+                        currentState: updated.state,
+                        hadConsultationBefore,
+                        attendance,
+                        reason: 'consultationBookingDate was missing after all blocks',
+                      });
+                      
+                      console.log(`[sync-today-webhooks] ✅ Set missing consultationBookingDate for client ${updated.id} (${datetime})`);
                     }
                     // Обробка приходу клієнта на консультацію
                     // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
