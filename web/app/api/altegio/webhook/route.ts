@@ -377,31 +377,34 @@ export async function POST(req: NextRequest) {
                 }
                 // 2.3.2 Встановлення consultationBookingDate для ВСІХ клієнтів з консультацією
                 // Якщо consultationBookingDate відсутній або змінився, встановлюємо його незалежно від стану
-                else if ((status === 'create' || status === 'update') && 
-                         datetime && 
-                         attendance !== 1) {
-                  // Встановлюємо consultationBookingDate, якщо він відсутній або змінився
-                  if (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime) {
-                    const updates: Partial<typeof existingClient> = {
-                      consultationBookingDate: datetime,
-                      updatedAt: new Date().toISOString(),
-                    };
-                    
-                    const updated: typeof existingClient = {
-                      ...existingClient,
-                      ...updates,
-                    };
-                    
-                    await saveDirectClient(updated, 'altegio-webhook-set-consultation-booking-date', {
-                      altegioClientId: clientId,
-                      staffName,
-                      datetime,
-                      oldDate: existingClient.consultationBookingDate,
-                      currentState: existingClient.state,
-                    });
-                    
-                    console.log(`[altegio/webhook] ✅ Set consultationBookingDate for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
-                  }
+                // Це fallback логіка, яка спрацьовує, якщо попередні блоки не спрацювали
+                if ((status === 'create' || status === 'update') && 
+                    datetime && 
+                    attendance !== 1 &&
+                    (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime)) {
+                  // Перевіряємо, чи не встановили consultationBookingDate в попередніх блоках
+                  // Якщо ні - встановлюємо його тут
+                  const updates: Partial<typeof existingClient> = {
+                    consultationBookingDate: datetime,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  
+                  const updated: typeof existingClient = {
+                    ...existingClient,
+                    ...updates,
+                  };
+                  
+                  await saveDirectClient(updated, 'altegio-webhook-set-consultation-booking-date', {
+                    altegioClientId: clientId,
+                    staffName,
+                    datetime,
+                    oldDate: existingClient.consultationBookingDate,
+                    currentState: existingClient.state,
+                    hadConsultationBefore,
+                    attendance,
+                  });
+                  
+                  console.log(`[altegio/webhook] ✅ Set consultationBookingDate (fallback) for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
                 }
                 // 2.4 Обробка неявки клієнта
                 else if (attendance === -1) {
@@ -565,25 +568,26 @@ export async function POST(req: NextRequest) {
                   updatedAt: new Date().toISOString(),
                 };
                 
-                          // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
-                if (data.datetime) {
+                // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
+                // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
+                if (data.datetime && !hasConsultation) {
                   const appointmentDate = new Date(data.datetime);
                   const now = new Date();
                   // Встановлюємо paidServiceDate для майбутніх записів або якщо вона новіша за існуючу
                   if (appointmentDate > now) {
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
-                    console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (future) for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (future, paid service) for client ${existingClient.id}`);
                   } else if (!existingClient.paidServiceDate || new Date(existingClient.paidServiceDate) < appointmentDate) {
                     // Для минулих дат встановлюємо тільки якщо paidServiceDate не встановлено або новіша
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
-                    console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing) for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing, paid service) for client ${existingClient.id}`);
                   }
                   
                   // 2.6 Визначення конверсії в платну послугу після консультації
                   // Перевіряємо тільки якщо це платна послуга (не консультація) і клієнт мав консультацію
-                  if (!hasConsultation && existingClient.consultationDate) {
+                  if (existingClient.consultationDate) {
                     const hadOnlyConsultations = await hadOnlyConsultationsBeforePaidService(clientId, data.datetime);
                     if (hadOnlyConsultations) {
                       updates.signedUpForPaidServiceAfterConsultation = true;
