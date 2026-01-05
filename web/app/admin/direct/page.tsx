@@ -906,9 +906,8 @@ export default function DirectPage() {
                       `  - ${state}: ${stats.clientsWithDuplicates} клієнтів, ${stats.totalDeletedLogs} записів`
                     ).join('\n') +
                     `\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
-                  setDiagnosticMessage(message);
-                  setShowDiagnostic(true);
-                  await loadClients(); // Оновлюємо список клієнтів
+                  showCopyableAlert(message);
+                  await loadData(); // Оновлюємо список клієнтів
                 } else {
                   alert(`❌ Помилка: ${data.error || 'Невідома помилка'}`);
                 }
