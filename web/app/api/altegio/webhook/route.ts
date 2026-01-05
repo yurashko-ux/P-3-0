@@ -168,8 +168,8 @@ export async function POST(req: NextRequest) {
       };
       const payload = JSON.stringify(entry);
       await kvWrite.lpush('altegio:webhook:log', payload);
-      // залишаємо лише останні 50
-      await kvWrite.ltrim('altegio:webhook:log', 0, 49);
+      // залишаємо лише останні 100
+      await kvWrite.ltrim('altegio:webhook:log', 0, 99);
     } catch (err) {
       console.warn('[altegio/webhook] Failed to persist webhook to KV:', err);
     }
