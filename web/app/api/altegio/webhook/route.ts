@@ -294,8 +294,9 @@ export async function POST(req: NextRequest) {
               );
               
               // Якщо клієнта не знайдено за altegioClientId, шукаємо за іменем
-              if (!existingClient && client.name) {
-                const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
+              if (!existingClient && data.client) {
+                const clientName = data.client.name || data.client.display_name || '';
+                const nameParts = clientName.trim().split(/\s+/);
                 const firstName = nameParts[0] || '';
                 const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
                 
