@@ -3,6 +3,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -44,28 +48,57 @@ export async function POST(req: NextRequest) {
       results.push(`⚠️ Не вдалося перевірити колонку: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Виконуємо міграцію
-    results.push('\nВиконання міграції...');
+    // Виконуємо міграцію через Prisma migrate deploy
+    results.push('\nВиконання міграції через Prisma migrate deploy...');
     try {
-      await prisma.$executeRawUnsafe(`
-        ALTER TABLE "direct_masters" 
-        ALTER COLUMN "telegramChatId" TYPE BIGINT 
-        USING "telegramChatId"::BIGINT
-      `);
-      results.push('✅ Міграція виконана успішно!');
+      const { stdout, stderr } = await execAsync(
+        'npx prisma migrate deploy',
+        { cwd: process.cwd(), timeout: 60000 }
+      );
+      
+      if (stdout) results.push(stdout);
+      if (stderr && !stderr.includes('warning') && !stderr.includes('info')) {
+        results.push(stderr);
+      }
+      
+      // Перевіряємо, чи міграція була виконана
+      const migrationApplied = stdout.includes('Applied migration') || stdout.includes('No pending migrations');
+      if (migrationApplied) {
+        results.push('✅ Міграція виконана успішно через Prisma migrate deploy!');
+      } else {
+        results.push('ℹ️ Міграція може бути вже застосована або не знайдена.');
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      results.push(`❌ Помилка міграції: ${errorMsg}`);
+      results.push(`❌ Помилка міграції через Prisma: ${errorMsg}`);
       
-      // Якщо помилка про те, що колонка вже має тип BIGINT, це нормально
-      if (errorMsg.includes('already') || errorMsg.includes('BIGINT')) {
-        results.push('ℹ️ Колонка вже має тип BIGINT, міграція не потрібна.');
+      // Якщо помилка про те, що міграція вже застосована, це нормально
+      if (errorMsg.includes('already') || errorMsg.includes('No pending migrations') || errorMsg.includes('already applied')) {
+        results.push('ℹ️ Міграція вже застосована або не знайдена.');
       } else {
-        return NextResponse.json({
-          ok: false,
-          error: errorMsg,
-          results: results.join('\n'),
-        }, { status: 500 });
+        // Якщо Prisma migrate не спрацював, спробуємо через db push
+        results.push('\nСпроба через Prisma db push...');
+        try {
+          const { stdout: pushStdout, stderr: pushStderr } = await execAsync(
+            'npx prisma db push --accept-data-loss',
+            { cwd: process.cwd(), timeout: 60000 }
+          );
+          
+          if (pushStdout) results.push(pushStdout);
+          if (pushStderr && !pushStderr.includes('warning') && !pushStderr.includes('info')) {
+            results.push(pushStderr);
+          }
+          results.push('✅ Схема оновлена через Prisma db push!');
+        } catch (pushErr) {
+          const pushErrorMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+          results.push(`❌ Помилка db push: ${pushErrorMsg}`);
+          return NextResponse.json({
+            ok: false,
+            error: 'Не вдалося виконати міграцію. Можливо, потрібні права власника таблиці або виконати міграцію вручну через Prisma CLI.',
+            results: results.join('\n'),
+            recommendation: 'Спробуйте виконати вручну: npx prisma migrate deploy або npx prisma db push',
+          }, { status: 500 });
+        }
       }
     }
 
