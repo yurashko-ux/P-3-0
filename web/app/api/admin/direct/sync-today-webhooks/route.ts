@@ -383,36 +383,46 @@ export async function POST(req: NextRequest) {
         // Для client events клієнт знаходиться в data або data.client
         const isRecordEvent = event.body?.resource === 'record';
         
-        // Витягуємо clientId, враховуючи структуру для конвертованих вебхуків з records:log
-        let clientId = isRecordEvent 
-          ? (event.body?.data?.client?.id || event.body?.data?.client_id)
+        // Діагностика: перевіряємо всі можливі місця для clientId для цільового клієнта
+        const possibleClientId1 = isRecordEvent 
+          ? event.body?.data?.client?.id 
           : event.body?.resource_id;
-        
-        // Діагностика ДО перевірки originalRecord
-        const originalRecordClientId = event.isFromRecordsLog && event.originalRecord 
+        const possibleClientId2 = isRecordEvent 
+          ? event.body?.data?.client_id 
+          : null;
+        const possibleClientId3 = event.isFromRecordsLog && event.originalRecord 
           ? (event.originalRecord.clientId || 
              event.originalRecord.data?.client?.id ||
              event.originalRecord.data?.client_id ||
              null)
           : null;
         
-        // Перевіряємо, чи це вебхук для цільового клієнта (навіть якщо clientId ще не витягнуто)
-        const mightBeTargetClient = clientId === TARGET_CLIENT_ID || originalRecordClientId === TARGET_CLIENT_ID;
+        // Перевіряємо, чи це може бути вебхук для цільового клієнта
+        const mightBeTargetClient = possibleClientId1 === TARGET_CLIENT_ID || 
+                                     possibleClientId2 === TARGET_CLIENT_ID || 
+                                     possibleClientId3 === TARGET_CLIENT_ID;
         
         if (mightBeTargetClient) {
           console.log(`[sync-today-webhooks] 🔍 BEFORE extraction for target client ${TARGET_CLIENT_ID}:`, {
             isRecordEvent,
-            clientIdFromBody: clientId,
-            originalRecordClientId,
+            possibleClientId1,
+            possibleClientId2,
+            possibleClientId3,
             isFromRecordsLog: event.isFromRecordsLog,
             bodyDataClient: event.body?.data?.client,
             bodyDataClientId: event.body?.data?.client_id,
+            resourceId: event.body?.resource_id,
+            originalRecordClientId: event.originalRecord?.clientId,
+            originalRecordDataClientId: event.originalRecord?.data?.client?.id,
           });
         }
         
+        // Витягуємо clientId, враховуючи структуру для конвертованих вебхуків з records:log
+        let clientId = possibleClientId1 || possibleClientId2;
+        
         // Якщо clientId не знайдено і це конвертований вебхук з records:log, шукаємо в originalRecord
         if (!clientId && event.isFromRecordsLog && event.originalRecord) {
-          clientId = originalRecordClientId;
+          clientId = possibleClientId3;
           
           // Якщо знайшли clientId в originalRecord, додаємо його до body.data.client для подальшої обробки
           if (clientId && isRecordEvent && !event.body?.data?.client?.id) {
@@ -424,6 +434,14 @@ export async function POST(req: NextRequest) {
               console.log(`[sync-today-webhooks] ✅ Extracted clientId ${clientId} from originalRecord and added to body.data.client`);
             }
           }
+        }
+        
+        // Діагностика ПІСЛЯ витягування
+        if (mightBeTargetClient) {
+          console.log(`[sync-today-webhooks] 🔍 AFTER extraction for target client ${TARGET_CLIENT_ID}:`, {
+            finalClientId: clientId,
+            wasExtracted: !!possibleClientId3 && clientId === possibleClientId3,
+          });
         }
         
         const client = isRecordEvent
