@@ -290,7 +290,10 @@ export async function POST(req: NextRequest) {
                 const hadConsultationBefore = await hasConsultationInHistory(existingClient.id);
                 
                 // 2.2 Обробка запису на консультацію (ПЕРША консультація)
-                if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
+                // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
+                // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
+                // Якщо клієнт прийшов (attendance === 1) - це обробляється нижче в блоці attendance === 1
+                if ((status === 'create' || status === 'update') && !hadConsultationBefore && attendance !== 1) {
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-booked',
                     consultationBookingDate: datetime,
@@ -308,7 +311,7 @@ export async function POST(req: NextRequest) {
                     datetime,
                   });
                   
-                  console.log(`[altegio/webhook] ✅ Set consultation-booked state for client ${existingClient.id}`);
+                  console.log(`[altegio/webhook] ✅ Set consultation-booked state for client ${existingClient.id} (status: ${status}, attendance: ${attendance})`);
                 }
                 // 2.3 Обробка переносу дати
                 else if (status === 'update' && wasAdminStaff && hadConsultationBefore) {
