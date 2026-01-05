@@ -240,19 +240,23 @@ export async function POST(req: NextRequest) {
       // ВАЖЛИВО: Для record events з майбутніми датами (наприклад, запис на 19 січня)
       // ми також обробляємо їх, якщо receivedAt (дата отримання вебхука) в діапазоні
       // Це дозволяє обробляти записи на майбутнє, які були створені сьогодні
+      // Приклад: запис створений 5 січня на 19 січня - обробиться, якщо синхронізація для 5-6 січня
       let isInRange = checkDate >= targetDate && checkDate <= endDate;
+      let futureRecordIncluded = false;
       
       // Якщо це record event і дата запису поза діапазоном, але receivedAt в діапазоні - обробляємо
       if (!isInRange && isRecordEvent && e.receivedAt) {
         const receivedDate = new Date(e.receivedAt);
         if (!isNaN(receivedDate.getTime()) && receivedDate >= targetDate && receivedDate <= endDate) {
           isInRange = true;
+          futureRecordIncluded = true;
           console.log(`[sync-today-webhooks] 📅 Record event with future datetime will be processed (receivedAt in range):`, {
             checkDate: checkDate.toISOString(),
             receivedAt: receivedDate.toISOString(),
             targetDate: targetDate.toISOString(),
             endDate: endDate.toISOString(),
             clientId: eventClientId,
+            reason: `Appointment date (${checkDate.toISOString().split('T')[0]}) is in future, but webhook was received (${receivedDate.toISOString().split('T')[0]}) within sync range`,
           });
         }
       }
@@ -1042,7 +1046,9 @@ export async function POST(req: NextRequest) {
                         currentPaidServiceDate: currentClient.paidServiceDate,
                       });
                       
-                      if (needsStateUpdate || needsPaidServiceDate) {
+                      // ВАЖЛИВО: Виконуємо оновлення якщо потрібно оновити стан АБО якщо є нарощування (навіть якщо стан не змінився)
+                      // Це гарантує, що paidServiceDate буде встановлено для всіх записів на нарощування
+                      if (needsStateUpdate || needsPaidServiceDate || (hasHairExtension && datetime && !hasConsultation)) {
                           const stateUpdates: Partial<typeof currentClient> = {
                             updatedAt: new Date().toISOString(),
                           };
@@ -1053,7 +1059,8 @@ export async function POST(req: NextRequest) {
                           }
                           
                           // Оновлюємо дату запису (paidServiceDate) для платних послуг (нарощування)
-                          if (datetime && !hasConsultation) {
+                          // ВАЖЛИВО: Встановлюємо paidServiceDate завжди, якщо є нарощування та дата
+                          if (hasHairExtension && datetime && !hasConsultation) {
                             const appointmentDate = new Date(datetime);
                             const now = new Date();
                             
@@ -1061,10 +1068,14 @@ export async function POST(req: NextRequest) {
                               // Запис в майбутньому - встановлюємо paidServiceDate
                               stateUpdates.paidServiceDate = datetime;
                               stateUpdates.signedUpForPaidService = true;
+                              console.log(`[sync-today-webhooks] 🔵 Will set paidServiceDate (future appointment): ${datetime}`);
                             } else if (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < appointmentDate) {
                               // Запис в минулому або поточному - встановлюємо paidServiceDate, якщо його немає або він старіший
                               stateUpdates.paidServiceDate = datetime;
                               stateUpdates.signedUpForPaidService = true;
+                              console.log(`[sync-today-webhooks] 🔵 Will set paidServiceDate (past/current appointment): ${datetime}`);
+                            } else {
+                              console.log(`[sync-today-webhooks] ⏭️ Skipping paidServiceDate update: existing date ${currentClient.paidServiceDate} is newer or same as ${datetime}`);
                             }
                           }
                           
