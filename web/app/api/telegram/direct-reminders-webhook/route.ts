@@ -673,24 +673,59 @@ async function handleMessage(message: TelegramUpdate["message"]) {
       
       // Шукаємо майстра за Telegram username
       if (fromUser?.username) {
-        console.log(`[direct-reminders-webhook] 🔍 Searching for master with username: "${fromUser.username}"`);
-        const directMaster = await getMasterByTelegramUsername(fromUser.username);
-        console.log(`[direct-reminders-webhook] 🔍 Search result:`, directMaster ? {
+        const searchUsername = fromUser.username.toLowerCase().trim().replace(/^@/, '');
+        console.log(`[direct-reminders-webhook] 🔍 Searching for master with username: "${fromUser.username}" (normalized: "${searchUsername}")`);
+        
+        // Спочатку пробуємо знайти через getMasterByTelegramUsername (тільки активні)
+        let directMaster = await getMasterByTelegramUsername(fromUser.username);
+        console.log(`[direct-reminders-webhook] 🔍 Search result (active only):`, directMaster ? {
           id: directMaster.id,
           name: directMaster.name,
           telegramUsername: directMaster.telegramUsername,
           telegramChatId: directMaster.telegramChatId,
+          isActive: directMaster.isActive,
         } : 'NOT FOUND');
         
+        // Якщо не знайдено серед активних, шукаємо серед ВСІХ майстрів (включаючи неактивних)
+        if (!directMaster) {
+          console.log(`[direct-reminders-webhook] 🔍 Not found among active masters, searching ALL masters (including inactive)...`);
+          const allMasters = await getAllDirectMasters();
+          console.log(`[direct-reminders-webhook] 🔍 Total masters in database: ${allMasters.length}`);
+          console.log(`[direct-reminders-webhook] 🔍 All masters with telegramUsername:`, allMasters
+            .filter(m => m.telegramUsername)
+            .map(m => ({
+              name: m.name,
+              username: m.telegramUsername,
+              isActive: m.isActive,
+            }))
+          );
+          
+          directMaster = allMasters.find(m => {
+            const masterUsername = (m.telegramUsername || '').trim().toLowerCase().replace(/^@/, '');
+            const matches = masterUsername === searchUsername;
+            if (matches) {
+              console.log(`[direct-reminders-webhook] 🔍 Found match: ${m.name} (${m.telegramUsername}), isActive: ${m.isActive}`);
+            }
+            return matches;
+          }) || null;
+          
+          if (directMaster) {
+            console.log(`[direct-reminders-webhook] ✅ Found master among all masters: ${directMaster.name} (isActive: ${directMaster.isActive})`);
+          } else {
+            console.log(`[direct-reminders-webhook] ⚠️ No master found with username "${searchUsername}" among ${allMasters.length} total masters`);
+          }
+        }
+        
         if (directMaster) {
-          // Оновлюємо chatId в DirectMaster
+          // Оновлюємо chatId в DirectMaster (і активуємо, якщо був неактивний)
           const updated = {
             ...directMaster,
             telegramChatId: chatId,
+            isActive: true, // Активуємо майстра при авторизації
             updatedAt: new Date().toISOString(),
           };
           await saveDirectMaster(updated);
-          console.log(`[direct-reminders-webhook] ✅ Updated DirectMaster ${directMaster.name} (@${fromUser.username}) with chatId: ${chatId}`);
+          console.log(`[direct-reminders-webhook] ✅ Updated DirectMaster ${directMaster.name} (@${fromUser.username}) with chatId: ${chatId}, activated: ${!directMaster.isActive}`);
           
           const botToken = getDirectRemindersBotToken();
           await sendMessage(
@@ -702,42 +737,17 @@ async function handleMessage(message: TelegramUpdate["message"]) {
             botToken
           );
         } else {
-          // Якщо не знайдено в DirectMaster, перевіряємо всіх майстрів
-          const allMasters = await getAllDirectMasters();
-          const masterByUsername = allMasters.find(m => 
-            m.telegramUsername?.toLowerCase().replace(/^@/, '') === fromUser.username.toLowerCase()
+          console.log(`[direct-reminders-webhook] ⚠️ No DirectMaster found for username @${fromUser.username}`);
+          console.log(`[direct-reminders-webhook] ⚠️ Searched username: "${searchUsername}"`);
+          const botToken = getDirectRemindersBotToken();
+          await sendMessage(
+            chatId,
+            `Привіт! Я не знайшов ваш профіль у системі Direct Manager.\n\n` +
+            `Якщо ви адміністратор або майстер, будь ласка, повідомте адміністратору для додавання вашого профілю.\n\n` +
+            `Ваш Telegram username: @${fromUser.username}`,
+            {},
+            botToken
           );
-          
-          if (masterByUsername) {
-            // Оновлюємо chatId
-            const updated = {
-              ...masterByUsername,
-              telegramChatId: chatId,
-              updatedAt: new Date().toISOString(),
-            };
-            await saveDirectMaster(updated);
-            console.log(`[direct-reminders-webhook] ✅ Updated DirectMaster ${masterByUsername.name} (@${fromUser.username}) with chatId: ${chatId}`);
-            
-            const botToken = getDirectRemindersBotToken();
-            await sendMessage(
-              chatId,
-              `Привіт, ${masterByUsername.name}!\n\n` +
-              `Ваш Telegram Chat ID (${chatId}) було автоматично збережено в системі.\n\n` +
-              `Тепер ви будете отримувати повідомлення про відсутній Instagram username для клієнтів.`,
-              {},
-              botToken
-            );
-          } else {
-            console.log(`[direct-reminders-webhook] ⚠️ No DirectMaster found for username @${fromUser.username}`);
-            const botToken = getDirectRemindersBotToken();
-            await sendMessage(
-              chatId,
-              `Привіт! Я не знайшов ваш профіль у системі Direct Manager.\n\n` +
-              `Якщо ви адміністратор або майстер, будь ласка, повідомте адміністратору для додавання вашого профілю.`,
-              {},
-              botToken
-            );
-          }
         }
       } else {
         console.log(`[direct-reminders-webhook] ⚠️ /start command received but username is missing`);
