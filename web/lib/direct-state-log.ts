@@ -89,9 +89,11 @@ export async function logStateChange(
       }
     }
 
-    // ПРАВИЛО: Запобігаємо дублікатам станів "client" та "lead"
+    // ПРАВИЛО: Запобігаємо дублікатам станів "client", "lead" та consultation-related станів
     // Перевіряємо ПІСЛЯ перевірки існування таблиці
-    if (newState === 'client' || newState === 'lead') {
+    const singleOccurrenceStates = ['client', 'lead', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+    
+    if (singleOccurrenceStates.includes(newState || '')) {
       // Отримуємо інформацію про клієнта
       const client = await prisma.directClient.findUnique({
         where: { id: clientId },
@@ -118,6 +120,10 @@ export async function logStateChange(
         } else if (newState === 'lead' && isManychatClient) {
           // Для Manychat клієнтів: "lead" може бути тільки один раз
           console.log(`[direct-state-log] ⚠️ Skipping duplicate 'lead' state log for Manychat client ${clientId} (already exists in history)`);
+          return;
+        } else if (newState === 'consultation-booked' || newState === 'consultation-no-show' || newState === 'consultation-rescheduled') {
+          // Consultation-related стани можуть бути тільки один раз
+          console.log(`[direct-state-log] ⚠️ Skipping duplicate '${newState}' state log for client ${clientId} (already exists in history)`);
           return;
         }
         // Для Altegio клієнтів "lead" не повинно бути взагалі, але це вже перевіряється в saveDirectClient
