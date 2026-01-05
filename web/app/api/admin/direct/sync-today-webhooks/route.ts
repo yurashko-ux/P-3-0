@@ -288,6 +288,11 @@ export async function POST(req: NextRequest) {
         console.log(`[sync-today-webhooks] ✅ Target client ${TARGET_CLIENT_ID} event WILL BE PROCESSED`);
       }
       
+      // Додаємо clientId до об'єкта event для подальшого використання
+      if (isInRange && eventClientId) {
+        (e as any).clientId = eventClientId;
+      }
+      
       return isInRange;
     });
 
