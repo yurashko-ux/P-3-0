@@ -318,7 +318,9 @@ export async function POST(req: NextRequest) {
 
     // Діагностика для цільового клієнта
     const targetEventsInToday = todayEvents.filter((e: any) => {
-      const eventClientId = e.body?.data?.client?.id || 
+      // Перевіряємо всі можливі джерела clientId
+      const eventClientId = (e as any).clientId || // Додається під час фільтрації
+                           e.body?.data?.client?.id || 
                            e.body?.data?.client_id || 
                            (e.isFromRecordsLog && e.originalRecord?.clientId) ||
                            null;
@@ -331,13 +333,36 @@ export async function POST(req: NextRequest) {
           receivedAt: e.receivedAt,
           resource: e.body?.resource,
           status: e.body?.status,
-          clientId: e.body?.data?.client?.id || (e.isFromRecordsLog && e.originalRecord?.clientId),
+          clientIdFromProperty: (e as any).clientId, // Перевіряємо, чи зберігся clientId
+          clientIdFromBody: e.body?.data?.client?.id,
+          clientIdFromOriginalRecord: e.isFromRecordsLog ? e.originalRecord?.clientId : null,
           isFromRecordsLog: e.isFromRecordsLog,
         }))
       );
     } else {
       console.log(`[sync-today-webhooks] ❌ Target client ${TARGET_CLIENT_ID} events NOT found in todayEvents after sorting!`);
       console.log(`[sync-today-webhooks] 🔍 Filtered events count: ${filteredEvents.length}, Today events count: ${todayEvents.length}`);
+      
+      // Додаткова діагностика: перевіряємо, чи clientId зберігся в filteredEvents
+      const targetInFiltered = filteredEvents.filter((e: any) => {
+        const eventClientId = (e as any).clientId || 
+                             e.body?.data?.client?.id || 
+                             e.body?.data?.client_id || 
+                             (e.isFromRecordsLog && e.originalRecord?.clientId) ||
+                             null;
+        return eventClientId === TARGET_CLIENT_ID;
+      });
+      
+      if (targetInFiltered.length > 0) {
+        console.log(`[sync-today-webhooks] ⚠️ Target client ${TARGET_CLIENT_ID} events found in filteredEvents but NOT in todayEvents after sorting!`);
+        console.log(`[sync-today-webhooks] 🔍 Target events in filteredEvents:`, 
+          targetInFiltered.map((e: any) => ({
+            receivedAt: e.receivedAt,
+            clientIdFromProperty: (e as any).clientId,
+            clientIdFromBody: e.body?.data?.client?.id,
+          }))
+        );
+      }
     }
 
     console.log(`[direct/sync-today-webhooks] Processing ${todayEvents.length} events sorted by date`);
@@ -383,6 +408,27 @@ export async function POST(req: NextRequest) {
 
     // Обробляємо кожен вебхук
     const TARGET_CLIENT_ID_LOOP = 172203711; // Аліна - для діагностики в циклі
+    
+    // Діагностика: перевіряємо перші кілька подій перед циклом
+    console.log(`[sync-today-webhooks] 🔍 Checking first 5 events before loop for target client ${TARGET_CLIENT_ID_LOOP}:`);
+    for (let i = 0; i < Math.min(5, todayEvents.length); i++) {
+      const e = todayEvents[i] as any;
+      const eventClientId = e.clientId || 
+                           e.body?.data?.client?.id || 
+                           e.body?.data?.client_id || 
+                           (e.isFromRecordsLog && e.originalRecord?.clientId) ||
+                           null;
+      console.log(`[sync-today-webhooks]   Event ${i + 1}:`, {
+        resource: e.body?.resource,
+        receivedAt: e.receivedAt,
+        clientIdFromProperty: e.clientId,
+        clientIdFromBody: e.body?.data?.client?.id,
+        clientIdFromOriginalRecord: e.isFromRecordsLog ? e.originalRecord?.clientId : null,
+        finalClientId: eventClientId,
+        isTarget: eventClientId === TARGET_CLIENT_ID_LOOP,
+      });
+    }
+    
     let loopIndex = 0;
     for (const event of todayEvents) {
       loopIndex++;
