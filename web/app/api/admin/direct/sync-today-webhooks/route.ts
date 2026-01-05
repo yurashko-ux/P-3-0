@@ -485,8 +485,8 @@ export async function POST(req: NextRequest) {
                                   data.staff?.display_name || 
                                   (event.isFromRecordsLog && event.originalRecord?.staffName) ||
                                   null;
-                  const attendance = data.attendance || 
-                                   (event.isFromRecordsLog && event.originalRecord?.attendance) ||
+                  const attendance = data.attendance ?? 
+                                   (event.isFromRecordsLog && (event.originalRecord?.data?.attendance ?? event.originalRecord?.attendance)) ??
                                    undefined;
                   const datetime = data.datetime || 
                                  (event.isFromRecordsLog && event.originalRecord?.datetime) ||
