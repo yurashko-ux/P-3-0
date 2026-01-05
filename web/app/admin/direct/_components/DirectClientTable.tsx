@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
+import { ClientWebhooksModal } from "./ClientWebhooksModal";
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -156,6 +157,7 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
+  const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
   const [searchInput, setSearchInput] = useState<string>(filters.search);
 
   // Синхронізуємо searchInput з filters.search коли filters змінюється ззовні (наприклад, при скиданні)
@@ -426,6 +428,16 @@ export function DirectClientTable({
         isOpen={!!stateHistoryClient}
         onClose={() => setStateHistoryClient(null)}
       />
+
+      {/* Модальне вікно вебхуків клієнта */}
+      {webhooksClient && (
+        <ClientWebhooksModal
+          isOpen={!!webhooksClient}
+          onClose={() => setWebhooksClient(null)}
+          clientName={[webhooksClient.firstName, webhooksClient.lastName].filter(Boolean).join(' ') || webhooksClient.instagramUsername}
+          altegioClientId={webhooksClient.altegioClientId}
+        />
+      )}
 
       {/* Таблиця */}
       <div className="card bg-base-100 shadow-sm">
