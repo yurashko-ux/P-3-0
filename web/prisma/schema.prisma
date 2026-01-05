@@ -88,7 +88,7 @@ model DirectMaster {
   id              String   @id @default(uuid())
   name            String   // Ім'я відповідального
   telegramUsername String? // Telegram username
-  telegramChatId  Int?     // Telegram chat ID (для відправки повідомлень)
+  telegramChatId  BigInt?  // Telegram chat ID (для відправки повідомлень) - BigInt для підтримки великих ID
   role            String   @default("master") // 'master' | 'direct-manager' | 'admin'
   altegioStaffId  Int?     // ID майстра в Altegio (якщо є)
   isActive        Boolean  @default(true) // Чи активний

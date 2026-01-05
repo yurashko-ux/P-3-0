@@ -7,7 +7,7 @@ export type DirectMaster = {
   id: string;
   name: string;
   telegramUsername?: string;
-  telegramChatId?: number;
+  telegramChatId?: number | bigint; // BigInt в Prisma конвертується в number або bigint в JavaScript
   role: 'master' | 'direct-manager' | 'admin';
   altegioStaffId?: number;
   isActive: boolean;
@@ -19,11 +19,22 @@ export type DirectMaster = {
 // Конвертація з Prisma моделі в DirectMaster
 function prismaMasterToDirectMaster(dbMaster: any): DirectMaster {
   try {
+    // Конвертуємо BigInt в number для JavaScript (якщо потрібно)
+    let telegramChatId: number | undefined = undefined;
+    if (dbMaster.telegramChatId !== null && dbMaster.telegramChatId !== undefined) {
+      // BigInt в Prisma може бути як BigInt, так і number
+      if (typeof dbMaster.telegramChatId === 'bigint') {
+        telegramChatId = Number(dbMaster.telegramChatId);
+      } else {
+        telegramChatId = dbMaster.telegramChatId;
+      }
+    }
+    
     return {
       id: dbMaster.id,
       name: dbMaster.name,
       telegramUsername: dbMaster.telegramUsername || undefined,
-      telegramChatId: dbMaster.telegramChatId ?? undefined, // Використовуємо ?? для коректної обробки null
+      telegramChatId,
       role: (dbMaster.role as 'master' | 'direct-manager' | 'admin') || 'master',
       altegioStaffId: dbMaster.altegioStaffId ?? undefined,
       isActive: dbMaster.isActive ?? true,
@@ -109,12 +120,23 @@ export async function getDirectMasterById(id: string): Promise<DirectMaster | nu
  */
 export async function saveDirectMaster(master: DirectMaster): Promise<DirectMaster> {
   try {
+    // Конвертуємо number в BigInt для Prisma (якщо потрібно)
+    let telegramChatIdForDb: bigint | null = null;
+    if (master.telegramChatId !== null && master.telegramChatId !== undefined) {
+      // Конвертуємо number або bigint в BigInt для Prisma
+      if (typeof master.telegramChatId === 'bigint') {
+        telegramChatIdForDb = master.telegramChatId;
+      } else {
+        telegramChatIdForDb = BigInt(master.telegramChatId);
+      }
+    }
+    
     const dbMaster = await prisma.directMaster.upsert({
       where: { id: master.id },
       update: {
         name: master.name,
         telegramUsername: master.telegramUsername || null,
-        telegramChatId: master.telegramChatId || null,
+        telegramChatId: telegramChatIdForDb,
         role: master.role,
         altegioStaffId: master.altegioStaffId || null,
         isActive: master.isActive,
@@ -125,7 +147,7 @@ export async function saveDirectMaster(master: DirectMaster): Promise<DirectMast
         id: master.id,
         name: master.name,
         telegramUsername: master.telegramUsername || null,
-        telegramChatId: master.telegramChatId || null,
+        telegramChatId: telegramChatIdForDb,
         role: master.role,
         altegioStaffId: master.altegioStaffId || null,
         isActive: master.isActive,
