@@ -130,15 +130,31 @@ export async function POST(req: NextRequest) {
 
     // Фільтруємо вебхуки за вказаний період та ті, що стосуються клієнтів або записів
     const filteredEvents = events.filter((e: any) => {
-      if (!e.receivedAt) return false;
-      const receivedDate = new Date(e.receivedAt);
-      const isInRange = receivedDate >= targetDate && receivedDate <= endDate;
+      // Перевіряємо, чи це client або record event
       const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
       const isRecordEvent = e.body?.resource === 'record' && (e.body?.status === 'create' || e.body?.status === 'update');
-      return isInRange && (isClientEvent || isRecordEvent);
+      
+      if (!isClientEvent && !isRecordEvent) return false;
+      
+      // Для record events перевіряємо також datetime з даних (може бути більш точною)
+      let checkDate: Date | null = null;
+      
+      if (e.receivedAt) {
+        checkDate = new Date(e.receivedAt);
+      } else if (e.body?.data?.datetime) {
+        // Якщо немає receivedAt, використовуємо datetime з даних запису
+        checkDate = new Date(e.body.data.datetime);
+      }
+      
+      if (!checkDate) return false;
+      
+      // Перевіряємо, чи дата в межах діапазону
+      const isInRange = checkDate >= targetDate && checkDate <= endDate;
+      
+      return isInRange;
     });
 
-    console.log(`[direct/sync-today-webhooks] Found ${filteredEvents.length} events in range (client + record)`);
+    console.log(`[direct/sync-today-webhooks] Found ${filteredEvents.length} events in range (client + record) out of ${events.length} total events`);
 
     // Сортуємо за датою отримання (найстаріші першими)
     const todayEvents = filteredEvents.sort((a: any, b: any) => {
