@@ -1023,13 +1023,6 @@ export async function POST(req: NextRequest) {
                             hasHairExtension,
                           });
                         }
-                      } else {
-                        console.log(`[sync-today-webhooks] ⏭️ Skipping services processing for client ${updated.id}:`, {
-                          hasConsultation,
-                          hasServices,
-                          servicesArrayLength: servicesArray.length,
-                        });
-                      }
                     } catch (stateErr) {
                       console.error(`[sync-today-webhooks] ⚠️ Failed to process state from services:`, stateErr);
                       // Не зупиняємо обробку через помилку
