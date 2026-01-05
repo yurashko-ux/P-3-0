@@ -910,6 +910,23 @@ export async function POST(req: NextRequest) {
                   // Встановлюємо стан на основі послуг, якщо це не консультація
                   // ВАЖЛИВО: Виконуємо для всіх record events, навіть якщо hasServices false
                   // (services можуть бути в різних місцях структури вебхука)
+                  console.log(`[sync-today-webhooks] 🔍 Services processing check for client ${clientId} (${updated.instagramUsername}):`, {
+                    isRecordEvent,
+                    hasConsultation,
+                    servicesArrayLength: servicesArray.length,
+                    servicesArray: servicesArray.map((s: any) => ({ title: s.title || s.name, name: s.name })),
+                    willProcess: isRecordEvent && !hasConsultation && servicesArray.length > 0,
+                    servicesFromBody: !!servicesFromBody,
+                    servicesFromRecord: !!servicesFromRecord,
+                    eventBodyData: event.body?.data ? Object.keys(event.body.data) : [],
+                    originalRecord: event.isFromRecordsLog ? {
+                      hasServiceName: !!event.originalRecord?.serviceName,
+                      serviceName: event.originalRecord?.serviceName,
+                      hasServices: !!event.originalRecord?.data?.services,
+                      servicesCount: Array.isArray(event.originalRecord?.data?.services) ? event.originalRecord.data.services.length : 0,
+                    } : null,
+                  });
+                  
                   if (isRecordEvent && !hasConsultation && servicesArray.length > 0) {
                     try {
                       const { determineStateFromServices } = await import('@/lib/direct-state-helper');
@@ -1031,6 +1048,14 @@ export async function POST(req: NextRequest) {
                       console.error(`[sync-today-webhooks] ⚠️ Failed to process state from services:`, stateErr);
                       // Не зупиняємо обробку через помилку
                     }
+                  } else {
+                    // Логуємо, чому логіка не спрацювала
+                    console.log(`[sync-today-webhooks] ⏭️ Skipping services processing for client ${clientId} (${updated.instagramUsername}):`, {
+                      isRecordEvent,
+                      hasConsultation,
+                      servicesArrayLength: servicesArray.length,
+                      reason: !isRecordEvent ? 'not a record event' : hasConsultation ? 'has consultation service' : servicesArray.length === 0 ? 'no services in array' : 'unknown',
+                    });
                   }
                 }
               } catch (consultationErr) {
