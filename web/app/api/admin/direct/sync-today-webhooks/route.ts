@@ -544,26 +544,31 @@ export async function POST(req: NextRequest) {
                     historyStates: history.map(h => h.state),
                   });
                   
-                  // Обробка запису на консультацію (ПЕРША консультація)
-                  if (status === 'create' && wasAdminStaff && !hadConsultationBefore) {
-                    const consultationUpdates = {
-                      state: 'consultation-booked' as const,
-                      consultationBookingDate: datetime,
-                      updatedAt: new Date().toISOString(),
-                    };
-                    
-                    const consultationUpdated = {
-                      ...updated,
-                      ...consultationUpdates,
-                    };
-                    
-                    await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
-                      altegioClientId: clientId,
-                      staffName,
-                      datetime,
-                    });
-                    
-                      console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id}`);
+                    // Обробка запису на консультацію (ПЕРША консультація)
+                    // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
+                    if ((status === 'create' || status === 'update') && !hadConsultationBefore) {
+                      // Якщо це адмін створює запис - встановлюємо 'consultation-booked'
+                      // Якщо це майстер і клієнт ще не прийшов (attendance !== 1) - також встановлюємо 'consultation-booked'
+                      if (wasAdminStaff || (status === 'create' && attendance !== 1)) {
+                        const consultationUpdates = {
+                          state: 'consultation-booked' as const,
+                          consultationBookingDate: datetime,
+                          updatedAt: new Date().toISOString(),
+                        };
+                        
+                        const consultationUpdated = {
+                          ...updated,
+                          ...consultationUpdates,
+                        };
+                        
+                        await saveDirectClient(consultationUpdated, 'sync-today-webhooks-consultation-booked', {
+                          altegioClientId: clientId,
+                          staffName,
+                          datetime,
+                        });
+                        
+                        console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id} (status: ${status}, wasAdminStaff: ${wasAdminStaff}, attendance: ${attendance})`);
+                      }
                     }
                     // Обробка приходу клієнта на консультацію
                     // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
