@@ -129,12 +129,24 @@ export async function POST(req: NextRequest) {
     }
 
     // Фільтруємо вебхуки за вказаний період та ті, що стосуються клієнтів або записів
+    let sampleCount = 0;
     const filteredEvents = events.filter((e: any) => {
       // Перевіряємо, чи це client або record event
       const isClientEvent = e.body?.resource === 'client' && (e.body?.status === 'create' || e.body?.status === 'update');
       const isRecordEvent = e.body?.resource === 'record' && (e.body?.status === 'create' || e.body?.status === 'update');
       
-      if (!isClientEvent && !isRecordEvent) return false;
+      if (!isClientEvent && !isRecordEvent) {
+        // Логуємо перші кілька прикладів для діагностики
+        if (sampleCount < 3) {
+          console.log(`[sync-today-webhooks] Sample skipped event (not client/record):`, {
+            resource: e.body?.resource,
+            status: e.body?.status,
+            hasBody: !!e.body,
+          });
+          sampleCount++;
+        }
+        return false;
+      }
       
       // Для record events перевіряємо також datetime з даних (може бути більш точною)
       let checkDate: Date | null = null;
@@ -146,15 +158,48 @@ export async function POST(req: NextRequest) {
         checkDate = new Date(e.body.data.datetime);
       }
       
-      if (!checkDate) return false;
+      if (!checkDate) {
+        if (sampleCount < 3) {
+          console.log(`[sync-today-webhooks] Sample skipped event (no date):`, {
+            hasReceivedAt: !!e.receivedAt,
+            hasDatetime: !!e.body?.data?.datetime,
+            resource: e.body?.resource,
+          });
+          sampleCount++;
+        }
+        return false;
+      }
       
       // Перевіряємо, чи дата в межах діапазону
       const isInRange = checkDate >= targetDate && checkDate <= endDate;
+      
+      if (!isInRange && sampleCount < 3) {
+        console.log(`[sync-today-webhooks] Sample skipped event (date out of range):`, {
+          checkDate: checkDate.toISOString(),
+          targetDate: targetDate.toISOString(),
+          endDate: endDate.toISOString(),
+          resource: e.body?.resource,
+          receivedAt: e.receivedAt,
+          datetime: e.body?.data?.datetime,
+        });
+        sampleCount++;
+      }
       
       return isInRange;
     });
 
     console.log(`[direct/sync-today-webhooks] Found ${filteredEvents.length} events in range (client + record) out of ${events.length} total events`);
+    
+    // Логуємо приклади відфільтрованих подій
+    if (filteredEvents.length > 0) {
+      console.log(`[direct/sync-today-webhooks] Sample filtered events:`, filteredEvents.slice(0, 3).map((e: any) => ({
+        resource: e.body?.resource,
+        status: e.body?.status,
+        receivedAt: e.receivedAt,
+        datetime: e.body?.data?.datetime,
+        clientId: e.body?.data?.client?.id || e.body?.data?.client_id,
+      })));
+    }
 
     // Сортуємо за датою отримання (найстаріші першими)
     const todayEvents = filteredEvents.sort((a: any, b: any) => {
