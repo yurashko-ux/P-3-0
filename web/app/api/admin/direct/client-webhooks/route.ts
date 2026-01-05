@@ -68,6 +68,31 @@ export async function GET(req: NextRequest) {
             }
           }
           
+          // Конвертуємо events з records:log у формат webhook events
+          // records:log містить об'єкти з полями: visitId, recordId, clientId, datetime, etc.
+          // webhook:log містить об'єкти з полями: body, receivedAt
+          if (parsed && parsed.visitId && !parsed.body) {
+            // Це event з records:log - конвертуємо в формат webhook
+            return {
+              body: {
+                resource: 'record',
+                resource_id: parsed.visitId,
+                status: parsed.status || 'create',
+                data: {
+                  datetime: parsed.datetime,
+                  client: parsed.client ? { id: parsed.clientId || parsed.client.id } : { id: parsed.clientId },
+                  staff: parsed.staff ? { name: parsed.staffName || parsed.staff.name } : { name: parsed.staffName },
+                  services: parsed.services || (parsed.serviceName ? [{ title: parsed.serviceName }] : []),
+                  attendance: parsed.attendance,
+                  visit_attendance: parsed.visit_attendance,
+                },
+              },
+              receivedAt: parsed.receivedAt || parsed.datetime,
+              isFromRecordsLog: true,
+              originalRecord: parsed,
+            };
+          }
+          
           return parsed;
         } catch {
           return null;
