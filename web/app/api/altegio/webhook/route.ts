@@ -415,41 +415,42 @@ export async function POST(req: NextRequest) {
                     
                     // Якщо ще немає фактичної консультації в історії, встановлюємо
                     if (!hasActualConsultation) {
-                    // Знаходимо майстра
-                    const master = await getMasterByName(staffName);
-                    if (master) {
-                      const updates: Partial<typeof existingClient> = {
-                        state: 'consultation',
-                        consultationAttended: true,
-                        consultationMasterId: master.id,
-                        consultationMasterName: master.name,
-                        consultationDate: datetime, // Дата фактичної консультації
-                        // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
-                        consultationBookingDate: existingClient.consultationBookingDate || datetime,
-                        masterId: master.id, // Оновлюємо відповідального
-                        masterManuallySet: false, // Автоматичне призначення
-                        updatedAt: new Date().toISOString(),
-                      };
-                      
-                      const updated: typeof existingClient = {
-                        ...existingClient,
-                        ...updates,
-                      };
-                      
-                      await saveDirectClient(updated, 'altegio-webhook-consultation-attended', {
-                        altegioClientId: clientId,
-                        staffName,
-                        masterId: master.id,
-                        masterName: master.name,
-                        datetime,
-                      });
-                      
-                      console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
+                      // Знаходимо майстра
+                      const master = await getMasterByName(staffName);
+                      if (master) {
+                        const updates: Partial<typeof existingClient> = {
+                          state: 'consultation',
+                          consultationAttended: true,
+                          consultationMasterId: master.id,
+                          consultationMasterName: master.name,
+                          consultationDate: datetime, // Дата фактичної консультації
+                          // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
+                          consultationBookingDate: existingClient.consultationBookingDate || datetime,
+                          masterId: master.id, // Оновлюємо відповідального
+                          masterManuallySet: false, // Автоматичне призначення
+                          updatedAt: new Date().toISOString(),
+                        };
+                        
+                        const updated: typeof existingClient = {
+                          ...existingClient,
+                          ...updates,
+                        };
+                        
+                        await saveDirectClient(updated, 'altegio-webhook-consultation-attended', {
+                          altegioClientId: clientId,
+                          staffName,
+                          masterId: master.id,
+                          masterName: master.name,
+                          datetime,
+                        });
+                        
+                        console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
+                      } else {
+                        console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
+                      }
                     } else {
-                      console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
+                      console.log(`[altegio/webhook] ⏭️ Client ${existingClient.id} already has consultation state in history, skipping`);
                     }
-                  } else {
-                    console.log(`[altegio/webhook] ⏭️ Client ${existingClient.id} already has consultation state in history, skipping`);
                   }
                 }
               }
