@@ -784,78 +784,81 @@ export async function POST(req: NextRequest) {
                   // ОНОВЛЕННЯ СТАНУ КЛІЄНТА НА ОСНОВІ SERVICES (нарощування, інші послуги)
                   // Встановлюємо стан на основі послуг, якщо це не консультація
                   if (!hasConsultation) {
-                  const { determineStateFromServices } = await import('@/lib/direct-state-helper');
-                  const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
-                  
-                  const newState = determineStateFromServices(servicesArray);
-                  
-                  if (newState) {
-                    const hasHairExtension = servicesArray.some((s: any) => {
-                      const title = s.title || s.name || '';
-                      return /нарощування/i.test(title);
-                    });
-                    
-                    // Отримуємо актуальний стан клієнта (може бути оновлено після консультації)
-                    const currentClient = existingDirectClients.find(
-                      (c) => c.id === updated.id
-                    ) || updated;
-                    
-                    const previousState = currentClient.state;
-                    
-                    // Оновлюємо стан, якщо він змінився
-                    if (previousState !== newState) {
-                      const stateUpdates: Partial<typeof currentClient> = {
-                        state: newState,
-                        updatedAt: new Date().toISOString(),
-                      };
+                    try {
+                      const { determineStateFromServices } = await import('@/lib/direct-state-helper');
+                      const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
                       
-                      // Оновлюємо дату запису (paidServiceDate) для платних послуг
-                      if (datetime && !hasConsultation) {
-                        const appointmentDate = new Date(datetime);
-                        const now = new Date();
+                      const newState = determineStateFromServices(servicesArray);
+                      
+                      if (newState) {
+                        const hasHairExtension = servicesArray.some((s: any) => {
+                          const title = s.title || s.name || '';
+                          return /нарощування/i.test(title);
+                        });
                         
-                        if (appointmentDate > now) {
-                          stateUpdates.paidServiceDate = datetime;
-                          stateUpdates.signedUpForPaidService = true;
-                        } else if (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < appointmentDate) {
-                          stateUpdates.paidServiceDate = datetime;
-                          stateUpdates.signedUpForPaidService = true;
+                        // Отримуємо актуальний стан клієнта (може бути оновлено після консультації)
+                        const currentClient = existingDirectClients.find(
+                          (c) => c.id === updated.id
+                        ) || updated;
+                        
+                        const previousState = currentClient.state;
+                        
+                        // Оновлюємо стан, якщо він змінився
+                        if (previousState !== newState) {
+                          const stateUpdates: Partial<typeof currentClient> = {
+                            state: newState,
+                            updatedAt: new Date().toISOString(),
+                          };
+                          
+                          // Оновлюємо дату запису (paidServiceDate) для платних послуг
+                          if (datetime && !hasConsultation) {
+                            const appointmentDate = new Date(datetime);
+                            const now = new Date();
+                            
+                            if (appointmentDate > now) {
+                              stateUpdates.paidServiceDate = datetime;
+                              stateUpdates.signedUpForPaidService = true;
+                            } else if (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < appointmentDate) {
+                              stateUpdates.paidServiceDate = datetime;
+                              stateUpdates.signedUpForPaidService = true;
+                            }
+                          }
+                          
+                          // Автоматично призначаємо майстра для нарощування
+                          if (hasHairExtension && staffId && !currentClient.masterManuallySet) {
+                            const master = await getMasterByAltegioStaffId(staffId);
+                            if (master) {
+                              stateUpdates.masterId = master.id;
+                              console.log(`[sync-today-webhooks] Auto-assigned master ${master.name} (${master.id}) by staff_id ${staffId} to client ${currentClient.id}`);
+                            }
+                          }
+                          
+                          const stateUpdated = {
+                            ...currentClient,
+                            ...stateUpdates,
+                          };
+                          
+                          const metadata = {
+                            altegioClientId: clientId,
+                            visitId: event.body?.data?.id,
+                            services: servicesArray.map((s: any) => ({ id: s.id, title: s.title || s.name })),
+                            staffName,
+                            masterId: stateUpdates.masterId,
+                          };
+                          
+                          await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata);
+                          
+                          console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${newState}' based on services`);
                         }
                       }
-                      
-                      // Автоматично призначаємо майстра для нарощування
-                      if (hasHairExtension && staffId && !currentClient.masterManuallySet) {
-                        const master = await getMasterByAltegioStaffId(staffId);
-                        if (master) {
-                          stateUpdates.masterId = master.id;
-                          console.log(`[sync-today-webhooks] Auto-assigned master ${master.name} (${master.id}) by staff_id ${staffId} to client ${currentClient.id}`);
-                        }
-                      }
-                      
-                      const stateUpdated = {
-                        ...currentClient,
-                        ...stateUpdates,
-                      };
-                      
-                      const metadata = {
-                        altegioClientId: clientId,
-                        visitId: event.body?.data?.id,
-                        services: servicesArray.map((s: any) => ({ id: s.id, title: s.title || s.name })),
-                        staffName,
-                        masterId: stateUpdates.masterId,
-                      };
-                      
-                      await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata);
-                      
-                      console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${newState}' based on services`);
+                    } catch (stateErr) {
+                      console.error(`[sync-today-webhooks] ⚠️ Failed to process state from services:`, stateErr);
+                      // Не зупиняємо обробку через помилку
                     }
                   }
                 }
               } catch (consultationErr) {
                 console.error(`[sync-today-webhooks] ⚠️ Failed to process consultation logic:`, consultationErr);
-                // Не зупиняємо обробку через помилку
-              } catch (stateErr) {
-                console.error(`[sync-today-webhooks] ⚠️ Failed to process state from services:`, stateErr);
                 // Не зупиняємо обробку через помилку
               }
             }
