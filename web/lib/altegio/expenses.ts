@@ -223,7 +223,22 @@ export async function fetchExpensesSummary(params: {
     for (const cat of categories) {
       const name = cat.name || cat.title || cat.category || `Категорія ${cat.id}`;
       categoryMap.set(cat.id, name);
+      
+      // Діагностика: шукаємо категорію "Комісія за еквайринг"
+      const catNameLower = name.toLowerCase();
+      if (catNameLower.includes("еквайринг") || catNameLower.includes("acquiring") || 
+          catNameLower.includes("комісія") || catNameLower.includes("комиссия")) {
+        console.log(`[altegio/expenses] 🔍 Found acquiring-related category:`, {
+          id: cat.id,
+          name: cat.name,
+          title: cat.title,
+          category: cat.category,
+          normalized_name: name,
+          full_object: cat,
+        });
+      }
     }
+    console.log(`[altegio/expenses] 📋 Loaded ${categoryMap.size} expense categories from API`);
   } catch (err) {
     console.log(`[altegio/expenses] ⚠️ Could not fetch categories, will extract from transactions`);
   }
@@ -799,17 +814,55 @@ export async function fetchExpensesSummary(params: {
     // Але тепер ми також включаємо транзакції без expense об'єкта
     let categoryName = "Інші витрати";
     
-    // Пріоритет 1: expense.title (найточніше)
-    if (expense.expense?.title) {
-      categoryName = normalizeCategoryName(expense.expense.title);
+    // Пріоритет 1: мапа категорій за expense_id (найнадійніше, якщо мапа заповнена)
+    if (expense.expense_id && categoryMap.has(expense.expense_id)) {
+      const mappedName = categoryMap.get(expense.expense_id)!;
+      categoryName = normalizeCategoryName(mappedName);
+      
+      // Діагностика для еквайрингу
+      if (mappedName.toLowerCase().includes("еквайринг") || mappedName.toLowerCase().includes("acquiring")) {
+        console.log(`[altegio/expenses] 🔍 Using categoryMap for acquiring:`, {
+          expense_id: expense.expense_id,
+          mapped_name: mappedName,
+          normalized: categoryName,
+          transaction_id: expense.id,
+          amount: expense.amount,
+        });
+      }
     }
-    // Пріоритет 2: expense.name
+    // Пріоритет 2: expense.title (якщо немає в мапі)
+    else if (expense.expense?.title) {
+      categoryName = normalizeCategoryName(expense.expense.title);
+      
+      // Діагностика для еквайрингу
+      if (expense.expense.title.toLowerCase().includes("еквайринг") || 
+          expense.expense.title.toLowerCase().includes("acquiring")) {
+        console.log(`[altegio/expenses] 🔍 Using expense.title for acquiring:`, {
+          expense_title: expense.expense.title,
+          normalized: categoryName,
+          expense_id: expense.expense_id,
+          expense_object: expense.expense,
+          transaction_id: expense.id,
+          amount: expense.amount,
+        });
+      }
+    }
+    // Пріоритет 3: expense.name
     else if (expense.expense?.name) {
       categoryName = normalizeCategoryName(expense.expense.name);
-    }
-    // Пріоритет 3: мапа категорій за expense_id
-    else if (expense.expense_id && categoryMap.has(expense.expense_id)) {
-      categoryName = normalizeCategoryName(categoryMap.get(expense.expense_id)!);
+      
+      // Діагностика для еквайрингу
+      if (expense.expense.name.toLowerCase().includes("еквайринг") || 
+          expense.expense.name.toLowerCase().includes("acquiring")) {
+        console.log(`[altegio/expenses] 🔍 Using expense.name for acquiring:`, {
+          expense_name: expense.expense.name,
+          normalized: categoryName,
+          expense_id: expense.expense_id,
+          expense_object: expense.expense,
+          transaction_id: expense.id,
+          amount: expense.amount,
+        });
+      }
     }
     // Пріоритет 4: expense.category
     else if (expense.expense?.category) {
