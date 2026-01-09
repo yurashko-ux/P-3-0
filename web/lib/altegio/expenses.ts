@@ -741,7 +741,13 @@ export async function fetchExpensesSummary(params: {
       return "Дірект";
     }
     
-    // Нормалізуємо "Еквайринг" / "Acquiring"
+    // Нормалізуємо "Комісія за еквайринг" (спочатку перевіряємо більш специфічну назву)
+    if (lower.includes("комісія за еквайринг") || lower.includes("комиссия за эквайринг") || 
+        lower.includes("комісія за acquiring") || lower.includes("commission for acquiring")) {
+      return "Комісія за еквайринг";
+    }
+    
+    // Нормалізуємо "Еквайринг" / "Acquiring" (загальна назва)
     if (lower.includes("еквайринг") || lower.includes("acquiring")) {
       return "Еквайринг";
     }

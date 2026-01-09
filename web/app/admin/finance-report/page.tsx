@@ -338,7 +338,7 @@ async function getSummaryForMonth(
     const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
     const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
     const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-    const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+    const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
     const acquiringManual = manualFields.acquiring || 0;
     const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
     const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
@@ -562,7 +562,7 @@ export default async function FinanceReportPage({
   const consumablesFromAPI_dashboard = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
   const stationeryFromAPI_dashboard = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
   const productsForGuestsFromAPI_dashboard = expenses?.byCategory["Продукти для гостей"] || 0;
-  const acquiringFromAPI_dashboard = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+  const acquiringFromAPI_dashboard = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
   const acquiringManual_dashboard = manualFields.acquiring || 0;
   const acquiring_dashboard = acquiringFromAPI_dashboard > 0 ? acquiringFromAPI_dashboard : acquiringManual_dashboard;
   const utilitiesFromAPI_dashboard = expenses?.byCategory["Інтернет, CRM і т д."] ||
@@ -759,7 +759,7 @@ export default async function FinanceReportPage({
                       const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
                       const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
                       const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-                      const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+                      const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
                       const acquiringManual = manualFields.acquiring || 0; // Fallback, якщо немає в API
                       const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual; // Використовуємо API, якщо є
                       const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
@@ -1090,7 +1090,7 @@ export default async function FinanceReportPage({
             const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
             const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
             const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-            const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+            const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
             const acquiringManual = manualFields.acquiring || 0;
             const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
             const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
@@ -1299,7 +1299,7 @@ export default async function FinanceReportPage({
             const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
             const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
             const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-            const acquiringFromAPI = expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+            const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
             const acquiringManual = manualFields.acquiring || 0;
             const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
             const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
