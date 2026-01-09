@@ -756,13 +756,17 @@ export async function fetchExpensesSummary(params: {
       return "Дірект";
     }
     
-    // Нормалізуємо "Комісія за еквайринг" (спочатку перевіряємо більш специфічну назву)
+    // Нормалізуємо "Комісія за еквайринг" / "Acquiring fee" (спочатку перевіряємо більш специфічну назву)
     // Перевіряємо різні варіанти написання
-    if (lower.includes("комісія за еквайринг") || 
+    if (lower === "acquiring fee" ||
+        name === "Acquiring fee" ||
+        name === "acquiring fee" ||
+        lower.includes("комісія за еквайринг") || 
         lower.includes("комиссия за эквайринг") || 
         lower.includes("комісія за acquiring") || 
         lower.includes("комиссия за acquiring") ||
         lower.includes("commission for acquiring") ||
+        lower.includes("acquiring fee") ||
         lower.includes("комісія за еквайрінг") ||
         lower.includes("комиссия за эквайринг") ||
         name === "Комісія за еквайринг" ||
@@ -822,24 +826,31 @@ export async function fetchExpensesSummary(params: {
     const expenseNameLower = expenseNameRaw.toLowerCase();
     const commentLower = commentRaw.toLowerCase();
     
-    // Прямий пошук статті витрат "Комісія за еквайринг" - якщо знайдено, одразу присвоюємо категорію
+    // Прямий пошук статті витрат "Комісія за еквайринг" / "Acquiring fee" - якщо знайдено, одразу присвоюємо категорію
     if (expenseTitleRaw === "Комісія за еквайринг" || 
         expenseTitleRaw === "Комиссия за эквайринг" ||
+        expenseTitleRaw === "Acquiring fee" ||
+        expenseTitleRaw === "acquiring fee" ||
         expenseNameRaw === "Комісія за еквайринг" ||
         expenseNameRaw === "Комиссия за эквайринг" ||
+        expenseNameRaw === "Acquiring fee" ||
         (expenseTitleLower.includes("комісія") && expenseTitleLower.includes("еквайринг")) ||
         (expenseTitleLower.includes("комиссия") && expenseTitleLower.includes("эквайринг")) ||
+        (expenseTitleLower.includes("acquiring") && expenseTitleLower.includes("fee")) ||
         (expenseNameLower.includes("комісія") && expenseNameLower.includes("еквайринг")) ||
-        (expenseNameLower.includes("комиссия") && expenseNameLower.includes("эквайринг"))) {
+        (expenseNameLower.includes("комиссия") && expenseNameLower.includes("эквайринг")) ||
+        (expenseNameLower.includes("acquiring") && expenseNameLower.includes("fee"))) {
       categoryName = "Комісія за еквайринг";
     }
     // Пріоритет 1: мапа категорій за expense_id (найнадійніше, якщо мапа заповнена)
     else if (expense.expense_id && categoryMap.has(expense.expense_id)) {
       const mappedName = categoryMap.get(expense.expense_id)!;
       const mappedNameLower = mappedName.toLowerCase();
-      // Перевіряємо, чи в мапі є "Комісія за еквайринг"
+      // Перевіряємо, чи в мапі є "Комісія за еквайринг" / "Acquiring fee"
       if ((mappedNameLower.includes("комісія") && mappedNameLower.includes("еквайринг")) ||
-          (mappedNameLower.includes("комиссия") && mappedNameLower.includes("эквайринг"))) {
+          (mappedNameLower.includes("комиссия") && mappedNameLower.includes("эквайринг")) ||
+          mappedNameLower === "acquiring fee" ||
+          (mappedNameLower.includes("acquiring") && mappedNameLower.includes("fee"))) {
         categoryName = "Комісія за еквайринг";
       } else {
         categoryName = normalizeCategoryName(mappedName);
