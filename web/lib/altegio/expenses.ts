@@ -742,13 +742,23 @@ export async function fetchExpensesSummary(params: {
     }
     
     // Нормалізуємо "Комісія за еквайринг" (спочатку перевіряємо більш специфічну назву)
-    if (lower.includes("комісія за еквайринг") || lower.includes("комиссия за эквайринг") || 
-        lower.includes("комісія за acquiring") || lower.includes("commission for acquiring")) {
+    // Перевіряємо різні варіанти написання
+    if (lower.includes("комісія за еквайринг") || 
+        lower.includes("комиссия за эквайринг") || 
+        lower.includes("комісія за acquiring") || 
+        lower.includes("комиссия за acquiring") ||
+        lower.includes("commission for acquiring") ||
+        lower.includes("комісія за еквайрінг") ||
+        lower.includes("комиссия за эквайринг") ||
+        name === "Комісія за еквайринг" ||
+        name === "Комиссия за эквайринг") {
       return "Комісія за еквайринг";
     }
     
     // Нормалізуємо "Еквайринг" / "Acquiring" (загальна назва)
-    if (lower.includes("еквайринг") || lower.includes("acquiring")) {
+    // Але тільки якщо це не "Комісія за еквайринг"
+    if ((lower.includes("еквайринг") || lower.includes("acquiring")) && 
+        !lower.includes("комісія") && !lower.includes("комиссия") && !lower.includes("commission")) {
       return "Еквайринг";
     }
     
@@ -811,6 +821,13 @@ export async function fetchExpensesSummary(params: {
       const commentLower = expense.comment.toLowerCase();
       if (commentLower.includes("подат") || commentLower.includes("tax") || commentLower.includes("налмн")) {
         categoryName = "Податки та збори";
+      } else if (commentLower.includes("комісія за еквайринг") || 
+                 commentLower.includes("комиссия за эквайринг") ||
+                 commentLower.includes("комісія за acquiring") ||
+                 commentLower.includes("еквайринг") || 
+                 commentLower.includes("acquiring")) {
+        // Якщо в коментарі є згадка про еквайринг, нормалізуємо
+        categoryName = normalizeCategoryName(expense.comment);
       } else {
         // Використовуємо comment, але обмежуємо довжину для читабельності
         categoryName = expense.comment.length > 50 
@@ -826,6 +843,26 @@ export async function fetchExpensesSummary(params: {
     // (це вже встановлено вище)
 
     byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
+    
+    // Діагностика для "Комісія за еквайринг"
+    const rawExpenseTitle = expense.expense?.title || expense.expense?.name || "";
+    const rawExpenseName = expense.expense?.name || "";
+    if (rawExpenseTitle.toLowerCase().includes("еквайринг") || 
+        rawExpenseTitle.toLowerCase().includes("acquiring") ||
+        rawExpenseName.toLowerCase().includes("еквайринг") ||
+        rawExpenseName.toLowerCase().includes("acquiring") ||
+        (expense.comment && expense.comment.toLowerCase().includes("еквайринг"))) {
+      console.log(`[altegio/expenses] 🔍 Found acquiring-related transaction:`, {
+        id: expense.id,
+        amount: expense.amount,
+        expense_title: rawExpenseTitle,
+        expense_name: rawExpenseName,
+        expense_id: expense.expense_id,
+        comment: expense.comment,
+        normalized_category: categoryName,
+        date: expense.date,
+      });
+    }
   }
   
   // Логуємо статистику по категоріях
@@ -834,6 +871,22 @@ export async function fetchExpensesSummary(params: {
     console.log(`[altegio/expenses] ✅ Found "Податки та збори": ${byCategory["Податки та збори"]} грн.`);
   } else {
     console.log(`[altegio/expenses] ⚠️ "Податки та збори" category NOT found in ${Object.keys(byCategory).length} categories`);
+  }
+  
+  // Діагностика для "Комісія за еквайринг"
+  if (byCategory["Комісія за еквайринг"]) {
+    console.log(`[altegio/expenses] ✅ Found "Комісія за еквайринг": ${byCategory["Комісія за еквайринг"]} грн.`);
+  } else {
+    console.log(`[altegio/expenses] ⚠️ "Комісія за еквайринг" category NOT found in ${Object.keys(byCategory).length} categories`);
+    // Шукаємо схожі категорії
+    const similarCategories = Object.keys(byCategory).filter(k => 
+      k.toLowerCase().includes("еквайринг") || 
+      k.toLowerCase().includes("acquiring") ||
+      k.toLowerCase().includes("комісія")
+    );
+    if (similarCategories.length > 0) {
+      console.log(`[altegio/expenses] 🔍 Found similar categories:`, similarCategories);
+    }
   }
 
   // Якщо є ручні витрати, додаємо їх до загальної суми
