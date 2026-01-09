@@ -814,55 +814,44 @@ export async function fetchExpensesSummary(params: {
     // Але тепер ми також включаємо транзакції без expense об'єкта
     let categoryName = "Інші витрати";
     
+    // Спочатку перевіряємо, чи це стаття витрат "Комісія за еквайринг" (прямий пошук)
+    const expenseTitleRaw = expense.expense?.title || "";
+    const expenseNameRaw = expense.expense?.name || "";
+    const commentRaw = expense.comment || "";
+    const expenseTitleLower = expenseTitleRaw.toLowerCase();
+    const expenseNameLower = expenseNameRaw.toLowerCase();
+    const commentLower = commentRaw.toLowerCase();
+    
+    // Прямий пошук статті витрат "Комісія за еквайринг" - якщо знайдено, одразу присвоюємо категорію
+    if (expenseTitleRaw === "Комісія за еквайринг" || 
+        expenseTitleRaw === "Комиссия за эквайринг" ||
+        expenseNameRaw === "Комісія за еквайринг" ||
+        expenseNameRaw === "Комиссия за эквайринг" ||
+        (expenseTitleLower.includes("комісія") && expenseTitleLower.includes("еквайринг")) ||
+        (expenseTitleLower.includes("комиссия") && expenseTitleLower.includes("эквайринг")) ||
+        (expenseNameLower.includes("комісія") && expenseNameLower.includes("еквайринг")) ||
+        (expenseNameLower.includes("комиссия") && expenseNameLower.includes("эквайринг"))) {
+      categoryName = "Комісія за еквайринг";
+    }
     // Пріоритет 1: мапа категорій за expense_id (найнадійніше, якщо мапа заповнена)
-    if (expense.expense_id && categoryMap.has(expense.expense_id)) {
+    else if (expense.expense_id && categoryMap.has(expense.expense_id)) {
       const mappedName = categoryMap.get(expense.expense_id)!;
-      categoryName = normalizeCategoryName(mappedName);
-      
-      // Діагностика для еквайрингу
-      if (mappedName.toLowerCase().includes("еквайринг") || mappedName.toLowerCase().includes("acquiring")) {
-        console.log(`[altegio/expenses] 🔍 Using categoryMap for acquiring:`, {
-          expense_id: expense.expense_id,
-          mapped_name: mappedName,
-          normalized: categoryName,
-          transaction_id: expense.id,
-          amount: expense.amount,
-        });
+      const mappedNameLower = mappedName.toLowerCase();
+      // Перевіряємо, чи в мапі є "Комісія за еквайринг"
+      if ((mappedNameLower.includes("комісія") && mappedNameLower.includes("еквайринг")) ||
+          (mappedNameLower.includes("комиссия") && mappedNameLower.includes("эквайринг"))) {
+        categoryName = "Комісія за еквайринг";
+      } else {
+        categoryName = normalizeCategoryName(mappedName);
       }
     }
     // Пріоритет 2: expense.title (якщо немає в мапі)
     else if (expense.expense?.title) {
       categoryName = normalizeCategoryName(expense.expense.title);
-      
-      // Діагностика для еквайрингу
-      if (expense.expense.title.toLowerCase().includes("еквайринг") || 
-          expense.expense.title.toLowerCase().includes("acquiring")) {
-        console.log(`[altegio/expenses] 🔍 Using expense.title for acquiring:`, {
-          expense_title: expense.expense.title,
-          normalized: categoryName,
-          expense_id: expense.expense_id,
-          expense_object: expense.expense,
-          transaction_id: expense.id,
-          amount: expense.amount,
-        });
-      }
     }
     // Пріоритет 3: expense.name
     else if (expense.expense?.name) {
       categoryName = normalizeCategoryName(expense.expense.name);
-      
-      // Діагностика для еквайрингу
-      if (expense.expense.name.toLowerCase().includes("еквайринг") || 
-          expense.expense.name.toLowerCase().includes("acquiring")) {
-        console.log(`[altegio/expenses] 🔍 Using expense.name for acquiring:`, {
-          expense_name: expense.expense.name,
-          normalized: categoryName,
-          expense_id: expense.expense_id,
-          expense_object: expense.expense,
-          transaction_id: expense.id,
-          amount: expense.amount,
-        });
-      }
     }
     // Пріоритет 4: expense.category
     else if (expense.expense?.category) {
@@ -874,12 +863,12 @@ export async function fetchExpensesSummary(params: {
       const commentLower = expense.comment.toLowerCase();
       if (commentLower.includes("подат") || commentLower.includes("tax") || commentLower.includes("налмн")) {
         categoryName = "Податки та збори";
-      } else if (commentLower.includes("комісія за еквайринг") || 
-                 commentLower.includes("комиссия за эквайринг") ||
-                 commentLower.includes("комісія за acquiring") ||
-                 commentLower.includes("еквайринг") || 
-                 commentLower.includes("acquiring")) {
-        // Якщо в коментарі є згадка про еквайринг, нормалізуємо
+      } else if ((commentLower.includes("комісія") && commentLower.includes("еквайринг")) ||
+                 (commentLower.includes("комиссия") && commentLower.includes("эквайринг"))) {
+        // Якщо в коментарі є згадка про "Комісія за еквайринг", одразу присвоюємо
+        categoryName = "Комісія за еквайринг";
+      } else if (commentLower.includes("еквайринг") || commentLower.includes("acquiring")) {
+        // Якщо в коментарі є згадка про еквайринг (без "комісія"), нормалізуємо
         categoryName = normalizeCategoryName(expense.comment);
       } else {
         // Використовуємо comment, але обмежуємо довжину для читабельності
