@@ -47,11 +47,8 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
   return { isConsultation, isOnline };
 }
 
-export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+// Функція для обробки оновлення
+async function fixOnlineConsultations() {
   try {
     // Отримуємо всіх клієнтів з consultationBookingDate
     const allClients = await getAllDirectClients();
@@ -139,12 +136,46 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return {
       success: true,
       checked: checkedCount,
       updated: updatedCount,
       message: `Перевірено ${checkedCount} клієнтів, оновлено ${updatedCount} записів`,
-    });
+    };
+  } catch (err: any) {
+    console.error('[fix-online-consultations] ❌ Помилка:', err);
+    throw err;
+  }
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const result = await fixOnlineConsultations();
+    return NextResponse.json(result);
+  } catch (err: any) {
+    console.error('[fix-online-consultations] ❌ Помилка:', err);
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        message: err?.message || 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const result = await fixOnlineConsultations();
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('[fix-online-consultations] ❌ Помилка:', err);
     return NextResponse.json(
