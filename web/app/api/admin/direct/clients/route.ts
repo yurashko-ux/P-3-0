@@ -124,6 +124,20 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Діагностика для "Юлія Кобра" та "Топоріна Олена"
+    const debugClients = clients.filter(c => 
+      c.instagramUsername === 'kobra_best' || 
+      c.instagramUsername === 'olena_toporina'
+    );
+    if (debugClients.length > 0) {
+      console.log('[direct/clients] 🔍 Діагностика для API:', debugClients.map(c => ({
+        instagramUsername: c.instagramUsername,
+        isOnlineConsultation: c.isOnlineConsultation,
+        consultationBookingDate: c.consultationBookingDate,
+        paidServiceDate: c.paidServiceDate,
+      })));
+    }
+
     // Сортування
     clients.sort((a, b) => {
       let aVal: any = a[sortBy as keyof DirectClient];
@@ -193,7 +207,7 @@ export async function GET(req: NextRequest) {
       const clientStates = statesMap.get(client.id) || [];
       
       return {
-        ...client,
+      ...client,
         last5States: clientStates,
       };
     });
