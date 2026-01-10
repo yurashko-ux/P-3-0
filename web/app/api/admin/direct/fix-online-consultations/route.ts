@@ -108,30 +108,43 @@ async function fixOnlineConsultations() {
     let normalizedCount = 0;
     for (const client of allClients) {
       if (client.consultationBookingDate) {
-        const normalized = normalizeConsultationBookingDate(client.consultationBookingDate);
-        if (normalized && normalized !== client.consultationBookingDate) {
-          try {
-            const updated = {
-              ...client,
-              consultationBookingDate: normalized,
-              updatedAt: new Date().toISOString(),
-            };
-            
-            await saveDirectClient(updated, 'fix-online-consultations-normalize-date', {
-              altegioClientId: client.altegioClientId,
-              instagramUsername: client.instagramUsername,
-              reason: `Нормалізація consultationBookingDate: "${client.consultationBookingDate}" -> "${normalized}"`,
-            });
-            
-            normalizedCount++;
-            console.log(
-              `[fix-online-consultations] 🔧 Нормалізовано consultationBookingDate для ${client.instagramUsername}: "${client.consultationBookingDate}" -> "${normalized}"`
-            );
-          } catch (err) {
-            console.error(
-              `[fix-online-consultations] ❌ Помилка при нормалізації consultationBookingDate для ${client.instagramUsername}:`,
-              err
-            );
+        // Перевіряємо, чи є кілька дат (містить пробіл)
+        const hasMultipleDates = typeof client.consultationBookingDate === 'string' && 
+                                 client.consultationBookingDate.trim().includes(' ');
+        
+        if (hasMultipleDates) {
+          const normalized = normalizeConsultationBookingDate(client.consultationBookingDate);
+          if (normalized) {
+            try {
+              // Нормалізуємо оригінальну дату для порівняння
+              const originalNormalized = normalizeConsultationBookingDate(client.consultationBookingDate);
+              const existingDate = client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null;
+              
+              // Перевіряємо, чи дати відрізняються
+              if (normalized !== existingDate) {
+                const updated = {
+                  ...client,
+                  consultationBookingDate: normalized,
+                  updatedAt: new Date().toISOString(),
+                };
+                
+                await saveDirectClient(updated, 'fix-online-consultations-normalize-date', {
+                  altegioClientId: client.altegioClientId,
+                  instagramUsername: client.instagramUsername,
+                  reason: `Нормалізація consultationBookingDate: "${client.consultationBookingDate}" -> "${normalized}"`,
+                });
+                
+                normalizedCount++;
+                console.log(
+                  `[fix-online-consultations] 🔧 Нормалізовано consultationBookingDate для ${client.instagramUsername}: "${client.consultationBookingDate}" -> "${normalized}"`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[fix-online-consultations] ❌ Помилка при нормалізації consultationBookingDate для ${client.instagramUsername}:`,
+                err
+              );
+            }
           }
         }
       }
@@ -143,11 +156,24 @@ async function fixOnlineConsultations() {
     
     // Фільтруємо клієнтів: мають altegioClientId і isOnlineConsultation = false або undefined
     // АБО мають consultationBookingDate, але isOnlineConsultation не встановлено правильно
+    // ТАКЖЕ перевіряємо всіх клієнтів з consultationBookingDate для оновлення isOnlineConsultation
     const clientsToCheck = allClients.filter(
-      (c) => c.altegioClientId && (
-        (!c.isOnlineConsultation || c.isOnlineConsultation === undefined) ||
-        (c.consultationBookingDate && !c.isOnlineConsultation) // Перевіряємо також клієнтів з консультацією, але без isOnlineConsultation
-      )
+      (c) => {
+        if (!c.altegioClientId) return false;
+        
+        // Перевіряємо, чи потрібно оновити isOnlineConsultation
+        // 1. Якщо isOnlineConsultation не встановлено або false
+        if (!c.isOnlineConsultation || c.isOnlineConsultation === undefined) {
+          return true;
+        }
+        
+        // 2. Якщо є consultationBookingDate, перевіряємо в webhook'ах
+        if (c.consultationBookingDate) {
+          return true;
+        }
+        
+        return false;
+      }
     );
 
     console.log(`[fix-online-consultations] Всього клієнтів: ${allClients.length}`);
@@ -421,7 +447,41 @@ async function fixOnlineConsultations() {
         }
 
         // Якщо знайшли онлайн-консультацію, оновлюємо клієнта
-        if (foundOnlineConsultation) {
+        // АБО якщо клієнт має consultationBookingDate, але isOnlineConsultation не встановлено правильно
+        if (foundOnlineConsultation || (client.consultationBookingDate && !client.isOnlineConsultation)) {
+          // Якщо не знайшли онлайн-консультацію в webhook'ах, але є consultationBookingDate,
+          // все одно перевіряємо, чи це може бути онлайн-консультація
+          if (!foundOnlineConsultation && client.consultationBookingDate) {
+            // Перевіряємо всі записи, чи є серед них онлайн-консультація
+            for (const record of clientRecords) {
+              const body = record.body || {};
+              const data = body.data || {};
+              const originalRecord = record.originalRecord || {};
+              
+              let services: any[] = [];
+              if (Array.isArray(data.services) && data.services.length > 0) {
+                services = data.services;
+              } else if (data.service) {
+                services = [data.service];
+              } else if (originalRecord.data && originalRecord.data.services && Array.isArray(originalRecord.data.services)) {
+                services = originalRecord.data.services;
+              } else if (originalRecord.data && originalRecord.data.service) {
+                services = [originalRecord.data.service];
+              } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
+                services = originalRecord.services;
+              } else if (originalRecord.serviceName) {
+                services = [{ title: originalRecord.serviceName }];
+              }
+              
+              const consultationInfo = isConsultationService(services);
+              if (consultationInfo.isConsultation && consultationInfo.isOnline) {
+                foundOnlineConsultation = true;
+                break;
+              }
+            }
+          }
+          
+          if (foundOnlineConsultation) {
           // Знаходимо найранішу дату онлайн-консультації
           let earliestConsultationDate: string | null = null;
           for (const record of clientRecords) {
