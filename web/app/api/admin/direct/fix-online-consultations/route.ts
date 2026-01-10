@@ -116,29 +116,23 @@ async function fixOnlineConsultations() {
           const normalized = normalizeConsultationBookingDate(client.consultationBookingDate);
           if (normalized) {
             try {
-              // Нормалізуємо оригінальну дату для порівняння
-              const originalNormalized = normalizeConsultationBookingDate(client.consultationBookingDate);
-              const existingDate = client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null;
+              // Завжди оновлюємо, якщо є кілька дат
+              const updated = {
+                ...client,
+                consultationBookingDate: normalized,
+                updatedAt: new Date().toISOString(),
+              };
               
-              // Перевіряємо, чи дати відрізняються
-              if (normalized !== existingDate) {
-                const updated = {
-                  ...client,
-                  consultationBookingDate: normalized,
-                  updatedAt: new Date().toISOString(),
-                };
-                
-                await saveDirectClient(updated, 'fix-online-consultations-normalize-date', {
-                  altegioClientId: client.altegioClientId,
-                  instagramUsername: client.instagramUsername,
-                  reason: `Нормалізація consultationBookingDate: "${client.consultationBookingDate}" -> "${normalized}"`,
-                });
-                
-                normalizedCount++;
-                console.log(
-                  `[fix-online-consultations] 🔧 Нормалізовано consultationBookingDate для ${client.instagramUsername}: "${client.consultationBookingDate}" -> "${normalized}"`
-                );
-              }
+              await saveDirectClient(updated, 'fix-online-consultations-normalize-date', {
+                altegioClientId: client.altegioClientId,
+                instagramUsername: client.instagramUsername,
+                reason: `Нормалізація consultationBookingDate: "${client.consultationBookingDate}" -> "${normalized}"`,
+              });
+              
+              normalizedCount++;
+              console.log(
+                `[fix-online-consultations] 🔧 Нормалізовано consultationBookingDate для ${client.instagramUsername}: "${client.consultationBookingDate}" -> "${normalized}"`
+              );
             } catch (err) {
               console.error(
                 `[fix-online-consultations] ❌ Помилка при нормалізації consultationBookingDate для ${client.instagramUsername}:`,
