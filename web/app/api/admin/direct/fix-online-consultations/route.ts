@@ -81,41 +81,114 @@ async function fixOnlineConsultations() {
       checkedCount++;
 
       try {
-        // Отримуємо всі webhook'и для цього клієнта
-        const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
-        const clientRecords = recordsLogRaw
+        // Отримуємо всі webhook'и для цього клієнта (як в client-webhooks)
+        // Перевіряємо обидва джерела: webhook:log та records:log
+        const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+        const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+        
+        // Об'єднуємо обидва джерела
+        const rawItems = [...rawItemsWebhook, ...rawItemsRecords];
+        const events = rawItems
           .map((raw) => {
             try {
-              const parsed = JSON.parse(raw);
+              let parsed: any;
+              if (typeof raw === 'string') {
+                parsed = JSON.parse(raw);
+              } else {
+                parsed = raw;
+              }
+              
               if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
                 try {
-                  return JSON.parse(parsed.value);
+                  parsed = JSON.parse(parsed.value);
                 } catch {
-                  return null;
+                  return parsed;
                 }
               }
+              
+              // Конвертуємо events з records:log у формат webhook events (як в client-webhooks)
+              if (parsed && parsed.visitId && !parsed.body) {
+                return {
+                  body: {
+                    resource: 'record',
+                    resource_id: parsed.visitId,
+                    status: parsed.status || 'create',
+                    data: {
+                      datetime: parsed.datetime,
+                      client: parsed.client ? { id: parsed.clientId || parsed.client.id } : { id: parsed.clientId },
+                      staff: parsed.staff ? { name: parsed.staffName || parsed.staff.name } : { name: parsed.staffName },
+                      services: parsed.services || (parsed.serviceName ? [{ title: parsed.serviceName }] : []),
+                      attendance: parsed.attendance,
+                      visit_attendance: parsed.visit_attendance,
+                    },
+                  },
+                  receivedAt: parsed.receivedAt || parsed.datetime,
+                  isFromRecordsLog: true,
+                  originalRecord: parsed,
+                };
+              }
+              
               return parsed;
             } catch {
               return null;
             }
           })
-          .filter(
-            (r) =>
-              r &&
-              r.clientId === client.altegioClientId &&
-              r.data &&
-              Array.isArray(r.data.services)
-          )
-          .sort((a, b) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
+          .filter(Boolean);
+        
+        // Фільтруємо record events для цього клієнта
+        const clientRecords = events
+          .filter((e: any) => {
+            const isRecordEvent = e.body?.resource === 'record' || e.isFromRecordsLog;
+            if (!isRecordEvent) return false;
+            
+            const data = e.body?.data || {};
+            const originalRecord = e.originalRecord || {};
+            
+            const clientId = data.client?.id || originalRecord.clientId;
+            const clientIdFromData = data.client_id || originalRecord.client_id;
+            
+            let foundClientId: number | null = null;
+            if (clientId) {
+              const parsed = parseInt(String(clientId), 10);
+              if (!isNaN(parsed)) {
+                foundClientId = parsed;
+              }
+            } else if (clientIdFromData) {
+              const parsed = parseInt(String(clientIdFromData), 10);
+              if (!isNaN(parsed)) {
+                foundClientId = parsed;
+              }
+            }
+            
+            return foundClientId === client.altegioClientId;
+          })
+          .sort((a: any, b: any) => new Date(b.receivedAt || 0).getTime() - new Date(a.receivedAt || 0).getTime());
 
         // Перевіряємо, чи є серед послуг "Онлайн-консультація"
+        // Витягуємо services з body.data або originalRecord (як в client-webhooks)
         let foundOnlineConsultation = false;
         let allServices: string[] = [];
         for (const record of clientRecords) {
-          const services = record.data?.services || [];
+          const body = record.body || {};
+          const data = body.data || {};
+          const originalRecord = record.originalRecord || {};
+          
+          // Витягуємо services (як в client-webhooks)
+          let services: any[] = [];
+          if (Array.isArray(data.services) && data.services.length > 0) {
+            services = data.services;
+          } else if (data.service) {
+            services = [data.service];
+          } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
+            services = originalRecord.services;
+          } else if (originalRecord.serviceName) {
+            services = [{ title: originalRecord.serviceName }];
+          }
+          
           if (services.length > 0) {
             allServices.push(...services.map((s: any) => s.title || s.name || '').filter(Boolean));
           }
+          
           const consultationInfo = isConsultationService(services);
           
           if (consultationInfo.isConsultation && consultationInfo.isOnline) {
