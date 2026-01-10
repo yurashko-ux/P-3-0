@@ -1061,14 +1061,28 @@ export function DirectClientTable({
                               const isOnline = client.isOnlineConsultation || false;
                               
                               // Діагностика для "Юлія Кобра" та "Топоріна Олена"
-                              if (client.instagramUsername === 'kobra_best' || client.instagramUsername === 'olena_toporina') {
-                                console.log(`[DirectClientTable] 🔍 Діагностика для ${client.instagramUsername}:`, {
+                              const isDebugClient = client.instagramUsername === 'kobra_best' || 
+                                                   client.instagramUsername === 'olena_toporina' ||
+                                                   (client.firstName === 'Юлія' && client.lastName === 'Кобра') ||
+                                                   (client.firstName === 'Топоріна' && client.lastName === 'Олена');
+                              
+                              if (isDebugClient) {
+                                console.log(`[DirectClientTable] 🔍 Діагностика для ${client.instagramUsername || 'unknown'}:`, {
+                                  clientId: client.id,
+                                  instagramUsername: client.instagramUsername,
+                                  firstName: client.firstName,
+                                  lastName: client.lastName,
                                   consultationBookingDate: client.consultationBookingDate,
+                                  consultationBookingDateType: typeof client.consultationBookingDate,
                                   isOnlineConsultation: client.isOnlineConsultation,
                                   isOnlineConsultationType: typeof client.isOnlineConsultation,
                                   isOnline: isOnline,
                                   dateStr,
                                   firstDate,
+                                  dateValue,
+                                  paidServiceDate: client.paidServiceDate,
+                                  signedUpForPaidService: client.signedUpForPaidService,
+                                  fullClient: client,
                                 });
                               }
                               
