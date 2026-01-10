@@ -98,11 +98,14 @@ export async function POST(req: NextRequest) {
     const errors: string[] = [];
 
     for (const client of clients) {
-      // Перевіряємо, чи клієнт має paidServiceDate, але не має signedUpForPaidService
-      // або має тільки консультації
+      // Перевіряємо, чи клієнт має paidServiceDate
+      // Якщо клієнт має тільки консультації - очищаємо paidServiceDate
       if (client.paidServiceDate && client.altegioClientId) {
         const onlyConsultations = await hasOnlyConsultations(client.altegioClientId);
         
+        // Очищаємо paidServiceDate, якщо:
+        // 1. signedUpForPaidService = false (помилка в даних)
+        // 2. Клієнт має тільки консультації (навіть якщо signedUpForPaidService = true, але це помилка)
         if (!client.signedUpForPaidService || onlyConsultations) {
           try {
             const updates: Partial<typeof client> = {
@@ -119,10 +122,11 @@ export async function POST(req: NextRequest) {
             await saveDirectClient(updated, 'cleanup-paid-service-dates', {
               reason: onlyConsultations ? 'only consultations' : 'signedUpForPaidService is false',
               altegioClientId: client.altegioClientId,
+              instagramUsername: client.instagramUsername,
             });
             
             cleaned.push(`${client.instagramUsername} (${client.firstName} ${client.lastName})`);
-            console.log(`[cleanup-paid-service-dates] ✅ Cleaned paidServiceDate for client ${client.id} (${client.instagramUsername})`);
+            console.log(`[cleanup-paid-service-dates] ✅ Cleaned paidServiceDate for client ${client.id} (${client.instagramUsername}) - reason: ${onlyConsultations ? 'only consultations' : 'signedUpForPaidService is false'}`);
           } catch (err) {
             const errorMsg = `Failed to clean ${client.instagramUsername}: ${err instanceof Error ? err.message : String(err)}`;
             errors.push(errorMsg);
