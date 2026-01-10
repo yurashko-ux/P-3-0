@@ -54,6 +54,49 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
   return { isConsultation, isOnline };
 }
 
+/**
+ * Нормалізує consultationBookingDate - якщо там кілька дат, бере першу валідну
+ */
+function normalizeConsultationBookingDate(dateStr: string | undefined | null): string | undefined {
+  if (!dateStr) return undefined;
+  
+  // Якщо це рядок з кількома датами (розділеними пробілом), беремо першу
+  if (typeof dateStr === 'string' && dateStr.includes(' ')) {
+    const parts = dateStr.trim().split(/\s+/);
+    for (const part of parts) {
+      try {
+        const testDate = new Date(part);
+        if (!isNaN(testDate.getTime())) {
+          return testDate.toISOString();
+        }
+      } catch (e) {
+        // Продовжуємо пошук
+      }
+    }
+    // Якщо не знайшли валідну дату в частинах, пробуємо весь рядок
+    try {
+      const testDate = new Date(dateStr.trim().split(/\s+/)[0]);
+      if (!isNaN(testDate.getTime())) {
+        return testDate.toISOString();
+      }
+    } catch (e) {
+      // Ігноруємо помилку
+    }
+  }
+  
+  // Якщо це одна дата, перевіряємо, чи вона валідна
+  try {
+    const testDate = new Date(dateStr);
+    if (!isNaN(testDate.getTime())) {
+      return testDate.toISOString();
+    }
+  } catch (e) {
+    // Ігноруємо помилку
+  }
+  
+  return undefined;
+}
+
 // Функція для обробки оновлення
 async function fixOnlineConsultations() {
   // Отримуємо всіх клієнтів з altegioClientId, у яких isOnlineConsultation не встановлено або false
@@ -61,9 +104,50 @@ async function fixOnlineConsultations() {
   const allClients = await getAllDirectClients();
   
   try {
+    // Нормалізуємо consultationBookingDate для всіх клієнтів з консультацією
+    let normalizedCount = 0;
+    for (const client of allClients) {
+      if (client.consultationBookingDate) {
+        const normalized = normalizeConsultationBookingDate(client.consultationBookingDate);
+        if (normalized && normalized !== client.consultationBookingDate) {
+          try {
+            const updated = {
+              ...client,
+              consultationBookingDate: normalized,
+              updatedAt: new Date().toISOString(),
+            };
+            
+            await saveDirectClient(updated, 'fix-online-consultations-normalize-date', {
+              altegioClientId: client.altegioClientId,
+              instagramUsername: client.instagramUsername,
+              reason: `Нормалізація consultationBookingDate: "${client.consultationBookingDate}" -> "${normalized}"`,
+            });
+            
+            normalizedCount++;
+            console.log(
+              `[fix-online-consultations] 🔧 Нормалізовано consultationBookingDate для ${client.instagramUsername}: "${client.consultationBookingDate}" -> "${normalized}"`
+            );
+          } catch (err) {
+            console.error(
+              `[fix-online-consultations] ❌ Помилка при нормалізації consultationBookingDate для ${client.instagramUsername}:`,
+              err
+            );
+          }
+        }
+      }
+    }
+    
+    if (normalizedCount > 0) {
+      console.log(`[fix-online-consultations] 🔧 Нормалізовано consultationBookingDate для ${normalizedCount} клієнтів`);
+    }
+    
     // Фільтруємо клієнтів: мають altegioClientId і isOnlineConsultation = false або undefined
+    // АБО мають consultationBookingDate, але isOnlineConsultation не встановлено правильно
     const clientsToCheck = allClients.filter(
-      (c) => c.altegioClientId && (!c.isOnlineConsultation || c.isOnlineConsultation === undefined)
+      (c) => c.altegioClientId && (
+        (!c.isOnlineConsultation || c.isOnlineConsultation === undefined) ||
+        (c.consultationBookingDate && !c.isOnlineConsultation) // Перевіряємо також клієнтів з консультацією, але без isOnlineConsultation
+      )
     );
 
     console.log(`[fix-online-consultations] Всього клієнтів: ${allClients.length}`);
@@ -373,10 +457,15 @@ async function fixOnlineConsultations() {
             }
           }
           
+          // Нормалізуємо consultationBookingDate перед збереженням
+          const normalizedDate = normalizeConsultationBookingDate(
+            earliestConsultationDate || client.consultationBookingDate
+          );
+          
           const updated = {
             ...client,
             isOnlineConsultation: true,
-            consultationBookingDate: earliestConsultationDate || client.consultationBookingDate,
+            consultationBookingDate: normalizedDate || earliestConsultationDate || client.consultationBookingDate,
             updatedAt: new Date().toISOString(),
           };
 
@@ -403,11 +492,12 @@ async function fixOnlineConsultations() {
       success: true,
       checked: checkedCount,
       updated: updatedCount,
+      normalized: normalizedCount,
       totalClients: allClients.length,
       clientsWithAltegioId: allClients.filter(c => c.altegioClientId).length,
       clientsWithConsultationBookingDate: allClients.filter(c => c.consultationBookingDate).length,
       clientsWithConsultationDate: allClients.filter(c => c.consultationDate).length,
-      message: `Перевірено ${checkedCount} клієнтів, оновлено ${updatedCount} записів`,
+      message: `Перевірено ${checkedCount} клієнтів, нормалізовано ${normalizedCount} дат, оновлено ${updatedCount} записів`,
     };
   } catch (err: any) {
     console.error('[fix-online-consultations] ❌ Помилка:', err);
