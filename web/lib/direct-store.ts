@@ -65,6 +65,7 @@ function directClientToPrisma(client: DirectClient) {
     consultationAttended: client.consultationAttended || false,
     consultationMasterId: client.consultationMasterId || null,
     consultationMasterName: client.consultationMasterName || null,
+    isOnlineConsultation: client.isOnlineConsultation || false,
     signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation || false,
   };
 }
