@@ -1036,25 +1036,45 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (
                           (() => {
-                            const appointmentDate = new Date(client.consultationBookingDate);
-                            const now = new Date();
-                            now.setHours(0, 0, 0, 0);
-                            appointmentDate.setHours(0, 0, 0, 0);
-                            const isPast = appointmentDate < now;
-                            const dateStr = formatDate(client.consultationBookingDate);
-                            const isOnline = client.isOnlineConsultation || false;
-                            
-                            return (
-                              <span
-                                className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                title={isPast 
-                                  ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
-                                  : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію")
-                                }
-                              >
-                                {dateStr} {isOnline ? "💻" : "📅"}
-                              </span>
-                            );
+                            try {
+                              // Перевіряємо, чи це не масив або кілька дат
+                              const dateValue = typeof client.consultationBookingDate === 'string' 
+                                ? client.consultationBookingDate.trim() 
+                                : client.consultationBookingDate;
+                              
+                              // Якщо це рядок з кількома датами (розділеними пробілом), беремо першу
+                              const firstDate = typeof dateValue === 'string' && dateValue.includes(' ') 
+                                ? dateValue.split(' ')[0] 
+                                : dateValue;
+                              
+                              const appointmentDate = new Date(firstDate);
+                              if (isNaN(appointmentDate.getTime())) {
+                                console.warn('[DirectClientTable] Invalid consultationBookingDate:', client.consultationBookingDate);
+                                return "";
+                              }
+                              
+                              const now = new Date();
+                              now.setHours(0, 0, 0, 0);
+                              appointmentDate.setHours(0, 0, 0, 0);
+                              const isPast = appointmentDate < now;
+                              const dateStr = formatDate(firstDate);
+                              const isOnline = client.isOnlineConsultation || false;
+                              
+                              return (
+                                <span
+                                  className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
+                                  title={isPast 
+                                    ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
+                                    : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію")
+                                  }
+                                >
+                                  {dateStr} {isOnline ? "💻" : "📅"}
+                                </span>
+                              );
+                            } catch (err) {
+                              console.error('[DirectClientTable] Error formatting consultationBookingDate:', err, client.consultationBookingDate);
+                              return "";
+                            }
                           })()
                         ) : (
                           ""
