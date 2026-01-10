@@ -65,11 +65,7 @@ async function fixOnlineConsultations() {
     let checkedCount = 0;
 
     // Для кожного клієнта перевіряємо webhook'и
-    for (const client of clientsWithConsultation) {
-      if (!client.altegioClientId) {
-        continue;
-      }
-
+    for (const client of clientsToCheck) {
       checkedCount++;
 
       try {
@@ -144,9 +140,9 @@ async function fixOnlineConsultations() {
       checked: checkedCount,
       updated: updatedCount,
       totalClients: allClients.length,
+      clientsWithAltegioId: allClients.filter(c => c.altegioClientId).length,
       clientsWithConsultationBookingDate: allClients.filter(c => c.consultationBookingDate).length,
       clientsWithConsultationDate: allClients.filter(c => c.consultationDate).length,
-      clientsWithAnyConsultationDate: allClients.filter(c => c.consultationBookingDate || c.consultationDate).length,
       message: `Перевірено ${checkedCount} клієнтів, оновлено ${updatedCount} записів`,
     };
   } catch (err: any) {
