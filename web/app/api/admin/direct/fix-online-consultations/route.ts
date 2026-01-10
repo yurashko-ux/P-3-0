@@ -37,18 +37,15 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
     const title = (s.title || s.name || '').toLowerCase();
     const originalTitle = s.title || s.name || '';
     
-    // Перевіряємо, чи це консультація (з "я" або без)
+    // Перевіряємо, чи це консультація (з "я" або без - "консультаці")
+    // Використовуємо більш гнучкий регулярний вираз, який знаходить обидва варіанти
     if (/консультаці/i.test(title)) {
       isConsultation = true;
       // Перевіряємо, чи це онлайн-консультація
       // Перевіряємо різні варіанти написання: "онлайн", "online", дефіс або пробіл
       // ВАЖЛИВО: також перевіряємо "Онлайн-консультаці" (без "я" в кінці)
       if (/онлайн/i.test(title) || 
-          /online/i.test(title) || 
-          /онлайн-консультаці/i.test(title) ||  // З дефісом, з "я" або без
-          /online-консультаці/i.test(title) ||
-          /онлайн консультаці/i.test(title) ||
-          /online консультаці/i.test(title)) {
+          /online/i.test(title)) {
         isOnline = true;
       }
     }
