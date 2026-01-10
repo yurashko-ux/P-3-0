@@ -1060,6 +1060,18 @@ export function DirectClientTable({
                               const dateStr = formatDate(firstDate);
                               const isOnline = client.isOnlineConsultation || false;
                               
+                              // Діагностика для "Юлія Кобра" та "Топоріна Олена"
+                              if (client.instagramUsername === 'kobra_best' || client.instagramUsername === 'olena_toporina') {
+                                console.log(`[DirectClientTable] 🔍 Діагностика для ${client.instagramUsername}:`, {
+                                  consultationBookingDate: client.consultationBookingDate,
+                                  isOnlineConsultation: client.isOnlineConsultation,
+                                  isOnlineConsultationType: typeof client.isOnlineConsultation,
+                                  isOnline: isOnline,
+                                  dateStr,
+                                  firstDate,
+                                });
+                              }
+                              
                               return (
                                 <span
                                   className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
