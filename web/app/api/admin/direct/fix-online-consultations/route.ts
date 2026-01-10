@@ -91,6 +91,26 @@ async function fixOnlineConsultations() {
         consultationBookingDate: yuliaKobra.consultationBookingDate,
         isOnlineConsultation: yuliaKobra.isOnlineConsultation,
       });
+    } else {
+      // Шукаємо серед усіх клієнтів
+      const yuliaKobraAll = allClients.find(
+        (c) => 
+          c.instagramUsername === 'kobra_best' || 
+          (c.firstName === 'Юлія' && c.lastName === 'Кобра') ||
+          (c.firstName?.toLowerCase().includes('юлія') && c.lastName?.toLowerCase().includes('кобра'))
+      );
+      
+      if (yuliaKobraAll) {
+        console.log(`[fix-online-consultations] ⚠️ Знайдено клієнта Юлія Кобра, але він не в списку для перевірки:`, {
+          instagramUsername: yuliaKobraAll.instagramUsername,
+          altegioClientId: yuliaKobraAll.altegioClientId,
+          isOnlineConsultation: yuliaKobraAll.isOnlineConsultation,
+          hasAltegioId: !!yuliaKobraAll.altegioClientId,
+          reason: yuliaKobraAll.isOnlineConsultation ? 'isOnlineConsultation = true' : (!yuliaKobraAll.altegioClientId ? 'немає altegioClientId' : 'непевна причина'),
+        });
+      } else {
+        console.log(`[fix-online-consultations] ⚠️ Не знайдено клієнта Юлія Кобра (kobra_best) серед всіх клієнтів`);
+      }
     }
 
     // Для кожного клієнта перевіряємо webhook'и
@@ -197,11 +217,18 @@ async function fixOnlineConsultations() {
           const originalRecord = record.originalRecord || {};
           
           // Витягуємо services (як в client-webhooks)
+          // Перевіряємо всі можливі місця, де можуть зберігатися послуги
           let services: any[] = [];
           if (Array.isArray(data.services) && data.services.length > 0) {
             services = data.services;
           } else if (data.service) {
             services = [data.service];
+          } else if (originalRecord.data && originalRecord.data.services && Array.isArray(originalRecord.data.services)) {
+            // Перевіряємо originalRecord.data.services
+            services = originalRecord.data.services;
+          } else if (originalRecord.data && originalRecord.data.service) {
+            // Перевіряємо originalRecord.data.service
+            services = [originalRecord.data.service];
           } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
             services = originalRecord.services;
           } else if (originalRecord.serviceName) {
