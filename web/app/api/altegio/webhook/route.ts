@@ -27,10 +27,15 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
   
   services.forEach((s: any) => {
     const title = (s.title || s.name || '').toLowerCase();
-    if (/консультація/i.test(title)) {
+    // Перевіряємо, чи це консультація (з "я" або без - "консультаці")
+    if (/консультаці/i.test(title)) {
       isConsultation = true;
       // Перевіряємо, чи це онлайн-консультація
-      if (/онлайн/i.test(title) || /online/i.test(title)) {
+      // ВАЖЛИВО: також перевіряємо "Онлайн-консультаці" (без "я" в кінці)
+      if (/онлайн/i.test(title) || 
+          /online/i.test(title) || 
+          /онлайн-консультаці/i.test(title) ||  // З дефісом, з "я" або без
+          /online-консультаці/i.test(title)) {
         isOnline = true;
       }
     }
