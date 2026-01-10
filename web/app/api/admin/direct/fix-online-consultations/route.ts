@@ -49,17 +49,21 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
 
 // Функція для обробки оновлення
 async function fixOnlineConsultations() {
-  // Отримуємо всіх клієнтів з consultationBookingDate
+  // Отримуємо всіх клієнтів з altegioClientId, у яких isOnlineConsultation не встановлено або false
+  // Перевіряємо всіх клієнтів, у яких може бути онлайн-консультація в webhook'ах
   const allClients = await getAllDirectClients();
   
   try {
-    const clientsWithConsultation = allClients.filter(
-      (c) => c.consultationBookingDate && (!c.isOnlineConsultation || c.isOnlineConsultation === undefined)
+    // Фільтруємо клієнтів: мають altegioClientId і isOnlineConsultation = false або undefined
+    const clientsToCheck = allClients.filter(
+      (c) => c.altegioClientId && (!c.isOnlineConsultation || c.isOnlineConsultation === undefined)
     );
 
     console.log(`[fix-online-consultations] Всього клієнтів: ${allClients.length}`);
+    console.log(`[fix-online-consultations] Клієнтів з altegioClientId: ${allClients.filter(c => c.altegioClientId).length}`);
     console.log(`[fix-online-consultations] Клієнтів з consultationBookingDate: ${allClients.filter(c => c.consultationBookingDate).length}`);
-    console.log(`[fix-online-consultations] Знайдено ${clientsWithConsultation.length} клієнтів з консультаціями для перевірки (isOnlineConsultation = false або undefined)`);
+    console.log(`[fix-online-consultations] Клієнтів з consultationDate: ${allClients.filter(c => c.consultationDate).length}`);
+    console.log(`[fix-online-consultations] Знайдено ${clientsToCheck.length} клієнтів для перевірки (мають altegioClientId і isOnlineConsultation = false або undefined)`);
 
     let updatedCount = 0;
     let checkedCount = 0;
