@@ -144,7 +144,9 @@ async function fixOnlineConsultations() {
       checked: checkedCount,
       updated: updatedCount,
       totalClients: allClients.length,
-      clientsWithConsultation: allClients.filter(c => c.consultationBookingDate).length,
+      clientsWithConsultationBookingDate: allClients.filter(c => c.consultationBookingDate).length,
+      clientsWithConsultationDate: allClients.filter(c => c.consultationDate).length,
+      clientsWithAnyConsultationDate: allClients.filter(c => c.consultationBookingDate || c.consultationDate).length,
       message: `Перевірено ${checkedCount} клієнтів, оновлено ${updatedCount} записів`,
     };
   } catch (err: any) {
