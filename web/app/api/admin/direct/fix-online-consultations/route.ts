@@ -240,6 +240,17 @@ async function fixOnlineConsultations() {
           
           const consultationInfo = isConsultationService(services);
           
+          // Детальне логування для "Юлія Кобра"
+          if (isYuliaKobra && !foundOnlineConsultation) {
+            console.log(`[fix-online-consultations] 🔍 Детальна перевірка для ${client.instagramUsername}:`, {
+              services: services.map((s: any) => s.title || s.name),
+              servicesLower: services.map((s: any) => (s.title || s.name || '').toLowerCase()),
+              consultationInfo,
+              titleContainsConsultation: services.some((s: any) => /консультаці/i.test((s.title || s.name || '').toLowerCase())),
+              titleContainsOnline: services.some((s: any) => /онлайн/i.test((s.title || s.name || '').toLowerCase())),
+            });
+          }
+          
           // Детальне логування для першого клієнта з записами або для "Юлія Кобра"
           if ((checkedCount === 1 || isYuliaKobra) && !foundOnlineConsultation) {
             console.log(`[fix-online-consultations] 🔍 Перевірка послуг для ${client.instagramUsername}:`, {
