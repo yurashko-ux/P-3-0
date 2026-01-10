@@ -203,11 +203,41 @@ async function fixOnlineConsultations() {
         
         // Логуємо перші 3 клієнтів для діагностики
         if (checkedCount <= 3 && clientRecords.length > 0) {
-          console.log(`[fix-online-consultations] 🔍 Діагностика для ${client.instagramUsername}:`, {
+          const firstRecord = clientRecords[0];
+          const body = firstRecord.body || {};
+          const data = body.data || {};
+          const originalRecord = firstRecord.originalRecord || {};
+          
+          let servicesFromRecord: any[] = [];
+          if (Array.isArray(data.services) && data.services.length > 0) {
+            servicesFromRecord = data.services;
+          } else if (data.service) {
+            servicesFromRecord = [data.service];
+          } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
+            servicesFromRecord = originalRecord.services;
+          } else if (originalRecord.serviceName) {
+            servicesFromRecord = [{ title: originalRecord.serviceName }];
+          }
+          
+          console.log(`[fix-online-consultations] 🔍 Діагностика для ${client.instagramUsername} (altegioClientId: ${client.altegioClientId}):`, {
             totalRecords: clientRecords.length,
-            firstRecordServices: clientRecords[0]?.data?.services?.map((s: any) => s.title || s.name) || [],
+            firstRecordBody: body,
+            firstRecordData: data,
+            firstRecordOriginalRecord: originalRecord,
+            servicesFromRecord: servicesFromRecord.map((s: any) => ({
+              title: s.title,
+              name: s.name,
+              raw: s,
+            })),
             allUniqueServices: [...new Set(allServices)].slice(0, 10),
+            consultationCheck: isConsultationService(servicesFromRecord),
           });
+        }
+        
+        // Якщо знайшли записи, але не знайшли онлайн-консультацію, логуємо для першого клієнта
+        if (checkedCount === 1 && clientRecords.length > 0 && !foundOnlineConsultation) {
+          console.log(`[fix-online-consultations] ⚠️ Для ${client.instagramUsername} знайдено ${clientRecords.length} записів, але не знайдено онлайн-консультацію`);
+          console.log(`[fix-online-consultations] Всі послуги з записів:`, allServices);
         }
 
         // Якщо знайшли онлайн-консультацію, оновлюємо клієнта
