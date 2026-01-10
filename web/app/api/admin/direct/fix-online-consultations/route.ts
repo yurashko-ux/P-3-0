@@ -191,11 +191,26 @@ async function fixOnlineConsultations() {
           
           const consultationInfo = isConsultationService(services);
           
+          // Детальне логування для першого клієнта з записами
+          if (checkedCount === 1 && !foundOnlineConsultation) {
+            console.log(`[fix-online-consultations] 🔍 Перевірка послуг для ${client.instagramUsername}:`, {
+              serviceCount: services.length,
+              services: services.map((s: any) => ({
+                title: s.title,
+                name: s.name,
+                raw: s,
+              })),
+              consultationInfo,
+              allServicesString: services.map((s: any) => s.title || s.name || '').join(', '),
+            });
+          }
+          
           if (consultationInfo.isConsultation && consultationInfo.isOnline) {
             foundOnlineConsultation = true;
             console.log(`[fix-online-consultations] ✅ Знайдено онлайн-консультацію для ${client.instagramUsername}:`, {
               services: services.map((s: any) => s.title || s.name),
               recordDate: record.receivedAt || record.datetime,
+              consultationInfo,
             });
             break;
           }
@@ -236,8 +251,28 @@ async function fixOnlineConsultations() {
         
         // Якщо знайшли записи, але не знайшли онлайн-консультацію, логуємо для першого клієнта
         if (checkedCount === 1 && clientRecords.length > 0 && !foundOnlineConsultation) {
-          console.log(`[fix-online-consultations] ⚠️ Для ${client.instagramUsername} знайдено ${clientRecords.length} записів, але не знайдено онлайн-консультацію`);
-          console.log(`[fix-online-consultations] Всі послуги з записів:`, allServices);
+          console.log(`[fix-online-consultations] ⚠️ Для ${client.instagramUsername} (altegioClientId: ${client.altegioClientId}) знайдено ${clientRecords.length} записів, але не знайдено онлайн-консультацію`);
+          console.log(`[fix-online-consultations] Всі унікальні послуги з записів:`, [...new Set(allServices)]);
+          
+          // Перевіряємо перший запис детально
+          if (clientRecords.length > 0) {
+            const firstRecord = clientRecords[0];
+            const body = firstRecord.body || {};
+            const data = body.data || {};
+            const originalRecord = firstRecord.originalRecord || {};
+            
+            console.log(`[fix-online-consultations] Перший запис детально:`, {
+              hasBody: !!body,
+              hasData: !!data,
+              hasOriginalRecord: !!originalRecord,
+              bodyKeys: Object.keys(body),
+              dataKeys: Object.keys(data),
+              originalRecordKeys: Object.keys(originalRecord),
+              servicesInData: data.services,
+              servicesInOriginal: originalRecord.services,
+              serviceNameInOriginal: originalRecord.serviceName,
+            });
+          }
         }
 
         // Якщо знайшли онлайн-консультацію, оновлюємо клієнта
