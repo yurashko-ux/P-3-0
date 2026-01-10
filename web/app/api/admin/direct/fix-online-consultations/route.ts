@@ -49,14 +49,17 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
 
 // Функція для обробки оновлення
 async function fixOnlineConsultations() {
+  // Отримуємо всіх клієнтів з consultationBookingDate
+  const allClients = await getAllDirectClients();
+  
   try {
-    // Отримуємо всіх клієнтів з consultationBookingDate
-    const allClients = await getAllDirectClients();
     const clientsWithConsultation = allClients.filter(
-      (c) => c.consultationBookingDate && !c.isOnlineConsultation
+      (c) => c.consultationBookingDate && (!c.isOnlineConsultation || c.isOnlineConsultation === undefined)
     );
 
-    console.log(`[fix-online-consultations] Знайдено ${clientsWithConsultation.length} клієнтів з консультаціями для перевірки`);
+    console.log(`[fix-online-consultations] Всього клієнтів: ${allClients.length}`);
+    console.log(`[fix-online-consultations] Клієнтів з consultationBookingDate: ${allClients.filter(c => c.consultationBookingDate).length}`);
+    console.log(`[fix-online-consultations] Знайдено ${clientsWithConsultation.length} клієнтів з консультаціями для перевірки (isOnlineConsultation = false або undefined)`);
 
     let updatedCount = 0;
     let checkedCount = 0;
@@ -140,6 +143,8 @@ async function fixOnlineConsultations() {
       success: true,
       checked: checkedCount,
       updated: updatedCount,
+      totalClients: allClients.length,
+      clientsWithConsultation: allClients.filter(c => c.consultationBookingDate).length,
       message: `Перевірено ${checkedCount} клієнтів, оновлено ${updatedCount} записів`,
     };
   } catch (err: any) {
