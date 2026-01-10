@@ -25,6 +25,7 @@ export type DirectClient = {
   consultationAttended?: boolean; // Чи прийшов на консультацію
   consultationMasterId?: string; // ID майстра, який провів консультацію
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію
+  isOnlineConsultation?: boolean; // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation?: boolean; // Записалась на послугу після консультації
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt?: string; // ISO date - останнє повідомлення

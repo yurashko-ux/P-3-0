@@ -14,16 +14,29 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
- * Перевіряє, чи є послуга "Консультація"
+ * Перевіряє, чи є послуга "Консультація" або "Онлайн-консультація"
+ * Повертає об'єкт з інформацією про те, чи це консультація та чи це онлайн-консультація
  */
-function isConsultationService(services: any[]): boolean {
+function isConsultationService(services: any[]): { isConsultation: boolean; isOnline: boolean } {
   if (!Array.isArray(services) || services.length === 0) {
-    return false;
+    return { isConsultation: false, isOnline: false };
   }
-  return services.some((s: any) => {
-    const title = s.title || s.name || '';
-    return /консультація/i.test(title);
+  
+  let isConsultation = false;
+  let isOnline = false;
+  
+  services.forEach((s: any) => {
+    const title = (s.title || s.name || '').toLowerCase();
+    if (/консультація/i.test(title)) {
+      isConsultation = true;
+      // Перевіряємо, чи це онлайн-консультація
+      if (/онлайн/i.test(title) || /online/i.test(title)) {
+        isOnline = true;
+      }
+    }
   });
+  
+  return { isConsultation, isOnline };
 }
 
 /**
@@ -285,7 +298,9 @@ export async function POST(req: NextRequest) {
               undefined;
             const datetime = data.datetime;
             
-            const hasConsultation = isConsultationService(services);
+            const consultationInfo = isConsultationService(services);
+            const hasConsultation = consultationInfo.isConsultation;
+            const isOnlineConsultation = consultationInfo.isOnline;
             
             if (hasConsultation) {
               const existingDirectClients = await getAllDirectClients();
@@ -300,18 +315,34 @@ export async function POST(req: NextRequest) {
                 const firstName = nameParts[0] || '';
                 const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
                 
-                if (firstName && lastName) {
-                  existingClient = existingDirectClients.find((dc) => {
-                    const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                    const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                    const searchFirstName = firstName.trim().toLowerCase();
-                    const searchLastName = lastName.trim().toLowerCase();
-                    
-                    return dcFirstName === searchFirstName && dcLastName === searchLastName;
-                  }) || undefined;
+                if (firstName) {
+                  // Спочатку шукаємо за ім'ям + прізвищем (якщо обидва є)
+                  if (lastName) {
+                    existingClient = existingDirectClients.find((dc) => {
+                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                      const searchFirstName = firstName.trim().toLowerCase();
+                      const searchLastName = lastName.trim().toLowerCase();
+                      
+                      return dcFirstName === searchFirstName && dcLastName === searchLastName;
+                    }) || undefined;
+                  }
+                  
+                  // Якщо не знайдено і є тільки ім'я (без прізвища), шукаємо за тільки ім'ям
+                  if (!existingClient && !lastName) {
+                    existingClient = existingDirectClients.find((dc) => {
+                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                      const searchFirstName = firstName.trim().toLowerCase();
+                      
+                      // Шукаємо за ім'ям, якщо прізвище відсутнє або порожнє
+                      return dcFirstName === searchFirstName && (!dcLastName || dcLastName === '');
+                    }) || undefined;
+                  }
                   
                   if (existingClient) {
-                    console.log(`[altegio/webhook] 🔍 Found client by name "${firstName} ${lastName}" for consultation: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
+                    const foundByName = lastName ? `${firstName} ${lastName}` : firstName;
+                    console.log(`[altegio/webhook] 🔍 Found client by name "${foundByName}" for consultation: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
                     
                     // Встановлюємо altegioClientId, якщо його ще немає
                     if (!existingClient.altegioClientId) {
@@ -370,6 +401,7 @@ export async function POST(req: NextRequest) {
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-booked',
                     consultationBookingDate: datetime,
+                    isOnlineConsultation: isOnlineConsultation,
                     // Очищаємо paidServiceDate для консультацій, якщо клієнт не має платних послуг
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
@@ -403,6 +435,7 @@ export async function POST(req: NextRequest) {
                     const updates: Partial<typeof existingClient> = {
                       state: 'consultation-rescheduled',
                       consultationBookingDate: datetime,
+                      isOnlineConsultation: isOnlineConsultation,
                       updatedAt: new Date().toISOString(),
                     };
                     
@@ -431,6 +464,7 @@ export async function POST(req: NextRequest) {
                   if (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime) {
                     const updates: Partial<typeof existingClient> = {
                       consultationBookingDate: datetime,
+                      isOnlineConsultation: isOnlineConsultation,
                       updatedAt: new Date().toISOString(),
                     };
                     
@@ -462,6 +496,7 @@ export async function POST(req: NextRequest) {
                   // ВАЖЛИВО: для консультацій ЗАВЖДИ очищаємо paidServiceDate, якщо signedUpForPaidService = false
                   const updates: Partial<typeof existingClient> = {
                     consultationBookingDate: datetime,
+                    isOnlineConsultation: isOnlineConsultation,
                     // Очищаємо paidServiceDate для консультацій, якщо клієнт не має платних послуг
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
@@ -496,6 +531,7 @@ export async function POST(req: NextRequest) {
                   console.log(`[altegio/webhook] ⚠️ consultationBookingDate is missing for client ${existingClient.id}, setting it now (datetime: ${datetime}, attendance: ${attendance}, state: ${existingClient.state})`);
                   const updates: Partial<typeof existingClient> = {
                     consultationBookingDate: datetime,
+                    isOnlineConsultation: isOnlineConsultation,
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
@@ -523,6 +559,7 @@ export async function POST(req: NextRequest) {
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-no-show',
                     consultationAttended: false,
+                    isOnlineConsultation: isOnlineConsultation,
                     updatedAt: new Date().toISOString(),
                   };
                   
@@ -547,6 +584,7 @@ export async function POST(req: NextRequest) {
                       state: 'consultation-rescheduled',
                       consultationBookingDate: datetime,
                       consultationAttended: false, // Зберігаємо false, бо клієнт не з'явився
+                      isOnlineConsultation: isOnlineConsultation,
                       updatedAt: new Date().toISOString(),
                     };
                     
@@ -597,6 +635,7 @@ export async function POST(req: NextRequest) {
                           consultationDate: datetime, // Дата фактичної консультації
                           // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
+                          isOnlineConsultation: isOnlineConsultation,
                           masterId: master.id, // Оновлюємо відповідального
                           masterManuallySet: false, // Автоматичне призначення
                           updatedAt: new Date().toISOString(),
@@ -677,18 +716,34 @@ export async function POST(req: NextRequest) {
                 const firstName = nameParts[0] || '';
                 const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
                 
-                if (firstName && lastName) {
-                  existingClient = existingDirectClients.find((dc) => {
-                    const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                    const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                    const searchFirstName = firstName.trim().toLowerCase();
-                    const searchLastName = lastName.trim().toLowerCase();
-                    
-                    return dcFirstName === searchFirstName && dcLastName === searchLastName;
-                  }) || undefined;
+                if (firstName) {
+                  // Спочатку шукаємо за ім'ям + прізвищем (якщо обидва є)
+                  if (lastName) {
+                    existingClient = existingDirectClients.find((dc) => {
+                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                      const searchFirstName = firstName.trim().toLowerCase();
+                      const searchLastName = lastName.trim().toLowerCase();
+                      
+                      return dcFirstName === searchFirstName && dcLastName === searchLastName;
+                    }) || undefined;
+                  }
+                  
+                  // Якщо не знайдено і є тільки ім'я (без прізвища), шукаємо за тільки ім'ям
+                  if (!existingClient && !lastName) {
+                    existingClient = existingDirectClients.find((dc) => {
+                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                      const searchFirstName = firstName.trim().toLowerCase();
+                      
+                      // Шукаємо за ім'ям, якщо прізвище відсутнє або порожнє
+                      return dcFirstName === searchFirstName && (!dcLastName || dcLastName === '');
+                    }) || undefined;
+                  }
                   
                   if (existingClient) {
-                    console.log(`[altegio/webhook] 🔍 Found client by name "${firstName} ${lastName}" for state update: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
+                    const foundByName = lastName ? `${firstName} ${lastName}` : firstName;
+                    console.log(`[altegio/webhook] 🔍 Found client by name "${foundByName}" for state update: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
                     
                     // Встановлюємо altegioClientId, якщо його ще немає
                     if (!existingClient.altegioClientId) {
@@ -1085,20 +1140,36 @@ export async function POST(req: NextRequest) {
                   
                   // Шукаємо клієнта по імені (якщо воно вказане)
                   let existingClientByName: typeof existingClientByAltegioId = null;
-                  if (firstName && lastName) {
+                  if (firstName) {
                     const existingDirectClients = await getAllDirectClients();
-                    // Шукаємо клієнта з таким самим іменем та прізвищем
-                    existingClientByName = existingDirectClients.find((dc) => {
-                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                      const searchFirstName = firstName.trim().toLowerCase();
-                      const searchLastName = lastName.trim().toLowerCase();
-                      
-                      return dcFirstName === searchFirstName && dcLastName === searchLastName;
-                    }) || null;
+                    
+                    // Спочатку шукаємо за ім'ям + прізвищем (якщо обидва є)
+                    if (lastName) {
+                      existingClientByName = existingDirectClients.find((dc) => {
+                        const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                        const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                        const searchFirstName = firstName.trim().toLowerCase();
+                        const searchLastName = lastName.trim().toLowerCase();
+                        
+                        return dcFirstName === searchFirstName && dcLastName === searchLastName;
+                      }) || null;
+                    }
+                    
+                    // Якщо не знайдено і є тільки ім'я (без прізвища), шукаємо за тільки ім'ям
+                    if (!existingClientByName && !lastName) {
+                      existingClientByName = existingDirectClients.find((dc) => {
+                        const dcFirstName = (dc.firstName || '').trim().toLowerCase();
+                        const dcLastName = (dc.lastName || '').trim().toLowerCase();
+                        const searchFirstName = firstName.trim().toLowerCase();
+                        
+                        // Шукаємо за ім'ям, якщо прізвище відсутнє або порожнє
+                        return dcFirstName === searchFirstName && (!dcLastName || dcLastName === '');
+                      }) || null;
+                    }
                     
                     if (existingClientByName) {
-                      console.log(`[altegio/webhook] 🔍 Found existing client by name "${firstName} ${lastName}": ${existingClientByName.id}, Instagram: ${existingClientByName.instagramUsername}, altegioClientId: ${existingClientByName.altegioClientId || 'none'}`);
+                      const foundByName = lastName ? `${firstName} ${lastName}` : firstName;
+                      console.log(`[altegio/webhook] 🔍 Found existing client by name "${foundByName}": ${existingClientByName.id}, Instagram: ${existingClientByName.instagramUsername}, altegioClientId: ${existingClientByName.altegioClientId || 'none'}`);
                       
                       // Якщо знайдено клієнта по імені - використовуємо його Instagram username
                       const normalizedInstagram = existingClientByName.instagramUsername;

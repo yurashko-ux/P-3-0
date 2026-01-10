@@ -256,8 +256,8 @@ export function DirectClientTable({
               <label className="label label-text text-xs">Пошук</label>
               <div className="flex gap-1 items-center">
                 <div className="relative flex-1">
-                  <input
-                    type="text"
+              <input
+                type="text"
                     placeholder="Instagram або ім'я..."
                     className="input input-bordered input-sm w-full pr-8"
                     value={searchInput}
@@ -691,15 +691,15 @@ export function DirectClientTable({
                             {client.instagramUsername}
                           </span>
                         ) : (
-                          <a
-                            href={`https://instagram.com/${client.instagramUsername}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-primary"
-                            title={client.instagramUsername}
-                          >
+                        <a
+                          href={`https://instagram.com/${client.instagramUsername}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link link-primary"
+                          title={client.instagramUsername}
+                        >
                             {client.instagramUsername}
-                          </a>
+                        </a>
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[150px]">
@@ -907,15 +907,15 @@ export function DirectClientTable({
                                   });
                                 } else if (currentState !== 'lead' && currentState !== 'client') {
                                   // Для всіх інших станів - завжди додаємо
-                                  statesToShow.push({
-                                    id: 'current',
-                                    clientId: client.id,
-                                    state: currentState,
-                                    previousState: lastHistoryState,
-                                    reason: 'current-state',
-                                    createdAt: new Date().toISOString(),
-                                  });
-                                }
+                                statesToShow.push({
+                                  id: 'current',
+                                  clientId: client.id,
+                                  state: currentState,
+                                  previousState: lastHistoryState,
+                                  reason: 'current-state',
+                                  createdAt: new Date().toISOString(),
+                                });
+                              }
                               }
                               
                               // Фінальна перевірка: видаляємо всі "lead" для Altegio клієнтів та "no-instagram" для всіх
@@ -1042,13 +1042,17 @@ export function DirectClientTable({
                             appointmentDate.setHours(0, 0, 0, 0);
                             const isPast = appointmentDate < now;
                             const dateStr = formatDate(client.consultationBookingDate);
+                            const isOnline = client.isOnlineConsultation || false;
                             
                             return (
                               <span
                                 className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                title={isPast ? "Минулий запис на консультацію" : "Майбутній запис на консультацію"}
+                                title={isPast 
+                                  ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
+                                  : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію")
+                                }
                               >
-                                {dateStr} 📅
+                                {isOnline ? "Онлайн " : ""}{dateStr} {isOnline ? "💻" : "📅"}
                               </span>
                             );
                           })()
@@ -1057,7 +1061,7 @@ export function DirectClientTable({
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
-                        <input
+                          <input
                           type="checkbox"
                           className="checkbox checkbox-xs"
                           checked={client.consultationAttended || false}
@@ -1069,13 +1073,13 @@ export function DirectClientTable({
                         {client.consultationMasterName || "-"}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
-                        <input
+                          <input
                           type="checkbox"
                           className="checkbox checkbox-xs"
                           checked={client.signedUpForPaidServiceAfterConsultation || false}
                           disabled
                           title={client.signedUpForPaidServiceAfterConsultation ? "Записалась на платну послугу після консультації" : "Не записалась на платну послугу після консультації"}
-                        />
+                          />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <input

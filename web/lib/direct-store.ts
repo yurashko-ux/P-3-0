@@ -32,6 +32,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     consultationAttended: dbClient.consultationAttended || false,
     consultationMasterId: dbClient.consultationMasterId || undefined,
     consultationMasterName: dbClient.consultationMasterName || undefined,
+    isOnlineConsultation: dbClient.isOnlineConsultation || false,
     signedUpForPaidServiceAfterConsultation: dbClient.signedUpForPaidServiceAfterConsultation || false,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
@@ -305,7 +306,7 @@ export async function updateInstagramForAltegioClient(
     const existingByInstagram = await prisma.directClient.findFirst({
       where: { instagramUsername: normalized },
     });
-    
+
     console.log(`[direct-store] 🔍 Checking for existing client with Instagram "${normalized}":`, existingByInstagram ? {
       id: existingByInstagram.id,
       instagramUsername: existingByInstagram.instagramUsername,
@@ -333,9 +334,9 @@ export async function updateInstagramForAltegioClient(
       
       // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
       const mergeUpdateData: any = {
-        updatedAt: new Date(),
-      };
-      
+      updatedAt: new Date(),
+    };
+    
       const wasAddingAltegioId = !existingByInstagram.altegioClientId && altegioClientId;
       if (wasAddingAltegioId) {
         mergeUpdateData.altegioClientId = altegioClientId;
@@ -416,30 +417,30 @@ export async function updateInstagramForAltegioClient(
       }
       
       try {
-        const updated = await prisma.directClient.update({
-          where: { id: existingClient.id },
-          data: updateData,
-        });
-        
-        // Логуємо зміну стану, якщо вона відбулася
+      const updated = await prisma.directClient.update({
+        where: { id: existingClient.id },
+        data: updateData,
+      });
+      
+      // Логуємо зміну стану, якщо вона відбулася
         if (hadMissingInstagram && updated.state === 'client') {
-          await logStateChange(
-            existingClient.id,
-            'client',
+        await logStateChange(
+          existingClient.id,
+          'client',
             previousState || 'lead',
-            'instagram-update',
-            {
-              altegioClientId,
-              instagramUsername: normalized,
-              source: 'telegram-reply',
-            }
-          );
-        }
-        
-        const result = prismaClientToDirectClient(updated);
-        console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
-        console.log(`[direct-store] 📊 State after update: ${result.state} (was: ${previousState})`);
-        return result;
+          'instagram-update',
+          {
+            altegioClientId,
+            instagramUsername: normalized,
+            source: 'telegram-reply',
+          }
+        );
+      }
+      
+      const result = prismaClientToDirectClient(updated);
+      console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
+      console.log(`[direct-store] 📊 State after update: ${result.state} (was: ${previousState})`);
+      return result;
       } catch (updateErr: any) {
         // Якщо виникла помилка unique constraint, спробуємо об'єднати клієнтів
         if (updateErr?.code === 'P2002' && updateErr?.meta?.target?.includes('instagramUsername')) {

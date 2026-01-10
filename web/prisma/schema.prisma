@@ -55,6 +55,7 @@ model DirectClient {
   consultationAttended   Boolean   @default(false) // Чи прийшов на консультацію
   consultationMasterId   String?   // ID майстра, який провів консультацію
   consultationMasterName String?   // Ім'я майстра, який провів консультацію
+  isOnlineConsultation  Boolean   @default(false) // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation Boolean @default(false) // Записалась на послугу після консультації
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
