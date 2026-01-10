@@ -1011,7 +1011,7 @@ export function DirectClientTable({
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.paidServiceDate ? (
+                        {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
                             const appointmentDate = new Date(client.paidServiceDate);
                             const now = new Date();
@@ -1023,7 +1023,7 @@ export function DirectClientTable({
                             return (
                               <span
                                 className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                title={isPast ? "Минулий запис" : "Майбутній запис"}
+                                title={isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу"}
                               >
                                 {dateStr}
                               </span>
@@ -1052,7 +1052,7 @@ export function DirectClientTable({
                                   : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію")
                                 }
                               >
-                                {isOnline ? "Онлайн " : ""}{dateStr} {isOnline ? "💻" : "📅"}
+                                {dateStr} {isOnline ? "💻" : "📅"}
                               </span>
                             );
                           })()
