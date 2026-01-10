@@ -76,9 +76,32 @@ async function fixOnlineConsultations() {
     let updatedCount = 0;
     let checkedCount = 0;
 
+    // Знаходимо клієнта "Юлія Кобра" для детальної діагностики
+    const yuliaKobra = clientsToCheck.find(
+      (c) => 
+        c.instagramUsername === 'kobra_best' || 
+        (c.firstName === 'Юлія' && c.lastName === 'Кобра') ||
+        (c.firstName?.toLowerCase().includes('юлія') && c.lastName?.toLowerCase().includes('кобра'))
+    );
+    
+    if (yuliaKobra) {
+      console.log(`[fix-online-consultations] 🎯 Знайдено клієнта Юлія Кобра:`, {
+        instagramUsername: yuliaKobra.instagramUsername,
+        altegioClientId: yuliaKobra.altegioClientId,
+        consultationBookingDate: yuliaKobra.consultationBookingDate,
+        isOnlineConsultation: yuliaKobra.isOnlineConsultation,
+      });
+    }
+
     // Для кожного клієнта перевіряємо webhook'и
     for (const client of clientsToCheck) {
       checkedCount++;
+      
+      // Детальна діагностика для "Юлія Кобра"
+      const isYuliaKobra = 
+        client.instagramUsername === 'kobra_best' || 
+        (client.firstName === 'Юлія' && client.lastName === 'Кобра') ||
+        (client.firstName?.toLowerCase().includes('юлія') && client.lastName?.toLowerCase().includes('кобра'));
 
       try {
         // Отримуємо всі webhook'и для цього клієнта (як в client-webhooks)
@@ -191,8 +214,8 @@ async function fixOnlineConsultations() {
           
           const consultationInfo = isConsultationService(services);
           
-          // Детальне логування для першого клієнта з записами
-          if (checkedCount === 1 && !foundOnlineConsultation) {
+          // Детальне логування для першого клієнта з записами або для "Юлія Кобра"
+          if ((checkedCount === 1 || isYuliaKobra) && !foundOnlineConsultation) {
             console.log(`[fix-online-consultations] 🔍 Перевірка послуг для ${client.instagramUsername}:`, {
               serviceCount: services.length,
               services: services.map((s: any) => ({
@@ -216,8 +239,8 @@ async function fixOnlineConsultations() {
           }
         }
         
-        // Логуємо перші 3 клієнтів для діагностики
-        if (checkedCount <= 3 && clientRecords.length > 0) {
+        // Логуємо перші 3 клієнтів для діагностики або "Юлія Кобра"
+        if ((checkedCount <= 3 || isYuliaKobra) && clientRecords.length > 0) {
           const firstRecord = clientRecords[0];
           const body = firstRecord.body || {};
           const data = body.data || {};
@@ -249,9 +272,10 @@ async function fixOnlineConsultations() {
           });
         }
         
-        // Якщо знайшли записи, але не знайшли онлайн-консультацію, логуємо для першого клієнта
-        if (checkedCount === 1 && clientRecords.length > 0 && !foundOnlineConsultation) {
-          console.log(`[fix-online-consultations] ⚠️ Для ${client.instagramUsername} (altegioClientId: ${client.altegioClientId}) знайдено ${clientRecords.length} записів, але не знайдено онлайн-консультацію`);
+        // Якщо знайшли записи, але не знайшли онлайн-консультацію, логуємо для першого клієнта або "Юлія Кобра"
+        if ((checkedCount === 1 || isYuliaKobra) && clientRecords.length > 0 && !foundOnlineConsultation) {
+          const clientName = isYuliaKobra ? 'Юлія Кобра' : client.instagramUsername;
+          console.log(`[fix-online-consultations] ⚠️ Для ${clientName} (${client.instagramUsername}, altegioClientId: ${client.altegioClientId}) знайдено ${clientRecords.length} записів, але не знайдено онлайн-консультацію`);
           console.log(`[fix-online-consultations] Всі унікальні послуги з записів:`, [...new Set(allServices)]);
           
           // Перевіряємо перший запис детально
