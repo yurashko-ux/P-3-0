@@ -446,42 +446,40 @@ async function fixOnlineConsultations() {
           }
         }
 
-        // Якщо знайшли онлайн-консультацію, оновлюємо клієнта
-        // АБО якщо клієнт має consultationBookingDate, але isOnlineConsultation не встановлено правильно
-        if (foundOnlineConsultation || (client.consultationBookingDate && !client.isOnlineConsultation)) {
-          // Якщо не знайшли онлайн-консультацію в webhook'ах, але є consultationBookingDate,
-          // все одно перевіряємо, чи це може бути онлайн-консультація
-          if (!foundOnlineConsultation && client.consultationBookingDate) {
-            // Перевіряємо всі записи, чи є серед них онлайн-консультація
-            for (const record of clientRecords) {
-              const body = record.body || {};
-              const data = body.data || {};
-              const originalRecord = record.originalRecord || {};
-              
-              let services: any[] = [];
-              if (Array.isArray(data.services) && data.services.length > 0) {
-                services = data.services;
-              } else if (data.service) {
-                services = [data.service];
-              } else if (originalRecord.data && originalRecord.data.services && Array.isArray(originalRecord.data.services)) {
-                services = originalRecord.data.services;
-              } else if (originalRecord.data && originalRecord.data.service) {
-                services = [originalRecord.data.service];
-              } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
-                services = originalRecord.services;
-              } else if (originalRecord.serviceName) {
-                services = [{ title: originalRecord.serviceName }];
-              }
-              
-              const consultationInfo = isConsultationService(services);
-              if (consultationInfo.isConsultation && consultationInfo.isOnline) {
-                foundOnlineConsultation = true;
-                break;
-              }
+        // Якщо не знайшли онлайн-консультацію в webhook'ах, але є consultationBookingDate,
+        // все одно перевіряємо, чи це може бути онлайн-консультація
+        if (!foundOnlineConsultation && client.consultationBookingDate) {
+          // Перевіряємо всі записи, чи є серед них онлайн-консультація
+          for (const record of clientRecords) {
+            const body = record.body || {};
+            const data = body.data || {};
+            const originalRecord = record.originalRecord || {};
+            
+            let services: any[] = [];
+            if (Array.isArray(data.services) && data.services.length > 0) {
+              services = data.services;
+            } else if (data.service) {
+              services = [data.service];
+            } else if (originalRecord.data && originalRecord.data.services && Array.isArray(originalRecord.data.services)) {
+              services = originalRecord.data.services;
+            } else if (originalRecord.data && originalRecord.data.service) {
+              services = [originalRecord.data.service];
+            } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
+              services = originalRecord.services;
+            } else if (originalRecord.serviceName) {
+              services = [{ title: originalRecord.serviceName }];
+            }
+            
+            const consultationInfo = isConsultationService(services);
+            if (consultationInfo.isConsultation && consultationInfo.isOnline) {
+              foundOnlineConsultation = true;
+              break;
             }
           }
-          
-          if (foundOnlineConsultation) {
+        }
+        
+        // Якщо знайшли онлайн-консультацію, оновлюємо клієнта
+        if (foundOnlineConsultation) {
           // Знаходимо найранішу дату онлайн-консультації
           let earliestConsultationDate: string | null = null;
           for (const record of clientRecords) {
