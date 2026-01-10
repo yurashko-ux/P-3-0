@@ -102,14 +102,31 @@ async function fixOnlineConsultations() {
 
         // Перевіряємо, чи є серед послуг "Онлайн-консультація"
         let foundOnlineConsultation = false;
+        let allServices: string[] = [];
         for (const record of clientRecords) {
           const services = record.data?.services || [];
+          if (services.length > 0) {
+            allServices.push(...services.map((s: any) => s.title || s.name || '').filter(Boolean));
+          }
           const consultationInfo = isConsultationService(services);
           
           if (consultationInfo.isConsultation && consultationInfo.isOnline) {
             foundOnlineConsultation = true;
+            console.log(`[fix-online-consultations] ✅ Знайдено онлайн-консультацію для ${client.instagramUsername}:`, {
+              services: services.map((s: any) => s.title || s.name),
+              recordDate: record.receivedAt || record.datetime,
+            });
             break;
           }
+        }
+        
+        // Логуємо перші 3 клієнтів для діагностики
+        if (checkedCount <= 3 && clientRecords.length > 0) {
+          console.log(`[fix-online-consultations] 🔍 Діагностика для ${client.instagramUsername}:`, {
+            totalRecords: clientRecords.length,
+            firstRecordServices: clientRecords[0]?.data?.services?.map((s: any) => s.title || s.name) || [],
+            allUniqueServices: [...new Set(allServices)].slice(0, 10),
+          });
         }
 
         // Якщо знайшли онлайн-консультацію, оновлюємо клієнта
