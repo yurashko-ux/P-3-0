@@ -35,10 +35,18 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
   
   services.forEach((s: any) => {
     const title = (s.title || s.name || '').toLowerCase();
+    const originalTitle = s.title || s.name || '';
+    
     if (/консультація/i.test(title)) {
       isConsultation = true;
       // Перевіряємо, чи це онлайн-консультація
-      if (/онлайн/i.test(title) || /online/i.test(title)) {
+      // Перевіряємо різні варіанти написання: "онлайн", "online", дефіс або пробіл
+      if (/онлайн/i.test(title) || 
+          /online/i.test(title) || 
+          /онлайн-консультація/i.test(title) ||
+          /online-консультація/i.test(title) ||
+          /онлайн консультація/i.test(title) ||
+          /online консультація/i.test(title)) {
         isOnline = true;
       }
     }
