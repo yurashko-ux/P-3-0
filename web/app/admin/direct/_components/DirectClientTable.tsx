@@ -1046,6 +1046,25 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs text-center">
+                        {client.paidServiceAttended === true ? (
+                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
+                            ✅
+                          </span>
+                        ) : client.paidServiceAttended === false && client.paidServiceDate ? (
+                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
+                            ❌
+                          </span>
+                        ) : client.paidServiceDate ? (
+                          <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги">
+                            ❓
+                          </span>
+                        ) : (
+                          <span className="text-gray-400" title="Немає запису на платну послугу">
+                            -
+                          </span>
+                        )}
+                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (
                           (() => {
@@ -1135,16 +1154,20 @@ export function DirectClientTable({
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {client.paidServiceAttended === true ? (
-                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
+                        {client.consultationAttended === true ? (
+                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
                             ✅
                           </span>
-                        ) : client.paidServiceAttended === false && client.paidServiceDate ? (
-                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
+                        ) : client.consultationAttended === false && client.consultationBookingDate ? (
+                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
                             ❌
                           </span>
+                        ) : client.consultationBookingDate ? (
+                          <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації">
+                            ❓
+                          </span>
                         ) : (
-                          <span className="text-gray-400" title="Немає інформації про відвідування платної послуги">
+                          <span className="text-gray-400" title="Немає запису на консультацію">
                             -
                           </span>
                         )}
