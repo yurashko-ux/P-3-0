@@ -1047,23 +1047,44 @@ export function DirectClientTable({
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {client.paidServiceAttended === true ? (
-                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
-                            ✅
-                          </span>
-                        ) : client.paidServiceAttended === false && client.paidServiceDate ? (
-                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
-                            ❌
-                          </span>
-                        ) : client.paidServiceDate ? (
-                          <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги">
-                            ❓
-                          </span>
-                        ) : (
-                          <span className="text-gray-400" title="Немає запису на платну послугу">
-                            -
-                          </span>
-                        )}
+                        {(() => {
+                          if (!client.paidServiceDate) {
+                            return <span className="text-gray-400" title="Немає запису на платну послугу">-</span>;
+                          }
+                          
+                          // Перевіряємо, чи дата запису в минулому
+                          const appointmentDate = new Date(client.paidServiceDate);
+                          const now = new Date();
+                          now.setHours(0, 0, 0, 0);
+                          appointmentDate.setHours(0, 0, 0, 0);
+                          const isPast = appointmentDate < now;
+                          
+                          // Якщо дата майбутня, не показуємо індикатори
+                          if (!isPast) {
+                            return <span className="text-gray-400" title="Запис ще не відбувся">-</span>;
+                          }
+                          
+                          // Якщо дата в минулому, показуємо індикатори
+                          if (client.paidServiceAttended === true) {
+                            return (
+                              <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
+                                ✅
+                              </span>
+                            );
+                          } else if (client.paidServiceAttended === false) {
+                            return (
+                              <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
+                                ❌
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги">
+                                ❓
+                              </span>
+                            );
+                          }
+                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (
@@ -1154,23 +1175,71 @@ export function DirectClientTable({
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {client.consultationAttended === true ? (
-                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
-                            ✅
-                          </span>
-                        ) : client.consultationAttended === false && client.consultationBookingDate ? (
-                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
-                            ❌
-                          </span>
-                        ) : client.consultationBookingDate ? (
-                          <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації">
-                            ❓
-                          </span>
-                        ) : (
-                          <span className="text-gray-400" title="Немає запису на консультацію">
-                            -
-                          </span>
-                        )}
+                        {(() => {
+                          if (!client.consultationBookingDate) {
+                            return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
+                          }
+                          
+                          // Перевіряємо, чи дата консультації в минулому
+                          try {
+                            const dateValue = typeof client.consultationBookingDate === 'string' 
+                              ? client.consultationBookingDate.trim() 
+                              : client.consultationBookingDate;
+                            
+                            let dateStr = typeof dateValue === 'string' ? dateValue : String(dateValue);
+                            const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
+                            if (!isoDateMatch) {
+                              const parts = dateStr.split(/\s+/);
+                              for (const part of parts) {
+                                const testDate = new Date(part);
+                                if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
+                                  dateStr = part;
+                                  break;
+                                }
+                              }
+                            } else {
+                              dateStr = isoDateMatch[0];
+                            }
+                            
+                            const appointmentDate = new Date(dateStr);
+                            if (isNaN(appointmentDate.getTime())) {
+                              return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
+                            }
+                            
+                            const now = new Date();
+                            now.setHours(0, 0, 0, 0);
+                            appointmentDate.setHours(0, 0, 0, 0);
+                            const isPast = appointmentDate < now;
+                            
+                            // Якщо дата майбутня, не показуємо індикатори
+                            if (!isPast) {
+                              return <span className="text-gray-400" title="Консультація ще не відбулася">-</span>;
+                            }
+                            
+                            // Якщо дата в минулому, показуємо індикатори
+                            if (client.consultationAttended === true) {
+                              return (
+                                <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
+                                  ✅
+                                </span>
+                              );
+                            } else if (client.consultationAttended === false) {
+                              return (
+                                <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
+                                  ❌
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації">
+                                  ❓
+                                </span>
+                              );
+                            }
+                          } catch (err) {
+                            return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
+                          }
+                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationMasterName || "-"}
