@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
+import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
