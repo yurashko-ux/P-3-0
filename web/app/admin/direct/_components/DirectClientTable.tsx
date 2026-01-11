@@ -447,7 +447,6 @@ export function DirectClientTable({
               <thead>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">№</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дії</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
                     <button
                       className="hover:underline cursor-pointer"
@@ -649,6 +648,7 @@ export function DirectClientTable({
                       Хто записав {sortBy === "signupAdmin" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дії</th>
                 </tr>
               </thead>
               <tbody>
@@ -664,118 +664,6 @@ export function DirectClientTable({
                       key={client.id}
                     >
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <div className="flex gap-1">
-                          <button
-                            className="btn btn-xs btn-ghost"
-                            onClick={() => setEditingClient(client)}
-                            title="Редагувати"
-                          >
-                            ✏️
-                          </button>
-                          {client.altegioClientId && (
-                            <button
-                              className="btn btn-xs btn-ghost text-info"
-                              onClick={() => setWebhooksClient(client)}
-                              title="Переглянути вебхуки клієнта"
-                            >
-                              🔗
-                            </button>
-                          )}
-                          <button
-                            className="btn btn-xs btn-ghost text-info"
-                            onClick={async () => {
-                              try {
-                                const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ');
-                                const res = await fetch('/api/admin/direct/diagnose-client', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    instagramUsername: client.instagramUsername,
-                                    fullName: fullName || undefined,
-                                    altegioClientId: client.altegioClientId || undefined,
-                                  }),
-                                });
-                                const data = await res.json();
-                                if (data.ok) {
-                                  const diagnosis = data.diagnosis;
-                                  let message = `🔍 Діагностика клієнтки: ${fullName || client.instagramUsername}\n\n`;
-                                  
-                                  if (diagnosis.directClient) {
-                                    message += `✅ Клієнтка знайдена в Direct Manager\n`;
-                                    message += `   ID: ${diagnosis.directClient.id}\n`;
-                                    message += `   Instagram: ${diagnosis.directClient.instagramUsername}\n`;
-                                    message += `   Стан: ${diagnosis.directClient.state || 'не встановлено'}\n`;
-                                    message += `   Altegio ID: ${diagnosis.directClient.altegioClientId || 'немає'}\n\n`;
-                                  } else {
-                                    message += `❌ Клієнтка не знайдена в Direct Manager\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.issues && diagnosis.issues.length > 0) {
-                                    message += `Проблеми:\n${diagnosis.issues.map((i: string) => `  ${i}`).join('\n')}\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.recommendations && diagnosis.recommendations.length > 0) {
-                                    message += `Рекомендації:\n${diagnosis.recommendations.map((r: string) => `  ${r}`).join('\n')}\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.records) {
-                                    message += `Записи в Altegio:\n`;
-                                    message += `  Всього: ${diagnosis.records.total}\n`;
-                                    message += `  З "Консультація": ${diagnosis.records.withConsultation}\n`;
-                                    message += `  З "Нарощування волосся": ${diagnosis.records.withHairExtension}\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.webhooks) {
-                                    message += `Вебхуки:\n`;
-                                    message += `  Всього: ${diagnosis.webhooks.total}\n`;
-                                    message += `  Записи: ${diagnosis.webhooks.records}\n`;
-                                    message += `  Клієнти: ${diagnosis.webhooks.clients}\n\n`;
-                                  }
-                                  
-                                  message += `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
-                                  
-                                  // Використовуємо alert з можливістю копіювання
-                                  alert(message);
-                                  // Також виводимо в консоль для детального аналізу
-                                  console.log('Client Diagnosis:', data);
-                                } else {
-                                  alert(`Помилка діагностики: ${data.error || 'Невідома помилка'}`);
-                                }
-                              } catch (err) {
-                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-                              }
-                            }}
-                            title="Діагностика"
-                          >
-                            🔍
-                          </button>
-                          <button
-                            className="btn btn-xs btn-ghost text-error"
-                            onClick={async () => {
-                              if (!confirm(`Видалити клієнта @${client.instagramUsername}?\n\nЦю дію неможливо скасувати.`)) {
-                                return;
-                              }
-                              try {
-                                const res = await fetch(`/api/admin/direct/clients/${client.id}`, {
-                                  method: 'DELETE',
-                                });
-                                const data = await res.json();
-                                if (data.ok) {
-                                  await onRefresh();
-                                } else {
-                                  alert(`Помилка видалення: ${data.error || 'Невідома помилка'}`);
-                                }
-                              } catch (err) {
-                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-                              }
-                            }}
-                            title="Видалити"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {formatDate(client.firstContactDate)}
                       </td>
@@ -1325,6 +1213,118 @@ export function DirectClientTable({
                           value={client.signupAdmin || ""}
                           onChange={(e) => handleFieldUpdate(client, "signupAdmin", e.target.value || undefined)}
                         />
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">
+                        <div className="flex gap-1">
+                          <button
+                            className="btn btn-xs btn-ghost"
+                            onClick={() => setEditingClient(client)}
+                            title="Редагувати"
+                          >
+                            ✏️
+                          </button>
+                          {client.altegioClientId && (
+                            <button
+                              className="btn btn-xs btn-ghost text-info"
+                              onClick={() => setWebhooksClient(client)}
+                              title="Переглянути вебхуки клієнта"
+                            >
+                              🔗
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-xs btn-ghost text-info"
+                            onClick={async () => {
+                              try {
+                                const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ');
+                                const res = await fetch('/api/admin/direct/diagnose-client', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    instagramUsername: client.instagramUsername,
+                                    fullName: fullName || undefined,
+                                    altegioClientId: client.altegioClientId || undefined,
+                                  }),
+                                });
+                                const data = await res.json();
+                                if (data.ok) {
+                                  const diagnosis = data.diagnosis;
+                                  let message = `🔍 Діагностика клієнтки: ${fullName || client.instagramUsername}\n\n`;
+                                  
+                                  if (diagnosis.directClient) {
+                                    message += `✅ Клієнтка знайдена в Direct Manager\n`;
+                                    message += `   ID: ${diagnosis.directClient.id}\n`;
+                                    message += `   Instagram: ${diagnosis.directClient.instagramUsername}\n`;
+                                    message += `   Стан: ${diagnosis.directClient.state || 'не встановлено'}\n`;
+                                    message += `   Altegio ID: ${diagnosis.directClient.altegioClientId || 'немає'}\n\n`;
+                                  } else {
+                                    message += `❌ Клієнтка не знайдена в Direct Manager\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.issues && diagnosis.issues.length > 0) {
+                                    message += `Проблеми:\n${diagnosis.issues.map((i: string) => `  ${i}`).join('\n')}\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.recommendations && diagnosis.recommendations.length > 0) {
+                                    message += `Рекомендації:\n${diagnosis.recommendations.map((r: string) => `  ${r}`).join('\n')}\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.records) {
+                                    message += `Записи в Altegio:\n`;
+                                    message += `  Всього: ${diagnosis.records.total}\n`;
+                                    message += `  З "Консультація": ${diagnosis.records.withConsultation}\n`;
+                                    message += `  З "Нарощування волосся": ${diagnosis.records.withHairExtension}\n\n`;
+                                  }
+                                  
+                                  if (diagnosis.webhooks) {
+                                    message += `Вебхуки:\n`;
+                                    message += `  Всього: ${diagnosis.webhooks.total}\n`;
+                                    message += `  Записи: ${diagnosis.webhooks.records}\n`;
+                                    message += `  Клієнти: ${diagnosis.webhooks.clients}\n\n`;
+                                  }
+                                  
+                                  message += `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                                  
+                                  // Використовуємо alert з можливістю копіювання
+                                  alert(message);
+                                  // Також виводимо в консоль для детального аналізу
+                                  console.log('Client Diagnosis:', data);
+                                } else {
+                                  alert(`Помилка діагностики: ${data.error || 'Невідома помилка'}`);
+                                }
+                              } catch (err) {
+                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                              }
+                            }}
+                            title="Діагностика"
+                          >
+                            🔍
+                          </button>
+                          <button
+                            className="btn btn-xs btn-ghost text-error"
+                            onClick={async () => {
+                              if (!confirm(`Видалити клієнта @${client.instagramUsername}?\n\nЦю дію неможливо скасувати.`)) {
+                                return;
+                              }
+                              try {
+                                const res = await fetch(`/api/admin/direct/clients/${client.id}`, {
+                                  method: 'DELETE',
+                                });
+                                const data = await res.json();
+                                if (data.ok) {
+                                  await onRefresh();
+                                } else {
+                                  alert(`Помилка видалення: ${data.error || 'Невідома помилка'}`);
+                                }
+                              } catch (err) {
+                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                              }
+                            }}
+                            title="Видалити"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
