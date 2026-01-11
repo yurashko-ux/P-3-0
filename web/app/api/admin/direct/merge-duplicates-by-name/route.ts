@@ -5,9 +5,72 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
 import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
+import { prisma } from '@/lib/prisma';
+import { determineStateFromServices } from '@/lib/direct-state-helper';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+
+/**
+ * Синхронізує стан клієнта на основі записів Altegio
+ */
+async function syncClientStateFromAltegioRecords(clientId: string, altegioClientId: number): Promise<void> {
+  try {
+    // Знаходимо останній запис для цього клієнта
+    const latestRecord = await prisma.altegioRecord.findFirst({
+      where: { altegioClientId },
+      orderBy: { receivedAt: 'desc' },
+    });
+
+    if (!latestRecord || !latestRecord.services) {
+      return; // Немає записів
+    }
+
+    let services: any[] = [];
+    try {
+      services = typeof latestRecord.services === 'string' 
+        ? JSON.parse(latestRecord.services) 
+        : latestRecord.services;
+    } catch {
+      return; // Не вдалося розпарсити services
+    }
+
+    if (!Array.isArray(services) || services.length === 0) {
+      return;
+    }
+
+    // Визначаємо стан на основі послуг
+    const newState = determineStateFromServices(services);
+    
+    // Отримуємо поточного клієнта
+    const { getDirectClient, saveDirectClient } = await import('@/lib/direct-store');
+    const client = await getDirectClient(clientId);
+    
+    if (!client) {
+      return;
+    }
+
+    // Оновлюємо стан, якщо він змінився
+    if (newState && client.state !== newState) {
+      const updated = {
+        ...client,
+        state: newState,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      await saveDirectClient(updated, 'merge-duplicates-sync-state', {
+        altegioClientId,
+        recordId: latestRecord.id,
+        services: services.map((s: any) => s.title || s.name),
+      });
+      
+      console.log(`[merge-duplicates-by-name] ✅ Synced state for client ${clientId}: ${client.state} → ${newState}`);
+    }
+  } catch (err) {
+    console.error(`[merge-duplicates-by-name] Error syncing state for client ${clientId}:`, err);
+    // Не викидаємо помилку, щоб не перервати об'єднання
+  }
+}
 
 function isAuthorized(req: NextRequest): boolean {
   // Перевірка через ADMIN_PASS (кука)
@@ -391,6 +454,15 @@ export async function POST(req: NextRequest) {
         const { deleteDirectClient } = await import('@/lib/direct-store');
         for (const duplicateId of duplicateIds) {
           await deleteDirectClient(duplicateId);
+        }
+        
+        // Синхронізуємо стан на основі записів Altegio
+        if (updatedClient.altegioClientId) {
+          try {
+            await syncClientStateFromAltegioRecords(updatedClient.id, updatedClient.altegioClientId);
+          } catch (err) {
+            console.error(`[merge-duplicates-by-name] Failed to sync state for client ${updatedClient.id}:`, err);
+          }
         }
         
         totalMerged += duplicates.length;
