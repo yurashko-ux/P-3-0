@@ -29,7 +29,6 @@ const SPECIAL_CASES: Record<string, string> = {
   'Тетяна': 'Tetiana',
   'Тетьяна': 'Tetiana',
   'Овчаренко': 'Ovcharenko',
-  'Овчаренко': 'Ovcharenko',
   // Можна додати інші поширені варіанти
 };
 
