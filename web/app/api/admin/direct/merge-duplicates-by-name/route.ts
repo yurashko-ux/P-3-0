@@ -291,28 +291,28 @@ export async function POST(req: NextRequest) {
       );
       
       // Знаходимо клієнта, якого залишити
+      // ПРАВИЛО: залишаємо клієнта з Altegio (missing_instagram_*), а Instagram username беремо з клієнта Manychat
       // Пріоритет:
-      // 1. Клієнт з правильним Instagram (не missing_instagram_*)
+      // 1. Клієнт з Altegio (missing_instagram_*)
       // 2. Клієнт з записями (state logs, дати)
-      // 3. Клієнт з altegioClientId
-      // 4. Найновіший клієнт
+      // 3. Найновіший клієнт
       
       let clientToKeep = clientsWithRecords[0].client;
       let keepHasRecords = clientsWithRecords[0].hasRecords;
       
       for (const { client, hasRecords } of clientsWithRecords) {
-        const keepHasRealInstagram = !clientToKeep.instagramUsername.startsWith('missing_instagram_');
-        const currentHasRealInstagram = !client.instagramUsername.startsWith('missing_instagram_');
+        const keepIsFromAltegio = clientToKeep.instagramUsername.startsWith('missing_instagram_');
+        const currentIsFromAltegio = client.instagramUsername.startsWith('missing_instagram_');
         
-        // Якщо поточний клієнт має правильний Instagram, а збережений - ні
-        if (!keepHasRealInstagram && currentHasRealInstagram) {
+        // Пріоритет: клієнт з Altegio (missing_instagram_*)
+        if (!keepIsFromAltegio && currentIsFromAltegio) {
           clientToKeep = client;
           keepHasRecords = hasRecords;
           continue;
         }
         
-        // Якщо обидва мають або не мають правильний Instagram
-        if (keepHasRealInstagram === currentHasRealInstagram) {
+        // Якщо обидва з Altegio або обидва не з Altegio
+        if (keepIsFromAltegio === currentIsFromAltegio) {
           // Пріоритет: той, хто має записи
           if (!keepHasRecords && hasRecords) {
             clientToKeep = client;
@@ -320,16 +320,8 @@ export async function POST(req: NextRequest) {
             continue;
           }
           
-          // Якщо обидва мають або не мають записи
+          // Якщо обидва мають або не мають записи - залишаємо новіший
           if (keepHasRecords === hasRecords) {
-            // Пріоритет: той, хто має altegioClientId
-            if (!clientToKeep.altegioClientId && client.altegioClientId) {
-              clientToKeep = client;
-              keepHasRecords = hasRecords;
-              continue;
-            }
-            
-            // Якщо обидва мають або не мають altegioClientId - залишаємо новіший
             if (new Date(client.createdAt) > new Date(clientToKeep.createdAt)) {
               clientToKeep = client;
               keepHasRecords = hasRecords;
