@@ -1052,19 +1052,19 @@ export function DirectClientTable({
                             return <span className="text-gray-400" title="Немає запису на платну послугу">-</span>;
                           }
                           
-                          // Перевіряємо, чи дата запису в минулому
+                          // Перевіряємо, чи дата запису в минулому або сьогодні
                           const appointmentDate = new Date(client.paidServiceDate);
                           const now = new Date();
                           now.setHours(0, 0, 0, 0);
                           appointmentDate.setHours(0, 0, 0, 0);
-                          const isPast = appointmentDate < now;
+                          const isPastOrToday = appointmentDate <= now;
                           
                           // Якщо дата майбутня, не показуємо індикатори
-                          if (!isPast) {
+                          if (!isPastOrToday) {
                             return <span className="text-gray-400" title="Запис ще не відбувся">-</span>;
                           }
                           
-                          // Якщо дата в минулому, показуємо індикатори
+                          // Якщо дата в минулому або сьогодні, показуємо індикатори
                           if (client.paidServiceAttended === true) {
                             return (
                               <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
@@ -1209,14 +1209,14 @@ export function DirectClientTable({
                             const now = new Date();
                             now.setHours(0, 0, 0, 0);
                             appointmentDate.setHours(0, 0, 0, 0);
-                            const isPast = appointmentDate < now;
+                            const isPastOrToday = appointmentDate <= now;
                             
                             // Якщо дата майбутня, не показуємо індикатори
-                            if (!isPast) {
+                            if (!isPastOrToday) {
                               return <span className="text-gray-400" title="Консультація ще не відбулася">-</span>;
                             }
                             
-                            // Якщо дата в минулому, показуємо індикатори
+                            // Якщо дата в минулому або сьогодні, показуємо індикатори
                             if (client.consultationAttended === true) {
                               return (
                                 <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
