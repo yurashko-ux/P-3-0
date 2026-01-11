@@ -1071,10 +1071,14 @@ export function DirectClientTable({
                                 ✅
                               </span>
                             );
+                          } else if (client.paidServiceAttended === false) {
+                            return (
+                              <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
+                                ❌
+                              </span>
+                            );
                           } else {
-                            // Показуємо ❓ для false або undefined, оскільки false може означати
-                            // як "не з'явився" (attendance = -1), так і "не встановлено" (дефолт)
-                            // Адміністратор має встановити attendance в Altegio, щоб отримати ✅ або ❌
+                            // Показуємо ❓ для undefined (attendance не встановлено в Altegio)
                             return (
                               <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">
                                 ❓
@@ -1220,10 +1224,14 @@ export function DirectClientTable({
                                   ✅
                                 </span>
                               );
+                            } else if (client.consultationAttended === false) {
+                              return (
+                                <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
+                                  ❌
+                                </span>
+                              );
                             } else {
-                              // Показуємо ❓ для false або undefined, оскільки false може означати
-                              // як "не з'явився" (attendance = -1), так і "не встановлено" (дефолт)
-                              // Адміністратор має встановити attendance в Altegio, щоб отримати ✅ або ❌
+                              // Показуємо ❓ для undefined (attendance не встановлено в Altegio)
                               return (
                                 <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)">
                                   ❓

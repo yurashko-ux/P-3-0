@@ -507,6 +507,15 @@ export async function POST(req: NextRequest) {
                     updatedAt: new Date().toISOString(),
                   };
                   
+                  // Встановлюємо consultationAttended на основі attendance
+                  if (attendance === -1) {
+                    updates.consultationAttended = false;
+                    console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in block 2.3.2 for client ${existingClient.id}`);
+                  } else if (attendance === 1) {
+                    updates.consultationAttended = true;
+                    console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in block 2.3.2 for client ${existingClient.id}`);
+                  }
+                  
                   // Якщо paidServiceDate встановлений, але signedUpForPaidService = false - це помилка, очищаємо
                   if (existingClient.paidServiceDate && !existingClient.signedUpForPaidService) {
                     updates.paidServiceDate = undefined;
@@ -540,6 +549,15 @@ export async function POST(req: NextRequest) {
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
+                  
+                  // Встановлюємо consultationAttended на основі attendance
+                  if (attendance === -1) {
+                    updates.consultationAttended = false;
+                    console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in missing date block for client ${existingClient.id}`);
+                  } else if (attendance === 1) {
+                    updates.consultationAttended = true;
+                    console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in missing date block for client ${existingClient.id}`);
+                  }
                   
                   const updated: typeof existingClient = {
                     ...existingClient,
