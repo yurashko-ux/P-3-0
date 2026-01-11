@@ -559,12 +559,12 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
-                          "consultationAttended",
-                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
+                          "paidServiceAttended",
+                          sortBy === "paidServiceAttended" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
-                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Прийшла {sortBy === "paidServiceAttended" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -585,12 +585,12 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
-                          "paidServiceAttended",
-                          sortBy === "paidServiceAttended" && sortOrder === "desc" ? "asc" : "desc"
+                          "consultationAttended",
+                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
-                      Прийшла {sortBy === "paidServiceAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
