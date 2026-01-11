@@ -1042,12 +1042,27 @@ export function DirectClientTable({
                                 ? client.consultationBookingDate.trim() 
                                 : client.consultationBookingDate;
                               
-                              // Якщо це рядок з кількома датами (розділеними пробілом), беремо першу
-                              const firstDate = typeof dateValue === 'string' && dateValue.includes(' ') 
-                                ? dateValue.split(' ')[0] 
-                                : dateValue;
+                              // Витягуємо тільки дату (ISO формат: YYYY-MM-DDTHH:mm:ss.sssZ або подібний)
+                              // Відкидаємо все, що не схоже на дату
+                              let dateStr = typeof dateValue === 'string' ? dateValue : String(dateValue);
                               
-                              const appointmentDate = new Date(firstDate);
+                              // Шукаємо ISO дату в рядку (YYYY-MM-DD або YYYY-MM-DDTHH:mm:ss)
+                              const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
+                              if (!isoDateMatch) {
+                                // Якщо не знайшли ISO формат, спробуємо інші формати
+                                const parts = dateStr.split(/\s+/);
+                                for (const part of parts) {
+                                  const testDate = new Date(part);
+                                  if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
+                                    dateStr = part;
+                                    break;
+                                  }
+                                }
+                              } else {
+                                dateStr = isoDateMatch[0];
+                              }
+                              
+                              const appointmentDate = new Date(dateStr);
                               if (isNaN(appointmentDate.getTime())) {
                                 console.warn('[DirectClientTable] Invalid consultationBookingDate:', client.consultationBookingDate);
                                 return "";
@@ -1057,7 +1072,7 @@ export function DirectClientTable({
                               now.setHours(0, 0, 0, 0);
                               appointmentDate.setHours(0, 0, 0, 0);
                               const isPast = appointmentDate < now;
-                              const dateStr = formatDate(firstDate);
+                              const formattedDateStr = formatDate(dateStr);
                               const isOnline = client.isOnlineConsultation || false;
                               
                               // Діагностика для "Юлія Кобра" та "Топоріна Олена"
@@ -1077,8 +1092,8 @@ export function DirectClientTable({
                                   isOnlineConsultation: client.isOnlineConsultation,
                                   isOnlineConsultationType: typeof client.isOnlineConsultation,
                                   isOnline: isOnline,
-                                  dateStr,
-                                  firstDate,
+                                  dateStr: formattedDateStr,
+                                  extractedDateStr: dateStr,
                                   dateValue,
                                   paidServiceDate: client.paidServiceDate,
                                   signedUpForPaidService: client.signedUpForPaidService,
@@ -1094,7 +1109,7 @@ export function DirectClientTable({
                                     : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію")
                                   }
                                 >
-                                  {dateStr} {isOnline ? "💻" : "📅"}
+                                  {formattedDateStr} {isOnline ? "💻" : "📅"}
                                 </span>
                               );
                             } catch (err) {
