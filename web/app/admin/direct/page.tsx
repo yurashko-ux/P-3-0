@@ -163,6 +163,7 @@ export default function DirectPage() {
     hasAppointment: "",
   });
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
+  const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   
   // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
   const sortByInitializer = useRef<(() => string) | null>(null);
