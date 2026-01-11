@@ -34,27 +34,37 @@ const SPECIAL_CASES: Record<string, string> = {
 
 /**
  * Нормалізує ім'я для порівняння (транслітерує українські букви в англійські)
+ * Якщо ім'я вже англійське, залишаємо його як є (тільки lowercase)
  */
 export function normalizeNameForComparison(name: string): string {
   if (!name) return '';
   
-  // Перевіряємо спеціальні випадки
   const normalized = name.trim();
+  if (!normalized) return '';
+  
+  // Перевіряємо спеціальні випадки
   if (SPECIAL_CASES[normalized]) {
     return SPECIAL_CASES[normalized].toLowerCase();
   }
   
-  // Транслітеруємо посимвольно
+  // Якщо ім'я містить тільки англійські букви, просто повертаємо lowercase
+  if (/^[a-zA-Z0-9\s]+$/.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+  
+  // Транслітеруємо посимвольно (для українських букв)
   let result = '';
   for (const char of normalized) {
     if (UKRAINIAN_TO_ENGLISH[char]) {
       result += UKRAINIAN_TO_ENGLISH[char];
     } else if (/[a-zA-Z0-9]/.test(char)) {
       result += char;
+    } else if (/\s/.test(char)) {
+      result += ' '; // Зберігаємо пробіли
     }
   }
   
-  return result.toLowerCase();
+  return result.toLowerCase().trim();
 }
 
 /**
