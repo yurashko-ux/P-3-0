@@ -531,6 +531,67 @@ async function fixOnlineConsultations() {
           console.log(
             `[fix-online-consultations] ✅ Оновлено клієнта ${client.instagramUsername} (${client.firstName} ${client.lastName || ''}) - встановлено isOnlineConsultation = true, consultationBookingDate = ${earliestConsultationDate || 'не встановлено'}`
           );
+        } else if (!client.consultationBookingDate && clientRecords.length > 0) {
+          // Якщо не знайшли онлайн-консультацію, але consultationBookingDate відсутній,
+          // перевіряємо, чи є серед записів консультація (звичайна або онлайн)
+          let foundAnyConsultation = false;
+          let earliestConsultationDate: string | null = null;
+          
+          for (const record of clientRecords) {
+            const body = record.body || {};
+            const data = body.data || {};
+            const originalRecord = record.originalRecord || {};
+            
+            let services: any[] = [];
+            if (Array.isArray(data.services) && data.services.length > 0) {
+              services = data.services;
+            } else if (data.service) {
+              services = [data.service];
+            } else if (originalRecord.data && originalRecord.data.services && Array.isArray(originalRecord.data.services)) {
+              services = originalRecord.data.services;
+            } else if (originalRecord.data && originalRecord.data.service) {
+              services = [originalRecord.data.service];
+            } else if (originalRecord.services && Array.isArray(originalRecord.services)) {
+              services = originalRecord.services;
+            } else if (originalRecord.serviceName) {
+              services = [{ title: originalRecord.serviceName }];
+            }
+            
+            const consultationInfo = isConsultationService(services);
+            if (consultationInfo.isConsultation) {
+              foundAnyConsultation = true;
+              const recordDate = data.datetime || originalRecord.datetime;
+              if (recordDate) {
+                const dateStr = new Date(recordDate).toISOString();
+                if (!earliestConsultationDate || dateStr < earliestConsultationDate) {
+                  earliestConsultationDate = dateStr;
+                }
+              }
+            }
+          }
+          
+          // Якщо знайшли консультацію, встановлюємо consultationBookingDate
+          if (foundAnyConsultation && earliestConsultationDate) {
+            const normalizedDate = normalizeConsultationBookingDate(earliestConsultationDate);
+            
+            const updated = {
+              ...client,
+              isOnlineConsultation: false, // Залишаємо false, якщо не онлайн
+              consultationBookingDate: normalizedDate || earliestConsultationDate,
+              updatedAt: new Date().toISOString(),
+            };
+
+            await saveDirectClient(updated, 'fix-online-consultations-set-consultation-date', {
+              altegioClientId: client.altegioClientId,
+              instagramUsername: client.instagramUsername,
+              reason: 'Встановлення consultationBookingDate на основі webhook історії (консультація без consultationBookingDate)',
+            });
+
+            updatedCount++;
+            console.log(
+              `[fix-online-consultations] ✅ Встановлено consultationBookingDate для ${client.instagramUsername} (${client.firstName} ${client.lastName || ''}) - consultationBookingDate = ${earliestConsultationDate}`
+            );
+          }
         }
       } catch (err) {
         console.error(
