@@ -55,6 +55,21 @@ export async function POST(req: NextRequest) {
     }
     console.log(`[merge-duplicates-by-name] 🔍 Clients with altegioClientId: ${clientsWithAltegioId}, Groups: ${clientsByAltegioId.size}`);
     
+    // Діагностика: показуємо приклади клієнтів з duplicate instagram (з altegioClientId в username)
+    const clientsWithAltegioIdInUsername = allClients.filter(c => 
+      c.instagramUsername.includes('missing_instagram_') && 
+      c.instagramUsername.match(/missing_instagram_(\d+)/)
+    );
+    if (clientsWithAltegioIdInUsername.length > 0) {
+      console.log(`[merge-duplicates-by-name] 🔍 Found ${clientsWithAltegioIdInUsername.length} clients with altegioClientId in username (missing_instagram_*)`);
+      // Показуємо перші 5 як приклад
+      for (const client of clientsWithAltegioIdInUsername.slice(0, 5)) {
+        const match = client.instagramUsername.match(/missing_instagram_(\d+)/);
+        const altegioIdFromUsername = match ? parseInt(match[1]) : null;
+        console.log(`[merge-duplicates-by-name]   - ${client.firstName} ${client.lastName} (${client.instagramUsername}): altegioClientId in DB = ${client.altegioClientId}, in username = ${altegioIdFromUsername}`);
+      }
+    }
+    
     const { saveDirectClient, deleteDirectClient } = await import('@/lib/direct-store');
     let totalMergedByAltegioId = 0;
     
