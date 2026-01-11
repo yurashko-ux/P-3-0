@@ -36,9 +36,149 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const allClients = await getAllDirectClients();
+    let allClients = await getAllDirectClients();
     
-    // Групуємо клієнтів по імені + прізвище
+    // КРОК 1: Спочатку об'єднуємо клієнтів за altegioClientId
+    // Це важливо, бо клієнти з Manychat можуть мати різні імена (англ vs укр), але один altegioClientId
+    const clientsByAltegioId = new Map<number, typeof allClients>();
+    
+    for (const client of allClients) {
+      if (client.altegioClientId) {
+        if (!clientsByAltegioId.has(client.altegioClientId)) {
+          clientsByAltegioId.set(client.altegioClientId, []);
+        }
+        clientsByAltegioId.get(client.altegioClientId)!.push(client);
+      }
+    }
+    
+    const { saveDirectClient, deleteDirectClient } = await import('@/lib/direct-store');
+    let totalMergedByAltegioId = 0;
+    
+    // Обробляємо кожну групу з кількома клієнтами з одним altegioClientId
+    for (const [altegioId, clients] of clientsByAltegioId.entries()) {
+      if (clients.length <= 1) {
+        continue; // Немає дублікатів
+      }
+      
+      console.log(`[merge-duplicates-by-name] 🔍 Found ${clients.length} clients with altegioClientId ${altegioId}`);
+      
+      // Перевіряємо записи для кожного клієнта
+      const clientsWithRecords = await Promise.all(
+        clients.map(async (client) => {
+          const history = await getStateHistory(client.id);
+          const hasRecords = 
+            history.length > 1 ||
+            !!client.paidServiceDate ||
+            !!client.consultationBookingDate ||
+            !!client.consultationDate ||
+            !!client.visitDate ||
+            !!client.lastMessageAt;
+          
+          return {
+            client,
+            hasRecords,
+          };
+        })
+      );
+      
+      // Знаходимо клієнта, якого залишити
+      // Пріоритет: клієнт з реальним Instagram (не missing_instagram_*), потім з записями
+      let clientToKeep = clientsWithRecords[0].client;
+      let keepHasRecords = clientsWithRecords[0].hasRecords;
+      
+      for (const { client, hasRecords } of clientsWithRecords) {
+        const keepHasRealInstagram = !clientToKeep.instagramUsername.startsWith('missing_instagram_');
+        const currentHasRealInstagram = !client.instagramUsername.startsWith('missing_instagram_');
+        
+        // Пріоритет: клієнт з реальним Instagram
+        if (!keepHasRealInstagram && currentHasRealInstagram) {
+          clientToKeep = client;
+          keepHasRecords = hasRecords;
+          continue;
+        }
+        
+        // Якщо обидва мають або не мають реальний Instagram
+        if (keepHasRealInstagram === currentHasRealInstagram) {
+          // Пріоритет: той, хто має записи
+          if (!keepHasRecords && hasRecords) {
+            clientToKeep = client;
+            keepHasRecords = hasRecords;
+            continue;
+          }
+          
+          // Якщо обидва мають або не мають записи - залишаємо новіший
+          if (keepHasRecords === hasRecords) {
+            if (new Date(client.createdAt) > new Date(clientToKeep.createdAt)) {
+              clientToKeep = client;
+              keepHasRecords = hasRecords;
+            }
+          }
+        }
+      }
+      
+      // Об'єднуємо інших клієнтів у клієнта, якого залишаємо
+      const duplicates = clientsWithRecords.filter(({ client }) => client.id !== clientToKeep.id);
+      
+      if (duplicates.length > 0) {
+        // Переносимо дані з дублікатів до клієнта, якого залишаємо
+        let updatedClient = { ...clientToKeep };
+        
+        for (const { client: duplicate } of duplicates) {
+          // Переносимо Instagram, якщо він правильний
+          if (updatedClient.instagramUsername.startsWith('missing_instagram_') && 
+              !duplicate.instagramUsername.startsWith('missing_instagram_')) {
+            updatedClient.instagramUsername = duplicate.instagramUsername;
+          }
+          
+          // Переносимо дати, якщо їх немає
+          if (!updatedClient.visitDate && duplicate.visitDate) {
+            updatedClient.visitDate = duplicate.visitDate;
+            updatedClient.visitedSalon = duplicate.visitedSalon;
+          }
+          
+          if (!updatedClient.paidServiceDate && duplicate.paidServiceDate) {
+            updatedClient.paidServiceDate = duplicate.paidServiceDate;
+            updatedClient.signedUpForPaidService = duplicate.signedUpForPaidService;
+          }
+          
+          if (!updatedClient.consultationDate && duplicate.consultationDate) {
+            updatedClient.consultationDate = duplicate.consultationDate;
+          }
+          
+          if (!updatedClient.consultationBookingDate && duplicate.consultationBookingDate) {
+            updatedClient.consultationBookingDate = duplicate.consultationBookingDate;
+          }
+          
+          if (!updatedClient.lastMessageAt && duplicate.lastMessageAt) {
+            updatedClient.lastMessageAt = duplicate.lastMessageAt;
+          }
+          
+          // Переносимо коментар, якщо його немає
+          if (!updatedClient.comment && duplicate.comment) {
+            updatedClient.comment = duplicate.comment;
+          }
+        }
+        
+        updatedClient.updatedAt = new Date().toISOString();
+        await saveDirectClient(updatedClient, 'merge-duplicates-by-altegio-id');
+        
+        // Видаляємо дублікати
+        for (const { client: duplicate } of duplicates) {
+          await deleteDirectClient(duplicate.id);
+        }
+        
+        totalMergedByAltegioId += duplicates.length;
+        console.log(`[merge-duplicates-by-name] ✅ Merged ${duplicates.length} duplicates by altegioClientId ${altegioId}, kept client ${clientToKeep.id}`);
+      }
+    }
+    
+    // Оновлюємо список клієнтів після об'єднання за altegioClientId
+    if (totalMergedByAltegioId > 0) {
+      allClients = await getAllDirectClients();
+      console.log(`[merge-duplicates-by-name] 📊 After merging by altegioClientId: ${totalMergedByAltegioId} duplicates merged, ${allClients.length} clients remaining`);
+    }
+    
+    // КРОК 2: Групуємо клієнтів по імені + прізвище (оригінальна логіка)
     const clientsByName = new Map<string, typeof allClients>();
     
     for (const client of allClients) {
@@ -65,7 +205,7 @@ export async function POST(req: NextRequest) {
       }>;
     }> = [];
     
-    let totalMerged = 0;
+    let totalMerged = totalMergedByAltegioId;
     
     // Обробляємо кожну групу з кількома клієнтами
     for (const [name, clients] of clientsByName.entries()) {
