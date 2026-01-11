@@ -577,7 +577,7 @@ export function DirectClientTable({
                         )
                       }
                     >
-                      Прийшов {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -1121,14 +1121,20 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                          <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs"
-                          checked={client.consultationAttended || false}
-                          disabled
-                          title={client.consultationAttended ? "Клієнт прийшов на консультацію" : "Клієнт не прийшов на консультацію"}
-                        />
+                      <td className="px-1 sm:px-2 py-1 text-xs text-center">
+                        {client.consultationAttended === true ? (
+                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
+                            ✅
+                          </span>
+                        ) : client.consultationAttended === false && client.consultationBookingDate ? (
+                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
+                            ❌
+                          </span>
+                        ) : (
+                          <span className="text-gray-400" title="Немає інформації про відвідування">
+                            -
+                          </span>
+                        )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationMasterName || "-"}
