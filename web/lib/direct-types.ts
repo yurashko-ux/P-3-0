@@ -19,6 +19,7 @@ export type DirectClient = {
   visitDate?: string; // ISO date - дата візиту в салон
   signedUpForPaidService: boolean; // Чи записався на платну послугу (Конверсія 2)
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
+  paidServiceAttended?: boolean; // Чи прийшов на платну послугу
   signupAdmin?: string; // Хто записав (ім'я адміна)
   comment?: string; // Коментар/нотатки
   consultationBookingDate?: string; // ISO date - дата запису на консультацію

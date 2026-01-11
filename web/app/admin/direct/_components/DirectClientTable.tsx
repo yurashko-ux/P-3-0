@@ -559,6 +559,19 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
+                          "consultationAttended",
+                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
                           "consultationBookingDate",
                           sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
                         )
@@ -572,12 +585,12 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
-                          "consultationAttended",
-                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
+                          "paidServiceAttended",
+                          sortBy === "paidServiceAttended" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
-                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Прийшла {sortBy === "paidServiceAttended" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -1122,16 +1135,16 @@ export function DirectClientTable({
                         )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {client.consultationAttended === true ? (
-                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
+                        {client.paidServiceAttended === true ? (
+                          <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
                             ✅
                           </span>
-                        ) : client.consultationAttended === false && client.consultationBookingDate ? (
-                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
+                        ) : client.paidServiceAttended === false && client.paidServiceDate ? (
+                          <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
                             ❌
                           </span>
                         ) : (
-                          <span className="text-gray-400" title="Немає інформації про відвідування">
+                          <span className="text-gray-400" title="Немає інформації про відвідування платної послуги">
                             -
                           </span>
                         )}

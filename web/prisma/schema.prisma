@@ -47,6 +47,7 @@ model DirectClient {
   visitDate              DateTime? // Дата візиту в салон
   signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
   paidServiceDate        DateTime? // Дата запису на платну послугу
+  paidServiceAttended    Boolean   @default(false) // Чи прийшов на платну послугу
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
