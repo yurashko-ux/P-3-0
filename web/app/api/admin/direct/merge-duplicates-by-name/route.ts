@@ -5,34 +5,82 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
 import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
-import { prisma } from '@/lib/prisma';
+import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 /**
- * Синхронізує стан клієнта на основі записів Altegio
+ * Синхронізує стан клієнта на основі записів Altegio з KV storage
  */
 async function syncClientStateFromAltegioRecords(clientId: string, altegioClientId: number): Promise<void> {
   try {
-    // Знаходимо останній запис для цього клієнта
-    const latestRecord = await prisma.altegioRecord.findFirst({
-      where: { altegioClientId },
-      orderBy: { receivedAt: 'desc' },
-    });
+    // Отримуємо записи з KV storage
+    const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
+    
+    // Фільтруємо записи для цього клієнта
+    const clientRecords = recordsLogRaw
+      .map((raw) => {
+        try {
+          let parsed: any;
+          if (typeof raw === 'string') {
+            parsed = JSON.parse(raw);
+          } else {
+            parsed = raw;
+          }
+          
+          // Upstash може повертати елементи як { value: "..." }
+          if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+            try {
+              parsed = JSON.parse(parsed.value);
+            } catch {
+              return null;
+            }
+          }
+          
+          // Також перевіряємо, чи це не обгортка з data
+          if (parsed && typeof parsed === 'object' && 'data' in parsed && !parsed.clientId) {
+            parsed = parsed.data;
+          }
+          
+          return parsed;
+        } catch {
+          return null;
+        }
+      })
+      .filter((r) => {
+        if (!r || typeof r !== 'object') return false;
+        const recordClientId = r.clientId || (r.data && r.data.client && r.data.client.id);
+        return parseInt(String(recordClientId), 10) === altegioClientId;
+      })
+      .filter((r) => {
+        // Перевіряємо, чи є services
+        return Array.isArray(r.services) || 
+               (r.data && Array.isArray(r.data.services)) ||
+               (r.data && r.data.service && typeof r.data.service === 'object');
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.receivedAt || 0).getTime();
+        const dateB = new Date(b.receivedAt || 0).getTime();
+        return dateB - dateA; // Сортуємо за спаданням (найновіші спочатку)
+      });
 
-    if (!latestRecord || !latestRecord.services) {
+    if (clientRecords.length === 0) {
       return; // Немає записів
     }
 
+    // Беремо останній запис
+    const latestRecord = clientRecords[0];
+    
+    // Отримуємо services з різних можливих місць
     let services: any[] = [];
-    try {
-      services = typeof latestRecord.services === 'string' 
-        ? JSON.parse(latestRecord.services) 
-        : latestRecord.services;
-    } catch {
-      return; // Не вдалося розпарсити services
+    if (latestRecord.data && Array.isArray(latestRecord.data.services)) {
+      services = latestRecord.data.services;
+    } else if (Array.isArray(latestRecord.services)) {
+      services = latestRecord.services;
+    } else if (latestRecord.data && latestRecord.data.service && typeof latestRecord.data.service === 'object') {
+      services = [latestRecord.data.service];
     }
 
     if (!Array.isArray(services) || services.length === 0) {
@@ -41,6 +89,10 @@ async function syncClientStateFromAltegioRecords(clientId: string, altegioClient
 
     // Визначаємо стан на основі послуг
     const newState = determineStateFromServices(services);
+    
+    if (!newState) {
+      return; // Не вдалося визначити стан
+    }
     
     // Отримуємо поточного клієнта
     const { getDirectClient, saveDirectClient } = await import('@/lib/direct-store');
@@ -51,7 +103,7 @@ async function syncClientStateFromAltegioRecords(clientId: string, altegioClient
     }
 
     // Оновлюємо стан, якщо він змінився
-    if (newState && client.state !== newState) {
+    if (client.state !== newState) {
       const updated = {
         ...client,
         state: newState,
@@ -60,11 +112,10 @@ async function syncClientStateFromAltegioRecords(clientId: string, altegioClient
       
       await saveDirectClient(updated, 'merge-duplicates-sync-state', {
         altegioClientId,
-        recordId: latestRecord.id,
         services: services.map((s: any) => s.title || s.name),
       });
       
-      console.log(`[merge-duplicates-by-name] ✅ Synced state for client ${clientId}: ${client.state} → ${newState}`);
+      console.log(`[merge-duplicates-by-name] ✅ Synced state for client ${clientId}: ${client.state || 'null'} → ${newState}`);
     }
   } catch (err) {
     console.error(`[merge-duplicates-by-name] Error syncing state for client ${clientId}:`, err);
