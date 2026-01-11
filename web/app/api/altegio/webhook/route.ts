@@ -508,12 +508,17 @@ export async function POST(req: NextRequest) {
                   };
                   
                   // Встановлюємо consultationAttended на основі attendance
+                  // Якщо attendance не встановлено (null/undefined/0), не встановлюємо consultationAttended (залишаємо null)
                   if (attendance === -1) {
                     updates.consultationAttended = false;
                     console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in block 2.3.2 for client ${existingClient.id}`);
                   } else if (attendance === 1) {
                     updates.consultationAttended = true;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in block 2.3.2 for client ${existingClient.id}`);
+                  } else {
+                    // Якщо attendance не встановлено, не встановлюємо consultationAttended (залишаємо null/undefined)
+                    // Це дозволить відрізнити "не встановлено" від "не з'явився"
+                    console.log(`[altegio/webhook] Not setting consultationAttended (attendance = ${attendance}, not 1 or -1) in block 2.3.2 for client ${existingClient.id}`);
                   }
                   
                   // Якщо paidServiceDate встановлений, але signedUpForPaidService = false - це помилка, очищаємо
@@ -551,12 +556,17 @@ export async function POST(req: NextRequest) {
                   };
                   
                   // Встановлюємо consultationAttended на основі attendance
+                  // Якщо attendance не встановлено (null/undefined/0), не встановлюємо consultationAttended (залишаємо null)
                   if (attendance === -1) {
                     updates.consultationAttended = false;
                     console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in missing date block for client ${existingClient.id}`);
                   } else if (attendance === 1) {
                     updates.consultationAttended = true;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in missing date block for client ${existingClient.id}`);
+                  } else {
+                    // Якщо attendance не встановлено, не встановлюємо consultationAttended (залишаємо null/undefined)
+                    // Це дозволить відрізнити "не встановлено" від "не з'явився"
+                    console.log(`[altegio/webhook] Not setting consultationAttended (attendance = ${attendance}, not 1 or -1) in missing date block for client ${existingClient.id}`);
                   }
                   
                   const updated: typeof existingClient = {
