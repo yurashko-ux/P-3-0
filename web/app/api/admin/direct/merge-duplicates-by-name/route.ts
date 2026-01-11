@@ -221,19 +221,34 @@ export async function POST(req: NextRequest) {
       console.log(`[merge-duplicates-by-name] 📊 After merging by altegioClientId: ${totalMergedByAltegioId} duplicates merged, ${allClients.length} clients remaining`);
     }
     
-    // КРОК 2: Групуємо клієнтів по імені + прізвище (оригінальна логіка)
+    // КРОК 2: Групуємо клієнтів по імені + прізвище з нормалізацією (українська ↔ англійська)
     const clientsByName = new Map<string, typeof allClients>();
     
     for (const client of allClients) {
-      const firstName = (client.firstName || '').trim().toLowerCase();
-      const lastName = (client.lastName || '').trim().toLowerCase();
+      const firstName = client.firstName || '';
+      const lastName = client.lastName || '';
       
       if (firstName && lastName) {
-        const nameKey = `${firstName} ${lastName}`;
+        // Використовуємо нормалізований ключ (транслітерація)
+        const nameKey = createNameComparisonKey(firstName, lastName).normalized;
+        if (!nameKey) continue; // Пропускаємо, якщо нормалізація не вдалась
+        
         if (!clientsByName.has(nameKey)) {
           clientsByName.set(nameKey, []);
         }
         clientsByName.get(nameKey)!.push(client);
+      }
+    }
+    
+    console.log(`[merge-duplicates-by-name] 🔍 After name normalization: ${clientsByName.size} name groups`);
+    
+    // Діагностика: показуємо приклади груп з кількома клієнтами
+    let diagnosticShown = 0;
+    for (const [nameKey, clients] of clientsByName.entries()) {
+      if (clients.length > 1 && diagnosticShown < 5) {
+        console.log(`[merge-duplicates-by-name] 🔍 Name group "${nameKey}" has ${clients.length} clients:`, 
+          clients.map(c => `${c.firstName} ${c.lastName} (${c.instagramUsername}, altegioClientId: ${c.altegioClientId || 'none'})`));
+        diagnosticShown++;
       }
     }
     
