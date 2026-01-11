@@ -704,8 +704,9 @@ export async function POST(req: NextRequest) {
               return /консультація/i.test(title);
             });
             
-            // Якщо знайшли новий стан - оновлюємо клієнта
-            if (newState) {
+            // ВАЖЛИВО: Обробляємо клієнтів навіть якщо newState null, якщо є нарощування або консультація
+            // Це гарантує, що paidServiceDate буде встановлено для всіх платних послуг
+            if (newState || hasHairExtension || hasConsultation) {
               const existingDirectClients = await getAllDirectClients();
               
               // Шукаємо клієнта за Altegio ID
@@ -774,14 +775,18 @@ export async function POST(req: NextRequest) {
                 const { logMultipleStates } = await import('@/lib/direct-state-log');
                 
                 const previousState = existingClient.state;
+                
+                // Визначаємо фінальний стан: якщо newState null, але є нарощування, встановлюємо 'hair-extension'
+                const finalState = newState || (hasHairExtension ? 'hair-extension' : null);
+                
                 const updates: Partial<typeof existingClient> = {
-                  state: existingClient.state !== newState ? newState : existingClient.state,
+                  state: finalState && existingClient.state !== finalState ? finalState : existingClient.state,
                   updatedAt: new Date().toISOString(),
                 };
                 
                 // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
                 // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
-                if (data.datetime && !hasConsultation) {
+                if (data.datetime && !hasConsultation && (hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services')) {
                   const appointmentDate = new Date(data.datetime);
                   const now = new Date();
                   // Встановлюємо paidServiceDate для майбутніх записів або якщо вона новіша за існуючу
@@ -838,11 +843,13 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 
-                // Оновлюємо клієнта, якщо є зміни стану або відповідального
-                const hasStateChange = updates.state !== existingClient.state;
+                // Оновлюємо клієнта, якщо є зміни стану, відповідального або paidServiceDate
+                const hasStateChange = finalState && existingClient.state !== finalState;
                 const hasMasterChange = updates.masterId && updates.masterId !== existingClient.masterId;
+                const hasPaidServiceDateChange = updates.paidServiceDate && existingClient.paidServiceDate !== updates.paidServiceDate;
+                const hasSignedUpChange = updates.signedUpForPaidService !== undefined && existingClient.signedUpForPaidService !== updates.signedUpForPaidService;
                 
-                if (hasStateChange || hasMasterChange || Object.keys(updates).length > 1) {
+                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange) {
                   const updated: typeof existingClient = {
                     ...existingClient,
                     ...updates,
@@ -888,7 +895,14 @@ export async function POST(req: NextRequest) {
                     await saveDirectClient(updated, 'altegio-webhook-record', metadata);
                   }
                   
-                  console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${newState}' based on services (Altegio client ${clientId})`);
+                  if (hasStateChange) {
+                    console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${finalState}' based on services (Altegio client ${clientId})`);
+                  }
+                  if (hasPaidServiceDateChange) {
+                    console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} paidServiceDate to ${updates.paidServiceDate} (Altegio client ${clientId})`);
+                  }
+                } else {
+                  console.log(`[altegio/webhook] ⏭️ No changes needed for client ${existingClient.id} (state: ${existingClient.state}, paidServiceDate: ${existingClient.paidServiceDate})`);
                 }
               } else {
                 console.log(`[altegio/webhook] ⏭️ Client ${clientId} not found in Direct Manager, skipping state update`);
