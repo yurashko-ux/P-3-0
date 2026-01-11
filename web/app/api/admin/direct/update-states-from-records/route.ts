@@ -166,11 +166,17 @@ export async function POST(req: NextRequest) {
         return /консультація/i.test(title);
       });
 
+      // Отримуємо дату запису з record
+      const recordData = record.data || record;
+      const datetime = recordData.datetime || recordData.receivedAt;
+      
       // Оновлюємо стан або відповідального, якщо потрібно
       const needsStateUpdate = newState && client.state !== newState;
       const needsMasterUpdate = !client.masterManuallySet && !client.masterId;
+      const needsPaidServiceDate = hasHairExtension && datetime && !hasConsultation &&
+        (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(datetime));
       
-      if (needsStateUpdate || needsMasterUpdate) {
+      if (needsStateUpdate || needsMasterUpdate || needsPaidServiceDate) {
         try {
           const { getMasterByName, getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
           const { logMultipleStates } = await import('@/lib/direct-state-log');
@@ -183,6 +189,13 @@ export async function POST(req: NextRequest) {
           // Оновлюємо стан, якщо він змінився
           if (needsStateUpdate) {
             updates.state = newState;
+          }
+          
+          // Встановлюємо paidServiceDate для нарощування
+          if (needsPaidServiceDate && datetime) {
+            updates.paidServiceDate = datetime;
+            updates.signedUpForPaidService = true;
+            console.log(`[direct/update-states-from-records] Setting paidServiceDate to ${datetime} for client ${client.id} (${client.instagramUsername})`);
           }
 
           // Автоматично призначаємо відповідального, якщо він не був вибраний вручну
