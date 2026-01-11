@@ -995,8 +995,15 @@ export function DirectClientTable({
                               now.setHours(0, 0, 0, 0);
                               appointmentDate.setHours(0, 0, 0, 0);
                               const isPast = appointmentDate < now;
+                              const isPastOrToday = appointmentDate <= now;
                               const formattedDateStr = formatDate(dateStr);
                               const isOnline = client.isOnlineConsultation || false;
+                              
+                              // Форматуємо дату створення запису для tooltip
+                              const createdAtDate = client.updatedAt ? new Date(client.updatedAt) : null;
+                              const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
+                                ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                                : null;
                               
                               // Діагностика для "Юлія Кобра" та "Топоріна Олена"
                               const isDebugClient = client.instagramUsername === 'kobra_best' || 
@@ -1024,15 +1031,32 @@ export function DirectClientTable({
                                 });
                               }
                               
+                              // Визначаємо значок attendance
+                              let attendanceIcon = null;
+                              if (isPastOrToday) {
+                                if (client.consultationAttended === true) {
+                                  attendanceIcon = <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">✅</span>;
+                                } else if (client.consultationAttended === false) {
+                                  attendanceIcon = <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">❌</span>;
+                                } else {
+                                  attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)">❓</span>;
+                                }
+                              }
+                              
+                              const baseTitle = isPast 
+                                ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
+                                : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
+                              const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
+                              
                               return (
-                                <span
-                                  className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                  title={isPast 
-                                    ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
-                                    : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію")
-                                  }
-                                >
-                                  {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                <span className="flex items-center gap-1">
+                                  <span
+                                    className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
+                                    title={tooltipTitle}
+                                  >
+                                    {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                  </span>
+                                  {attendanceIcon}
                                 </span>
                               );
                             } catch (err) {
@@ -1043,74 +1067,6 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {(() => {
-                          if (!client.consultationBookingDate) {
-                            return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
-                          }
-                          
-                          // Перевіряємо, чи дата консультації в минулому
-                          try {
-                            const dateValue = typeof client.consultationBookingDate === 'string' 
-                              ? client.consultationBookingDate.trim() 
-                              : client.consultationBookingDate;
-                            
-                            let dateStr = typeof dateValue === 'string' ? dateValue : String(dateValue);
-                            const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-                            if (!isoDateMatch) {
-                              const parts = dateStr.split(/\s+/);
-                              for (const part of parts) {
-                                const testDate = new Date(part);
-                                if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
-                                  dateStr = part;
-                                  break;
-                                }
-                              }
-                            } else {
-                              dateStr = isoDateMatch[0];
-                            }
-                            
-                            const appointmentDate = new Date(dateStr);
-                            if (isNaN(appointmentDate.getTime())) {
-                              return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
-                            }
-                            
-                            const now = new Date();
-                            now.setHours(0, 0, 0, 0);
-                            appointmentDate.setHours(0, 0, 0, 0);
-                            const isPastOrToday = appointmentDate <= now;
-                            
-                            // Якщо дата майбутня, не показуємо індикатори
-                            if (!isPastOrToday) {
-                              return <span className="text-gray-400" title="Консультація ще не відбулася">-</span>;
-                            }
-                            
-                            // Якщо дата в минулому або сьогодні, показуємо індикатори
-                            if (client.consultationAttended === true) {
-                              return (
-                                <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">
-                                  ✅
-                                </span>
-                              );
-                            } else if (client.consultationAttended === false) {
-                              return (
-                                <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">
-                                  ❌
-                                </span>
-                              );
-                            } else {
-                              // Показуємо ❓ для undefined (attendance не встановлено в Altegio)
-                              return (
-                                <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)">
-                                  ❓
-                                </span>
-                              );
-                            }
-                          } catch (err) {
-                            return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
-                          }
-                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.signedUpForPaidService && client.paidServiceDate ? (
