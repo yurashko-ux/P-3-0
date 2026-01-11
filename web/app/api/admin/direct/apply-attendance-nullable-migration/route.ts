@@ -5,7 +5,33 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+const CRON_SECRET = process.env.CRON_SECRET || '';
+
+function isAuthorized(req: NextRequest): boolean {
+  // Перевірка через ADMIN_PASS (кука)
+  const adminToken = req.cookies.get('admin_token')?.value || '';
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+
+  // Перевірка через CRON_SECRET
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+    const secret = req.nextUrl.searchParams.get('secret');
+    if (secret === CRON_SECRET) return true;
+  }
+
+  // Якщо нічого не налаштовано, дозволяємо (для розробки)
+  if (!ADMIN_PASS && !CRON_SECRET) return true;
+
+  return false;
+}
+
 export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const results: string[] = [];
     
