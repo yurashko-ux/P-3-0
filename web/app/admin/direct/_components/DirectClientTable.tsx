@@ -230,73 +230,21 @@ export function DirectClientTable({
     await onClientUpdate(client.id, { [field]: value });
   };
 
-  // Унікалізуємо клієнтів за instagramUsername та altegioClientId, щоб не було дублів
+  // Унікалізуємо клієнтів за instagramUsername, щоб не було дублів
+  // ПРИМІТКА: Об'єднання за altegioClientId відбувається на рівні бази даних через endpoint merge-duplicates-by-name
   const uniqueClients = useMemo(() => {
     const map = new Map<string, DirectClient>();
-    const altegioMap = new Map<number, DirectClient>(); // Для об'єднання за altegioClientId
 
     const normalize = (username: string) => username.trim().toLowerCase();
 
-    // Спочатку проходимо по всіх клієнтах і зберігаємо їх
     for (const client of clients) {
-      const instagramKey = normalize(client.instagramUsername);
-      
-      // Якщо клієнт має altegioClientId, перевіряємо чи вже є клієнт з таким ID
-      if (client.altegioClientId) {
-        const existingByAltegio = altegioMap.get(client.altegioClientId);
-        if (existingByAltegio) {
-          // Знайдено дублікат за altegioClientId - об'єднуємо
-          // Залишаємо клієнта з реальним Instagram (не missing_instagram_*)
-          const existingIsMissing = existingByAltegio.instagramUsername.startsWith('missing_instagram_');
-          const currentIsMissing = client.instagramUsername.startsWith('missing_instagram_');
-          
-          if (existingIsMissing && !currentIsMissing) {
-            // Поточний клієнт має реальний Instagram, замінюємо існуючого
-            altegioMap.set(client.altegioClientId, client);
-            // Також оновлюємо в основній map, якщо там був старий клієнт
-            const oldKey = normalize(existingByAltegio.instagramUsername);
-            if (map.get(oldKey)?.id === existingByAltegio.id) {
-              map.set(oldKey, client);
-            }
-          } else if (!existingIsMissing) {
-            // Існуючий клієнт має реальний Instagram, залишаємо його
-            // Не додаємо поточного
-            continue;
-          }
-        } else {
-          // Немає клієнта з таким altegioClientId, додаємо
-          altegioMap.set(client.altegioClientId, client);
-        }
-      }
-      
-      // Додаємо до основної map за instagramUsername (якщо ще не додано через altegioClientId)
-      if (!map.has(instagramKey)) {
-        map.set(instagramKey, client);
+      const key = normalize(client.instagramUsername);
+      if (!map.has(key)) {
+        map.set(key, client);
       }
     }
 
-    // Повертаємо унікальних клієнтів (без дублікатів за altegioClientId)
-    const result = new Map<string, DirectClient>();
-    for (const client of clients) {
-      const instagramKey = normalize(client.instagramUsername);
-      if (client.altegioClientId) {
-        const clientByAltegio = altegioMap.get(client.altegioClientId);
-        if (clientByAltegio && clientByAltegio.id === client.id) {
-          // Це клієнт, який ми залишили для цього altegioClientId
-          result.set(instagramKey, client);
-        } else if (!clientByAltegio || clientByAltegio.id !== client.id) {
-          // Це дублікат, який ми вже залишили іншого клієнта
-          // Не додаємо
-        }
-      } else {
-        // Клієнт без altegioClientId - додаємо за instagramUsername
-        if (!result.has(instagramKey)) {
-          result.set(instagramKey, client);
-        }
-      }
-    }
-
-    return Array.from(result.values());
+    return Array.from(map.values());
   }, [clients]);
 
   return (

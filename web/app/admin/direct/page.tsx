@@ -380,7 +380,7 @@ export default function DirectPage() {
     }
   };
 
-  const loadClients = async () => {
+  const loadClients = async (skipMergeDuplicates = false) => {
     // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
     let currentSortBy = sortBy;
     let currentSortOrder = sortOrder;
@@ -401,6 +401,29 @@ export default function DirectPage() {
           console.warn('[DirectPage] ⚠️ loadClients: sortOrder mismatch! State:', currentSortOrder, 'localStorage:', savedSortOrder, '- using localStorage');
           currentSortOrder = savedSortOrder;
         }
+      }
+    }
+    
+    // Автоматично об'єднуємо дублікати перед завантаженням клієнтів (тільки один раз при першому завантаженні)
+    if (!skipMergeDuplicates && !hasAutoMergedDuplicates.current) {
+      try {
+        console.log('[DirectPage] Автоматичне об\'єднання дублікатів...');
+        const mergeRes = await fetch('/api/admin/direct/merge-duplicates-by-name', {
+          method: 'POST',
+        });
+        const mergeData = await mergeRes.json();
+        if (mergeData.ok) {
+          hasAutoMergedDuplicates.current = true; // Позначаємо, що об'єднання вже виконано
+          if (mergeData.totalMerged > 0) {
+            console.log(`[DirectPage] ✅ Автоматично об'єднано ${mergeData.totalMerged} дублікатів`);
+          } else {
+            console.log('[DirectPage] ✅ Дублікатів для об\'єднання не знайдено');
+          }
+        }
+      } catch (mergeErr) {
+        console.warn('[DirectPage] Помилка автоматичного об\'єднання дублікатів (некритично):', mergeErr);
+        // Не блокуємо завантаження клієнтів, якщо об'єднання не вдалося
+        // Але не позначаємо, що об'єднання виконано, щоб спробувати наступного разу
       }
     }
     
@@ -1041,34 +1064,6 @@ export default function DirectPage() {
             title="Очистити помилково встановлені paidServiceDate для клієнтів з консультаціями"
           >
             🧹 Очистити paidServiceDate для консультацій
-          </button>
-          <button
-            className="btn btn-sm btn-info"
-            onClick={async () => {
-              if (!confirm('Виконати міграцію зміни типу telegramChatId з Int на BigInt?\n\nЦе дозволить зберігати великі Telegram Chat ID (наприклад, 5987285517).\n\nПродовжити?')) {
-                return;
-              }
-              setIsLoading(true);
-              try {
-                const res = await fetch('/api/admin/direct/run-telegram-chat-id-migration', {
-                  method: 'POST',
-                });
-                const data = await res.json();
-                if (data.ok) {
-                  showCopyableAlert(`✅ Міграція виконана успішно!\n\n${data.results}`);
-                } else {
-                  showCopyableAlert(`❌ Помилка міграції:\n\n${data.error || data.results || JSON.stringify(data, null, 2)}`);
-                }
-              } catch (err) {
-                showCopyableAlert(`❌ Помилка: ${err instanceof Error ? err.message : String(err)}`);
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-            disabled={isLoading}
-            title="Виконати міграцію зміни типу telegramChatId з Int на BigInt"
-          >
-            🔧 Міграція telegramChatId → BigInt
           </button>
           <button
             className="btn btn-sm btn-warning"
