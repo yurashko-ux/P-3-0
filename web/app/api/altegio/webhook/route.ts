@@ -839,12 +839,17 @@ export async function POST(req: NextRequest) {
                   }
                   
                   // Встановлюємо paidServiceAttended на основі attendance
+                  // Якщо attendance не встановлено (null/undefined/0), не встановлюємо paidServiceAttended (залишаємо null)
                   if (attendance === 1) {
                     updates.paidServiceAttended = true;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to true (attendance = 1) for client ${existingClient.id}`);
                   } else if (attendance === -1) {
                     updates.paidServiceAttended = false;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to false (attendance = -1, no-show) for client ${existingClient.id}`);
+                  } else {
+                    // Якщо attendance не встановлено, не встановлюємо paidServiceAttended (залишаємо null/undefined)
+                    // Це дозволить відрізнити "не встановлено" від "не з'явився"
+                    console.log(`[altegio/webhook] Not setting paidServiceAttended (attendance = ${attendance}, not 1 or -1) for client ${existingClient.id}`);
                   }
                   
                   // 2.6 Визначення конверсії в платну послугу після консультації
