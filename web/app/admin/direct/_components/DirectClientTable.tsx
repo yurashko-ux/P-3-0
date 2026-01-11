@@ -502,6 +502,58 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "consultationBookingDate",
+                          sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Запис на консультацію {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "consultationAttended",
+                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "paidServiceDate",
+                          sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "paidServiceAttended",
+                          sortBy === "paidServiceAttended" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Прийшла {sortBy === "paidServiceAttended" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">
                     <button
                       className="hover:underline cursor-pointer"
@@ -539,58 +591,6 @@ export function DirectClientTable({
                       }
                     >
                       Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "paidServiceDate",
-                          sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "paidServiceAttended",
-                          sortBy === "paidServiceAttended" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Прийшла {sortBy === "paidServiceAttended" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "consultationBookingDate",
-                          sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Запис на консультацію {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "consultationAttended",
-                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
@@ -982,111 +982,6 @@ export function DirectClientTable({
                           </button>
                         </div>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
-                        <select
-                          className="select select-xs select-bordered w-full min-w-[160px]"
-                          value={client.statusId}
-                          onChange={(e) => handleStatusChange(client, e.target.value)}
-                          style={{ 
-                            borderColor: getStatusColor(client.statusId),
-                            backgroundColor: getStatusColor(client.statusId) + "20"
-                          }}
-                        >
-                          {statuses.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <select
-                          className="select select-xs select-bordered w-full max-w-[120px]"
-                          value={client.masterId || ""}
-                          onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
-                        >
-                          <option value="">-</option>
-                          {masters.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
-                        <input
-                          type="text"
-                          className="input input-xs input-bordered w-full min-w-[180px]"
-                          placeholder="Коментар..."
-                          value={client.comment || ""}
-                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
-                          title={client.comment || "Коментар..."}
-                        />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.signedUpForPaidService && client.paidServiceDate ? (
-                          (() => {
-                            const appointmentDate = new Date(client.paidServiceDate);
-                            const now = new Date();
-                            now.setHours(0, 0, 0, 0); // Порівнюємо тільки дати, без часу
-                            appointmentDate.setHours(0, 0, 0, 0);
-                            const isPast = appointmentDate < now;
-                            const dateStr = formatDate(client.paidServiceDate);
-                            
-                            return (
-                              <span
-                                className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                title={isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу"}
-                              >
-                                {dateStr}
-                              </span>
-                            );
-                          })()
-                        ) : (
-                          ""
-                        )}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {(() => {
-                          if (!client.paidServiceDate) {
-                            return <span className="text-gray-400" title="Немає запису на платну послугу">-</span>;
-                          }
-                          
-                          // Перевіряємо, чи дата запису в минулому або сьогодні
-                          const appointmentDate = new Date(client.paidServiceDate);
-                          const now = new Date();
-                          now.setHours(0, 0, 0, 0);
-                          appointmentDate.setHours(0, 0, 0, 0);
-                          const isPastOrToday = appointmentDate <= now;
-                          
-                          // Якщо дата майбутня, не показуємо індикатори
-                          if (!isPastOrToday) {
-                            return <span className="text-gray-400" title="Запис ще не відбувся">-</span>;
-                          }
-                          
-                          // Якщо дата в минулому або сьогодні, показуємо індикатори
-                          if (client.paidServiceAttended === true) {
-                            return (
-                              <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
-                                ✅
-                              </span>
-                            );
-                          } else if (client.paidServiceAttended === false) {
-                            return (
-                              <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
-                                ❌
-                              </span>
-                            );
-                          } else {
-                            // Показуємо ❓ для undefined (attendance не встановлено в Altegio)
-                            return (
-                              <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">
-                                ❓
-                              </span>
-                            );
-                          }
-                        })()}
-                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (
                           (() => {
@@ -1242,6 +1137,111 @@ export function DirectClientTable({
                             return <span className="text-gray-400" title="Немає запису на консультацію">-</span>;
                           }
                         })()}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {client.signedUpForPaidService && client.paidServiceDate ? (
+                          (() => {
+                            const appointmentDate = new Date(client.paidServiceDate);
+                            const now = new Date();
+                            now.setHours(0, 0, 0, 0); // Порівнюємо тільки дати, без часу
+                            appointmentDate.setHours(0, 0, 0, 0);
+                            const isPast = appointmentDate < now;
+                            const dateStr = formatDate(client.paidServiceDate);
+                            
+                            return (
+                              <span
+                                className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
+                                title={isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу"}
+                              >
+                                {dateStr}
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          ""
+                        )}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs text-center">
+                        {(() => {
+                          if (!client.paidServiceDate) {
+                            return <span className="text-gray-400" title="Немає запису на платну послугу">-</span>;
+                          }
+                          
+                          // Перевіряємо, чи дата запису в минулому або сьогодні
+                          const appointmentDate = new Date(client.paidServiceDate);
+                          const now = new Date();
+                          now.setHours(0, 0, 0, 0);
+                          appointmentDate.setHours(0, 0, 0, 0);
+                          const isPastOrToday = appointmentDate <= now;
+                          
+                          // Якщо дата майбутня, не показуємо індикатори
+                          if (!isPastOrToday) {
+                            return <span className="text-gray-400" title="Запис ще не відбувся">-</span>;
+                          }
+                          
+                          // Якщо дата в минулому або сьогодні, показуємо індикатори
+                          if (client.paidServiceAttended === true) {
+                            return (
+                              <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
+                                ✅
+                              </span>
+                            );
+                          } else if (client.paidServiceAttended === false) {
+                            return (
+                              <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
+                                ❌
+                              </span>
+                            );
+                          } else {
+                            // Показуємо ❓ для undefined (attendance не встановлено в Altegio)
+                            return (
+                              <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">
+                                ❓
+                              </span>
+                            );
+                          }
+                        })()}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
+                        <select
+                          className="select select-xs select-bordered w-full min-w-[160px]"
+                          value={client.statusId}
+                          onChange={(e) => handleStatusChange(client, e.target.value)}
+                          style={{ 
+                            borderColor: getStatusColor(client.statusId),
+                            backgroundColor: getStatusColor(client.statusId) + "20"
+                          }}
+                        >
+                          {statuses.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">
+                        <select
+                          className="select select-xs select-bordered w-full max-w-[120px]"
+                          value={client.masterId || ""}
+                          onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
+                        >
+                          <option value="">-</option>
+                          {masters.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
+                        <input
+                          type="text"
+                          className="input input-xs input-bordered w-full min-w-[180px]"
+                          placeholder="Коментар..."
+                          value={client.comment || ""}
+                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
+                          title={client.comment || "Коментар..."}
+                        />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationMasterName || "-"}
