@@ -688,6 +688,15 @@ export async function POST(req: NextRequest) {
             const services = data.services;
             const staffId = data.staff?.id || data.staff_id;
             const staffName = data.staff?.name || data.staff?.display_name || null;
+            // attendance / visit_attendance:
+            //  0   – подія ще не настала (запис існує, але не відбулася)
+            //  1   – клієнт прийшов (фактична послуга)
+            // -1   – клієнт не з'явився
+            // null/undefined – ще не відмічено
+            const attendance =
+              (data as any).attendance ??
+              (data as any).visit_attendance ??
+              undefined;
             
             // Визначаємо новий стан на основі послуг (з пріоритетом: нарощування > консультація)
             const newState = determineStateFromServices(services);
