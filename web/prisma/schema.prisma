@@ -47,13 +47,13 @@ model DirectClient {
   visitDate              DateTime? // Дата візиту в салон
   signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
   paidServiceDate        DateTime? // Дата запису на платну послугу
-  paidServiceAttended    Boolean   @default(false) // Чи прийшов на платну послугу
+  paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt          DateTime? // Останнє повідомлення
   consultationBookingDate DateTime? // Дата запису на консультацію
-  consultationAttended   Boolean   @default(false) // Чи прийшов на консультацію
+  consultationAttended   Boolean?  // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
   consultationMasterId   String?   // ID майстра, який провів консультацію
   consultationMasterName String?   // Ім'я майстра, який провів консультацію
   isOnlineConsultation  Boolean   @default(false) // Чи це онлайн-консультація
