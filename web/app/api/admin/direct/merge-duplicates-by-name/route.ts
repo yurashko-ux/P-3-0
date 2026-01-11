@@ -125,23 +125,23 @@ export async function POST(req: NextRequest) {
       );
       
       // Знаходимо клієнта, якого залишити
-      // Пріоритет: клієнт з реальним Instagram (не missing_instagram_*), потім з записями
+      // ПРАВИЛО: залишаємо клієнта з Altegio (missing_instagram_*), а Instagram username беремо з клієнта Manychat
       let clientToKeep = clientsWithRecords[0].client;
       let keepHasRecords = clientsWithRecords[0].hasRecords;
       
       for (const { client, hasRecords } of clientsWithRecords) {
-        const keepHasRealInstagram = !clientToKeep.instagramUsername.startsWith('missing_instagram_');
-        const currentHasRealInstagram = !client.instagramUsername.startsWith('missing_instagram_');
+        const keepIsFromAltegio = clientToKeep.instagramUsername.startsWith('missing_instagram_');
+        const currentIsFromAltegio = client.instagramUsername.startsWith('missing_instagram_');
         
-        // Пріоритет: клієнт з реальним Instagram
-        if (!keepHasRealInstagram && currentHasRealInstagram) {
+        // Пріоритет: клієнт з Altegio (missing_instagram_*)
+        if (!keepIsFromAltegio && currentIsFromAltegio) {
           clientToKeep = client;
           keepHasRecords = hasRecords;
           continue;
         }
         
-        // Якщо обидва мають або не мають реальний Instagram
-        if (keepHasRealInstagram === currentHasRealInstagram) {
+        // Якщо обидва з Altegio або обидва не з Altegio
+        if (keepIsFromAltegio === currentIsFromAltegio) {
           // Пріоритет: той, хто має записи
           if (!keepHasRecords && hasRecords) {
             clientToKeep = client;
