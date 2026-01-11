@@ -864,7 +864,7 @@ export async function POST(req: NextRequest) {
                   };
                   
                   // Якщо є і консультація, і нарощування - логуємо обидва стани для конверсії
-                  if (hasConsultation && hasHairExtension && newState === 'hair-extension') {
+                  if (hasConsultation && hasHairExtension && finalState === 'hair-extension') {
                     // Логуємо обидва стани: спочатку консультацію, потім нарощування
                     const statesToLog: Array<{ state: string | null; previousState: string | null | undefined }> = [];
                     
