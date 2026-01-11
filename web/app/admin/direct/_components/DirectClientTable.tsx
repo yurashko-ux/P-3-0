@@ -520,38 +520,12 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
-                          "consultationAttended",
-                          sortBy === "consultationAttended" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Прийшла {sortBy === "consultationAttended" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
                           "paidServiceDate",
                           sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
                         )
                       }
                     >
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "paidServiceAttended",
-                          sortBy === "paidServiceAttended" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Прийшла {sortBy === "paidServiceAttended" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">
@@ -1146,61 +1120,45 @@ export function DirectClientTable({
                             now.setHours(0, 0, 0, 0); // Порівнюємо тільки дати, без часу
                             appointmentDate.setHours(0, 0, 0, 0);
                             const isPast = appointmentDate < now;
+                            const isPastOrToday = appointmentDate <= now;
                             const dateStr = formatDate(client.paidServiceDate);
                             
+                            // Форматуємо дату створення запису для tooltip
+                            const createdAtDate = client.updatedAt ? new Date(client.updatedAt) : null;
+                            const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
+                              ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                              : null;
+                            
+                            // Визначаємо значок attendance
+                            let attendanceIcon = null;
+                            if (isPastOrToday) {
+                              if (client.paidServiceAttended === true) {
+                                attendanceIcon = <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">✅</span>;
+                              } else if (client.paidServiceAttended === false) {
+                                attendanceIcon = <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">❌</span>;
+                              } else {
+                                attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">❓</span>;
+                              }
+                            }
+                            
+                            const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
+                            const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
+                            
                             return (
-                              <span
-                                className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                title={isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу"}
-                              >
-                                {dateStr}
+                              <span className="flex items-center gap-1">
+                                <span
+                                  className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
+                                  title={tooltipTitle}
+                                >
+                                  {dateStr}
+                                </span>
+                                {attendanceIcon}
                               </span>
                             );
                           })()
                         ) : (
                           ""
                         )}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs text-center">
-                        {(() => {
-                          if (!client.paidServiceDate) {
-                            return <span className="text-gray-400" title="Немає запису на платну послугу">-</span>;
-                          }
-                          
-                          // Перевіряємо, чи дата запису в минулому або сьогодні
-                          const appointmentDate = new Date(client.paidServiceDate);
-                          const now = new Date();
-                          now.setHours(0, 0, 0, 0);
-                          appointmentDate.setHours(0, 0, 0, 0);
-                          const isPastOrToday = appointmentDate <= now;
-                          
-                          // Якщо дата майбутня, не показуємо індикатори
-                          if (!isPastOrToday) {
-                            return <span className="text-gray-400" title="Запис ще не відбувся">-</span>;
-                          }
-                          
-                          // Якщо дата в минулому або сьогодні, показуємо індикатори
-                          if (client.paidServiceAttended === true) {
-                            return (
-                              <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">
-                                ✅
-                              </span>
-                            );
-                          } else if (client.paidServiceAttended === false) {
-                            return (
-                              <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">
-                                ❌
-                              </span>
-                            );
-                          } else {
-                            // Показуємо ❓ для undefined (attendance не встановлено в Altegio)
-                            return (
-                              <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">
-                                ❓
-                              </span>
-                            );
-                          }
-                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
                         <select
