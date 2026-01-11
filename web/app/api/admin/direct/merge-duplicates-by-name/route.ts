@@ -37,19 +37,23 @@ export async function POST(req: NextRequest) {
 
   try {
     let allClients = await getAllDirectClients();
+    console.log(`[merge-duplicates-by-name] 📊 Total clients: ${allClients.length}`);
     
     // КРОК 1: Спочатку об'єднуємо клієнтів за altegioClientId
     // Це важливо, бо клієнти з Manychat можуть мати різні імена (англ vs укр), але один altegioClientId
     const clientsByAltegioId = new Map<number, typeof allClients>();
     
+    let clientsWithAltegioId = 0;
     for (const client of allClients) {
       if (client.altegioClientId) {
+        clientsWithAltegioId++;
         if (!clientsByAltegioId.has(client.altegioClientId)) {
           clientsByAltegioId.set(client.altegioClientId, []);
         }
         clientsByAltegioId.get(client.altegioClientId)!.push(client);
       }
     }
+    console.log(`[merge-duplicates-by-name] 🔍 Clients with altegioClientId: ${clientsWithAltegioId}, Groups: ${clientsByAltegioId.size}`);
     
     const { saveDirectClient, deleteDirectClient } = await import('@/lib/direct-store');
     let totalMergedByAltegioId = 0;
