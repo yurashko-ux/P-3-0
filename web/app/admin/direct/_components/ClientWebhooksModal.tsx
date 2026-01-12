@@ -50,7 +50,27 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
       const data = await response.json();
       
       if (data.ok) {
-        setWebhooks(data.rows || []);
+        // Додаткова фільтрація "Запис" на клієнті (навіть якщо вже відфільтровано на сервері)
+        const filteredRows = (data.rows || []).map((row: any) => ({
+          ...row,
+          services: Array.isArray(row.services) 
+            ? row.services.filter((s: string) => s.toLowerCase() !== 'запис')
+            : row.services,
+        }));
+        
+        // Перевіряємо, чи було відфільтровано "Запис"
+        const hadZapis = (data.rows || []).some((row: any) => 
+          Array.isArray(row.services) && row.services.some((s: string) => s.toLowerCase() === 'запис')
+        );
+        
+        if (hadZapis) {
+          console.warn('[ClientWebhooksModal] ⚠️ Found "Запис" in services, filtered out:', {
+            before: data.rows,
+            after: filteredRows,
+          });
+        }
+        
+        setWebhooks(filteredRows);
         
         // Діагностична інформація (тільки в консолі для дебагу)
         if (data.debug) {
@@ -60,10 +80,11 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
           }
           
           // Показуємо діагностику в alert, якщо є "Запис" в послугах
-          if (data.debug.hasZapis || (data.debug.servicesStats && ('Запис' in data.debug.servicesStats || 'запис' in data.debug.servicesStats))) {
+          if (data.debug.hasZapis || (data.debug.servicesStats && ('Запис' in data.debug.servicesStats || 'запис' in data.debug.servicesStats)) || hadZapis) {
             const debugText = `🔍 Діагностика "Запис" в послугах:\n\n` +
               `Статистика послуг: ${JSON.stringify(data.debug.servicesStats, null, 2)}\n\n` +
-              `Діагностика перших рядків:\n${JSON.stringify(data.debug.sampleDebugRows, null, 2)}`;
+              `Знайдено "Запис" в response: ${hadZapis}\n\n` +
+              `Діагностика перших рядків:\n${JSON.stringify(data.debug.sampleDebugRows || [], null, 2)}`;
             console.warn('[ClientWebhooksModal] ⚠️ Found "Запис" in services!', debugText);
             // Показуємо alert з можливістю копіювання
             alert(debugText + '\n\n(Також перевірте консоль F12 для деталей)');
