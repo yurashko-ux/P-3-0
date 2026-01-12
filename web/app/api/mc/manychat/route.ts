@@ -1110,11 +1110,42 @@ export async function GET(req: NextRequest) {
             }
             
             // Перевіряємо, чи це валідний об'єкт вебхука
-            if (parsed && typeof parsed === 'object' && 'receivedAt' in parsed) {
-              return parsed;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              const parsedObj = parsed as Record<string, unknown>;
+              // Перевіряємо, чи є поле receivedAt (може бути string або Date)
+              if ('receivedAt' in parsedObj) {
+                // Перевіряємо тип receivedAt
+                const hasValidReceivedAt = 
+                  typeof parsedObj.receivedAt === 'string' || 
+                  parsedObj.receivedAt instanceof Date ||
+                  typeof parsedObj.receivedAt === 'number';
+                
+                if (hasValidReceivedAt) {
+                  return parsedObj;
+                }
+              }
             }
             
-            return { raw: parsed, index, error: 'Invalid webhook format' };
+            // Якщо не пройшов перевірку, повертаємо помилку з деталями для діагностики
+            const parsedType = parsed ? typeof parsed : 'null';
+            const isArray = Array.isArray(parsed);
+            const hasReceivedAt = parsed && typeof parsed === 'object' && !Array.isArray(parsed) 
+              ? 'receivedAt' in (parsed as Record<string, unknown>)
+              : false;
+            
+            return { 
+              raw: parsed, 
+              index, 
+              error: 'Invalid webhook format',
+              debug: {
+                parsedType,
+                isArray,
+                hasReceivedAt,
+                keys: parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                  ? Object.keys(parsed as Record<string, unknown>)
+                  : []
+              }
+            };
           } catch (err) {
             return { 
               raw, 
