@@ -309,14 +309,33 @@ export async function GET(req: NextRequest) {
         })),
     };
 
+    // Збираємо статистику по послугах для діагностики
+    const servicesStats: Record<string, number> = {};
+    tableRows.forEach((row: any) => {
+      if (Array.isArray(row.services)) {
+        row.services.forEach((service: string) => {
+          servicesStats[service] = (servicesStats[service] || 0) + 1;
+        });
+      }
+    });
+    
     console.log(`[client-webhooks] ✅ Completed webhooks fetch for altegioClientId: ${altegioClientId}, found ${tableRows.length} rows`);
+    console.log(`[client-webhooks] 📊 Services statistics:`, servicesStats);
     
     return NextResponse.json({
       ok: true,
       altegioClientId,
       total: tableRows.length,
       rows: tableRows,
-      debug: debugInfo, // Додаємо для діагностики
+      debug: {
+        ...debugInfo,
+        servicesStats, // Статистика по послугах
+        sampleRow: tableRows.length > 0 ? {
+          services: tableRows[0].services,
+          visitId: tableRows[0].visitId,
+          status: tableRows[0].status,
+        } : null,
+      },
     });
   } catch (error) {
     console.error('[direct/client-webhooks] GET error:', error);
