@@ -9,8 +9,11 @@ import type { DirectClient } from '@/lib/direct-types';
 interface Message {
   receivedAt: string;
   text: string;
-  fullName: string;
-  username: string;
+  fullName?: string;
+  username?: string;
+  direction?: 'incoming' | 'outgoing';
+  id?: string;
+  type?: string;
 }
 
 interface MessagesHistoryModalProps {
@@ -43,6 +46,24 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
         return;
       }
       
+      // Спочатку спробуємо отримати повну історію через ManyChat API
+      const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(instagramUsername)}`);
+      const apiData = await apiResponse.json();
+      
+      if (apiData.ok && apiData.messages && apiData.messages.length > 0) {
+        // Конвертуємо повідомлення з ManyChat API в наш формат
+        const convertedMessages: Message[] = apiData.messages.map((msg: any) => ({
+          receivedAt: msg.timestamp || new Date().toISOString(),
+          text: msg.text || '-',
+          direction: msg.direction,
+          id: msg.id,
+          type: msg.type,
+        }));
+        setMessages(convertedMessages);
+        return;
+      }
+      
+      // Якщо API не повернув повідомлення, використовуємо вебхуки
       const response = await fetch(`/api/admin/direct/messages-history?instagramUsername=${encodeURIComponent(instagramUsername)}`);
       const data = await response.json();
       
@@ -147,25 +168,42 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
             </div>
           ) : (
             <div className="space-y-4">
-              {messages.map((message, index) => (
-                <div key={`${message.receivedAt}-${index}`} className="border-b border-gray-200 pb-4 last:border-b-0">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-gray-600">
-                          {formatDate(message.receivedAt)}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          ({formatRelativeTime(message.receivedAt)})
-                        </span>
-                      </div>
-                      <div className="bg-gray-100 rounded-lg p-3 text-sm">
-                        {message.text}
+              {messages.map((message, index) => {
+                const isOutgoing = message.direction === 'outgoing';
+                return (
+                  <div key={message.id || `${message.receivedAt}-${index}`} className="border-b border-gray-200 pb-4 last:border-b-0">
+                    <div className={`flex items-start gap-3 ${isOutgoing ? 'flex-row-reverse' : ''}`}>
+                      <div className="flex-1">
+                        <div className={`flex items-center gap-2 mb-1 ${isOutgoing ? 'justify-end' : ''}`}>
+                          {isOutgoing && (
+                            <span className="text-xs font-medium text-blue-600">
+                              Ви
+                            </span>
+                          )}
+                          <span className="text-xs font-medium text-gray-600">
+                            {formatDate(message.receivedAt)}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            ({formatRelativeTime(message.receivedAt)})
+                          </span>
+                          {!isOutgoing && (
+                            <span className="text-xs font-medium text-gray-600">
+                              Клієнт
+                            </span>
+                          )}
+                        </div>
+                        <div className={`rounded-lg p-3 text-sm ${
+                          isOutgoing 
+                            ? 'bg-blue-100 text-blue-900 ml-auto max-w-[80%]' 
+                            : 'bg-gray-100'
+                        }`}>
+                          {message.text}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -173,7 +211,10 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
             <div className="mt-4 text-sm text-gray-500">
               Всього повідомлень: {messages.length}
               <p className="text-xs mt-1 text-gray-400">
-                Показуються тільки повідомлення від клієнта (через ManyChat вебхуки)
+                {messages.some(m => m.direction === 'outgoing') 
+                  ? 'Показуються всі повідомлення (включно з нашими відповідями через ManyChat API)'
+                  : 'Показуються тільки повідомлення від клієнта (через ManyChat вебхуки). Для повної історії налаштуйте MANYCHAT_API_KEY'
+                }
               </p>
             </div>
           )}
