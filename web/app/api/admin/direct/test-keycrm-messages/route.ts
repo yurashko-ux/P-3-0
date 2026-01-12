@@ -141,6 +141,83 @@ export async function GET(req: NextRequest) {
       const cards = Array.isArray(cardsData?.data) ? cardsData.data : [];
       if (cards.length > 0) {
         testCardId = cards[0].id?.toString() || null;
+        // Зберігаємо contact_id для подальшої перевірки
+        const testCard = cards[0];
+        if (testCard?.contact_id) {
+          // Додаємо перевірку через contact_id
+          const contactId = testCard.contact_id.toString();
+          const contactEndpoints = [
+            `contacts/${contactId}/messages`,
+            `contacts/${contactId}?include[]=messages`,
+            `contacts/${contactId}/conversations`,
+            `contacts/${contactId}/chats`,
+            `contacts/${contactId}/communications`,
+            `contacts/${contactId}/activities`,
+            `contacts/${contactId}?with[]=messages`,
+            `clients/${testCard.contact?.client?.id}/messages`,
+            `clients/${testCard.contact?.client?.id}/conversations`,
+          ];
+
+          for (const path of contactEndpoints) {
+            try {
+              const target = `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+              const response = await fetch(target, {
+                method: 'GET',
+                headers: {
+                  Authorization: auth,
+                  Accept: 'application/json',
+                },
+                cache: 'no-store',
+              });
+
+              const text = await response.text();
+              let parsed: any = null;
+              try {
+                parsed = JSON.parse(text);
+              } catch {
+                parsed = { text: text.substring(0, 200) };
+              }
+
+              const hasData = parsed?.data && Array.isArray(parsed.data) && parsed.data.length > 0;
+              const hasMessages = parsed?.messages && Array.isArray(parsed.messages) && parsed.messages.length > 0;
+              const contactData = parsed?.data || parsed;
+              const hasMessagesInContact = contactData && typeof contactData === 'object' && (
+                Array.isArray(contactData.messages) ||
+                Array.isArray(contactData.conversations) ||
+                Array.isArray(contactData.chats) ||
+                Array.isArray(contactData.communications)
+              );
+
+              results.push({
+                endpoint: path,
+                status: response.status,
+                ok: response.ok,
+                error: response.ok ? undefined : (parsed?.error || parsed?.message || text.substring(0, 100)),
+                hasData: hasData || hasMessages || hasMessagesInContact,
+                dataPreview: response.ok && (hasData || hasMessages || hasMessagesInContact)
+                  ? {
+                      count: parsed?.data?.length || parsed?.messages?.length || 
+                             (contactData?.messages?.length) || (contactData?.conversations?.length) || 0,
+                      firstItem: parsed?.data?.[0] || parsed?.messages?.[0] || 
+                                contactData?.messages?.[0] || contactData?.conversations?.[0] || null,
+                      structure: Object.keys(parsed || {}).slice(0, 15),
+                      contactStructure: contactData ? Object.keys(contactData).slice(0, 20) : undefined,
+                    }
+                  : response.ok ? {
+                      structure: Object.keys(parsed || {}).slice(0, 15),
+                      contactStructure: contactData ? Object.keys(contactData).slice(0, 20) : undefined,
+                    } : undefined,
+              });
+            } catch (error) {
+              results.push({
+                endpoint: path,
+                status: 0,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        }
       }
     }
   } catch (err) {
@@ -164,6 +241,17 @@ export async function GET(req: NextRequest) {
       `pipelines/cards/${cardId}`,
       `pipelines/cards/${cardId}?include[]=messages`,
       `pipelines/cards/${cardId}?include[]=conversations`,
+      // Додаткові варіанти через pipelines
+      `pipelines/cards/${cardId}/history`,
+      `pipelines/cards/${cardId}/timeline`,
+      `pipelines/cards/${cardId}/feed`,
+      `pipelines/cards/${cardId}/log`,
+      // Через deals (можливо, картки називаються deals)
+      `deals/${cardId}`,
+      `deals/${cardId}/messages`,
+      `deals/${cardId}/conversations`,
+      `crm/deals/${cardId}`,
+      `crm/deals/${cardId}/messages`,
     ];
 
     for (const path of cardEndpoints) {
