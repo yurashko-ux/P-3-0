@@ -239,20 +239,6 @@ export async function GET(req: NextRequest) {
           console.log(`[client-webhooks] ⚠️ No services found for visitId ${visitId}. data.services:`, data.services, `data.service:`, data.service, `originalRecord.serviceName:`, originalRecord.serviceName);
         }
         
-        return {
-          receivedAt,
-          datetime,
-          clientName,
-          staffName,
-          services: services.length > 0 ? services : ['Невідома послуга'],
-          visitId: body.resource_id || originalRecord.visitId,
-          status: body.status || originalRecord.status || 'create',
-          attendance,
-          instagramUsername: instagramUsername || null,
-          fullBody: body,
-          _debug: processingInfo, // Додаємо діагностичну інформацію
-        };
-        
         // Дата вебхука
         const receivedAt = (e.receivedAt || originalRecord.receivedAt) ? new Date(e.receivedAt || originalRecord.receivedAt).toISOString() : null;
         
@@ -267,6 +253,20 @@ export async function GET(req: NextRequest) {
         
         // Attendance
         const attendance = data.attendance ?? data.visit_attendance ?? originalRecord.attendance ?? originalRecord.visit_attendance ?? null;
+        
+        return {
+          receivedAt,
+          datetime,
+          clientName,
+          staffName,
+          services: services.length > 0 ? services : ['Невідома послуга'],
+          visitId: body.resource_id || originalRecord.visitId,
+          status: body.status || originalRecord.status || 'create',
+          attendance,
+          instagramUsername: instagramUsername || null,
+          fullBody: body,
+          _debug: processingInfo, // Додаємо діагностичну інформацію
+        };
         
         // Instagram username з custom_fields
         let instagramUsername: string | null = null;
