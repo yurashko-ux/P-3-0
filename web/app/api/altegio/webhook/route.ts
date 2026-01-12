@@ -1102,7 +1102,7 @@ export async function POST(req: NextRequest) {
                   // Автоматично призначаємо майстра, якщо є staff_id і послуга з нарощуванням
                   let masterId: string | undefined = undefined;
                   const recordData = body.data?.data || body.data;
-                  const services = recordData?.services || [];
+                  const services = recordData?.services || data.services || [];
                   const staffId = recordData?.staff?.id || recordData?.staff_id;
                   const hasHairExtension = Array.isArray(services) && services.some((s: any) => {
                     const title = s.title || s.name || '';
@@ -1125,7 +1125,6 @@ export async function POST(req: NextRequest) {
                   // Встановлюємо дату запису з data.datetime, якщо вона є і є майбутньою
                   // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
                   const appointmentDateTime = recordData?.datetime || data.datetime;
-                  const services = recordData?.services || data.services || [];
                   const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
                   const hasConsultation = consultationInfo.isConsultation;
                   
