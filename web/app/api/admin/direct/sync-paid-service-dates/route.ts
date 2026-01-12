@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
             clientId: client.id,
             instagramUsername: client.instagramUsername,
             altegioClientId: client.altegioClientId,
-            oldPaidServiceDate: client.paidServiceDate,
+            oldPaidServiceDate: client.paidServiceDate ? new Date(client.paidServiceDate).toISOString() : null,
             newPaidServiceDate: latestPaidServiceDate,
             reason: client.paidServiceDate ? 'Updated to newer date' : 'Set from webhooks',
           });
