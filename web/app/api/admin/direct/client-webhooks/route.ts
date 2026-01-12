@@ -254,20 +254,6 @@ export async function GET(req: NextRequest) {
         // Attendance
         const attendance = data.attendance ?? data.visit_attendance ?? originalRecord.attendance ?? originalRecord.visit_attendance ?? null;
         
-        return {
-          receivedAt,
-          datetime,
-          clientName,
-          staffName,
-          services: services.length > 0 ? services : ['Невідома послуга'],
-          visitId: body.resource_id || originalRecord.visitId,
-          status: body.status || originalRecord.status || 'create',
-          attendance,
-          instagramUsername: instagramUsername || null,
-          fullBody: body,
-          _debug: processingInfo, // Додаємо діагностичну інформацію
-        };
-        
         // Instagram username з custom_fields
         let instagramUsername: string | null = null;
         const client = data.client || originalRecord.client || {};
@@ -314,6 +300,7 @@ export async function GET(req: NextRequest) {
           attendance,
           instagramUsername: instagramUsername || null,
           fullBody: body,
+          _debug: processingInfo, // Додаємо діагностичну інформацію
         };
       })
       .filter((row: any) => row.receivedAt) // Фільтруємо записи без дати
