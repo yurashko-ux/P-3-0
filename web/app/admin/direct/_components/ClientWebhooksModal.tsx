@@ -58,6 +58,16 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
           if (data.total === 0 && data.debug.recordEvents > 0) {
             console.warn('[ClientWebhooksModal] No webhooks found but record events exist. Sample client IDs:', data.debug.sampleClientIds);
           }
+          
+          // Показуємо діагностику в alert, якщо є "Запис" в послугах
+          if (data.debug.hasZapis || (data.debug.servicesStats && ('Запис' in data.debug.servicesStats || 'запис' in data.debug.servicesStats))) {
+            const debugText = `🔍 Діагностика "Запис" в послугах:\n\n` +
+              `Статистика послуг: ${JSON.stringify(data.debug.servicesStats, null, 2)}\n\n` +
+              `Діагностика перших рядків:\n${JSON.stringify(data.debug.sampleDebugRows, null, 2)}`;
+            console.warn('[ClientWebhooksModal] ⚠️ Found "Запис" in services!', debugText);
+            // Показуємо alert з можливістю копіювання
+            alert(debugText + '\n\n(Також перевірте консоль F12 для деталей)');
+          }
         }
       } else {
         setError(data.error || 'Помилка завантаження webhook-ів');
