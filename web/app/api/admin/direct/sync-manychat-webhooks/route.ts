@@ -92,8 +92,30 @@ export async function POST(req: NextRequest) {
     // Отримуємо всі вебхуки з логу
     const rawItems = await kvRead.lrange('manychat:webhook:log', 0, limit - 1);
     console.log(`[direct/sync-manychat-webhooks] Found ${rawItems.length} raw items in log`);
+    
+    if (rawItems.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        message: 'No webhooks found in log',
+        results: {
+          processed: 0,
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          errors: 0,
+          errorsList: [],
+        },
+        diagnostics: {
+          rawItemsCount: 0,
+          message: 'No webhooks in manychat:webhook:log. Webhooks might not be logged yet or log was cleared.',
+        },
+      });
+    }
 
     // Парсимо вебхуки
+    let parsedCount = 0;
+    let hasReceivedAtCount = 0;
+    let filteredByDaysCount = 0;
     const webhooks = rawItems
       .map((raw, index) => {
         try {
@@ -119,8 +141,10 @@ export async function POST(req: NextRequest) {
           }
           
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            parsedCount++;
             const parsedObj = parsed as Record<string, unknown>;
             if ('receivedAt' in parsedObj) {
+              hasReceivedAtCount++;
               // Якщо skipDaysFilter = true або days = null, не фільтруємо по днях
               if (skipDaysFilter || days === null) {
                 return parsedObj;
@@ -133,6 +157,8 @@ export async function POST(req: NextRequest) {
               
               if (receivedAt >= daysAgo) {
                 return parsedObj;
+              } else {
+                filteredByDaysCount++;
               }
             }
           }
@@ -144,6 +170,14 @@ export async function POST(req: NextRequest) {
       })
       .filter(Boolean) as Array<Record<string, unknown>>;
 
+    console.log(`[direct/sync-manychat-webhooks] Parsing stats:`, {
+      rawItems: rawItems.length,
+      parsed: parsedCount,
+      hasReceivedAt: hasReceivedAtCount,
+      filteredByDays: filteredByDaysCount,
+      finalWebhooks: webhooks.length,
+    });
+    
     console.log(`[direct/sync-manychat-webhooks] Found ${webhooks.length} webhooks${days !== null ? ` within last ${days} days` : ' (all webhooks)'}`);
     
     // Додаткова діагностика: показуємо дати вебхуків
@@ -161,7 +195,11 @@ export async function POST(req: NextRequest) {
           }
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             const parsedObj = parsed as Record<string, unknown>;
-            return parsedObj.receivedAt as string;
+            return {
+              receivedAt: parsedObj.receivedAt as string,
+              hasRawBody: !!parsedObj.rawBody,
+              keys: Object.keys(parsedObj),
+            };
           }
         } catch {
           return null;
@@ -169,7 +207,29 @@ export async function POST(req: NextRequest) {
         return null;
       }).filter(Boolean);
       
-      console.log(`[direct/sync-manychat-webhooks] Sample webhook dates:`, sampleDates);
+      console.log(`[direct/sync-manychat-webhooks] Sample webhook data:`, sampleDates);
+      
+      return NextResponse.json({
+        ok: true,
+        message: `Found ${rawItems.length} raw items but 0 webhooks passed filters`,
+        results: {
+          processed: 0,
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          errors: 0,
+          errorsList: [],
+        },
+        diagnostics: {
+          rawItemsCount: rawItems.length,
+          parsedCount,
+          hasReceivedAtCount,
+          filteredByDaysCount,
+          daysFilter: days,
+          skipDaysFilter,
+          sampleWebhooks: sampleDates,
+        },
+      });
     }
 
     // Імпортуємо функції для роботи з Direct Manager
