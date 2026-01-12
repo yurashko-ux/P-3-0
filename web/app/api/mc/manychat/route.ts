@@ -1056,6 +1056,110 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  // Якщо запитують лог вебхуків (підтримуємо обидва варіанти: webhooks=true та check=webhooks)
+  const webhooksParam = req.nextUrl.searchParams.get('webhooks');
+  const checkParam = req.nextUrl.searchParams.get('check');
+  const showWebhooks = webhooksParam === 'true' || checkParam === 'webhooks';
+  
+  // Додаткова перевірка для debug
+  const url = req.nextUrl.toString();
+  const hasWebhookParam = url.includes('webhooks=true') || url.includes('check=webhooks');
+  
+  console.log('[manychat] GET request:', { 
+    webhooksParam, 
+    checkParam, 
+    showWebhooks, 
+    hasWebhookParam,
+    url: url.substring(0, 200) 
+  });
+  
+  if (showWebhooks || hasWebhookParam) {
+    console.log('[manychat] Returning webhook log');
+    try {
+      const limitParam = req.nextUrl.searchParams.get('limit');
+      const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 10, 1), 100) : 10;
+
+      console.log('[manychat] Reading webhook log from KV, limit:', limit);
+      const rawItems = await kvRead.lrange('manychat:webhook:log', 0, limit - 1);
+      console.log('[manychat] Raw items from KV:', rawItems.length);
+      const webhooks = rawItems
+        .map((raw, index) => {
+          try {
+            let parsed: unknown = raw;
+            
+            // Vercel KV може повертати дані в різних форматах
+            if (typeof raw === 'string') {
+              try {
+                parsed = JSON.parse(raw);
+              } catch {
+                // Якщо не JSON, повертаємо як є
+                return { raw, error: 'Not valid JSON string' };
+              }
+            } else if (raw && typeof raw === 'object') {
+              // Може бути об'єкт з полем value (Vercel KV формат)
+              if ('value' in raw && typeof raw.value === 'string') {
+                try {
+                  parsed = JSON.parse(raw.value);
+                } catch {
+                  parsed = raw.value;
+                }
+              } else {
+                parsed = raw;
+              }
+            }
+            
+            // Перевіряємо, чи це валідний об'єкт вебхука
+            if (parsed && typeof parsed === 'object' && 'receivedAt' in parsed) {
+              return parsed;
+            }
+            
+            return { raw: parsed, index, error: 'Invalid webhook format' };
+          } catch (err) {
+            return { 
+              raw, 
+              index, 
+              error: err instanceof Error ? err.message : 'Failed to parse' 
+            };
+          }
+        })
+        .filter(Boolean);
+
+      // Розділяємо валідні вебхуки та помилки
+      const validWebhooks = webhooks.filter((w: any) => !w.error);
+      const errors = webhooks.filter((w: any) => w.error);
+
+      console.log('[manychat] Webhook log processed:', {
+        totalItems: rawItems.length,
+        validWebhooks: validWebhooks.length,
+        errors: errors.length,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        message: 'ManyChat webhook log',
+        timestamp: new Date().toISOString(),
+        totalItems: rawItems.length,
+        webhooksCount: validWebhooks.length,
+        errorsCount: errors.length,
+        webhooks: validWebhooks,
+        ...(errors.length > 0 && { parsingErrors: errors }),
+      });
+    } catch (error) {
+      console.error('[manychat] Error reading webhook log:', error);
+      return NextResponse.json(
+        {
+          ok: false,
+          message: 'Failed to read webhook log',
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        { status: 500 },
+      );
+    }
+  }
+  
+  console.log('[manychat] Returning standard response (not webhook log)');
+
   const diagnostics: Diagnostics = {};
   const apiKeyAvailable = hasEnvValue(
     'MANYCHAT_API_KEY',
@@ -1702,6 +1806,14 @@ export async function GET(req: NextRequest) {
     return null;
   })();
 
+  // Debug інформація для перевірки параметрів
+  const debugInfo = {
+    webhooksParam: req.nextUrl.searchParams.get('webhooks'),
+    checkParam: req.nextUrl.searchParams.get('check'),
+    showWebhooks: webhooksParam === 'true' || checkParam === 'webhooks',
+    url: req.nextUrl.toString().substring(0, 200),
+  };
+
   return NextResponse.json({
     ok: true,
     latest: latest ?? null,
@@ -1712,6 +1824,7 @@ export async function GET(req: NextRequest) {
     diagnostics,
     automation: automation ?? null,
     automationAnalysis: automationAnalysis ?? null,
+    _debug: debugInfo, // Debug інформація (видалити після тестування)
     rawSnapshot: {
       raw: combinedRaw,
       text: combinedRawText ?? null,
