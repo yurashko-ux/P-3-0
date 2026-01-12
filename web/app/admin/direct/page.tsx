@@ -1145,6 +1145,45 @@ export default function DirectPage() {
             🧹 Очистити paidServiceDate для консультацій
           </button>
           <button
+            className="btn btn-sm btn-success"
+            onClick={async () => {
+              if (!confirm('Синхронізувати paidServiceDate з вебхуків для платних послуг?\n\nЦе знайде всі вебхуки з платними послугами (нарощування, інші послуги) і встановить paidServiceDate для відповідних клієнтів.\n\nПродовжити?')) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/sync-paid-service-dates', {
+                  method: 'POST',
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Синхронізація завершена!\n\n` +
+                    `Всього клієнтів: ${data.results.total}\n` +
+                    `Оновлено: ${data.results.updated}\n` +
+                    `Пропущено: ${data.results.skipped}\n` +
+                    `Помилок: ${data.results.errors}\n\n` +
+                    (data.results.details && data.results.details.length > 0
+                      ? `Оновлені клієнти:\n${data.results.details.slice(0, 20).map((d: any) => `  - ${d.instagramUsername || d.altegioClientId} (${d.reason})`).join('\n')}` +
+                        (data.results.details.length > 20 ? `\n... і ще ${data.results.details.length - 20} клієнтів` : '') + '\n\n'
+                      : '') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Синхронізувати paidServiceDate з вебхуків для платних послуг"
+          >
+            ✅ Синхронізувати paidServiceDate з вебхуків
+          </button>
+          <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
               if (!confirm('Синхронізувати клієнтів без Instagram з вебхуків?\n\nЦе разова початкова дія. Будуть оброблені всі вебхуки за весь період, які не мають Instagram username.\n\nПродовжити?')) {
