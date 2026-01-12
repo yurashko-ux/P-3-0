@@ -24,10 +24,18 @@ function isAuthorized(req: NextRequest): boolean {
 
 /**
  * GET - перевірити ManyChat API Key
+ * Авторизація: через admin_token cookie або ?secret=CRON_SECRET
  */
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ 
+      error: 'Unauthorized',
+      hint: 'Authenticate with admin_token cookie or add ?secret=CRON_SECRET parameter',
+      authMethods: {
+        cookie: 'Set admin_token cookie with value = ADMIN_PASS',
+        secret: 'Add ?secret=CRON_SECRET to URL',
+      },
+    }, { status: 401 });
   }
 
   const envCheck = {
