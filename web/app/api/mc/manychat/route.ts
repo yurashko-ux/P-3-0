@@ -362,6 +362,26 @@ async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; 
 export async function POST(req: NextRequest) {
   console.log('[manychat] 📨 POST request received');
   
+  // Зберігаємо вебхук в лог для діагностики
+  try {
+    const rawBody = await req.text();
+    const logEntry = {
+      receivedAt: new Date().toISOString(),
+      rawBody: rawBody.substring(0, 1000), // Перші 1000 символів
+      headers: {
+        'x-mc-token': req.headers.get('x-mc-token') || null,
+        'authorization': req.headers.get('authorization') ? '***' : null,
+        'content-type': req.headers.get('content-type') || null,
+      },
+    };
+    const payload = JSON.stringify(logEntry);
+    await kvWrite.lpush('manychat:webhook:log', payload);
+    // Залишаємо лише останні 100 вебхуків
+    await kvWrite.ltrim('manychat:webhook:log', 0, 99);
+  } catch (logErr) {
+    console.warn('[manychat] Failed to persist webhook to log:', logErr);
+  }
+  
   try {
     console.log('[manychat] Step 1: Checking authentication');
     const mcToken = getEnvValue('MC_TOKEN');
@@ -391,7 +411,10 @@ export async function POST(req: NextRequest) {
     let payload: unknown;
     let rawText: string;
     try {
-      const result = await readRequestPayload(req);
+      // Якщо body вже прочитано для логування, використовуємо його
+      const result = rawBodyText 
+        ? await readRequestPayloadFromText(rawBodyText)
+        : await readRequestPayload(req);
       payload = result.parsed;
       rawText = result.rawText;
       console.log('[manychat] Step 2: Request payload read successfully');
