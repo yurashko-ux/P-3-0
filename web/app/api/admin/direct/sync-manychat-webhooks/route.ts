@@ -143,6 +143,38 @@ export async function POST(req: NextRequest) {
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             parsedCount++;
             const parsedObj = parsed as Record<string, unknown>;
+            
+            // Якщо parsed має тільки поле "value", спробуємо розпарсити його ще раз
+            const parsedKeys = Object.keys(parsedObj);
+            if (parsedKeys.length === 1 && parsedKeys[0] === 'value' && typeof parsedObj.value === 'string') {
+              try {
+                const doubleParsed = JSON.parse(parsedObj.value);
+                if (doubleParsed && typeof doubleParsed === 'object' && !Array.isArray(doubleParsed)) {
+                  const doubleParsedObj = doubleParsed as Record<string, unknown>;
+                  if ('receivedAt' in doubleParsedObj) {
+                    hasReceivedAtCount++;
+                    // Якщо skipDaysFilter = true або days = null, не фільтруємо по днях
+                    if (skipDaysFilter || days === null) {
+                      return doubleParsedObj;
+                    }
+                    
+                    // Перевіряємо, чи вебхук в межах вказаних днів
+                    const receivedAt = new Date(doubleParsedObj.receivedAt as string);
+                    const daysAgo = new Date();
+                    daysAgo.setDate(daysAgo.getDate() - days);
+                    
+                    if (receivedAt >= daysAgo) {
+                      return doubleParsedObj;
+                    } else {
+                      filteredByDaysCount++;
+                    }
+                  }
+                }
+              } catch {
+                // Якщо не вдалося розпарсити, продовжуємо з поточним parsedObj
+              }
+            }
+            
             if ('receivedAt' in parsedObj) {
               hasReceivedAtCount++;
               // Якщо skipDaysFilter = true або days = null, не фільтруємо по днях
