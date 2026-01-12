@@ -79,27 +79,36 @@ export async function GET(req: NextRequest) {
               // Може бути масив або JSON-рядок
               if (Array.isArray(parsed.data.services)) {
                 services = parsed.data.services;
+                console.log(`[client-webhooks] 📦 Found services array in parsed.data.services:`, services.map((s: any) => s.title || s.name || s));
               } else if (typeof parsed.data.services === 'string') {
                 try {
                   const parsedServices = JSON.parse(parsed.data.services);
                   services = Array.isArray(parsedServices) ? parsedServices : [];
+                  console.log(`[client-webhooks] 📦 Parsed services from JSON string:`, services.map((s: any) => s.title || s.name || s));
                 } catch {
                   services = [];
+                  console.warn(`[client-webhooks] ⚠️ Failed to parse services JSON string:`, parsed.data.services);
                 }
               }
             } else if (parsed.services) {
               if (Array.isArray(parsed.services)) {
                 services = parsed.services;
+                console.log(`[client-webhooks] 📦 Found services array in parsed.services:`, services.map((s: any) => s.title || s.name || s));
               } else if (typeof parsed.services === 'string') {
                 try {
                   const parsedServices = JSON.parse(parsed.services);
                   services = Array.isArray(parsedServices) ? parsedServices : [];
+                  console.log(`[client-webhooks] 📦 Parsed services from JSON string (parsed.services):`, services.map((s: any) => s.title || s.name || s));
                 } catch {
                   services = [];
+                  console.warn(`[client-webhooks] ⚠️ Failed to parse services JSON string (parsed.services):`, parsed.services);
                 }
               }
             } else if (parsed.serviceName) {
               services = [{ title: parsed.serviceName }];
+              console.log(`[client-webhooks] 📦 Using parsed.serviceName:`, parsed.serviceName);
+            } else {
+              console.log(`[client-webhooks] ⚠️ No services found in record. Parsed keys:`, Object.keys(parsed), `parsed.data keys:`, parsed.data ? Object.keys(parsed.data) : 'no data');
             }
             
             return {
@@ -173,19 +182,36 @@ export async function GET(req: NextRequest) {
         // Фільтруємо "Запис" - це не послуга, а тип запису
         let services: string[] = [];
         if (Array.isArray(data.services) && data.services.length > 0) {
-          services = data.services
-            .map((s: any) => s.title || s.name || 'Невідома послуга')
-            .filter((s: string) => s.toLowerCase() !== 'запис'); // Видаляємо "Запис" зі списку послуг
+          const allServices = data.services.map((s: any) => s.title || s.name || 'Невідома послуга');
+          console.log(`[client-webhooks] 🔍 Processing services array (${allServices.length} items):`, allServices);
+          services = allServices.filter((s: string) => {
+            const isZapis = s.toLowerCase() === 'запис';
+            if (isZapis) {
+              console.log(`[client-webhooks] 🚫 Filtered out "Запис" from services:`, s);
+            }
+            return !isZapis;
+          });
+          console.log(`[client-webhooks] ✅ Final services after filtering (${services.length} items):`, services);
         } else if (data.service) {
           const serviceName = data.service.title || data.service.name || 'Невідома послуга';
+          console.log(`[client-webhooks] 🔍 Processing single service:`, serviceName);
           if (serviceName.toLowerCase() !== 'запис') {
             services = [serviceName];
+            console.log(`[client-webhooks] ✅ Added service:`, serviceName);
+          } else {
+            console.log(`[client-webhooks] 🚫 Filtered out "Запис":`, serviceName);
           }
         } else if (data.service_id || data.serviceName || originalRecord.serviceName) {
           const serviceName = data.serviceName || originalRecord.serviceName || 'Невідома послуга';
+          console.log(`[client-webhooks] 🔍 Processing serviceName:`, serviceName);
           if (serviceName.toLowerCase() !== 'запис') {
             services = [serviceName];
+            console.log(`[client-webhooks] ✅ Added serviceName:`, serviceName);
+          } else {
+            console.log(`[client-webhooks] 🚫 Filtered out "Запис" (serviceName):`, serviceName);
           }
+        } else {
+          console.log(`[client-webhooks] ⚠️ No services found. data.services:`, data.services, `data.service:`, data.service, `originalRecord.serviceName:`, originalRecord.serviceName);
         }
         
         // Дата вебхука
