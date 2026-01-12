@@ -90,19 +90,15 @@ export async function POST(req: NextRequest) {
     console.log(`[direct/sync-manychat-webhooks] Starting sync, limit: ${limit}, days: ${days}, skipDaysFilter: ${skipDaysFilter}`);
 
     // Отримуємо всі вебхуки з логу
-    // Спочатку перевіряємо, скільки елементів в логу загалом
-    let totalInLog = 0;
-    try {
-      totalInLog = await kvRead.llen('manychat:webhook:log');
-      console.log(`[direct/sync-manychat-webhooks] Total items in log: ${totalInLog}`);
-    } catch (err) {
-      console.warn('[direct/sync-manychat-webhooks] Failed to get log length:', err);
-    }
+    // Читаємо більше елементів, щоб перевірити, скільки насправді є в логу
+    const checkLimit = Math.max(limit, 1000); // Читаємо більше, щоб перевірити загальну кількість
+    const allRawItems = await kvRead.lrange('manychat:webhook:log', 0, checkLimit - 1);
+    const totalInLog = allRawItems.length;
     
-    // Читаємо вебхуки (максимум limit, але не більше ніж є в логу)
-    const actualLimit = Math.min(limit, totalInLog || limit);
-    const rawItems = await kvRead.lrange('manychat:webhook:log', 0, actualLimit - 1);
-    console.log(`[direct/sync-manychat-webhooks] Found ${rawItems.length} raw items in log (requested limit: ${limit}, actual limit: ${actualLimit}, total in log: ${totalInLog})`);
+    // Беремо тільки потрібну кількість
+    const rawItems = allRawItems.slice(0, limit);
+    
+    console.log(`[direct/sync-manychat-webhooks] Found ${rawItems.length} raw items (requested limit: ${limit}, total in log: ${totalInLog})`);
     
     if (rawItems.length === 0) {
       return NextResponse.json({
