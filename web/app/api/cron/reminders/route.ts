@@ -270,9 +270,87 @@ async function sendViaManyChat(
     }
 
     const sendData = await sendResponse.json();
+    const messageId = sendData?.data?.message_id || `manychat_${Date.now()}`;
+
+    // Зберігаємо вихідне повідомлення в базу даних
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const { normalizeInstagram } = await import('@/lib/normalize');
+      const prisma = new PrismaClient();
+      
+      const normalizedInstagram = normalizeInstagram(cleanInstagram);
+      if (!normalizedInstagram) {
+        console.warn('[reminders] ⚠️ Cannot save outgoing message: invalid Instagram username:', cleanInstagram);
+        await prisma.$disconnect();
+      } else {
+        let client = await prisma.directClient.findUnique({
+          where: { instagramUsername: normalizedInstagram },
+        });
+        
+        // Якщо клієнта немає, спробуємо створити його
+        if (!client) {
+          console.log('[reminders] Client not found, attempting to create:', normalizedInstagram);
+          try {
+            const { getAllDirectStatuses } = await import('@/lib/direct-store');
+            const statuses = await getAllDirectStatuses();
+            const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
+            
+            const now = new Date().toISOString();
+            const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            client = await prisma.directClient.create({
+              data: {
+                id: clientId,
+                instagramUsername: normalizedInstagram,
+                source: 'instagram',
+                state: 'lead',
+                firstContactDate: now,
+                statusId: defaultStatus?.id || 'new',
+                visitedSalon: false,
+                signedUpForPaidService: false,
+                createdAt: now,
+                updatedAt: now,
+              },
+            });
+            console.log('[reminders] ✅ Created new client for outgoing message:', client.id);
+          } catch (createErr) {
+            console.error('[reminders] Failed to create client for outgoing message:', createErr);
+            await prisma.$disconnect();
+            return {
+              success: true,
+              messageId,
+            };
+          }
+        }
+        
+        if (client) {
+          await prisma.directMessage.create({
+            data: {
+              clientId: client.id,
+              direction: 'outgoing',
+              text: message,
+              messageId: messageId,
+              subscriberId: subscriberId,
+              source: 'manychat',
+              receivedAt: new Date(),
+              rawData: JSON.stringify(sendData).substring(0, 10000), // Обмежуємо розмір
+            },
+          });
+          console.log('[reminders] ✅ Outgoing message saved to database for client:', client.id);
+        } else {
+          console.warn('[reminders] ⚠️ Cannot save outgoing message: client is null');
+        }
+        
+        await prisma.$disconnect();
+      }
+    } catch (dbErr) {
+      console.error('[reminders] Failed to save outgoing message to DB:', dbErr);
+      // Не зупиняємо виконання, просто логуємо
+    }
+
     return {
       success: true,
-      messageId: sendData?.data?.message_id || `manychat_${Date.now()}`,
+      messageId,
     };
   } catch (err) {
     return {
