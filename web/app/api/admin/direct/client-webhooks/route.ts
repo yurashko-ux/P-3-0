@@ -73,6 +73,35 @@ export async function GET(req: NextRequest) {
           // webhook:log містить об'єкти з полями: body, receivedAt
           if (parsed && parsed.visitId && !parsed.body) {
             // Це event з records:log - конвертуємо в формат webhook
+            // Витягуємо services з parsed.data.services (якщо є) або з parsed.services
+            let services: any[] = [];
+            if (parsed.data && parsed.data.services) {
+              // Може бути масив або JSON-рядок
+              if (Array.isArray(parsed.data.services)) {
+                services = parsed.data.services;
+              } else if (typeof parsed.data.services === 'string') {
+                try {
+                  const parsedServices = JSON.parse(parsed.data.services);
+                  services = Array.isArray(parsedServices) ? parsedServices : [];
+                } catch {
+                  services = [];
+                }
+              }
+            } else if (parsed.services) {
+              if (Array.isArray(parsed.services)) {
+                services = parsed.services;
+              } else if (typeof parsed.services === 'string') {
+                try {
+                  const parsedServices = JSON.parse(parsed.services);
+                  services = Array.isArray(parsedServices) ? parsedServices : [];
+                } catch {
+                  services = [];
+                }
+              }
+            } else if (parsed.serviceName) {
+              services = [{ title: parsed.serviceName }];
+            }
+            
             return {
               body: {
                 resource: 'record',
@@ -82,7 +111,7 @@ export async function GET(req: NextRequest) {
                   datetime: parsed.datetime,
                   client: parsed.client ? { id: parsed.clientId || parsed.client.id } : { id: parsed.clientId },
                   staff: parsed.staff ? { name: parsed.staffName || parsed.staff.name } : { name: parsed.staffName },
-                  services: parsed.services || (parsed.serviceName ? [{ title: parsed.serviceName }] : []),
+                  services: services,
                   attendance: parsed.attendance,
                   visit_attendance: parsed.visit_attendance,
                 },
@@ -141,13 +170,22 @@ export async function GET(req: NextRequest) {
         const originalRecord = e.originalRecord || {};
         
         // Витягуємо services (може бути масив або один об'єкт)
+        // Фільтруємо "Запис" - це не послуга, а тип запису
         let services: string[] = [];
         if (Array.isArray(data.services) && data.services.length > 0) {
-          services = data.services.map((s: any) => s.title || s.name || 'Невідома послуга');
+          services = data.services
+            .map((s: any) => s.title || s.name || 'Невідома послуга')
+            .filter((s: string) => s.toLowerCase() !== 'запис'); // Видаляємо "Запис" зі списку послуг
         } else if (data.service) {
-          services = [data.service.title || data.service.name || 'Невідома послуга'];
+          const serviceName = data.service.title || data.service.name || 'Невідома послуга';
+          if (serviceName.toLowerCase() !== 'запис') {
+            services = [serviceName];
+          }
         } else if (data.service_id || data.serviceName || originalRecord.serviceName) {
-          services = [data.serviceName || originalRecord.serviceName || 'Невідома послуга'];
+          const serviceName = data.serviceName || originalRecord.serviceName || 'Невідома послуга';
+          if (serviceName.toLowerCase() !== 'запис') {
+            services = [serviceName];
+          }
         }
         
         // Дата вебхука
