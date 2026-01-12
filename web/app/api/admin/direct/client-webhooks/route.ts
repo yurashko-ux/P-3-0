@@ -186,40 +186,72 @@ export async function GET(req: NextRequest) {
         // Фільтруємо "Запис" - це не послуга, а тип запису
         let services: string[] = [];
         const visitId = body.resource_id || originalRecord.visitId;
+        const processingInfo: any = {
+          visitId,
+          source: e.isFromRecordsLog ? 'records:log' : 'webhook:log',
+          rawServices: data.services,
+          rawService: data.service,
+          rawServiceName: data.serviceName || originalRecord.serviceName,
+        };
+        
         console.log(`[client-webhooks] 🔍 Processing services for visitId: ${visitId}, clientId: ${altegioClientId}`);
         
         if (Array.isArray(data.services) && data.services.length > 0) {
           const allServices = data.services.map((s: any) => s.title || s.name || 'Невідома послуга');
+          processingInfo.beforeFilter = allServices;
           console.log(`[client-webhooks] 📦 Processing services array (${allServices.length} items) for visitId ${visitId}:`, allServices);
           services = allServices.filter((s: string) => {
             const isZapis = s.toLowerCase() === 'запис';
             if (isZapis) {
               console.log(`[client-webhooks] 🚫 FILTERED OUT "Запис" from services for visitId ${visitId}:`, s);
+              processingInfo.filteredOut = s;
             }
             return !isZapis;
           });
+          processingInfo.afterFilter = services;
           console.log(`[client-webhooks] ✅ Final services after filtering (${services.length} items) for visitId ${visitId}:`, services);
         } else if (data.service) {
           const serviceName = data.service.title || data.service.name || 'Невідома послуга';
+          processingInfo.beforeFilter = [serviceName];
           console.log(`[client-webhooks] 📦 Processing single service for visitId ${visitId}:`, serviceName);
           if (serviceName.toLowerCase() !== 'запис') {
             services = [serviceName];
+            processingInfo.afterFilter = services;
             console.log(`[client-webhooks] ✅ Added service for visitId ${visitId}:`, serviceName);
           } else {
+            processingInfo.filteredOut = serviceName;
             console.log(`[client-webhooks] 🚫 FILTERED OUT "Запис" (single service) for visitId ${visitId}:`, serviceName);
           }
         } else if (data.service_id || data.serviceName || originalRecord.serviceName) {
           const serviceName = data.serviceName || originalRecord.serviceName || 'Невідома послуга';
+          processingInfo.beforeFilter = [serviceName];
           console.log(`[client-webhooks] 📦 Processing serviceName for visitId ${visitId}:`, serviceName);
           if (serviceName.toLowerCase() !== 'запис') {
             services = [serviceName];
+            processingInfo.afterFilter = services;
             console.log(`[client-webhooks] ✅ Added serviceName for visitId ${visitId}:`, serviceName);
           } else {
+            processingInfo.filteredOut = serviceName;
             console.log(`[client-webhooks] 🚫 FILTERED OUT "Запис" (serviceName) for visitId ${visitId}:`, serviceName);
           }
         } else {
+          processingInfo.error = 'No services found';
           console.log(`[client-webhooks] ⚠️ No services found for visitId ${visitId}. data.services:`, data.services, `data.service:`, data.service, `originalRecord.serviceName:`, originalRecord.serviceName);
         }
+        
+        return {
+          receivedAt,
+          datetime,
+          clientName,
+          staffName,
+          services: services.length > 0 ? services : ['Невідома послуга'],
+          visitId: body.resource_id || originalRecord.visitId,
+          status: body.status || originalRecord.status || 'create',
+          attendance,
+          instagramUsername: instagramUsername || null,
+          fullBody: body,
+          _debug: processingInfo, // Додаємо діагностичну інформацію
+        };
         
         // Дата вебхука
         const receivedAt = (e.receivedAt || originalRecord.receivedAt) ? new Date(e.receivedAt || originalRecord.receivedAt).toISOString() : null;
@@ -311,10 +343,19 @@ export async function GET(req: NextRequest) {
 
     // Збираємо статистику по послугах для діагностики
     const servicesStats: Record<string, number> = {};
+    const debugRows: any[] = [];
     tableRows.forEach((row: any) => {
       if (Array.isArray(row.services)) {
         row.services.forEach((service: string) => {
           servicesStats[service] = (servicesStats[service] || 0) + 1;
+        });
+      }
+      // Зберігаємо діагностичну інформацію для перших 5 рядків
+      if (debugRows.length < 5 && row._debug) {
+        debugRows.push({
+          visitId: row.visitId,
+          services: row.services,
+          debug: row._debug,
         });
       }
     });
@@ -322,19 +363,22 @@ export async function GET(req: NextRequest) {
     console.log(`[client-webhooks] ✅ Completed webhooks fetch for altegioClientId: ${altegioClientId}, found ${tableRows.length} rows`);
     console.log(`[client-webhooks] 📊 Services statistics:`, servicesStats);
     
+    // Видаляємо _debug з рядків перед поверненням (або залишаємо для діагностики)
+    const cleanRows = tableRows.map((row: any) => {
+      const { _debug, ...cleanRow } = row;
+      return cleanRow;
+    });
+    
     return NextResponse.json({
       ok: true,
       altegioClientId,
       total: tableRows.length,
-      rows: tableRows,
+      rows: cleanRows,
       debug: {
         ...debugInfo,
         servicesStats, // Статистика по послугах
-        sampleRow: tableRows.length > 0 ? {
-          services: tableRows[0].services,
-          visitId: tableRows[0].visitId,
-          status: tableRows[0].status,
-        } : null,
+        sampleDebugRows: debugRows, // Діагностична інформація для перших 5 рядків
+        hasZapis: 'Запис' in servicesStats || 'запис' in servicesStats, // Чи є "Запис" в статистиці
       },
     });
   } catch (error) {
