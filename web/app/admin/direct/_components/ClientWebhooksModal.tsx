@@ -181,11 +181,13 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
                       <td className="text-xs">
                         {webhook.services.length > 0 ? (
                           <div className="flex flex-col gap-1">
-                            {webhook.services.map((service, i) => (
-                              <span key={i} className="badge badge-sm badge-outline">
-                                {service}
-                              </span>
-                            ))}
+                            {webhook.services
+                              .filter((service) => service.toLowerCase() !== 'запис') // Фільтруємо "Запис" на клієнті
+                              .map((service, i) => (
+                                <span key={i} className="badge badge-sm badge-outline">
+                                  {service}
+                                </span>
+                              ))}
                           </div>
                         ) : (
                           <span className="text-gray-400">-</span>
