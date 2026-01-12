@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
+import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 
 // Компонент для відображення піктограми стану
@@ -157,6 +158,7 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
+  const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
   const [searchInput, setSearchInput] = useState<string>(filters.search);
 
@@ -430,6 +432,13 @@ export function DirectClientTable({
         onClose={() => setStateHistoryClient(null)}
       />
 
+      {/* Модальне вікно історії повідомлень */}
+      <MessagesHistoryModal
+        client={messagesHistoryClient}
+        isOpen={!!messagesHistoryClient}
+        onClose={() => setMessagesHistoryClient(null)}
+      />
+
       {/* Модальне вікно вебхуків клієнта */}
       {webhooksClient && (
         <ClientWebhooksModal
@@ -701,9 +710,9 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
                         <div className="flex items-center justify-center gap-1">
                           <button
-                            onClick={() => setStateHistoryClient(client)}
+                            onClick={() => setMessagesHistoryClient(client)}
                             className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center gap-1"
-                            title="Натисніть, щоб переглянути повну історію змін стану"
+                            title="Натисніть, щоб переглянути історію повідомлень"
                           >
                             {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
                             {(() => {
