@@ -11,6 +11,7 @@ import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 import { DirectStats } from "./_components/DirectStats";
 import { WebhooksTableModal } from "./_components/WebhooksTableModal";
+import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableModal";
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
@@ -154,6 +155,7 @@ export default function DirectPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
+  const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
   const [isTelegramMessagesModalOpen, setIsTelegramMessagesModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     statusId: "",
@@ -1334,7 +1336,14 @@ export default function DirectPage() {
             onClick={() => setIsWebhooksModalOpen(true)}
             title="Переглянути таблицю webhook-ів Altegio"
           >
-            📊 Таблиця вебхуків
+            📊 Таблиця вебхуків Altegio
+          </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() => setIsManyChatWebhooksModalOpen(true)}
+            title="Переглянути таблицю webhook-ів ManyChat"
+          >
+            📱 Таблиця вебхуків ManyChat
           </button>
           <button
             className="btn btn-sm btn-ghost"
@@ -2399,10 +2408,22 @@ export default function DirectPage() {
       {/* Статистика */}
       {stats && <DirectStats stats={stats} />}
 
-      {/* Модальне вікно webhook-ів */}
+      {/* Модальне вікно webhook-ів Altegio */}
       <WebhooksTableModal
         isOpen={isWebhooksModalOpen}
         onClose={() => setIsWebhooksModalOpen(false)}
+      />
+
+      {/* Модальне вікно webhook-ів ManyChat */}
+      <ManyChatWebhooksTableModal
+        isOpen={isManyChatWebhooksModalOpen}
+        onClose={() => setIsManyChatWebhooksModalOpen(false)}
+      />
+
+      {/* Модальне вікно webhook-ів ManyChat */}
+      <ManyChatWebhooksTableModal
+        isOpen={isManyChatWebhooksModalOpen}
+        onClose={() => setIsManyChatWebhooksModalOpen(false)}
       />
 
       {/* Модальне вікно повідомлень Telegram бота */}
