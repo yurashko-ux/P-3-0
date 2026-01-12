@@ -709,201 +709,182 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => setMessagesHistoryClient(client)}
-                            className="hover:opacity-70 transition-opacity cursor-pointer flex items-center justify-center gap-1"
-                            title="Натисніть, щоб переглянути історію повідомлень"
-                          >
-                            {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
-                            {(() => {
-                              const states = client.last5States || [];
-                              const currentState = client.state || 'lead';
-                              
-                              // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
-                              const isManychatClient = !client.altegioClientId;
-                              
-                              // Якщо немає історії, показуємо поточний стан (якщо це не "lead" для Altegio клієнта)
-                              if (states.length === 0) {
-                                if (!isManychatClient && currentState === 'lead') {
-                                  return null; // Не показуємо "lead" для Altegio клієнтів
-                                }
-                                return (
+                          {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
+                          {(() => {
+                            const states = client.last5States || [];
+                            const currentState = client.state || 'lead';
+                            
+                            // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
+                            const isManychatClient = !client.altegioClientId;
+                            
+                            // Якщо немає історії, показуємо поточний стан (якщо це не "lead" для Altegio клієнта)
+                            if (states.length === 0) {
+                              if (!isManychatClient && currentState === 'lead') {
+                                return null; // Не показуємо "lead" для Altegio клієнтів
+                              }
+                              return (
+                                <button
+                                  onClick={() => setStateHistoryClient(client)}
+                                  className="hover:opacity-70 transition-opacity cursor-pointer"
+                                  title="Натисніть, щоб переглянути історію станів"
+                                >
                                   <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
                                     <StateIcon state={currentState} size={32} />
                                   </div>
-                                );
+                                </button>
+                              );
+                            }
+                            
+                            // Спочатку сортуємо від старіших до новіших для правильної фільтрації
+                            const sortedStates = [...states].sort((a, b) => 
+                              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                            );
+                            
+                            // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
+                            // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
+                            // для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
+                            // ВИДАЛЯЄМО ВСІ "no-instagram" (це були червоні квадрати, які потім стали чорними лійками)
+                            // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
+                            const filteredStates: typeof sortedStates = [];
+                            const leadLogs: typeof sortedStates = [];
+                            const messageLogs: typeof sortedStates = [];
+                            const clientLogs: typeof sortedStates = [];
+                            const consultationLogs: typeof sortedStates = [];
+                            const consultationBookedLogs: typeof sortedStates = [];
+                            const consultationNoShowLogs: typeof sortedStates = [];
+                            const consultationRescheduledLogs: typeof sortedStates = [];
+                            const otherLogs: typeof sortedStates = [];
+                            
+                            for (let i = 0; i < sortedStates.length; i++) {
+                              const log = sortedStates[i];
+                              
+                              // ВИДАЛЯЄМО "no-instagram" (це були червоні квадрати)
+                              if (log.state === 'no-instagram') {
+                                continue; // Пропускаємо всі "no-instagram"
                               }
                               
-                              // Спочатку сортуємо від старіших до новіших для правильної фільтрації
-                              const sortedStates = [...states].sort((a, b) => 
-                                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                              if (log.state === 'lead') {
+                                // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
+                                if (!isManychatClient) {
+                                  continue; // Пропускаємо всі "lead" для Altegio клієнтів
+                                }
+                                // Для Manychat клієнтів - збираємо "lead" окремо
+                                leadLogs.push(log);
+                              } else if (log.state === 'message') {
+                                // Збираємо "message" окремо для перевірки, чи це перше повідомлення
+                                messageLogs.push(log);
+                              } else if (log.state === 'client') {
+                                // Збираємо "client" окремо для фільтрації дублікатів
+                                clientLogs.push(log);
+                              } else if (log.state === 'consultation') {
+                                consultationLogs.push(log);
+                              } else if (log.state === 'consultation-booked') {
+                                consultationBookedLogs.push(log);
+                              } else if (log.state === 'consultation-no-show') {
+                                consultationNoShowLogs.push(log);
+                              } else if (log.state === 'consultation-rescheduled') {
+                                consultationRescheduledLogs.push(log);
+                              } else {
+                                // Всі інші стани збираємо окремо
+                                otherLogs.push(log);
+                              }
+                            }
+                            
+                            // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
+                            // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
+                            // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
+                            let oldestMessageAsLead: typeof sortedStates[0] | null = null;
+                            if (messageLogs.length > 0 && leadLogs.length === 0) {
+                              // Перевіряємо, чи "message" найстаріший стан тільки якщо немає справжнього "lead"
+                              const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
+                              
+                              // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
+                              const allOtherStates = [...clientLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                              const olderThanMessage = allOtherStates.filter(log => 
+                                new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
                               );
                               
-                              // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
-                              // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
-                              // для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
-                              // ВИДАЛЯЄМО ВСІ "no-instagram" (це були червоні квадрати, які потім стали чорними лійками)
-                              // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
-                              const filteredStates: typeof sortedStates = [];
-                              const leadLogs: typeof sortedStates = [];
-                              const messageLogs: typeof sortedStates = [];
-                              const clientLogs: typeof sortedStates = [];
-                              const consultationLogs: typeof sortedStates = [];
-                              const consultationBookedLogs: typeof sortedStates = [];
-                              const consultationNoShowLogs: typeof sortedStates = [];
-                              const consultationRescheduledLogs: typeof sortedStates = [];
-                              const otherLogs: typeof sortedStates = [];
-                              
-                              for (let i = 0; i < sortedStates.length; i++) {
-                                const log = sortedStates[i];
-                                
-                                // ВИДАЛЯЄМО "no-instagram" (це були червоні квадрати)
-                                if (log.state === 'no-instagram') {
-                                  continue; // Пропускаємо всі "no-instagram"
-                                }
-                                
-                                if (log.state === 'lead') {
-                                  // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
-                                  if (!isManychatClient) {
-                                    continue; // Пропускаємо всі "lead" для Altegio клієнтів
-                                  }
-                                  // Для Manychat клієнтів - збираємо "lead" окремо
-                                  leadLogs.push(log);
-                                } else if (log.state === 'message') {
-                                  // Збираємо "message" окремо для перевірки, чи це перше повідомлення
-                                  messageLogs.push(log);
-                                } else if (log.state === 'client') {
-                                  // Збираємо "client" окремо для фільтрації дублікатів
-                                  clientLogs.push(log);
-                                } else if (log.state === 'consultation') {
-                                  consultationLogs.push(log);
-                                } else if (log.state === 'consultation-booked') {
-                                  consultationBookedLogs.push(log);
-                                } else if (log.state === 'consultation-no-show') {
-                                  consultationNoShowLogs.push(log);
-                                } else if (log.state === 'consultation-rescheduled') {
-                                  consultationRescheduledLogs.push(log);
-                                } else {
-                                  // Всі інші стани збираємо окремо
-                                  otherLogs.push(log);
-                                }
+                              // Якщо "message" найстаріший - відображаємо його як "Лід"
+                              if (olderThanMessage.length === 0) {
+                                oldestMessageAsLead = {
+                                  ...oldestMessage,
+                                  state: 'lead', // Відображаємо як "Лід"
+                                };
                               }
+                            }
+                            
+                            // Якщо перше повідомлення має відображатися як "Лід" - додаємо його
+                            if (oldestMessageAsLead) {
+                              filteredStates.push(oldestMessageAsLead);
+                            } else if (isManychatClient && leadLogs.length > 0) {
+                              // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
+                              const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
                               
-                              // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
-                              // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
-                              // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
-                              let oldestMessageAsLead: typeof sortedStates[0] | null = null;
-                              if (messageLogs.length > 0 && leadLogs.length === 0) {
-                                // Перевіряємо, чи "message" найстаріший стан тільки якщо немає справжнього "lead"
-                                const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
-                                
-                                // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                                const allOtherStates = [...clientLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
-                                const olderThanMessage = allOtherStates.filter(log => 
-                                  new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
-                                );
-                                
-                                // Якщо "message" найстаріший - відображаємо його як "Лід"
-                                if (olderThanMessage.length === 0) {
-                                  oldestMessageAsLead = {
-                                    ...oldestMessage,
-                                    state: 'lead', // Відображаємо як "Лід"
-                                  };
-                                }
-                              }
-                              
-                              // Якщо перше повідомлення має відображатися як "Лід" - додаємо його
-                              if (oldestMessageAsLead) {
-                                filteredStates.push(oldestMessageAsLead);
-                              } else if (isManychatClient && leadLogs.length > 0) {
-                                // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
-                                const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
-                                
-                                // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з message)
-                                const allOtherStates = [...clientLogs, ...messageLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
-                                const olderThanLead = allOtherStates.filter(log => 
-                                  new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
-                                );
-                                
-                                // Якщо "lead" найстаріший - залишаємо його (він початковий стан)
-                                // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
-                                if (olderThanLead.length === 0) {
-                                  // "lead" найстаріший - додаємо його першим
-                                  filteredStates.push(oldestLead);
-                                }
-                                // Якщо є стани старіші - не додаємо "lead"
-                              }
-                              
-                              // Для ВСІХ клієнтів: залишаємо тільки найстаріший "client"
-                              if (clientLogs.length > 0) {
-                                filteredStates.push(clientLogs[0]); // Тільки найстаріший "client"
-                              }
-                              
-                              // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
-                              if (consultationLogs.length > 0) {
-                                filteredStates.push(consultationLogs[0]); // Тільки найстаріший "consultation"
-                              }
-                              if (consultationBookedLogs.length > 0) {
-                                filteredStates.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
-                              }
-                              if (consultationNoShowLogs.length > 0) {
-                                filteredStates.push(consultationNoShowLogs[0]); // Тільки найстаріший "consultation-no-show"
-                              }
-                              if (consultationRescheduledLogs.length > 0) {
-                                filteredStates.push(consultationRescheduledLogs[0]); // Тільки найстаріший "consultation-rescheduled"
-                              }
-                              
-                              // Додаємо всі інші стани (без "no-instagram")
-                              // Якщо перше повідомлення вже відображено як "Лід", не додаємо інші "message" стани
-                              const remainingMessageLogs = oldestMessageAsLead 
-                                ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
-                                : messageLogs;
-                              filteredStates.push(...remainingMessageLogs);
-                              
-                              // Додаємо всі інші стани
-                              filteredStates.push(...otherLogs);
-                              
-                              // Сортуємо від старіших до новіших для подальшої обробки
-                              filteredStates.sort((a, b) => 
-                                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                              // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з message)
+                              const allOtherStates = [...clientLogs, ...messageLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                              const olderThanLead = allOtherStates.filter(log => 
+                                new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
                               );
                               
-                              // Останній стан з історії
-                              const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
-                              
-                              // Додаємо поточний стан, якщо він відрізняється
-                              const statesToShow = [...filteredStates];
-                              
-                              // Перевіряємо, чи є "lead" та "client" в відфільтрованих станах
-                              const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
-                              const hasClientInFiltered = filteredStates.some(log => log.state === 'client');
-                              
-                              if (currentState !== lastHistoryState) {
-                                // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
-                                if (!isManychatClient && currentState === 'lead') {
-                                  // Не додаємо "lead" для Altegio клієнтів
-                                } else if (currentState === 'lead' && !hasLeadInFiltered) {
-                                  // Для Manychat клієнтів - додаємо "lead" тільки якщо його немає в історії
-                                  statesToShow.push({
-                                    id: 'current',
-                                    clientId: client.id,
-                                    state: currentState,
-                                    previousState: lastHistoryState,
-                                    reason: 'current-state',
-                                    createdAt: new Date().toISOString(),
-                                  });
-                                } else if (currentState === 'client' && !hasClientInFiltered) {
-                                  // Для "client" - додаємо тільки якщо його немає в історії (стан "client" має бути тільки один раз)
-                                  statesToShow.push({
-                                    id: 'current',
-                                    clientId: client.id,
-                                    state: currentState,
-                                    previousState: lastHistoryState,
-                                    reason: 'current-state',
-                                    createdAt: new Date().toISOString(),
-                                  });
-                                } else if (currentState !== 'lead' && currentState !== 'client') {
-                                  // Для всіх інших станів - завжди додаємо
+                              // Якщо "lead" найстаріший - залишаємо його (він початковий стан)
+                              // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
+                              if (olderThanLead.length === 0) {
+                                // "lead" найстаріший - додаємо його першим
+                                filteredStates.push(oldestLead);
+                              }
+                              // Якщо є стани старіші - не додаємо "lead"
+                            }
+                            
+                            // Для ВСІХ клієнтів: залишаємо тільки найстаріший "client"
+                            if (clientLogs.length > 0) {
+                              filteredStates.push(clientLogs[0]); // Тільки найстаріший "client"
+                            }
+                            
+                            // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
+                            if (consultationLogs.length > 0) {
+                              filteredStates.push(consultationLogs[0]); // Тільки найстаріший "consultation"
+                            }
+                            if (consultationBookedLogs.length > 0) {
+                              filteredStates.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
+                            }
+                            if (consultationNoShowLogs.length > 0) {
+                              filteredStates.push(consultationNoShowLogs[0]); // Тільки найстаріший "consultation-no-show"
+                            }
+                            if (consultationRescheduledLogs.length > 0) {
+                              filteredStates.push(consultationRescheduledLogs[0]); // Тільки найстаріший "consultation-rescheduled"
+                            }
+                            
+                            // Додаємо всі інші стани (без "no-instagram")
+                            // Якщо перше повідомлення вже відображено як "Лід", не додаємо інші "message" стани
+                            const remainingMessageLogs = oldestMessageAsLead 
+                              ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
+                              : messageLogs;
+                            filteredStates.push(...remainingMessageLogs);
+                            
+                            // Додаємо всі інші стани
+                            filteredStates.push(...otherLogs);
+                            
+                            // Сортуємо від старіших до новіших для подальшої обробки
+                            filteredStates.sort((a, b) => 
+                              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                            );
+                            
+                            // Останній стан з історії
+                            const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
+                            
+                            // Додаємо поточний стан, якщо він відрізняється
+                            const statesToShow = [...filteredStates];
+                            
+                            // Перевіряємо, чи є "lead" та "client" в відфільтрованих станах
+                            const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
+                            const hasClientInFiltered = filteredStates.some(log => log.state === 'client');
+                            
+                            if (currentState !== lastHistoryState) {
+                              // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
+                              if (!isManychatClient && currentState === 'lead') {
+                                // Не додаємо "lead" для Altegio клієнтів
+                              } else if (currentState === 'lead' && !hasLeadInFiltered) {
+                                // Для Manychat клієнтів - додаємо "lead" тільки якщо його немає в історії
                                 statesToShow.push({
                                   id: 'current',
                                   clientId: client.id,
@@ -912,58 +893,89 @@ export function DirectClientTable({
                                   reason: 'current-state',
                                   createdAt: new Date().toISOString(),
                                 });
-                              }
-                              }
-                              
-                              // Фінальна перевірка: видаляємо всі "lead" для Altegio клієнтів та "no-instagram" для всіх
-                              // Також приховуємо невідомі стани, які можуть показуватись як чорні лійки (image-lead.png)
-                              const finalStatesToShow = statesToShow.filter(log => {
-                                // Видаляємо "no-instagram"
-                                if (log.state === 'no-instagram') return false;
-                                
-                                // Видаляємо "lead" для Altegio клієнтів
-                                if (!isManychatClient && log.state === 'lead') return false;
-                                
-                                // Приховуємо null/undefined стани (вони показуються як "lead")
-                                if (!log.state || log.state.trim() === '') return false;
-                                
-                                return true;
+                              } else if (currentState === 'client' && !hasClientInFiltered) {
+                                // Для "client" - додаємо тільки якщо його немає в історії (стан "client" має бути тільки один раз)
+                                statesToShow.push({
+                                  id: 'current',
+                                  clientId: client.id,
+                                  state: currentState,
+                                  previousState: lastHistoryState,
+                                  reason: 'current-state',
+                                  createdAt: new Date().toISOString(),
+                                });
+                              } else if (currentState !== 'lead' && currentState !== 'client') {
+                                // Для всіх інших станів - завжди додаємо
+                              statesToShow.push({
+                                id: 'current',
+                                clientId: client.id,
+                                state: currentState,
+                                previousState: lastHistoryState,
+                                reason: 'current-state',
+                                createdAt: new Date().toISOString(),
                               });
+                            }
+                            }
+                            
+                            // Фінальна перевірка: видаляємо всі "lead" для Altegio клієнтів та "no-instagram" для всіх
+                            // Також приховуємо невідомі стани, які можуть показуватись як чорні лійки (image-lead.png)
+                            const finalStatesToShow = statesToShow.filter(log => {
+                              // Видаляємо "no-instagram"
+                              if (log.state === 'no-instagram') return false;
                               
-                              return (
-                                <>
-                                  {finalStatesToShow.slice(-5).map((stateLog, idx) => {
-                                    const stateDate = new Date(stateLog.createdAt);
-                                    const formattedDate = stateDate.toLocaleDateString('uk-UA', {
-                                      day: '2-digit',
-                                      month: '2-digit',
-                                      year: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    });
-                                    
-                                    // Гарантуємо, що state не є "no-instagram" або "lead" для Altegio клієнтів
-                                    const stateToShow = (!isManychatClient && stateLog.state === 'lead') || stateLog.state === 'no-instagram'
-                                      ? null
-                                      : (stateLog.state || null);
-                                    
-                                    // Якщо state null після фільтрації, не показуємо іконку
-                                    if (!stateToShow) return null;
-                                    
-                                    return (
-                                      <div
-                                        key={stateLog.id || `state-${idx}`}
-                                        className="tooltip tooltip-top"
-                                        data-tip={formattedDate}
-                                      >
+                              // Видаляємо "lead" для Altegio клієнтів
+                              if (!isManychatClient && log.state === 'lead') return false;
+                              
+                              // Приховуємо null/undefined стани (вони показуються як "lead")
+                              if (!log.state || log.state.trim() === '') return false;
+                              
+                              return true;
+                            });
+                            
+                            return (
+                              <>
+                                {finalStatesToShow.slice(-5).map((stateLog, idx) => {
+                                  const stateDate = new Date(stateLog.createdAt);
+                                  const formattedDate = stateDate.toLocaleDateString('uk-UA', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                  
+                                  // Гарантуємо, що state не є "no-instagram" або "lead" для Altegio клієнтів
+                                  const stateToShow = (!isManychatClient && stateLog.state === 'lead') || stateLog.state === 'no-instagram'
+                                    ? null
+                                    : (stateLog.state || null);
+                                  
+                                  // Якщо state null після фільтрації, не показуємо іконку
+                                  if (!stateToShow) return null;
+                                  
+                                  // Визначаємо, який обробник кліку використовувати
+                                  const isMessageState = stateToShow === 'message';
+                                  const onClickHandler = isMessageState
+                                    ? () => setMessagesHistoryClient(client)
+                                    : () => setStateHistoryClient(client);
+                                  const tooltipText = isMessageState
+                                    ? `${formattedDate}\nНатисніть, щоб переглянути історію повідомлень`
+                                    : `${formattedDate}\nНатисніть, щоб переглянути історію станів`;
+                                  
+                                  return (
+                                    <button
+                                      key={stateLog.id || `state-${idx}`}
+                                      onClick={onClickHandler}
+                                      className="hover:opacity-70 transition-opacity cursor-pointer"
+                                      title={tooltipText}
+                                    >
+                                      <div className="tooltip tooltip-top" data-tip={formattedDate}>
                                         <StateIcon state={stateToShow} size={28} />
                                       </div>
-                                    );
-                                  })}
-                                </>
-                              );
-                            })()}
-                          </button>
+                                    </button>
+                                  );
+                                })}
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
