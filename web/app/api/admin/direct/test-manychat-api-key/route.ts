@@ -87,27 +87,109 @@ export async function GET(req: NextRequest) {
   // Тестуємо API, якщо ключ знайдено
   let apiTest: any = null;
   if (foundKey) {
+    const tests: any[] = [];
+    
+    // Тест 1: Старий формат (може не працювати)
     try {
-      // Простий тест - отримуємо список subscribers (перша сторінка)
-      const testUrl = 'https://api.manychat.com/fb/subscriber/getSubscribers?page=1&limit=1';
-      const testResponse = await fetch(testUrl, {
+      const testUrl1 = 'https://api.manychat.com/fb/subscriber/getSubscribers?page=1&limit=1';
+      const testResponse1 = await fetch(testUrl1, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${foundKey}`,
         },
       });
-
-      apiTest = {
-        status: testResponse.status,
-        statusText: testResponse.statusText,
-        ok: testResponse.ok,
-        responsePreview: (await testResponse.text()).substring(0, 500),
-      };
+      const responseText1 = await testResponse1.text();
+      tests.push({
+        url: testUrl1,
+        status: testResponse1.status,
+        statusText: testResponse1.statusText,
+        ok: testResponse1.ok,
+        responsePreview: responseText1.substring(0, 500),
+      });
     } catch (err) {
-      apiTest = {
+      tests.push({
+        url: 'https://api.manychat.com/fb/subscriber/getSubscribers',
         error: err instanceof Error ? err.message : String(err),
-      };
+      });
     }
+
+    // Тест 2: Новий формат API v2 (якщо існує)
+    try {
+      const testUrl2 = 'https://api.manychat.com/v2/subscribers?page=1&limit=1';
+      const testResponse2 = await fetch(testUrl2, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${foundKey}`,
+        },
+      });
+      const responseText2 = await testResponse2.text();
+      tests.push({
+        url: testUrl2,
+        status: testResponse2.status,
+        statusText: testResponse2.statusText,
+        ok: testResponse2.ok,
+        responsePreview: responseText2.substring(0, 500),
+      });
+    } catch (err) {
+      tests.push({
+        url: 'https://api.manychat.com/v2/subscribers',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Тест 3: /v2.0/me (рекомендований ManyChat для тестування)
+    try {
+      const testUrl3 = 'https://api.manychat.com/v2.0/me';
+      const testResponse3 = await fetch(testUrl3, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${foundKey}`,
+        },
+      });
+      const responseText3 = await testResponse3.text();
+      tests.push({
+        url: testUrl3,
+        method: 'GET',
+        status: testResponse3.status,
+        statusText: testResponse3.statusText,
+        ok: testResponse3.ok,
+        responsePreview: responseText3.substring(0, 500),
+      });
+    } catch (err) {
+      tests.push({
+        url: 'https://api.manychat.com/v2.0/me',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Тест 4: findByName (простий тест)
+    try {
+      const testUrl4 = 'https://api.manychat.com/fb/subscriber/findByName';
+      const testResponse4 = await fetch(testUrl4, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${foundKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'test' }),
+      });
+      const responseText4 = await testResponse4.text();
+      tests.push({
+        url: testUrl4,
+        method: 'POST',
+        status: testResponse4.status,
+        statusText: testResponse4.statusText,
+        ok: testResponse4.ok,
+        responsePreview: responseText4.substring(0, 500),
+      });
+    } catch (err) {
+      tests.push({
+        url: 'https://api.manychat.com/fb/subscriber/findByName',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    apiTest = { tests };
   }
 
   return NextResponse.json({

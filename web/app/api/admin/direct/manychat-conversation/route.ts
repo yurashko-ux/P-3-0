@@ -126,7 +126,8 @@ async function getConversationHistory(subscriberId: string, apiKey: string): Pro
     // ManyChat API може мати різні методи для отримання історії
     // Спробуємо різні варіанти:
     
-    // Варіант 1: getMessages (якщо існує)
+    // Варіант 1: getMessages (може не існувати в ManyChat API)
+    // ManyChat API може не мати прямого endpoint для історії повідомлень
     const messagesUrl = `https://api.manychat.com/fb/subscriber/getMessages?subscriber_id=${subscriberId}`;
     try {
       console.log('[manychat-conversation] Trying getMessages:', messagesUrl);
