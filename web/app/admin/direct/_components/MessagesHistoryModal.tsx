@@ -51,9 +51,18 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
       const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(instagramUsername)}`);
       const apiData = await apiResponse.json();
       
+      console.log('[MessagesHistoryModal] API response:', apiData);
+      
       // Зберігаємо діагностику
       if (apiData.diagnostics) {
         setDiagnostics(apiData.diagnostics);
+      }
+      
+      // Якщо API Key не налаштовано, показуємо помилку
+      if (!apiData.ok && apiData.error && apiData.error.includes('API Key not configured')) {
+        setError(`API Key не налаштовано. Діагностика: ${JSON.stringify(apiData.diagnostics || {}, null, 2)}`);
+        setDiagnostics(apiData.diagnostics);
+        return;
       }
       
       if (apiData.ok && apiData.messages && apiData.messages.length > 0) {
@@ -72,6 +81,12 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
       // Якщо API не повернув повідомлення, але subscriber знайдено - показуємо повідомлення
       if (apiData.ok && apiData.subscriberId && apiData.messages && apiData.messages.length === 0) {
         console.log('[MessagesHistoryModal] API returned but no messages. Diagnostics:', apiData.diagnostics);
+        // Продовжуємо до fallback (вебхуки)
+      }
+      
+      // Якщо API повернув помилку, але subscriber не знайдено
+      if (!apiData.ok && apiData.error) {
+        console.log('[MessagesHistoryModal] API error:', apiData.error);
         // Продовжуємо до fallback (вебхуки)
       }
       

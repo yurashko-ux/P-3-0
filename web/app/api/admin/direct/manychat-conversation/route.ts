@@ -296,11 +296,25 @@ export async function GET(req: NextRequest) {
 
     const apiKey = getManyChatApiKey();
     if (!apiKey) {
+      // Детальна діагностика доступних змінних
+      const envCheck = {
+        MANYCHAT_API_KEY: !!process.env.MANYCHAT_API_KEY,
+        ManyChat_API_Key: !!process.env.ManyChat_API_Key,
+        MANYCHAT_API_TOKEN: !!process.env.MANYCHAT_API_TOKEN,
+        MC_API_KEY: !!process.env.MC_API_KEY,
+        MANYCHAT_APIKEY: !!process.env.MANYCHAT_APIKEY,
+        // Перевіряємо всі змінні, що містять "manychat" або "api"
+        allEnvVars: Object.keys(process.env)
+          .filter(key => /manychat|api.*key|mc.*key/i.test(key))
+          .map(key => ({ key, hasValue: !!process.env[key], length: process.env[key]?.length || 0 })),
+      };
+      
       return NextResponse.json(
         { 
           ok: false, 
           error: 'ManyChat API Key not configured',
-          hint: 'Set MANYCHAT_API_KEY environment variable',
+          hint: 'Set MANYCHAT_API_KEY or ManyChat_API_Key environment variable',
+          diagnostics: envCheck,
         },
         { status: 500 }
       );
