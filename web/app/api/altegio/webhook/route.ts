@@ -1058,18 +1058,28 @@ export async function POST(req: NextRequest) {
                   const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
                   if (existingClient) {
                     // Оновлюємо дату запису з data.datetime, якщо вона є
+                    // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
                     const recordData = body.data?.data || body.data;
                     const appointmentDateTime = recordData?.datetime || data.datetime;
+                    const services = recordData?.services || data.services || [];
+                    const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
+                    const hasConsultation = consultationInfo.isConsultation;
+                    
                     let paidServiceDate = existingClient.paidServiceDate;
                     let signedUpForPaidService = existingClient.signedUpForPaidService;
                     
-                    if (appointmentDateTime) {
+                    // Встановлюємо paidServiceDate ТІЛЬКИ якщо НЕ консультація
+                    if (appointmentDateTime && !hasConsultation) {
                       const appointmentDate = new Date(appointmentDateTime);
                       const now = new Date();
                       if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
                         paidServiceDate = appointmentDateTime;
                         signedUpForPaidService = true;
                       }
+                    } else if (hasConsultation && !existingClient.signedUpForPaidService) {
+                      // Для консультацій очищаємо paidServiceDate, якщо signedUpForPaidService = false
+                      paidServiceDate = undefined;
+                      signedUpForPaidService = false;
                     }
                     
                     const updated: typeof existingClient = {
@@ -1113,11 +1123,17 @@ export async function POST(req: NextRequest) {
                   }
                   
                   // Встановлюємо дату запису з data.datetime, якщо вона є і є майбутньою
+                  // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
                   const appointmentDateTime = recordData?.datetime || data.datetime;
+                  const services = recordData?.services || data.services || [];
+                  const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
+                  const hasConsultation = consultationInfo.isConsultation;
+                  
                   let paidServiceDate: string | undefined = undefined;
                   let signedUpForPaidService = false;
                   
-                  if (appointmentDateTime) {
+                  // Встановлюємо paidServiceDate ТІЛЬКИ якщо НЕ консультація
+                  if (appointmentDateTime && !hasConsultation) {
                     const appointmentDate = new Date(appointmentDateTime);
                     const nowDate = new Date();
                     if (appointmentDate > nowDate) {
@@ -1170,18 +1186,28 @@ export async function POST(req: NextRequest) {
                   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
                   
                   // Оновлюємо дату запису з data.datetime, якщо вона є
+                  // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
                   const recordData = body.data?.data || body.data;
                   const appointmentDateTime = recordData?.datetime || data.datetime;
+                  const services = recordData?.services || data.services || [];
+                  const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
+                  const hasConsultation = consultationInfo.isConsultation;
+                  
                   let paidServiceDate = existingClientByAltegioId.paidServiceDate;
                   let signedUpForPaidService = existingClientByAltegioId.signedUpForPaidService;
                   
-                  if (appointmentDateTime) {
+                  // Встановлюємо paidServiceDate ТІЛЬКИ якщо НЕ консультація
+                  if (appointmentDateTime && !hasConsultation) {
                     const appointmentDate = new Date(appointmentDateTime);
                     const now = new Date();
                     if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
                       paidServiceDate = appointmentDateTime;
                       signedUpForPaidService = true;
                     }
+                  } else if (hasConsultation && !existingClientByAltegioId.signedUpForPaidService) {
+                    // Для консультацій очищаємо paidServiceDate, якщо signedUpForPaidService = false
+                    paidServiceDate = undefined;
+                    signedUpForPaidService = false;
                   }
                   
                   // Клієнти з Altegio завжди мають стан "client" (не "lead")
@@ -1245,18 +1271,28 @@ export async function POST(req: NextRequest) {
                       const isMissingInstagramReal = normalizedInstagram.startsWith('missing_instagram_');
                       
                       // Оновлюємо дату запису з data.datetime, якщо вона є
+                      // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
                       const recordData = body.data?.data || body.data;
                       const appointmentDateTime = recordData?.datetime || data.datetime;
+                      const services = recordData?.services || data.services || [];
+                      const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
+                      const hasConsultation = consultationInfo.isConsultation;
+                      
                       let paidServiceDate = existingClientByName.paidServiceDate;
                       let signedUpForPaidService = existingClientByName.signedUpForPaidService;
                       
-                      if (appointmentDateTime) {
+                      // Встановлюємо paidServiceDate ТІЛЬКИ якщо НЕ консультація
+                      if (appointmentDateTime && !hasConsultation) {
                         const appointmentDate = new Date(appointmentDateTime);
                         const now = new Date();
                         if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
                           paidServiceDate = appointmentDateTime;
                           signedUpForPaidService = true;
                         }
+                      } else if (hasConsultation && !existingClientByName.signedUpForPaidService) {
+                        // Для консультацій очищаємо paidServiceDate, якщо signedUpForPaidService = false
+                        paidServiceDate = undefined;
+                        signedUpForPaidService = false;
                       }
                       
                       // Встановлюємо altegioClientId, якщо його ще немає
