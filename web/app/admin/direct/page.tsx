@@ -870,6 +870,63 @@ export default function DirectPage() {
             🔄 Синхронізувати сьогоднішні вебхуки
           </button>
           <button
+            className="btn btn-sm btn-info"
+            onClick={async () => {
+              const days = prompt('Синхронізувати клієнтів з ManyChat вебхуків.\n\nВведіть кількість днів назад (1 = сьогодні, 2 = сьогодні + вчора, тощо):', '7');
+              if (days === null) return;
+              const daysNum = parseInt(days, 10);
+              if (isNaN(daysNum) || daysNum < 1 || daysNum > 30) {
+                alert('Введіть число від 1 до 30');
+                return;
+              }
+              const limit = prompt('Скільки вебхуків обробити? (за замовчуванням 100):', '100');
+              if (limit === null) return;
+              const limitNum = parseInt(limit, 10);
+              if (isNaN(limitNum) || limitNum < 1 || limitNum > 500) {
+                alert('Введіть число від 1 до 500');
+                return;
+              }
+              if (!confirm(`Синхронізувати клієнтів з ManyChat вебхуків за останні ${daysNum} днів?\n\nБуде оброблено до ${limitNum} вебхуків.\n\nПродовжити?`)) {
+                return;
+              }
+              setIsLoading(true);
+              try {
+                const res = await fetch('/api/admin/direct/sync-manychat-webhooks', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ days: daysNum, limit: limitNum }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  const message = `✅ Синхронізація ManyChat завершена!\n\n` +
+                    `Оброблено: ${data.results.processed}\n` +
+                    `Створено: ${data.results.created}\n` +
+                    `Оновлено: ${data.results.updated}\n` +
+                    `Пропущено: ${data.results.skipped}\n` +
+                    `Помилок: ${data.results.errors}\n\n` +
+                    (data.results.errorsList && data.results.errorsList.length > 0
+                      ? `Помилки:\n${data.results.errorsList.map((e: any) => 
+                          `  ${e.error}`
+                        ).join('\n')}\n\n`
+                      : '') +
+                    `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                  showCopyableAlert(message);
+                  await loadData();
+                } else {
+                  showCopyableAlert(`❌ Помилка: ${data.error || 'Невідома помилка'}\n\n${JSON.stringify(data, null, 2)}`);
+                }
+              } catch (err) {
+                showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+            title="Синхронізувати клієнтів з ManyChat вебхуків"
+          >
+            📱 Синхронізувати ManyChat вебхуки
+          </button>
+          <button
             className="btn btn-sm btn-error"
             onClick={async () => {
               if (!confirm('Видалити дублікати стану "client" з історії?\n\nЦе видалить всі дублікати стану "client" для Altegio клієнтів, залишивши тільки перший (найстаріший) запис.\n\nПродовжити?')) {
