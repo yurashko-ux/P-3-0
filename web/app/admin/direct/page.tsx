@@ -872,13 +872,23 @@ export default function DirectPage() {
           <button
             className="btn btn-sm btn-info"
             onClick={async () => {
-              const days = prompt('Синхронізувати клієнтів з ManyChat вебхуків.\n\nВведіть кількість днів назад (1 = сьогодні, 2 = сьогодні + вчора, тощо):', '7');
-              if (days === null) return;
-              const daysNum = parseInt(days, 10);
-              if (isNaN(daysNum) || daysNum < 1 || daysNum > 30) {
-                alert('Введіть число від 1 до 30');
-                return;
+              const syncAll = confirm('Синхронізувати ВСІ вебхуки ManyChat (без фільтрації по днях)?\n\nOK - синхронізувати всі\nСкасувати - вибрати кількість днів');
+              let daysNum: number | null = null;
+              
+              if (!syncAll) {
+                const days = prompt('Синхронізувати клієнтів з ManyChat вебхуків.\n\nВведіть кількість днів назад (1 = сьогодні, 2 = сьогодні + вчора, тощо):\n\nАбо залиште порожнім для синхронізації всіх вебхуків', '');
+                if (days === null) return;
+                if (days.trim() === '') {
+                  daysNum = null; // Синхронізувати всі
+                } else {
+                  daysNum = parseInt(days, 10);
+                  if (isNaN(daysNum) || daysNum < 1 || daysNum > 30) {
+                    alert('Введіть число від 1 до 30 або залиште порожнім для всіх вебхуків');
+                    return;
+                  }
+                }
               }
+              
               const limit = prompt('Скільки вебхуків обробити? (за замовчуванням 100):', '100');
               if (limit === null) return;
               const limitNum = parseInt(limit, 10);
@@ -886,7 +896,12 @@ export default function DirectPage() {
                 alert('Введіть число від 1 до 500');
                 return;
               }
-              if (!confirm(`Синхронізувати клієнтів з ManyChat вебхуків за останні ${daysNum} днів?\n\nБуде оброблено до ${limitNum} вебхуків.\n\nПродовжити?`)) {
+              
+              const confirmMessage = daysNum === null 
+                ? `Синхронізувати клієнтів з ManyChat вебхуків (ВСІ вебхуки)?\n\nБуде оброблено до ${limitNum} вебхуків.\n\nПродовжити?`
+                : `Синхронізувати клієнтів з ManyChat вебхуків за останні ${daysNum} днів?\n\nБуде оброблено до ${limitNum} вебхуків.\n\nПродовжити?`;
+              
+              if (!confirm(confirmMessage)) {
                 return;
               }
               setIsLoading(true);
@@ -894,7 +909,11 @@ export default function DirectPage() {
                 const res = await fetch('/api/admin/direct/sync-manychat-webhooks', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ days: daysNum, limit: limitNum }),
+                  body: JSON.stringify({ 
+                    days: daysNum, 
+                    limit: limitNum,
+                    skipDaysFilter: daysNum === null 
+                  }),
                 });
                 const data = await res.json();
                 if (data.ok) {

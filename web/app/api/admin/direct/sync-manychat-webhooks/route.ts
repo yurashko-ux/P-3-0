@@ -84,13 +84,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const limit = body.limit || 100; // За замовчуванням обробляємо 100 вебхуків
-    const days = body.days || 7; // За замовчуванням за останні 7 днів
+    const days = body.days !== undefined ? body.days : null; // null = синхронізувати всі вебхуки
+    const skipDaysFilter = body.skipDaysFilter === true; // Опція пропустити фільтр по днях
 
-    console.log(`[direct/sync-manychat-webhooks] Starting sync for last ${days} days, limit: ${limit}`);
+    console.log(`[direct/sync-manychat-webhooks] Starting sync, limit: ${limit}, days: ${days}, skipDaysFilter: ${skipDaysFilter}`);
 
     // Отримуємо всі вебхуки з логу
     const rawItems = await kvRead.lrange('manychat:webhook:log', 0, limit - 1);
-    console.log(`[direct/sync-manychat-webhooks] Found ${rawItems.length} webhooks in log`);
+    console.log(`[direct/sync-manychat-webhooks] Found ${rawItems.length} raw items in log`);
 
     // Парсимо вебхуки
     const webhooks = rawItems
@@ -120,6 +121,11 @@ export async function POST(req: NextRequest) {
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             const parsedObj = parsed as Record<string, unknown>;
             if ('receivedAt' in parsedObj) {
+              // Якщо skipDaysFilter = true або days = null, не фільтруємо по днях
+              if (skipDaysFilter || days === null) {
+                return parsedObj;
+              }
+              
               // Перевіряємо, чи вебхук в межах вказаних днів
               const receivedAt = new Date(parsedObj.receivedAt as string);
               const daysAgo = new Date();
@@ -138,7 +144,33 @@ export async function POST(req: NextRequest) {
       })
       .filter(Boolean) as Array<Record<string, unknown>>;
 
-    console.log(`[direct/sync-manychat-webhooks] Found ${webhooks.length} webhooks within last ${days} days`);
+    console.log(`[direct/sync-manychat-webhooks] Found ${webhooks.length} webhooks${days !== null ? ` within last ${days} days` : ' (all webhooks)'}`);
+    
+    // Додаткова діагностика: показуємо дати вебхуків
+    if (webhooks.length === 0 && rawItems.length > 0) {
+      const sampleDates = rawItems.slice(0, 5).map((raw) => {
+        try {
+          let parsed: unknown = raw;
+          if (typeof raw === 'string') {
+            parsed = JSON.parse(raw);
+          } else if (raw && typeof raw === 'object') {
+            const rawObj = raw as Record<string, unknown>;
+            if ('value' in rawObj && typeof rawObj.value === 'string') {
+              parsed = JSON.parse(rawObj.value);
+            }
+          }
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const parsedObj = parsed as Record<string, unknown>;
+            return parsedObj.receivedAt as string;
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }).filter(Boolean);
+      
+      console.log(`[direct/sync-manychat-webhooks] Sample webhook dates:`, sampleDates);
+    }
 
     // Імпортуємо функції для роботи з Direct Manager
     const statuses = await getAllDirectStatuses();
