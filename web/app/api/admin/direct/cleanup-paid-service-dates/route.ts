@@ -1,9 +1,8 @@
 // web/app/api/admin/direct/cleanup-paid-service-dates/route.ts
-// API endpoint для очищення помилково встановлених paidServiceDate для клієнтів з консультаціями
+// Endpoint для очищення paidServiceDate для клієнтів, у яких він встановлений для консультацій
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
-import { kvRead } from '@/lib/kv';
+import { PrismaClient } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,67 +24,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
- * Перевіряє, чи клієнт має тільки консультації (без платних послуг)
- */
-async function hasOnlyConsultations(altegioClientId: number | null | undefined): Promise<boolean> {
-  if (!altegioClientId) return false;
-  
-  try {
-    // Отримуємо всі записи з records:log
-    const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const clientRecords = recordsLogRaw
-      .map((raw) => {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
-            try {
-              return JSON.parse(parsed.value);
-            } catch {
-              return null;
-            }
-          }
-          return parsed;
-        } catch {
-          return null;
-        }
-      })
-      .filter((r) => {
-        if (!r || typeof r !== 'object') return false;
-        const recordClientId = r.clientId || (r.data && r.data.client && r.data.client.id) || (r.data && r.data.client_id);
-        if (!recordClientId) return false;
-        const parsedClientId = parseInt(String(recordClientId), 10);
-        return !isNaN(parsedClientId) && parsedClientId === altegioClientId;
-      })
-      .filter((r) => {
-        // Перевіряємо, що запис має services
-        const services = r.data?.services || r.services || [];
-        return Array.isArray(services) && services.length > 0;
-      });
-
-    // Перевіряємо, чи всі послуги - це консультації
-    for (const record of clientRecords) {
-      const services = record.data?.services || record.services || [];
-      const hasNonConsultation = services.some((s: any) => {
-        const title = s.title || s.name || '';
-        return !/консультація/i.test(title);
-      });
-      
-      if (hasNonConsultation) {
-        // Знайдено платну послугу
-        return false;
-      }
-    }
-    
-    // Якщо є записи і всі вони - консультації
-    return clientRecords.length > 0;
-  } catch (err) {
-    console.warn(`[cleanup-paid-service-dates] Failed to check consultation history for client ${altegioClientId}:`, err);
-    return false;
-  }
-}
-
-/**
- * POST - очистити помилково встановлені paidServiceDate для клієнтів з консультаціями
+ * POST - очистити paidServiceDate для клієнтів, у яких він встановлений для консультацій
  */
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -93,58 +32,165 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const clients = await getAllDirectClients();
-    const cleaned: string[] = [];
-    const errors: string[] = [];
+    const prisma = new PrismaClient();
+    
+    // Отримуємо всіх клієнтів з paidServiceDate
+    const clientsWithPaidServiceDate = await prisma.directClient.findMany({
+      where: {
+        paidServiceDate: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        instagramUsername: true,
+        firstName: true,
+        lastName: true,
+        paidServiceDate: true,
+        consultationBookingDate: true,
+        signedUpForPaidService: true,
+        altegioClientId: true,
+      },
+    });
 
-    for (const client of clients) {
-      // Перевіряємо, чи клієнт має paidServiceDate
-      // Якщо клієнт має тільки консультації - очищаємо paidServiceDate
-      if (client.paidServiceDate && client.altegioClientId) {
-        const onlyConsultations = await hasOnlyConsultations(client.altegioClientId);
-        
-        // Очищаємо paidServiceDate, якщо:
-        // 1. signedUpForPaidService = false (помилка в даних)
-        // 2. Клієнт має тільки консультації (навіть якщо signedUpForPaidService = true, але це помилка)
-        if (!client.signedUpForPaidService || onlyConsultations) {
-          try {
-            const updates: Partial<typeof client> = {
-              paidServiceDate: undefined,
-              signedUpForPaidService: false,
-              updatedAt: new Date().toISOString(),
-            };
-            
-            const updated = {
-              ...client,
-              ...updates,
-            };
-            
-            await saveDirectClient(updated, 'cleanup-paid-service-dates', {
-              reason: onlyConsultations ? 'only consultations' : 'signedUpForPaidService is false',
-              altegioClientId: client.altegioClientId,
-              instagramUsername: client.instagramUsername,
-            });
-            
-            cleaned.push(`${client.instagramUsername} (${client.firstName} ${client.lastName})`);
-            console.log(`[cleanup-paid-service-dates] ✅ Cleaned paidServiceDate for client ${client.id} (${client.instagramUsername}) - reason: ${onlyConsultations ? 'only consultations' : 'signedUpForPaidService is false'}`);
-          } catch (err) {
-            const errorMsg = `Failed to clean ${client.instagramUsername}: ${err instanceof Error ? err.message : String(err)}`;
-            errors.push(errorMsg);
-            console.error(`[cleanup-paid-service-dates] ❌ ${errorMsg}`);
+    console.log(`[cleanup-paid-service-dates] Found ${clientsWithPaidServiceDate.length} clients with paidServiceDate`);
+
+    const results = {
+      total: clientsWithPaidServiceDate.length,
+      cleaned: 0,
+      skipped: 0,
+      errors: 0,
+      details: [] as Array<{
+        clientId: string;
+        instagramUsername: string | null;
+        reason: string;
+        paidServiceDate: string | null;
+        consultationBookingDate: string | null;
+      }>,
+    };
+
+    // Перевіряємо кожного клієнта
+    for (const client of clientsWithPaidServiceDate) {
+      try {
+        let shouldClean = false;
+        let reason = '';
+
+        // Варіант 1: paidServiceDate збігається з consultationBookingDate
+        if (client.consultationBookingDate && client.paidServiceDate) {
+          const paidDate = new Date(client.paidServiceDate);
+          const consultationDate = new Date(client.consultationBookingDate);
+          
+          // Порівнюємо тільки дати (без часу)
+          paidDate.setHours(0, 0, 0, 0);
+          consultationDate.setHours(0, 0, 0, 0);
+          
+          if (paidDate.getTime() === consultationDate.getTime()) {
+            shouldClean = true;
+            reason = 'paidServiceDate matches consultationBookingDate';
           }
         }
+
+        // Варіант 2: signedUpForPaidService = false, але paidServiceDate встановлений
+        // Це означає, що paidServiceDate встановлений помилково
+        if (!shouldClean && !client.signedUpForPaidService && client.paidServiceDate) {
+          shouldClean = true;
+          reason = 'signedUpForPaidService is false but paidServiceDate is set';
+        }
+
+        // Варіант 3: Перевіряємо записи в Altegio records:log
+        // Якщо для цієї дати є тільки консультації - очищаємо
+        if (!shouldClean && client.paidServiceDate && client.altegioClientId) {
+          try {
+            const { kvRead } = await import('@/lib/kv');
+            const rawItems = await kvRead.lrange('altegio:records:log', 0, 999);
+            
+            const paidDate = new Date(client.paidServiceDate);
+            paidDate.setHours(0, 0, 0, 0);
+            
+            let hasOnlyConsultations = true;
+            let hasPaidService = false;
+            
+            for (const raw of rawItems) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed.clientId === client.altegioClientId || parsed.data?.clientId === client.altegioClientId) {
+                  const recordDate = parsed.datetime ? new Date(parsed.datetime) : null;
+                  if (recordDate) {
+                    recordDate.setHours(0, 0, 0, 0);
+                    if (recordDate.getTime() === paidDate.getTime()) {
+                      // Перевіряємо послуги
+                      const services = parsed.data?.services || parsed.services || [];
+                      if (Array.isArray(services) && services.length > 0) {
+                        const hasConsultation = services.some((s: any) => {
+                          const title = (s.title || s.name || '').toLowerCase();
+                          return /консультаці/i.test(title);
+                        });
+                        const hasHairExtension = services.some((s: any) => {
+                          const title = (s.title || s.name || '').toLowerCase();
+                          return /нарощування/i.test(title);
+                        });
+                        
+                        if (hasHairExtension || (!hasConsultation && services.length > 0)) {
+                          hasPaidService = true;
+                          hasOnlyConsultations = false;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch {
+                // Пропускаємо невалідні записи
+              }
+            }
+            
+            if (hasOnlyConsultations && !hasPaidService) {
+              shouldClean = true;
+              reason = 'Only consultations found for this date in Altegio records';
+            }
+          } catch (err) {
+            console.warn(`[cleanup-paid-service-dates] Failed to check Altegio records for client ${client.id}:`, err);
+          }
+        }
+
+        if (shouldClean) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: {
+              paidServiceDate: null,
+              signedUpForPaidService: false,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          
+          results.cleaned++;
+          results.details.push({
+            clientId: client.id,
+            instagramUsername: client.instagramUsername,
+            reason,
+            paidServiceDate: client.paidServiceDate,
+            consultationBookingDate: client.consultationBookingDate,
+          });
+          
+          console.log(`[cleanup-paid-service-dates] ✅ Cleaned paidServiceDate for client ${client.id} (${client.instagramUsername}): ${reason}`);
+        } else {
+          results.skipped++;
+        }
+      } catch (err) {
+        results.errors++;
+        console.error(`[cleanup-paid-service-dates] Error processing client ${client.id}:`, err);
       }
     }
 
+    await prisma.$disconnect();
+
     return NextResponse.json({
       ok: true,
-      total: clients.length,
-      cleaned: cleaned.length,
-      cleanedClients: cleaned,
-      errors: errors.length > 0 ? errors : undefined,
+      message: `Cleaned ${results.cleaned} clients, skipped ${results.skipped}, errors: ${results.errors}`,
+      results,
     });
   } catch (error) {
-    console.error('[cleanup-paid-service-dates] POST error:', error);
+    console.error('[cleanup-paid-service-dates] Error:', error);
     return NextResponse.json(
       {
         ok: false,
@@ -154,4 +200,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
