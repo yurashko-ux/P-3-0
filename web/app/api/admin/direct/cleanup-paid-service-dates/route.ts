@@ -168,8 +168,8 @@ export async function POST(req: NextRequest) {
             clientId: client.id,
             instagramUsername: client.instagramUsername,
             reason,
-            paidServiceDate: client.paidServiceDate,
-            consultationBookingDate: client.consultationBookingDate,
+            paidServiceDate: client.paidServiceDate ? new Date(client.paidServiceDate).toISOString() : null,
+            consultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
           });
           
           console.log(`[cleanup-paid-service-dates] ✅ Cleaned paidServiceDate for client ${client.id} (${client.instagramUsername}): ${reason}`);
