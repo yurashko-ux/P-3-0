@@ -1097,11 +1097,12 @@ export async function GET(req: NextRequest) {
               }
             } else if (raw && typeof raw === 'object') {
               // Може бути об'єкт з полем value (Vercel KV формат)
-              if ('value' in raw && typeof raw.value === 'string') {
+              const rawObj = raw as Record<string, unknown>;
+              if ('value' in rawObj && typeof rawObj.value === 'string') {
                 try {
-                  parsed = JSON.parse(raw.value);
+                  parsed = JSON.parse(rawObj.value);
                 } catch {
-                  parsed = raw.value;
+                  parsed = rawObj.value;
                 }
               } else {
                 parsed = raw;
