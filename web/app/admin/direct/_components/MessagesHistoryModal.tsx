@@ -26,6 +26,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<any>(null);
 
   useEffect(() => {
     if (isOpen && client) {
@@ -50,6 +51,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
       const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(instagramUsername)}`);
       const apiData = await apiResponse.json();
       
+      // Зберігаємо діагностику
+      if (apiData.diagnostics) {
+        setDiagnostics(apiData.diagnostics);
+      }
+      
       if (apiData.ok && apiData.messages && apiData.messages.length > 0) {
         // Конвертуємо повідомлення з ManyChat API в наш формат
         const convertedMessages: Message[] = apiData.messages.map((msg: any) => ({
@@ -61,6 +67,12 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
         }));
         setMessages(convertedMessages);
         return;
+      }
+      
+      // Якщо API не повернув повідомлення, але subscriber знайдено - показуємо повідомлення
+      if (apiData.ok && apiData.subscriberId && apiData.messages && apiData.messages.length === 0) {
+        console.log('[MessagesHistoryModal] API returned but no messages. Diagnostics:', apiData.diagnostics);
+        // Продовжуємо до fallback (вебхуки)
       }
       
       // Якщо API не повернув повідомлення, використовуємо вебхуки
@@ -161,7 +173,23 @@ export function MessagesHistoryModal({ client, isOpen, onClose }: MessagesHistor
             </div>
           ) : messages.length === 0 ? (
             <div className="text-center p-8 text-gray-500">
-              Немає повідомлень для відображення
+              <p className="mb-2">Немає повідомлень для відображення</p>
+              {diagnostics && (
+                <div className="text-xs mt-4 p-4 bg-gray-100 rounded text-left max-w-md mx-auto">
+                  <p className="font-semibold mb-2">Діагностика:</p>
+                  <ul className="space-y-1">
+                    <li>API Key: {diagnostics.apiKeyConfigured ? '✅ Налаштовано' : '❌ Не налаштовано'}</li>
+                    <li>Subscriber знайдено: {diagnostics.subscriberFound ? '✅ Так' : '❌ Ні'}</li>
+                    {diagnostics.subscriberId && <li>Subscriber ID: {diagnostics.subscriberId}</li>}
+                    <li>Повідомлень знайдено: {diagnostics.messagesFound || 0}</li>
+                  </ul>
+                  {diagnostics.subscriberFound && diagnostics.messagesFound === 0 && (
+                    <p className="mt-2 text-orange-600">
+                      ⚠️ ManyChat API може не підтримувати endpoint для історії повідомлень
+                    </p>
+                  )}
+                </div>
+              )}
               <p className="text-xs mt-2">
                 Повідомлення зберігаються тільки коли клієнт пише в ManyChat
               </p>

@@ -27,7 +27,7 @@ function isAuthorized(req: NextRequest): boolean {
  * Отримує ManyChat API ключ
  */
 function getManyChatApiKey(): string | null {
-  return (
+  const key = (
     process.env.MANYCHAT_API_KEY || 
     process.env.ManyChat_API_Key ||
     process.env.MANYCHAT_API_TOKEN || 
@@ -35,6 +35,21 @@ function getManyChatApiKey(): string | null {
     process.env.MANYCHAT_APIKEY ||
     null
   );
+  
+  // Діагностика для дебагу
+  if (!key) {
+    console.log('[manychat-conversation] API Key not found. Available env vars:', {
+      MANYCHAT_API_KEY: !!process.env.MANYCHAT_API_KEY,
+      ManyChat_API_Key: !!process.env.ManyChat_API_Key,
+      MANYCHAT_API_TOKEN: !!process.env.MANYCHAT_API_TOKEN,
+      MC_API_KEY: !!process.env.MC_API_KEY,
+      MANYCHAT_APIKEY: !!process.env.MANYCHAT_APIKEY,
+    });
+  } else {
+    console.log('[manychat-conversation] API Key found, length:', key.length);
+  }
+  
+  return key;
 }
 
 /**
@@ -105,6 +120,8 @@ async function findSubscriberByInstagram(instagram: string, apiKey: string): Pro
  * Отримує історію повідомлень для subscriber через ManyChat API
  */
 async function getConversationHistory(subscriberId: string, apiKey: string): Promise<any[]> {
+  const results: any[] = [];
+  
   try {
     // ManyChat API може мати різні методи для отримання історії
     // Спробуємо різні варіанти:
@@ -112,6 +129,7 @@ async function getConversationHistory(subscriberId: string, apiKey: string): Pro
     // Варіант 1: getMessages (якщо існує)
     const messagesUrl = `https://api.manychat.com/fb/subscriber/getMessages?subscriber_id=${subscriberId}`;
     try {
+      console.log('[manychat-conversation] Trying getMessages:', messagesUrl);
       const messagesResponse = await fetch(messagesUrl, {
         method: 'GET',
         headers: {
@@ -119,22 +137,45 @@ async function getConversationHistory(subscriberId: string, apiKey: string): Pro
         },
       });
 
+      const responseText = await messagesResponse.text();
+      console.log('[manychat-conversation] getMessages response:', {
+        status: messagesResponse.status,
+        statusText: messagesResponse.statusText,
+        responsePreview: responseText.substring(0, 500),
+      });
+
       if (messagesResponse.ok) {
-        const data = await messagesResponse.json();
-        if (data?.data && Array.isArray(data.data)) {
-          return data.data;
+        try {
+          const data = JSON.parse(responseText);
+          if (data?.data && Array.isArray(data.data)) {
+            console.log('[manychat-conversation] Found messages in data.data:', data.data.length);
+            return data.data;
+          }
+          if (data?.messages && Array.isArray(data.messages)) {
+            console.log('[manychat-conversation] Found messages in data.messages:', data.messages.length);
+            return data.messages;
+          }
+          // Зберігаємо для діагностики
+          results.push({ method: 'getMessages', response: data });
+        } catch (parseErr) {
+          console.log('[manychat-conversation] Failed to parse getMessages response');
         }
-        if (data?.messages && Array.isArray(data.messages)) {
-          return data.messages;
-        }
+      } else {
+        results.push({ 
+          method: 'getMessages', 
+          status: messagesResponse.status,
+          error: responseText.substring(0, 200),
+        });
       }
     } catch (err) {
-      console.log('[manychat-conversation] getMessages method not available or failed');
+      console.log('[manychat-conversation] getMessages method error:', err);
+      results.push({ method: 'getMessages', error: err instanceof Error ? err.message : String(err) });
     }
 
     // Варіант 2: getConversation
     const conversationUrl = `https://api.manychat.com/fb/subscriber/getConversation?subscriber_id=${subscriberId}`;
     try {
+      console.log('[manychat-conversation] Trying getConversation:', conversationUrl);
       const conversationResponse = await fetch(conversationUrl, {
         method: 'GET',
         headers: {
@@ -142,25 +183,48 @@ async function getConversationHistory(subscriberId: string, apiKey: string): Pro
         },
       });
 
+      const responseText = await conversationResponse.text();
+      console.log('[manychat-conversation] getConversation response:', {
+        status: conversationResponse.status,
+        statusText: conversationResponse.statusText,
+        responsePreview: responseText.substring(0, 500),
+      });
+
       if (conversationResponse.ok) {
-        const data = await conversationResponse.json();
-        if (data?.data && Array.isArray(data.data)) {
-          return data.data;
+        try {
+          const data = JSON.parse(responseText);
+          if (data?.data && Array.isArray(data.data)) {
+            console.log('[manychat-conversation] Found messages in data.data:', data.data.length);
+            return data.data;
+          }
+          if (data?.messages && Array.isArray(data.messages)) {
+            console.log('[manychat-conversation] Found messages in data.messages:', data.messages.length);
+            return data.messages;
+          }
+          if (data?.conversation && Array.isArray(data.conversation)) {
+            console.log('[manychat-conversation] Found messages in data.conversation:', data.conversation.length);
+            return data.conversation;
+          }
+          results.push({ method: 'getConversation', response: data });
+        } catch (parseErr) {
+          console.log('[manychat-conversation] Failed to parse getConversation response');
         }
-        if (data?.messages && Array.isArray(data.messages)) {
-          return data.messages;
-        }
-        if (data?.conversation && Array.isArray(data.conversation)) {
-          return data.conversation;
-        }
+      } else {
+        results.push({ 
+          method: 'getConversation', 
+          status: conversationResponse.status,
+          error: responseText.substring(0, 200),
+        });
       }
     } catch (err) {
-      console.log('[manychat-conversation] getConversation method not available or failed');
+      console.log('[manychat-conversation] getConversation method error:', err);
+      results.push({ method: 'getConversation', error: err instanceof Error ? err.message : String(err) });
     }
 
     // Варіант 3: getSubscriberInfo (може містити останні повідомлення)
     const subscriberInfoUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${subscriberId}`;
     try {
+      console.log('[manychat-conversation] Trying getSubscriberInfo:', subscriberInfoUrl);
       const subscriberInfoResponse = await fetch(subscriberInfoUrl, {
         method: 'GET',
         headers: {
@@ -168,20 +232,43 @@ async function getConversationHistory(subscriberId: string, apiKey: string): Pro
         },
       });
 
+      const responseText = await subscriberInfoResponse.text();
+      console.log('[manychat-conversation] getSubscriberInfo response:', {
+        status: subscriberInfoResponse.status,
+        statusText: subscriberInfoResponse.statusText,
+        responsePreview: responseText.substring(0, 500),
+      });
+
       if (subscriberInfoResponse.ok) {
-        const data = await subscriberInfoResponse.json();
-        // Перевіряємо, чи є повідомлення в відповіді
-        if (data?.data?.messages && Array.isArray(data.data.messages)) {
-          return data.data.messages;
+        try {
+          const data = JSON.parse(responseText);
+          // Перевіряємо, чи є повідомлення в відповіді
+          if (data?.data?.messages && Array.isArray(data.data.messages)) {
+            console.log('[manychat-conversation] Found messages in data.data.messages:', data.data.messages.length);
+            return data.data.messages;
+          }
+          if (data?.messages && Array.isArray(data.messages)) {
+            console.log('[manychat-conversation] Found messages in data.messages:', data.messages.length);
+            return data.messages;
+          }
+          // Зберігаємо для діагностики
+          results.push({ method: 'getSubscriberInfo', response: data });
+        } catch (parseErr) {
+          console.log('[manychat-conversation] Failed to parse getSubscriberInfo response');
         }
-        if (data?.messages && Array.isArray(data.messages)) {
-          return data.messages;
-        }
+      } else {
+        results.push({ 
+          method: 'getSubscriberInfo', 
+          status: subscriberInfoResponse.status,
+          error: responseText.substring(0, 200),
+        });
       }
     } catch (err) {
-      console.log('[manychat-conversation] getSubscriberInfo method not available or failed');
+      console.log('[manychat-conversation] getSubscriberInfo method error:', err);
+      results.push({ method: 'getSubscriberInfo', error: err instanceof Error ? err.message : String(err) });
     }
 
+    console.log('[manychat-conversation] All methods tried, no messages found. Results:', results);
     return [];
   } catch (error) {
     console.error('[manychat-conversation] Error getting conversation history:', error);
@@ -233,6 +320,15 @@ export async function GET(req: NextRequest) {
     // Отримуємо історію повідомлень
     const messages = await getConversationHistory(subscriberId, apiKey);
 
+    // Діагностична інформація
+    const diagnostics = {
+      subscriberFound: !!subscriberId,
+      subscriberId,
+      messagesFound: messages.length,
+      apiKeyConfigured: !!apiKey,
+      apiKeyLength: apiKey?.length || 0,
+    };
+
     return NextResponse.json({
       ok: true,
       subscriberId,
@@ -249,8 +345,9 @@ export async function GET(req: NextRequest) {
         type: msg.type || 'text',
       })),
       total: messages.length,
+      diagnostics,
       note: messages.length === 0 
-        ? 'ManyChat API may not support conversation history endpoint, or subscriber has no messages'
+        ? 'ManyChat API may not support conversation history endpoint, or subscriber has no messages. Check diagnostics for details.'
         : undefined,
     });
   } catch (error) {
