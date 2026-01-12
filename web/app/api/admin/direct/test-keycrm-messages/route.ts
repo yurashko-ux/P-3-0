@@ -122,13 +122,48 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Перевіряємо також через картки (якщо є card_id в query)
-  const cardId = req.nextUrl.searchParams.get('card_id');
+  // Перевіряємо також через картки
+  // Спочатку отримуємо одну картку для тестування
+  let testCardId: string | null = null;
+  try {
+    const cardsUrl = `${base.replace(/\/+$/, '')}/pipelines/cards?page=1&limit=1&include[]=contact`;
+    const cardsResponse = await fetch(cardsUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: auth,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    });
+
+    if (cardsResponse.ok) {
+      const cardsData = await cardsResponse.json();
+      const cards = Array.isArray(cardsData?.data) ? cardsData.data : [];
+      if (cards.length > 0) {
+        testCardId = cards[0].id?.toString() || null;
+      }
+    }
+  } catch (err) {
+    console.log('[test-keycrm-messages] Could not fetch test card:', err);
+  }
+
+  // Перевіряємо через картки (якщо є card_id в query або знайшли тестову картку)
+  const cardId = req.nextUrl.searchParams.get('card_id') || testCardId;
   if (cardId) {
     const cardEndpoints = [
       `cards/${cardId}/messages`,
       `cards/${cardId}?include[]=messages`,
-      `cards/${cardId}/conversations`,
+      `cards/${cardId}?include[]=conversations`,
+      `cards/${cardId}?include[]=chats`,
+      `cards/${cardId}?include[]=communications`,
+      `cards/${cardId}?include[]=activities`,
+      `cards/${cardId}?include[]=notes`,
+      `cards/${cardId}?include[]=comments`,
+      `cards/${cardId}?with[]=messages`,
+      `cards/${cardId}?with[]=conversations`,
+      `pipelines/cards/${cardId}`,
+      `pipelines/cards/${cardId}?include[]=messages`,
+      `pipelines/cards/${cardId}?include[]=conversations`,
     ];
 
     for (const path of cardEndpoints) {
@@ -153,20 +188,38 @@ export async function GET(req: NextRequest) {
 
         const hasData = parsed?.data && Array.isArray(parsed.data) && parsed.data.length > 0;
         const hasMessages = parsed?.messages && Array.isArray(parsed.messages) && parsed.messages.length > 0;
+        
+        // Перевіряємо структуру картки на наявність полів з повідомленнями
+        const cardData = parsed?.data || parsed;
+        const hasMessagesInCard = cardData && typeof cardData === 'object' && (
+          Array.isArray(cardData.messages) ||
+          Array.isArray(cardData.conversations) ||
+          Array.isArray(cardData.chats) ||
+          Array.isArray(cardData.communications) ||
+          Array.isArray(cardData.activities) ||
+          Array.isArray(cardData.notes) ||
+          Array.isArray(cardData.comments)
+        );
 
         results.push({
           endpoint: path,
           status: response.status,
           ok: response.ok,
           error: response.ok ? undefined : (parsed?.error || parsed?.message || text.substring(0, 100)),
-          hasData: hasData || hasMessages,
-          dataPreview: response.ok && (hasData || hasMessages)
+          hasData: hasData || hasMessages || hasMessagesInCard,
+          dataPreview: response.ok && (hasData || hasMessages || hasMessagesInCard)
             ? {
-                count: parsed?.data?.length || parsed?.messages?.length || 0,
-                firstItem: parsed?.data?.[0] || parsed?.messages?.[0] || null,
-                structure: Object.keys(parsed || {}).slice(0, 10),
+                count: parsed?.data?.length || parsed?.messages?.length || 
+                       (cardData?.messages?.length) || (cardData?.conversations?.length) || 0,
+                firstItem: parsed?.data?.[0] || parsed?.messages?.[0] || 
+                          cardData?.messages?.[0] || cardData?.conversations?.[0] || null,
+                structure: Object.keys(parsed || {}).slice(0, 15),
+                cardStructure: cardData ? Object.keys(cardData).slice(0, 20) : undefined,
               }
-            : undefined,
+            : response.ok ? {
+                structure: Object.keys(parsed || {}).slice(0, 15),
+                cardStructure: cardData ? Object.keys(cardData).slice(0, 20) : undefined,
+              } : undefined,
         });
       } catch (error) {
         results.push({
