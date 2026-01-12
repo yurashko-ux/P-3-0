@@ -318,6 +318,25 @@ function ensureMessageText(
   return message;
 }
 
+async function readRequestPayloadFromText(bodyText: string): Promise<{ parsed: unknown; rawText: string | null }> {
+  if (!bodyText) {
+    return { parsed: {}, rawText: null };
+  }
+
+  const trimmed = bodyText.trim();
+
+  // Спробуємо спочатку розпарсити як JSON — ManyChat зазвичай шле саме такий формат.
+  if (trimmed) {
+    try {
+      return { parsed: JSON.parse(trimmed) as unknown, rawText: bodyText };
+    } catch {
+      // ігноруємо, переходимо до альтернативних варіантів
+    }
+  }
+
+  return { parsed: { text: bodyText, raw: bodyText }, rawText: bodyText };
+}
+
 async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; rawText: string | null }> {
   let bodyText: string | null = null;
 
