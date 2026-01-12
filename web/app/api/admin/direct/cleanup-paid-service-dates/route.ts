@@ -187,7 +187,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       message: `Cleaned ${results.cleaned} clients, skipped ${results.skipped}, errors: ${results.errors}`,
-      results,
+      total: results.total,
+      cleaned: results.cleaned,
+      skipped: results.skipped,
+      errors: results.errors,
+      cleanedClients: results.details.map((d) => 
+        `${d.instagramUsername || 'Unknown'} (${d.reason})`
+      ),
+      details: results.details,
     });
   } catch (error) {
     console.error('[cleanup-paid-service-dates] Error:', error);
