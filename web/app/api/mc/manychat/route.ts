@@ -362,12 +362,16 @@ async function readRequestPayload(req: NextRequest): Promise<{ parsed: unknown; 
 export async function POST(req: NextRequest) {
   console.log('[manychat] 📨 POST request received');
   
-  // Зберігаємо вебхук в лог для діагностики
+  // Читаємо body один раз і зберігаємо для подальшого використання
+  let rawBodyText: string | null = null;
   try {
-    const rawBody = await req.text();
+    rawBodyText = await req.text();
+    
+    // Зберігаємо вебхук в лог для діагностики
     const logEntry = {
       receivedAt: new Date().toISOString(),
-      rawBody: rawBody.substring(0, 1000), // Перші 1000 символів
+      rawBody: rawBodyText.substring(0, 2000), // Перші 2000 символів
+      bodyLength: rawBodyText.length,
       headers: {
         'x-mc-token': req.headers.get('x-mc-token') || null,
         'authorization': req.headers.get('authorization') ? '***' : null,
@@ -378,6 +382,7 @@ export async function POST(req: NextRequest) {
     await kvWrite.lpush('manychat:webhook:log', payload);
     // Залишаємо лише останні 100 вебхуків
     await kvWrite.ltrim('manychat:webhook:log', 0, 99);
+    console.log('[manychat] ✅ Webhook logged to KV');
   } catch (logErr) {
     console.warn('[manychat] Failed to persist webhook to log:', logErr);
   }
