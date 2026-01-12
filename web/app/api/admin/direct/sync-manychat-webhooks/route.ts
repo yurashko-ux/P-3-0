@@ -290,12 +290,27 @@ export async function POST(req: NextRequest) {
       errorsList: [] as Array<{ webhook: string; error: string }>,
     };
 
+    // Статистика для діагностики
+    const diagnostics = {
+      noRawBody: 0,
+      noUsername: 0,
+      invalidInstagram: 0,
+      sampleSkipped: [] as Array<{ reason: string; rawBodyPreview?: string }>,
+    };
+
     // Обробляємо кожен вебхук
     for (const webhook of webhooks) {
       try {
         const rawBody = webhook.rawBody as string | undefined;
         if (!rawBody) {
           results.skipped++;
+          diagnostics.noRawBody++;
+          if (diagnostics.sampleSkipped.length < 3) {
+            diagnostics.sampleSkipped.push({ 
+              reason: 'no rawBody',
+              rawBodyPreview: 'missing',
+            });
+          }
           continue;
         }
 
@@ -304,6 +319,13 @@ export async function POST(req: NextRequest) {
         
         if (!username) {
           results.skipped++;
+          diagnostics.noUsername++;
+          if (diagnostics.sampleSkipped.length < 3) {
+            diagnostics.sampleSkipped.push({ 
+              reason: 'no username in rawBody',
+              rawBodyPreview: rawBody.substring(0, 200),
+            });
+          }
           continue;
         }
 
@@ -311,6 +333,13 @@ export async function POST(req: NextRequest) {
         const normalizedInstagram = normalizeInstagram(username);
         if (!normalizedInstagram) {
           results.skipped++;
+          diagnostics.invalidInstagram++;
+          if (diagnostics.sampleSkipped.length < 3) {
+            diagnostics.sampleSkipped.push({ 
+              reason: `invalid Instagram format: ${username}`,
+              rawBodyPreview: rawBody.substring(0, 200),
+            });
+          }
           continue;
         }
 
@@ -381,11 +410,21 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[direct/sync-manychat-webhooks] Sync completed:`, results);
+    console.log(`[direct/sync-manychat-webhooks] Diagnostics:`, diagnostics);
 
     return NextResponse.json({
       ok: true,
-      message: `Processed ${results.processed} webhooks`,
+      message: `Processed ${results.processed} webhooks from ${webhooks.length} total`,
       results,
+      diagnostics: {
+        totalWebhooks: webhooks.length,
+        skippedReasons: {
+          noRawBody: diagnostics.noRawBody,
+          noUsername: diagnostics.noUsername,
+          invalidInstagram: diagnostics.invalidInstagram,
+        },
+        sampleSkipped: diagnostics.sampleSkipped,
+      },
     });
   } catch (error) {
     console.error('[direct/sync-manychat-webhooks] POST error:', error);
