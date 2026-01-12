@@ -203,7 +203,7 @@ export async function GET(req: NextRequest) {
       tokenLength: token.length,
     },
     note: workingEndpoints.length > 0
-      ? `Знайдено ${workingEndpoints.length} робочих endpoint'ів для повідомлень!`
-      : 'Робочі endpoint'и не знайдено. Перевірте документацію KeyCRM API.',
+      ? `Found ${workingEndpoints.length} working endpoints for messages!`
+      : 'No working endpoints found. Check KeyCRM API documentation.',
   });
 }
