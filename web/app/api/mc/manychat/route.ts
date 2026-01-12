@@ -1100,11 +1100,15 @@ export async function GET(req: NextRequest) {
               const rawObj = raw as Record<string, unknown>;
               if ('value' in rawObj && typeof rawObj.value === 'string') {
                 try {
-                  parsed = JSON.parse(rawObj.value);
-                } catch {
+                  // Парсимо JSON рядок з поля value
+                  const parsedValue = JSON.parse(rawObj.value);
+                  parsed = parsedValue;
+                } catch (parseError) {
+                  // Якщо не вдалося розпарсити, спробуємо використати як є
                   parsed = rawObj.value;
                 }
               } else {
+                // Якщо немає поля value, використовуємо raw як є
                 parsed = raw;
               }
             }
@@ -1112,6 +1116,8 @@ export async function GET(req: NextRequest) {
             // Перевіряємо, чи це валідний об'єкт вебхука
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
               const parsedObj = parsed as Record<string, unknown>;
+              const parsedKeys = Object.keys(parsedObj);
+              
               // Перевіряємо, чи є поле receivedAt (може бути string або Date)
               if ('receivedAt' in parsedObj) {
                 // Перевіряємо тип receivedAt
@@ -1122,6 +1128,21 @@ export async function GET(req: NextRequest) {
                 
                 if (hasValidReceivedAt) {
                   return parsedObj;
+                }
+              }
+              
+              // Якщо parsed має тільки поле "value", спробуємо розпарсити його
+              if (parsedKeys.length === 1 && parsedKeys[0] === 'value' && typeof parsedObj.value === 'string') {
+                try {
+                  const doubleParsed = JSON.parse(parsedObj.value);
+                  if (doubleParsed && typeof doubleParsed === 'object' && !Array.isArray(doubleParsed)) {
+                    const doubleParsedObj = doubleParsed as Record<string, unknown>;
+                    if ('receivedAt' in doubleParsedObj) {
+                      return doubleParsedObj;
+                    }
+                  }
+                } catch {
+                  // Ігноруємо помилку парсингу
                 }
               }
             }
