@@ -399,8 +399,8 @@ export async function POST(req: NextRequest) {
     };
     const payload = JSON.stringify(logEntry);
     await kvWrite.lpush('manychat:webhook:log', payload);
-    // Залишаємо лише останні 100 вебхуків
-    await kvWrite.ltrim('manychat:webhook:log', 0, 99);
+    // Залишаємо лише останні 1000 вебхуків (збільшено для синхронізації за кілька днів)
+    await kvWrite.ltrim('manychat:webhook:log', 0, 999);
     console.log('[manychat] ✅ Webhook logged to KV');
   } catch (logErr) {
     console.warn('[manychat] Failed to persist webhook to log:', logErr);
