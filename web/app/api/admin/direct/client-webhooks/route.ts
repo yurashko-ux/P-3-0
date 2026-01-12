@@ -43,10 +43,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid altegioClientId' }, { status: 400 });
     }
 
+    console.log(`[client-webhooks] 🔍 Starting webhooks fetch for altegioClientId: ${altegioClientId}`);
+
     // Отримуємо всі webhook events (до 1000 для пошуку)
     // Перевіряємо обидва джерела: webhook:log та records:log
     const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
     const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 999);
+    
+    console.log(`[client-webhooks] 📊 Found ${rawItemsWebhook.length} items in webhook:log, ${rawItemsRecords.length} items in records:log`);
     
     // Об'єднуємо обидва джерела
     const rawItems = [...rawItemsWebhook, ...rawItemsRecords];
@@ -181,37 +185,40 @@ export async function GET(req: NextRequest) {
         // Витягуємо services (може бути масив або один об'єкт)
         // Фільтруємо "Запис" - це не послуга, а тип запису
         let services: string[] = [];
+        const visitId = body.resource_id || originalRecord.visitId;
+        console.log(`[client-webhooks] 🔍 Processing services for visitId: ${visitId}, clientId: ${altegioClientId}`);
+        
         if (Array.isArray(data.services) && data.services.length > 0) {
           const allServices = data.services.map((s: any) => s.title || s.name || 'Невідома послуга');
-          console.log(`[client-webhooks] 🔍 Processing services array (${allServices.length} items):`, allServices);
+          console.log(`[client-webhooks] 📦 Processing services array (${allServices.length} items) for visitId ${visitId}:`, allServices);
           services = allServices.filter((s: string) => {
             const isZapis = s.toLowerCase() === 'запис';
             if (isZapis) {
-              console.log(`[client-webhooks] 🚫 Filtered out "Запис" from services:`, s);
+              console.log(`[client-webhooks] 🚫 FILTERED OUT "Запис" from services for visitId ${visitId}:`, s);
             }
             return !isZapis;
           });
-          console.log(`[client-webhooks] ✅ Final services after filtering (${services.length} items):`, services);
+          console.log(`[client-webhooks] ✅ Final services after filtering (${services.length} items) for visitId ${visitId}:`, services);
         } else if (data.service) {
           const serviceName = data.service.title || data.service.name || 'Невідома послуга';
-          console.log(`[client-webhooks] 🔍 Processing single service:`, serviceName);
+          console.log(`[client-webhooks] 📦 Processing single service for visitId ${visitId}:`, serviceName);
           if (serviceName.toLowerCase() !== 'запис') {
             services = [serviceName];
-            console.log(`[client-webhooks] ✅ Added service:`, serviceName);
+            console.log(`[client-webhooks] ✅ Added service for visitId ${visitId}:`, serviceName);
           } else {
-            console.log(`[client-webhooks] 🚫 Filtered out "Запис":`, serviceName);
+            console.log(`[client-webhooks] 🚫 FILTERED OUT "Запис" (single service) for visitId ${visitId}:`, serviceName);
           }
         } else if (data.service_id || data.serviceName || originalRecord.serviceName) {
           const serviceName = data.serviceName || originalRecord.serviceName || 'Невідома послуга';
-          console.log(`[client-webhooks] 🔍 Processing serviceName:`, serviceName);
+          console.log(`[client-webhooks] 📦 Processing serviceName for visitId ${visitId}:`, serviceName);
           if (serviceName.toLowerCase() !== 'запис') {
             services = [serviceName];
-            console.log(`[client-webhooks] ✅ Added serviceName:`, serviceName);
+            console.log(`[client-webhooks] ✅ Added serviceName for visitId ${visitId}:`, serviceName);
           } else {
-            console.log(`[client-webhooks] 🚫 Filtered out "Запис" (serviceName):`, serviceName);
+            console.log(`[client-webhooks] 🚫 FILTERED OUT "Запис" (serviceName) for visitId ${visitId}:`, serviceName);
           }
         } else {
-          console.log(`[client-webhooks] ⚠️ No services found. data.services:`, data.services, `data.service:`, data.service, `originalRecord.serviceName:`, originalRecord.serviceName);
+          console.log(`[client-webhooks] ⚠️ No services found for visitId ${visitId}. data.services:`, data.services, `data.service:`, data.service, `originalRecord.serviceName:`, originalRecord.serviceName);
         }
         
         // Дата вебхука
@@ -302,6 +309,8 @@ export async function GET(req: NextRequest) {
         })),
     };
 
+    console.log(`[client-webhooks] ✅ Completed webhooks fetch for altegioClientId: ${altegioClientId}, found ${tableRows.length} rows`);
+    
     return NextResponse.json({
       ok: true,
       altegioClientId,
