@@ -61,11 +61,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Конвертуємо telegramChatId в number або bigint (не використовуємо parseInt для великих чисел)
+    let telegramChatIdValue: number | bigint | undefined = undefined;
+    if (telegramChatId) {
+      const chatIdStr = String(telegramChatId).trim();
+      if (chatIdStr) {
+        // Для великих чисел використовуємо BigInt, для малих - number
+        const chatIdNum = Number(chatIdStr);
+        if (!isNaN(chatIdNum) && isFinite(chatIdNum)) {
+          // Якщо число більше за максимальне значення 32-бітного int, використовуємо BigInt
+          if (chatIdNum > 2147483647 || chatIdNum < -2147483648) {
+            telegramChatIdValue = BigInt(chatIdStr);
+          } else {
+            telegramChatIdValue = chatIdNum;
+          }
+        }
+      }
+    }
+
     const newMaster = {
       id: randomUUID(),
       name,
       telegramUsername: telegramUsername || undefined,
-      telegramChatId: telegramChatId ? parseInt(String(telegramChatId), 10) : undefined,
+      telegramChatId: telegramChatIdValue,
       role: (role as 'master' | 'direct-manager' | 'admin') || 'master',
       altegioStaffId: altegioStaffId ? parseInt(String(altegioStaffId), 10) : undefined,
       isActive: true,

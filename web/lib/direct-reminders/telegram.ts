@@ -34,26 +34,46 @@ export async function getAdminChatIds(): Promise<number[]> {
     console.log(`[direct-reminders] Added ${TELEGRAM_ENV.ADMIN_CHAT_IDS.length} admin chat IDs from env`);
   }
   
-  // Додаємо chat_id адміністраторів з бази даних DirectMaster
+  // Додаємо chat_id адміністраторів та дірект-менеджерів з бази даних DirectMaster
   const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
   try {
     const directMasters = await getAllDirectMasters();
-    const directAdmins = directMasters.filter(m => m.role === 'admin');
-    console.log(`[direct-reminders] Found ${directAdmins.length} admins in DirectMaster database:`, directAdmins.map(a => ({ id: a.id, name: a.name, username: a.telegramUsername, chatId: a.telegramChatId })));
+    // Включаємо адміністраторів та дірект-менеджерів
+    const directAdminsAndManagers = directMasters.filter(m => m.role === 'admin' || m.role === 'direct-manager');
+    console.log(`[direct-reminders] Found ${directAdminsAndManagers.length} admins and direct-managers in DirectMaster database:`, directAdminsAndManagers.map(a => ({ id: a.id, name: a.name, role: a.role, username: a.telegramUsername, chatId: a.telegramChatId })));
     
-    for (const admin of directAdmins) {
+    for (const adminOrManager of directAdminsAndManagers) {
       // Спочатку перевіряємо chatId з бази даних
-      if (admin.telegramChatId) {
+      if (adminOrManager.telegramChatId) {
         // Конвертуємо bigint в number для сумісності з масивом number[]
-        const chatId = Number(admin.telegramChatId);
-        if (!adminChatIds.includes(chatId)) {
+        // Використовуємо Number() для конвертації, але перевіряємо, чи не втратили точність
+        let chatId: number;
+        if (typeof adminOrManager.telegramChatId === 'bigint') {
+          // Для великих чисел перевіряємо, чи не втратили точність
+          const bigIntValue = adminOrManager.telegramChatId;
+          const numberValue = Number(bigIntValue);
+          if (numberValue > Number.MAX_SAFE_INTEGER) {
+            console.warn(`[direct-reminders] ⚠️ Chat ID ${bigIntValue} is too large for safe number conversion, using string representation`);
+            // Telegram API приймає chat_id як string або number, тому можемо використати string
+            // Але для сумісності з масивом number[] використовуємо number (може втратити точність)
+            chatId = numberValue;
+          } else {
+            chatId = numberValue;
+          }
+        } else {
+          chatId = Number(adminOrManager.telegramChatId);
+        }
+        
+        if (!isNaN(chatId) && isFinite(chatId) && !adminChatIds.includes(chatId)) {
           adminChatIds.push(chatId);
-          console.log(`[direct-reminders] ✅ Added admin ${admin.name} (@${admin.telegramUsername}) with chatId from database: ${chatId}`);
+          console.log(`[direct-reminders] ✅ Added ${adminOrManager.role} ${adminOrManager.name} (@${adminOrManager.telegramUsername}) with chatId from database: ${chatId}`);
+        } else {
+          console.warn(`[direct-reminders] ⚠️ Invalid chatId for ${adminOrManager.name}: ${adminOrManager.telegramChatId}`);
         }
       }
     }
   } catch (err) {
-    console.error('[direct-reminders] Error getting admins from DirectMaster database:', err);
+    console.error('[direct-reminders] Error getting admins and managers from DirectMaster database:', err);
   }
   
   // Також додаємо chat_id адміністраторів з реєстру майстрів (photo-reports)
