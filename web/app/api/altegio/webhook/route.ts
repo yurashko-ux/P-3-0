@@ -809,15 +809,24 @@ export async function POST(req: NextRequest) {
             // ВАЖЛИВО: Обробляємо клієнтів навіть якщо newState null, якщо є нарощування або консультація
             // Це гарантує, що paidServiceDate буде встановлено для всіх платних послуг
             if (newState || hasHairExtension || hasConsultation) {
-              const existingDirectClients = await getAllDirectClients();
+              // ВАЖЛИВО: Спочатку перевіряємо через getDirectClientByAltegioId (як в інших блоках)
+              // Це знайде клієнта навіть якщо altegioClientId не встановлено в момент пошуку
+              const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+              let existingClient = await getDirectClientByAltegioId(clientId);
               
-              // Шукаємо клієнта за Altegio ID
-              let existingClient = existingDirectClients.find(
-                (c) => c.altegioClientId === clientId
-              );
+              // Якщо не знайдено через getDirectClientByAltegioId, шукаємо через getAllDirectClients
+              if (!existingClient) {
+                const existingDirectClients = await getAllDirectClients();
+                
+                // Шукаємо клієнта за Altegio ID
+                existingClient = existingDirectClients.find(
+                  (c) => c.altegioClientId === clientId
+                );
+              }
               
               // Якщо клієнта не знайдено за altegioClientId, шукаємо за іменем
               if (!existingClient && data.client) {
+                const existingDirectClients = await getAllDirectClients();
                 const clientName = data.client.name || data.client.display_name || '';
                 const nameParts = clientName.trim().split(/\s+/);
                 const firstName = nameParts[0] || '';
