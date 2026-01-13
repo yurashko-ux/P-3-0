@@ -2407,6 +2407,7 @@ export default function DirectPage() {
           >
             👥 Мігрувати майстрів
           </button>
+          */}
         </div>
       </div>
 
