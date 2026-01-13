@@ -12,6 +12,9 @@ interface AdminToolsModalProps {
   setIsLoading: (loading: boolean) => void;
   showCopyableAlert: (message: string) => void;
   loadData: () => Promise<void>;
+  setIsWebhooksModalOpen?: (open: boolean) => void;
+  setIsManyChatWebhooksModalOpen?: (open: boolean) => void;
+  setIsTelegramMessagesModalOpen?: (open: boolean) => void;
 }
 
 export function AdminToolsModal({
@@ -21,6 +24,9 @@ export function AdminToolsModal({
   setIsLoading,
   showCopyableAlert,
   loadData,
+  setIsWebhooksModalOpen,
+  setIsManyChatWebhooksModalOpen,
+  setIsTelegramMessagesModalOpen,
 }: AdminToolsModalProps) {
   if (!isOpen) return null;
 
@@ -242,6 +248,40 @@ export function AdminToolsModal({
         },
         {
           icon: "🔍",
+          label: "Діагностика записів",
+          endpoint: "/api/admin/direct/debug-records",
+          method: "GET" as const,
+        },
+        {
+          icon: "🔍",
+          label: "Діагностика нагадувань",
+          endpoint: "/api/admin/direct/test-reminder-debug",
+          method: "GET" as const,
+        },
+        {
+          icon: "🔍",
+          label: "Перевірити дані",
+          endpoint: "/api/admin/direct/check-data",
+          method: "GET" as const,
+        },
+        {
+          icon: "🔍",
+          label: "Перевірити стан клієнта",
+          endpoint: "/api/admin/direct/check-client-state",
+          method: "GET" as const,
+          prompt: "Введіть Altegio ID клієнта для перевірки стану:",
+          isPrompt: true,
+        },
+        {
+          icon: "🔍",
+          label: "Тест пошуку адміна",
+          endpoint: "/api/admin/direct/test-start-command",
+          method: "GET" as const,
+          prompt: "Введіть Telegram username для перевірки (наприклад: kolachnykv):",
+          isPrompt: true,
+        },
+        {
+          icon: "🔍",
           label: "Пошук вебхуків",
           endpoint: "/api/admin/direct/search-webhooks",
           method: "GET" as const,
@@ -298,6 +338,121 @@ export function AdminToolsModal({
       ],
     },
     {
+      category: "Таблиці та перегляди",
+      items: [
+        {
+          icon: "📊",
+          label: "Таблиця вебхуків Altegio",
+          endpoint: "modal:webhooks",
+          method: "GET" as const,
+          isModal: true,
+        },
+        {
+          icon: "📱",
+          label: "Таблиця вебхуків ManyChat",
+          endpoint: "modal:manychat-webhooks",
+          method: "GET" as const,
+          isModal: true,
+        },
+        {
+          icon: "💬",
+          label: "Повідомлення Telegram бота",
+          endpoint: "modal:telegram-messages",
+          method: "GET" as const,
+          isModal: true,
+        },
+      ],
+    },
+    {
+      category: "Нагадування",
+      items: [
+        {
+          icon: "📱",
+          label: "Тест нагадування",
+          endpoint: "/api/admin/direct/test-reminder",
+          method: "POST" as const,
+          confirm: "Надіслати повторне нагадування?\n\nНатисніть OK для повторного нагадування (Недодзвон)\nНатисніть Скасувати для нового нагадування",
+          isConfirmWithType: true,
+        },
+      ],
+    },
+    {
+      category: "Webhook",
+      items: [
+        {
+          icon: "🔗",
+          label: "Перевірити webhook",
+          endpoint: "/api/admin/direct/check-telegram-webhook",
+          method: "GET" as const,
+        },
+        {
+          icon: "⚙️",
+          label: "Налаштувати webhook",
+          endpoint: "/api/admin/direct/check-telegram-webhook",
+          method: "POST" as const,
+          confirm: "Налаштувати webhook для HOB_client_bot на спеціальний endpoint (/api/telegram/direct-reminders-webhook)?",
+        },
+      ],
+    },
+    {
+      category: "Міграція та відновлення",
+      items: [
+        {
+          icon: "🚀",
+          label: "Мігрувати дані",
+          endpoint: "/api/admin/direct/migrate-data",
+          method: "POST" as const,
+          confirm: "Виконати міграцію даних з KV → Postgres?",
+        },
+        {
+          icon: "🔄",
+          label: "Відновити дані з KV",
+          endpoint: "/api/admin/direct/recover-all-data",
+          method: "POST" as const,
+          confirm: "Відновити всі дані з KV в Postgres?",
+        },
+        {
+          icon: "👥",
+          label: "Мігрувати майстрів",
+          endpoint: "/api/admin/direct/migrate-masters",
+          method: "POST" as const,
+          confirm: "Мігрувати майстрів з mock-data в базу даних?",
+        },
+        {
+          icon: "🔧",
+          label: "Відновити індекс",
+          endpoint: "/api/admin/direct/rebuild-index",
+          method: "POST" as const,
+          confirm: "Відновити індекс клієнтів?",
+        },
+        {
+          icon: "🔍",
+          label: "Перевірити міграцію",
+          endpoint: "/api/admin/direct/check-migration",
+          method: "GET" as const,
+        },
+      ],
+    },
+    {
+      category: "Виправлення",
+      items: [
+        {
+          icon: "🔧",
+          label: "Виправити пропущені консультації",
+          endpoint: "/api/admin/direct/fix-missed-consultations",
+          method: "POST" as const,
+          confirm: "Виправити пропущені консультації в історії станів?",
+        },
+        {
+          icon: "🗑️",
+          label: "Очистити згенеровані",
+          endpoint: "/api/admin/direct/cleanup-altegio-generated",
+          method: "POST" as const,
+          isPreviewFirst: true,
+        },
+      ],
+    },
+    {
       category: "Повідомлення",
       items: [
         {
@@ -345,6 +500,71 @@ export function AdminToolsModal({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {category.items.map((item, itemIndex) => {
                   const handleClick = () => {
+                    // Обробка модальних вікон
+                    if (item.isModal) {
+                      if (item.endpoint === "modal:webhooks" && setIsWebhooksModalOpen) {
+                        setIsWebhooksModalOpen(true);
+                        onClose();
+                        return;
+                      }
+                      if (item.endpoint === "modal:manychat-webhooks" && setIsManyChatWebhooksModalOpen) {
+                        setIsManyChatWebhooksModalOpen(true);
+                        onClose();
+                        return;
+                      }
+                      if (item.endpoint === "modal:telegram-messages" && setIsTelegramMessagesModalOpen) {
+                        setIsTelegramMessagesModalOpen(true);
+                        onClose();
+                        return;
+                      }
+                    }
+
+                    // Обробка test-reminder з типом
+                    if (item.isConfirmWithType) {
+                      const type = confirm(item.confirm || "") ? 'repeat' : 'new';
+                      handleEndpoint(
+                        item.endpoint,
+                        item.method,
+                        undefined,
+                        undefined,
+                        { type }
+                      );
+                      return;
+                    }
+
+                    // Обробка cleanup-altegio-generated з preview
+                    if (item.isPreviewFirst) {
+                      setIsLoading(true);
+                      fetch(item.endpoint)
+                        .then(res => res.json())
+                        .then(previewData => {
+                          if (previewData.ok) {
+                            const count = previewData.stats?.toDelete || 0;
+                            if (count === 0) {
+                              alert('✅ Немає клієнтів для видалення');
+                              setIsLoading(false);
+                              return;
+                            }
+                            
+                            const confirmMessage = `Знайдено ${count} клієнтів з Altegio, які мають згенерований Instagram username (починається з "altegio_").\n\nВидалити їх?`;
+                            if (confirm(confirmMessage)) {
+                              handleEndpoint(item.endpoint, "POST" as const);
+                            } else {
+                              setIsLoading(false);
+                            }
+                          } else {
+                            showCopyableAlert(`Помилка перегляду: ${previewData.error || 'Невідома помилка'}\n\n${JSON.stringify(previewData, null, 2)}`);
+                            setIsLoading(false);
+                          }
+                        })
+                        .catch(err => {
+                          alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                          setIsLoading(false);
+                        });
+                      return;
+                    }
+
+                    // Обробка prompt
                     if (item.isPrompt && item.prompt) {
                       const input = prompt(item.prompt);
                       if (!input || !input.trim()) return;
@@ -381,6 +601,26 @@ export function AdminToolsModal({
                           undefined,
                           undefined,
                           { clientId: input.trim(), customFieldsFormat }
+                        );
+                      } else if (item.endpoint.includes('check-client-state')) {
+                        handleEndpoint(
+                          `${item.endpoint}?altegioClientId=${encodeURIComponent(input.trim())}`,
+                          item.method
+                        );
+                      } else if (item.endpoint.includes('test-start-command')) {
+                        handleEndpoint(
+                          `${item.endpoint}?username=${encodeURIComponent(input.trim())}`,
+                          item.method
+                        );
+                      } else if (item.endpoint.includes('check-telegram-webhook') && item.method === 'POST') {
+                        const currentUrl = window.location.origin;
+                        const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
+                        handleEndpoint(
+                          item.endpoint,
+                          item.method,
+                          undefined,
+                          undefined,
+                          { url: webhookUrl }
                         );
                       } else {
                         handleEndpoint(
