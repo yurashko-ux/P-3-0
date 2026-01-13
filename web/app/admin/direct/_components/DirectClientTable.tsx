@@ -683,9 +683,16 @@ export function DirectClientTable({
                           : '-'}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.instagramUsername?.startsWith('missing_instagram_') ? (
-                          <span className="text-red-600 font-semibold" title="Відсутній Instagram username">
+                        {client.instagramUsername === 'NO INSTAGRAM' ? (
+                          <span className="text-orange-600 font-semibold" title="Клієнт не має Instagram акаунту">
+                            NO INSTAGRAM
+                          </span>
+                        ) : client.instagramUsername?.startsWith('missing_instagram_') ? (
+                          <span className="text-red-600 font-semibold flex items-center gap-1" title="Відсутній Instagram username">
                             {client.instagramUsername}
+                            {client.telegramNotificationSent && (
+                              <span className="text-blue-500" title="Повідомлення відправлено в Telegram">📱</span>
+                            )}
                           </span>
                         ) : (
                         <a

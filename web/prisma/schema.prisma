@@ -58,6 +58,7 @@ model DirectClient {
   consultationMasterName String?   // Ім'я майстра, який провів консультацію
   isOnlineConsultation  Boolean   @default(false) // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation Boolean @default(false) // Записалась на послугу після консультації
+  telegramNotificationSent Boolean  @default(false) // Чи було відправлено повідомлення в Telegram про відсутній Instagram
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -69,6 +70,9 @@ model DirectClient {
 
   // Зв'язок з історією станів
   stateLogs DirectClientStateLog[]
+
+  // Зв'язок з повідомленнями
+  messages DirectMessage[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -152,3 +156,25 @@ model AltegioRecord {
   @@map("altegio_records")
 }
 
+// Повідомлення ManyChat (вхідні та вихідні)
+model DirectMessage {
+  id                String   @id @default(uuid())
+  clientId          String   // ID клієнта (DirectClient)
+  direction         String   // 'incoming' | 'outgoing'
+  text              String   // Текст повідомлення
+  messageId         String?  // ID повідомлення з ManyChat (якщо є)
+  subscriberId      String?  // ID subscriber в ManyChat
+  source            String   @default("manychat") // 'manychat' | 'instagram_graph' | 'manual'
+  receivedAt        DateTime @default(now()) // Коли отримано/відправлено
+  rawData           String?  // Повні дані webhook/API response (JSON)
+  createdAt         DateTime @default(now())
+
+  // Зв'язок з клієнтом
+  client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([direction])
+  @@index([receivedAt])
+  @@index([messageId])
+  @@map("direct_messages")
+}

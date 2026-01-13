@@ -1491,14 +1491,17 @@ export async function POST(req: NextRequest) {
                               `Altegio ID: <code>${client.id}</code>\n\n` +
                               `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
                               `(наприклад: @username або username)\n\n` +
+                              `Або відправте "ні", якщо у клієнта немає Instagram акаунту.\n\n` +
                               `Або додайте Instagram username для цього клієнта в Altegio.`;
 
                             const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
 
+                            let notificationSent = false;
                             if (mykolayChatId) {
                               try {
                                 await sendMessage(mykolayChatId, message, {}, botToken);
                                 console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                                notificationSent = true;
                               } catch (err) {
                                 console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
                               }
@@ -1509,8 +1512,23 @@ export async function POST(req: NextRequest) {
                               try {
                                 await sendMessage(adminChatId, message, {}, botToken);
                                 console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                                notificationSent = true;
                               } catch (err) {
                                 console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                              }
+                            }
+                            
+                            // Оновлюємо клієнта, встановлюючи telegramNotificationSent = true
+                            if (notificationSent && newClient.id) {
+                              try {
+                                const { prisma } = await import('@/lib/prisma');
+                                await prisma.directClient.update({
+                                  where: { id: newClient.id },
+                                  data: { telegramNotificationSent: true },
+                                });
+                                console.log(`[altegio/webhook] ✅ Updated telegramNotificationSent for client ${newClient.id}`);
+                              } catch (updateErr) {
+                                console.error(`[altegio/webhook] ❌ Failed to update telegramNotificationSent:`, updateErr);
                               }
                             }
                           }
@@ -2189,16 +2207,19 @@ export async function POST(req: NextRequest) {
                     `Altegio ID: <code>${clientId}</code>\n\n` +
                     `📝 <b>Відправте Instagram username у відповідь на це повідомлення</b>\n` +
                     `(наприклад: @username або username)\n\n` +
+                    `Або відправте "ні", якщо у клієнта немає Instagram акаунту.\n\n` +
                     `Або додайте Instagram username для цього клієнта в Altegio.`;
 
                   // Отримуємо токен бота
                   const botToken = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
 
+                  let notificationSent = false;
                   // Відправляємо повідомлення mykolay007
                   if (mykolayChatId) {
                     try {
                       await sendMessage(mykolayChatId, message, {}, botToken);
                       console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
+                      notificationSent = true;
                     } catch (err) {
                       console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
                     }
@@ -2211,8 +2232,27 @@ export async function POST(req: NextRequest) {
                     try {
                       await sendMessage(adminChatId, message, {}, botToken);
                       console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
+                      notificationSent = true;
                     } catch (err) {
                       console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
+                    }
+                  }
+                  
+                  // Оновлюємо клієнта, встановлюючи telegramNotificationSent = true
+                  if (notificationSent && clientId) {
+                    try {
+                      const { prisma } = await import('@/lib/prisma');
+                      const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+                      const directClient = await getDirectClientByAltegioId(clientId);
+                      if (directClient) {
+                        await prisma.directClient.update({
+                          where: { id: directClient.id },
+                          data: { telegramNotificationSent: true },
+                        });
+                        console.log(`[altegio/webhook] ✅ Updated telegramNotificationSent for client ${directClient.id} (Altegio ID: ${clientId})`);
+                      }
+                    } catch (updateErr) {
+                      console.error(`[altegio/webhook] ❌ Failed to update telegramNotificationSent:`, updateErr);
                     }
                   }
                 }

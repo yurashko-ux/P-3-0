@@ -28,6 +28,7 @@ export type DirectClient = {
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію
   isOnlineConsultation?: boolean; // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation?: boolean; // Записалась на послугу після консультації
+  telegramNotificationSent?: boolean; // Чи було відправлено повідомлення в Telegram про відсутній Instagram
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt?: string; // ISO date - останнє повідомлення
   createdAt: string; // ISO date - коли створено запис
