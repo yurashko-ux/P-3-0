@@ -470,7 +470,7 @@ export function DirectClientTable({
                       Дата контакту {sortBy === "firstContactDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -483,7 +483,7 @@ export function DirectClientTable({
                       Останнє оновлення {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -496,10 +496,10 @@ export function DirectClientTable({
                       Instagram {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     Повне імʼя
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -512,7 +512,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -525,7 +525,7 @@ export function DirectClientTable({
                       Запис на консультацію {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -551,7 +551,7 @@ export function DirectClientTable({
                       Статус {sortBy === "statusId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -577,10 +577,10 @@ export function DirectClientTable({
                       Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     Консультував
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -593,7 +593,7 @@ export function DirectClientTable({
                       Записалась на послугу {sortBy === "signedUpForPaidServiceAfterConsultation" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -606,7 +606,7 @@ export function DirectClientTable({
                       Прийшов (старий) {sortBy === "visitedSalon" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -619,7 +619,7 @@ export function DirectClientTable({
                       Дата візиту {sortBy === "visitDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -632,7 +632,7 @@ export function DirectClientTable({
                       Записався на послугу {sortBy === "signedUpForPaidService" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -645,7 +645,7 @@ export function DirectClientTable({
                       Дата запису {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -658,7 +658,7 @@ export function DirectClientTable({
                       Хто записав {sortBy === "signupAdmin" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">Дії</th>
                 </tr>
               </thead>
               <tbody>
