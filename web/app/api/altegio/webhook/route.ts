@@ -1502,6 +1502,25 @@ export async function POST(req: NextRequest) {
                                 await sendMessage(mykolayChatId, message, {}, botToken);
                                 console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
                                 notificationSent = true;
+                                
+                                // Логуємо вихідне повідомлення в KV
+                                try {
+                                  const { kvWrite } = await import('@/lib/kv');
+                                  const logEntry = {
+                                    type: 'outgoing',
+                                    direction: 'outgoing',
+                                    sentAt: new Date().toISOString(),
+                                    chatId: mykolayChatId,
+                                    altegioClientId: client.id,
+                                    clientName: clientName,
+                                    message: message,
+                                    source: 'altegio-webhook',
+                                  };
+                                  await kvWrite.lpush('telegram:missing-instagram:outgoing', JSON.stringify(logEntry));
+                                  await kvWrite.ltrim('telegram:missing-instagram:outgoing', 0, 9999);
+                                } catch (logErr) {
+                                  console.error(`[altegio/webhook] Failed to log outgoing message:`, logErr);
+                                }
                               } catch (err) {
                                 console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
                               }
@@ -1513,6 +1532,25 @@ export async function POST(req: NextRequest) {
                                 await sendMessage(adminChatId, message, {}, botToken);
                                 console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
                                 notificationSent = true;
+                                
+                                // Логуємо вихідне повідомлення в KV
+                                try {
+                                  const { kvWrite } = await import('@/lib/kv');
+                                  const logEntry = {
+                                    type: 'outgoing',
+                                    direction: 'outgoing',
+                                    sentAt: new Date().toISOString(),
+                                    chatId: adminChatId,
+                                    altegioClientId: client.id,
+                                    clientName: clientName,
+                                    message: message,
+                                    source: 'altegio-webhook',
+                                  };
+                                  await kvWrite.lpush('telegram:missing-instagram:outgoing', JSON.stringify(logEntry));
+                                  await kvWrite.ltrim('telegram:missing-instagram:outgoing', 0, 9999);
+                                } catch (logErr) {
+                                  console.error(`[altegio/webhook] Failed to log outgoing message:`, logErr);
+                                }
                               } catch (err) {
                                 console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
                               }
@@ -2220,6 +2258,25 @@ export async function POST(req: NextRequest) {
                       await sendMessage(mykolayChatId, message, {}, botToken);
                       console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to mykolay007 (chatId: ${mykolayChatId})`);
                       notificationSent = true;
+                      
+                      // Логуємо вихідне повідомлення в KV
+                      try {
+                        const { kvWrite } = await import('@/lib/kv');
+                        const logEntry = {
+                          type: 'outgoing',
+                          direction: 'outgoing',
+                          sentAt: new Date().toISOString(),
+                          chatId: mykolayChatId,
+                          altegioClientId: clientId,
+                          clientName: clientName,
+                          message: message,
+                          source: 'altegio-webhook',
+                        };
+                        await kvWrite.lpush('telegram:missing-instagram:outgoing', JSON.stringify(logEntry));
+                        await kvWrite.ltrim('telegram:missing-instagram:outgoing', 0, 9999);
+                      } catch (logErr) {
+                        console.error(`[altegio/webhook] Failed to log outgoing message:`, logErr);
+                      }
                     } catch (err) {
                       console.error(`[altegio/webhook] ❌ Failed to send notification to mykolay007:`, err);
                     }
@@ -2233,6 +2290,25 @@ export async function POST(req: NextRequest) {
                       await sendMessage(adminChatId, message, {}, botToken);
                       console.log(`[altegio/webhook] ✅ Sent missing Instagram notification to admin (chatId: ${adminChatId})`);
                       notificationSent = true;
+                      
+                      // Логуємо вихідне повідомлення в KV
+                      try {
+                        const { kvWrite } = await import('@/lib/kv');
+                        const logEntry = {
+                          type: 'outgoing',
+                          direction: 'outgoing',
+                          sentAt: new Date().toISOString(),
+                          chatId: adminChatId,
+                          altegioClientId: clientId,
+                          clientName: clientName,
+                          message: message,
+                          source: 'altegio-webhook',
+                        };
+                        await kvWrite.lpush('telegram:missing-instagram:outgoing', JSON.stringify(logEntry));
+                        await kvWrite.ltrim('telegram:missing-instagram:outgoing', 0, 9999);
+                      } catch (logErr) {
+                        console.error(`[altegio/webhook] Failed to log outgoing message:`, logErr);
+                      }
                     } catch (err) {
                       console.error(`[altegio/webhook] ❌ Failed to send notification to admin ${adminChatId}:`, err);
                     }

@@ -285,6 +285,25 @@ export async function POST(req: NextRequest) {
             await sendMessage(mykolayChatId, message, {}, botToken);
             sentToMykolay = true;
             console.log(`[direct/send-missing-instagram-notifications] ✅ Sent notification to mykolay007 for client ${client.id}`);
+            
+            // Логуємо вихідне повідомлення в KV
+            try {
+              const { kvWrite } = await import('@/lib/kv');
+              const logEntry = {
+                type: 'outgoing',
+                direction: 'outgoing',
+                sentAt: new Date().toISOString(),
+                chatId: mykolayChatId,
+                altegioClientId: altegioClientId,
+                clientName: clientName,
+                message: message,
+                source: 'send-missing-instagram-notifications',
+              };
+              await kvWrite.lpush('telegram:missing-instagram:outgoing', JSON.stringify(logEntry));
+              await kvWrite.ltrim('telegram:missing-instagram:outgoing', 0, 9999);
+            } catch (logErr) {
+              console.error(`[direct/send-missing-instagram-notifications] Failed to log outgoing message:`, logErr);
+            }
           } catch (err) {
             console.error(`[direct/send-missing-instagram-notifications] ❌ Failed to send to mykolay007:`, err);
           }
@@ -296,6 +315,25 @@ export async function POST(req: NextRequest) {
             await sendMessage(adminChatId, message, {}, botToken);
             sentToAdmins++;
             console.log(`[direct/send-missing-instagram-notifications] ✅ Sent notification to admin ${adminChatId} for client ${client.id}`);
+            
+            // Логуємо вихідне повідомлення в KV
+            try {
+              const { kvWrite } = await import('@/lib/kv');
+              const logEntry = {
+                type: 'outgoing',
+                direction: 'outgoing',
+                sentAt: new Date().toISOString(),
+                chatId: adminChatId,
+                altegioClientId: altegioClientId,
+                clientName: clientName,
+                message: message,
+                source: 'send-missing-instagram-notifications',
+              };
+              await kvWrite.lpush('telegram:missing-instagram:outgoing', JSON.stringify(logEntry));
+              await kvWrite.ltrim('telegram:missing-instagram:outgoing', 0, 9999);
+            } catch (logErr) {
+              console.error(`[direct/send-missing-instagram-notifications] Failed to log outgoing message:`, logErr);
+            }
           } catch (err) {
             console.error(`[direct/send-missing-instagram-notifications] ❌ Failed to send to admin ${adminChatId}:`, err);
           }

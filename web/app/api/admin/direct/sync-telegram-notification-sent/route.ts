@@ -71,6 +71,34 @@ export async function POST(req: NextRequest) {
 
     console.log(`[direct/sync-telegram-notification-sent] Found ${telegramLogs.length} Telegram log entries`);
 
+    // Отримуємо лог вихідних повідомлень про відсутній Instagram
+    const outgoingLogItems = await kvRead.lrange('telegram:missing-instagram:outgoing', 0, 9999);
+    const outgoingLogs = outgoingLogItems
+      .map((raw) => {
+        try {
+          const parsed = JSON.parse(raw);
+          // Upstash може повертати елементи як { value: "..." }
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            'value' in parsed &&
+            typeof parsed.value === 'string'
+          ) {
+            try {
+              return JSON.parse(parsed.value);
+            } catch {
+              return parsed;
+            }
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    console.log(`[direct/sync-telegram-notification-sent] Found ${outgoingLogs.length} outgoing message log entries`);
+
     // Отримуємо лог вебхуків Altegio для перевірки відправлених повідомлень
     const altegioWebhookItems = await kvRead.lrange('altegio:webhook:log', 0, 9999);
     const altegioWebhooks = altegioWebhookItems
