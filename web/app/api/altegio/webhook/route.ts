@@ -508,13 +508,20 @@ export async function POST(req: NextRequest) {
                   };
                   
                   // Встановлюємо consultationAttended на основі attendance
-                  // Якщо attendance не встановлено (null/undefined/0), не встановлюємо consultationAttended (залишаємо null)
-                  if (attendance === -1) {
-                    updates.consultationAttended = false;
-                    console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in block 2.3.2 for client ${existingClient.id}`);
-                  } else if (attendance === 1) {
+                  // ВАЖЛИВО: Якщо клієнт прийшов (attendance === 1), завжди встановлюємо consultationAttended = true
+                  // Якщо клієнт не з'явився (attendance === -1), встановлюємо false ТІЛЬКИ якщо consultationAttended ще не true
+                  if (attendance === 1) {
                     updates.consultationAttended = true;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in block 2.3.2 for client ${existingClient.id}`);
+                  } else if (attendance === -1) {
+                    // Встановлюємо false тільки якщо consultationAttended ще не встановлено як true
+                    // Це запобігає перезапису true на false, якщо раніше був вебхук з attendance = 1
+                    if (existingClient.consultationAttended !== true) {
+                      updates.consultationAttended = false;
+                      console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in block 2.3.2 for client ${existingClient.id}`);
+                    } else {
+                      console.log(`[altegio/webhook] Keeping consultationAttended = true (attendance = -1, but already set to true from previous webhook) for client ${existingClient.id}`);
+                    }
                   } else {
                     // Якщо attendance не встановлено, не встановлюємо consultationAttended (залишаємо null/undefined)
                     // Це дозволить відрізнити "не встановлено" від "не з'явився"
@@ -556,13 +563,20 @@ export async function POST(req: NextRequest) {
                   };
                   
                   // Встановлюємо consultationAttended на основі attendance
-                  // Якщо attendance не встановлено (null/undefined/0), не встановлюємо consultationAttended (залишаємо null)
-                  if (attendance === -1) {
-                    updates.consultationAttended = false;
-                    console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in missing date block for client ${existingClient.id}`);
-                  } else if (attendance === 1) {
+                  // ВАЖЛИВО: Якщо клієнт прийшов (attendance === 1), завжди встановлюємо consultationAttended = true
+                  // Якщо клієнт не з'явився (attendance === -1), встановлюємо false ТІЛЬКИ якщо consultationAttended ще не true
+                  if (attendance === 1) {
                     updates.consultationAttended = true;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in missing date block for client ${existingClient.id}`);
+                  } else if (attendance === -1) {
+                    // Встановлюємо false тільки якщо consultationAttended ще не встановлено як true
+                    // Це запобігає перезапису true на false, якщо раніше був вебхук з attendance = 1
+                    if (existingClient.consultationAttended !== true) {
+                      updates.consultationAttended = false;
+                      console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in missing date block for client ${existingClient.id}`);
+                    } else {
+                      console.log(`[altegio/webhook] Keeping consultationAttended = true (attendance = -1, but already set to true from previous webhook) in missing date block for client ${existingClient.id}`);
+                    }
                   } else {
                     // Якщо attendance не встановлено, не встановлюємо consultationAttended (залишаємо null/undefined)
                     // Це дозволить відрізнити "не встановлено" від "не з'явився"
