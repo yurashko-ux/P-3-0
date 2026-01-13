@@ -162,6 +162,15 @@ export function AdminToolsModal({
                 : ""
             }${JSON.stringify(data, null, 2)}`,
         },
+        {
+          icon: "🔄",
+          label: "Оновити стани",
+          endpoint: "/api/admin/direct/update-states-from-records",
+          method: "POST" as const,
+          confirm: "Оновити стани всіх клієнтів на основі записів з вебхуків?",
+          successMessage: (data: any) =>
+            `✅ Оновлення станів завершено!\n\nВсього клієнтів: ${data.stats.totalClients}\nОновлено: ${data.stats.updated}\nПропущено: ${data.stats.skipped}\nПомилок: ${data.stats.errors}\n\n${JSON.stringify(data, null, 2)}`,
+        },
       ],
     },
     {
