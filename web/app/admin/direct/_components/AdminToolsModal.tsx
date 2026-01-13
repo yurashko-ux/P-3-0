@@ -514,8 +514,8 @@ export function AdminToolsModal({
         
         <div className="p-6">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {tools.flatMap((category, categoryIndex) => 
-              category.items.map((item, itemIndex) => {
+            {tools.flatMap((category, categoryIndex) => {
+              return category.items.map((item, itemIndex) => {
                 const globalIndex = tools.slice(0, categoryIndex).reduce((sum, cat) => sum + cat.items.length, 0) + itemIndex + 1;
                 const handleClick = () => {
                     // Обробка модальних вікон
@@ -674,8 +674,9 @@ export function AdminToolsModal({
                       </div>
                     </button>
                   );
-                })
-            ))}
+                });
+              })
+            )}
           </div>
         </div>
         
