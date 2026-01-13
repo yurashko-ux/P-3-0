@@ -512,14 +512,11 @@ export function AdminToolsModal({
           </button>
         </div>
         
-        <div className="p-6 space-y-8">
-          {tools.map((category, categoryIndex) => (
-            <div key={categoryIndex} className="border-b pb-6 last:border-b-0">
-              <h3 className="text-lg font-semibold mb-4 text-gray-700">
-                {category.category}
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {category.items.map((item, itemIndex) => {
+        <div className="p-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {tools.flatMap((category, categoryIndex) => 
+              category.items.map((item, itemIndex) => {
+                const globalIndex = tools.slice(0, categoryIndex).reduce((sum, cat) => sum + cat.items.length, 0) + itemIndex + 1;
                   const handleClick = () => {
                     // Обробка модальних вікон
                     if (item.isModal) {
@@ -664,22 +661,23 @@ export function AdminToolsModal({
 
                   return (
                     <button
-                      key={itemIndex}
-                      className="flex flex-col items-center justify-center p-4 border-2 border-blue-500 rounded-lg bg-white hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[120px]"
+                      key={`${categoryIndex}-${itemIndex}`}
+                      className="flex flex-col items-center justify-center p-2 border border-blue-500 rounded-lg bg-white hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] relative"
                       onClick={handleClick}
                       disabled={isLoading}
                       title={item.confirm || item.prompt || item.label}
                     >
-                      <div className="text-4xl mb-3">{item.icon}</div>
-                      <div className="text-xs text-center text-blue-700 font-medium leading-tight px-1">
+                      <div className="absolute top-1 left-1 text-[10px] text-gray-500 font-bold">{globalIndex}</div>
+                      <div className="text-2xl mb-1">{item.icon}</div>
+                      <div className="text-[10px] text-center text-blue-700 font-medium leading-tight px-1">
                         {item.label}
                       </div>
                     </button>
                   );
-                })}
-              </div>
-            </div>
-          ))}
+                })
+              )
+            )}
+          </div>
         </div>
         
         <div className="sticky bottom-0 bg-white border-t p-4 flex justify-end">
