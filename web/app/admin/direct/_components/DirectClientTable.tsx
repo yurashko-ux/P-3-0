@@ -452,9 +452,9 @@ export function DirectClientTable({
       {/* Таблиця */}
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-2 sm:p-4">
-          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+          <div className="overflow-x-auto" style={{ position: 'relative', maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
             <table className="table table-xs sm:table-sm w-full border-collapse">
-              <thead className="sticky top-0 z-20 bg-base-200">
+              <thead style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: 'hsl(var(--b2))' }}>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">№</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
