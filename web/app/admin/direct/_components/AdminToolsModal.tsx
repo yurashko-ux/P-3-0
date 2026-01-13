@@ -517,7 +517,7 @@ export function AdminToolsModal({
             {tools.flatMap((category, categoryIndex) => 
               category.items.map((item, itemIndex) => {
                 const globalIndex = tools.slice(0, categoryIndex).reduce((sum, cat) => sum + cat.items.length, 0) + itemIndex + 1;
-                  const handleClick = () => {
+                const handleClick = () => {
                     // Обробка модальних вікон
                     if (item.isModal) {
                       if (item.endpoint === "modal:webhooks" && setIsWebhooksModalOpen) {
