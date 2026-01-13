@@ -451,11 +451,11 @@ export function DirectClientTable({
 
       {/* Таблиця */}
       <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-2 sm:p-4" style={{ position: 'relative' }}>
-          <div style={{ overflowX: 'auto', position: 'relative' }}>
+        <div className="card-body p-2 sm:p-4">
+          <div className="overflow-x-auto">
             <table className="table table-xs sm:table-sm w-full border-collapse">
-              <thead>
-                <tr className="bg-base-200" style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+              <thead className="sticky top-0 z-20">
+                <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">№</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <button
