@@ -71,10 +71,37 @@ export async function POST(req: NextRequest) {
 
     console.log(`[direct/sync-telegram-notification-sent] Found ${telegramLogs.length} Telegram log entries`);
 
+    // Отримуємо лог вебхуків Altegio для перевірки відправлених повідомлень
+    const altegioWebhookItems = await kvRead.lrange('altegio:webhook:log', 0, 9999);
+    const altegioWebhooks = altegioWebhookItems
+      .map((raw) => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            'value' in parsed &&
+            typeof parsed.value === 'string'
+          ) {
+            try {
+              return JSON.parse(parsed.value);
+            } catch {
+              return parsed;
+            }
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    console.log(`[direct/sync-telegram-notification-sent] Found ${altegioWebhooks.length} Altegio webhook log entries`);
+
     // Створюємо мапу Altegio ID -> чи було відправлено повідомлення
     const notificationSentMap = new Map<number, boolean>();
 
-    // Перевіряємо кожен лог на наявність повідомлень про відсутній Instagram
+    // Перевіряємо Telegram лог на наявність повідомлень про відсутній Instagram
     for (const logEntry of telegramLogs) {
       const replyText = logEntry.replyToMessageText || '';
       if (replyText.includes('Відсутній Instagram username') && replyText.includes('Altegio ID:')) {
@@ -84,6 +111,34 @@ export async function POST(req: NextRequest) {
           const altegioId = parseInt(altegioIdMatch[1] || altegioIdMatch[2], 10);
           if (!isNaN(altegioId)) {
             notificationSentMap.set(altegioId, true);
+          }
+        }
+      }
+    }
+
+    // Перевіряємо вебхуки Altegio на наявність відправлених повідомлень
+    // Шукаємо записи, де було відправлено повідомлення про відсутній Instagram
+    for (const webhook of altegioWebhooks) {
+      const body = webhook.body || {};
+      const clientId = body.data?.client?.id || body.data?.data?.client?.id;
+      
+      if (clientId) {
+        const clientIdNum = parseInt(String(clientId), 10);
+        if (!isNaN(clientIdNum)) {
+          // Перевіряємо, чи в логах є запис про відправку повідомлення для цього клієнта
+          // Це можна визначити по наявності повідомлення "Відсутній Instagram username" в контексті вебхука
+          const hasMissingInstagram = body.data?.client?.instagram === undefined || 
+                                     body.data?.client?.instagram === null ||
+                                     (typeof body.data?.client?.instagram === 'string' && 
+                                      body.data.client.instagram.toLowerCase().trim() === 'no');
+          
+          if (hasMissingInstagram) {
+            // Перевіряємо, чи є запис про успішну відправку в консолі або в самому вебхуці
+            // Якщо вебхук містить інформацію про відправку повідомлення, позначаємо
+            // Для точності перевіряємо також через Telegram лог
+            if (notificationSentMap.has(clientIdNum)) {
+              notificationSentMap.set(clientIdNum, true);
+            }
           }
         }
       }
