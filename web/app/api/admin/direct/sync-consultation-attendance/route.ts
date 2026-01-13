@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
           continue;
         }
         
-        // Знаходимо всі записи з консультацією для цього клієнта
+        // Знаходимо найновіший запис з консультацією для цього клієнта
         const clientRecords = consultationRecords.filter(
           (r) => r.clientId === client.altegioClientId
         );
@@ -159,55 +159,31 @@ export async function POST(req: NextRequest) {
           continue;
         }
         
-        // ВАЖЛИВО: Шукаємо найновіший вебхук з attendance = 1 (якщо є)
-        // Якщо клієнт прийшов (attendance = 1), це має пріоритет над "не з'явився" (attendance = -1)
-        let latestAttendedRecord = null;
-        let latestNotAttendedRecord = null;
+        // Беремо найновіший запис (вже відсортовані за датою)
+        const latestRecord = clientRecords[0];
+        const attendance = latestRecord.data?.attendance ?? latestRecord.data?.visit_attendance ?? latestRecord.attendance;
+        const datetime = latestRecord.datetime || latestRecord.data?.datetime;
         
-        for (const record of clientRecords) {
-          const attendance = record.data?.attendance ?? record.data?.visit_attendance ?? record.attendance;
-          const datetime = record.datetime || record.data?.datetime;
-          
-          if (!datetime) continue;
-          
-          if (attendance === 1) {
-            if (!latestAttendedRecord || new Date(datetime) > new Date(latestAttendedRecord.datetime || latestAttendedRecord.data?.datetime || 0)) {
-              latestAttendedRecord = record;
-            }
-          } else if (attendance === -1) {
-            if (!latestNotAttendedRecord || new Date(datetime) > new Date(latestNotAttendedRecord.datetime || latestNotAttendedRecord.data?.datetime || 0)) {
-              latestNotAttendedRecord = record;
-            }
-          }
+        if (!datetime) {
+          results.skipped++;
+          continue;
         }
         
-        // Визначаємо нове значення consultationAttended
-        // Якщо є вебхук з attendance = 1, встановлюємо true (навіть якщо пізніше був вебхук з attendance = -1)
+        // Визначаємо нове значення consultationAttended на основі найновішого вебхука
         let newConsultationAttended: boolean | null = null;
-        let datetime: string | null = null;
-        
-        if (latestAttendedRecord) {
+        if (attendance === 1) {
           newConsultationAttended = true;
-          datetime = latestAttendedRecord.datetime || latestAttendedRecord.data?.datetime;
-        } else if (latestNotAttendedRecord) {
+        } else if (attendance === -1) {
           newConsultationAttended = false;
-          datetime = latestNotAttendedRecord.datetime || latestNotAttendedRecord.data?.datetime;
         }
         
-        if (newConsultationAttended === null || !datetime) {
+        if (newConsultationAttended === null) {
           results.skipped++;
           continue;
         }
         
         // Перевіряємо, чи потрібно оновити
-        // Оновлюємо, якщо:
-        // 1. consultationAttended не встановлено (null) і є вебхук з attendance
-        // 2. consultationAttended = false, але є вебхук з attendance = 1
-        // 3. consultationAttended = true, але всі вебхуки мають attendance = -1 (не має бути вебхуків з attendance = 1)
-        const shouldUpdate = 
-          (client.consultationAttended === null && newConsultationAttended !== null) ||
-          (client.consultationAttended === false && newConsultationAttended === true) ||
-          (client.consultationAttended === true && newConsultationAttended === false && !latestAttendedRecord);
+        const shouldUpdate = client.consultationAttended !== newConsultationAttended;
         
         if (shouldUpdate) {
           await prisma.directClient.update({
