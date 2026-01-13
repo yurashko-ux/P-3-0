@@ -260,8 +260,11 @@ export async function POST(req: NextRequest) {
           resource: w.body?.resource,
           status: w.body?.status,
           resourceId: w.body?.resource_id,
+          datetime: w.body?.data?.datetime || w.originalRecord?.datetime,
           hasServices: Array.isArray(w.body?.data?.services),
           services: w.body?.data?.services?.map((s: any) => s.title) || [],
+          hasHairExtension: w.body?.data?.services?.some((s: any) => /нарощування/i.test(s.title || s.name || '')) || false,
+          hasConsultation: w.body?.data?.services?.some((s: any) => /консультаці/i.test(s.title || s.name || '')) || false,
         })),
     };
 
