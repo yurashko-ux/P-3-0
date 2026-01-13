@@ -102,7 +102,8 @@ export async function POST(req: NextRequest) {
     // Створюємо мапу Altegio ID -> чи було відправлено повідомлення
     const notificationSentMap = new Map<number, boolean>();
 
-    // Перевіряємо лог вихідних повідомлень - це найточніший спосіб визначити, які повідомлення були відправлені
+    // Перевіряємо лог вихідних повідомлень - це єдиний точний спосіб визначити, які повідомлення були відправлені
+    // Примітка: не перевіряємо відповіді, бо якщо є відповідь - Instagram вже доданий, і клієнт не має missing_instagram_*
     for (const logEntry of outgoingLogs) {
       if (logEntry.type === 'outgoing' || logEntry.direction === 'outgoing') {
         const altegioId = logEntry.altegioClientId;
@@ -113,24 +114,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ДОДАТКОВО: Перевіряємо Telegram лог на наявність відповідей на повідомлення про відсутній Instagram
-    // Якщо є відповідь, це також підтверджує, що повідомлення було відправлено
-    for (const logEntry of telegramLogs) {
-      const replyText = logEntry.replyToMessageText || '';
-      if (replyText && replyText.includes('Відсутній Instagram username') && replyText.includes('Altegio ID:')) {
-        // Витягуємо Altegio ID з повідомлення, на яке була відповідь
-        const altegioIdMatch = replyText.match(/Altegio ID[:\s]+<code>(\d+)<\/code>|Altegio ID[:\s]+(\d+)/i);
-        if (altegioIdMatch) {
-          const altegioId = parseInt(altegioIdMatch[1] || altegioIdMatch[2], 10);
-          if (!isNaN(altegioId)) {
-            notificationSentMap.set(altegioId, true);
-            console.log(`[direct/sync-telegram-notification-sent] Found reply for Altegio ID ${altegioId} - message was sent`);
-          }
-        }
-      }
-    }
-
-    console.log(`[direct/sync-telegram-notification-sent] Found ${notificationSentMap.size} clients with confirmed sent notifications (from outgoing logs and replies)`);
+    console.log(`[direct/sync-telegram-notification-sent] Found ${notificationSentMap.size} clients with confirmed sent notifications (from outgoing logs)`);
 
     // Оновлюємо клієнтів
     const results = {
