@@ -684,6 +684,103 @@ export async function saveDirectClient(
       }
     }
     
+    // Якщо встановлюється altegioClientId і клієнт не має paidServiceDate, перевіряємо старі вебхуки
+    if (data.altegioClientId && !data.paidServiceDate) {
+      const existingClientAfterSave = await prisma.directClient.findFirst({
+        where: {
+          OR: [
+            { id: client.id },
+            { instagramUsername: normalizedUsername },
+          ],
+        },
+        select: { id: true, altegioClientId: true, paidServiceDate: true },
+      });
+
+      if (existingClientAfterSave && existingClientAfterSave.altegioClientId && !existingClientAfterSave.paidServiceDate) {
+        // Асинхронно перевіряємо старі вебхуки (не блокуємо збереження)
+        setImmediate(async () => {
+          try {
+            const { kvRead } = await import('@/lib/kv');
+            const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
+            
+            // Парсимо записи
+            const records = rawItems
+              .map((raw: any) => {
+                try {
+                  let parsed: any;
+                  if (typeof raw === 'string') {
+                    parsed = JSON.parse(raw);
+                  } else {
+                    parsed = raw;
+                  }
+                  
+                  if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+                    try {
+                      parsed = JSON.parse(parsed.value);
+                    } catch {
+                      return null;
+                    }
+                  }
+                  
+                  return parsed;
+                } catch {
+                  return null;
+                }
+              })
+              .filter((r: any) => r && r.clientId === existingClientAfterSave.altegioClientId && r.datetime && r.data && Array.isArray(r.data.services));
+
+            // Знаходимо найновішу дату платної послуги (не консультації)
+            let latestPaidServiceDate: string | null = null;
+            for (const record of records) {
+              const services = record.data.services || [];
+              const hasConsultation = services.some((s: any) => {
+                const title = (s.title || s.name || '').toLowerCase();
+                return /консультаці/i.test(title);
+              });
+              
+              if (hasConsultation) continue;
+              
+              const hasPaidService = services.some((s: any) => {
+                const title = (s.title || s.name || '').toLowerCase();
+                if (/консультаці/i.test(title)) return false;
+                return true;
+              });
+              
+              if (hasPaidService && record.datetime) {
+                const recordDate = new Date(record.datetime);
+                if (!latestPaidServiceDate || new Date(latestPaidServiceDate) < recordDate) {
+                  latestPaidServiceDate = record.datetime;
+                }
+              }
+            }
+
+            // Якщо знайшли дату, оновлюємо клієнта
+            if (latestPaidServiceDate) {
+              const updatedClient = await prisma.directClient.findUnique({
+                where: { id: existingClientAfterSave.id },
+              });
+              
+              if (updatedClient && !updatedClient.paidServiceDate) {
+                // Оновлюємо через Prisma напряму, щоб уникнути рекурсії
+                await prisma.directClient.update({
+                  where: { id: existingClientAfterSave.id },
+                  data: {
+                    paidServiceDate: latestPaidServiceDate,
+                    signedUpForPaidService: true,
+                    updatedAt: new Date(),
+                  },
+                });
+                
+                console.log(`[direct-store] ✅ Auto-synced paidServiceDate for client ${existingClientAfterSave.id} from old webhooks: ${latestPaidServiceDate}`);
+              }
+            }
+          } catch (err) {
+            console.error(`[direct-store] ⚠️ Failed to auto-sync paidServiceDate for client ${existingClientAfterSave.id}:`, err);
+          }
+        });
+      }
+    }
+
     // Логуємо зміну стану, якщо вона відбулася (якщо не пропущено логування)
     if (!skipLogging && finalState !== previousState) {
       // Додаємо masterId до метаданих для історії
