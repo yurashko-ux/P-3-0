@@ -956,8 +956,8 @@ export default function DirectPage() {
           >
             🔧 Інструменти адміністратора
           </button>
-          {/* Старі кнопки endpoints залишені для сумісності, але тепер вони в модальному вікні */}
-          {false && (
+          {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
+          {/*
           <button
             className="btn btn-sm btn-error"
             onClick={async () => {
@@ -1240,6 +1240,7 @@ export default function DirectPage() {
           >
             ⚠️ Синхронізувати без Instagram
           </button>
+          */}
           <button
             className="btn btn-sm btn-warning"
             onClick={async () => {
