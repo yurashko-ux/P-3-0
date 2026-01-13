@@ -101,7 +101,8 @@ export async function POST(req: NextRequest) {
     // Створюємо мапу Altegio ID -> чи було відправлено повідомлення
     const notificationSentMap = new Map<number, boolean>();
 
-    // Перевіряємо Telegram лог на наявність повідомлень про відсутній Instagram
+    // Перевіряємо Telegram лог на наявність відповідей на повідомлення про відсутній Instagram
+    // Це означає, що повідомлення було відправлено
     for (const logEntry of telegramLogs) {
       const replyText = logEntry.replyToMessageText || '';
       if (replyText.includes('Відсутній Instagram username') && replyText.includes('Altegio ID:')) {
@@ -116,35 +117,95 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Перевіряємо вебхуки Altegio на наявність відправлених повідомлень
-    // Шукаємо записи, де було відправлено повідомлення про відсутній Instagram
+    // Перевіряємо вебхуки Altegio - якщо клієнт був створений через вебхук з missing_instagram_*,
+    // то повідомлення має бути відправлено автоматично
+    // Шукаємо вебхуки, де створювався клієнт без Instagram
     for (const webhook of altegioWebhooks) {
       const body = webhook.body || {};
-      const clientId = body.data?.client?.id || body.data?.data?.client?.id;
+      const resource = body.resource || body.data?.resource;
+      const status = body.status || body.data?.status;
       
-      if (clientId) {
-        const clientIdNum = parseInt(String(clientId), 10);
-        if (!isNaN(clientIdNum)) {
-          // Перевіряємо, чи в логах є запис про відправку повідомлення для цього клієнта
-          // Це можна визначити по наявності повідомлення "Відсутній Instagram username" в контексті вебхука
-          const hasMissingInstagram = body.data?.client?.instagram === undefined || 
-                                     body.data?.client?.instagram === null ||
-                                     (typeof body.data?.client?.instagram === 'string' && 
-                                      body.data.client.instagram.toLowerCase().trim() === 'no');
-          
-          if (hasMissingInstagram) {
-            // Перевіряємо, чи є запис про успішну відправку в консолі або в самому вебхуці
-            // Якщо вебхук містить інформацію про відправку повідомлення, позначаємо
-            // Для точності перевіряємо також через Telegram лог
-            if (notificationSentMap.has(clientIdNum)) {
-              notificationSentMap.set(clientIdNum, true);
+      // Перевіряємо тільки події створення або оновлення клієнта
+      if (resource === 'client' && (status === 'create' || status === 'update')) {
+        const client = body.data?.client || body.data?.data?.client;
+        const clientId = client?.id;
+        
+        if (clientId) {
+          const clientIdNum = parseInt(String(clientId), 10);
+          if (!isNaN(clientIdNum)) {
+            // Перевіряємо, чи у клієнта відсутній Instagram
+            const instagram = client.instagram || client['instagram-user-name'] || 
+                            (client.custom_fields && (client.custom_fields['instagram-user-name'] || client.custom_fields.instagram_user_name));
+            
+            const hasMissingInstagram = !instagram || 
+                                       instagram === null ||
+                                       instagram === '' ||
+                                       (typeof instagram === 'string' && instagram.toLowerCase().trim() === 'no');
+            
+            if (hasMissingInstagram) {
+              // Якщо клієнт має ім'я (не "Невідоме ім'я"), то повідомлення має бути відправлено
+              const clientName = client.name || client.display_name || '';
+              const clientNameLower = clientName.toLowerCase().trim();
+              const isUnknownName = 
+                !clientName || 
+                clientName === 'Невідоме ім\'я' || 
+                clientName === 'Невідомий клієнт' ||
+                clientNameLower === 'невідоме ім\'я' ||
+                clientNameLower === 'невідомий клієнт' ||
+                clientNameLower.startsWith('невідом') ||
+                clientNameLower === 'unknown' ||
+                clientNameLower === 'немає імені';
+              
+              if (!isUnknownName) {
+                // Повідомлення має бути відправлено автоматично
+                notificationSentMap.set(clientIdNum, true);
+              }
+            }
+          }
+        }
+      }
+      
+      // Також перевіряємо події record, де може бути інформація про клієнта
+      if (resource === 'record' && (status === 'create' || status === 'update')) {
+        const recordData = body.data?.data || body.data;
+        const client = recordData?.client;
+        const clientId = client?.id;
+        
+        if (clientId) {
+          const clientIdNum = parseInt(String(clientId), 10);
+          if (!isNaN(clientIdNum)) {
+            // Перевіряємо, чи у клієнта відсутній Instagram в custom_fields
+            const customFields = client.custom_fields || {};
+            const instagram = customFields['instagram-user-name'] || customFields.instagram_user_name;
+            
+            const hasMissingInstagram = !instagram || 
+                                       instagram === null ||
+                                       instagram === '' ||
+                                       (typeof instagram === 'string' && instagram.toLowerCase().trim() === 'no');
+            
+            if (hasMissingInstagram) {
+              const clientName = client.name || client.display_name || '';
+              const clientNameLower = clientName.toLowerCase().trim();
+              const isUnknownName = 
+                !clientName || 
+                clientName === 'Невідоме ім\'я' || 
+                clientName === 'Невідомий клієнт' ||
+                clientNameLower === 'невідоме ім\'я' ||
+                clientNameLower === 'невідомий клієнт' ||
+                clientNameLower.startsWith('невідом') ||
+                clientNameLower === 'unknown' ||
+                clientNameLower === 'немає імені';
+              
+              if (!isUnknownName) {
+                notificationSentMap.set(clientIdNum, true);
+              }
             }
           }
         }
       }
     }
 
-    console.log(`[direct/sync-telegram-notification-sent] Found ${notificationSentMap.size} clients with sent notifications in logs`);
+    console.log(`[direct/sync-telegram-notification-sent] Found ${notificationSentMap.size} clients with sent notifications in logs/webhooks`);
 
     // Оновлюємо клієнтів
     const results = {
