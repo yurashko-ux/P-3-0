@@ -634,15 +634,17 @@ export function AdminToolsModal({
                           item.method
                         );
                       } else if (item.endpoint.includes('check-telegram-webhook') && item.method === 'POST') {
-                        const currentUrl = window.location.origin;
-                        const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
-                        handleEndpoint(
-                          item.endpoint,
-                          item.method,
-                          undefined,
-                          undefined,
-                          { url: webhookUrl }
-                        );
+                        if (typeof window !== 'undefined') {
+                          const currentUrl = window.location.origin;
+                          const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
+                          handleEndpoint(
+                            item.endpoint,
+                            item.method,
+                            item.confirm,
+                            item.successMessage,
+                            { url: webhookUrl }
+                          );
+                        }
                       } else {
                         handleEndpoint(
                           item.endpoint,
