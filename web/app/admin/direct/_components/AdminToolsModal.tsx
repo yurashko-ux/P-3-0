@@ -404,13 +404,13 @@ export function AdminToolsModal({
                   return (
                     <button
                       key={itemIndex}
-                      className="flex flex-col items-center justify-center p-4 border-2 border-blue-500 rounded-lg bg-white hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex flex-col items-center justify-center p-4 border-2 border-blue-500 rounded-lg bg-white hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[120px]"
                       onClick={handleClick}
                       disabled={isLoading}
                       title={item.confirm || item.prompt || item.label}
                     >
-                      <div className="text-4xl mb-2">{item.icon}</div>
-                      <div className="text-xs text-center text-blue-700 font-medium leading-tight whitespace-pre-line">
+                      <div className="text-4xl mb-3">{item.icon}</div>
+                      <div className="text-xs text-center text-blue-700 font-medium leading-tight px-1">
                         {item.label}
                       </div>
                     </button>
