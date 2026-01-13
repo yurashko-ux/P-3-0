@@ -51,7 +51,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     
     // Перевіряємо, чи це відповідь "ні" (відсутній Instagram)
     const cleanText = instagramText.trim().toLowerCase();
-    const isNoResponse = cleanText === 'ні' || cleanText === 'no' || cleanText === 'немає' || cleanText === 'нет';
+    const isNoResponse = cleanText === 'ні' || cleanText === 'no' || cleanText === 'немає';
     
     if (isNoResponse) {
       // Встановлюємо "NO INSTAGRAM" для клієнта
