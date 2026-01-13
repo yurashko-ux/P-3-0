@@ -454,8 +454,8 @@ export function DirectClientTable({
         <div className="card-body p-2 sm:p-4">
           <div className="overflow-x-auto">
             <table className="table table-xs sm:table-sm w-full border-collapse">
-              <thead style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: 'hsl(var(--b2))' }}>
-                <tr className="bg-base-200">
+              <thead>
+                <tr className="bg-base-200" style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">№</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <button
