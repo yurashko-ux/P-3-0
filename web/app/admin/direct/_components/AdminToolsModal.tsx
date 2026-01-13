@@ -325,8 +325,24 @@ export function AdminToolsModal({
         {
           icon: "📋",
           label: "Останні вебхуки",
-          endpoint: "/api/altegio/webhook",
+          endpoint: "/api/altegio/webhook?limit=20",
           method: "GET" as const,
+          successMessage: (data: any) => {
+            const clientEvents = data.lastClientEvents || [];
+            return `Останні вебхуки Altegio:\n\n` +
+              `Всього подій: ${data.eventsCount}\n` +
+              `Події по клієнтах: ${data.clientEventsCount || 0}\n` +
+              `Події по записах: ${data.recordEventsCount || 0}\n\n` +
+              (clientEvents.length > 0 
+                ? `Останні події по клієнтах:\n${clientEvents.map((e: any, i: number) => 
+                    `${i + 1}. ${e.status} - Client ID: ${e.clientId}, Name: ${e.clientName || '—'}\n` +
+                    `   Custom fields: ${e.hasCustomFields ? '✅' : '❌'}, Type: ${e.customFieldsType}, IsArray: ${e.customFieldsIsArray}\n` +
+                    `   Received: ${new Date(e.receivedAt).toLocaleString('uk-UA')}`
+                  ).join('\n\n')}\n\n`
+                : '❌ Немає подій по клієнтах\n\n'
+              ) +
+              `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+          },
         },
         {
           icon: "🔧",
@@ -391,6 +407,11 @@ export function AdminToolsModal({
           endpoint: "/api/admin/direct/check-telegram-webhook",
           method: "POST" as const,
           confirm: "Налаштувати webhook для HOB_client_bot на спеціальний endpoint (/api/telegram/direct-reminders-webhook)?",
+          successMessage: (data: any) => {
+            const currentUrl = window.location.origin;
+            const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
+            return `✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися через спеціальний endpoint.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+          },
         },
       ],
     },
