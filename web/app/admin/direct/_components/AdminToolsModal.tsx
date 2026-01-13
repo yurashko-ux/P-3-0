@@ -146,6 +146,22 @@ export function AdminToolsModal({
           method: "POST" as const,
           confirm: "Синхронізувати клієнтів без Instagram з вебхуків?",
         },
+        {
+          icon: "📱",
+          label: "Синхронізувати telegramNotificationSent",
+          endpoint: "/api/admin/direct/sync-telegram-notification-sent",
+          method: "POST" as const,
+          confirm: "Синхронізувати telegramNotificationSent для клієнтів з missing_instagram_*?",
+          successMessage: (data: any) =>
+            `✅ Синхронізація завершена!\n\nВсього клієнтів: ${data.results.total}\nОновлено: ${data.results.updated}\nВже встановлено: ${data.results.alreadySet}\nБез Altegio ID: ${data.results.noAltegioId}\nНе знайдено в логах: ${data.results.notFoundInLogs}\nПомилок: ${data.results.errors}\n\n${
+              data.results.details && data.results.details.length > 0
+                ? `Деталі:\n${data.results.details
+                    .slice(0, 20)
+                    .map((d: any) => `  - ${d.instagramUsername || d.clientId} (${d.status})${d.altegioClientId ? ` - Altegio ID: ${d.altegioClientId}` : ''}`)
+                    .join("\n")}${data.results.details.length > 20 ? `\n... і ще ${data.results.details.length - 20} клієнтів` : ""}\n\n`
+                : ""
+            }${JSON.stringify(data, null, 2)}`,
+        },
       ],
     },
     {
