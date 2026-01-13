@@ -13,6 +13,7 @@ import { DirectStats } from "./_components/DirectStats";
 import { WebhooksTableModal } from "./_components/WebhooksTableModal";
 import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableModal";
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
+import { AdminToolsModal } from "./_components/AdminToolsModal";
 import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
@@ -157,6 +158,7 @@ export default function DirectPage() {
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
   const [isTelegramMessagesModalOpen, setIsTelegramMessagesModalOpen] = useState(false);
+  const [isAdminToolsModalOpen, setIsAdminToolsModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     statusId: "",
     masterId: "",
@@ -947,6 +949,15 @@ export default function DirectPage() {
           >
             📱 Синхронізувати ManyChat вебхуки
           </button>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => setIsAdminToolsModalOpen(true)}
+            title="Відкрити інструменти адміністратора"
+          >
+            🔧 Інструменти адміністратора
+          </button>
+          {/* Старі кнопки endpoints залишені для сумісності, але тепер вони в модальному вікні */}
+          {false && (
           <button
             className="btn btn-sm btn-error"
             onClick={async () => {
@@ -2469,6 +2480,16 @@ export default function DirectPage() {
       <TelegramMessagesModal
         isOpen={isTelegramMessagesModalOpen}
         onClose={() => setIsTelegramMessagesModalOpen(false)}
+      />
+      
+      {/* Модальне вікно інструментів адміністратора */}
+      <AdminToolsModal
+        isOpen={isAdminToolsModalOpen}
+        onClose={() => setIsAdminToolsModalOpen(false)}
+        isLoading={isLoading}
+        setIsLoading={setIsLoading}
+        showCopyableAlert={showCopyableAlert}
+        loadData={loadData}
       />
 
       {/* Управління статусами та відповідальними */}
