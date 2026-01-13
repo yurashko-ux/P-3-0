@@ -1,11 +1,12 @@
 // web/app/api/cron/sync-paid-service-dates/route.ts
-// Автоматична синхронізація paidServiceDate зі старих вебхуків для клієнтів, які з'явилися пізніше
+// Автоматична синхронізація paidServiceDate, consultationBookingDate та станів зі старих вебхуків
+// для клієнтів, які з'явилися пізніше
 // Запускається автоматично раз на годину
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { kvRead } from '@/lib/kv';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
+import { determineStateFromServices } from '@/lib/direct-state-helper';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -94,11 +95,17 @@ export async function POST(req: NextRequest) {
     const allClients = await getAllDirectClients();
     console.log(`[cron/sync-paid-service-dates] Found ${allClients.length} clients in Direct Manager`);
 
-    // Фільтруємо клієнтів, які мають altegioClientId, але не мають paidServiceDate
+    // Фільтруємо клієнтів, які мають altegioClientId, але не мають paidServiceDate або consultationBookingDate
+    // або мають стан 'client' (потрібно оновити стан)
     const clientsToCheck = allClients.filter(
-      (c) => c.altegioClientId && !c.paidServiceDate
+      (c) => c.altegioClientId && (
+        !c.paidServiceDate || 
+        !c.consultationBookingDate || 
+        c.state === 'client' || 
+        c.state === 'lead'
+      )
     );
-    console.log(`[cron/sync-paid-service-dates] Found ${clientsToCheck.length} clients with altegioClientId but without paidServiceDate`);
+    console.log(`[cron/sync-paid-service-dates] Found ${clientsToCheck.length} clients that need sync (missing dates or need state update)`);
 
     if (clientsToCheck.length === 0) {
       return NextResponse.json({
@@ -133,8 +140,10 @@ export async function POST(req: NextRequest) {
 
     console.log(`[cron/sync-paid-service-dates] Parsed ${records.length} valid records`);
 
-    // Створюємо мапу: clientId -> найновіша дата платної послуги
+    // Створюємо мапи: clientId -> найновіша дата та послуги
     const clientPaidServiceDates = new Map<number, { datetime: string; services: any[] }>();
+    const clientConsultationDates = new Map<number, { datetime: string; services: any[]; attendance?: number }>();
+    const clientStates = new Map<number, { state: string | null; datetime: string; services: any[] }>();
 
     for (const record of records) {
       const clientId = parseInt(String(record.clientId), 10);
@@ -143,24 +152,42 @@ export async function POST(req: NextRequest) {
       const services = record.data.services || [];
       if (services.length === 0) continue;
 
-      // Пропускаємо консультації
-      if (isConsultationService(services)) continue;
-
-      // Перевіряємо, чи є платна послуга
-      if (!hasPaidService(services)) continue;
-
       const datetime = record.datetime || record.data?.datetime;
       if (!datetime) continue;
 
-      const existing = clientPaidServiceDates.get(clientId);
+      const attendance = record.attendance || record.data?.attendance || record.visit_attendance;
       const recordDate = new Date(datetime);
+
+      // Визначаємо стан на основі послуг
+      const determinedState = determineStateFromServices(services);
       
-      if (!existing || new Date(existing.datetime) < recordDate) {
-        clientPaidServiceDates.set(clientId, { datetime, services });
+      // Оновлюємо стан (беремо найновіший запис)
+      const existingState = clientStates.get(clientId);
+      if (!existingState || new Date(existingState.datetime) < recordDate) {
+        clientStates.set(clientId, { 
+          state: determinedState, 
+          datetime, 
+          services 
+        });
+      }
+
+      // Для консультацій
+      if (isConsultationService(services)) {
+        const existing = clientConsultationDates.get(clientId);
+        if (!existing || new Date(existing.datetime) < recordDate) {
+          clientConsultationDates.set(clientId, { datetime, services, attendance });
+        }
+      }
+      // Для платних послуг (не консультації)
+      else if (hasPaidService(services)) {
+        const existing = clientPaidServiceDates.get(clientId);
+        if (!existing || new Date(existing.datetime) < recordDate) {
+          clientPaidServiceDates.set(clientId, { datetime, services });
+        }
       }
     }
 
-    console.log(`[cron/sync-paid-service-dates] Found paid service dates for ${clientPaidServiceDates.size} clients`);
+    console.log(`[cron/sync-paid-service-dates] Found: ${clientPaidServiceDates.size} paid services, ${clientConsultationDates.size} consultations, ${clientStates.size} states`);
 
     let updatedCount = 0;
     let skippedCount = 0;
@@ -174,28 +201,95 @@ export async function POST(req: NextRequest) {
       }
 
       const paidServiceInfo = clientPaidServiceDates.get(client.altegioClientId);
-      if (!paidServiceInfo) {
+      const consultationInfo = clientConsultationDates.get(client.altegioClientId);
+      const stateInfo = clientStates.get(client.altegioClientId);
+
+      // Якщо немає жодної інформації - пропускаємо
+      if (!paidServiceInfo && !consultationInfo && !stateInfo) {
         skippedCount++;
         continue;
       }
 
       try {
-        const updated: typeof client = {
-          ...client,
-          paidServiceDate: paidServiceInfo.datetime,
-          signedUpForPaidService: true,
+        const updates: Partial<typeof client> = {
           updatedAt: new Date().toISOString(),
         };
 
-        await saveDirectClient(updated, 'cron-sync-paid-service-dates', {
-          altegioClientId: client.altegioClientId,
-          datetime: paidServiceInfo.datetime,
-          services: paidServiceInfo.services.map((s: any) => ({ id: s.id, title: s.title })),
-          reason: 'Auto-synced from old webhooks',
-        });
+        // Оновлюємо consultationBookingDate
+        if (consultationInfo && (!client.consultationBookingDate || new Date(client.consultationBookingDate) < new Date(consultationInfo.datetime))) {
+          updates.consultationBookingDate = consultationInfo.datetime;
+          updates.consultationAttended = consultationInfo.attendance === 1 ? true : (consultationInfo.attendance === -1 ? false : undefined);
+        }
 
-        updatedCount++;
-        console.log(`[cron/sync-paid-service-dates] ✅ Updated client ${client.id} (${client.instagramUsername}): set paidServiceDate to ${paidServiceInfo.datetime}`);
+        // Оновлюємо paidServiceDate (тільки якщо немає консультації або консультація вже пройшла)
+        if (paidServiceInfo) {
+          const shouldSetPaidService = !consultationInfo || 
+            (client.consultationBookingDate && new Date(client.consultationBookingDate) < new Date(paidServiceInfo.datetime));
+          
+          if (shouldSetPaidService && (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(paidServiceInfo.datetime))) {
+            updates.paidServiceDate = paidServiceInfo.datetime;
+            updates.signedUpForPaidService = true;
+          }
+        }
+
+        // Оновлюємо стан (якщо потрібно)
+        if (stateInfo && stateInfo.state) {
+          // Визначаємо фінальний стан
+          let finalState = stateInfo.state;
+          
+          // Якщо є консультація і клієнт не прийшов - встановлюємо consultation-booked
+          if (consultationInfo && consultationInfo.attendance !== 1) {
+            finalState = 'consultation-booked';
+          }
+          // Якщо є консультація і клієнт прийшов - встановлюємо consultation
+          else if (consultationInfo && consultationInfo.attendance === 1) {
+            finalState = 'consultation';
+          }
+          // Якщо є нарощування - встановлюємо hair-extension
+          else if (finalState === 'hair-extension') {
+            finalState = 'hair-extension';
+          }
+          // Якщо є інші послуги - встановлюємо other-services
+          else if (finalState === 'other-services') {
+            finalState = 'other-services';
+          }
+          // Якщо визначили consultation - встановлюємо consultation
+          else if (finalState === 'consultation') {
+            finalState = 'consultation';
+          }
+
+          // Оновлюємо стан тільки якщо він відрізняється від поточного
+          if (finalState && client.state !== finalState && (client.state === 'client' || client.state === 'lead' || !client.state)) {
+            updates.state = finalState as any;
+          }
+        }
+
+        // Якщо є зміни - зберігаємо
+        if (Object.keys(updates).length > 1) { // Більше 1, бо завжди є updatedAt
+          const updated: typeof client = {
+            ...client,
+            ...updates,
+          };
+
+          await saveDirectClient(updated, 'cron-sync-from-old-webhooks', {
+            altegioClientId: client.altegioClientId,
+            paidServiceDate: paidServiceInfo?.datetime,
+            consultationBookingDate: consultationInfo?.datetime,
+            newState: updates.state,
+            oldState: client.state,
+            services: stateInfo?.services?.map((s: any) => ({ id: s.id, title: s.title })) || [],
+            reason: 'Auto-synced from old webhooks',
+          });
+
+          updatedCount++;
+          const changes = [];
+          if (updates.paidServiceDate) changes.push(`paidServiceDate: ${updates.paidServiceDate}`);
+          if (updates.consultationBookingDate) changes.push(`consultationBookingDate: ${updates.consultationBookingDate}`);
+          if (updates.state) changes.push(`state: ${client.state} -> ${updates.state}`);
+          console.log(`[cron/sync-paid-service-dates] ✅ Updated client ${client.id} (${client.instagramUsername}): ${changes.join(', ')}`);
+        } else {
+          skippedCount++;
+        }
       } catch (err) {
         const errorMsg = `Failed to update client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
         errors.push(errorMsg);
@@ -205,7 +299,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: 'Automatic paidServiceDate sync completed',
+      message: 'Automatic sync completed (paidServiceDate, consultationBookingDate, states)',
       stats: {
         totalClients: allClients.length,
         checked: clientsToCheck.length,

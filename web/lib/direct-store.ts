@@ -684,8 +684,8 @@ export async function saveDirectClient(
       }
     }
     
-    // Якщо встановлюється altegioClientId і клієнт не має paidServiceDate, перевіряємо старі вебхуки
-    if (data.altegioClientId && !data.paidServiceDate) {
+    // Якщо встановлюється altegioClientId, перевіряємо старі вебхуки для синхронізації дат та станів
+    if (data.altegioClientId && (!data.paidServiceDate || !data.consultationBookingDate || client.state === 'client' || client.state === 'lead')) {
       const existingClientAfterSave = await prisma.directClient.findFirst({
         where: {
           OR: [
@@ -693,14 +693,21 @@ export async function saveDirectClient(
             { instagramUsername: normalizedUsername },
           ],
         },
-        select: { id: true, altegioClientId: true, paidServiceDate: true },
+        select: { 
+          id: true, 
+          altegioClientId: true, 
+          paidServiceDate: true, 
+          consultationBookingDate: true,
+          state: true,
+        },
       });
 
-      if (existingClientAfterSave && existingClientAfterSave.altegioClientId && !existingClientAfterSave.paidServiceDate) {
+      if (existingClientAfterSave && existingClientAfterSave.altegioClientId) {
         // Асинхронно перевіряємо старі вебхуки (не блокуємо збереження)
         setImmediate(async () => {
           try {
             const { kvRead } = await import('@/lib/kv');
+            const { determineStateFromServices } = await import('@/lib/direct-state-helper');
             const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
             
             // Парсимо записи
@@ -729,53 +736,126 @@ export async function saveDirectClient(
               })
               .filter((r: any) => r && r.clientId === existingClientAfterSave.altegioClientId && r.datetime && r.data && Array.isArray(r.data.services));
 
-            // Знаходимо найновішу дату платної послуги (не консультації)
+            // Знаходимо найновіші дати та стан
             let latestPaidServiceDate: string | null = null;
+            let latestConsultationDate: string | null = null;
+            let latestConsultationAttendance: number | undefined = undefined;
+            let latestState: string | null = null;
+            let latestStateDatetime: string | null = null;
+
             for (const record of records) {
               const services = record.data.services || [];
+              const datetime = record.datetime;
+              const attendance = record.attendance || record.visit_attendance;
+              
+              if (!datetime) continue;
+
+              const recordDate = new Date(datetime);
+              
+              // Визначаємо стан
+              const determinedState = determineStateFromServices(services);
+              if (determinedState && (!latestStateDatetime || new Date(latestStateDatetime) < recordDate)) {
+                latestState = determinedState;
+                latestStateDatetime = datetime;
+              }
+
+              // Перевіряємо консультації
               const hasConsultation = services.some((s: any) => {
                 const title = (s.title || s.name || '').toLowerCase();
                 return /консультаці/i.test(title);
               });
               
-              if (hasConsultation) continue;
+              if (hasConsultation) {
+                if (!latestConsultationDate || new Date(latestConsultationDate) < recordDate) {
+                  latestConsultationDate = datetime;
+                  latestConsultationAttendance = attendance;
+                }
+                continue;
+              }
               
+              // Перевіряємо платні послуги
               const hasPaidService = services.some((s: any) => {
                 const title = (s.title || s.name || '').toLowerCase();
                 if (/консультаці/i.test(title)) return false;
                 return true;
               });
               
-              if (hasPaidService && record.datetime) {
-                const recordDate = new Date(record.datetime);
+              if (hasPaidService) {
                 if (!latestPaidServiceDate || new Date(latestPaidServiceDate) < recordDate) {
-                  latestPaidServiceDate = record.datetime;
+                  latestPaidServiceDate = datetime;
                 }
               }
             }
 
-            // Якщо знайшли дату, оновлюємо клієнта
-            if (latestPaidServiceDate) {
-              const updatedClient = await prisma.directClient.findUnique({
-                where: { id: existingClientAfterSave.id },
-              });
-              
-              if (updatedClient && !updatedClient.paidServiceDate) {
+            // Оновлюємо клієнта, якщо знайшли дані
+            const updatedClient = await prisma.directClient.findUnique({
+              where: { id: existingClientAfterSave.id },
+            });
+            
+            if (updatedClient) {
+              const updates: any = {};
+              let needsUpdate = false;
+
+              // Оновлюємо consultationBookingDate
+              if (latestConsultationDate && (!updatedClient.consultationBookingDate || new Date(updatedClient.consultationBookingDate) < new Date(latestConsultationDate))) {
+                updates.consultationBookingDate = latestConsultationDate;
+                if (latestConsultationAttendance === 1) {
+                  updates.consultationAttended = true;
+                } else if (latestConsultationAttendance === -1) {
+                  updates.consultationAttended = false;
+                }
+                needsUpdate = true;
+              }
+
+              // Оновлюємо paidServiceDate (тільки якщо немає консультації або консультація вже пройшла)
+              if (latestPaidServiceDate) {
+                const shouldSetPaidService = !latestConsultationDate || 
+                  (updatedClient.consultationBookingDate && new Date(updatedClient.consultationBookingDate) < new Date(latestPaidServiceDate));
+                
+                if (shouldSetPaidService && (!updatedClient.paidServiceDate || new Date(updatedClient.paidServiceDate) < new Date(latestPaidServiceDate))) {
+                  updates.paidServiceDate = latestPaidServiceDate;
+                  updates.signedUpForPaidService = true;
+                  needsUpdate = true;
+                }
+              }
+
+              // Оновлюємо стан
+              if (latestState && (updatedClient.state === 'client' || updatedClient.state === 'lead' || !updatedClient.state)) {
+                let finalState = latestState;
+                
+                // Якщо є консультація і клієнт не прийшов - встановлюємо consultation-booked
+                if (latestConsultationDate && latestConsultationAttendance !== 1) {
+                  finalState = 'consultation-booked';
+                }
+                // Якщо є консультація і клієнт прийшов - встановлюємо consultation
+                else if (latestConsultationDate && latestConsultationAttendance === 1) {
+                  finalState = 'consultation';
+                }
+                
+                if (finalState !== updatedClient.state) {
+                  updates.state = finalState;
+                  needsUpdate = true;
+                }
+              }
+
+              if (needsUpdate) {
+                updates.updatedAt = new Date();
+                
                 // Оновлюємо через Prisma напряму, щоб уникнути рекурсії
                 await prisma.directClient.update({
                   where: { id: existingClientAfterSave.id },
-                  data: {
-                    paidServiceDate: latestPaidServiceDate,
-                    signedUpForPaidService: true,
-                    updatedAt: new Date(),
-                  },
+                  data: updates,
                 });
                 
-                console.log(`[direct-store] ✅ Auto-synced paidServiceDate for client ${existingClientAfterSave.id} from old webhooks: ${latestPaidServiceDate}`);
+                const changes = [];
+                if (updates.paidServiceDate) changes.push(`paidServiceDate: ${updates.paidServiceDate}`);
+                if (updates.consultationBookingDate) changes.push(`consultationBookingDate: ${updates.consultationBookingDate}`);
+                if (updates.state) changes.push(`state: ${updatedClient.state} -> ${updates.state}`);
+                console.log(`[direct-store] ✅ Auto-synced from old webhooks for client ${existingClientAfterSave.id}: ${changes.join(', ')}`);
               }
             }
           } catch (err) {
-            console.error(`[direct-store] ⚠️ Failed to auto-sync paidServiceDate for client ${existingClientAfterSave.id}:`, err);
+            console.error(`[direct-store] ⚠️ Failed to auto-sync from old webhooks for client ${existingClientAfterSave.id}:`, err);
           }
         });
       }
