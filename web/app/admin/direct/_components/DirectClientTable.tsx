@@ -454,10 +454,10 @@ export function DirectClientTable({
         <div className="card-body p-2 sm:p-4">
           <div className="overflow-x-auto">
             <table className="table table-xs sm:table-sm w-full border-collapse">
-              <thead className="sticky top-0 z-10">
+              <thead>
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">№</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">№</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold sticky top-0 bg-base-200 z-10">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
