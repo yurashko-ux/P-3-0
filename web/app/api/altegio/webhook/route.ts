@@ -639,7 +639,8 @@ export async function POST(req: NextRequest) {
                 // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
                 // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
                 // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
-                else if (attendance === 1 && !wasAdminStaff && staffName && datetime) {
+                // ВАЖЛИВО: обробляємо навіть якщо майстер - адміністратор (wasAdminStaff), бо attendance все одно має бути встановлено
+                else if (attendance === 1 && datetime) {
                   // Перевіряємо, чи дата консультації вже настала
                   const consultationDate = new Date(datetime);
                   const now = new Date();
@@ -689,10 +690,74 @@ export async function POST(req: NextRequest) {
                         console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
                       } else {
                         console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
+                        // Навіть якщо майстра не знайдено, встановлюємо consultationAttended = true
+                        const updates: Partial<typeof existingClient> = {
+                          consultationAttended: true,
+                          consultationDate: datetime,
+                          consultationBookingDate: existingClient.consultationBookingDate || datetime,
+                          isOnlineConsultation: isOnlineConsultation,
+                          updatedAt: new Date().toISOString(),
+                        };
+                        const updated: typeof existingClient = {
+                          ...existingClient,
+                          ...updates,
+                        };
+                        await saveDirectClient(updated, 'altegio-webhook-consultation-attended-no-master', {
+                          altegioClientId: clientId,
+                          staffName: staffName || 'unknown',
+                          datetime,
+                        });
+                        console.log(`[altegio/webhook] ✅ Set consultationAttended = true (no master found) for client ${existingClient.id}`);
                       }
                     } else {
-                      console.log(`[altegio/webhook] ⏭️ Client ${existingClient.id} already has consultation state in history, skipping`);
+                      // Якщо консультація вже є в історії, все одно оновлюємо consultationAttended, якщо він не встановлений
+                      if (existingClient.consultationAttended !== true) {
+                        const updates: Partial<typeof existingClient> = {
+                          consultationAttended: true,
+                          updatedAt: new Date().toISOString(),
+                        };
+                        const updated: typeof existingClient = {
+                          ...existingClient,
+                          ...updates,
+                        };
+                        await saveDirectClient(updated, 'altegio-webhook-consultation-attended-update', {
+                          altegioClientId: clientId,
+                          staffName: staffName || 'unknown',
+                          datetime,
+                        });
+                        console.log(`[altegio/webhook] ✅ Updated consultationAttended = true for existing consultation client ${existingClient.id}`);
+                      } else {
+                        console.log(`[altegio/webhook] ⏭️ Client ${existingClient.id} already has consultation state and consultationAttended = true, skipping`);
+                      }
                     }
+                  }
+                }
+                // 2.5.1 Fallback: Якщо attendance === 1, але попередній блок не спрацював (наприклад, немає staffName або майбутня дата)
+                // Все одно встановлюємо consultationAttended = true
+                else if (attendance === 1 && datetime) {
+                  const consultationDate = new Date(datetime);
+                  const now = new Date();
+                  const isPastOrToday = consultationDate <= now;
+                  
+                  // Встановлюємо consultationAttended навіть для майбутніх дат (якщо вже відмічено в Altegio)
+                  if (existingClient.consultationAttended !== true) {
+                    const updates: Partial<typeof existingClient> = {
+                      consultationAttended: true,
+                      consultationBookingDate: existingClient.consultationBookingDate || datetime,
+                      isOnlineConsultation: isOnlineConsultation,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    const updated: typeof existingClient = {
+                      ...existingClient,
+                      ...updates,
+                    };
+                    await saveDirectClient(updated, 'altegio-webhook-consultation-attended-fallback', {
+                      altegioClientId: clientId,
+                      staffName: staffName || 'unknown',
+                      datetime,
+                      isPastOrToday,
+                    });
+                    console.log(`[altegio/webhook] ✅ Set consultationAttended = true (fallback) for client ${existingClient.id}, isPastOrToday: ${isPastOrToday}`);
                   }
                 }
               }
