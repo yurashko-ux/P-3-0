@@ -95,6 +95,13 @@ export async function POST(req: NextRequest) {
       } else {
         diagnosis.info = `✅ Клієнтка має altegioClientId: ${directClient.altegioClientId}`;
       }
+      
+      // Перевіряємо, чи є запис на платну послугу
+      if (!directClient.paidServiceDate && !directClient.consultationBookingDate) {
+        diagnosis.issues.push('⚠️ У клієнтки немає запису на послугу (ні на платну, ні на консультацію)');
+      } else if (directClient.paidServiceDate) {
+        diagnosis.info = `${diagnosis.info || ''}\n✅ Запис на платну послугу: ${new Date(directClient.paidServiceDate).toLocaleString('uk-UA')}`;
+      }
     } else {
       diagnosis.issues.push('❌ Клієнтка не знайдена в Direct Manager');
       diagnosis.recommendations.push('Перевірте, чи правильно вказано Instagram username або ім\'я');
@@ -141,6 +148,15 @@ export async function POST(req: NextRequest) {
           })),
       };
 
+      // Перевіряємо, чи є записи з нарощуванням, але немає paidServiceDate
+      const hasHairExtensionRecords = records.some((r) =>
+        r.data.services.some((s: any) => s.title && /нарощування/i.test(s.title))
+      );
+      if (hasHairExtensionRecords && !directClient.paidServiceDate) {
+        diagnosis.issues.push('⚠️ Знайдено записи з нарощуванням в вебхуках, але paidServiceDate не встановлено');
+        diagnosis.recommendations.push('Можливо, вебхук не обробився правильно. Перевірте логи вебхуків або запустіть синхронізацію paidServiceDate.');
+      }
+      
       if (records.length === 0) {
         diagnosis.issues.push('❌ Не знайдено записів в Altegio records log для цієї клієнтки');
         diagnosis.recommendations.push('Можливо, вебхук не отримував події для цієї клієнтки');
@@ -157,26 +173,72 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Перевіряємо вебхуки
-    const webhooksLogRaw = await kvRead.lrange('altegio:webhooks:log', 0, 999);
-    const webhooks = webhooksLogRaw
+    // 4. Перевіряємо вебхуки (перевіряємо обидва джерела: webhook:log та records:log)
+    const webhookLogRaw = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const recordsLogRawForWebhooks = await kvRead.lrange('altegio:records:log', 0, 999);
+    
+    // Об'єднуємо обидва джерела
+    const allWebhookItems = [...webhookLogRaw, ...recordsLogRawForWebhooks];
+    
+    const webhooks = allWebhookItems
       .map((raw) => {
         try {
-          const parsed = JSON.parse(raw);
+          let parsed: any;
+          if (typeof raw === 'string') {
+            parsed = JSON.parse(raw);
+          } else {
+            parsed = raw;
+          }
+          
           if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
             try {
-              return JSON.parse(parsed.value);
+              parsed = JSON.parse(parsed.value);
             } catch {
-              return null;
+              return parsed;
             }
           }
+          
+          // Конвертуємо events з records:log у формат webhook events (як в client-webhooks/route.ts)
+          if (parsed && parsed.visitId && !parsed.body) {
+            // Це event з records:log - конвертуємо в формат webhook
+            return {
+              body: {
+                resource: 'record',
+                resource_id: parsed.visitId,
+                status: parsed.status || 'create',
+                data: {
+                  datetime: parsed.datetime,
+                  client: parsed.client ? { id: parsed.clientId || parsed.client.id } : { id: parsed.clientId },
+                  staff: parsed.staff ? { name: parsed.staffName || parsed.staff.name } : { name: parsed.staffName },
+                  services: parsed.services || parsed.data?.services || [],
+                  attendance: parsed.attendance || parsed.visit_attendance,
+                },
+              },
+              receivedAt: parsed.receivedAt || parsed.datetime,
+              isFromRecordsLog: true,
+              originalRecord: parsed,
+            };
+          }
+          
           return parsed;
         } catch {
           return null;
         }
       })
       .filter((w) => {
-        if (!w || !w.body) return false;
+        if (!w) return false;
+        
+        // Для конвертованих events з records:log
+        if (w.isFromRecordsLog && w.originalRecord) {
+          const clientId = w.originalRecord.clientId || w.body?.data?.client?.id;
+          if (directClient?.altegioClientId && clientId) {
+            return parseInt(String(clientId), 10) === directClient.altegioClientId;
+          }
+          return false;
+        }
+        
+        // Для звичайних webhook events
+        if (!w.body) return false;
         if (directClient?.altegioClientId) {
           return (
             (w.body.resource === 'record' && w.body.data?.client?.id === directClient.altegioClientId) ||
