@@ -23,6 +23,25 @@ export default function AdminHome() {
           alignItems: 'stretch',
         }}
       >
+        {/* Direct Manager */}
+        <Card>
+          <CardHeader
+            emoji="💬"
+            title="Direct"
+            subtitle="Робота з клієнтами Instagram Direct"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Автоматичне підтягування з ManyChat</li>
+              <li>Статуси та призначення майстрів</li>
+              <li>Відстеження конверсії</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/direct">Відкрити модуль</PrimaryLink>
+          </CardFooter>
+        </Card>
+
         {/* Кампанії — список */}
         <Card>
           <CardHeader emoji="📋" title="Кампанії" subtitle="Перегляд та керування" />
@@ -127,25 +146,6 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/finance-report">Відкрити звіт</PrimaryLink>
-          </CardFooter>
-        </Card>
-
-        {/* Direct Manager */}
-        <Card>
-          <CardHeader
-            emoji="💬"
-            title="Direct"
-            subtitle="Робота з клієнтами Instagram Direct"
-          />
-          <CardBody>
-            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
-              <li>Автоматичне підтягування з ManyChat</li>
-              <li>Статуси та призначення майстрів</li>
-              <li>Відстеження конверсії</li>
-            </ul>
-          </CardBody>
-          <CardFooter>
-            <PrimaryLink href="/admin/direct">Відкрити модуль</PrimaryLink>
           </CardFooter>
         </Card>
       </section>
