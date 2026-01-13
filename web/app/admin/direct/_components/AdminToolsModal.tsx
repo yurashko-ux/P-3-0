@@ -675,8 +675,7 @@ export function AdminToolsModal({
                     </button>
                   );
                 })
-              )
-            )}
+            ))}
           </div>
         </div>
         
