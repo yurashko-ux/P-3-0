@@ -408,9 +408,12 @@ export function AdminToolsModal({
           method: "POST" as const,
           confirm: "Налаштувати webhook для HOB_client_bot на спеціальний endpoint (/api/telegram/direct-reminders-webhook)?",
           successMessage: (data: any) => {
-            const currentUrl = window.location.origin;
-            const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
-            return `✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися через спеціальний endpoint.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+            if (typeof window !== 'undefined') {
+              const currentUrl = window.location.origin;
+              const webhookUrl = `${currentUrl}/api/telegram/direct-reminders-webhook`;
+              return `✅ Webhook налаштовано успішно!\n\nURL: ${webhookUrl}\n\nТепер повідомлення від HOB_client_bot будуть оброблятися через спеціальний endpoint.\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
+            }
+            return `✅ Webhook налаштовано успішно!\n\nПовна відповідь:\n${JSON.stringify(data, null, 2)}`;
           },
         },
       ],
