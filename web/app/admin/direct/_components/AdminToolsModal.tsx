@@ -533,6 +533,21 @@ export function AdminToolsModal({
         },
       ],
     },
+    {
+      // Додаємо в КІНЕЦЬ, щоб не зсувати нумерацію існуючих кнопок
+      category: "Імена",
+      items: [
+        {
+          icon: "🧩",
+          label: "Виправити імена з records:log",
+          endpoint: "/api/admin/direct/fix-names-from-records",
+          method: "POST" as const,
+          confirm: "Виправити плейсхолдерні імена ({{full_name}}) з Altegio records log для всіх клієнтів?",
+          successMessage: (data: any) =>
+            `✅ Виправлення імен завершено!\n\nВсього клієнтів: ${data.stats.totalClients}\nКандидатів: ${data.stats.candidates}\nОновлено: ${data.stats.updated}\nНе знайдено в records:log: ${data.stats.notFoundInLog}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+      ],
+    },
   ];
 
   return (
