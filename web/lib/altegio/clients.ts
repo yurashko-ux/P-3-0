@@ -373,13 +373,26 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
         method: 'GET' as const,
         url: `/company/${companyId}/clients/${clientId}?include[]=custom_fields`,
       },
-      // Варіант 5: POST /clients/search з фільтром по client_id
+      // Варіант 5: POST /clients/search з фільтром по client_id та всіма статистичними полями
       {
         method: 'POST' as const,
         url: `/company/${companyId}/clients/search`,
         body: JSON.stringify({
           filters: [{ field: 'id', operation: 'equals', value: clientId }],
-          fields: ['id', 'name', 'phone', 'email', 'custom_fields'],
+          fields: [
+            'id', 
+            'name', 
+            'phone', 
+            'email', 
+            'custom_fields',
+            'success_visits_count',
+            'fail_visits_count',
+            'visits_count',
+            'total_spent',
+            'total_amount',
+            'total_payment_amount',
+            'spent_amount',
+          ],
         }),
       },
       // Варіант 6: GET без параметрів (fallback)
@@ -413,26 +426,46 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           }
           
           if (client && client.id) {
-            // Логуємо структуру для діагностики кастомних полів
+            // Логуємо структуру для діагностики, включаючи статистичні поля
+            const allKeys = Object.keys(client);
+            const visitRelatedKeys = allKeys.filter(key => 
+              key.toLowerCase().includes('visit') || 
+              key.toLowerCase().includes('візит')
+            );
+            const amountRelatedKeys = allKeys.filter(key => 
+              key.toLowerCase().includes('amount') || 
+              key.toLowerCase().includes('spent') || 
+              key.toLowerCase().includes('total') ||
+              key.toLowerCase().includes('сума')
+            );
+            
             console.log(`[altegio/clients] Client ${clientId} structure from ${attempt.method} ${attempt.url}:`, {
-              keys: Object.keys(client),
+              keys: allKeys,
               hasCustomFields: 'custom_fields' in client,
               customFields: client.custom_fields || null,
               customFieldsKeys: client.custom_fields ? Object.keys(client.custom_fields) : [],
-              hasInstagramField: Object.keys(client).some(key => 
+              hasInstagramField: allKeys.some(key => 
                 key.toLowerCase().includes('instagram')
               ),
-              fullResponse: JSON.stringify(client, null, 2).substring(0, 500), // Перші 500 символів для діагностики
+              // Статистичні поля
+              visitRelatedKeys,
+              visitRelatedValues: visitRelatedKeys.reduce((acc, key) => {
+                acc[key] = (client as any)[key];
+                return acc;
+              }, {} as Record<string, any>),
+              amountRelatedKeys,
+              amountRelatedValues: amountRelatedKeys.reduce((acc, key) => {
+                acc[key] = (client as any)[key];
+                return acc;
+              }, {} as Record<string, any>),
+              // Повна відповідь (обмежена для логування)
+              fullResponse: JSON.stringify(client, null, 2).substring(0, 1000),
             });
             
-            // Якщо отримали custom_fields, повертаємо клієнта
-            if (client.custom_fields) {
-              console.log(`[altegio/clients] ✅ Got custom_fields for client ${clientId} using ${attempt.method} ${attempt.url}:`, Object.keys(client.custom_fields));
-              return client;
-            }
-            
-            // Якщо не отримали custom_fields, продовжуємо спроби з іншими URL
-            console.log(`[altegio/clients] ⚠️ No custom_fields in response from ${attempt.method} ${attempt.url}, trying next...`);
+            // Повертаємо клієнта, якщо отримали хоча б якісь дані (не обов'язково custom_fields)
+            // Це дозволяє отримати клієнтів, які мають інші поля (success_visits_count, total_spent тощо)
+            console.log(`[altegio/clients] ✅ Got client ${clientId} using ${attempt.method} ${attempt.url}`);
+            return client;
           }
         }
       } catch (err) {

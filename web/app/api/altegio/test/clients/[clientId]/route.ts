@@ -45,38 +45,205 @@ export async function GET(
     // Спочатку спробуємо отримати клієнта з усіма полями через прямий виклик API
     const { altegioFetch } = await import('@/lib/altegio/client');
     let fullClientData: any = null;
+    let apiError: any = null;
     
-    try {
-      // Пробуємо отримати з усіма полями
-      const fullResponse = await altegioFetch<any>(`/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`);
-      if (fullResponse && typeof fullResponse === 'object') {
-        fullClientData = 'data' in fullResponse ? fullResponse.data : fullResponse;
-        console.log(`[altegio/test/clients/${clientId}] Got full client data with keys:`, Object.keys(fullClientData || {}));
+    // Пробуємо різні варіанти запитів
+    const apiAttempts = [
+      `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
+      `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=success_visits_count&fields[]=total_spent&fields[]=visits_count`,
+      `/company/${companyId}/client/${clientId}`,
+    ];
+    
+    for (const url of apiAttempts) {
+      try {
+        console.log(`[altegio/test/clients/${clientId}] Trying API: ${url}`);
+        const fullResponse = await altegioFetch<any>(url);
+        if (fullResponse && typeof fullResponse === 'object') {
+          fullClientData = 'data' in fullResponse ? fullResponse.data : fullResponse;
+          if (fullClientData && (fullClientData.id || fullClientData.client_id)) {
+            console.log(`[altegio/test/clients/${clientId}] ✅ Got full client data from ${url} with keys:`, Object.keys(fullClientData || {}));
+            break;
+          }
+        }
+      } catch (err: any) {
+        apiError = {
+          url,
+          error: err.message || String(err),
+          status: err.status,
+          statusText: err.statusText,
+        };
+        console.warn(`[altegio/test/clients/${clientId}] ⚠️ Failed to get full client data from ${url}:`, err);
+        // Продовжуємо спроби з іншими URL
       }
-    } catch (err) {
-      console.warn(`[altegio/test/clients/${clientId}] Failed to get full client data:`, err);
     }
     
+    console.log(`[altegio/test/clients/${clientId}] Calling getClient()...`);
     const client = await getClient(companyId, clientId);
+    console.log(`[altegio/test/clients/${clientId}] getClient() returned:`, client ? `client with id ${client.id}` : 'null');
     
-    if (!client) {
+    // Якщо клієнта не знайдено через API, перевіряємо вебхуки
+    let webhookClientData: any = null;
+    const webhookDiagnostics: any = {
+      webhookLogChecked: 0,
+      recordsLogChecked: 0,
+      foundClientIds: new Set<number>(),
+      sampleWebhookStructures: [] as any[],
+    };
+    
+    if (!client && !fullClientData) {
+      console.log(`[altegio/test/clients/${clientId}] Client not found via API, checking webhooks...`);
+      try {
+        const { kvRead } = await import('@/lib/kv');
+        const webhooksLogRaw = await kvRead.lrange('altegio:webhook:log', 0, 999);
+        const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
+        
+        console.log(`[altegio/test/clients/${clientId}] Checking ${webhooksLogRaw.length} webhook:log entries...`);
+        // Спочатку перевіряємо webhook:log (повні вебхуки)
+        for (let i = 0; i < webhooksLogRaw.length && i < 100; i++) {
+          const raw = webhooksLogRaw[i];
+          webhookDiagnostics.webhookLogChecked++;
+          try {
+            let parsed: any;
+            if (typeof raw === 'string') {
+              parsed = JSON.parse(raw);
+            } else {
+              parsed = raw;
+            }
+            
+            if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+              try {
+                parsed = JSON.parse(parsed.value);
+              } catch {
+                continue;
+              }
+            }
+            
+            // Збираємо діагностичну інформацію про знайдені clientId
+            const webhookClientId = parsed?.body?.data?.client?.id || 
+                                   parsed?.body?.data?.client_id || 
+                                   (parsed?.body?.resource === 'client' ? parsed?.body?.resource_id : null);
+            
+            if (webhookClientId && typeof webhookClientId === 'number') {
+              webhookDiagnostics.foundClientIds.add(webhookClientId);
+            }
+            
+            // Зберігаємо приклади структур для діагностики
+            if (webhookDiagnostics.sampleWebhookStructures.length < 3 && parsed?.body) {
+              webhookDiagnostics.sampleWebhookStructures.push({
+                resource: parsed.body.resource,
+                resourceId: parsed.body.resource_id,
+                hasClient: !!parsed.body.data?.client,
+                clientId: webhookClientId,
+                structure: {
+                  bodyKeys: Object.keys(parsed.body || {}),
+                  dataKeys: Object.keys(parsed.body?.data || {}),
+                  clientKeys: Object.keys(parsed.body?.data?.client || {}),
+                },
+              });
+            }
+            
+            // Перевіряємо, чи це вебхук про цього клієнта
+            if (webhookClientId === clientId) {
+              // Для client events: body.data або body.data.client
+              // Для record events: body.data.client
+              const clientData = parsed?.body?.data?.client || 
+                               (parsed?.body?.resource === 'client' ? parsed?.body?.data : null);
+              
+              if (clientData && (clientData.id === clientId || webhookClientId === clientId)) {
+                webhookClientData = clientData;
+                console.log(`[altegio/test/clients/${clientId}] ✅ Found client data in webhook:log with keys:`, Object.keys(webhookClientData || {}));
+                break;
+              }
+            }
+          } catch (err) {
+            console.warn(`[altegio/test/clients/${clientId}] Error parsing webhook:log entry:`, err);
+            continue;
+          }
+        }
+        
+        // Якщо не знайдено в webhook:log, перевіряємо records:log
+        if (!webhookClientData) {
+          console.log(`[altegio/test/clients/${clientId}] Not found in webhook:log, checking ${recordsLogRaw.length} records:log entries...`);
+          for (let i = 0; i < recordsLogRaw.length && i < 1000; i++) {
+            const raw = recordsLogRaw[i];
+            webhookDiagnostics.recordsLogChecked++;
+            try {
+              let parsed: any;
+              if (typeof raw === 'string') {
+                parsed = JSON.parse(raw);
+              } else {
+                parsed = raw;
+              }
+              
+              if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+                try {
+                  parsed = JSON.parse(parsed.value);
+                } catch {
+                  continue;
+                }
+              }
+              
+              // В records:log структура: data.client.id або clientId
+              const recordClientId = parsed?.data?.client?.id || 
+                                    parsed?.clientId;
+              
+              if (recordClientId && typeof recordClientId === 'number') {
+                webhookDiagnostics.foundClientIds.add(recordClientId);
+              }
+              
+              if (recordClientId === clientId && parsed?.data?.client) {
+                webhookClientData = parsed.data.client;
+                console.log(`[altegio/test/clients/${clientId}] ✅ Found client data in records:log with keys:`, Object.keys(webhookClientData || {}));
+                break;
+              }
+            } catch (err) {
+              console.warn(`[altegio/test/clients/${clientId}] Error parsing records:log entry:`, err);
+              continue;
+            }
+          }
+        }
+        
+        // Конвертуємо Set в масив для JSON
+        webhookDiagnostics.foundClientIds = Array.from(webhookDiagnostics.foundClientIds).slice(0, 50);
+      } catch (err) {
+        console.warn(`[altegio/test/clients/${clientId}] Failed to check webhooks:`, err);
+        webhookDiagnostics.error = err instanceof Error ? err.message : String(err);
+      }
+    }
+    
+    if (!client && !webhookClientData && !fullClientData) {
       return NextResponse.json({
         ok: false,
-        error: `Client with ID ${clientId} not found`,
+        error: `Client with ID ${clientId} not found in API or webhooks`,
         clientId,
         companyId,
+        apiError: apiError || null,
+        webhookDiagnostics: {
+          ...webhookDiagnostics,
+          searchedInWebhookLog: webhookDiagnostics.webhookLogChecked > 0,
+          searchedInRecordsLog: webhookDiagnostics.recordsLogChecked > 0,
+          totalUniqueClientIdsFound: webhookDiagnostics.foundClientIds.length,
+          closestClientIds: webhookDiagnostics.foundClientIds
+            .map((id: number) => ({ id, diff: Math.abs(id - clientId) }))
+            .sort((a, b) => a.diff - b.diff)
+            .slice(0, 10),
+        },
+        note: 'Перевірте логи для детальної інформації про помилки API. webhookDiagnostics показує, скільки вебхуків перевірено та які clientId знайдені.',
       }, { status: 404 });
     }
     
+    // Використовуємо дані з API або вебхуків
+    const clientData = client || webhookClientData;
+    
     // Повна структура клієнта
-    const allKeys = Object.keys(client);
+    const allKeys = Object.keys(clientData);
     const standardFields = ['id', 'name', 'phone', 'email', 'created_at', 'updated_at', 'company_id'];
     const customFields = allKeys.filter(key => !standardFields.includes(key));
     
     // Шукаємо поля, пов'язані з візитами та сумами
     const visitRelatedFields: Record<string, any> = {};
     const amountRelatedFields: Record<string, any> = {};
-    const allClientData = fullClientData || client;
+    const allClientData = fullClientData || clientData;
     
     if (allClientData) {
       Object.keys(allClientData).forEach(key => {
@@ -95,18 +262,29 @@ export async function GET(
       ok: true,
       clientId,
       companyId,
+      source: client ? 'api' : (webhookClientData ? 'webhook' : 'unknown'),
+      // Дані з API (якщо отримали)
+      apiData: fullClientData ? {
+        keys: Object.keys(fullClientData),
+        hasSuccessVisitsCount: 'success_visits_count' in fullClientData,
+        successVisitsCount: fullClientData.success_visits_count,
+        hasTotalSpent: 'total_spent' in fullClientData,
+        totalSpent: fullClientData.total_spent,
+        fullData: fullClientData,
+      } : null,
+      // Дані клієнта (з API або вебхука)
       client: {
-        ...client,
+        ...clientData,
         // Додаємо мета-інформацію
         _meta: {
           allKeys,
           customFields,
-          hasCustomFields: !!client.custom_fields,
-          customFieldsKeys: client.custom_fields ? Object.keys(client.custom_fields) : [],
+          hasCustomFields: !!clientData.custom_fields,
+          customFieldsKeys: clientData.custom_fields ? Object.keys(clientData.custom_fields) : [],
         },
       },
       // Повна raw структура для діагностики
-      rawStructure: JSON.stringify(client, null, 2),
+      rawStructure: JSON.stringify(clientData, null, 2),
       // Повна структура з усіма полями (якщо отримали)
       fullClientData: fullClientData ? JSON.stringify(fullClientData, null, 2) : null,
       // Поля, пов'язані з візитами
@@ -114,8 +292,10 @@ export async function GET(
       // Поля, пов'язані з сумами
       amountRelatedFields,
       // Детальна інформація про custom_fields
-      customFieldsData: client.custom_fields || null,
-      note: 'Використовуй fullClientData або rawStructure для повного перегляду всіх полів. visitRelatedFields та amountRelatedFields показують релевантні поля.',
+      customFieldsData: clientData.custom_fields || null,
+      // Помилки API (якщо були)
+      apiErrors: apiError ? [apiError] : [],
+      note: 'Використовуй fullClientData або rawStructure для повного перегляду всіх полів. visitRelatedFields та amountRelatedFields показують релевантні поля. source вказує, звідки отримані дані (api або webhook). apiData показує, чи отримали ми success_visits_count та total_spent через API.',
     });
   } catch (err) {
     console.error(`[altegio/test/clients/${params.clientId}] Error:`, err);
