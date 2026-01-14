@@ -86,7 +86,7 @@ export async function GET(
     
     console.log(`[altegio/test/clients/${clientId}] Calling getClient()...`);
     const client = await getClient(companyId, clientId);
-    console.log(`[altegio/test/clients/${clientId}] getClient() returned:`, client ? `client with id ${client.id}` : 'null');
+    console.log(`[altegio/test/clients/${clientId}] getClient() returned:`, client ? `client with id ${client.id}, keys: ${Object.keys(client).join(', ')}` : 'null');
     
     // Працюємо тільки з API, без fallback на вебхуки
     if (!client && !fullClientData) {
@@ -96,6 +96,7 @@ export async function GET(
         clientId,
         companyId,
         apiErrors: apiErrorsList.length > 0 ? apiErrorsList : (apiError ? [apiError] : []),
+        totalAttempts: apiAttempts.length,
         note: 'Перевірте логи для детальної інформації про помилки API. Всі спроби endpoint\'ів показані в apiErrors.',
       }, { status: 404 });
     }
@@ -111,6 +112,11 @@ export async function GET(
         companyId,
       }, { status: 500 });
     }
+    
+    console.log(`[altegio/test/clients/${clientId}] Client data keys:`, Object.keys(clientData));
+    console.log(`[altegio/test/clients/${clientId}] Client spent:`, (clientData as any).spent);
+    console.log(`[altegio/test/clients/${clientId}] Client visits:`, (clientData as any).visits);
+    console.log(`[altegio/test/clients/${clientId}] Client balance:`, (clientData as any).balance);
     let webhookClientData: any = null;
     const webhookDiagnostics: any = {
       webhookLogChecked: 0,
