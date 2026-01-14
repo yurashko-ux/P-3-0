@@ -504,6 +504,32 @@ export function DirectClientTable({
                       className="hover:underline cursor-pointer"
                       onClick={() =>
                         onSortChange(
+                          "spent",
+                          sortBy === "spent" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Витрати {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "visits",
+                          sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Візити {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
                           "state",
                           sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
                         )
@@ -664,7 +690,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={20} className="text-center py-8 text-gray-500">
+                    <td colSpan={22} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -713,6 +739,14 @@ export function DirectClientTable({
                         >
                           {getFullName(client)}
                         </div>
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-right">
+                        {client.spent !== null && client.spent !== undefined
+                          ? new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'UAH', minimumFractionDigits: 0 }).format(client.spent / 100)
+                          : '-'}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
+                        {client.visits !== null && client.visits !== undefined ? client.visits : '-'}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
                         <div className="flex items-center justify-center gap-1">

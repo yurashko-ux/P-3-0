@@ -8,6 +8,8 @@ export type DirectClient = {
   instagramUsername: string; // Нікнейм в Instagram
   firstName?: string;
   lastName?: string;
+  spent?: number; // Загальна сума витрат клієнта (з Altegio API)
+  visits?: number; // Кількість візитів клієнта (з Altegio API)
   source: 'instagram' | 'tiktok' | 'other'; // Джерело реклами
   state?: 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message'; // Системний стан: Лід, Клієнт, Консультація, Запис на консультацію, Клієнт не з'явився, Перенос дати запису на консультацію, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого, Повідомлення
   firstContactDate: string; // ISO date - дата першого контакту

@@ -171,6 +171,15 @@ export function AdminToolsModal({
           successMessage: (data: any) =>
             `✅ Оновлення станів завершено!\n\nВсього клієнтів: ${data.stats.totalClients}\nОновлено: ${data.stats.updated}\nПропущено: ${data.stats.skipped}\nПомилок: ${data.stats.errors}\n\n${JSON.stringify(data, null, 2)}`,
         },
+        {
+          icon: "💰",
+          label: "Синхронізувати витрати та візити",
+          endpoint: "/api/admin/direct/sync-spent-visits",
+          method: "POST" as const,
+          confirm: "Синхронізувати spent та visits з Altegio API для всіх клієнтів?",
+          successMessage: (data: any) =>
+            `✅ Синхронізація завершена!\n\nВсього клієнтів: ${data.stats.totalClients}\nОновлено: ${data.stats.updated}\nПропущено: ${data.stats.skipped}\nПомилок: ${data.stats.errors}\n\n${JSON.stringify(data, null, 2)}`,
+        },
       ],
     },
     {
