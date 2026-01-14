@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
-import { getClientsSpentVisitsBulk, getClientsSpentVisitsSequential } from '@/lib/altegio/clients-bulk';
 import { saveDirectClient } from '@/lib/direct-store';
 import { ALTEGIO_ENV } from '@/lib/altegio/env';
 
@@ -47,24 +46,13 @@ export async function POST(req: NextRequest) {
 
     // Фільтруємо клієнтів з altegioClientId
     const clientsWithAltegioId = allClients.filter(c => c.altegioClientId);
-    const clientIds = clientsWithAltegioId.map(c => c.altegioClientId!);
     
-    console.log(`[direct/sync-spent-visits] Found ${clientIds.length} clients with Altegio ID`);
+    console.log(`[direct/sync-spent-visits] Found ${clientsWithAltegioId.length} clients with Altegio ID`);
+    console.log(`[direct/sync-spent-visits] Using individual requests with rate limiting (4 req/sec)`);
+    console.log(`[direct/sync-spent-visits] Estimated time: ~${Math.ceil(clientsWithAltegioId.length / 4)} seconds`);
 
-    // Спробуємо отримати дані масовим запитом
-    console.log(`[direct/sync-spent-visits] Attempting bulk fetch for ${clientIds.length} clients...`);
-    let spentVisitsMap = await getClientsSpentVisitsBulk(companyId, clientIds);
-    
-    // Якщо масовий запит не дав результатів, використовуємо послідовний підхід
-    // З дотриманням rate limits: 200 запитів/хв, 5 запитів/сек
-    // Використовуємо 4 запити/сек для безпеки
-    if (spentVisitsMap.size === 0 && clientIds.length > 0) {
-      console.log(`[direct/sync-spent-visits] Bulk fetch returned 0 results, trying sequential approach with rate limiting (4 req/sec)...`);
-      console.log(`[direct/sync-spent-visits] Estimated time: ~${Math.ceil(clientIds.length / 4)} seconds for ${clientIds.length} clients`);
-      spentVisitsMap = await getClientsSpentVisitsSequential(companyId, clientIds, 4);
-    }
-
-    console.log(`[direct/sync-spent-visits] Received data for ${spentVisitsMap.size} clients from API`);
+    const requestsPerSecond = 4; // 4 запити/сек для дотримання rate limit (5/сек)
+    const delayBetweenRequests = 1000 / requestsPerSecond; // 250мс між запитами
 
     let updatedCount = 0;
     let skippedCount = 0;
@@ -74,12 +62,22 @@ export async function POST(req: NextRequest) {
     const errors: string[] = [];
     const details: any[] = [];
 
-    // Обробляємо клієнтів
-    for (const client of clientsWithAltegioId) {
+    // Обробляємо клієнтів по одному з дотриманням rate limit
+    for (let i = 0; i < clientsWithAltegioId.length; i++) {
+      const client = clientsWithAltegioId[i];
+      
       try {
-        const apiData = spentVisitsMap.get(client.altegioClientId!);
-        
-        if (!apiData) {
+        if (!client.altegioClientId) {
+          skippedNoAltegioId++;
+          skippedCount++;
+          continue;
+        }
+
+        // Отримуємо дані клієнта з Altegio API через наш протестований endpoint
+        const altegioClient = await getClient(companyId, client.altegioClientId);
+
+        if (!altegioClient) {
+          console.log(`[direct/sync-spent-visits] ⚠️ Client ${client.id} (Altegio ID: ${client.altegioClientId}) not found in API`);
           skippedNotFound++;
           skippedCount++;
           details.push({
@@ -87,10 +85,19 @@ export async function POST(req: NextRequest) {
             altegioClientId: client.altegioClientId,
             status: 'not_found_in_api',
           });
+          
+          // Затримка навіть при помилці для дотримання rate limit
+          if (i < clientsWithAltegioId.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+          }
           continue;
         }
 
-        const { spent, visits } = apiData;
+        // Отримуємо spent та visits з API
+        const spent = altegioClient.spent ?? null;
+        const visits = altegioClient.visits ?? null;
+
+        console.log(`[direct/sync-spent-visits] Client ${i + 1}/${clientsWithAltegioId.length} (${client.instagramUsername}): API spent=${spent}, visits=${visits}, DB spent=${client.spent}, visits=${client.visits}`);
 
         // Перевіряємо, чи потрібно оновити дані
         const needsUpdate = 
@@ -100,6 +107,11 @@ export async function POST(req: NextRequest) {
         if (!needsUpdate) {
           skippedNoUpdate++;
           skippedCount++;
+          
+          // Затримка для дотримання rate limit
+          if (i < clientsWithAltegioId.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+          }
           continue;
         }
 
@@ -115,7 +127,7 @@ export async function POST(req: NextRequest) {
           altegioClientId: client.altegioClientId,
           spent,
           visits,
-          reason: 'Synced from Altegio API (bulk)',
+          reason: 'Synced from Altegio API',
         });
 
         updatedCount++;
@@ -124,6 +136,11 @@ export async function POST(req: NextRequest) {
         const errorMsg = `Failed to sync client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
         errors.push(errorMsg);
         console.error(`[direct/sync-spent-visits] ❌ ${errorMsg}`, err);
+      }
+
+      // Затримка між запитами для дотримання rate limit (крім останнього запиту)
+      if (i < clientsWithAltegioId.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
       }
     }
 
