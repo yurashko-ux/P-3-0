@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
+import { getClientsSpentVisitsBulk, getClientsSpentVisitsSequential } from '@/lib/altegio/clients-bulk';
 import { saveDirectClient } from '@/lib/direct-store';
 import { ALTEGIO_ENV } from '@/lib/altegio/env';
 
@@ -44,30 +45,38 @@ export async function POST(req: NextRequest) {
     const allClients = await getAllDirectClients();
     console.log(`[direct/sync-spent-visits] Found ${allClients.length} clients in database`);
 
+    // Фільтруємо клієнтів з altegioClientId
+    const clientsWithAltegioId = allClients.filter(c => c.altegioClientId);
+    const clientIds = clientsWithAltegioId.map(c => c.altegioClientId!);
+    
+    console.log(`[direct/sync-spent-visits] Found ${clientIds.length} clients with Altegio ID`);
+
+    // Спробуємо отримати дані масовим запитом
+    console.log(`[direct/sync-spent-visits] Attempting bulk fetch for ${clientIds.length} clients...`);
+    let spentVisitsMap = await getClientsSpentVisitsBulk(companyId, clientIds);
+    
+    // Якщо масовий запит не дав результатів, використовуємо послідовний підхід
+    if (spentVisitsMap.size === 0 && clientIds.length > 0) {
+      console.log(`[direct/sync-spent-visits] Bulk fetch returned 0 results, trying sequential approach...`);
+      spentVisitsMap = await getClientsSpentVisitsSequential(companyId, clientIds, 5);
+    }
+
+    console.log(`[direct/sync-spent-visits] Received data for ${spentVisitsMap.size} clients from API`);
+
     let updatedCount = 0;
     let skippedCount = 0;
-    let skippedNoAltegioId = 0;
+    let skippedNoAltegioId = allClients.length - clientsWithAltegioId.length;
     let skippedNotFound = 0;
     let skippedNoUpdate = 0;
     const errors: string[] = [];
     const details: any[] = [];
 
-    // Обробляємо клієнтів по черзі
-    for (const client of allClients) {
+    // Обробляємо клієнтів
+    for (const client of clientsWithAltegioId) {
       try {
-        // Пропускаємо клієнтів без altegioClientId
-        if (!client.altegioClientId) {
-          skippedNoAltegioId++;
-          skippedCount++;
-          continue;
-        }
-
-        // Отримуємо дані клієнта з Altegio API
-        console.log(`[direct/sync-spent-visits] Fetching client ${client.id} (Altegio ID: ${client.altegioClientId})...`);
-        const altegioClient = await getClient(companyId, client.altegioClientId);
-
-        if (!altegioClient) {
-          console.log(`[direct/sync-spent-visits] ⚠️ Client ${client.id} (Altegio ID: ${client.altegioClientId}) not found in API`);
+        const apiData = spentVisitsMap.get(client.altegioClientId!);
+        
+        if (!apiData) {
           skippedNotFound++;
           skippedCount++;
           details.push({
@@ -78,11 +87,7 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Отримуємо spent та visits з API
-        const spent = altegioClient.spent ?? null;
-        const visits = altegioClient.visits ?? null;
-
-        console.log(`[direct/sync-spent-visits] Client ${client.id}: API spent=${spent}, visits=${visits}, DB spent=${client.spent}, visits=${client.visits}`);
+        const { spent, visits } = apiData;
 
         // Перевіряємо, чи потрібно оновити дані
         const needsUpdate = 
@@ -107,7 +112,7 @@ export async function POST(req: NextRequest) {
           altegioClientId: client.altegioClientId,
           spent,
           visits,
-          reason: 'Synced from Altegio API',
+          reason: 'Synced from Altegio API (bulk)',
         });
 
         updatedCount++;
