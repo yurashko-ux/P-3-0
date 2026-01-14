@@ -88,7 +88,29 @@ export async function GET(
     const client = await getClient(companyId, clientId);
     console.log(`[altegio/test/clients/${clientId}] getClient() returned:`, client ? `client with id ${client.id}` : 'null');
     
-    // Якщо клієнта не знайдено через API, перевіряємо вебхуки
+    // Працюємо тільки з API, без fallback на вебхуки
+    if (!client && !fullClientData) {
+      return NextResponse.json({
+        ok: false,
+        error: `Client with ID ${clientId} not found via API`,
+        clientId,
+        companyId,
+        apiErrors: apiErrorsList.length > 0 ? apiErrorsList : (apiError ? [apiError] : []),
+        note: 'Перевірте логи для детальної інформації про помилки API. Всі спроби endpoint\'ів показані в apiErrors.',
+      }, { status: 404 });
+    }
+    
+    // Використовуємо дані з API
+    const clientData = client || fullClientData;
+    
+    if (!clientData) {
+      return NextResponse.json({
+        ok: false,
+        error: `Client data is null`,
+        clientId,
+        companyId,
+      }, { status: 500 });
+    }
     let webhookClientData: any = null;
     const webhookDiagnostics: any = {
       webhookLogChecked: 0,
@@ -269,16 +291,35 @@ export async function GET(
       ok: true,
       clientId,
       companyId,
-      source: client ? 'api' : (webhookClientData ? 'webhook' : 'unknown'),
+      source: 'api',
       // Дані з API (якщо отримали)
       apiData: fullClientData ? {
         keys: Object.keys(fullClientData),
+        hasSpent: 'spent' in fullClientData,
+        spent: fullClientData.spent,
+        hasVisits: 'visits' in fullClientData,
+        visits: fullClientData.visits,
+        hasBalance: 'balance' in fullClientData,
+        balance: fullClientData.balance,
         hasSuccessVisitsCount: 'success_visits_count' in fullClientData,
         successVisitsCount: fullClientData.success_visits_count,
         hasTotalSpent: 'total_spent' in fullClientData,
         totalSpent: fullClientData.total_spent,
         fullData: fullClientData,
-      } : null,
+      } : (client ? {
+        keys: Object.keys(client),
+        hasSpent: 'spent' in client,
+        spent: (client as any).spent,
+        hasVisits: 'visits' in client,
+        visits: (client as any).visits,
+        hasBalance: 'balance' in client,
+        balance: (client as any).balance,
+        hasSuccessVisitsCount: 'success_visits_count' in client,
+        successVisitsCount: (client as any).success_visits_count,
+        hasTotalSpent: 'total_spent' in client,
+        totalSpent: (client as any).total_spent,
+        fullData: client,
+      } : null),
       // Дані клієнта (з API або вебхука)
       client: {
         ...clientData,
@@ -297,7 +338,12 @@ export async function GET(
       // Поля, пов'язані з візитами
       visitRelatedFields,
       // Поля, пов'язані з сумами
-      amountRelatedFields,
+      amountRelatedFields: {
+        ...amountRelatedFields,
+        // Додаємо поля з API, якщо вони є
+        spent: clientData.spent,
+        balance: (clientData as any).balance,
+      },
       // Детальна інформація про custom_fields
       customFieldsData: clientData.custom_fields || null,
       // Помилки API (якщо були)

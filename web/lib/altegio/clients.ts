@@ -437,7 +437,15 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           options.body = attempt.body;
         }
         
-        const response = await altegioFetch<Client | { success?: boolean; data?: Client; meta?: any }>(attempt.url, options);
+        const response = await altegioFetch<any>(attempt.url, options);
+        
+        console.log(`[altegio/clients] Response structure for attempt ${i + 1}:`, {
+          hasSuccess: 'success' in response,
+          hasData: 'data' in response,
+          hasId: 'id' in response,
+          responseKeys: Object.keys(response || {}),
+          responseType: typeof response,
+        });
         
         if (response && typeof response === 'object') {
           let client: Client | null = null;
@@ -445,11 +453,23 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           // Згідно з документацією, відповідь має формат: { success: true, data: {...}, meta: [] }
           if ('data' in response && response.data && typeof response.data === 'object') {
             client = response.data as Client;
-            console.log(`[altegio/clients] ✅ Got client from response.data for attempt ${i + 1}`);
+            console.log(`[altegio/clients] ✅ Got client from response.data for attempt ${i + 1}, keys:`, Object.keys(client));
+            console.log(`[altegio/clients] Client data preview:`, {
+              id: client.id,
+              name: client.name,
+              spent: (client as any).spent,
+              visits: (client as any).visits,
+              balance: (client as any).balance,
+            });
           } else if ('id' in response) {
             // Якщо відповідь - це сам клієнт (без обгортки)
             client = response as Client;
-            console.log(`[altegio/clients] ✅ Got client directly from response for attempt ${i + 1}`);
+            console.log(`[altegio/clients] ✅ Got client directly from response for attempt ${i + 1}, keys:`, Object.keys(client));
+          } else {
+            console.log(`[altegio/clients] ⚠️ Attempt ${i + 1}: Response structure doesn't match expected format:`, {
+              responseKeys: Object.keys(response),
+              responsePreview: JSON.stringify(response).substring(0, 200),
+            });
           }
           
           if (client && client.id) {
