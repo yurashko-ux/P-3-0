@@ -46,23 +46,35 @@ export async function POST(req: NextRequest) {
 
     let updatedCount = 0;
     let skippedCount = 0;
+    let skippedNoAltegioId = 0;
+    let skippedNotFound = 0;
+    let skippedNoUpdate = 0;
     const errors: string[] = [];
+    const details: any[] = [];
 
     // Обробляємо клієнтів по черзі
     for (const client of allClients) {
       try {
         // Пропускаємо клієнтів без altegioClientId
         if (!client.altegioClientId) {
+          skippedNoAltegioId++;
           skippedCount++;
           continue;
         }
 
         // Отримуємо дані клієнта з Altegio API
+        console.log(`[direct/sync-spent-visits] Fetching client ${client.id} (Altegio ID: ${client.altegioClientId})...`);
         const altegioClient = await getClient(companyId, client.altegioClientId);
 
         if (!altegioClient) {
           console.log(`[direct/sync-spent-visits] ⚠️ Client ${client.id} (Altegio ID: ${client.altegioClientId}) not found in API`);
+          skippedNotFound++;
           skippedCount++;
+          details.push({
+            instagramUsername: client.instagramUsername,
+            altegioClientId: client.altegioClientId,
+            status: 'not_found_in_api',
+          });
           continue;
         }
 
@@ -70,12 +82,15 @@ export async function POST(req: NextRequest) {
         const spent = altegioClient.spent ?? null;
         const visits = altegioClient.visits ?? null;
 
+        console.log(`[direct/sync-spent-visits] Client ${client.id}: API spent=${spent}, visits=${visits}, DB spent=${client.spent}, visits=${client.visits}`);
+
         // Перевіряємо, чи потрібно оновити дані
         const needsUpdate = 
           (spent !== null && client.spent !== spent) ||
           (visits !== null && client.visits !== visits);
 
         if (!needsUpdate) {
+          skippedNoUpdate++;
           skippedCount++;
           continue;
         }
@@ -111,8 +126,12 @@ export async function POST(req: NextRequest) {
         totalClients: allClients.length,
         updated: updatedCount,
         skipped: skippedCount,
+        skippedNoAltegioId,
+        skippedNotFound,
+        skippedNoUpdate,
         errors: errors.length,
       },
+      details: details.slice(0, 50),
       errors: errors.length > 0 ? errors.slice(0, 20) : [],
       timestamp: new Date().toISOString(),
     });
