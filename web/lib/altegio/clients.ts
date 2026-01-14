@@ -172,8 +172,8 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
         firstClientKeys: clients[0] ? Object.keys(clients[0]) : [],
         firstClientSample: clients[0] || null,
         // Перевіряємо, чи клієнти мають хоча б ім'я або телефон
-        clientsWithNames: clients.filter(c => c.name && c.name.trim()).length,
-        clientsWithPhones: clients.filter(c => c.phone && c.phone.trim()).length,
+        clientsWithNames: clients.filter(c => c.name && typeof c.name === 'string' && c.name.trim()).length,
+        clientsWithPhones: clients.filter(c => c.phone && (typeof c.phone === 'string' ? c.phone.trim() : String(c.phone))).length,
         clientsWithOnlyId: clients.filter(c => Object.keys(c).length === 1 && 'id' in c).length,
       });
       
