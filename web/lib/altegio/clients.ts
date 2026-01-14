@@ -353,17 +353,17 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
     // Спробуємо різні варіанти URL з параметрами для отримання всіх полів, включаючи custom_fields
     // Згідно з документацією: GET /company/{company_id}/client/{client_id}
     const attempts = [
-      // Варіант 1: GET /company/{id}/client/{id} з explicit fields (згідно з документацією)
+      // Варіант 1: GET /company/{id}/client/{id} з explicit fields включаючи статистику
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=success_visits_count&fields[]=total_spent&fields[]=total_amount&fields[]=visits_count&fields[]=total_payment_amount&fields[]=spent_amount`,
       },
-      // Варіант 2: GET з include[]=custom_fields
+      // Варіант 2: GET з include[]=custom_fields та статистикою
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields`,
+        url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields&fields[]=success_visits_count&fields[]=total_spent`,
       },
-      // Варіант 3: GET з усіма полями
+      // Варіант 3: GET з усіма полями (найкращий варіант для перевірки)
       {
         method: 'GET' as const,
         url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,

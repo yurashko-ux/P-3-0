@@ -42,6 +42,21 @@ export async function GET(
     
     console.log(`[altegio/test/clients/${clientId}] Fetching full structure for client ${clientId}...`);
     
+    // Спочатку спробуємо отримати клієнта з усіма полями через прямий виклик API
+    const { altegioFetch } = await import('@/lib/altegio/client');
+    let fullClientData: any = null;
+    
+    try {
+      // Пробуємо отримати з усіма полями
+      const fullResponse = await altegioFetch<any>(`/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`);
+      if (fullResponse && typeof fullResponse === 'object') {
+        fullClientData = 'data' in fullResponse ? fullResponse.data : fullResponse;
+        console.log(`[altegio/test/clients/${clientId}] Got full client data with keys:`, Object.keys(fullClientData || {}));
+      }
+    } catch (err) {
+      console.warn(`[altegio/test/clients/${clientId}] Failed to get full client data:`, err);
+    }
+    
     const client = await getClient(companyId, clientId);
     
     if (!client) {
@@ -57,6 +72,24 @@ export async function GET(
     const allKeys = Object.keys(client);
     const standardFields = ['id', 'name', 'phone', 'email', 'created_at', 'updated_at', 'company_id'];
     const customFields = allKeys.filter(key => !standardFields.includes(key));
+    
+    // Шукаємо поля, пов'язані з візитами та сумами
+    const visitRelatedFields: Record<string, any> = {};
+    const amountRelatedFields: Record<string, any> = {};
+    const allClientData = fullClientData || client;
+    
+    if (allClientData) {
+      Object.keys(allClientData).forEach(key => {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey.includes('visit') || lowerKey.includes('візит')) {
+          visitRelatedFields[key] = allClientData[key];
+        }
+        if (lowerKey.includes('amount') || lowerKey.includes('spent') || lowerKey.includes('total') || 
+            lowerKey.includes('сума') || lowerKey.includes('сум')) {
+          amountRelatedFields[key] = allClientData[key];
+        }
+      });
+    }
     
     return NextResponse.json({
       ok: true,
@@ -74,9 +107,15 @@ export async function GET(
       },
       // Повна raw структура для діагностики
       rawStructure: JSON.stringify(client, null, 2),
+      // Повна структура з усіма полями (якщо отримали)
+      fullClientData: fullClientData ? JSON.stringify(fullClientData, null, 2) : null,
+      // Поля, пов'язані з візитами
+      visitRelatedFields,
+      // Поля, пов'язані з сумами
+      amountRelatedFields,
       // Детальна інформація про custom_fields
       customFieldsData: client.custom_fields || null,
-      note: 'Використовуй rawStructure для повного перегляду всіх полів',
+      note: 'Використовуй fullClientData або rawStructure для повного перегляду всіх полів. visitRelatedFields та amountRelatedFields показують релевантні поля.',
     });
   } catch (err) {
     console.error(`[altegio/test/clients/${params.clientId}] Error:`, err);
