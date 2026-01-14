@@ -54,25 +54,32 @@ export async function GET(
       `/company/${companyId}/client/${clientId}`,
     ];
     
-    for (const url of apiAttempts) {
+    const apiErrorsList: any[] = [];
+    for (let i = 0; i < apiAttempts.length; i++) {
+      const url = apiAttempts[i];
       try {
-        console.log(`[altegio/test/clients/${clientId}] Trying API: ${url}`);
+        console.log(`[altegio/test/clients/${clientId}] Trying API attempt ${i + 1}/${apiAttempts.length}: ${url}`);
         const fullResponse = await altegioFetch<any>(url);
         if (fullResponse && typeof fullResponse === 'object') {
           fullClientData = 'data' in fullResponse ? fullResponse.data : fullResponse;
           if (fullClientData && (fullClientData.id || fullClientData.client_id)) {
             console.log(`[altegio/test/clients/${clientId}] ✅ Got full client data from ${url} with keys:`, Object.keys(fullClientData || {}));
+            apiError = null; // Скидаємо помилку, якщо успішно
             break;
+          } else {
+            console.log(`[altegio/test/clients/${clientId}] ⚠️ Response received but no client data (id missing)`);
           }
         }
       } catch (err: any) {
-        apiError = {
+        const errorInfo = {
           url,
           error: err.message || String(err),
           status: err.status,
           statusText: err.statusText,
         };
-        console.warn(`[altegio/test/clients/${clientId}] ⚠️ Failed to get full client data from ${url}:`, err);
+        apiErrorsList.push(errorInfo);
+        apiError = errorInfo; // Зберігаємо останню помилку
+        console.warn(`[altegio/test/clients/${clientId}] ❌ Attempt ${i + 1}/${apiAttempts.length} failed: ${url} - ${err.message} (status: ${err.status || 'unknown'})`);
         // Продовжуємо спроби з іншими URL
       }
     }
@@ -294,7 +301,7 @@ export async function GET(
       // Детальна інформація про custom_fields
       customFieldsData: clientData.custom_fields || null,
       // Помилки API (якщо були)
-      apiErrors: apiError ? [apiError] : [],
+      apiErrors: apiErrorsList.length > 0 ? apiErrorsList : (apiError ? [apiError] : []),
       note: 'Використовуй fullClientData або rawStructure для повного перегляду всіх полів. visitRelatedFields та amountRelatedFields показують релевантні поля. source вказує, звідки отримані дані (api або webhook). apiData показує, чи отримали ми success_visits_count та total_spent через API.',
     });
   } catch (err) {

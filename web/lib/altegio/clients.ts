@@ -421,10 +421,14 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
       },
     ];
     
+    const errors: Array<{ url: string; method: string; error: string; status?: number }> = [];
     let lastError: Error | null = null;
     
-    for (const attempt of attempts) {
+    for (let i = 0; i < attempts.length; i++) {
+      const attempt = attempts[i];
       try {
+        console.log(`[altegio/clients] Attempt ${i + 1}/${attempts.length}: ${attempt.method} ${attempt.url}`);
+        
         const options: RequestInit = {
           method: attempt.method,
         };
@@ -458,7 +462,7 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
               key.toLowerCase().includes('сума')
             );
             
-            console.log(`[altegio/clients] Client ${clientId} structure from ${attempt.method} ${attempt.url}:`, {
+            console.log(`[altegio/clients] ✅ Client ${clientId} structure from ${attempt.method} ${attempt.url}:`, {
               keys: allKeys,
               hasCustomFields: 'custom_fields' in client,
               customFields: client.custom_fields || null,
@@ -485,16 +489,35 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             // Це дозволяє отримати клієнтів, які мають інші поля (success_visits_count, total_spent тощо)
             console.log(`[altegio/clients] ✅ Got client ${clientId} using ${attempt.method} ${attempt.url}`);
             return client;
+          } else {
+            console.log(`[altegio/clients] ⚠️ Attempt ${i + 1}: Response received but no client data (id missing or invalid)`);
           }
+        } else {
+          console.log(`[altegio/clients] ⚠️ Attempt ${i + 1}: Invalid response format`);
         }
-      } catch (err) {
+      } catch (err: any) {
+        const errorMessage = err.message || String(err);
+        const status = err.status;
         lastError = err instanceof Error ? err : new Error(String(err));
+        
+        errors.push({
+          url: attempt.url,
+          method: attempt.method,
+          error: errorMessage,
+          status: status,
+        });
+        
+        console.log(`[altegio/clients] ❌ Attempt ${i + 1}/${attempts.length} failed: ${attempt.method} ${attempt.url} - ${errorMessage} (status: ${status || 'unknown'})`);
         continue; // Пробуємо наступний URL
       }
     }
     
     if (lastError) {
-      console.error(`[altegio/clients] All attempts failed for client ${clientId}:`, lastError);
+      console.error(`[altegio/clients] ❌ All ${attempts.length} attempts failed for client ${clientId}:`, {
+        totalAttempts: attempts.length,
+        errors: errors.map(e => `${e.method} ${e.url}: ${e.error} (${e.status || 'no status'})`),
+        lastError: lastError.message,
+      });
     }
     
     return null;
