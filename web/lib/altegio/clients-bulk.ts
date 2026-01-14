@@ -163,7 +163,15 @@ export async function getClientsSpentVisitsSequential(
       });
 
       if (response && typeof response === 'object') {
-        const client = 'data' in response && response.data ? response.data : response;
+        let client: Client | null = null;
+        
+        // Перевіряємо формат відповіді
+        if ('data' in response && response.data) {
+          client = response.data;
+        } else if ('id' in response) {
+          // Якщо відповідь - це сам клієнт
+          client = response as Client;
+        }
         
         if (client && client.id) {
           result.set(client.id, {
