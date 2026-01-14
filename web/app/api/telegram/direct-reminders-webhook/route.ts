@@ -13,6 +13,105 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+function isTemplateOrPlaceholderNamePart(value?: string | null): boolean {
+  if (!value) return true;
+  const v = String(value).trim();
+  if (!v) return true;
+  const lower = v.toLowerCase();
+  if (v.includes("{{") || v.includes("}}")) return true;
+  if (lower === "not found") return true;
+  return false;
+}
+
+async function tryFixClientNameFromRecordsLog(altegioClientId: number, directClientId: string) {
+  try {
+    const { prisma } = await import('@/lib/prisma');
+    const { kvRead } = await import('@/lib/kv');
+
+    const current = await prisma.directClient.findUnique({
+      where: { id: directClientId },
+      select: { id: true, firstName: true, lastName: true, altegioClientId: true },
+    });
+
+    if (!current) return;
+    if (current.altegioClientId !== altegioClientId) {
+      console.log(`[direct-reminders-webhook] ⚠️ Пропускаємо оновлення імені: directClientId=${directClientId} має altegioClientId=${current.altegioClientId}, очікували ${altegioClientId}`);
+      return;
+    }
+
+    const needsFix =
+      isTemplateOrPlaceholderNamePart(current.firstName) ||
+      isTemplateOrPlaceholderNamePart(current.lastName);
+
+    if (!needsFix) {
+      return;
+    }
+
+    const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
+    let best: any = null;
+    let bestTime = 0;
+
+    for (const raw of rawItems) {
+      try {
+        let parsed: any = raw;
+        if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+        // KV інколи повертає { value: "..." }
+        if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+          try {
+            parsed = JSON.parse(parsed.value);
+          } catch {
+            // ignore
+          }
+        }
+        if (!parsed || typeof parsed !== 'object') continue;
+        const cid = parsed.clientId ?? parsed.data?.client?.id ?? parsed.data?.client_id;
+        if (Number(cid) !== altegioClientId) continue;
+
+        const dt = parsed.datetime || parsed.data?.datetime || parsed.receivedAt;
+        const ts = dt ? new Date(dt).getTime() : 0;
+        if (ts >= bestTime) {
+          bestTime = ts;
+          best = parsed;
+        }
+      } catch {
+        // ignore one bad record
+      }
+    }
+
+    const clientObj = best?.data?.client || null;
+    const fullNameRaw =
+      (clientObj?.name || clientObj?.display_name || best?.clientName || '').toString().trim();
+
+    if (!fullNameRaw) {
+      console.log(`[direct-reminders-webhook] ⚠️ Не знайшли імʼя в altegio:records:log для Altegio ID ${altegioClientId}`);
+      return;
+    }
+    if (fullNameRaw.includes("{{") || fullNameRaw.includes("}}")) {
+      console.log(`[direct-reminders-webhook] ⚠️ Імʼя з records:log містить плейсхолдер, пропускаємо: "${fullNameRaw}" (Altegio ID ${altegioClientId})`);
+      return;
+    }
+
+    const parts = fullNameRaw.split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || null;
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+
+    if (!firstName) return;
+
+    await prisma.directClient.update({
+      where: { id: directClientId },
+      data: {
+        firstName,
+        lastName,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`[direct-reminders-webhook] ✅ Оновили імʼя клієнта ${directClientId} з records:log: "${firstName} ${lastName || ''}".trim() (Altegio ID ${altegioClientId})`);
+  } catch (err) {
+    console.warn(`[direct-reminders-webhook] ⚠️ Не вдалося оновити імʼя з records:log для Altegio ID ${altegioClientId}:`, err);
+  }
+}
+
 /**
  * Отримує токен бота для нагадувань Direct клієнтів (HOB_client_bot)
  */
@@ -194,6 +293,9 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
         
         console.log(`[direct-reminders-webhook] ✅ Merged clients BEFORE update: kept ${clientByInstagram.id}, deleted ${existingClient.id}`);
         
+        // Якщо імʼя плейсхолдерне ({{full_name}}) — підтягуємо з records:log
+        await tryFixClientNameFromRecordsLog(altegioClientId, clientByInstagram.id);
+
         // Відправляємо успішне повідомлення
         await sendMessage(
           chatId,
@@ -306,6 +408,8 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     }
     
     if (updatedClient) {
+      // Якщо імʼя плейсхолдерне ({{full_name}}) — підтягуємо з records:log
+      await tryFixClientNameFromRecordsLog(altegioClientId, updatedClient.id);
       await sendMessage(
         chatId,
         `✅ Instagram username оновлено!\n\n` +

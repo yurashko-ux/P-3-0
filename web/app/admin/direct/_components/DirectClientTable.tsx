@@ -216,7 +216,16 @@ export function DirectClientTable({
   };
 
   const getFullName = (client: DirectClient) => {
-    const parts = [client.firstName, client.lastName].filter(Boolean);
+    const isBadNamePart = (v?: string) => {
+      if (!v) return true;
+      const t = v.trim();
+      if (!t) return true;
+      // Не показуємо плейсхолдери типу {{full_name}}
+      if (t.includes("{{") || t.includes("}}")) return true;
+      if (t.toLowerCase() === "not found") return true;
+      return false;
+    };
+    const parts = [client.firstName, client.lastName].filter((p) => !isBadNamePart(p));
     return parts.length ? parts.join(" ") : "-";
   };
 

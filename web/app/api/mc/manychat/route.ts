@@ -269,6 +269,16 @@ function normalisePayload(payload: unknown, rawText?: string | null): LatestMess
   };
 }
 
+function isTemplateOrPlaceholderName(value: string): boolean {
+  const v = value.trim();
+  if (!v) return true;
+  const lower = v.toLowerCase();
+  // ManyChat/templating placeholders або наші fallback-и
+  if (v.includes('{{') || v.includes('}}')) return true;
+  if (lower === 'not found') return true;
+  return false;
+}
+
 function ensureMessageText(
   message: LatestMessage | null,
   fallbackRaw: unknown,
@@ -529,7 +539,11 @@ export async function POST(req: NextRequest) {
       if (!client || !client.id) {
         // Створюємо нового клієнта
         const now = new Date().toISOString();
-        const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
+        const safeFullName =
+          typeof message.fullName === 'string' && !isTemplateOrPlaceholderName(message.fullName)
+            ? message.fullName.trim()
+            : null;
+        const fullNameParts = safeFullName ? safeFullName.split(/\s+/) : [];
         const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         // Автоматично призначаємо дірект-менеджера для клієнтів з ManyChat
@@ -565,7 +579,11 @@ export async function POST(req: NextRequest) {
         console.log('[manychat] Created new Direct client:', { id: client.id, username: client.instagramUsername, masterId });
       } else {
         // Оновлюємо існуючого клієнта
-        const fullNameParts = message.fullName ? message.fullName.trim().split(' ') : [];
+        const safeFullName =
+          typeof message.fullName === 'string' && !isTemplateOrPlaceholderName(message.fullName)
+            ? message.fullName.trim()
+            : null;
+        const fullNameParts = safeFullName ? safeFullName.split(/\s+/) : [];
         
         // Перевіряємо, чи потрібно встановити стан 'message'
         // Стан 'message' встановлюється тільки якщо минуло більше 24 годин з останнього встановлення
@@ -596,7 +614,7 @@ export async function POST(req: NextRequest) {
           ...client,
           id: client.id,
           instagramUsername: normalizedInstagram,
-          ...(message.fullName && fullNameParts.length > 0 && {
+          ...(safeFullName && fullNameParts.length > 0 && {
             firstName: fullNameParts[0],
             lastName: fullNameParts.slice(1).join(' ') || undefined,
           }),
@@ -617,6 +635,32 @@ export async function POST(req: NextRequest) {
           username: client.instagramUsername,
           statusId: client.statusId,
         });
+
+        // Зберігаємо вхідне повідомлення в базу даних
+        if (message.text && message.text.trim()) {
+          try {
+            const { PrismaClient } = await import('@prisma/client');
+            const prisma = new PrismaClient();
+            
+            await prisma.directMessage.create({
+              data: {
+                clientId: client.id,
+                direction: 'incoming',
+                text: message.text,
+                messageId: message.id?.toString(),
+                source: 'manychat',
+                receivedAt: new Date(message.receivedAt || Date.now()),
+                rawData: rawBodyText ? rawBodyText.substring(0, 10000) : null, // Обмежуємо розмір
+              },
+            });
+            console.log('[manychat] ✅ Incoming message saved to database');
+            
+            await prisma.$disconnect();
+          } catch (dbErr) {
+            console.error('[manychat] Failed to save incoming message to DB:', dbErr);
+            // Не зупиняємо виконання webhook, просто логуємо помилку
+          }
+        }
       } else {
         console.error('[manychat] ❌ Invalid client data:', { id: client.id, username: client.instagramUsername });
       }
