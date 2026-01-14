@@ -13,15 +13,34 @@ export type Company = {
 export type Client = {
   id: number;
   name: string;
-  phone?: string;
+  surname?: string;
+  middle_name?: string;
+  phone?: string | number;
   email?: string;
+  // Статистика клієнта (згідно з документацією API)
+  spent?: number; // Загальна сума витрат клієнта
+  visits?: number; // Кількість візитів
+  balance?: number; // Баланс клієнта
+  // Можливі додаткові поля з вебхуків
+  success_visits_count?: number; // Кількість успішних візитів (з вебхуків)
+  fail_visits_count?: number; // Кількість невдалих візитів (з вебхуків)
   // Кастомні поля для Instagram username (можливі варіанти назв)
   'instagram-user-name'?: string; // API key з налаштувань (kebab-case)
   instagram_user_name?: string; // snake_case варіант
   instagramUsername?: string; // camelCase варіант
   instagram_username?: string; // інший snake_case варіант
   // Додаткові поля (може бути об'єкт custom_fields)
-  custom_fields?: Record<string, any>;
+  custom_fields?: Record<string, any> | any[];
+  categories?: any[];
+  gender?: string;
+  discount?: number;
+  importance?: string;
+  card?: string;
+  birth_date?: string | null;
+  comment?: string;
+  sms_check?: number;
+  sms_not?: number;
+  last_change_date?: string;
   [key: string]: any; // Дозволяємо додаткові поля
 };
 

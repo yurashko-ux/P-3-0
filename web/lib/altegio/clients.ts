@@ -353,30 +353,42 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
     // Спробуємо різні варіанти URL згідно з документацією Altegio API
     // Документація: https://developer.alteg.io/en
     // Base URL: https://api.alteg.io/api (v1 або v2)
-    // Base URL вже містить /v1, тому path не повинен містити версію
-    // Але спробуємо різні варіанти на випадок, якщо base URL змінений
+    // Згідно з документацією: https://developer.alteg.io/en
+    // Правильний endpoint: GET /v1/client/{location_id}/{id}
+    // (БЕЗ /company/ в шляху!)
+    // Відповідь містить: spent, visits, balance та інші поля
     const attempts = [
-      // Варіант 1: GET /company/{id}/client/{id} без параметрів (найпростіший)
+      // Варіант 1: Правильний формат згідно з документацією - GET /v1/client/{location_id}/{id}
+      {
+        method: 'GET' as const,
+        url: `/v1/client/${companyId}/${clientId}`,
+      },
+      // Варіант 2: Без префіксу версії (якщо base URL вже містить /v1)
+      {
+        method: 'GET' as const,
+        url: `/client/${companyId}/${clientId}`,
+      },
+      // Варіант 3: GET /company/{id}/client/{id} без параметрів (старий формат)
       {
         method: 'GET' as const,
         url: `/company/${companyId}/client/${clientId}`,
       },
-      // Варіант 2: GET /company/{id}/client/{id} з усіма полями
+      // Варіант 4: GET /company/{id}/client/{id} з усіма полями
       {
         method: 'GET' as const,
         url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
       },
-      // Варіант 3: GET /company/{id}/client/{id} з explicit fields включаючи статистику
+      // Варіант 5: GET /company/{id}/client/{id} з explicit fields включаючи статистику
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=success_visits_count&fields[]=fail_visits_count&fields[]=total_spent&fields[]=visits_count&fields[]=spent`,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=spent&fields[]=visits&fields[]=balance`,
       },
-      // Варіант 4: Альтернативний формат - GET /clients/{location_id}/{client_id}
+      // Варіант 6: Альтернативний формат - GET /clients/{location_id}/{client_id}
       {
         method: 'GET' as const,
         url: `/clients/${companyId}/${clientId}`,
       },
-      // Варіант 5: POST /company/{id}/clients/search з фільтром по client_id
+      // Варіант 7: POST /company/{id}/clients/search з фільтром по client_id
       {
         method: 'POST' as const,
         url: `/company/${companyId}/clients/search`,
@@ -388,15 +400,13 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             'phone', 
             'email', 
             'custom_fields',
-            'success_visits_count',
-            'fail_visits_count',
-            'visits_count',
-            'total_spent',
             'spent',
+            'visits',
+            'balance',
           ],
         }),
       },
-      // Варіант 6: POST /company/{id}/clients/search без fields (поверне всі поля)
+      // Варіант 8: POST /company/{id}/clients/search без fields (поверне всі поля)
       {
         method: 'POST' as const,
         url: `/company/${companyId}/clients/search`,
@@ -404,20 +414,10 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           filters: [{ field: 'id', operation: 'equals', value: clientId }],
         }),
       },
-      // Варіант 7: Спробуємо з явною версією v2 (якщо base URL не містить версії)
+      // Варіант 9: Спробуємо з явною версією v2
       {
         method: 'GET' as const,
-        url: `/v2/company/${companyId}/client/${clientId}`,
-      },
-      // Варіант 8: Спробуємо з явною версією v1 (якщо base URL не містить версії)
-      {
-        method: 'GET' as const,
-        url: `/v1/company/${companyId}/client/${clientId}`,
-      },
-      // Варіант 9: Спробуємо через analytics endpoint (може містити статистику)
-      {
-        method: 'GET' as const,
-        url: `/company/${companyId}/analytics/clients?client_id=${clientId}`,
+        url: `/v2/client/${companyId}/${clientId}`,
       },
     ];
     
@@ -437,15 +437,19 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           options.body = attempt.body;
         }
         
-        const response = await altegioFetch<Client | { data?: Client }>(attempt.url, options);
+        const response = await altegioFetch<Client | { success?: boolean; data?: Client; meta?: any }>(attempt.url, options);
         
         if (response && typeof response === 'object') {
           let client: Client | null = null;
           
-          if ('id' in response) {
-            client = response as Client;
-          } else if ('data' in response && response.data) {
+          // Згідно з документацією, відповідь має формат: { success: true, data: {...}, meta: [] }
+          if ('data' in response && response.data && typeof response.data === 'object') {
             client = response.data as Client;
+            console.log(`[altegio/clients] ✅ Got client from response.data for attempt ${i + 1}`);
+          } else if ('id' in response) {
+            // Якщо відповідь - це сам клієнт (без обгортки)
+            client = response as Client;
+            console.log(`[altegio/clients] ✅ Got client directly from response for attempt ${i + 1}`);
           }
           
           if (client && client.id) {
