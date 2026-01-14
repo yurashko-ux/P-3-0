@@ -110,7 +110,6 @@ export async function POST(req: NextRequest) {
 
         if (!needsUpdate) {
           skippedNoUpdate++;
-          skippedCount++;
           
           // Затримка для дотримання rate limit
           if (i < clientsWithAltegioId.length - 1) {
@@ -147,6 +146,9 @@ export async function POST(req: NextRequest) {
         await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
       }
     }
+
+    // Загальна кількість пропущених = ті, що без Altegio ID + не знайдені в API + не потребували оновлення
+    skippedCount = skippedNoAltegioId + skippedNotFound + skippedNoUpdate;
 
     return NextResponse.json({
       ok: true,
