@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
 import { saveDirectClient } from '@/lib/direct-store';
-import { ALTEGIO_ENV } from '@/lib/altegio/env';
+import { assertAltegioEnv } from '@/lib/altegio/env';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -30,15 +30,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const companyId = parseInt(ALTEGIO_ENV.PARTNER_ID || '', 10);
+    // Важливо: для отримання spent/visits ми використовуємо location_id (companyId) з ALTEGIO_COMPANY_ID,
+    // так само як у тестовому endpoint /api/altegio/test/clients/[clientId]
+    assertAltegioEnv();
+    const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+    const companyId = parseInt(companyIdStr, 10);
     if (!companyId || isNaN(companyId)) {
       return NextResponse.json({
         ok: false,
-        error: 'ALTEGIO_PARTNER_ID not configured',
+        error: 'ALTEGIO_COMPANY_ID not configured',
       }, { status: 500 });
     }
 
-    console.log(`[direct/sync-spent-visits] Starting sync for company ${companyId}...`);
+    console.log(`[direct/sync-spent-visits] Starting sync for company ${companyId} (from ALTEGIO_COMPANY_ID='${companyIdStr}')...`);
 
     // Отримуємо всіх клієнтів з бази даних
     const allClients = await getAllDirectClients();
