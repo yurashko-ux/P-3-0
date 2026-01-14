@@ -350,30 +350,33 @@ export async function getClients(companyId: number, limit?: number): Promise<Cli
  */
 export async function getClient(companyId: number, clientId: number): Promise<Client | null> {
   try {
-    // Спробуємо різні варіанти URL з параметрами для отримання всіх полів, включаючи custom_fields
-    // Згідно з документацією: GET /company/{company_id}/client/{client_id}
+    // Спробуємо різні варіанти URL згідно з документацією Altegio API
+    // Документація: https://developer.alteg.io/en
+    // Base URL: https://api.alteg.io/api (v1 або v2)
+    // Base URL вже містить /v1, тому path не повинен містити версію
+    // Але спробуємо різні варіанти на випадок, якщо base URL змінений
     const attempts = [
-      // Варіант 1: GET /company/{id}/client/{id} з explicit fields включаючи статистику
+      // Варіант 1: GET /company/{id}/client/{id} без параметрів (найпростіший)
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=success_visits_count&fields[]=total_spent&fields[]=total_amount&fields[]=visits_count&fields[]=total_payment_amount&fields[]=spent_amount`,
+        url: `/company/${companyId}/client/${clientId}`,
       },
-      // Варіант 2: GET з include[]=custom_fields та статистикою
-      {
-        method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?include[]=custom_fields&with[]=custom_fields&fields[]=custom_fields&fields[]=success_visits_count&fields[]=total_spent`,
-      },
-      // Варіант 3: GET з усіма полями (найкращий варіант для перевірки)
+      // Варіант 2: GET /company/{id}/client/{id} з усіма полями
       {
         method: 'GET' as const,
         url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
       },
-      // Варіант 4: GET /company/{id}/clients/{id} (альтернативний шлях)
+      // Варіант 3: GET /company/{id}/client/{id} з explicit fields включаючи статистику
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/clients/${clientId}?include[]=custom_fields`,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=success_visits_count&fields[]=fail_visits_count&fields[]=total_spent&fields[]=visits_count&fields[]=spent`,
       },
-      // Варіант 5: POST /clients/search з фільтром по client_id та всіма статистичними полями
+      // Варіант 4: Альтернативний формат - GET /clients/{location_id}/{client_id}
+      {
+        method: 'GET' as const,
+        url: `/clients/${companyId}/${clientId}`,
+      },
+      // Варіант 5: POST /company/{id}/clients/search з фільтром по client_id
       {
         method: 'POST' as const,
         url: `/company/${companyId}/clients/search`,
@@ -389,16 +392,32 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             'fail_visits_count',
             'visits_count',
             'total_spent',
-            'total_amount',
-            'total_payment_amount',
-            'spent_amount',
+            'spent',
           ],
         }),
       },
-      // Варіант 6: GET без параметрів (fallback)
+      // Варіант 6: POST /company/{id}/clients/search без fields (поверне всі поля)
+      {
+        method: 'POST' as const,
+        url: `/company/${companyId}/clients/search`,
+        body: JSON.stringify({
+          filters: [{ field: 'id', operation: 'equals', value: clientId }],
+        }),
+      },
+      // Варіант 7: Спробуємо з явною версією v2 (якщо base URL не містить версії)
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}`,
+        url: `/v2/company/${companyId}/client/${clientId}`,
+      },
+      // Варіант 8: Спробуємо з явною версією v1 (якщо base URL не містить версії)
+      {
+        method: 'GET' as const,
+        url: `/v1/company/${companyId}/client/${clientId}`,
+      },
+      // Варіант 9: Спробуємо через analytics endpoint (може містити статистику)
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/analytics/clients?client_id=${clientId}`,
       },
     ];
     
