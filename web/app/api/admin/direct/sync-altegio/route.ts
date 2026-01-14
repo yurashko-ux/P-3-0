@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         c.instagram_user_name ||
         c.instagramUsername ||
         c.instagram_username ||
-        (c.custom_fields && (
+        (c.custom_fields && typeof c.custom_fields === 'object' && !Array.isArray(c.custom_fields) && (
           c.custom_fields['instagram-user-name'] ||
           c.custom_fields.instagram_user_name ||
           c.custom_fields.instagramUsername ||
