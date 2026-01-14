@@ -1,7 +1,7 @@
 // web/lib/altegio/clients-bulk.ts
 // Функції для масового отримання даних клієнтів з Altegio API
 
-import { altegioFetch } from './altegio-fetch';
+import { altegioFetch } from './client';
 import { altegioUrl, altegioHeaders } from './env';
 import type { Client } from './types';
 
