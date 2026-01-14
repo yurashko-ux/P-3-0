@@ -56,9 +56,12 @@ export async function POST(req: NextRequest) {
     let spentVisitsMap = await getClientsSpentVisitsBulk(companyId, clientIds);
     
     // Якщо масовий запит не дав результатів, використовуємо послідовний підхід
+    // З дотриманням rate limits: 200 запитів/хв, 5 запитів/сек
+    // Використовуємо 4 запити/сек для безпеки
     if (spentVisitsMap.size === 0 && clientIds.length > 0) {
-      console.log(`[direct/sync-spent-visits] Bulk fetch returned 0 results, trying sequential approach...`);
-      spentVisitsMap = await getClientsSpentVisitsSequential(companyId, clientIds, 5);
+      console.log(`[direct/sync-spent-visits] Bulk fetch returned 0 results, trying sequential approach with rate limiting (4 req/sec)...`);
+      console.log(`[direct/sync-spent-visits] Estimated time: ~${Math.ceil(clientIds.length / 4)} seconds for ${clientIds.length} clients`);
+      spentVisitsMap = await getClientsSpentVisitsSequential(companyId, clientIds, 4);
     }
 
     console.log(`[direct/sync-spent-visits] Received data for ${spentVisitsMap.size} clients from API`);

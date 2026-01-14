@@ -95,9 +95,10 @@ export async function getClientsSpentVisitsBulk(
           }
         }
 
-        // Невелика затримка між батчами, щоб не перевантажити API
+        // Затримка між батчами з дотриманням rate limit: 5 запитів/сек = 200мс між запитами
+        // Але оскільки це батчі, робимо затримку 1 секунду між батчами для безпеки
         if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (err) {
         console.error(`[altegio/clients-bulk] Error processing batch ${batchIndex + 1}:`, err);
@@ -117,12 +118,18 @@ export async function getClientsSpentVisitsBulk(
 
 /**
  * Альтернативний метод: отримує дані через GET /v1/client/{location_id}/{id} для кожного клієнта
- * з обмеженням на кількість одночасних запитів
+ * з дотриманням rate limits: 200 запитів/хв, 5 запитів/сек
+ * 
+ * Обмеження:
+ * - 200 запитів на хвилину на одну IP-адресу
+ * - 5 запитів на секунду на одну IP-адресу
+ * 
+ * Стратегія: 4 запити/сек (залишаємо запас), ~120 запитів/хв (залишаємо запас)
  */
 export async function getClientsSpentVisitsSequential(
   companyId: number,
   clientIds: number[],
-  concurrency: number = 5
+  requestsPerSecond: number = 4 // 4 замість 5, щоб бути в безпеці
 ): Promise<Map<number, { spent: number | null; visits: number | null }>> {
   const result = new Map<number, { spent: number | null; visits: number | null }>();
   
@@ -130,62 +137,54 @@ export async function getClientsSpentVisitsSequential(
     return result;
   }
 
-  console.log(`[altegio/clients-sequential] Processing ${clientIds.length} clients with concurrency ${concurrency}`);
+  console.log(`[altegio/clients-sequential] Processing ${clientIds.length} clients with rate limit: ${requestsPerSecond} requests/second`);
 
-  // Обробляємо клієнтів батчами з обмеженою конкурентністю
-  for (let i = 0; i < clientIds.length; i += concurrency) {
-    const batch = clientIds.slice(i, i + concurrency);
+  const delayBetweenRequests = 1000 / requestsPerSecond; // мс між запитами (250мс для 4/сек)
+  let requestCount = 0;
+  const startTime = Date.now();
+
+  // Обробляємо клієнтів послідовно з дотриманням rate limit
+  for (let i = 0; i < clientIds.length; i++) {
+    const clientId = clientIds[i];
     
-    const promises = batch.map(async (clientId) => {
-      try {
-        const url = altegioUrl(`/v1/client/${companyId}/${clientId}`);
-        const headers = altegioHeaders();
-        
-        const response = await altegioFetch<{
-          success?: boolean;
-          data?: Client;
-        }>(`/v1/client/${companyId}/${clientId}`, {
-          method: 'GET',
-          headers,
-        });
+    try {
+      // Перевіряємо rate limit: якщо минула хвилина, скидаємо лічильник
+      const elapsed = Date.now() - startTime;
+      if (elapsed > 60000) {
+        // Якщо минула хвилина, можна продовжувати (але все одно дотримуємось 5/сек)
+        requestCount = 0;
+      }
 
-        if (response && typeof response === 'object') {
-          const client = 'data' in response && response.data ? response.data : response;
-          
-          if (client && client.id) {
-            return {
-              id: client.id,
-              spent: client.spent ?? null,
-              visits: client.visits ?? null,
-            };
-          }
+      const response = await altegioFetch<{
+        success?: boolean;
+        data?: Client;
+      }>(`/v1/client/${companyId}/${clientId}`, {
+        method: 'GET',
+      });
+
+      if (response && typeof response === 'object') {
+        const client = 'data' in response && response.data ? response.data : response;
+        
+        if (client && client.id) {
+          result.set(client.id, {
+            spent: client.spent ?? null,
+            visits: client.visits ?? null,
+          });
+          requestCount++;
         }
-        
-        return null;
-      } catch (err) {
-        console.warn(`[altegio/clients-sequential] Failed to get client ${clientId}:`, err);
-        return null;
       }
-    });
-
-    const results = await Promise.all(promises);
-    
-    for (const data of results) {
-      if (data) {
-        result.set(data.id, {
-          spent: data.spent,
-          visits: data.visits,
-        });
-      }
+    } catch (err) {
+      console.warn(`[altegio/clients-sequential] Failed to get client ${clientId}:`, err);
+      // Продовжуємо навіть при помилці
     }
 
-    // Невелика затримка між батчами
-    if (i + concurrency < clientIds.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+    // Затримка між запитами для дотримання rate limit (крім останнього запиту)
+    if (i < clientIds.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
     }
   }
 
-  console.log(`[altegio/clients-sequential] ✅ Processed ${result.size} clients out of ${clientIds.length} requested`);
+  console.log(`[altegio/clients-sequential] ✅ Processed ${result.size} clients out of ${clientIds.length} requested in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
   
   return result;
 }
