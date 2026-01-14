@@ -13,6 +13,8 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     instagramUsername: dbClient.instagramUsername,
     firstName: dbClient.firstName || undefined,
     lastName: dbClient.lastName || undefined,
+    spent: dbClient.spent ?? undefined,
+    visits: dbClient.visits ?? undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
     state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
@@ -35,6 +37,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     consultationMasterName: dbClient.consultationMasterName || undefined,
     isOnlineConsultation: dbClient.isOnlineConsultation || false,
     signedUpForPaidServiceAfterConsultation: dbClient.signedUpForPaidServiceAfterConsultation || false,
+    telegramNotificationSent: dbClient.telegramNotificationSent ?? false,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -47,6 +50,8 @@ function directClientToPrisma(client: DirectClient) {
     instagramUsername: client.instagramUsername.toLowerCase().trim(),
     firstName: client.firstName || null,
     lastName: client.lastName || null,
+    spent: client.spent ?? null,
+    visits: client.visits ?? null,
     source: client.source || 'instagram',
     state: client.state || null,
     firstContactDate: new Date(client.firstContactDate),
@@ -69,6 +74,7 @@ function directClientToPrisma(client: DirectClient) {
     consultationMasterName: client.consultationMasterName || null,
     isOnlineConsultation: client.isOnlineConsultation || false,
     signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation || false,
+    telegramNotificationSent: client.telegramNotificationSent ?? false,
   };
 }
 
