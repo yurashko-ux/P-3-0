@@ -509,7 +509,7 @@ export function DirectClientTable({
                         )
                       }
                     >
-                      Витрати {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Продажі {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
