@@ -742,7 +742,7 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-right">
                         {client.spent !== null && client.spent !== undefined
-                          ? new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'UAH', minimumFractionDigits: 0 }).format(client.spent / 100)
+                          ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
                           : '-'}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
