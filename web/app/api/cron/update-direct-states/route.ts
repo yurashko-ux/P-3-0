@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
           await saveDirectClient(updated, 'cron-update-states', {
             altegioClientId: client.altegioClientId,
             groupType: chosen.groupType,
-            visitDayKyiv: chosen.visitDayKyiv,
+            visitDayKyiv: chosen.kyivDay,
             services: (chosen.services || []).map((s: any) => ({ id: s.id, title: s.title || s.name })) || [],
           });
           updatedCount++;
