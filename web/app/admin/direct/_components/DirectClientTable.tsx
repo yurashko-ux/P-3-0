@@ -165,6 +165,95 @@ export function DirectClientTable({
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
   const [searchInput, setSearchInput] = useState<string>(filters.search);
 
+  // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    try {
+      const kyivDay = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Kyiv',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+      return kyivDay.slice(0, 7);
+    } catch {
+      return new Date().toISOString().slice(0, 7);
+    }
+  });
+
+  type MastersStatsRow = {
+    masterId: string;
+    masterName: string;
+    role: string;
+    clients: number;
+    consultBooked: number;
+    consultAttended: number;
+    paidAttended: number;
+    rebooksCreated: number;
+  };
+  const [mastersStats, setMastersStats] = useState<{
+    loading: boolean;
+    error: string | null;
+    rows: MastersStatsRow[];
+    totalClients: number;
+  }>({ loading: false, error: null, rows: [], totalClients: 0 });
+
+  const monthOptions = useMemo(() => {
+    // Останні 18 місяців включно з поточним
+    const out: Array<{ value: string; label: string }> = [];
+    const now = new Date();
+    for (let i = 0; i < 18; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = d.toISOString().slice(0, 7);
+      const label = d.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+      out.push({ value, label });
+    }
+    return out;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStats() {
+      try {
+        setMastersStats((s) => ({ ...s, loading: true, error: null }));
+        const params = new URLSearchParams();
+        params.set('month', selectedMonth);
+        // Підтримка майбутніх фільтрів (у таблиці вони вже існують)
+        if (filters.statusId) params.set('statusId', filters.statusId);
+        if (filters.masterId) params.set('masterId', filters.masterId);
+        if (filters.source) params.set('source', filters.source);
+        if (filters.search) params.set('search', filters.search);
+        if (filters.hasAppointment) params.set('hasAppointment', filters.hasAppointment);
+
+        const res = await fetch(`/api/admin/direct/masters-stats?${params.toString()}`);
+        const data = await res.json();
+        if (!data?.ok) throw new Error(data?.error || 'Не вдалося завантажити статистику');
+        if (cancelled) return;
+
+        const mastersRows: MastersStatsRow[] = Array.isArray(data.masters) ? data.masters : [];
+        const unassignedRow: MastersStatsRow | null = data.unassigned && typeof data.unassigned === 'object' ? data.unassigned : null;
+        const rows = unassignedRow ? [...mastersRows, unassignedRow] : mastersRows;
+
+        setMastersStats({
+          loading: false,
+          error: null,
+          rows,
+          totalClients: typeof data.totalClients === 'number' ? data.totalClients : 0,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setMastersStats((s) => ({
+          ...s,
+          loading: false,
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
+    }
+    void loadStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMonth, filters.statusId, filters.masterId, filters.source, filters.search, filters.hasAppointment]);
+
   // Синхронізуємо searchInput з filters.search коли filters змінюється ззовні (наприклад, при скиданні)
   useEffect(() => {
     setSearchInput(filters.search);
@@ -263,6 +352,76 @@ export function DirectClientTable({
 
   return (
     <div className="space-y-4">
+      {/* Верхня панель KPI по відповідальних (майстри/адмін/direct-менеджер) */}
+      <div className="card bg-base-100 shadow-sm">
+        <div className="card-body p-4">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="text-sm font-semibold">Статистика по відповідальних</div>
+                <div className="text-xs opacity-70">
+                  Місяць: {selectedMonth} • Клієнтів у вибірці: {mastersStats.totalClients}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs opacity-70">Місяць</span>
+                <select
+                  className="select select-bordered select-sm"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                >
+                  {monthOptions.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {mastersStats.loading ? (
+              <div className="text-xs opacity-70">Завантаження статистики...</div>
+            ) : mastersStats.error ? (
+              <div className="alert alert-warning">
+                <span className="text-sm">Помилка статистики: {mastersStats.error}</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table table-xs w-full">
+                  <thead>
+                    <tr>
+                      <th className="text-xs">Відповідальний</th>
+                      <th className="text-xs text-right">Клієнти</th>
+                      <th className="text-xs text-right">Запис на конс.</th>
+                      <th className="text-xs text-right">Конс. ✅</th>
+                      <th className="text-xs text-right">Запис ✅</th>
+                      <th className="text-xs text-right">Перезаписи 🔁</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mastersStats.rows.map((r) => (
+                      <tr key={r.masterId}>
+                        <td className="text-xs whitespace-nowrap">
+                          <span className="font-medium">{r.masterName}</span>
+                          {r.role && r.role !== 'unassigned' ? (
+                            <span className="ml-2 text-[10px] opacity-60">({r.role})</span>
+                          ) : null}
+                        </td>
+                        <td className="text-xs text-right">{r.clients}</td>
+                        <td className="text-xs text-right">{r.consultBooked}</td>
+                        <td className="text-xs text-right">{r.consultAttended}</td>
+                        <td className="text-xs text-right">{r.paidAttended}</td>
+                        <td className="text-xs text-right">{r.rebooksCreated}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Фільтри та пошук */}
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-4">

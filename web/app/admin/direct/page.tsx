@@ -2226,17 +2226,17 @@ export default function DirectPage() {
       />
       
       {/* Модальне вікно інструментів адміністратора */}
-        <AdminToolsModal
-          isOpen={isAdminToolsModalOpen}
-          onClose={() => setIsAdminToolsModalOpen(false)}
-          isLoading={isLoading}
-          setIsLoading={setIsLoading}
-          showCopyableAlert={showCopyableAlert}
-          loadData={loadData}
-          setIsWebhooksModalOpen={setIsWebhooksModalOpen}
-          setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
-          setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
-        />
+      <AdminToolsModal
+        isOpen={isAdminToolsModalOpen}
+        onClose={() => setIsAdminToolsModalOpen(false)}
+        isLoading={isLoading}
+        setIsLoading={setIsLoading}
+        showCopyableAlert={showCopyableAlert}
+        loadData={loadData}
+        setIsWebhooksModalOpen={setIsWebhooksModalOpen}
+        setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
+        setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
+      />
 
       {/* Управління статусами та відповідальними */}
       <div className="flex gap-4 items-start">
