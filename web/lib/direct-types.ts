@@ -22,10 +22,12 @@ export type DirectClient = {
   signedUpForPaidService: boolean; // Чи записався на платну послугу (Конверсія 2)
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
   paidServiceAttended?: boolean | null; // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
+  paidServiceCancelled?: boolean; // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   signupAdmin?: string; // Хто записав (ім'я адміна)
   comment?: string; // Коментар/нотатки
   consultationBookingDate?: string; // ISO date - дата запису на консультацію
   consultationAttended?: boolean | null; // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
+  consultationCancelled?: boolean; // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
   consultationMasterId?: string; // ID майстра, який провів консультацію
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію
   isOnlineConsultation?: boolean; // Чи це онлайн-консультація
