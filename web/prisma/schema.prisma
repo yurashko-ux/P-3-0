@@ -50,12 +50,14 @@ model DirectClient {
   signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
   paidServiceDate        DateTime? // Дата запису на платну послугу
   paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
+  paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt          DateTime? // Останнє повідомлення
   consultationBookingDate DateTime? // Дата запису на консультацію
   consultationAttended   Boolean?  // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
+  consultationCancelled  Boolean   @default(false) // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
   consultationMasterId   String?   // ID майстра, який провів консультацію
   consultationMasterName String?   // Ім'я майстра, який провів консультацію
   isOnlineConsultation  Boolean   @default(false) // Чи це онлайн-консультація
@@ -88,6 +90,8 @@ model DirectClient {
   @@index([consultationBookingDate])
   @@index([consultationAttended])
   @@index([consultationMasterId])
+  @@index([paidServiceCancelled])
+  @@index([consultationCancelled])
   @@map("direct_clients")
 }
 
