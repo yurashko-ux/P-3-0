@@ -9,6 +9,7 @@ import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
+import { RecordHistoryModal } from "./RecordHistoryModal";
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -160,6 +161,8 @@ export function DirectClientTable({
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
+  const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
+  const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
   const [searchInput, setSearchInput] = useState<string>(filters.search);
 
   // Синхронізуємо searchInput з filters.search коли filters змінюється ззовні (наприклад, при скиданні)
@@ -455,6 +458,17 @@ export function DirectClientTable({
           onClose={() => setWebhooksClient(null)}
           clientName={[webhooksClient.firstName, webhooksClient.lastName].filter(Boolean).join(' ') || webhooksClient.instagramUsername}
           altegioClientId={webhooksClient.altegioClientId}
+        />
+      )}
+
+      {/* Модальне вікно історії записів/консультацій (Altegio) */}
+      {recordHistoryClient && (
+        <RecordHistoryModal
+          isOpen={!!recordHistoryClient}
+          onClose={() => setRecordHistoryClient(null)}
+          clientName={[recordHistoryClient.firstName, recordHistoryClient.lastName].filter(Boolean).join(' ') || recordHistoryClient.instagramUsername}
+          altegioClientId={recordHistoryClient.altegioClientId}
+          type={recordHistoryType}
         />
       )}
 
@@ -1105,6 +1119,9 @@ export function DirectClientTable({
                               
                               // Визначаємо значок attendance
                               let attendanceIcon = null;
+                              if (client.consultationCancelled) {
+                                attendanceIcon = <span className="text-orange-600 text-lg" title="Скасовано до дати консультації">🚫</span>;
+                              } else
                               if (isPastOrToday) {
                                 if (client.consultationAttended === true) {
                                   attendanceIcon = <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">✅</span>;
@@ -1122,12 +1139,22 @@ export function DirectClientTable({
                               
                               return (
                                 <span className="flex items-center gap-1">
-                                  <span
-                                    className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                    title={tooltipTitle}
+                                  <button
+                                    className={
+                                      isPast
+                                        ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                        : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                    }
+                                    title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
+                                    onClick={() => {
+                                      if (!client.altegioClientId) return;
+                                      setRecordHistoryType('consultation');
+                                      setRecordHistoryClient(client);
+                                    }}
+                                    disabled={!client.altegioClientId}
                                   >
                                     {formattedDateStr} {isOnline ? "💻" : "📅"}
-                                  </span>
+                                  </button>
                                   {attendanceIcon}
                                 </span>
                               );
@@ -1159,6 +1186,9 @@ export function DirectClientTable({
                             
                             // Визначаємо значок attendance
                             let attendanceIcon = null;
+                            if (client.paidServiceCancelled) {
+                              attendanceIcon = <span className="text-orange-600 text-lg" title="Скасовано до дати запису">🚫</span>;
+                            } else
                             if (isPastOrToday) {
                               if (client.paidServiceAttended === true) {
                                 attendanceIcon = <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">✅</span>;
@@ -1174,12 +1204,22 @@ export function DirectClientTable({
                             
                             return (
                               <span className="flex items-center gap-1">
-                                <span
-                                  className={isPast ? "text-amber-600 font-medium" : "text-blue-600 font-medium"}
-                                  title={tooltipTitle}
+                                <button
+                                  className={
+                                    isPast
+                                      ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                      : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                  }
+                                  title={`${tooltipTitle}\nНатисніть, щоб переглянути історію записів`}
+                                  onClick={() => {
+                                    if (!client.altegioClientId) return;
+                                    setRecordHistoryType('paid');
+                                    setRecordHistoryClient(client);
+                                  }}
+                                  disabled={!client.altegioClientId}
                                 >
                                   {dateStr}
-                                </span>
+                                </button>
                                 {attendanceIcon}
                               </span>
                             );
