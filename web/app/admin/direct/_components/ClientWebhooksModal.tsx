@@ -13,7 +13,7 @@ interface ClientWebhookRow {
   services: string[];
   visitId: number;
   status: string;
-  attendance: number | null;
+  attendance: number | null; // 1=прийшов, 0=очікується, -1=не з'явився, -2=скасовано
   instagramUsername: string | null;
   fullBody: any;
 }
@@ -119,6 +119,7 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
   function getAttendanceLabel(attendance: number | null): string {
     if (attendance === null || attendance === undefined) return '-';
     if (attendance === 1) return '✅ Прийшов';
+    if (attendance === -2) return '🚫 Скасовано';
     if (attendance === -1) return '❌ Не з\'явився';
     if (attendance === 0) return '⏳ Очікується';
     return String(attendance);

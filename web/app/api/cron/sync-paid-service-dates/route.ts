@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -126,68 +127,9 @@ export async function POST(req: NextRequest) {
     const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
     console.log(`[cron/sync-paid-service-dates] Found ${rawItems.length} records in records:log`);
 
-    // Парсимо записи
-    const records = rawItems
-      .map((raw) => {
-        try {
-          const parsed = unwrapKVResponse(raw);
-          return parsed;
-        } catch {
-          return null;
-        }
-      })
-      .filter((r) => r && r.clientId && r.datetime && r.data && Array.isArray(r.data.services));
-
-    console.log(`[cron/sync-paid-service-dates] Parsed ${records.length} valid records`);
-
-    // Створюємо мапи: clientId -> найновіша дата та послуги
-    const clientPaidServiceDates = new Map<number, { datetime: string; services: any[] }>();
-    const clientConsultationDates = new Map<number, { datetime: string; services: any[]; attendance?: number }>();
-    const clientStates = new Map<number, { state: string | null; datetime: string; services: any[] }>();
-
-    for (const record of records) {
-      const clientId = parseInt(String(record.clientId), 10);
-      if (isNaN(clientId)) continue;
-
-      const services = record.data.services || [];
-      if (services.length === 0) continue;
-
-      const datetime = record.datetime || record.data?.datetime;
-      if (!datetime) continue;
-
-      const attendance = record.attendance || record.data?.attendance || record.visit_attendance;
-      const recordDate = new Date(datetime);
-
-      // Визначаємо стан на основі послуг
-      const determinedState = determineStateFromServices(services);
-      
-      // Оновлюємо стан (беремо найновіший запис)
-      const existingState = clientStates.get(clientId);
-      if (!existingState || new Date(existingState.datetime) < recordDate) {
-        clientStates.set(clientId, { 
-          state: determinedState, 
-          datetime, 
-          services 
-        });
-      }
-
-      // Для консультацій
-      if (isConsultationService(services)) {
-        const existing = clientConsultationDates.get(clientId);
-        if (!existing || new Date(existing.datetime) < recordDate) {
-          clientConsultationDates.set(clientId, { datetime, services, attendance });
-        }
-      }
-      // Для платних послуг (не консультації)
-      else if (hasPaidService(services)) {
-        const existing = clientPaidServiceDates.get(clientId);
-        if (!existing || new Date(existing.datetime) < recordDate) {
-          clientPaidServiceDates.set(clientId, { datetime, services });
-        }
-      }
-    }
-
-    console.log(`[cron/sync-paid-service-dates] Found: ${clientPaidServiceDates.size} paid services, ${clientConsultationDates.size} consultations, ${clientStates.size} states`);
+    const normalizedEvents = normalizeRecordsLogItems(rawItems);
+    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+    console.log(`[cron/sync-paid-service-dates] Normalized ${normalizedEvents.length} events, groups for ${groupsByClient.size} clients`);
 
     let updatedCount = 0;
     let skippedCount = 0;
@@ -200,12 +142,14 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const paidServiceInfo = clientPaidServiceDates.get(client.altegioClientId);
-      const consultationInfo = clientConsultationDates.get(client.altegioClientId);
-      const stateInfo = clientStates.get(client.altegioClientId);
+      const groups = groupsByClient.get(client.altegioClientId) || [];
+      const paidGroups = groups.filter((g) => g.groupType === 'paid');
+      const consultationGroups = groups.filter((g) => g.groupType === 'consultation');
+      const paidServiceInfo = paidGroups[0] || null;
+      const consultationInfo = consultationGroups[0] || null;
 
       // Якщо немає жодної інформації - пропускаємо
-      if (!paidServiceInfo && !consultationInfo && !stateInfo) {
+      if (!paidServiceInfo && !consultationInfo) {
         skippedCount++;
         continue;
       }
@@ -215,50 +159,87 @@ export async function POST(req: NextRequest) {
           updatedAt: new Date().toISOString(),
         };
 
-        // Оновлюємо consultationBookingDate
-        if (consultationInfo && (!client.consultationBookingDate || new Date(client.consultationBookingDate) < new Date(consultationInfo.datetime))) {
-          updates.consultationBookingDate = consultationInfo.datetime;
-          updates.consultationAttended = consultationInfo.attendance === 1 ? true : (consultationInfo.attendance === -1 ? false : undefined);
+        // Консультація: дата + attendance (✅/❌/🚫) + "Консультував"
+        if (consultationInfo && consultationInfo.datetime) {
+          if (!client.consultationBookingDate || new Date(client.consultationBookingDate) < new Date(consultationInfo.datetime)) {
+            updates.consultationBookingDate = consultationInfo.datetime;
+          }
+
+          // attendance: не перезаписуємо true на false/null
+          if (consultationInfo.attendanceStatus === 'arrived') {
+            updates.consultationAttended = true;
+            updates.consultationCancelled = false;
+          } else if (consultationInfo.attendanceStatus === 'no-show') {
+            if (client.consultationAttended !== true) {
+              updates.consultationAttended = false;
+            }
+            updates.consultationCancelled = false;
+          } else if (consultationInfo.attendanceStatus === 'cancelled') {
+            if (client.consultationAttended !== true) {
+              updates.consultationAttended = null;
+            }
+            updates.consultationCancelled = true;
+          } else {
+            updates.consultationCancelled = false;
+          }
+
+          // "Консультував": беремо останній event з НЕ-адміністратором
+          const lastNonAdmin = [...(consultationInfo.events || [])]
+            .sort((a: any, b: any) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+            .find((ev: any) => {
+              const name = (ev.staffName || '').toString().trim();
+              if (!name) return false;
+              if (name.toLowerCase().includes('невідом')) return false;
+              return !isAdminStaffName(name);
+            });
+
+          if (lastNonAdmin?.staffName) {
+            updates.consultationMasterName = lastNonAdmin.staffName;
+            try {
+              const { getMasterByName } = await import('@/lib/direct-masters/store');
+              const m = await getMasterByName(lastNonAdmin.staffName);
+              if (m) updates.consultationMasterId = m.id;
+            } catch (err) {
+              console.warn('[cron/sync-paid-service-dates] ⚠️ Не вдалося знайти майстра по імені для консультації:', err);
+            }
+          }
         }
 
-        // Оновлюємо paidServiceDate (тільки якщо немає консультації або консультація вже пройшла)
-        if (paidServiceInfo) {
-          const shouldSetPaidService = !consultationInfo || 
-            (client.consultationBookingDate && new Date(client.consultationBookingDate) < new Date(paidServiceInfo.datetime));
-          
-          if (shouldSetPaidService && (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(paidServiceInfo.datetime))) {
+        // Платні послуги: дата + attendance (✅/❌/🚫)
+        if (paidServiceInfo && paidServiceInfo.datetime) {
+          if (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(paidServiceInfo.datetime)) {
             updates.paidServiceDate = paidServiceInfo.datetime;
             updates.signedUpForPaidService = true;
           }
+
+          if (paidServiceInfo.attendanceStatus === 'arrived') {
+            updates.paidServiceAttended = true;
+            updates.paidServiceCancelled = false;
+          } else if (paidServiceInfo.attendanceStatus === 'no-show') {
+            if (client.paidServiceAttended !== true) {
+              updates.paidServiceAttended = false;
+            }
+            updates.paidServiceCancelled = false;
+          } else if (paidServiceInfo.attendanceStatus === 'cancelled') {
+            if (client.paidServiceAttended !== true) {
+              updates.paidServiceAttended = null;
+            }
+            updates.paidServiceCancelled = true;
+          } else {
+            updates.paidServiceCancelled = false;
+          }
         }
 
-        // Оновлюємо стан (якщо потрібно)
-        if (stateInfo && stateInfo.state) {
-          // Визначаємо фінальний стан
-          let finalState = stateInfo.state;
-          
-          // Якщо є консультація і клієнт не прийшов - встановлюємо consultation-booked
-          if (consultationInfo && consultationInfo.attendance !== 1) {
-            finalState = 'consultation-booked';
-          }
-          // Якщо є консультація і клієнт прийшов - встановлюємо consultation
-          else if (consultationInfo && consultationInfo.attendance === 1) {
-            finalState = 'consultation';
-          }
-          // Якщо є нарощування - встановлюємо hair-extension
-          else if (finalState === 'hair-extension') {
-            finalState = 'hair-extension';
-          }
-          // Якщо є інші послуги - встановлюємо other-services
-          else if (finalState === 'other-services') {
-            finalState = 'other-services';
-          }
-          // Якщо визначили consultation - встановлюємо consultation
-          else if (finalState === 'consultation') {
-            finalState = 'consultation';
+        // Оновлюємо стан по групі (paid має пріоритет над consultation)
+        const chosenForState = paidServiceInfo || consultationInfo;
+        if (chosenForState) {
+          let finalState: string | null = null;
+          if (chosenForState.groupType === 'consultation') {
+            finalState = consultationInfo?.attendanceStatus === 'arrived' ? 'consultation' : 'consultation-booked';
+          } else {
+            finalState = determineStateFromServices(chosenForState.services) || 'other-services';
           }
 
-          // Оновлюємо стан тільки якщо він відрізняється від поточного
           if (finalState && client.state !== finalState && (client.state === 'client' || client.state === 'lead' || !client.state)) {
             updates.state = finalState as any;
           }
@@ -273,11 +254,11 @@ export async function POST(req: NextRequest) {
 
           await saveDirectClient(updated, 'cron-sync-from-old-webhooks', {
             altegioClientId: client.altegioClientId,
-            paidServiceDate: paidServiceInfo?.datetime,
-            consultationBookingDate: consultationInfo?.datetime,
+            paidServiceDate: paidServiceInfo?.datetime || null,
+            consultationBookingDate: consultationInfo?.datetime || null,
             newState: updates.state,
             oldState: client.state,
-            services: stateInfo?.services?.map((s: any) => ({ id: s.id, title: s.title })) || [],
+            services: (paidServiceInfo?.services || consultationInfo?.services || []).map((s: any) => ({ id: s.id, title: s.title || s.name })) || [],
             reason: 'Auto-synced from old webhooks',
           });
 

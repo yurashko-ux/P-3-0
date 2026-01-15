@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
+import { groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -62,33 +63,11 @@ export async function GET(req: NextRequest) {
     const recordsLogRaw = await kvRead.lrange('altegio:records:log', 0, 9999);
     console.log(`[cron/update-direct-states] Found ${recordsLogRaw.length} records in Altegio log`);
 
-    // Парсимо записи
-    const records = recordsLogRaw
-      .map((raw) => {
-        try {
-          const parsed = unwrapKVResponse(raw);
-          return parsed;
-        } catch {
-          return null;
-        }
-      })
-      .filter((r) => r && r.clientId && r.data && Array.isArray(r.data.services));
-
-    console.log(`[cron/update-direct-states] Parsed ${records.length} valid records`);
-
-    // Групуємо записи по clientId, беремо останній запис для кожного клієнта
-    const recordsByClient = new Map<number, any>();
-    for (const record of records) {
-      const clientId = parseInt(String(record.clientId), 10);
-      if (!isNaN(clientId)) {
-        const existing = recordsByClient.get(clientId);
-        if (!existing || new Date(record.receivedAt || 0) > new Date(existing.receivedAt || 0)) {
-          recordsByClient.set(clientId, record);
-        }
-      }
-    }
-
-    console.log(`[cron/update-direct-states] Found records for ${recordsByClient.size} unique clients`);
+    // Нормалізуємо records:log та групуємо по дню (Europe/Kyiv) і типу (consultation|paid)
+    // Це прибирає дублікати "в 4 руки" і не дає attendance/state перетиратись.
+    const normalizedEvents = normalizeRecordsLogItems(recordsLogRaw);
+    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+    console.log(`[cron/update-direct-states] Normalized events: ${normalizedEvents.length}, grouped clients: ${groupsByClient.size}`);
 
     let updatedCount = 0;
     let skippedCount = 0;
@@ -101,16 +80,25 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      const record = recordsByClient.get(client.altegioClientId);
-      if (!record || !record.data || !Array.isArray(record.data.services)) {
+      const groups = groupsByClient.get(client.altegioClientId) || [];
+      if (groups.length === 0) {
+        skippedCount++;
+        continue;
+      }
+      
+      // Беремо найновішу paid-групу, якщо є; інакше consultation
+      const latestPaid = groups.find((g) => g.groupType === 'paid') || null;
+      const latestConsultation = groups.find((g) => g.groupType === 'consultation') || null;
+      const chosen = latestPaid || latestConsultation;
+      if (!chosen) {
         skippedCount++;
         continue;
       }
 
-      const services = record.data.services;
-      
-      // Визначаємо новий стан на основі послуг (з пріоритетом)
-      const newState = determineStateFromServices(services);
+      const newState =
+        chosen.groupType === 'consultation'
+          ? 'consultation'
+          : (determineStateFromServices(chosen.services) || 'other-services');
 
       // Якщо знайшли новий стан і він відрізняється від поточного - оновлюємо
       if (newState && client.state !== newState) {
@@ -122,8 +110,9 @@ export async function GET(req: NextRequest) {
           };
           await saveDirectClient(updated, 'cron-update-states', {
             altegioClientId: client.altegioClientId,
-            visitId: record.visitId,
-            services: record.data?.services?.map((s: any) => ({ id: s.id, title: s.title })) || [],
+            groupType: chosen.groupType,
+            visitDayKyiv: chosen.visitDayKyiv,
+            services: (chosen.services || []).map((s: any) => ({ id: s.id, title: s.title || s.name })) || [],
           });
           updatedCount++;
           console.log(`[cron/update-direct-states] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
