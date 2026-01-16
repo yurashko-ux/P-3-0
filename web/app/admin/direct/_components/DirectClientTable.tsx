@@ -423,11 +423,13 @@ export function DirectClientTable({
                 <span className="text-sm">Помилка статистики: {mastersStats.error}</span>
               </div>
             ) : !isStatsExpanded ? null : (
-              <div className="overflow-x-auto">
-                <table
-                  className="table table-compact table-xs w-max leading-tight border-collapse"
-                  style={{ tableLayout: "auto" }}
-                >
+              <div className="overflow-x-auto max-w-full">
+                {/* shrink-to-fit wrapper: щоб таблиця не виглядала розтягнутою на всю ширину */}
+                <div className="inline-block w-max">
+                  <table
+                    className="table table-compact table-xs w-auto leading-tight border-collapse"
+                    style={{ tableLayout: "auto" }}
+                  >
                   <thead>
                     <tr>
                       <th className="text-[10px] py-0.5 px-1 whitespace-nowrap w-[120px] max-w-[120px] text-base-content">
@@ -493,7 +495,8 @@ export function DirectClientTable({
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                  </table>
+                </div>
               </div>
             )}
           </div>
