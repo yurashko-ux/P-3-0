@@ -195,6 +195,10 @@ export function DirectClientTable({
     consultAttended: number;
     paidAttended: number;
     rebooksCreated: number;
+    futureSum?: number;
+    monthToEndSum?: number;
+    nextMonthSum?: number;
+    plus2MonthSum?: number;
   };
   const [mastersStats, setMastersStats] = useState<{
     loading: boolean;
@@ -311,6 +315,17 @@ export function DirectClientTable({
     }
   };
 
+  const formatUAHExact = (amountUAH: number): string => {
+    const n = Math.round(amountUAH);
+    return `${n.toLocaleString('uk-UA')} грн`;
+  };
+
+  // Формат як у колонці “Продажі”: округляємо до тисяч і показуємо “тис.”
+  const formatUAHThousands = (amountUAH: number): string => {
+    const n = Math.round(amountUAH);
+    return `${Math.round(n / 1000).toLocaleString('uk-UA')} тис.`;
+  };
+
   // Відображаємо тільки імʼя (перше слово), щоб таблиця була компактною
   const shortPersonName = (raw?: string | null): string => {
     const s = (raw || '').toString().trim();
@@ -374,7 +389,11 @@ export function DirectClientTable({
       (r.consultBooked || 0) > 0 ||
       (r.consultAttended || 0) > 0 ||
       (r.paidAttended || 0) > 0 ||
-      (r.rebooksCreated || 0) > 0;
+      (r.rebooksCreated || 0) > 0 ||
+      (r.futureSum || 0) > 0 ||
+      (r.monthToEndSum || 0) > 0 ||
+      (r.nextMonthSum || 0) > 0 ||
+      (r.plus2MonthSum || 0) > 0;
     const filtered = rows.filter((r) => nonZero(r) || r.masterId === 'unassigned');
     // Якщо все нуль — показуємо як є (щоб не було порожньо)
     return filtered.length ? filtered : rows;
@@ -390,9 +409,23 @@ export function DirectClientTable({
         acc.consultAttended += r.consultAttended || 0;
         acc.paidAttended += r.paidAttended || 0;
         acc.rebooksCreated += r.rebooksCreated || 0;
+        acc.futureSum += r.futureSum || 0;
+        acc.monthToEndSum += r.monthToEndSum || 0;
+        acc.nextMonthSum += r.nextMonthSum || 0;
+        acc.plus2MonthSum += r.plus2MonthSum || 0;
         return acc;
       },
-      { clients: 0, consultBooked: 0, consultAttended: 0, paidAttended: 0, rebooksCreated: 0 }
+      {
+        clients: 0,
+        consultBooked: 0,
+        consultAttended: 0,
+        paidAttended: 0,
+        rebooksCreated: 0,
+        futureSum: 0,
+        monthToEndSum: 0,
+        nextMonthSum: 0,
+        plus2MonthSum: 0,
+      }
     );
   }, [mastersStats.rows]);
 
@@ -483,6 +516,42 @@ export function DirectClientTable({
                           <span className="text-[9px] opacity-60">{statsTotals.rebooksCreated}</span>
                         </div>
                       </th>
+                      <th
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.futureSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Майб</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.futureSum > 0 ? formatUAHThousands(statsTotals.futureSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
+                      <th
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.monthToEndSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>До кін</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.monthToEndSum > 0 ? formatUAHThousands(statsTotals.monthToEndSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
+                      <th
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.nextMonthSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Наст</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.nextMonthSum > 0 ? formatUAHThousands(statsTotals.nextMonthSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
+                      <th
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.plus2MonthSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>+2</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.plus2MonthSum > 0 ? formatUAHThousands(statsTotals.plus2MonthSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -509,6 +578,30 @@ export function DirectClientTable({
                           {r.paidAttended > 0 ? (
                             <span className="ml-1 text-[10px] opacity-60">({Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%)</span>
                           ) : null}
+                        </td>
+                        <td
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.futureSum === 'number' ? formatUAHExact(r.futureSum) : ''}
+                        >
+                          {typeof r.futureSum === 'number' && r.futureSum > 0 ? formatUAHThousands(r.futureSum) : '-'}
+                        </td>
+                        <td
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.monthToEndSum === 'number' ? formatUAHExact(r.monthToEndSum) : ''}
+                        >
+                          {typeof r.monthToEndSum === 'number' && r.monthToEndSum > 0 ? formatUAHThousands(r.monthToEndSum) : '-'}
+                        </td>
+                        <td
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.nextMonthSum === 'number' ? formatUAHExact(r.nextMonthSum) : ''}
+                        >
+                          {typeof r.nextMonthSum === 'number' && r.nextMonthSum > 0 ? formatUAHThousands(r.nextMonthSum) : '-'}
+                        </td>
+                        <td
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.plus2MonthSum === 'number' ? formatUAHExact(r.plus2MonthSum) : ''}
+                        >
+                          {typeof r.plus2MonthSum === 'number' && r.plus2MonthSum > 0 ? formatUAHThousands(r.plus2MonthSum) : '-'}
                         </td>
                       </tr>
                     ))}
@@ -1488,7 +1581,8 @@ export function DirectClientTable({
                             const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                             
                             return (
-                              <span className="flex items-center gap-1">
+                              <span className="flex flex-col items-center">
+                                <span className="flex items-center gap-1">
                                 <button
                                   className={
                                     isPast
@@ -1514,6 +1608,20 @@ export function DirectClientTable({
                                   </span>
                                 ) : null}
                                 {attendanceIcon}
+                                </span>
+
+                                {typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? (
+                                  <span
+                                    className="text-[10px] leading-none opacity-70 max-w-[160px] truncate text-center"
+                                    title={`Сума запису: ${formatUAHExact(client.paidServiceTotalCost)}`}
+                                  >
+                                    {formatUAHThousands(client.paidServiceTotalCost)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] leading-none opacity-50 max-w-[160px] truncate text-center">
+                                    невідомо
+                                  </span>
+                                )}
                               </span>
                             );
                           })()

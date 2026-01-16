@@ -76,6 +76,23 @@ export type ServiceMasterHistoryItem = {
   recordedAt: string; // ISO
 };
 
+// Рахуємо суму послуг для запису (грн) на основі services з вебхуків Altegio.
+// Бізнес-правило: використовуємо `cost * amount` і підсумовуємо по всіх послугах.
+export function computeServicesTotalCostUAH(services: any[]): number {
+  if (!Array.isArray(services) || services.length === 0) return 0;
+  let total = 0;
+  for (const s of services) {
+    const costRaw = (s as any)?.cost;
+    const amountRaw = (s as any)?.amount;
+    const cost = typeof costRaw === 'number' ? costRaw : Number(costRaw);
+    const amount = typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);
+    if (!isFinite(cost) || !isFinite(amount)) continue;
+    total += cost * amount;
+  }
+  // Сума у грн. На випадок дробів — округляємо до цілих грн.
+  return Math.round(total);
+}
+
 export function pickNonAdminStaffFromGroup(
   group: RecordGroup,
   mode: 'latest' | 'first' = 'latest'

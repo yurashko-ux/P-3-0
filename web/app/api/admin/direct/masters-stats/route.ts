@@ -8,11 +8,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
 import {
+  computeServicesTotalCostUAH,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
   kyivDayFromISO,
   isAdminStaffName,
   pickNonAdminStaffFromGroup,
+  pickStaffFromGroup,
 } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
@@ -144,6 +146,17 @@ function firstTokenName(fullName: string | null | undefined): string {
   return n.split(/\s+/)[0] || '';
 }
 
+function addMonths(monthKey: string, deltaMonths: number): string {
+  // monthKey: YYYY-MM
+  const [yStr, mStr] = monthKey.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!y || !m) return monthKey;
+  const d = new Date(y, m - 1 + deltaMonths, 1);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}`;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -260,12 +273,30 @@ export async function GET(req: NextRequest) {
       paidAttended: number;
       rebooksCreated: number; // max 1 per client
       rebookRatePct: number; // % перезаписів від attended paid
+      futureSum: number; // сума майбутніх записів (після сьогодні), грн
+      monthToEndSum: number; // сума майбутніх записів до кінця поточного місяця, грн
+      nextMonthSum: number; // сума записів на наступний місяць, грн
+      plus2MonthSum: number; // сума записів через 2 місяці, грн
     };
 
     const rowsByMasterId = new Map<string, Row>();
     const ensureRow = (id: string, name: string, role: string) => {
       if (rowsByMasterId.has(id)) return rowsByMasterId.get(id)!;
-      const row: Row = { masterId: id, masterName: name, role, clients: 0, consultBooked: 0, consultAttended: 0, paidAttended: 0, rebooksCreated: 0, rebookRatePct: 0 };
+      const row: Row = {
+        masterId: id,
+        masterName: name,
+        role,
+        clients: 0,
+        consultBooked: 0,
+        consultAttended: 0,
+        paidAttended: 0,
+        rebooksCreated: 0,
+        rebookRatePct: 0,
+        futureSum: 0,
+        monthToEndSum: 0,
+        nextMonthSum: 0,
+        plus2MonthSum: 0,
+      };
       rowsByMasterId.set(id, row);
       return row;
     };
@@ -291,6 +322,18 @@ export async function GET(req: NextRequest) {
       const first = firstTokenName(picked.staffName);
       if (first && masterIdByFirst.has(first)) return masterIdByFirst.get(first)!;
       return unassignedId;
+    };
+
+    const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+    const currentMonthKey = todayKyivDay ? todayKyivDay.slice(0, 7) : '';
+    const nextMonthKey = currentMonthKey ? addMonths(currentMonthKey, 1) : '';
+    const plus2MonthKey = currentMonthKey ? addMonths(currentMonthKey, 2) : '';
+
+    const pickStaffForSums = (g: any): { staffId: number | null; staffName: string } | null => {
+      // Для сум: беремо latest non-admin, а якщо його нема — fallback на admin (але без “невідомого”)
+      const nonAdmin = pickNonAdminStaffFromGroup(g, 'latest');
+      if (nonAdmin) return nonAdmin;
+      return pickStaffFromGroup(g, { mode: 'latest', allowAdmin: true });
     };
 
     // Підрахунок по клієнтах/групах (по місяцю, Europe/Kyiv)
@@ -358,6 +401,31 @@ export async function GET(req: NextRequest) {
         }
         if (!!c.paidServiceDate && kyivMonthKeyFromISO(c.paidServiceDate.toISOString()) === month && c.paidServiceAttended === true) {
           ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').paidAttended += 1;
+        }
+      }
+
+      // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv), незалежно від фільтра month.
+      if (todayKyivDay && currentMonthKey && groups.length) {
+        const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
+        for (const g of paidGroupsAll) {
+          const gDay: string = (g?.kyivDay || '').toString();
+          if (!gDay) continue;
+          const gMonth = gDay.slice(0, 7);
+
+          const totalCost = computeServicesTotalCostUAH(g?.services || []);
+          if (!totalCost || totalCost <= 0) continue;
+
+          const staffForSum = pickStaffForSums(g);
+          const mid = mapStaffToMasterId(staffForSum);
+          const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+
+          // future: строго після сьогодні (сьогодні = минуле)
+          if (gDay > todayKyivDay) {
+            row.futureSum += totalCost;
+            if (gMonth === currentMonthKey) row.monthToEndSum += totalCost;
+          }
+          if (gMonth === nextMonthKey) row.nextMonthSum += totalCost;
+          if (gMonth === plus2MonthKey) row.plus2MonthSum += totalCost;
         }
       }
 

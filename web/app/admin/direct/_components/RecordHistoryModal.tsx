@@ -18,6 +18,7 @@ type RecordHistoryRow = {
   attendanceLabel: string;
   staffNames: string[];
   services: string[];
+  totalCost?: number; // грн
   rawEventsCount: number;
   events: Array<{
     receivedAt: string | null;
@@ -52,6 +53,16 @@ function formatDateTime(value: string | null): string {
   } catch {
     return value;
   }
+}
+
+function formatUAHExact(amountUAH: number): string {
+  const n = Math.round(amountUAH);
+  return `${n.toLocaleString('uk-UA')} грн`;
+}
+
+function formatUAHThousands(amountUAH: number): string {
+  const n = Math.round(amountUAH);
+  return `${Math.round(n / 1000).toLocaleString('uk-UA')} тис.`;
 }
 
 export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientId, type }: RecordHistoryModalProps) {
@@ -145,6 +156,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                     <th className="text-xs">Статус</th>
                     <th className="text-xs">Майстри</th>
                     <th className="text-xs">Послуги</th>
+                    {type === 'paid' ? <th className="text-xs text-right">Сума</th> : null}
                     <th className="text-xs">Raw</th>
                     <th className="text-xs"></th>
                   </tr>
@@ -177,6 +189,11 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                               <span className="text-gray-400">-</span>
                             )}
                           </td>
+                          {type === 'paid' ? (
+                            <td className="text-xs whitespace-nowrap text-right tabular-nums" title={typeof r.totalCost === 'number' ? formatUAHExact(r.totalCost) : ''}>
+                              {typeof r.totalCost === 'number' && r.totalCost > 0 ? formatUAHThousands(r.totalCost) : '-'}
+                            </td>
+                          ) : null}
                           <td className="text-xs whitespace-nowrap">{r.rawEventsCount}</td>
                           <td className="text-xs whitespace-nowrap">
                             <button
@@ -190,7 +207,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                         </tr>
                         {isExpanded && (
                           <tr key={`${key}-expanded`}>
-                            <td colSpan={6} className="bg-base-100">
+                            <td colSpan={type === 'paid' ? 7 : 6} className="bg-base-100">
                               <div className="p-2">
                                 <div className="text-xs text-gray-600 mb-2">
                                   Raw події (останні/перші 50)

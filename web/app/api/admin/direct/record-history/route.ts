@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
-import { groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
+import { computeServicesTotalCostUAH, groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -76,6 +76,7 @@ export async function GET(req: NextRequest) {
 
     const rows = filtered.map((g) => {
       const ui = attendanceUi(g.attendance, g.attendanceStatus);
+      const totalCost = computeServicesTotalCostUAH(g.services || []);
       return {
         kyivDay: g.kyivDay,
         type: g.groupType,
@@ -87,6 +88,7 @@ export async function GET(req: NextRequest) {
         attendanceLabel: ui.label,
         staffNames: g.staffNames,
         services: g.services.map((s: any) => (s?.title || s?.name || 'Невідома послуга').toString()),
+        totalCost,
         rawEventsCount: g.events.length,
         events: g.events.slice(0, 50).map((e) => ({
           receivedAt: e.receivedAt,

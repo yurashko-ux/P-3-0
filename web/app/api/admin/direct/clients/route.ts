@@ -12,6 +12,7 @@ import {
   normalizeRecordsLogItems,
   kyivDayFromISO,
   isAdminStaffName,
+  computeServicesTotalCostUAH,
   pickNonAdminStaffFromGroup,
 } from '@/lib/altegio/records-grouping';
 
@@ -251,6 +252,19 @@ export async function GET(req: NextRequest) {
 
         const currentGroup = paidGroups.find((g: any) => (g?.kyivDay || '') === paidKyivDay) || null;
         if (!currentGroup) return c;
+
+        // Дораховуємо суму поточного платного запису (грн) по paid-групі цього дня.
+        try {
+          const computed = computeServicesTotalCostUAH(currentGroup.services || []);
+          if (computed > 0) {
+            const current = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
+            if (!current || current !== computed) {
+              c = { ...c, paidServiceTotalCost: computed };
+            }
+          }
+        } catch (err) {
+          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати paidServiceTotalCost (не критично):', err);
+        }
 
         const events = Array.isArray(currentGroup.events) ? currentGroup.events : [];
         const createEvents = events

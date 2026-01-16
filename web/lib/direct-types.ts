@@ -23,6 +23,7 @@ export type DirectClient = {
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
   paidServiceAttended?: boolean | null; // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   paidServiceCancelled?: boolean; // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
+  paidServiceTotalCost?: number; // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
   signupAdmin?: string; // Хто записав (ім'я адміна)
   comment?: string; // Коментар/нотатки
   consultationBookingDate?: string; // ISO date - дата запису на консультацію

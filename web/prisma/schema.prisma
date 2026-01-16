@@ -51,6 +51,7 @@ model DirectClient {
   paidServiceDate        DateTime? // Дата запису на платну послугу
   paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
+  paidServiceTotalCost   Int?      // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
@@ -96,6 +97,7 @@ model DirectClient {
   @@index([serviceMasterAltegioStaffId])
   @@index([serviceMasterName])
   @@index([paidServiceCancelled])
+  @@index([paidServiceTotalCost])
   @@index([consultationCancelled])
   @@map("direct_clients")
 }

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -240,6 +240,14 @@ export async function POST(req: NextRequest) {
           if (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(paidServiceInfo.datetime)) {
             updates.paidServiceDate = paidServiceInfo.datetime;
             updates.signedUpForPaidService = true;
+          }
+
+          // Сума платного запису (грн) — підрахунок по services з вебхуків Altegio
+          try {
+            const total = computeServicesTotalCostUAH(paidServiceInfo.services || []);
+            if (total > 0) updates.paidServiceTotalCost = total;
+          } catch (err) {
+            console.warn('[cron/sync-paid-service-dates] ⚠️ Не вдалося порахувати paidServiceTotalCost:', err);
           }
 
           if (paidServiceInfo.attendanceStatus === 'arrived') {
