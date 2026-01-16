@@ -183,21 +183,39 @@ export async function POST(req: NextRequest) {
             updates.consultationCancelled = false;
           }
 
-          // "Консультував": беремо останній event з НЕ-адміністратором
-          const lastNonAdmin = [...(consultationInfo.events || [])]
-            .sort((a: any, b: any) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
-            .find((ev: any) => {
-              const name = (ev.staffName || '').toString().trim();
-              if (!name) return false;
-              if (name.toLowerCase().includes('невідом')) return false;
-              return !isAdminStaffName(name);
-            });
+          // "Хто консультував":
+          // - бізнес-правило: показуємо МАЙСТРА (не-адміна), якщо він є
+          // - fallback: якщо в групі тільки адмін — показуємо адміна (щоб не було порожньо)
+          // - завжди беремо ОСТАННІЙ webhook (latest by receivedAt)
+          const sortedConsultationEvents = [...(consultationInfo.events || [])].sort((a: any, b: any) => {
+            const ta = new Date(b?.receivedAt || b?.datetime || 0).getTime();
+            const tb = new Date(a?.receivedAt || a?.datetime || 0).getTime();
+            return ta - tb;
+          });
 
-          if (lastNonAdmin?.staffName) {
-            updates.consultationMasterName = lastNonAdmin.staffName;
+          const isKnownName = (ev: any) => {
+            const name = (ev?.staffName || '').toString().trim();
+            if (!name) return false;
+            if (name.toLowerCase().includes('невідом')) return false;
+            return true;
+          };
+
+          const lastNonAdmin = sortedConsultationEvents.find((ev: any) => {
+            if (!isKnownName(ev)) return false;
+            return !isAdminStaffName((ev.staffName || '').toString());
+          });
+
+          const lastAdmin = sortedConsultationEvents.find((ev: any) => {
+            if (!isKnownName(ev)) return false;
+            return isAdminStaffName((ev.staffName || '').toString());
+          });
+
+          const chosenConsultant = lastNonAdmin || lastAdmin || null;
+          if (chosenConsultant?.staffName) {
+            updates.consultationMasterName = chosenConsultant.staffName;
             try {
               const { getMasterByName } = await import('@/lib/direct-masters/store');
-              const m = await getMasterByName(lastNonAdmin.staffName);
+              const m = await getMasterByName(chosenConsultant.staffName);
               if (m) updates.consultationMasterId = m.id;
             } catch (err) {
               console.warn('[cron/sync-paid-service-dates] ⚠️ Не вдалося знайти майстра по імені для консультації:', err);

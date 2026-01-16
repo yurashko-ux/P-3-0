@@ -1393,24 +1393,39 @@ export function DirectClientTable({
                               const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                               
                               return (
-                                <span className="flex items-center gap-1">
-                                  <button
-                                    className={
-                                      isPast
-                                        ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                        : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                    }
-                                    title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
-                                    onClick={() => {
-                                      if (!client.altegioClientId) return;
-                                      setRecordHistoryType('consultation');
-                                      setRecordHistoryClient(client);
-                                    }}
-                                    disabled={!client.altegioClientId}
-                                  >
-                                    {formattedDateStr} {isOnline ? "💻" : "📅"}
-                                  </button>
-                                  {attendanceIcon}
+                                <span className="flex flex-col items-start">
+                                  <span className="flex items-center gap-1">
+                                    <button
+                                      className={
+                                        isPast
+                                          ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                          : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                      }
+                                      title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
+                                      onClick={() => {
+                                        if (!client.altegioClientId) return;
+                                        setRecordHistoryType('consultation');
+                                        setRecordHistoryClient(client);
+                                      }}
+                                      disabled={!client.altegioClientId}
+                                    >
+                                      {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                    </button>
+                                    {attendanceIcon}
+                                  </span>
+
+                                  {(() => {
+                                    const consultant = (client.consultationMasterName || '').toString().trim();
+                                    if (!consultant) return null;
+                                    return (
+                                      <span
+                                        className="text-[10px] leading-none opacity-70 max-w-[160px] truncate"
+                                        title={`Консультував: ${consultant}`}
+                                      >
+                                        {consultant}
+                                      </span>
+                                    );
+                                  })()}
                                 </span>
                               );
                             } catch (err) {
