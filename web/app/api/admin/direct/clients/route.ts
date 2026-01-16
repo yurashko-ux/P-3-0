@@ -97,12 +97,18 @@ export async function GET(req: NextRequest) {
     // DirectMaster: потрібен для фільтра "Майстер" (тепер це serviceMasterName) і для атрибуції перезаписів
     let directMasterIdToName = new Map<string, string>();
     let directMasterNameToId = new Map<string, string>();
+    let directMasterIdToStaffId = new Map<string, number>();
     try {
       const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
       const dms = await getAllDirectMasters();
       directMasterIdToName = new Map(dms.map((m: any) => [m.id, (m.name || '').toString()]));
       directMasterNameToId = new Map(
         dms.map((m: any) => [(m.name || '').toString().trim().toLowerCase(), m.id])
+      );
+      directMasterIdToStaffId = new Map(
+        dms
+          .filter((m: any) => typeof m.altegioStaffId === 'number')
+          .map((m: any) => [m.id, m.altegioStaffId as number])
       );
     } catch (err) {
       console.warn('[direct/clients] ⚠️ Не вдалося завантажити DirectMaster (фільтр/перезапис):', err);
@@ -134,7 +140,21 @@ export async function GET(req: NextRequest) {
     }
     if (masterId) {
       const selectedMasterName = (directMasterIdToName.get(masterId) || '').trim().toLowerCase();
-      clients = clients.filter((c) => (c.serviceMasterName || '').trim().toLowerCase() === selectedMasterName);
+      const selectedMasterFirst = selectedMasterName ? selectedMasterName.split(/\s+/)[0] : '';
+      const selectedStaffId = directMasterIdToStaffId.get(masterId) ?? null;
+
+      clients = clients.filter((c) => {
+        // 1) точний матч по staffId (найнадійніше)
+        if (selectedStaffId && (c.serviceMasterAltegioStaffId ?? null) === selectedStaffId) return true;
+
+        // 2) фолбек: коли в DirectMaster тільки ім'я, а в Altegio ПІБ
+        const cm = (c.serviceMasterName || '').trim().toLowerCase();
+        if (!cm) return false;
+        if (selectedMasterName && cm === selectedMasterName) return true;
+        const clientFirst = cm.split(/\s+/)[0] || '';
+        if (selectedMasterFirst && clientFirst === selectedMasterFirst) return true;
+        return false;
+      });
     }
     if (source) {
       clients = clients.filter((c) => c.source === source);
@@ -199,9 +219,24 @@ export async function GET(req: NextRequest) {
         if (!attendedGroup) return c;
 
         const picked = pickNonAdminStaffFromGroup(attendedGroup, 'first');
-        const pickedMasterId = picked?.staffName
-          ? directMasterNameToId.get(picked.staffName.trim().toLowerCase())
-          : undefined;
+        let pickedMasterId: string | undefined = undefined;
+        if (picked?.staffId != null) {
+          // Перевага: матч по altegioStaffId
+          for (const [dmId, staffId] of directMasterIdToStaffId.entries()) {
+            if (staffId === picked.staffId) {
+              pickedMasterId = dmId;
+              break;
+            }
+          }
+        }
+        if (!pickedMasterId && picked?.staffName) {
+          const full = picked.staffName.trim().toLowerCase();
+          pickedMasterId = directMasterNameToId.get(full);
+          if (!pickedMasterId) {
+            const first = full.split(/\s+/)[0] || '';
+            pickedMasterId = first ? directMasterNameToId.get(first) : undefined;
+          }
+        }
 
         return {
           ...c,

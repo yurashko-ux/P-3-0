@@ -12,7 +12,7 @@ import {
   normalizeRecordsLogItems,
   kyivDayFromISO,
   isAdminStaffName,
-  pickStaffFromGroup,
+  pickNonAdminStaffFromGroup,
 } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
@@ -66,7 +66,7 @@ function getAttendedEventReceivedAt(group: any): string | null {
   return attended[0]?.receivedAt || null;
 }
 
-function getPrimaryStaffForAttendedGroup(group: any): string | null {
+function getPrimaryStaffForAttendedGroup(group: any): { staffId: number | null; staffName: string } | null {
   // Майстер для атрибуції “Перезапис”: перший (за receivedAt) не-адмін/не-невідомий staff у цій attended-групі в цей день
   const kyivDay = group?.kyivDay || '';
   if (!kyivDay) return null;
@@ -84,10 +84,14 @@ function getPrimaryStaffForAttendedGroup(group: any): string | null {
     })
     .sort((a: any, b: any) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
 
-  return inDay[0]?.staffName ? String(inDay[0].staffName) : null;
+  if (!inDay[0]?.staffName) return null;
+  return { staffId: inDay[0].staffId ?? null, staffName: String(inDay[0].staffName) };
 }
 
-function detectRebookForMonth(groups: any[], month: string): { hasRebook: boolean; primaryStaffName: string | null; nextRebookDate: string | null } {
+function detectRebookForMonth(
+  groups: any[],
+  month: string
+): { hasRebook: boolean; primaryStaff: { staffId: number | null; staffName: string } | null; nextRebookDate: string | null } {
   // max 1 перезапис на клієнта в межах місяця
   const paidGroups = groups.filter((g) => g?.groupType === 'paid');
   for (const attendedGroup of paidGroups) {
@@ -121,13 +125,23 @@ function detectRebookForMonth(groups: any[], month: string): { hasRebook: boolea
     });
     const next = candidates[0]?.g || null;
 
-    const primaryStaffName = getPrimaryStaffForAttendedGroup(attendedGroup);
+    const primaryStaff = getPrimaryStaffForAttendedGroup(attendedGroup);
     const nextRebookDate = next?.datetime || null;
 
-    return { hasRebook: true, primaryStaffName, nextRebookDate };
+    return { hasRebook: true, primaryStaff, nextRebookDate };
   }
 
-  return { hasRebook: false, primaryStaffName: null, nextRebookDate: null };
+  return { hasRebook: false, primaryStaff: null, nextRebookDate: null };
+}
+
+function normalizeName(s: string | null | undefined): string {
+  return (s || '').toString().trim().toLowerCase();
+}
+
+function firstTokenName(fullName: string | null | undefined): string {
+  const n = normalizeName(fullName);
+  if (!n) return '';
+  return n.split(/\s+/)[0] || '';
 }
 
 export async function GET(req: NextRequest) {
@@ -154,13 +168,14 @@ export async function GET(req: NextRequest) {
     // Всі відповідальні (включно admin/direct-manager/master)
     const masters = await prisma.directMaster.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, role: true },
+      select: { id: true, name: true, role: true, altegioStaffId: true },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
 
-    const selectedMasterName = masterIdFilter
-      ? (masters.find((m) => m.id === masterIdFilter)?.name || '').trim().toLowerCase()
-      : '';
+    const selectedMaster = masterIdFilter ? masters.find((m) => m.id === masterIdFilter) || null : null;
+    const selectedMasterName = selectedMaster ? normalizeName(selectedMaster.name) : '';
+    const selectedMasterFirst = selectedMaster ? firstTokenName(selectedMaster.name) : '';
+    const selectedMasterStaffId = selectedMaster?.altegioStaffId ?? null;
 
     // Беремо клієнтів з бази.
     // Важливо: ми використовуємо ці ж поля, що й таблиця.
@@ -177,6 +192,7 @@ export async function GET(req: NextRequest) {
         paidServiceDate: true,
         paidServiceAttended: true,
         serviceMasterName: true,
+        serviceMasterAltegioStaffId: true,
         altegioClientId: true,
       },
     });
@@ -184,7 +200,22 @@ export async function GET(req: NextRequest) {
     // Мінімальна фільтрація вже зараз (бо в коді UI вона є), щоб панель не “жила окремо”.
     const filteredClients = clients.filter((c) => {
       if (statusId && c.statusId !== statusId) return false;
-      if (selectedMasterName && (c.serviceMasterName || '').trim().toLowerCase() !== selectedMasterName) return false;
+      if (selectedMaster) {
+        // Спершу — точний матч по altegioStaffId (найнадійніше)
+        if (selectedMasterStaffId && (c.serviceMasterAltegioStaffId ?? null) === selectedMasterStaffId) {
+          // ok
+        } else {
+          // Фолбек — матч по першому слову (коли в DirectMaster тільки ім'я, а в Altegio ПІБ)
+          const clientFirst = firstTokenName(c.serviceMasterName);
+          if (selectedMasterFirst && clientFirst && clientFirst === selectedMasterFirst) {
+            // ok
+          } else if (selectedMasterName && normalizeName(c.serviceMasterName) === selectedMasterName) {
+            // ok
+          } else {
+            return false;
+          }
+        }
+      }
       if (source && (c.source || '') !== source) return false;
       if (hasAppointment === 'true' && !(c.paidServiceDate || c.consultationBookingDate)) return false;
       if (search) {
@@ -207,10 +238,16 @@ export async function GET(req: NextRequest) {
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
-    // Індекс майстрів по імені (для атрибуції перезаписів)
-    const masterIdByName = new Map<string, string>();
+    // Індекс DirectMaster для атрибуції
+    const masterIdByName = new Map<string, string>(); // full name або simple name
+    const masterIdByFirst = new Map<string, string>(); // перше слово імені
+    const masterIdByStaffId = new Map<number, string>();
     for (const m of masters) {
-      masterIdByName.set(m.name.trim().toLowerCase(), m.id);
+      const nm = normalizeName(m.name);
+      if (nm) masterIdByName.set(nm, m.id);
+      const first = firstTokenName(m.name);
+      if (first) masterIdByFirst.set(first, m.id);
+      if (typeof m.altegioStaffId === 'number') masterIdByStaffId.set(m.altegioStaffId, m.id);
     }
 
     type Row = {
@@ -246,9 +283,14 @@ export async function GET(req: NextRequest) {
       return s;
     };
 
-    const pickNameForStats = (group: any): string | null => {
-      const picked = pickStaffFromGroup(group, { mode: 'first', allowAdmin: true });
-      return picked?.staffName ? String(picked.staffName) : null;
+    const mapStaffToMasterId = (picked: { staffId: number | null; staffName: string } | null): string => {
+      if (!picked) return unassignedId;
+      if (picked.staffId != null && masterIdByStaffId.has(picked.staffId)) return masterIdByStaffId.get(picked.staffId)!;
+      const full = normalizeName(picked.staffName);
+      if (full && masterIdByName.has(full)) return masterIdByName.get(full)!;
+      const first = firstTokenName(picked.staffName);
+      if (first && masterIdByFirst.has(first)) return masterIdByFirst.get(first)!;
+      return unassignedId;
     };
 
     // Підрахунок по клієнтах/групах (по місяцю, Europe/Kyiv)
@@ -267,14 +309,13 @@ export async function GET(req: NextRequest) {
           return tb - ta;
         });
         const chosen = sorted[0];
-        const name = pickNameForStats(chosen);
-        if (name) {
-          const key = name.trim().toLowerCase();
-          clientMasterId = masterIdByName.get(key) || unassignedId;
-        }
-      } else if (c.serviceMasterName) {
-        const key = c.serviceMasterName.trim().toLowerCase();
-        clientMasterId = masterIdByName.get(key) || unassignedId;
+        const picked = pickNonAdminStaffFromGroup(chosen, 'latest');
+        clientMasterId = mapStaffToMasterId(picked);
+      } else if (c.serviceMasterAltegioStaffId != null || c.serviceMasterName) {
+        clientMasterId = mapStaffToMasterId({
+          staffId: c.serviceMasterAltegioStaffId ?? null,
+          staffName: c.serviceMasterName || '',
+        });
       }
 
       const activeInMonth =
@@ -289,8 +330,8 @@ export async function GET(req: NextRequest) {
       // consultBooked / consultAttended / paidAttended — атрибутуємо по групі
       if (groupsInMonth.length) {
         for (const g of groupsInMonth) {
-          const name = pickNameForStats(g);
-          const mid = name ? masterIdByName.get(name.trim().toLowerCase()) || unassignedId : unassignedId;
+          const picked = pickNonAdminStaffFromGroup(g, 'first');
+          const mid = mapStaffToMasterId(picked);
 
           if (g.groupType === 'consultation' && g.datetime) {
             ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultBooked += 1;
@@ -304,10 +345,10 @@ export async function GET(req: NextRequest) {
         }
       } else {
         // Фолбек для клієнтів без Altegio груп у KV: атрибутуємо по serviceMasterName (якщо є)
-        const fallbackMid =
-          c.serviceMasterName && masterIdByName.has(c.serviceMasterName.trim().toLowerCase())
-            ? masterIdByName.get(c.serviceMasterName.trim().toLowerCase())!
-            : unassignedId;
+        const fallbackMid = mapStaffToMasterId({
+          staffId: c.serviceMasterAltegioStaffId ?? null,
+          staffName: c.serviceMasterName || '',
+        });
 
         if (!!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) {
           ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').consultBooked += 1;
@@ -324,8 +365,7 @@ export async function GET(req: NextRequest) {
       if (c.altegioClientId) {
         const rebook = detectRebookForMonth(groups, month);
         if (rebook.hasRebook) {
-          const keyName = (rebook.primaryStaffName || '').trim().toLowerCase();
-          const attributedMasterId = keyName && masterIdByName.has(keyName) ? masterIdByName.get(keyName)! : unassignedId;
+          const attributedMasterId = mapStaffToMasterId(rebook.primaryStaff || null);
           ensureRow(
             attributedMasterId,
             rowsByMasterId.get(attributedMasterId)?.masterName || 'Без майстра',

@@ -348,26 +348,36 @@ export function DirectClientTable({
     return Array.from(map.values());
   }, [clients]);
 
+  // KPI-таблиця: робимо максимально компактно — ховаємо рядки, де всі значення = 0
+  const compactStatsRows = useMemo(() => {
+    const rows = mastersStats.rows || [];
+    const nonZero = (r: MastersStatsRow) =>
+      (r.clients || 0) > 0 ||
+      (r.consultBooked || 0) > 0 ||
+      (r.consultAttended || 0) > 0 ||
+      (r.paidAttended || 0) > 0 ||
+      (r.rebooksCreated || 0) > 0;
+    const filtered = rows.filter((r) => nonZero(r) || r.masterId === 'unassigned');
+    // Якщо все нуль — показуємо як є (щоб не було порожньо)
+    return filtered.length ? filtered : rows;
+  }, [mastersStats.rows]);
+
   return (
     <div className="space-y-4">
       {/* Верхня панель KPI по майстрах (майстри/адмін/direct-менеджер) */}
       <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-4">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="text-sm font-semibold">Статистика по майстрах</div>
-                <div className="text-xs opacity-70">
-                  Місяць: {selectedMonth} • Клієнтів у вибірці: {mastersStats.totalClients}
+        <div className="card-body p-2 sm:p-3">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="text-sm font-semibold">Статистика</div>
+                <div className="text-[11px] opacity-70">
+                  {selectedMonth} • клієнтів: {mastersStats.totalClients}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs opacity-70">Місяць</span>
-                <select
-                  className="select select-bordered select-sm"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                >
+                <span className="text-[11px] opacity-70">Місяць</span>
+                <select className="select select-bordered select-xs" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
                   {monthOptions.map((m) => (
                     <option key={m.value} value={m.value}>
                       {m.label}
@@ -378,38 +388,42 @@ export function DirectClientTable({
             </div>
 
             {mastersStats.loading ? (
-              <div className="text-xs opacity-70">Завантаження статистики...</div>
+              <div className="text-[11px] opacity-70">Завантаження...</div>
             ) : mastersStats.error ? (
               <div className="alert alert-warning">
                 <span className="text-sm">Помилка статистики: {mastersStats.error}</span>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="table table-xs w-full">
+                <table className="table table-compact table-xs w-full leading-tight">
                   <thead>
                     <tr>
-                      <th className="text-xs">Майстер</th>
-                      <th className="text-xs text-right">Клієнти</th>
-                      <th className="text-xs text-right">Запис на конс.</th>
-                      <th className="text-xs text-right">Конс. ✅</th>
-                      <th className="text-xs text-right">Запис ✅</th>
-                      <th className="text-xs text-right">Перезаписи 🔁</th>
+                      <th className="text-[11px] py-1">Майстер</th>
+                      <th className="text-[11px] text-right py-1">Кл</th>
+                      <th className="text-[11px] text-right py-1">Конс</th>
+                      <th className="text-[11px] text-right py-1">✅К</th>
+                      <th className="text-[11px] text-right py-1">✅З</th>
+                      <th className="text-[11px] text-right py-1">🔁</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {mastersStats.rows.map((r) => (
+                    {compactStatsRows.map((r) => (
                       <tr key={r.masterId}>
-                        <td className="text-xs whitespace-nowrap">
+                        <td className="text-[11px] whitespace-nowrap py-1">
                           <span className="font-medium">{r.masterName}</span>
-                          {r.role && r.role !== 'unassigned' ? (
-                            <span className="ml-2 text-[10px] opacity-60">({r.role})</span>
-                          ) : null}
                         </td>
-                        <td className="text-xs text-right">{r.clients}</td>
-                        <td className="text-xs text-right">{r.consultBooked}</td>
-                        <td className="text-xs text-right">{r.consultAttended}</td>
-                        <td className="text-xs text-right">{r.paidAttended}</td>
-                        <td className="text-xs text-right" title={r.paidAttended > 0 ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%` : ''}>
+                        <td className="text-[11px] text-right py-1">{r.clients}</td>
+                        <td className="text-[11px] text-right py-1">{r.consultBooked}</td>
+                        <td className="text-[11px] text-right py-1">{r.consultAttended}</td>
+                        <td className="text-[11px] text-right py-1">{r.paidAttended}</td>
+                        <td
+                          className="text-[11px] text-right py-1"
+                          title={
+                            r.paidAttended > 0
+                              ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%`
+                              : ''
+                          }
+                        >
                           {r.rebooksCreated}
                           {r.paidAttended > 0 ? (
                             <span className="ml-1 text-[10px] opacity-60">({Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%)</span>
