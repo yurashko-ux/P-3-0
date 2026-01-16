@@ -363,6 +363,22 @@ export function DirectClientTable({
     return filtered.length ? filtered : rows;
   }, [mastersStats.rows]);
 
+  const statsTotals = useMemo(() => {
+    const rows = mastersStats.rows || [];
+    // Підсумки по всіх рядках (включно "Без майстра"), щоб цифри сходились з загальним.
+    return rows.reduce(
+      (acc, r) => {
+        acc.clients += r.clients || 0;
+        acc.consultBooked += r.consultBooked || 0;
+        acc.consultAttended += r.consultAttended || 0;
+        acc.paidAttended += r.paidAttended || 0;
+        acc.rebooksCreated += r.rebooksCreated || 0;
+        return acc;
+      },
+      { clients: 0, consultBooked: 0, consultAttended: 0, paidAttended: 0, rebooksCreated: 0 }
+    );
+  }, [mastersStats.rows]);
+
   return (
     <div className="space-y-4">
       {/* Верхня панель KPI по майстрах (майстри/адмін/direct-менеджер) */}
@@ -414,26 +430,28 @@ export function DirectClientTable({
                 >
                   <thead>
                     <tr>
-                      <th className="text-[11px] py-0.5 px-1 whitespace-nowrap">Майстер</th>
-                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">Кл</th>
-                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">Конс</th>
-                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">✅К</th>
-                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">✅З</th>
-                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">🔁</th>
+                      <th className="text-[10px] py-0.5 px-1 whitespace-nowrap w-[120px] max-w-[120px]">Майстер</th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px]" title={`Σ ${statsTotals.clients}`}>Кл Σ{statsTotals.clients}</th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[58px]" title={`Σ ${statsTotals.consultBooked}`}>Конс Σ{statsTotals.consultBooked}</th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px]" title={`Σ ${statsTotals.consultAttended}`}>✅К Σ{statsTotals.consultAttended}</th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px]" title={`Σ ${statsTotals.paidAttended}`}>✅З Σ{statsTotals.paidAttended}</th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px]" title={`Σ ${statsTotals.rebooksCreated}`}>🔁 Σ{statsTotals.rebooksCreated}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {compactStatsRows.map((r) => (
                       <tr key={r.masterId}>
-                        <td className="text-[11px] whitespace-nowrap py-0.5 px-1">
-                          <span className="font-medium">{r.masterName}</span>
+                        <td className="text-[10px] whitespace-nowrap py-0.5 px-1 w-[120px] max-w-[120px]">
+                          <span className="font-medium block truncate" title={r.masterName}>
+                            {r.masterName}
+                          </span>
                         </td>
-                        <td className="text-[11px] text-right py-0.5 px-1">{r.clients}</td>
-                        <td className="text-[11px] text-right py-0.5 px-1">{r.consultBooked}</td>
-                        <td className="text-[11px] text-right py-0.5 px-1">{r.consultAttended}</td>
-                        <td className="text-[11px] text-right py-0.5 px-1">{r.paidAttended}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px]">{r.clients}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[58px]">{r.consultBooked}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px]">{r.consultAttended}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px]">{r.paidAttended}</td>
                         <td
-                          className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px]"
                           title={
                             r.paidAttended > 0
                               ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%`
