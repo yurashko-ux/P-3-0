@@ -88,9 +88,12 @@ export function pickNonAdminStaffFromGroup(
       if (!name) return false;
       if (isUnknownStaffName(name)) return false;
       if (isAdminStaffName(name)) return false;
-      const receivedAt = e.receivedAt || e.datetime || '';
-      if (!receivedAt) return false;
-      return kyivDayFromISO(receivedAt) === kyivDay;
+      // ВАЖЛИВО: для майбутніх записів webhooks часто приходять ЗАЗДАЛЕГІДЬ.
+      // Тому staff потрібно прив'язувати до ДНЯ ВІЗИТУ (datetime), а не до дня отримання (receivedAt).
+      const dayByDatetime = e.datetime ? kyivDayFromISO(e.datetime) : '';
+      const dayByReceivedAt = e.receivedAt ? kyivDayFromISO(e.receivedAt) : '';
+      if (!dayByDatetime && !dayByReceivedAt) return false;
+      return dayByDatetime === kyivDay || dayByReceivedAt === kyivDay;
     })
     .sort((a, b) => {
       const ta = new Date(a.receivedAt || a.datetime || 0).getTime();
@@ -118,9 +121,10 @@ export function pickStaffFromGroup(
       if (!name) return false;
       if (isUnknownStaffName(name)) return false;
       if (!allowAdmin && isAdminStaffName(name)) return false;
-      const receivedAt = e.receivedAt || e.datetime || '';
-      if (!receivedAt) return false;
-      return kyivDayFromISO(receivedAt) === kyivDay;
+      const dayByDatetime = e.datetime ? kyivDayFromISO(e.datetime) : '';
+      const dayByReceivedAt = e.receivedAt ? kyivDayFromISO(e.receivedAt) : '';
+      if (!dayByDatetime && !dayByReceivedAt) return false;
+      return dayByDatetime === kyivDay || dayByReceivedAt === kyivDay;
     })
     .sort((a, b) => {
       const ta = new Date(a.receivedAt || a.datetime || 0).getTime();
