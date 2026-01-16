@@ -166,6 +166,7 @@ export function DirectClientTable({
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
   const [masterHistoryClient, setMasterHistoryClient] = useState<DirectClient | null>(null);
   const [searchInput, setSearchInput] = useState<string>(filters.search);
+  const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
 
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -368,16 +369,28 @@ export function DirectClientTable({
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-2 sm:p-3">
           <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
+            <button
+              type="button"
+              className="flex items-center justify-between gap-2 w-full text-left"
+              onClick={() => setIsStatsExpanded((v) => !v)}
+              title="Натисніть, щоб згорнути/розгорнути статистику"
+            >
               <div className="flex items-center gap-2 flex-wrap">
-                <div className="text-sm font-semibold">Статистика</div>
+                <div className="text-sm font-semibold">
+                  Статистика <span className="ml-1 opacity-60">{isStatsExpanded ? "▲" : "▼"}</span>
+                </div>
                 <div className="text-[11px] opacity-70">
                   {selectedMonth} • клієнтів: {mastersStats.totalClients}
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] opacity-70">Місяць</span>
-                <select className="select select-bordered select-xs" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                <select
+                  className="select select-bordered select-xs"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {monthOptions.map((m) => (
                     <option key={m.value} value={m.value}>
                       {m.label}
@@ -385,7 +398,7 @@ export function DirectClientTable({
                   ))}
                 </select>
               </div>
-            </div>
+            </button>
 
             {mastersStats.loading ? (
               <div className="text-[11px] opacity-70">Завантаження...</div>
@@ -393,31 +406,34 @@ export function DirectClientTable({
               <div className="alert alert-warning">
                 <span className="text-sm">Помилка статистики: {mastersStats.error}</span>
               </div>
-            ) : (
+            ) : !isStatsExpanded ? null : (
               <div className="overflow-x-auto">
-                <table className="table table-compact table-xs w-full leading-tight">
+                <table
+                  className="table table-compact table-xs w-max leading-tight"
+                  style={{ tableLayout: "auto" }}
+                >
                   <thead>
                     <tr>
-                      <th className="text-[11px] py-1">Майстер</th>
-                      <th className="text-[11px] text-right py-1">Кл</th>
-                      <th className="text-[11px] text-right py-1">Конс</th>
-                      <th className="text-[11px] text-right py-1">✅К</th>
-                      <th className="text-[11px] text-right py-1">✅З</th>
-                      <th className="text-[11px] text-right py-1">🔁</th>
+                      <th className="text-[11px] py-0.5 px-1 whitespace-nowrap">Майстер</th>
+                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">Кл</th>
+                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">Конс</th>
+                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">✅К</th>
+                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">✅З</th>
+                      <th className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap">🔁</th>
                     </tr>
                   </thead>
                   <tbody>
                     {compactStatsRows.map((r) => (
                       <tr key={r.masterId}>
-                        <td className="text-[11px] whitespace-nowrap py-1">
+                        <td className="text-[11px] whitespace-nowrap py-0.5 px-1">
                           <span className="font-medium">{r.masterName}</span>
                         </td>
-                        <td className="text-[11px] text-right py-1">{r.clients}</td>
-                        <td className="text-[11px] text-right py-1">{r.consultBooked}</td>
-                        <td className="text-[11px] text-right py-1">{r.consultAttended}</td>
-                        <td className="text-[11px] text-right py-1">{r.paidAttended}</td>
+                        <td className="text-[11px] text-right py-0.5 px-1">{r.clients}</td>
+                        <td className="text-[11px] text-right py-0.5 px-1">{r.consultBooked}</td>
+                        <td className="text-[11px] text-right py-0.5 px-1">{r.consultAttended}</td>
+                        <td className="text-[11px] text-right py-0.5 px-1">{r.paidAttended}</td>
                         <td
-                          className="text-[11px] text-right py-1"
+                          className="text-[11px] text-right py-0.5 px-1 whitespace-nowrap"
                           title={
                             r.paidAttended > 0
                               ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%`
