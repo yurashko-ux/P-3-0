@@ -311,6 +311,17 @@ export function DirectClientTable({
     }
   };
 
+  // Відображаємо тільки імʼя (перше слово), щоб таблиця була компактною
+  const shortPersonName = (raw?: string | null): string => {
+    const s = (raw || '').toString().trim();
+    if (!s) return '';
+    // Якщо раптом прийде "Імʼя Прізвище, Імʼя2 Прізвище2" — беремо першу персону
+    const firstPerson = s.split(',')[0]?.trim() || s;
+    // Перше слово = імʼя
+    const firstWord = firstPerson.split(/\s+/)[0]?.trim();
+    return firstWord || firstPerson;
+  };
+
   const getStatusColor = (statusId: string) => {
     const status = statuses.find((s) => s.id === statusId);
     return status?.color || "#6b7280";
@@ -1415,7 +1426,7 @@ export function DirectClientTable({
                                   </span>
 
                                   {(() => {
-                                    const consultant = (client.consultationMasterName || '').toString().trim();
+                                    const consultant = shortPersonName(client.consultationMasterName);
                                     if (!consultant) return (
                                       <span className="text-[10px] leading-none opacity-50 max-w-[160px] truncate text-center">
                                         невідомо
@@ -1497,7 +1508,7 @@ export function DirectClientTable({
                                 {client.paidServiceIsRebooking ? (
                                   <span
                                     className="text-purple-700 text-lg"
-                                    title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${client.paidServiceRebookFromMasterName || '-'}`}
+                                    title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
                                   >
                                     🔁
                                   </span>
@@ -1512,7 +1523,8 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {(() => {
-                          const name = (client.serviceMasterName || '').trim();
+                          const full = (client.serviceMasterName || '').trim();
+                          const name = shortPersonName(full);
                           if (!name) return '-';
                           let historyTitle = name;
                           try {
@@ -1521,7 +1533,9 @@ export function DirectClientTable({
                               const last5 = raw.slice(-5);
                               historyTitle =
                                 `${name}\n\nІсторія змін (останні 5):\n` +
-                                last5.map((h: any) => `${h.kyivDay || '-'} — ${h.masterName || '-'}`).join('\n');
+                                last5
+                                  .map((h: any) => `${h.kyivDay || '-'} — ${shortPersonName(h.masterName) || '-'}`)
+                                  .join('\n');
                             }
                           } catch {
                             // ignore
