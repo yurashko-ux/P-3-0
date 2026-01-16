@@ -191,6 +191,53 @@ export async function GET(req: NextRequest) {
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
       clients = clients.map((c) => {
+        // Дораховуємо "хто консультував" для UI (щоб не чекати cron), якщо є дата консультації.
+        // Правило:
+        // - беремо consultation-групу на kyivDay консультації
+        // - показуємо останнього МАЙСТРА (не-адміна) за receivedAt
+        // - якщо майстра нема — fallback на адміна
+        // - якщо немає жодного staffName — лишаємо як є (UI покаже "невідомо")
+        try {
+          if (c.altegioClientId && c.consultationBookingDate) {
+            const groups = groupsByClient.get(c.altegioClientId) || [];
+            const consultDay = kyivDayFromISO(c.consultationBookingDate);
+            const consultGroup =
+              consultDay
+                ? (groups.find((g: any) => (g?.groupType === 'consultation') && (g?.kyivDay || '') === consultDay) || null)
+                : null;
+
+            if (consultGroup) {
+              const events = Array.isArray((consultGroup as any).events) ? (consultGroup as any).events : [];
+              const sorted = [...events].sort((a: any, b: any) => {
+                const ta = new Date(b?.receivedAt || b?.datetime || 0).getTime();
+                const tb = new Date(a?.receivedAt || a?.datetime || 0).getTime();
+                return ta - tb;
+              });
+
+              const isKnownName = (ev: any) => {
+                const name = (ev?.staffName || '').toString().trim();
+                if (!name) return false;
+                if (name.toLowerCase().includes('невідом')) return false;
+                return true;
+              };
+
+              const lastNonAdmin = sorted.find((ev: any) => isKnownName(ev) && !isAdminStaffName((ev.staffName || '').toString()));
+              const lastAdmin = sorted.find((ev: any) => isKnownName(ev) && isAdminStaffName((ev.staffName || '').toString()));
+              const chosen = lastNonAdmin || lastAdmin || null;
+
+              if (chosen?.staffName) {
+                const current = (c.consultationMasterName || '').toString().trim();
+                const shouldReplace = !current || isAdminStaffName(current);
+                if (shouldReplace) {
+                  c = { ...c, consultationMasterName: String(chosen.staffName) };
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати consultationMasterName (не критично):', err);
+        }
+
         if (!c.altegioClientId || !c.paidServiceDate) return c;
         const groups = groupsByClient.get(c.altegioClientId) || [];
         if (!groups.length) return c;

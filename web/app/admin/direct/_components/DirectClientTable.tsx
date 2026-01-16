@@ -1393,7 +1393,7 @@ export function DirectClientTable({
                               const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                               
                               return (
-                                <span className="flex flex-col items-start">
+                                <span className="flex flex-col items-center">
                                   <span className="flex items-center gap-1">
                                     <button
                                       className={
@@ -1416,10 +1416,14 @@ export function DirectClientTable({
 
                                   {(() => {
                                     const consultant = (client.consultationMasterName || '').toString().trim();
-                                    if (!consultant) return null;
+                                    if (!consultant) return (
+                                      <span className="text-[10px] leading-none opacity-50 max-w-[160px] truncate text-center">
+                                        невідомо
+                                      </span>
+                                    );
                                     return (
                                       <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[160px] truncate"
+                                        className="text-[10px] leading-none opacity-70 max-w-[160px] truncate text-center"
                                         title={`Консультував: ${consultant}`}
                                       >
                                         {consultant}
