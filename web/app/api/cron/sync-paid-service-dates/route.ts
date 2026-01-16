@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -203,6 +203,18 @@ export async function POST(req: NextRequest) {
               console.warn('[cron/sync-paid-service-dates] ⚠️ Не вдалося знайти майстра по імені для консультації:', err);
             }
           }
+
+          // "Майстер" (загальний): для консультації теж виставляємо поточного майстра
+          const picked = pickNonAdminStaffFromGroup(consultationInfo, 'latest');
+          if (picked?.staffName) {
+            updates.serviceMasterName = picked.staffName;
+            updates.serviceMasterAltegioStaffId = picked.staffId ?? null;
+            updates.serviceMasterHistory = appendServiceMasterHistory(client.serviceMasterHistory, {
+              kyivDay: consultationInfo.kyivDay,
+              masterName: picked.staffName,
+              source: 'records-group',
+            });
+          }
         }
 
         // Платні послуги: дата + attendance (✅/❌/🚫)
@@ -227,6 +239,18 @@ export async function POST(req: NextRequest) {
             updates.paidServiceCancelled = true;
           } else {
             updates.paidServiceCancelled = false;
+          }
+
+          // "Майстер" (загальний): беремо майстра з paid-групи (latest non-admin)
+          const picked = pickNonAdminStaffFromGroup(paidServiceInfo, 'latest');
+          if (picked?.staffName) {
+            updates.serviceMasterName = picked.staffName;
+            updates.serviceMasterAltegioStaffId = picked.staffId ?? null;
+            updates.serviceMasterHistory = appendServiceMasterHistory(client.serviceMasterHistory, {
+              kyivDay: paidServiceInfo.kyivDay,
+              masterName: picked.staffName,
+              source: 'records-group',
+            });
           }
         }
 

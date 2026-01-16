@@ -6,6 +6,13 @@ import { getAllDirectClients, saveDirectClient, getAllDirectStatuses } from '@/l
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
+import { kvRead } from '@/lib/kv';
+import {
+  groupRecordsByClientDay,
+  normalizeRecordsLogItems,
+  kyivDayFromISO,
+  pickNonAdminStaffFromGroup,
+} from '@/lib/altegio/records-grouping';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -87,6 +94,20 @@ export async function GET(req: NextRequest) {
     const statuses = await getAllDirectStatuses();
     const statusMap = new Map(statuses.map(s => [s.id, s.name]));
 
+    // DirectMaster: потрібен для фільтра "Майстер" (тепер це serviceMasterName) і для атрибуції перезаписів
+    let directMasterIdToName = new Map<string, string>();
+    let directMasterNameToId = new Map<string, string>();
+    try {
+      const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+      const dms = await getAllDirectMasters();
+      directMasterIdToName = new Map(dms.map((m: any) => [m.id, (m.name || '').toString()]));
+      directMasterNameToId = new Map(
+        dms.map((m: any) => [(m.name || '').toString().trim().toLowerCase(), m.id])
+      );
+    } catch (err) {
+      console.warn('[direct/clients] ⚠️ Не вдалося завантажити DirectMaster (фільтр/перезапис):', err);
+    }
+
     // Завантажуємо відповідальних для сортування по імені (якщо потрібно)
     let masterMap = new Map<string, string>();
     if (sortBy === 'masterId') {
@@ -112,7 +133,8 @@ export async function GET(req: NextRequest) {
       clients = clients.filter((c) => c.statusId === statusId);
     }
     if (masterId) {
-      clients = clients.filter((c) => c.masterId === masterId);
+      const selectedMasterName = (directMasterIdToName.get(masterId) || '').trim().toLowerCase();
+      clients = clients.filter((c) => (c.serviceMasterName || '').trim().toLowerCase() === selectedMasterName);
     }
     if (source) {
       clients = clients.filter((c) => c.source === source);
@@ -138,6 +160,61 @@ export async function GET(req: NextRequest) {
       })));
     }
 
+    // Обчислюємо прапори "Перезапис" (🔁) для клієнтів, які мають Altegio ID і paidServiceDate.
+    // Умови:
+    // - поточний paid запис (той що показуємо) був створений в день attended paid-візиту (Europe/Kyiv)
+    // - атрибуція: майстер = перший receivedAt у attended-групі (exclude admin/unknown)
+    try {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+
+      clients = clients.map((c) => {
+        if (!c.altegioClientId || !c.paidServiceDate) return c;
+        const groups = groupsByClient.get(c.altegioClientId) || [];
+        if (!groups.length) return c;
+
+        const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
+        if (!paidGroups.length) return c;
+
+        const paidKyivDay = kyivDayFromISO(c.paidServiceDate);
+        if (!paidKyivDay) return c;
+
+        const currentGroup = paidGroups.find((g: any) => (g?.kyivDay || '') === paidKyivDay) || null;
+        if (!currentGroup) return c;
+
+        const events = Array.isArray(currentGroup.events) ? currentGroup.events : [];
+        const createEvents = events
+          .filter((e: any) => (e?.status || '').toString().toLowerCase() === 'create' && e?.receivedAt)
+          .sort((a: any, b: any) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
+        const createdKyivDay = createEvents.length ? kyivDayFromISO(createEvents[0].receivedAt) : '';
+        if (!createdKyivDay) return c;
+
+        const attendedGroup =
+          paidGroups.find(
+            (g: any) =>
+              (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendanceStatus === 'arrived')
+          ) || null;
+        if (!attendedGroup) return c;
+
+        const picked = pickNonAdminStaffFromGroup(attendedGroup, 'first');
+        const pickedMasterId = picked?.staffName
+          ? directMasterNameToId.get(picked.staffName.trim().toLowerCase())
+          : undefined;
+
+        return {
+          ...c,
+          paidServiceIsRebooking: true,
+          paidServiceRebookFromKyivDay: createdKyivDay,
+          paidServiceRebookFromMasterName: picked?.staffName || undefined,
+          paidServiceRebookFromMasterId: pickedMasterId,
+        };
+      });
+    } catch (err) {
+      console.warn('[direct/clients] ⚠️ Не вдалося обчислити "Перезапис" (не критично):', err);
+    }
+
     // Сортування
     clients.sort((a, b) => {
       let aVal: any = a[sortBy as keyof DirectClient];
@@ -152,8 +229,8 @@ export async function GET(req: NextRequest) {
       }
       // Спеціальна обробка для майстрів - сортуємо по імені
       else if (sortBy === 'masterId') {
-        aVal = masterMap.get(a.masterId || '') || a.masterId || '';
-        bVal = masterMap.get(b.masterId || '') || b.masterId || '';
+        aVal = a.serviceMasterName || '';
+        bVal = b.serviceMasterName || '';
         aVal = String(aVal).toLowerCase();
         bVal = String(bVal).toLowerCase();
       }

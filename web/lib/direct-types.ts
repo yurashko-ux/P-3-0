@@ -30,6 +30,13 @@ export type DirectClient = {
   consultationCancelled?: boolean; // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
   consultationMasterId?: string; // ID майстра, який провів консультацію
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію
+  serviceMasterAltegioStaffId?: number; // Поточний майстер (Altegio staffId) з усіх записів (paid/consultation)
+  serviceMasterName?: string; // Поточний майстер (Altegio staffName) з усіх записів (paid/consultation)
+  serviceMasterHistory?: string; // Історія змін майстра (JSON): [{ kyivDay, masterName, source }]
+  paidServiceIsRebooking?: boolean; // 🔁 Чи є поточний запис на платну послугу "перезаписом"
+  paidServiceRebookFromKyivDay?: string; // YYYY-MM-DD (Europe/Kyiv) — день attended, після якого створено перезапис
+  paidServiceRebookFromMasterName?: string; // Майстер, якому атрибутуємо перезапис (перший receivedAt у attended-групі)
+  paidServiceRebookFromMasterId?: string; // ID майстра (DirectMaster), якщо знайдено
   isOnlineConsultation?: boolean; // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation?: boolean; // Записалась на послугу після консультації
   telegramNotificationSent?: boolean; // Чи було відправлено повідомлення в Telegram про відсутній Instagram

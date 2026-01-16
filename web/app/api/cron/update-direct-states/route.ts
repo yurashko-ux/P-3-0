@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, pickNonAdminStaffFromGroup, appendServiceMasterHistory } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -100,12 +100,27 @@ export async function GET(req: NextRequest) {
           ? 'consultation'
           : (determineStateFromServices(chosen.services) || 'other-services');
 
+      const picked = pickNonAdminStaffFromGroup(chosen, 'latest');
+      const needsMasterUpdate =
+        !!picked?.staffName && (client.serviceMasterName || '').trim() !== picked.staffName.trim();
+
       // Якщо знайшли новий стан і він відрізняється від поточного - оновлюємо
-      if (newState && client.state !== newState) {
+      if ((newState && client.state !== newState) || needsMasterUpdate) {
         try {
           const updated: typeof client = {
             ...client,
-            state: newState,
+            ...(newState && client.state !== newState ? { state: newState } : {}),
+            ...(needsMasterUpdate
+              ? {
+                  serviceMasterName: picked!.staffName,
+                  serviceMasterAltegioStaffId: picked!.staffId ?? null,
+                  serviceMasterHistory: appendServiceMasterHistory(client.serviceMasterHistory, {
+                    kyivDay: chosen.kyivDay,
+                    masterName: picked!.staffName,
+                    source: 'records-group',
+                  }),
+                }
+              : {}),
             updatedAt: new Date().toISOString(),
           };
           await saveDirectClient(updated, 'cron-update-states', {
@@ -115,7 +130,10 @@ export async function GET(req: NextRequest) {
             services: (chosen.services || []).map((s: any) => ({ id: s.id, title: s.title || s.name })) || [],
           });
           updatedCount++;
-          console.log(`[cron/update-direct-states] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}) state to '${newState}'`);
+          const changes = [];
+          if (newState && client.state !== newState) changes.push(`state: '${client.state}' -> '${newState}'`);
+          if (needsMasterUpdate) changes.push(`serviceMasterName: '${client.serviceMasterName || '-'}' -> '${picked!.staffName}'`);
+          console.log(`[cron/update-direct-states] ✅ Updated client ${client.id} (Altegio ${client.altegioClientId}): ${changes.join(', ')}`);
         } catch (err) {
           const errorMsg = `Failed to update client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
           errors.push(errorMsg);

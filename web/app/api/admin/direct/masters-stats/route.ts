@@ -7,7 +7,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, kyivDayFromISO, isAdminStaffName } from '@/lib/altegio/records-grouping';
+import {
+  groupRecordsByClientDay,
+  normalizeRecordsLogItems,
+  kyivDayFromISO,
+  isAdminStaffName,
+  pickStaffFromGroup,
+} from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -152,13 +158,15 @@ export async function GET(req: NextRequest) {
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
 
-    // Беремо клієнтів (поки що з бази, фільтри застосуємо пізніше; зараз простий варіант).
+    const selectedMasterName = masterIdFilter
+      ? (masters.find((m) => m.id === masterIdFilter)?.name || '').trim().toLowerCase()
+      : '';
+
+    // Беремо клієнтів з бази.
     // Важливо: ми використовуємо ці ж поля, що й таблиця.
     const clients = await prisma.directClient.findMany({
       select: {
         id: true,
-        masterId: true,
-        masterManuallySet: true,
         statusId: true,
         source: true,
         instagramUsername: true,
@@ -168,6 +176,7 @@ export async function GET(req: NextRequest) {
         consultationAttended: true,
         paidServiceDate: true,
         paidServiceAttended: true,
+        serviceMasterName: true,
         altegioClientId: true,
       },
     });
@@ -175,7 +184,7 @@ export async function GET(req: NextRequest) {
     // Мінімальна фільтрація вже зараз (бо в коді UI вона є), щоб панель не “жила окремо”.
     const filteredClients = clients.filter((c) => {
       if (statusId && c.statusId !== statusId) return false;
-      if (masterIdFilter && (c.masterId || '') !== masterIdFilter) return false;
+      if (selectedMasterName && (c.serviceMasterName || '').trim().toLowerCase() !== selectedMasterName) return false;
       if (source && (c.source || '') !== source) return false;
       if (hasAppointment === 'true' && !(c.paidServiceDate || c.consultationBookingDate)) return false;
       if (search) {
@@ -213,12 +222,13 @@ export async function GET(req: NextRequest) {
       consultAttended: number;
       paidAttended: number;
       rebooksCreated: number; // max 1 per client
+      rebookRatePct: number; // % перезаписів від attended paid
     };
 
     const rowsByMasterId = new Map<string, Row>();
     const ensureRow = (id: string, name: string, role: string) => {
       if (rowsByMasterId.has(id)) return rowsByMasterId.get(id)!;
-      const row: Row = { masterId: id, masterName: name, role, clients: 0, consultBooked: 0, consultAttended: 0, paidAttended: 0, rebooksCreated: 0 };
+      const row: Row = { masterId: id, masterName: name, role, clients: 0, consultBooked: 0, consultAttended: 0, paidAttended: 0, rebooksCreated: 0, rebookRatePct: 0 };
       rowsByMasterId.set(id, row);
       return row;
     };
@@ -228,42 +238,111 @@ export async function GET(req: NextRequest) {
     const unassignedId = 'unassigned';
     ensureRow(unassignedId, 'Без майстра', 'unassigned');
 
-    // Підрахунок по клієнтах
+    const clientsSetByMasterId = new Map<string, Set<string>>();
+    const ensureClientSet = (id: string) => {
+      if (clientsSetByMasterId.has(id)) return clientsSetByMasterId.get(id)!;
+      const s = new Set<string>();
+      clientsSetByMasterId.set(id, s);
+      return s;
+    };
+
+    const pickNameForStats = (group: any): string | null => {
+      const picked = pickStaffFromGroup(group, { mode: 'first', allowAdmin: true });
+      return picked?.staffName ? String(picked.staffName) : null;
+    };
+
+    // Підрахунок по клієнтах/групах (по місяцю, Europe/Kyiv)
     for (const c of filteredClients) {
-      const masterId = c.masterId || unassignedId;
+      const groups = c.altegioClientId ? (groupsByClient.get(c.altegioClientId) || []) : [];
+      const groupsInMonth = groups.filter((g: any) => (g?.kyivDay || '').slice(0, 7) === month);
 
-      const consultBookedInMonth =
-        !!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month;
-      const consultAttendedInMonth =
-        c.consultationAttended === true &&
-        !!c.consultationBookingDate &&
-        kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month;
-      const paidAttendedInMonth =
-        c.paidServiceAttended === true &&
-        !!c.paidServiceDate &&
-        kyivMonthKeyFromISO(c.paidServiceDate.toISOString()) === month;
-
-      // Перезапис: рахуємо тільки якщо є Altegio ID і знайдений перезапис за правилами
-      let rebook = { hasRebook: false, primaryStaffName: null as string | null, nextRebookDate: null as string | null };
-      if (c.altegioClientId) {
-        const groups = groupsByClient.get(c.altegioClientId) || [];
-        rebook = detectRebookForMonth(groups, month);
+      // Визначаємо "клієнта у майстра" за найновішою групою в місяці
+      let clientMasterId = unassignedId;
+      if (groupsInMonth.length) {
+        const sorted = [...groupsInMonth].sort((a: any, b: any) => {
+          const da = (a?.kyivDay || '').localeCompare(b?.kyivDay || '');
+          if (da !== 0) return -da; // desc
+          const ta = new Date(a?.receivedAt || a?.datetime || 0).getTime();
+          const tb = new Date(b?.receivedAt || b?.datetime || 0).getTime();
+          return tb - ta;
+        });
+        const chosen = sorted[0];
+        const name = pickNameForStats(chosen);
+        if (name) {
+          const key = name.trim().toLowerCase();
+          clientMasterId = masterIdByName.get(key) || unassignedId;
+        }
+      } else if (c.serviceMasterName) {
+        const key = c.serviceMasterName.trim().toLowerCase();
+        clientMasterId = masterIdByName.get(key) || unassignedId;
       }
 
-      const activeInMonth = consultBookedInMonth || consultAttendedInMonth || paidAttendedInMonth || rebook.hasRebook;
+      const activeInMonth =
+        (groupsInMonth && groupsInMonth.length > 0) ||
+        (!!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) ||
+        (!!c.paidServiceDate && kyivMonthKeyFromISO(c.paidServiceDate.toISOString()) === month);
+
       if (activeInMonth) {
-        ensureRow(masterId, rowsByMasterId.get(masterId)?.masterName || 'Без майстра', rowsByMasterId.get(masterId)?.role || 'unassigned').clients += 1;
+        ensureClientSet(clientMasterId).add(c.id);
       }
-      if (consultBookedInMonth) ensureRow(masterId, '', '').consultBooked += 1;
-      if (consultAttendedInMonth) ensureRow(masterId, '', '').consultAttended += 1;
-      if (paidAttendedInMonth) ensureRow(masterId, '', '').paidAttended += 1;
 
-      // rebooksCreated: max 1 per client, атрибутуємо по primaryStaffName (після attended)
-      if (rebook.hasRebook) {
-        const keyName = (rebook.primaryStaffName || '').trim().toLowerCase();
-        const attributedMasterId = keyName && masterIdByName.has(keyName) ? masterIdByName.get(keyName)! : unassignedId;
-        ensureRow(attributedMasterId, rowsByMasterId.get(attributedMasterId)?.masterName || 'Без майстра', rowsByMasterId.get(attributedMasterId)?.role || 'unassigned').rebooksCreated += 1;
+      // consultBooked / consultAttended / paidAttended — атрибутуємо по групі
+      if (groupsInMonth.length) {
+        for (const g of groupsInMonth) {
+          const name = pickNameForStats(g);
+          const mid = name ? masterIdByName.get(name.trim().toLowerCase()) || unassignedId : unassignedId;
+
+          if (g.groupType === 'consultation' && g.datetime) {
+            ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultBooked += 1;
+            if (g.attendanceStatus === 'arrived' || g.attendance === 1) {
+              ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultAttended += 1;
+            }
+          }
+          if (g.groupType === 'paid' && (g.attendanceStatus === 'arrived' || g.attendance === 1)) {
+            ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').paidAttended += 1;
+          }
+        }
+      } else {
+        // Фолбек для клієнтів без Altegio груп у KV: атрибутуємо по serviceMasterName (якщо є)
+        const fallbackMid =
+          c.serviceMasterName && masterIdByName.has(c.serviceMasterName.trim().toLowerCase())
+            ? masterIdByName.get(c.serviceMasterName.trim().toLowerCase())!
+            : unassignedId;
+
+        if (!!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) {
+          ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').consultBooked += 1;
+          if (c.consultationAttended === true) {
+            ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').consultAttended += 1;
+          }
+        }
+        if (!!c.paidServiceDate && kyivMonthKeyFromISO(c.paidServiceDate.toISOString()) === month && c.paidServiceAttended === true) {
+          ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').paidAttended += 1;
+        }
       }
+
+      // Перезапис: max 1 per client, атрибутуємо по первинному майстру attended-групи (exclude admin/unknown)
+      if (c.altegioClientId) {
+        const rebook = detectRebookForMonth(groups, month);
+        if (rebook.hasRebook) {
+          const keyName = (rebook.primaryStaffName || '').trim().toLowerCase();
+          const attributedMasterId = keyName && masterIdByName.has(keyName) ? masterIdByName.get(keyName)! : unassignedId;
+          ensureRow(
+            attributedMasterId,
+            rowsByMasterId.get(attributedMasterId)?.masterName || 'Без майстра',
+            rowsByMasterId.get(attributedMasterId)?.role || 'unassigned'
+          ).rebooksCreated += 1;
+        }
+      }
+    }
+
+    // Записуємо кількість клієнтів (унікальних) по майстру
+    for (const [mid, set] of clientsSetByMasterId.entries()) {
+      ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').clients = set.size;
+    }
+
+    // % перезаписів
+    for (const row of rowsByMasterId.values()) {
+      row.rebookRatePct = row.paidAttended > 0 ? Math.round((row.rebooksCreated / row.paidAttended) * 1000) / 10 : 0;
     }
 
     const mastersRows = masters.map((m) => rowsByMasterId.get(m.id)!).filter(Boolean);

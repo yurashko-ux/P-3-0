@@ -63,6 +63,113 @@ export function isAdminStaffName(name: string | null | undefined): boolean {
   return n.includes('адм') || n.includes('адміністратор') || n.includes('administrator') || n.includes('admin');
 }
 
+export function isUnknownStaffName(name: string | null | undefined): boolean {
+  if (!name) return true;
+  const n = name.toLowerCase();
+  return n.includes('невідом');
+}
+
+export type ServiceMasterHistoryItem = {
+  kyivDay: string; // YYYY-MM-DD
+  masterName: string;
+  source: string; // 'records-group' | 'manual' | ...
+  recordedAt: string; // ISO
+};
+
+export function pickNonAdminStaffFromGroup(
+  group: RecordGroup,
+  mode: 'latest' | 'first' = 'latest'
+): { staffId: number | null; staffName: string } | null {
+  const kyivDay = group.kyivDay;
+  const events = Array.isArray(group.events) ? group.events : [];
+  const relevant = events
+    .filter((e) => {
+      const name = (e.staffName || '').toString().trim();
+      if (!name) return false;
+      if (isUnknownStaffName(name)) return false;
+      if (isAdminStaffName(name)) return false;
+      const receivedAt = e.receivedAt || e.datetime || '';
+      if (!receivedAt) return false;
+      return kyivDayFromISO(receivedAt) === kyivDay;
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.receivedAt || a.datetime || 0).getTime();
+      const tb = new Date(b.receivedAt || b.datetime || 0).getTime();
+      return mode === 'first' ? ta - tb : tb - ta;
+    });
+
+  const chosen = relevant[0];
+  if (!chosen?.staffName) return null;
+  return { staffId: chosen.staffId ?? null, staffName: String(chosen.staffName) };
+}
+
+export function pickStaffFromGroup(
+  group: RecordGroup,
+  opts?: { mode?: 'latest' | 'first'; allowAdmin?: boolean }
+): { staffId: number | null; staffName: string } | null {
+  const mode = opts?.mode || 'latest';
+  const allowAdmin = opts?.allowAdmin ?? false;
+  const kyivDay = group.kyivDay;
+  const events = Array.isArray(group.events) ? group.events : [];
+
+  const relevant = events
+    .filter((e) => {
+      const name = (e.staffName || '').toString().trim();
+      if (!name) return false;
+      if (isUnknownStaffName(name)) return false;
+      if (!allowAdmin && isAdminStaffName(name)) return false;
+      const receivedAt = e.receivedAt || e.datetime || '';
+      if (!receivedAt) return false;
+      return kyivDayFromISO(receivedAt) === kyivDay;
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.receivedAt || a.datetime || 0).getTime();
+      const tb = new Date(b.receivedAt || b.datetime || 0).getTime();
+      return mode === 'first' ? ta - tb : tb - ta;
+    });
+
+  const chosen = relevant[0];
+  if (!chosen?.staffName) return null;
+  return { staffId: chosen.staffId ?? null, staffName: String(chosen.staffName) };
+}
+
+export function appendServiceMasterHistory(
+  historyJson: string | null | undefined,
+  item: Omit<ServiceMasterHistoryItem, 'recordedAt'> & { recordedAt?: string }
+): string {
+  const next: ServiceMasterHistoryItem = {
+    kyivDay: item.kyivDay,
+    masterName: item.masterName,
+    source: item.source,
+    recordedAt: item.recordedAt || new Date().toISOString(),
+  };
+
+  let arr: ServiceMasterHistoryItem[] = [];
+  try {
+    if (historyJson) {
+      const parsed = JSON.parse(historyJson);
+      if (Array.isArray(parsed)) arr = parsed as ServiceMasterHistoryItem[];
+    }
+  } catch {
+    arr = [];
+  }
+
+  const last = arr.length ? arr[arr.length - 1] : null;
+  if (last && last.masterName === next.masterName && last.kyivDay === next.kyivDay) {
+    return JSON.stringify(arr);
+  }
+
+  // Не пишемо “зміну”, якщо майстер не змінився (навіть якщо день інший)
+  if (last && last.masterName === next.masterName) {
+    return JSON.stringify(arr);
+  }
+
+  arr.push(next);
+  // страховка від розростання
+  if (arr.length > 200) arr = arr.slice(arr.length - 200);
+  return JSON.stringify(arr);
+}
+
 export function isConsultationServices(services: any[]): boolean {
   if (!Array.isArray(services)) return false;
   return services.some((s: any) => {

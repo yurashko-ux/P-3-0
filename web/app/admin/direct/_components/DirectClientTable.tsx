@@ -10,6 +10,7 @@ import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
+import { MasterHistoryModal } from "./MasterHistoryModal";
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -163,6 +164,7 @@ export function DirectClientTable({
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
   const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
+  const [masterHistoryClient, setMasterHistoryClient] = useState<DirectClient | null>(null);
   const [searchInput, setSearchInput] = useState<string>(filters.search);
 
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
@@ -325,10 +327,6 @@ export function DirectClientTable({
     await onClientUpdate(client.id, { statusId: newStatusId });
   };
 
-  const handleMasterChange = async (client: DirectClient, masterId: string | undefined) => {
-    await onClientUpdate(client.id, { masterId, masterManuallySet: true });
-  };
-
   const handleFieldUpdate = async (client: DirectClient, field: keyof DirectClient, value: any) => {
     await onClientUpdate(client.id, { [field]: value });
   };
@@ -352,13 +350,13 @@ export function DirectClientTable({
 
   return (
     <div className="space-y-4">
-      {/* Верхня панель KPI по відповідальних (майстри/адмін/direct-менеджер) */}
+      {/* Верхня панель KPI по майстрах (майстри/адмін/direct-менеджер) */}
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-4">
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-3 flex-wrap">
-                <div className="text-sm font-semibold">Статистика по відповідальних</div>
+                <div className="text-sm font-semibold">Статистика по майстрах</div>
                 <div className="text-xs opacity-70">
                   Місяць: {selectedMonth} • Клієнтів у вибірці: {mastersStats.totalClients}
                 </div>
@@ -390,7 +388,7 @@ export function DirectClientTable({
                 <table className="table table-xs w-full">
                   <thead>
                     <tr>
-                      <th className="text-xs">Відповідальний</th>
+                      <th className="text-xs">Майстер</th>
                       <th className="text-xs text-right">Клієнти</th>
                       <th className="text-xs text-right">Запис на конс.</th>
                       <th className="text-xs text-right">Конс. ✅</th>
@@ -411,7 +409,12 @@ export function DirectClientTable({
                         <td className="text-xs text-right">{r.consultBooked}</td>
                         <td className="text-xs text-right">{r.consultAttended}</td>
                         <td className="text-xs text-right">{r.paidAttended}</td>
-                        <td className="text-xs text-right">{r.rebooksCreated}</td>
+                        <td className="text-xs text-right" title={r.paidAttended > 0 ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%` : ''}>
+                          {r.rebooksCreated}
+                          {r.paidAttended > 0 ? (
+                            <span className="ml-1 text-[10px] opacity-60">({Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%)</span>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -507,7 +510,7 @@ export function DirectClientTable({
               </select>
             </div>
             <div className="min-w-[150px]">
-              <label className="label label-text text-xs">Відповідальний</label>
+              <label className="label label-text text-xs">Майстер</label>
               <select
                 className="select select-bordered select-sm w-full"
                 value={filters.masterId}
@@ -631,6 +634,17 @@ export function DirectClientTable({
         />
       )}
 
+      {/* Модальне вікно історії майстрів */}
+      {masterHistoryClient && (
+        <MasterHistoryModal
+          isOpen={!!masterHistoryClient}
+          onClose={() => setMasterHistoryClient(null)}
+          clientName={[masterHistoryClient.firstName, masterHistoryClient.lastName].filter(Boolean).join(' ') || masterHistoryClient.instagramUsername}
+          currentMasterName={masterHistoryClient.serviceMasterName}
+          historyJson={masterHistoryClient.serviceMasterHistory}
+        />
+      )}
+
       {/* Таблиця */}
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-2 sm:p-4">
@@ -746,6 +760,19 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                    <button
+                      className="hover:underline cursor-pointer"
+                      onClick={() =>
+                        onSortChange(
+                          "masterId",
+                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">
                     <button
                       className="hover:underline cursor-pointer"
@@ -757,19 +784,6 @@ export function DirectClientTable({
                       }
                     >
                       Статус {sortBy === "statusId" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "masterId",
-                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Відповідальний {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[200px]">
@@ -784,9 +798,6 @@ export function DirectClientTable({
                     >
                       Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    Консультував
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <button
@@ -1379,6 +1390,14 @@ export function DirectClientTable({
                                 >
                                   {dateStr}
                                 </button>
+                                {client.paidServiceIsRebooking ? (
+                                  <span
+                                    className="text-purple-700 text-lg"
+                                    title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${client.paidServiceRebookFromMasterName || '-'}`}
+                                  >
+                                    🔁
+                                  </span>
+                                ) : null}
                                 {attendanceIcon}
                               </span>
                             );
@@ -1386,6 +1405,34 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {(() => {
+                          const name = (client.serviceMasterName || '').trim();
+                          if (!name) return '-';
+                          let historyTitle = name;
+                          try {
+                            const raw = client.serviceMasterHistory ? JSON.parse(client.serviceMasterHistory) : null;
+                            if (Array.isArray(raw) && raw.length) {
+                              const last5 = raw.slice(-5);
+                              historyTitle =
+                                `${name}\n\nІсторія змін (останні 5):\n` +
+                                last5.map((h: any) => `${h.kyivDay || '-'} — ${h.masterName || '-'}`).join('\n');
+                            }
+                          } catch {
+                            // ignore
+                          }
+                          return (
+                            <button
+                              type="button"
+                              className="font-medium hover:underline text-left"
+                              title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
+                              onClick={() => setMasterHistoryClient(client)}
+                            >
+                              {name}
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
                         <select
@@ -1404,20 +1451,6 @@ export function DirectClientTable({
                           ))}
                         </select>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <select
-                          className="select select-xs select-bordered w-full max-w-[120px]"
-                          value={client.masterId || ""}
-                          onChange={(e) => handleMasterChange(client, e.target.value || undefined)}
-                        >
-                          <option value="">-</option>
-                          {masters.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
                         <input
                           type="text"
@@ -1427,9 +1460,6 @@ export function DirectClientTable({
                           onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
                           title={client.comment || "Коментар..."}
                         />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.consultationMasterName || "-"}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                           <input
