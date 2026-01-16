@@ -177,9 +177,12 @@ export function DirectClientTable({
         month: '2-digit',
         day: '2-digit',
       }).format(new Date());
-      return kyivDay.slice(0, 7);
+      const m = kyivDay.slice(0, 7);
+      // Мінімальний доступний місяць: 2026-01
+      return m < '2026-01' ? '2026-01' : m;
     } catch {
-      return new Date().toISOString().slice(0, 7);
+      const m = new Date().toISOString().slice(0, 7);
+      return m < '2026-01' ? '2026-01' : m;
     }
   });
 
@@ -201,11 +204,14 @@ export function DirectClientTable({
   }>({ loading: false, error: null, rows: [], totalClients: 0 });
 
   const monthOptions = useMemo(() => {
-    // Останні 18 місяців включно з поточним
+    // Доступні місяці: від 2026-01 і далі (без 2024/2025).
+    // Щоб можна було вибирати наперед (лютий, березень і т.д.), будуємо вперед на 24 місяці.
     const out: Array<{ value: string; label: string }> = [];
-    const now = new Date();
-    for (let i = 0; i < 18; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const startYear = 2026;
+    const startMonthIdx = 0; // Jan
+    const start = new Date(startYear, startMonthIdx, 1);
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
       const value = d.toISOString().slice(0, 7);
       const label = d.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
       out.push({ value, label });
@@ -387,19 +393,20 @@ export function DirectClientTable({
           <div className="flex flex-col gap-1">
             <button
               type="button"
-              className="flex items-center justify-between gap-2 w-full text-left"
+              className="flex items-center gap-3 w-full text-left"
               onClick={() => setIsStatsExpanded((v) => !v)}
               title="Натисніть, щоб згорнути/розгорнути статистику"
             >
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="text-sm font-semibold">
-                  Статистика <span className="ml-1 opacity-60">{isStatsExpanded ? "▲" : "▼"}</span>
-                </div>
-                <div className="text-[11px] opacity-70">
-                  {selectedMonth} • клієнтів: {mastersStats.totalClients}
-                </div>
+              <div className="text-sm font-semibold whitespace-nowrap">
+                Статистика <span className="ml-1 opacity-60">{isStatsExpanded ? "▲" : "▼"}</span>
               </div>
-              <div className="flex items-center gap-2">
+
+              <div className="text-[11px] opacity-70 whitespace-nowrap">
+                {selectedMonth} • клієнтів: {mastersStats.totalClients}
+              </div>
+
+              {/* Місячний фільтр переносимо сюди (в центр/порожній простір) */}
+              <div className="flex items-center gap-2 ml-auto">
                 <span className="text-[11px] opacity-70">Місяць</span>
                 <select
                   className="select select-bordered select-xs"
