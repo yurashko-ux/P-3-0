@@ -425,33 +425,60 @@ export function DirectClientTable({
             ) : !isStatsExpanded ? null : (
               <div className="overflow-x-auto">
                 <table
-                  className="table table-compact table-xs w-max leading-tight"
+                  className="table table-compact table-xs w-max leading-tight border-collapse"
                   style={{ tableLayout: "auto" }}
                 >
                   <thead>
                     <tr>
-                      <th className="text-[10px] py-0.5 px-1 whitespace-nowrap w-[120px] max-w-[120px]">Майстер</th>
-                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px]" title={`Σ ${statsTotals.clients}`}>Кл Σ{statsTotals.clients}</th>
-                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[58px]" title={`Σ ${statsTotals.consultBooked}`}>Конс Σ{statsTotals.consultBooked}</th>
-                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px]" title={`Σ ${statsTotals.consultAttended}`}>✅К Σ{statsTotals.consultAttended}</th>
-                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px]" title={`Σ ${statsTotals.paidAttended}`}>✅З Σ{statsTotals.paidAttended}</th>
-                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px]" title={`Σ ${statsTotals.rebooksCreated}`}>🔁 Σ{statsTotals.rebooksCreated}</th>
+                      <th className="text-[10px] py-0.5 px-1 whitespace-nowrap w-[120px] max-w-[120px] text-base-content">
+                        Майстер
+                      </th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.clients}`}>
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Кл</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.clients}</span>
+                        </div>
+                      </th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[58px] text-base-content" title={`${statsTotals.consultBooked}`}>
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Конс</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.consultBooked}</span>
+                        </div>
+                      </th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.consultAttended}`}>
+                        <div className="flex flex-col items-end leading-none">
+                          <span>✅К</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.consultAttended}</span>
+                        </div>
+                      </th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.paidAttended}`}>
+                        <div className="flex flex-col items-end leading-none">
+                          <span>✅З</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.paidAttended}</span>
+                        </div>
+                      </th>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px] text-base-content" title={`${statsTotals.rebooksCreated}`}>
+                        <div className="flex flex-col items-end leading-none">
+                          <span>🔁</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.rebooksCreated}</span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {compactStatsRows.map((r) => (
                       <tr key={r.masterId}>
-                        <td className="text-[10px] whitespace-nowrap py-0.5 px-1 w-[120px] max-w-[120px]">
+                        <td className="text-[10px] whitespace-nowrap py-0.5 px-1 w-[120px] max-w-[120px] text-base-content">
                           <span className="font-medium block truncate" title={r.masterName}>
                             {r.masterName}
                           </span>
                         </td>
-                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px]">{r.clients}</td>
-                        <td className="text-[10px] text-right py-0.5 px-1 w-[58px]">{r.consultBooked}</td>
-                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px]">{r.consultAttended}</td>
-                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px]">{r.paidAttended}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.clients}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[58px] text-base-content tabular-nums">{r.consultBooked}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.consultAttended}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.paidAttended}</td>
                         <td
-                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px]"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px] text-base-content tabular-nums"
                           title={
                             r.paidAttended > 0
                               ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%`
