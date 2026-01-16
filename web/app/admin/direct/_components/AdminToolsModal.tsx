@@ -548,6 +548,22 @@ export function AdminToolsModal({
         },
       ],
     },
+    // ВАЖЛИВО: додаємо нові кнопки в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
+      category: "Синхронізація (майстри)",
+      items: [
+        {
+          icon: "🧑‍🎨",
+          label: "Завантажити майстрів в колонку «Майстер»",
+          endpoint: "/api/admin/direct/sync-service-masters",
+          method: "POST" as const,
+          confirm:
+            "Заповнити колонку «Майстер» (serviceMasterName) для клієнтів на основі Altegio records?\n\nЗа замовчуванням оновлюємо тільки порожні значення. (Щоб перерахувати всіх — запустіть endpoint з ?all=true&force=true)",
+          successMessage: (data: any) =>
+            `✅ Синхронізація майстрів завершена!\n\nВсього клієнтів: ${data.results.totalClients}\nПеревірено: ${data.results.checked}\nОновлено: ${data.results.updated}\nБез Altegio ID: ${data.results.skippedNoAltegioId}\nПропущено (вже заповнено): ${data.results.skippedOnlyMissing}\nНемає груп: ${data.results.skippedNoGroups}\nНемає майстра в групі: ${data.results.skippedNoStaff}\nБез змін: ${data.results.skippedNoChange}\nПомилок: ${data.results.errors}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+      ],
+    },
   ];
 
   return (
