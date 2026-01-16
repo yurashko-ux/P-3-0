@@ -388,12 +388,12 @@ export function DirectClientTable({
   return (
     <div className="space-y-4">
       {/* Верхня панель KPI по майстрах (майстри/адмін/direct-менеджер) */}
-      <div className="card bg-base-100 shadow-sm">
+      <div className="card bg-base-100 shadow-sm inline-block w-max max-w-full">
         <div className="card-body p-2 sm:p-3">
           <div className="flex flex-col gap-1">
             <button
               type="button"
-              className="flex items-center gap-3 w-full text-left"
+              className="inline-flex items-center gap-3 text-left w-max max-w-full flex-wrap"
               onClick={() => setIsStatsExpanded((v) => !v)}
               title="Натисніть, щоб згорнути/розгорнути статистику"
             >
@@ -406,7 +406,7 @@ export function DirectClientTable({
               </div>
 
               {/* Місячний фільтр переносимо сюди (в центр/порожній простір) */}
-              <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2">
                 <span className="text-[11px] opacity-70">Місяць</span>
                 <select
                   className="select select-bordered select-xs"
