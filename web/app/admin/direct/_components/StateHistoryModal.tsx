@@ -319,7 +319,9 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       return null;
                     }
                     
-                    return currentState && (history.length === 0 || history[history.length - 1]?.state !== currentState) ? (
+                    // Не дублюємо поточний стан: якщо такий state вже є в історії — окремо зверху не показуємо.
+                    const currentStateExistsInHistory = currentState ? history.some((h) => h.state === currentState) : false;
+                    return currentState && !currentStateExistsInHistory ? (
                       <div className="flex items-center gap-3 pb-2 border-b border-base-300">
                         <div className="text-xs text-base-content/50 font-medium min-w-[140px]">
                           {currentStateDate ? formatDate(currentStateDate) : (client.updatedAt ? formatDate(client.updatedAt) : 'Поточний')}
@@ -438,7 +440,10 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     const remainingMessageLogs = oldestMessageAsLead 
                       ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
                       : messageLogs;
-                    filteredHistory.push(...remainingMessageLogs);
+                    // Уникаємо дублювання стану `message` — показуємо тільки один запис (найстаріший).
+                    if (remainingMessageLogs.length > 0) {
+                      filteredHistory.push(remainingMessageLogs[0]);
+                    }
                     filteredHistory.push(...otherLogs);
                     
                     // Сортуємо назад від новіших до старіших для відображення
