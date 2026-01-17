@@ -1353,15 +1353,25 @@ export function DirectClientTable({
                             });
 
                             // Дедуплікація для колонки “Стан”:
-                            // показуємо кожен state максимум 1 раз (беремо ОСТАННЄ входження), щоб не було двох однакових іконок.
+                            // важливо: деякі різні state можуть виглядати однаково (наприклад `consultation` та `consultation-booked`).
+                            // Тому дедуп робимо по ключу іконки (iconKey), а не по raw state.
+                            const iconKeyForState = (st: any): string => {
+                              const s = (st || '').toString();
+                              if (!s) return '';
+                              // `consultation` більше не використовуємо як окремий стан, у UI він = `consultation-booked`
+                              if (s === 'consultation') return 'consultation-booked';
+                              return s;
+                            };
+
                             const dedupedStatesToShow = (() => {
                               const out: typeof finalStatesToShow = [];
                               const seen = new Set<string>();
                               for (let i = finalStatesToShow.length - 1; i >= 0; i--) {
-                                const st = (finalStatesToShow[i]?.state || '').toString();
-                                if (!st) continue;
-                                if (seen.has(st)) continue;
-                                seen.add(st);
+                                const stRaw = finalStatesToShow[i]?.state;
+                                const key = iconKeyForState(stRaw);
+                                if (!key) continue;
+                                if (seen.has(key)) continue;
+                                seen.add(key);
                                 out.push(finalStatesToShow[i]);
                               }
                               return out.reverse();
@@ -1381,6 +1391,13 @@ export function DirectClientTable({
                                 fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'table-dups',hypothesisId:'T1',location:'DirectClientTable.tsx:stateIcons',message:'Duplicate states in table icons',data:{dups,states:states.slice(0,20),currentState:String(currentState||''),lastHistoryState:String(lastHistoryState||'')},timestamp:Date.now()})}).catch(()=>{});
                                 fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'table-dups',hypothesisId:'T2',location:'DirectClientTable.tsx:stateIcons',message:'Duplicates after dedupe (should be empty)',data:{dups2,deduped:deduped.slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
                               }
+
+                              // Перевірка дублювання "по іконці" після нормалізації (consultation -> consultation-booked)
+                              const iconKeys = dedupedStatesToShow.map((x: any) => iconKeyForState(x?.state));
+                              const iconCounts: Record<string, number> = {};
+                              for (const k of iconKeys) iconCounts[k] = (iconCounts[k] || 0) + 1;
+                              const iconDups = Object.entries(iconCounts).filter(([, n]) => n > 1).map(([k, n]) => `${k}:${n}`).slice(0, 20);
+                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'icon-dedupe',hypothesisId:'T3',location:'DirectClientTable.tsx:stateIcons',message:'Icon-key duplicates after dedupe (should be empty)',data:{iconDups,iconKeys:iconKeys.slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
                             } catch {}
                             // #endregion agent log
                             
