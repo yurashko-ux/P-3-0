@@ -1488,8 +1488,10 @@ export async function POST(req: NextRequest) {
                       await saveDirectClient(newClient);
                       console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event without Instagram (client ${client.id}, state: lead, masterId: ${masterId || 'none'})`);
                       
-                      // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no"
-                      if (shouldSendNotification) {
+                  // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no/ні"
+                  // і клієнт НЕ позначений як no_instagram_* (явно без Instagram).
+                  const isSavedNoInstagram = normalizedInstagram?.startsWith('no_instagram_');
+                  if (shouldSendNotification && !isSavedNoInstagram) {
                         try {
                           const { sendMessage } = await import('@/lib/telegram/api');
                           const { getAdminChatIds, getMykolayChatId } = await import('@/lib/direct-reminders/telegram');
@@ -2250,7 +2252,11 @@ export async function POST(req: NextRequest) {
 
             // Якщо створено клієнта без Instagram, відправляємо повідомлення
             // АЛЕ: якщо Instagram = "no", не відправляємо повідомлення (бо "no" означає, що у клієнтки немає Instagram)
-            const shouldSendNotification = isMissingInstagram && !['no', 'ні'].includes((instagram || '').toLowerCase().trim());
+            const isSavedNoInstagram = (normalizedInstagram || '').startsWith('no_instagram_');
+            const shouldSendNotification =
+              isMissingInstagram &&
+              !isSavedNoInstagram &&
+              !['no', 'ні'].includes((instagram || '').toLowerCase().trim());
             if (shouldSendNotification) {
               try {
                 const { sendMessage } = await import('@/lib/telegram/api');

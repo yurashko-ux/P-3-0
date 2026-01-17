@@ -162,9 +162,10 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
-        const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+        // Перевіряємо, чи Instagram валідний (не "no/ні", не порожній, не null)
+        const invalidValues = ['no', 'ні', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
         const originalInstagram = instagram; // Зберігаємо оригінальне значення для перевірки повідомлень
+        const isExplicitNoInstagram = !!originalInstagram && ['no', 'ні'].includes(originalInstagram.toLowerCase().trim());
         if (instagram) {
           const lowerInstagram = instagram.toLowerCase().trim();
           if (invalidValues.includes(lowerInstagram)) {
@@ -180,8 +181,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Якщо немає Instagram, створюємо/оновлюємо клієнта зі станом "lead"
-        const normalizedInstagram = `missing_instagram_${clientId}`;
-        const shouldSendNotification = originalInstagram?.toLowerCase().trim() !== 'no';
+        const normalizedInstagram = isExplicitNoInstagram ? `no_instagram_${clientId}` : `missing_instagram_${clientId}`;
+        const shouldSendNotification = !isExplicitNoInstagram;
 
         // Витягуємо ім'я
         const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
@@ -360,8 +361,8 @@ export async function POST(req: NextRequest) {
             } catch (notificationErr) {
               console.error(`[direct/sync-missing-instagram] ❌ Failed to send missing Instagram notifications:`, notificationErr);
             }
-          } else if (originalInstagram?.toLowerCase().trim() === 'no') {
-            console.log(`[direct/sync-missing-instagram] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no"`);
+          } else if (['no', 'ні'].includes((originalInstagram || '').toLowerCase().trim())) {
+            console.log(`[direct/sync-missing-instagram] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no/ні"`);
           }
         }
 

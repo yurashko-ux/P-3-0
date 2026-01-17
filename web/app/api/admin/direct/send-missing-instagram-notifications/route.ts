@@ -215,7 +215,7 @@ export async function POST(req: NextRequest) {
           if (clientId && parseInt(String(clientId), 10) === parseInt(String(altegioClientId), 10)) {
             // Знайшли webhook для цього клієнта - перевіряємо Instagram
             // Якщо Instagram = "no", повертаємо true
-            if (instagram && instagram.toLowerCase().trim() === 'no') {
+            if (instagram && ['no', 'ні'].includes(instagram.toLowerCase().trim())) {
               return true;
             }
             // Якщо знайшли webhook для цього клієнта і Instagram вказано (не "no"), повертаємо false
@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
         if (altegioClientId) {
           const wasNo = await wasInstagramSetToNo(altegioClientId);
           if (wasNo) {
-            console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} (Altegio ID: ${altegioClientId}) - Instagram was explicitly set to "no"`);
+            console.log(`[direct/send-missing-instagram-notifications] ⏭️ Skipping client ${client.id} (Altegio ID: ${altegioClientId}) - Instagram was explicitly set to "no/ні"`);
             results.skipped = (results.skipped || 0) + 1;
             continue;
           }

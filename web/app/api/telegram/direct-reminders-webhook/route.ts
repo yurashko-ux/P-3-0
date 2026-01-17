@@ -161,7 +161,9 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
         await prisma.directClient.update({
           where: { id: existingClient.id },
           data: {
-            instagramUsername: 'NO INSTAGRAM',
+            // ВАЖЛИВО: не можна ставити однаковий рядок всім (таблиця дедуплікує по instagramUsername).
+            // Тому зберігаємо як унікальний токен.
+            instagramUsername: `no_instagram_${altegioClientId}`,
             updatedAt: new Date(),
           },
         });

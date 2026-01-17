@@ -581,8 +581,9 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
-        const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+        // Перевіряємо, чи Instagram валідний (не "no/ні", не порожній, не null)
+        const invalidValues = ['no', 'ні', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+        const isExplicitNoInstagram = !!instagram && ['no', 'ні'].includes(instagram.toLowerCase().trim());
         if (instagram) {
           const lowerInstagram = instagram.toLowerCase().trim();
           if (invalidValues.includes(lowerInstagram)) {
@@ -622,23 +623,25 @@ export async function POST(req: NextRequest) {
             } else {
               // Якщо Instagram з webhook'а невалідний, використовуємо старий
               normalizedInstagram = existingClientByAltegioId.instagramUsername;
-              isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
+              isMissingInstagram =
+                normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
             }
           } else {
             // Якщо в webhook немає Instagram, використовуємо існуючий
             normalizedInstagram = existingClientByAltegioId.instagramUsername;
-            isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
+            isMissingInstagram =
+              normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
           }
         } else {
           // Клієнта не знайдено - обробляємо Instagram з вебхука
           if (!instagram) {
             isMissingInstagram = true;
-            normalizedInstagram = `missing_instagram_${clientId}`;
+            normalizedInstagram = isExplicitNoInstagram ? `no_instagram_${clientId}` : `missing_instagram_${clientId}`;
           } else {
             normalizedInstagram = normalizeInstagram(instagram);
             if (!normalizedInstagram) {
               isMissingInstagram = true;
-              normalizedInstagram = `missing_instagram_${clientId}`;
+              normalizedInstagram = isExplicitNoInstagram ? `no_instagram_${clientId}` : `missing_instagram_${clientId}`;
             } else {
               isMissingInstagram = false;
             }
