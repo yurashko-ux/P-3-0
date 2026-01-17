@@ -991,91 +991,13 @@ export function DirectClientTable({
                       Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "signedUpForPaidServiceAfterConsultation",
-                          sortBy === "signedUpForPaidServiceAfterConsultation" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Записалась на послугу {sortBy === "signedUpForPaidServiceAfterConsultation" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "visitedSalon",
-                          sortBy === "visitedSalon" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Прийшов (старий) {sortBy === "visitedSalon" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "visitDate",
-                          sortBy === "visitDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Дата візиту {sortBy === "visitDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "signedUpForPaidService",
-                          sortBy === "signedUpForPaidService" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Записався на послугу {sortBy === "signedUpForPaidService" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "paidServiceDate",
-                          sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Дата запису {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "signupAdmin",
-                          sortBy === "signupAdmin" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Хто записав {sortBy === "signupAdmin" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">Дії</th>
                 </tr>
               </thead>
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={19} className="text-center py-8 text-gray-500">
+                    <td colSpan={13} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1723,60 +1645,6 @@ export function DirectClientTable({
                           value={client.comment || ""}
                           onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
                           title={client.comment || "Коментар..."}
-                        />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                          <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs"
-                          checked={client.signedUpForPaidServiceAfterConsultation || false}
-                          disabled
-                          title={client.signedUpForPaidServiceAfterConsultation ? "Записалась на платну послугу після консультації" : "Не записалась на платну послугу після консультації"}
-                          />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs"
-                          checked={client.visitedSalon}
-                          onChange={(e) => {
-                            const updates: Partial<DirectClient> = {
-                              visitedSalon: e.target.checked,
-                              visitDate: e.target.checked ? new Date().toISOString() : undefined,
-                            };
-                            // Оновлюємо обидва поля одночасно
-                            onClientUpdate(client.id, updates);
-                          }}
-                        />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.visitedSalon && client.visitDate ? formatDate(client.visitDate) : "-"}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs"
-                          checked={client.signedUpForPaidService}
-                          onChange={(e) => {
-                            const updates: Partial<DirectClient> = {
-                              signedUpForPaidService: e.target.checked,
-                              paidServiceDate: e.target.checked ? new Date().toISOString() : undefined,
-                            };
-                            // Оновлюємо обидва поля одночасно
-                            onClientUpdate(client.id, updates);
-                          }}
-                        />
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.signedUpForPaidService && client.paidServiceDate ? formatDate(client.paidServiceDate) : "-"}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
-                        <input
-                          type="text"
-                          className="input input-xs input-bordered w-full max-w-[100px]"
-                          placeholder="Адмін"
-                          value={client.signupAdmin || ""}
-                          onChange={(e) => handleFieldUpdate(client, "signupAdmin", e.target.value || undefined)}
                         />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">

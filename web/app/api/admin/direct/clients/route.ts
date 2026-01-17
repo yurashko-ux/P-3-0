@@ -53,8 +53,24 @@ export async function GET(req: NextRequest) {
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
     const hasAppointment = searchParams.get('hasAppointment');
-    const sortBy = searchParams.get('sortBy') || 'updatedAt';
+    let sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
+
+    // Старі поля (дублювались в UI). Сортування по них більше не підтримуємо.
+    // Payload лишаємо без змін, але sortBy примусово переводимо на updatedAt.
+    const legacySortBy = new Set([
+      'signedUpForPaidServiceAfterConsultation',
+      'visitedSalon',
+      'visitDate',
+      'signedUpForPaidService',
+      'signupAdmin',
+    ]);
+    if (legacySortBy.has(sortBy)) {
+      console.warn(
+        `[direct/clients] ⚠️ Отримано застарілий sortBy="${sortBy}". Використовую fallback: sortBy="updatedAt".`
+      );
+      sortBy = 'updatedAt';
+    }
 
     console.log('[direct/clients] GET: Fetching all clients...');
     let clients: DirectClient[] = [];
