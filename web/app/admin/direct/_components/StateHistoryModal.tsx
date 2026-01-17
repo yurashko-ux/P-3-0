@@ -187,7 +187,14 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
     
     setLoading(true);
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'verify-1',hypothesisId:'H0',location:'StateHistoryModal.tsx:loadHistory',message:'loadHistory start',data:{clientId:String(client.id||''),isOpen:!!isOpen,ts:new Date().toISOString()},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
+
       const res = await fetch(`/api/admin/direct/state-history?clientId=${client.id}`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'verify-1',hypothesisId:'H0',location:'StateHistoryModal.tsx:loadHistory',message:'state-history fetch response',data:{status:res.status,ok:res.ok},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
       const data = await res.json();
       
       if (data.ok) {
@@ -234,6 +241,9 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
       }
     } catch (err) {
       console.error('Failed to load state history:', err);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'verify-1',hypothesisId:'H0',location:'StateHistoryModal.tsx:loadHistory',message:'loadHistory catch',data:{err:String(err instanceof Error ? err.message : err)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
     } finally {
       setLoading(false);
     }
