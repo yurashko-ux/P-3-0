@@ -1513,6 +1513,15 @@ export function DirectClientTable({
                                   attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)">❓</span>;
                                 }
                               }
+
+                              // #region agent log
+                              try {
+                                const shouldShowCross = !client.consultationCancelled && isPastOrToday && client.consultationAttended === false;
+                                if (shouldShowCross) {
+                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H2',location:'DirectClientTable.tsx:consultationCell',message:'У таблиці показуємо ❌ для консультації',data:{clientId:String((client as any).id||''),altegioClientId:Number((client as any).altegioClientId||0),consultationBookingDate:String((client as any).consultationBookingDate||''),consultationAttended:(client as any).consultationAttended ?? null,consultationCancelled:(client as any).consultationCancelled ?? null,isPastOrToday:!!isPastOrToday},timestamp:Date.now()})}).catch(()=>{});
+                                }
+                              } catch {}
+                              // #endregion agent log
                               
                               const baseTitle = isPast 
                                 ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
