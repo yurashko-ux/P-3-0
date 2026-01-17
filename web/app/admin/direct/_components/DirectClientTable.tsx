@@ -1707,6 +1707,58 @@ export function DirectClientTable({
                           const full = (client.serviceMasterName || '').trim();
                           const name = shortPersonName(full);
                           if (!name) return '-';
+
+                          // #region agent log
+                          try {
+                            const cid = String((client as any).id || '');
+                            const acId = Number((client as any).altegioClientId || 0);
+                            const paidIso = String((client as any).paidServiceDate || '');
+                            const w: any = (window as any);
+                            w.__masterMismatchChecked = w.__masterMismatchChecked || {};
+
+                            const kyivDay = (iso: string) => {
+                              try {
+                                const d = new Date(iso);
+                                if (isNaN(d.getTime())) return '';
+                                return new Intl.DateTimeFormat('en-CA', {
+                                  timeZone: 'Europe/Kyiv',
+                                  year: 'numeric',
+                                  month: '2-digit',
+                                  day: '2-digit',
+                                }).format(d);
+                              } catch {
+                                return '';
+                              }
+                            };
+
+                            const paidDay = paidIso ? kyivDay(paidIso) : '';
+                            if (cid && acId && paidDay && !w.__masterMismatchChecked[cid]) {
+                              w.__masterMismatchChecked[cid] = true;
+                              fetch(`/api/admin/direct/client-webhooks?altegioClientId=${acId}`)
+                                .then((r) => r.json())
+                                .then((payload) => {
+                                  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+                                  const paidRows = rows.filter((r: any) => String(r?.status || '') === 'paid-group');
+                                  const sameDay = paidRows.find((r: any) => {
+                                    const dt = String(r?.datetime || '');
+                                    const day = dt ? kyivDay(dt) : '';
+                                    return day && day === paidDay;
+                                  }) || null;
+
+                                  const rawStaff = sameDay ? String(sameDay?.staffName || '') : '';
+                                  const expectedFirst = rawStaff ? rawStaff.split(',')[0].trim().split(/\s+/)[0] : '';
+                                  const shown = String(name || '');
+                                  const mismatch = !!expectedFirst && expectedFirst !== shown;
+
+                                  if (mismatch) {
+                                    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'master-mismatch',hypothesisId:'H4',location:'DirectClientTable.tsx:masterCell',message:'Майстер у таблиці не збігається з paid-group (client-webhooks) для paidServiceDate',data:{clientId:cid,altegioClientId:acId,paidServiceDate:paidIso,paidDay,shown,expectedFirst,rawStaff},timestamp:Date.now()})}).catch(()=>{});
+                                  }
+                                })
+                                .catch(() => {});
+                            }
+                          } catch {}
+                          // #endregion agent log
+
                           let historyTitle = name;
                           try {
                             const raw = client.serviceMasterHistory ? JSON.parse(client.serviceMasterHistory) : null;

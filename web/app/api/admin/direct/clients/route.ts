@@ -193,6 +193,61 @@ export async function GET(req: NextRequest) {
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
       clients = clients.map((c) => {
+        // Дораховуємо "поточний Майстер" для UI з KV (щоб збігалось з модалкою "Webhook-и").
+        // Бізнес-правило для колонки "Майстер": ігноруємо адмінів/невідомих, пріоритет = paid-запис (якщо він є).
+        try {
+          if (c.altegioClientId) {
+            const groups = groupsByClient.get(c.altegioClientId) || [];
+
+            const pickClosestGroup = (groupType: 'paid' | 'consultation', targetISO: string) => {
+              const targetTs = new Date(targetISO).getTime();
+              if (!isFinite(targetTs)) return null;
+              const targetDay = kyivDayFromISO(targetISO);
+              const sameDay = targetDay
+                ? (groups.find((g: any) => (g?.groupType === groupType) && (g?.kyivDay || '') === targetDay) || null)
+                : null;
+              if (sameDay) return sameDay;
+
+              let best: any = null;
+              let bestDiff = Infinity;
+              for (const g of groups) {
+                if ((g as any)?.groupType !== groupType) continue;
+                const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+                if (!dt) continue;
+                const ts = new Date(dt).getTime();
+                if (!isFinite(ts)) continue;
+                const diff = Math.abs(ts - targetTs);
+                if (diff < bestDiff) {
+                  bestDiff = diff;
+                  best = g;
+                }
+              }
+              // Фолбек тільки якщо це справді той самий запис (до 24 год різниці)
+              if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
+              return null;
+            };
+
+            const paidGroup =
+              c.paidServiceDate ? pickClosestGroup('paid', c.paidServiceDate) : null;
+            const consultGroupForMaster =
+              !paidGroup && c.consultationBookingDate ? pickClosestGroup('consultation', c.consultationBookingDate) : null;
+
+            const chosen = paidGroup || consultGroupForMaster;
+            if (chosen) {
+              const picked = pickNonAdminStaffFromGroup(chosen as any, 'latest');
+              if (picked?.staffName) {
+                c = {
+                  ...c,
+                  serviceMasterName: String(picked.staffName),
+                  serviceMasterAltegioStaffId: picked.staffId ?? null,
+                };
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати serviceMasterName з KV (не критично):', err);
+        }
+
         // Дораховуємо "хто консультував" для UI (щоб не чекати cron), якщо є дата консультації.
         // Правило:
         // - беремо consultation-групу на kyivDay консультації
