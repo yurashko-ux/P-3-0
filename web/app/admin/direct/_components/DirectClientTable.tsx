@@ -872,20 +872,20 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "instagramUsername",
-                          sortBy === "instagramUsername" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Instagram {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    Повне імʼя
+                    <div className="flex flex-col items-start leading-none">
+                      <span>Повне імʼя</span>
+                      <button
+                        className="hover:underline cursor-pointer text-left mt-0.5"
+                        onClick={() =>
+                          onSortChange(
+                            "instagramUsername",
+                            sortBy === "instagramUsername" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Instagram {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <button
@@ -1075,7 +1075,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={21} className="text-center py-8 text-gray-500">
+                    <td colSpan={20} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1091,37 +1091,39 @@ export function DirectClientTable({
                           <span className="opacity-70">{client.createdAt ? formatDate(client.createdAt) : '-'}</span>
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.instagramUsername === 'NO INSTAGRAM' || client.instagramUsername?.startsWith('no_instagram_') ? (
-                          <span className="text-orange-600 font-semibold" title="Клієнт не має Instagram акаунту">
-                            NO INSTAGRAM
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[170px]">
+                        <span className="flex flex-col leading-none">
+                          <span
+                            className="truncate"
+                            title={getFullName(client)}
+                          >
+                            {getFullName(client)}
                           </span>
-                        ) : client.instagramUsername?.startsWith('missing_instagram_') ? (
-                          <span className="text-red-600 font-semibold flex items-center gap-1" title="Відсутній Instagram username">
-                            {client.instagramUsername}
-                            {client.telegramNotificationSent && (
-                              <span className="text-blue-500" title="Повідомлення відправлено в Telegram">📱</span>
+                          <span className="opacity-80 mt-0.5 truncate" title={client.instagramUsername || ''}>
+                            {client.instagramUsername === 'NO INSTAGRAM' || client.instagramUsername?.startsWith('no_instagram_') ? (
+                              <span className="text-orange-600 font-semibold" title="Клієнт не має Instagram акаунту">
+                                NO INSTAGRAM
+                              </span>
+                            ) : client.instagramUsername?.startsWith('missing_instagram_') ? (
+                              <span className="text-red-600 font-semibold inline-flex items-center gap-1" title="Відсутній Instagram username">
+                                {client.instagramUsername}
+                                {client.telegramNotificationSent && (
+                                  <span className="text-blue-500" title="Повідомлення відправлено в Telegram">📱</span>
+                                )}
+                              </span>
+                            ) : (
+                              <a
+                                href={`https://instagram.com/${client.instagramUsername}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="link link-primary"
+                                title={client.instagramUsername}
+                              >
+                                {client.instagramUsername}
+                              </a>
                             )}
                           </span>
-                        ) : (
-                        <a
-                          href={`https://instagram.com/${client.instagramUsername}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link link-primary"
-                          title={client.instagramUsername}
-                        >
-                            {client.instagramUsername}
-                        </a>
-                        )}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[150px]">
-                        <div 
-                          className="truncate" 
-                          title={getFullName(client)}
-                        >
-                          {getFullName(client)}
-                        </div>
+                        </span>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-right">
                         {client.spent !== null && client.spent !== undefined
