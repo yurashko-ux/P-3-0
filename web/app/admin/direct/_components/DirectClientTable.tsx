@@ -1376,30 +1376,6 @@ export function DirectClientTable({
                               }
                               return out.reverse();
                             })();
-
-                            // #region agent log
-                            try {
-                              const states = finalStatesToShow.map((x: any) => String(x?.state || ''));
-                              const counts: Record<string, number> = {};
-                              for (const s of states) counts[s] = (counts[s] || 0) + 1;
-                              const dups = Object.entries(counts).filter(([, n]) => n > 1).map(([s, n]) => `${s}:${n}`).slice(0, 20);
-                              const deduped = dedupedStatesToShow.map((x: any) => String(x?.state || ''));
-                              const counts2: Record<string, number> = {};
-                              for (const s of deduped) counts2[s] = (counts2[s] || 0) + 1;
-                              const dups2 = Object.entries(counts2).filter(([, n]) => n > 1).map(([s, n]) => `${s}:${n}`).slice(0, 20);
-                              if (dups.length > 0 || dups2.length > 0) {
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'table-dups',hypothesisId:'T1',location:'DirectClientTable.tsx:stateIcons',message:'Duplicate states in table icons',data:{dups,states:states.slice(0,20),currentState:String(currentState||''),lastHistoryState:String(lastHistoryState||'')},timestamp:Date.now()})}).catch(()=>{});
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'table-dups',hypothesisId:'T2',location:'DirectClientTable.tsx:stateIcons',message:'Duplicates after dedupe (should be empty)',data:{dups2,deduped:deduped.slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
-                              }
-
-                              // Перевірка дублювання "по іконці" після нормалізації (consultation -> consultation-booked)
-                              const iconKeys = dedupedStatesToShow.map((x: any) => iconKeyForState(x?.state));
-                              const iconCounts: Record<string, number> = {};
-                              for (const k of iconKeys) iconCounts[k] = (iconCounts[k] || 0) + 1;
-                              const iconDups = Object.entries(iconCounts).filter(([, n]) => n > 1).map(([k, n]) => `${k}:${n}`).slice(0, 20);
-                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'icon-dedupe',hypothesisId:'T3',location:'DirectClientTable.tsx:stateIcons',message:'Icon-key duplicates after dedupe (should be empty)',data:{iconDups,iconKeys:iconKeys.slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
-                            } catch {}
-                            // #endregion agent log
                             
                             return (
                               <>

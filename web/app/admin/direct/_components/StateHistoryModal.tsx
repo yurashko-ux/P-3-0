@@ -187,53 +187,19 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
     
     setLoading(true);
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'verify-1',hypothesisId:'H0',location:'StateHistoryModal.tsx:loadHistory',message:'loadHistory start',data:{clientId:String(client.id||''),isOpen:!!isOpen,ts:new Date().toISOString()},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
-
       const res = await fetch(`/api/admin/direct/state-history?clientId=${client.id}`);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'verify-1',hypothesisId:'H0',location:'StateHistoryModal.tsx:loadHistory',message:'state-history fetch response',data:{status:res.status,ok:res.ok},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
       const data = await res.json();
       
       if (data.ok) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1',location:'StateHistoryModal.tsx:loadHistory',message:'Fetched state-history payload summary',data:{hasData:!!data?.data,currentState:String(data?.data?.currentState||''),historyLen:Array.isArray(data?.data?.history)?data.data.history.length:0,historyStates:Array.isArray(data?.data?.history)?data.data.history.map((h:any)=>String(h?.state||'')).slice(0,20):[]},timestamp:Date.now()})}).catch(()=>{});
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'H1',location:'StateHistoryModal.tsx:loadHistory',message:'Fetched state-history payload summary',data:{hasData:!!data?.data,currentState:String(data?.data?.currentState||''),historyLen:Array.isArray(data?.data?.history)?data.data.history.length:0,historyStates:Array.isArray(data?.data?.history)?data.data.history.map((h:any)=>String(h?.state||'')).slice(0,20):[]},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion agent log
-
         // Фільтруємо записи зі станом "no-instagram" (видалений стан)
         const filteredHistory = (data.data.history || []).filter(
           (log: StateHistoryLog) => log.state !== 'no-instagram'
         );
-
-        // #region agent log
-        try {
-          // Дивимось, чи лишилися дублікати станів у raw history
-          const states = filteredHistory.map((h) => String(h?.state || ''));
-          const counts: Record<string, number> = {};
-          for (const s of states) counts[s] = (counts[s] || 0) + 1;
-          const dups = Object.entries(counts).filter(([, n]) => n > 1).map(([s, n]) => `${s}:${n}`).slice(0, 20);
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'StateHistoryModal.tsx:loadHistory',message:'Raw history duplicate states (counts>1)',data:{dups},timestamp:Date.now()})}).catch(()=>{});
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'H2',location:'StateHistoryModal.tsx:loadHistory',message:'Raw history duplicate states (counts>1)',data:{dups},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion agent log
-
         setHistory(filteredHistory);
         // Якщо поточний стан - "no-instagram", не показуємо його.
         // Нормалізація: `consultation` -> `consultation-booked`
         let currentStateValue = data.data.currentState === 'no-instagram' ? null : data.data.currentState;
         if (currentStateValue === 'consultation') currentStateValue = 'consultation-booked';
-
-        // #region agent log
-        try {
-          const lastHistoryState = filteredHistory.length ? String(filteredHistory[filteredHistory.length - 1]?.state || '') : '';
-          const cs = currentStateValue ? String(currentStateValue) : '';
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'StateHistoryModal.tsx:loadHistory',message:'currentState vs lastHistoryState',data:{currentState:cs,lastHistoryState,lastHistoryDiff:cs!==lastHistoryState},timestamp:Date.now()})}).catch(()=>{});
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'H3',location:'StateHistoryModal.tsx:loadHistory',message:'currentState vs lastHistoryState',data:{currentState:cs,lastHistoryState,lastHistoryDiff:cs!==lastHistoryState},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion agent log
 
         setCurrentState(currentStateValue);
         setCurrentStateMasterName(data.data.currentStateMasterName);
@@ -241,9 +207,6 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
       }
     } catch (err) {
       console.error('Failed to load state history:', err);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'verify-1',hypothesisId:'H0',location:'StateHistoryModal.tsx:loadHistory',message:'loadHistory catch',data:{err:String(err instanceof Error ? err.message : err)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
     } finally {
       setLoading(false);
     }
