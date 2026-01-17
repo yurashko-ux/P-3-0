@@ -7,9 +7,75 @@ import { getStateHistory } from '@/lib/direct-state-log';
 import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
+import { prisma } from '@/lib/prisma';
+import { getEnvValue } from '@/lib/env';
+import { getClient as getAltegioClient } from '@/lib/altegio/clients';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+
+function isBadNamePart(v?: string | null): boolean {
+  if (!v) return true;
+  const t = String(v).trim();
+  if (!t) return true;
+  const lower = t.toLowerCase();
+  if (t.includes('{{') || t.includes('}}')) return true;
+  if (lower === 'not found') return true;
+  return false;
+}
+
+function looksInstagramSourced(firstName?: string | null, lastName?: string | null): boolean {
+  const fn = String(firstName || '').trim();
+  const ln = String(lastName || '').trim();
+  if (!fn && !ln) return true;
+  const isAllCapsSingle = !!fn && !ln && fn.length >= 3 && fn === fn.toUpperCase() && !/\s/.test(fn);
+  return isAllCapsSingle;
+}
+
+function isAltegioGeneratedInstagram(username?: string | null): boolean {
+  const u = String(username || '');
+  return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
+}
+
+async function reassignHistory(fromClientId: string, toClientId: string) {
+  // Важливо: перед видаленням дублікату переносимо історію, бо в БД стоїть ON DELETE CASCADE.
+  const movedMessages = await prisma.directMessage.updateMany({
+    where: { clientId: fromClientId },
+    data: { clientId: toClientId },
+  });
+  const movedStateLogs = await prisma.directClientStateLog.updateMany({
+    where: { clientId: fromClientId },
+    data: { clientId: toClientId },
+  });
+  return { movedMessages: movedMessages.count, movedStateLogs: movedStateLogs.count };
+}
+
+async function applyNameFromAltegioIfPossible(directClientId: string, altegioClientId: number) {
+  const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
+  const companyId = companyIdStr ? Number(companyIdStr) : NaN;
+  if (!Number.isFinite(companyId) || companyId <= 0) return { updated: false, reason: 'no_company_id' as const };
+  try {
+    const ac = await getAltegioClient(companyId, altegioClientId);
+    if (!ac) return { updated: false, reason: 'not_found' as const };
+    const fullName = String((ac as any).name || (ac as any).display_name || '').trim();
+    if (!fullName) return { updated: false, reason: 'no_name' as const };
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || null;
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+    if (!firstName) return { updated: false, reason: 'no_first' as const };
+    await prisma.directClient.update({
+      where: { id: directClientId },
+      data: { firstName, lastName, updatedAt: new Date() },
+    });
+    return { updated: true, reason: 'ok' as const };
+  } catch (err) {
+    console.warn('[merge-duplicates-by-name] ⚠️ Не вдалося підтягнути імʼя з Altegio API (не критично):', {
+      altegioClientId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return { updated: false, reason: 'error' as const };
+  }
+}
 
 /**
  * Синхронізує стан клієнта на основі записів Altegio з KV storage
@@ -239,13 +305,13 @@ export async function POST(req: NextRequest) {
       );
       
       // Знаходимо клієнта, якого залишити
-      // ПРАВИЛО: залишаємо клієнта з Altegio (missing_instagram_*), а Instagram username беремо з клієнта Manychat
+      // ПРАВИЛО: спираємось на Altegio (зберігаємо Altegio-клієнта), а з Instagram/Manychat беремо тільки Instagram username і історію повідомлень.
       let clientToKeep = clientsWithRecords[0].client;
       let keepHasRecords = clientsWithRecords[0].hasRecords;
       
       for (const { client, hasRecords } of clientsWithRecords) {
-        const keepIsFromAltegio = clientToKeep.instagramUsername.startsWith('missing_instagram_');
-        const currentIsFromAltegio = client.instagramUsername.startsWith('missing_instagram_');
+        const keepIsFromAltegio = Boolean(clientToKeep.altegioClientId) || isAltegioGeneratedInstagram(clientToKeep.instagramUsername);
+        const currentIsFromAltegio = Boolean(client.altegioClientId) || isAltegioGeneratedInstagram(client.instagramUsername);
         
         // Пріоритет: клієнт з Altegio (missing_instagram_*)
         if (!keepIsFromAltegio && currentIsFromAltegio) {
@@ -290,10 +356,22 @@ export async function POST(req: NextRequest) {
         let updatedClient = { ...clientToKeep };
         
         for (const { client: duplicate } of duplicates) {
-          // Переносимо Instagram, якщо він правильний
+          // Переносимо Instagram, якщо він "людський" (не missing_instagram_/no_instagram_)
           if (updatedClient.instagramUsername.startsWith('missing_instagram_') && 
               !duplicate.instagramUsername.startsWith('missing_instagram_')) {
             updatedClient.instagramUsername = duplicate.instagramUsername;
+          }
+
+          // Якщо у дублікаті є історія повідомлень/станів — переносимо на клієнта, якого залишаємо (щоб не втратити при delete cascade).
+          try {
+            const moved = await reassignHistory(duplicate.id, updatedClient.id);
+            if (moved.movedMessages || moved.movedStateLogs) {
+              console.log(
+                `[merge-duplicates-by-name] ✅ Перенесено історію з ${duplicate.id} → ${updatedClient.id}: messages=${moved.movedMessages}, stateLogs=${moved.movedStateLogs}`
+              );
+            }
+          } catch (err) {
+            console.warn('[merge-duplicates-by-name] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', err);
           }
           
           // Переносимо дати, якщо їх немає
@@ -327,6 +405,19 @@ export async function POST(req: NextRequest) {
         
         updatedClient.updatedAt = new Date().toISOString();
         await saveDirectClient(updatedClient, 'merge-duplicates-by-altegio-id');
+
+        // Після злиття: пріоритезуємо імʼя з Altegio API, якщо поточне виглядає як інстаграмне/плейсхолдер.
+        if (
+          updatedClient.altegioClientId &&
+          (isBadNamePart(updatedClient.firstName) ||
+            isBadNamePart(updatedClient.lastName) ||
+            looksInstagramSourced(updatedClient.firstName, updatedClient.lastName))
+        ) {
+          const res = await applyNameFromAltegioIfPossible(updatedClient.id, updatedClient.altegioClientId);
+          console.log(
+            `[merge-duplicates-by-name] 🧾 Спроба виправити імʼя з Altegio API: updated=${res.updated} reason=${res.reason} (altegioClientId=${updatedClient.altegioClientId})`
+          );
+        }
         
         // Видаляємо дублікати
         for (const { client: duplicate } of duplicates) {
