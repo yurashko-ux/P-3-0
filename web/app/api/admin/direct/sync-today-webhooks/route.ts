@@ -1173,7 +1173,9 @@ export async function POST(req: NextRequest) {
                           
                           if (master) {
                             const consultationUpdates = {
-                              state: 'consultation' as const,
+                              // НЕ переводимо стан в `consultation` (факт приходу дивимось по ✅ у даті консультації).
+                              // Якщо раніше стояв `consultation` — нормалізуємо до `consultation-booked`.
+                              state: (updated.state === 'consultation' ? 'consultation-booked' : updated.state) as any,
                               consultationAttended: true,
                               consultationMasterId: master.id,
                               consultationMasterName: master.name,
@@ -1197,7 +1199,7 @@ export async function POST(req: NextRequest) {
                               datetime,
                             });
                             
-                            console.log(`[sync-today-webhooks] ✅ Set consultation state (attended) for client ${updated.id}, master: ${master.name}`);
+                            console.log(`[sync-today-webhooks] ✅ Marked consultation attended for client ${updated.id}, master: ${master.name}`);
                           } else {
                             console.warn(`[sync-today-webhooks] ⚠️ Master not found for "${staffName}" for client ${updated.id}`);
                           }

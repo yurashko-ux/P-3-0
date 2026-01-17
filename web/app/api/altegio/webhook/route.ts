@@ -650,8 +650,9 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 // 2.5 Обробка приходу клієнта на консультацію
-                // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
-                // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
+                // Якщо клієнт прийшов на консультацію (attendance === 1), НЕ переводимо стан в 'consultation'.
+                // Факт приходу показуємо ✅ у колонці дати консультації.
+                // Стан лишаємо як є (зазвичай 'consultation-booked'). Якщо раніше вже стояв 'consultation' — нормалізуємо до 'consultation-booked'.
                 // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
                 // ВАЖЛИВО: обробляємо навіть якщо майстер - адміністратор (wasAdminStaff), бо attendance все одно має бути встановлено
                 else if (attendance === 1 && datetime) {
@@ -674,8 +675,12 @@ export async function POST(req: NextRequest) {
                       // Знаходимо майстра
                       const master = await getMasterByName(staffName);
                       if (master) {
+                        const normalizedState =
+                          existingClient.state === 'consultation'
+                            ? 'consultation-booked'
+                            : existingClient.state;
                         const updates: Partial<typeof existingClient> = {
-                          state: 'consultation',
+                          state: normalizedState,
                           consultationAttended: true,
                           consultationMasterId: master.id,
                           consultationMasterName: master.name,
@@ -701,11 +706,16 @@ export async function POST(req: NextRequest) {
                           datetime,
                         });
                         
-                        console.log(`[altegio/webhook] ✅ Set consultation state (attended) for client ${existingClient.id}, master: ${master.name}`);
+                        console.log(`[altegio/webhook] ✅ Marked consultation attended for client ${existingClient.id}, master: ${master.name}`);
                       } else {
                         console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
                         // Навіть якщо майстра не знайдено, встановлюємо consultationAttended = true
+                        const normalizedState =
+                          existingClient.state === 'consultation'
+                            ? 'consultation-booked'
+                            : existingClient.state;
                         const updates: Partial<typeof existingClient> = {
+                          state: normalizedState,
                           consultationAttended: true,
                           consultationDate: datetime,
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
@@ -721,7 +731,7 @@ export async function POST(req: NextRequest) {
                           staffName: staffName || 'unknown',
                           datetime,
                         });
-                        console.log(`[altegio/webhook] ✅ Set consultationAttended = true (no master found) for client ${existingClient.id}`);
+                        console.log(`[altegio/webhook] ✅ Marked consultationAttended = true (no master found) for client ${existingClient.id}`);
                       }
                     } else {
                       // Якщо консультація вже є в історії, все одно оновлюємо consultationAttended, якщо він не встановлений
@@ -1008,14 +1018,14 @@ export async function POST(req: NextRequest) {
                     const statesToLog: Array<{ state: string | null; previousState: string | null | undefined }> = [];
                     
                     // Якщо попередній стан не був консультацією - логуємо консультацію
-                    if (previousState !== 'consultation') {
-                      statesToLog.push({ state: 'consultation', previousState });
+                    if (previousState !== 'consultation-booked') {
+                      statesToLog.push({ state: 'consultation-booked', previousState });
                     }
                     
                     // Логуємо нарощування (попередній стан - консультація, якщо вона була, інакше - попередній)
                     statesToLog.push({ 
                       state: 'hair-extension', 
-                      previousState: previousState === 'consultation' ? 'consultation' : previousState 
+                      previousState: previousState === 'consultation-booked' ? 'consultation-booked' : previousState 
                     });
                     
                     if (statesToLog.length > 0) {

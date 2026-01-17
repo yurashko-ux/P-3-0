@@ -29,13 +29,16 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
       </svg>
     );
   } else if (state === 'consultation') {
+    // Стан `consultation` більше не відображаємо окремо (щоб не плутати зі “записом на консультацію”).
+    // Для сумісності зі старими даними показуємо той самий значок, що й `consultation-booked`.
     return (
-      <img 
-        src="/assets/image-consultation-arrow.png" 
-        alt="Консультація" 
-        className="object-contain"
-        style={iconStyle}
-      />
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#2563eb" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
     );
   } else if (state === 'message') {
     return (
@@ -1172,7 +1175,6 @@ export function DirectClientTable({
                             const leadLogs: typeof sortedStates = [];
                             const messageLogs: typeof sortedStates = [];
                             const clientLogs: typeof sortedStates = [];
-                            const consultationLogs: typeof sortedStates = [];
                             const consultationBookedLogs: typeof sortedStates = [];
                             const consultationNoShowLogs: typeof sortedStates = [];
                             const consultationRescheduledLogs: typeof sortedStates = [];
@@ -1199,8 +1201,6 @@ export function DirectClientTable({
                               } else if (log.state === 'client') {
                                 // Збираємо "client" окремо для фільтрації дублікатів
                                 clientLogs.push(log);
-                              } else if (log.state === 'consultation') {
-                                consultationLogs.push(log);
                               } else if (log.state === 'consultation-booked') {
                                 consultationBookedLogs.push(log);
                               } else if (log.state === 'consultation-no-show') {
@@ -1222,7 +1222,7 @@ export function DirectClientTable({
                               const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
                               
                               // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                              const allOtherStates = [...clientLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                              const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                               const olderThanMessage = allOtherStates.filter(log => 
                                 new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
                               );
@@ -1244,7 +1244,7 @@ export function DirectClientTable({
                               const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
                               
                               // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з message)
-                              const allOtherStates = [...clientLogs, ...messageLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                              const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                               const olderThanLead = allOtherStates.filter(log => 
                                 new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
                               );
@@ -1264,9 +1264,7 @@ export function DirectClientTable({
                             }
                             
                             // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
-                            if (consultationLogs.length > 0) {
-                              filteredStates.push(consultationLogs[0]); // Тільки найстаріший "consultation"
-                            }
+                            // Стан `consultation` більше не показуємо в UI (факт приходу дивимось по ✅ у даті консультації).
                             if (consultationBookedLogs.length > 0) {
                               filteredStates.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
                             }

@@ -67,12 +67,16 @@ function StateIcon({ state }: { state: string | null }) {
       </svg>
     );
   } else if (state === 'consultation') {
+    // Стан `consultation` більше не відображаємо окремо (щоб не плутати зі “записом на консультацію”).
+    // Для сумісності зі старими даними показуємо той самий значок, що й `consultation-booked`.
     return (
-      <img 
-        src="/assets/image-consultation-arrow.png" 
-        alt="Консультація" 
-        className="w-6 h-6 object-contain"
-      />
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#2563eb" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#2563eb" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
     );
   } else if (state === 'message') {
     return (
@@ -305,7 +309,6 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     const leadLogs = sortedHistory.filter(log => log.state === 'lead');
                     const clientLogs = sortedHistory.filter(log => log.state === 'client');
                     const messageLogs = sortedHistory.filter(log => log.state === 'message');
-                    const consultationLogs = sortedHistory.filter(log => log.state === 'consultation');
                     const consultationBookedLogs = sortedHistory.filter(log => log.state === 'consultation-booked');
                     const consultationNoShowLogs = sortedHistory.filter(log => log.state === 'consultation-no-show');
                     const consultationRescheduledLogs = sortedHistory.filter(log => log.state === 'consultation-rescheduled');
@@ -329,7 +332,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
                       
                       // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                      const allOtherStates = [...clientLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                      const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                       const olderThanMessage = allOtherStates.filter(log => 
                         new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
                       );
@@ -357,7 +360,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       const oldestLead = leadLogs[0]; // Вже відсортовано від старіших до новіших
                       
                       // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з consultation та message)
-                      const allOtherStates = [...clientLogs, ...messageLogs, ...consultationLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
+                      const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
                       const olderThanLead = allOtherStates.filter(log => 
                         new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
                       );
@@ -375,9 +378,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     }
                     
                     // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
-                    if (consultationLogs.length > 0) {
-                      filteredHistory.push(consultationLogs[0]); // Тільки найстаріший "consultation"
-                    }
+                    // Стан `consultation` більше не показуємо в UI (факт приходу дивимось по ✅ у даті консультації).
                     if (consultationBookedLogs.length > 0) {
                       filteredHistory.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
                     }

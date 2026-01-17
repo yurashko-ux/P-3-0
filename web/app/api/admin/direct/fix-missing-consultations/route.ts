@@ -330,7 +330,8 @@ export async function POST(req: NextRequest) {
                   data: {
                     id: consultationLogId,
                     clientId: client.id,
-                    state: 'consultation',
+                    // Стан `consultation` більше не використовуємо. Залишаємо `consultation-booked`.
+                    state: 'consultation-booked',
                     previousState: previousState,
                     reason: 'retroactive-fix',
                     metadata: metadata || null,
@@ -404,7 +405,8 @@ export async function POST(req: NextRequest) {
                   data: {
                     id: consultationLogId,
                     clientId: client.id,
-                    state: 'consultation',
+                    // Стан `consultation` більше не використовуємо. Залишаємо `consultation-booked`.
+                    state: 'consultation-booked',
                     previousState: previousState,
                     reason: 'retroactive-fix-separate',
                     metadata: metadata || null,

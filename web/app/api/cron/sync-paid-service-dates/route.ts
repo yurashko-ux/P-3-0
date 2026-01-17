@@ -285,7 +285,8 @@ export async function POST(req: NextRequest) {
         if (chosenForState) {
           let finalState: string | null = null;
           if (chosenForState.groupType === 'consultation') {
-            finalState = consultationInfo?.attendanceStatus === 'arrived' ? 'consultation' : 'consultation-booked';
+            // НЕ використовуємо стан `consultation` (факт приходу дивимось по ✅ у даті консультації).
+            finalState = 'consultation-booked';
           } else {
             finalState = determineStateFromServices(chosenForState.services) || 'other-services';
           }

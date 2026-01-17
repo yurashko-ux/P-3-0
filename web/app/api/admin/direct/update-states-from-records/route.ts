@@ -253,7 +253,8 @@ export async function POST(req: NextRequest) {
             
             // Якщо попередній стан не був консультацією - логуємо консультацію
             if (previousState !== 'consultation') {
-              statesToLog.push({ state: 'consultation', previousState });
+              // Стан `consultation` більше не використовуємо. Залишаємо `consultation-booked`.
+              statesToLog.push({ state: 'consultation-booked', previousState });
             }
             
             // Логуємо нарощування (попередній стан - консультація, якщо вона була, інакше - попередній)
