@@ -913,7 +913,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-right">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1137,8 +1137,8 @@ export function DirectClientTable({
                           </span>
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-right min-w-[200px]">
+                        <div className="flex w-full items-center justify-end gap-1">
                           {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
                           {(() => {
                             const states = client.last5States || [];
