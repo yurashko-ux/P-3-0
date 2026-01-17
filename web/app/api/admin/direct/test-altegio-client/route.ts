@@ -153,16 +153,29 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    // КРОК 2: Отримуємо повні дані клієнта через GET /company/{company_id}/clients/{client_id}
+    // КРОК 2: Отримуємо повні дані клієнта через GET по різних endpoint'ах
     // ВАЖЛИВО згідно з чек-листом:
     // 1. Використовувати User Token, не Partner (altegioFetch використовує altegioHeaders, який перевіряє USER_TOKEN)
     // 2. User Token має доступ до location 1169323
     // 3. clients/search — не очікувати custom_fields (вже зроблено)
     // 4. custom_fields читати лише з GET /company/{location}/clients/{id}
-    console.log(`[direct/test-altegio-client] Step 2: Getting full client data via GET /company/{company_id}/clients/{client_id}...`);
+    console.log(`[direct/test-altegio-client] Step 2: Getting full client data via GET (multiple endpoints)...`);
     
-    // Спробуємо всі варіанти endpoint'ів, як у getClient функції (singular "client" та plural "clients")
+    // Спочатку пробуємо варіанти з документації: /v1/client/{location}/{id}
+    // (У деяких конфігураціях /company/.../client/... повертає 404)
     const clientEndpoints = [
+      {
+        url: `/v1/client/${companyId}/${clientId}`,
+        params: 'v1 client/{location}/{id} (doc)',
+      },
+      {
+        url: `/client/${companyId}/${clientId}`,
+        params: 'client/{location}/{id} (base already has v1?)',
+      },
+      {
+        url: `/clients/${companyId}/${clientId}`,
+        params: 'clients/{location}/{id} (alt)',
+      },
       {
         url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields`,
         params: 'singular client with fields[]',
@@ -208,6 +221,8 @@ export async function POST(req: NextRequest) {
             client = detailedClient;
           } else if ('data' in detailedClient && detailedClient.data && detailedClient.data.id === clientId) {
             client = detailedClient.data;
+          } else if ('success' in detailedClient && (detailedClient as any).success && 'data' in detailedClient && (detailedClient as any).data?.id === clientId) {
+            client = (detailedClient as any).data;
           }
         }
         
@@ -225,7 +240,14 @@ export async function POST(req: NextRequest) {
               ? Object.keys(client?.custom_fields)
               : [],
             customFieldsLength: Array.isArray(client?.custom_fields) ? client.custom_fields.length : 0,
-            response: client,
+            response: {
+              id: client.id,
+              name: client?.name || client?.display_name || null,
+              hasCustomFields: !!client?.custom_fields,
+              customFieldsType: typeof client?.custom_fields,
+              customFieldsIsArray: Array.isArray(client?.custom_fields),
+              keys: Object.keys(client || {}).slice(0, 80),
+            },
             allKeys: Object.keys(client || {}),
             fullResponse: JSON.stringify(client, null, 2).substring(0, 2000),
             note: '✅ This is the proper flow: search → get by id',
