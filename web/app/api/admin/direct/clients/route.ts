@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
     const hasAppointment = searchParams.get('hasAppointment');
-    const sortBy = searchParams.get('sortBy') || 'firstContactDate';
+    const sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
     console.log('[direct/clients] GET: Fetching all clients...');

@@ -181,15 +181,15 @@ export default function DirectPage() {
           allKeys: Object.keys(localStorage).filter(k => k.includes('direct')),
           stack: stack?.split('\n').slice(1, 6).join('\n')
         });
-        if (saved === 'updatedAt' || saved === 'firstContactDate') {
+        if (saved === 'updatedAt' || saved === 'createdAt' || saved === 'firstContactDate') {
           console.log('[DirectPage] ✅ Using saved sortBy:', saved);
           return saved;
         } else {
-          console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: firstContactDate');
+          console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: updatedAt');
         }
       }
-      console.log('[DirectPage] ⚠️ Window undefined, using default: firstContactDate');
-      return 'firstContactDate';
+      console.log('[DirectPage] ⚠️ Window undefined, using default: updatedAt');
+      return 'updatedAt';
     };
   }
   
