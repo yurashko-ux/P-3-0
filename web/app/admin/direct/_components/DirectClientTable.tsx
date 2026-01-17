@@ -1126,11 +1126,11 @@ export function DirectClientTable({
                         </span>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        <span className="flex flex-col leading-none">
+                        <span className="flex flex-col items-center leading-none">
                           <span className="text-center">
                             {client.visits !== null && client.visits !== undefined ? client.visits : '-'}
                           </span>
-                          <span className="opacity-80 mt-0.5 text-right">
+                          <span className="opacity-80 mt-0.5 text-center">
                             {client.spent !== null && client.spent !== undefined
                               ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
                               : '-'}
