@@ -208,24 +208,25 @@ export async function GET(req: NextRequest) {
                 ? (groups.find((g: any) => (g?.groupType === 'consultation') && (g?.kyivDay || '') === consultDay) || null)
                 : null;
 
+            // #region agent log
+            try {
+              // Лог для кейсу з ❌ у таблиці: хочемо зрозуміти, чи KV-група цього дня справді "arrived".
+              const dbAtt = (c as any).consultationAttended ?? null;
+              const dbCancelled = (c as any).consultationCancelled ?? null;
+              if (dbAtt === false) {
+                const gAtt = consultGroup ? ((consultGroup as any).attendance ?? null) : null;
+                const gStatus = consultGroup ? ((consultGroup as any).attendanceStatus ?? null) : null;
+                const anyArrivedConsult = groups.some((g: any) => g?.groupType === 'consultation' && (g?.attendance === 1 || g?.attendanceStatus === 'arrived'));
+                const arrivedDays = groups
+                  .filter((g: any) => g?.groupType === 'consultation' && (g?.attendance === 1 || g?.attendanceStatus === 'arrived'))
+                  .slice(0, 5)
+                  .map((g: any) => ({ kyivDay: String(g?.kyivDay || ''), datetime: String(g?.datetime || ''), attendance: g?.attendance ?? null }));
+                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H1',location:'direct/clients/route.ts:mapClient',message:'DB має consultationAttended=false; перевіряємо KV consultGroup для дня bookingDate',data:{clientId:String((c as any).id||''),altegioClientId:Number((c as any).altegioClientId||0),consultationBookingDate:String((c as any).consultationBookingDate||''),consultDay:String(consultDay||''),db:{consultationAttended:dbAtt,consultationCancelled:dbCancelled},groupFound:!!consultGroup,group:{kyivDay:consultGroup?String((consultGroup as any).kyivDay||''):'',attendance:gAtt,attendanceStatus:String(gStatus||'')},anyArrivedConsult,arrivedDays,groupsCount:groups.length},timestamp:Date.now()})}).catch(()=>{});
+              }
+            } catch {}
+            // #endregion agent log
+
             if (consultGroup) {
-              // #region agent log
-              try {
-                const dbAtt = (c as any).consultationAttended ?? null;
-                const dbCancelled = (c as any).consultationCancelled ?? null;
-                const gAtt = (consultGroup as any).attendance ?? null;
-                const gStatus = (consultGroup as any).attendanceStatus ?? null;
-
-                const mismatch =
-                  (dbAtt === false && gAtt === 1) ||
-                  (dbCancelled === true && gAtt === 1);
-
-                if (mismatch) {
-                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H1',location:'direct/clients/route.ts:mapClient',message:'Розсинхрон attendance: DB vs KV-group для консультації',data:{clientId:String((c as any).id||''),altegioClientId:Number((c as any).altegioClientId||0),consultationBookingDate:String((c as any).consultationBookingDate||''),db:{consultationAttended:dbAtt,consultationCancelled:dbCancelled},group:{kyivDay:String((consultGroup as any).kyivDay||''),attendance:gAtt,attendanceStatus:String(gStatus||'')},eventsSummary:Array.isArray((consultGroup as any).events)?(consultGroup as any).events.slice(0,10).map((e:any)=>({attendance:e?.attendance??null,status:String(e?.status||''),receivedAt:String(e?.receivedAt||''),datetime:String(e?.datetime||'')})) : []},timestamp:Date.now()})}).catch(()=>{});
-                }
-              } catch {}
-              // #endregion agent log
-
               const events = Array.isArray((consultGroup as any).events) ? (consultGroup as any).events : [];
               const sorted = [...events].sort((a: any, b: any) => {
                 const ta = new Date(b?.receivedAt || b?.datetime || 0).getTime();
