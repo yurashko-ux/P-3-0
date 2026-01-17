@@ -22,13 +22,14 @@ function RebookingIcon({ size = 18 }: { size?: number }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
+      <circle cx="12" cy="12" r="10" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5" />
       <path
-        d="M20 7h-6a1 1 0 0 1 0-2h4.2A8 8 0 0 0 4 12a1 1 0 1 1-2 0 10 10 0 0 1 17.7-6.2V4a1 1 0 1 1 2 0v3Z"
-        fill="currentColor"
+        d="M16.5 8.5h-4a1 1 0 1 1 0-2h2.8A6.5 6.5 0 0 0 7.5 12a1 1 0 1 1-2 0 8.5 8.5 0 0 1 9.9-8.3V3.5a1 1 0 0 1 2 0v5Z"
+        fill="#ffffff"
       />
       <path
-        d="M4 17h6a1 1 0 1 1 0 2H5.8A8 8 0 0 0 20 12a1 1 0 1 1 2 0 10 10 0 0 1-17.7 6.2V20a1 1 0 1 1-2 0v-3Z"
-        fill="currentColor"
+        d="M7.5 15.5h4a1 1 0 1 1 0 2H8.7A6.5 6.5 0 0 0 16.5 12a1 1 0 1 1 2 0 8.5 8.5 0 0 1-9.9 8.3v.2a1 1 0 0 1-2 0v-5Z"
+        fill="#ffffff"
       />
     </svg>
   );
