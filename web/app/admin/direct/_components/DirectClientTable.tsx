@@ -846,19 +846,6 @@ export function DirectClientTable({
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">№</th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "firstContactDate",
-                          sortBy === "firstContactDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Дата контакту {sortBy === "firstContactDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left"
@@ -1088,7 +1075,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={22} className="text-center py-8 text-gray-500">
+                    <td colSpan={21} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1098,9 +1085,6 @@ export function DirectClientTable({
                       key={client.id}
                     >
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {formatDate(client.firstContactDate)}
-                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
                           <span>{client.updatedAt ? formatDate(client.updatedAt) : '-'}</span>
