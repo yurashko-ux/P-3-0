@@ -1108,9 +1108,12 @@ export async function POST(req: NextRequest) {
             }
             // Якщо custom_fields порожній або відсутній - instagram залишається null
             
-            // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
-            const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+            // Перевіряємо, чи Instagram валідний (не "no/ні", не порожній, не null)
+            // ВАЖЛИВО: "no" / "ні" означає, що Instagram акаунту немає (явна відповідь).
+            const invalidValues = ['no', 'ні', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
             const originalInstagram = instagram; // Зберігаємо оригінальне значення для перевірки повідомлень
+            const isExplicitNoInstagram =
+              !!originalInstagram && ['no', 'ні'].includes(originalInstagram.toLowerCase().trim());
             if (instagram) {
               const lowerInstagram = instagram.toLowerCase().trim();
               if (invalidValues.includes(lowerInstagram)) {
@@ -1121,7 +1124,7 @@ export async function POST(req: NextRequest) {
             
             // Синхронізуємо клієнта в будь-якому випадку (з Instagram або без)
             const isMissingInstagram = !instagram;
-            const shouldSendNotification = isMissingInstagram && originalInstagram?.toLowerCase().trim() !== 'no';
+            const shouldSendNotification = isMissingInstagram && !isExplicitNoInstagram;
             
             if (instagram) {
               const normalizedInstagram = normalizeInstagram(instagram);
@@ -1275,8 +1278,14 @@ export async function POST(req: NextRequest) {
                 
                 if (existingClientByAltegioId) {
                   // Якщо клієнт існує - використовуємо його Instagram username
-                  const normalizedInstagram = existingClientByAltegioId.instagramUsername;
-                  const isMissingInstagramReal = normalizedInstagram.startsWith('missing_instagram_');
+                  let normalizedInstagram = existingClientByAltegioId.instagramUsername;
+                  // Якщо в Altegio явно вказано "no/ні", то позначаємо це окремим токеном,
+                  // щоб у таблиці було "NO INSTAGRAM", але без злиття клієнтів (унікальний username).
+                  if (isExplicitNoInstagram && normalizedInstagram.startsWith('missing_instagram_')) {
+                    normalizedInstagram = `no_instagram_${client.id}`;
+                  }
+                  const isMissingInstagramReal =
+                    normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
                   
                   const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
                   const firstName = nameParts[0] || undefined;
@@ -1365,7 +1374,8 @@ export async function POST(req: NextRequest) {
                       
                       // Якщо знайдено клієнта по імені - використовуємо його Instagram username
                       const normalizedInstagram = existingClientByName.instagramUsername;
-                      const isMissingInstagramReal = normalizedInstagram.startsWith('missing_instagram_');
+                      const isMissingInstagramReal =
+                        normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
                       
                       // Оновлюємо дату запису з data.datetime, якщо вона є
                       // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
@@ -1428,7 +1438,9 @@ export async function POST(req: NextRequest) {
                     
                     if (!existingClientId) {
                       const now = new Date().toISOString();
-                      const normalizedInstagram = `missing_instagram_${client.id}`;
+                      const normalizedInstagram = isExplicitNoInstagram
+                        ? `no_instagram_${client.id}`
+                        : `missing_instagram_${client.id}`;
                       const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
                       const firstName = nameParts[0] || undefined;
                       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
@@ -1606,8 +1618,8 @@ export async function POST(req: NextRequest) {
                         } catch (notificationErr) {
                           console.error(`[altegio/webhook] ❌ Failed to send missing Instagram notifications:`, notificationErr);
                         }
-                      } else if (originalInstagram?.toLowerCase().trim() === 'no') {
-                        console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to "no"`);
+                      } else if (['no', 'ні'].includes((originalInstagram || '').toLowerCase().trim())) {
+                        console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to \"no/ні\" (клієнт не має Instagram акаунту)`);
                       }
                     }
                   }
@@ -2041,8 +2053,10 @@ export async function POST(req: NextRequest) {
             console.log(`[altegio/webhook] ⚠️ No custom_fields found in client data`);
           }
 
-          // Перевіряємо, чи Instagram валідний (не "no", не порожній, не null)
-          const invalidValues = ['no', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+          // Перевіряємо, чи Instagram валідний (не "no/ні", не порожній, не null)
+          // ВАЖЛИВО: "no" / "ні" означає, що Instagram акаунту немає (явна відповідь).
+          const invalidValues = ['no', 'ні', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
+          const isExplicitNoInstagram = !!instagram && ['no', 'ні'].includes(instagram.toLowerCase().trim());
           if (instagram) {
             const lowerInstagram = instagram.toLowerCase().trim();
             if (invalidValues.includes(lowerInstagram)) {
@@ -2071,29 +2085,36 @@ export async function POST(req: NextRequest) {
               } else {
                 // Якщо Instagram з webhook'а невалідний, використовуємо старий
                 normalizedInstagram = existingClientByAltegioId.instagramUsername;
-                isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
+                isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
                 console.log(`[altegio/webhook] ⚠️ Invalid Instagram in webhook for client ${clientId}, keeping existing: ${normalizedInstagram}`);
               }
             } else {
               // Якщо в webhook немає Instagram, використовуємо існуючий
               normalizedInstagram = existingClientByAltegioId.instagramUsername;
-              isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_');
+              isMissingInstagram = normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
               usingSavedLink = true;
               console.log(`[altegio/webhook] ✅ Using saved Instagram link for client ${clientId}: ${normalizedInstagram}`);
+            }
+
+            // Якщо в Altegio явно вказано "no/ні", позначаємо це як no_instagram_* (унікально),
+            // щоб у таблиці показувати "NO INSTAGRAM" без злиття клієнтів.
+            if (isExplicitNoInstagram && normalizedInstagram && normalizedInstagram.startsWith('missing_instagram_')) {
+              normalizedInstagram = `no_instagram_${clientId}`;
+              isMissingInstagram = true;
             }
           } else {
             // Клієнта не знайдено - обробляємо Instagram з вебхука
             if (!instagram) {
               console.log(`[altegio/webhook] ⚠️ No Instagram username for client ${clientId}, creating with temporary username`);
               isMissingInstagram = true;
-              normalizedInstagram = `missing_instagram_${clientId}`;
+              normalizedInstagram = isExplicitNoInstagram ? `no_instagram_${clientId}` : `missing_instagram_${clientId}`;
             } else {
               console.log(`[altegio/webhook] ✅ Extracted Instagram for new client ${clientId}: ${instagram}`);
               normalizedInstagram = normalizeInstagram(instagram);
               if (!normalizedInstagram) {
                 console.log(`[altegio/webhook] ⚠️ Invalid Instagram username for client ${clientId}: ${instagram}, creating with temporary username`);
                 isMissingInstagram = true;
-                normalizedInstagram = `missing_instagram_${clientId}`;
+                normalizedInstagram = isExplicitNoInstagram ? `no_instagram_${clientId}` : `missing_instagram_${clientId}`;
               } else {
                 isMissingInstagram = false;
                 console.log(`[altegio/webhook] ✅ Normalized Instagram for new client ${clientId}: ${normalizedInstagram}`);
@@ -2150,8 +2171,12 @@ export async function POST(req: NextRequest) {
             const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
             
             if (clientByInstagram && clientByAltegio) {
-              const hasRealInstagram = !clientByInstagram.instagramUsername.startsWith('missing_instagram_');
-              const hasMissingInstagram = clientByAltegio.instagramUsername.startsWith('missing_instagram_');
+              const hasRealInstagram =
+                !clientByInstagram.instagramUsername.startsWith('missing_instagram_') &&
+                !clientByInstagram.instagramUsername.startsWith('no_instagram_');
+              const hasMissingInstagram =
+                clientByAltegio.instagramUsername.startsWith('missing_instagram_') ||
+                clientByAltegio.instagramUsername.startsWith('no_instagram_');
               
               if (hasRealInstagram && hasMissingInstagram) {
                 // Об'єднуємо: залишаємо клієнта з реальним Instagram, видаляємо з missing_instagram_*
@@ -2225,7 +2250,7 @@ export async function POST(req: NextRequest) {
 
             // Якщо створено клієнта без Instagram, відправляємо повідомлення
             // АЛЕ: якщо Instagram = "no", не відправляємо повідомлення (бо "no" означає, що у клієнтки немає Instagram)
-            const shouldSendNotification = isMissingInstagram && instagram?.toLowerCase().trim() !== 'no';
+            const shouldSendNotification = isMissingInstagram && !['no', 'ні'].includes((instagram || '').toLowerCase().trim());
             if (shouldSendNotification) {
               try {
                 const { sendMessage } = await import('@/lib/telegram/api');
@@ -2369,8 +2394,8 @@ export async function POST(req: NextRequest) {
                 console.error(`[altegio/webhook] ❌ Failed to send missing Instagram notifications:`, notificationErr);
                 // Не блокуємо обробку вебхука, якщо не вдалося відправити повідомлення
               }
-            } else if (isMissingInstagram && instagram?.toLowerCase().trim() === 'no') {
-              console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no" (client has no Instagram account)`);
+            } else if (isMissingInstagram && ['no', 'ні'].includes((instagram || '').toLowerCase().trim())) {
+              console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no/ні" (клієнт не має Instagram акаунту)`);
             }
           }
 

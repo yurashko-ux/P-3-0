@@ -1094,7 +1094,7 @@ export function DirectClientTable({
                           : '-'}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.instagramUsername === 'NO INSTAGRAM' ? (
+                        {client.instagramUsername === 'NO INSTAGRAM' || client.instagramUsername?.startsWith('no_instagram_') ? (
                           <span className="text-orange-600 font-semibold" title="Клієнт не має Instagram акаунту">
                             NO INSTAGRAM
                           </span>
