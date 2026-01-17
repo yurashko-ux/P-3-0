@@ -11,6 +11,16 @@ export default function middleware(req: NextRequest) {
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
   const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || '';
 
+  const isHttps = (() => {
+    try {
+      const xfProto = (req.headers.get('x-forwarded-proto') || '').toLowerCase();
+      const proto = url.protocol;
+      return proto === 'https:' || xfProto === 'https';
+    } catch {
+      return true;
+    }
+  })();
+
   // ===== ПЕРЕВІРКА ДОМЕНУ: Якщо finance-hob.vercel.app, дозволяємо тільки фінансовий звіт =====
   const isFinanceReportDomain = host === 'finance-hob.vercel.app';
   
@@ -146,6 +156,10 @@ export default function middleware(req: NextRequest) {
     if (qToken !== null) {
       const token = (qToken || '').trim();
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H6',location:'middleware.ts:/admin/login',message:'admin_login_attempt',data:{host,protocol:url.protocol,xfProto:(req.headers.get('x-forwarded-proto')||''),isHttps,hasAdminPass:!!ADMIN_PASS,tokenLen:token.length},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
+
       // якщо ADMIN_PASS не заданий — не пускаємо, просимо адміна виставити змінну
       if (!ADMIN_PASS) {
         const back = new URL(url);
@@ -170,6 +184,11 @@ export default function middleware(req: NextRequest) {
           secure: true,
           maxAge: 60 * 60 * 24 * 7, // 7 днів
         });
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H7',location:'middleware.ts:/admin/login',message:'admin_cookie_set_attempt',data:{host,isHttps,cookieName:'admin_token',secureFlag:true,maxAge:60*60*24*7},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion agent log
+
         return res;
       } else {
         const back = new URL(url);
@@ -194,6 +213,9 @@ export default function middleware(req: NextRequest) {
 
   const cookieToken = req.cookies.get('admin_token')?.value || '';
   if (cookieToken !== ADMIN_PASS) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H8',location:'middleware.ts:/admin/*',message:'admin_auth_blocked',data:{pathname,host,isHttps,hasAdminPass:!!ADMIN_PASS,hasCookieToken:!!cookieToken,cookieLen:cookieToken?cookieToken.length:0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
