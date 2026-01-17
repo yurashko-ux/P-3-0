@@ -564,6 +564,22 @@ export function AdminToolsModal({
         },
       ],
     },
+    // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
+      category: "Імена (Altegio)",
+      items: [
+        {
+          icon: "🪪",
+          label: "Виправити імена з Altegio API",
+          endpoint: "/api/admin/direct/fix-names-from-altegio",
+          method: "POST" as const,
+          confirm:
+            "Оновити імена клієнтів з Altegio API (по altegioClientId), якщо поточне імʼя виглядає як інстаграмне/плейсхолдер?\n\nЦе НЕ чіпає Instagram username і НЕ змінює історію повідомлень.",
+          successMessage: (data: any) =>
+            `✅ Виправлення імен з Altegio API завершено!\n\nВсього клієнтів: ${data.stats.totalClients}\nКандидатів: ${data.stats.candidates}\nОновлено: ${data.stats.updated}\n404/не знайдено: ${data.stats.fetched404}\nПомилок запитів: ${data.stats.fetchedErrors}\nБез імені в Altegio: ${data.stats.noNameInAltegio}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+      ],
+    },
   ];
 
   return (

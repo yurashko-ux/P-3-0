@@ -9,6 +9,24 @@ import { getEnvValue } from '@/lib/env';
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
+function isBadNamePart(v?: string | null): boolean {
+  if (!v) return true;
+  const t = String(v).trim();
+  if (!t) return true;
+  const lower = t.toLowerCase();
+  if (t.includes('{{') || t.includes('}}')) return true;
+  if (lower === 'not found') return true;
+  return false;
+}
+
+function looksInstagramSourced(firstName?: string | null, lastName?: string | null): boolean {
+  const fn = String(firstName || '').trim();
+  const ln = String(lastName || '').trim();
+  if (!fn && !ln) return true;
+  const isAllCapsSingle = !!fn && !ln && fn.length >= 3 && fn === fn.toUpperCase() && !/\s/.test(fn);
+  return isAllCapsSingle;
+}
+
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
@@ -102,13 +120,20 @@ export async function POST(req: NextRequest) {
       fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H4',location:'sync-altegio/route.ts:found',message:'sync_altegio_found_client',data:{directClientId:directClient.id,hasDirectFirstName:!!(directClient.firstName&&directClient.firstName.trim()),hasDirectLastName:!!(directClient.lastName&&directClient.lastName.trim()),willSetName:!!(altegioClient.name&&!directClient.firstName),willSetAltegioClientId:true},timestamp:Date.now()})}).catch(()=>{});
       // #endregion agent log
 
+      const altegioName = (altegioClient.name || '').toString().trim();
+      const shouldReplaceName =
+        Boolean(altegioName) &&
+        (isBadNamePart(directClient.firstName) ||
+          isBadNamePart(directClient.lastName) ||
+          looksInstagramSourced(directClient.firstName, directClient.lastName));
+
       // Оновлюємо Direct клієнта з даними Altegio
       const updated: typeof directClient = {
         ...directClient,
         altegioClientId: altegioClient.id,
-        ...(altegioClient.name && !directClient.firstName && {
-          firstName: altegioClient.name.split(' ')[0],
-          lastName: altegioClient.name.split(' ').slice(1).join(' '),
+        ...(shouldReplaceName && {
+          firstName: altegioName.split(' ')[0],
+          lastName: altegioName.split(' ').slice(1).join(' '),
         }),
         updatedAt: new Date().toISOString(),
       };
