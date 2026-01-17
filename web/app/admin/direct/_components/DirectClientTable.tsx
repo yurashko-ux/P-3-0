@@ -1351,6 +1351,18 @@ export function DirectClientTable({
                               
                               return true;
                             });
+
+                            // #region agent log
+                            try {
+                              const states = finalStatesToShow.map((x: any) => String(x?.state || ''));
+                              const counts: Record<string, number> = {};
+                              for (const s of states) counts[s] = (counts[s] || 0) + 1;
+                              const dups = Object.entries(counts).filter(([, n]) => n > 1).map(([s, n]) => `${s}:${n}`).slice(0, 20);
+                              if (dups.length > 0) {
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'table-dups',hypothesisId:'T1',location:'DirectClientTable.tsx:stateIcons',message:'Duplicate states in table icons',data:{dups,states:states.slice(0,20),currentState:String(currentState||''),lastHistoryState:String(lastHistoryState||'')},timestamp:Date.now()})}).catch(()=>{});
+                              }
+                            } catch {}
+                            // #endregion agent log
                             
                             return (
                               <>
