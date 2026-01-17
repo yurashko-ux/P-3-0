@@ -1152,14 +1152,13 @@ export async function POST(req: NextRequest) {
                       if (!isPastOrToday) {
                         console.log(`[sync-today-webhooks] ⏭️ Skipping consultation attendance for ${updated.id}: consultation date ${datetime} is in the future`);
                       } else {
-                        // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
-                        const { getStateHistory } = await import('@/lib/direct-state-log');
-                        const history = await getStateHistory(updated.id);
-                        const hasActualConsultation = history.some(log => log.state === 'consultation');
+                        // Стан `consultation` більше не використовуємо.
+                        // Маркер фактичної консультації: consultationAttended === true.
+                        const hasActualConsultation = updated.consultationAttended === true;
                         
                         console.log(`[sync-today-webhooks] 🔍 Consultation attendance check for ${updated.id}:`, {
                           hasActualConsultation,
-                          historyStates: history.map(h => h.state),
+                          consultationAttended: updated.consultationAttended,
                         });
                         
                         // Якщо ще немає фактичної консультації в історії, встановлюємо
@@ -1175,7 +1174,7 @@ export async function POST(req: NextRequest) {
                             const consultationUpdates = {
                               // НЕ переводимо стан в `consultation` (факт приходу дивимось по ✅ у даті консультації).
                               // Якщо раніше стояв `consultation` — нормалізуємо до `consultation-booked`.
-                              state: (updated.state === 'consultation' ? 'consultation-booked' : updated.state) as any,
+                              state: (String(updated.state) === 'consultation' ? 'consultation-booked' : updated.state) as any,
                               consultationAttended: true,
                               consultationMasterId: master.id,
                               consultationMasterName: master.name,
