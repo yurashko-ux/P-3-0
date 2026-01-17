@@ -227,20 +227,22 @@ export async function GET(req: NextRequest) {
               return null;
             };
 
-            const paidGroup =
-              c.paidServiceDate ? pickClosestGroup('paid', c.paidServiceDate) : null;
-            const consultGroupForMaster =
-              !paidGroup && c.consultationBookingDate ? pickClosestGroup('consultation', c.consultationBookingDate) : null;
-
-            const chosen = paidGroup || consultGroupForMaster;
-            if (chosen) {
-              const picked = pickNonAdminStaffFromGroup(chosen as any, 'latest');
+            // ВАЖЛИВО (оновлене правило): "Майстер" — ТІЛЬКИ для платних записів.
+            // Якщо в клієнта немає paidServiceDate — в UI робимо колонку порожньою, навіть якщо в БД щось залишилось.
+            if (!c.paidServiceDate) {
+              c = { ...c, serviceMasterName: undefined, serviceMasterAltegioStaffId: null };
+            } else {
+              const paidGroup = pickClosestGroup('paid', c.paidServiceDate);
+              const chosen = paidGroup;
+              if (chosen) {
+                const picked = pickNonAdminStaffFromGroup(chosen as any, 'latest');
               if (picked?.staffName) {
                 c = {
                   ...c,
                   serviceMasterName: String(picked.staffName),
                   serviceMasterAltegioStaffId: picked.staffId ?? null,
                 };
+              }
               }
             }
           }

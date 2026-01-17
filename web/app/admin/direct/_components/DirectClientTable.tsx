@@ -1704,9 +1704,11 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {(() => {
+                          // Колонка "Майстер" — ТІЛЬКИ для платних записів.
+                          if (!client.paidServiceDate) return '';
                           const full = (client.serviceMasterName || '').trim();
                           const name = shortPersonName(full);
-                          if (!name) return '-';
+                          if (!name) return '';
 
                           // #region agent log
                           try {
