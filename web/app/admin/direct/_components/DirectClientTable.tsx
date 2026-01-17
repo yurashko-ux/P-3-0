@@ -888,30 +888,30 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "spent",
-                          sortBy === "spent" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Продажі {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "visits",
-                          sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Візити {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex flex-col items-start leading-none">
+                      <button
+                        className="hover:underline cursor-pointer text-left"
+                        onClick={() =>
+                          onSortChange(
+                            "visits",
+                            sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Візити {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <button
+                        className="hover:underline cursor-pointer text-left mt-0.5"
+                        onClick={() =>
+                          onSortChange(
+                            "spent",
+                            sortBy === "spent" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Продажі {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <button
@@ -1075,7 +1075,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={20} className="text-center py-8 text-gray-500">
+                    <td colSpan={19} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1125,13 +1125,17 @@ export function DirectClientTable({
                           </span>
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-right">
-                        {client.spent !== null && client.spent !== undefined
-                          ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
-                          : '-'}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center">
-                        {client.visits !== null && client.visits !== undefined ? client.visits : '-'}
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        <span className="flex flex-col leading-none">
+                          <span className="text-center">
+                            {client.visits !== null && client.visits !== undefined ? client.visits : '-'}
+                          </span>
+                          <span className="opacity-80 mt-0.5 text-right">
+                            {client.spent !== null && client.spent !== undefined
+                              ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
+                              : '-'}
+                          </span>
+                        </span>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-center min-w-[200px]">
                         <div className="flex items-center justify-center gap-1">
