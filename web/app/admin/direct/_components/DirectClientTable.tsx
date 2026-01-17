@@ -12,6 +12,28 @@ import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
 
+function RebookingIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        d="M20 7h-6a1 1 0 0 1 0-2h4.2A8 8 0 0 0 4 12a1 1 0 1 1-2 0 10 10 0 0 1 17.7-6.2V4a1 1 0 1 1 2 0v3Z"
+        fill="currentColor"
+      />
+      <path
+        d="M4 17h6a1 1 0 1 1 0 2H5.8A8 8 0 0 0 20 12a1 1 0 1 1 2 0 10 10 0 0 1-17.7 6.2V20a1 1 0 1 1-2 0v-3Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const iconStyle = { width: `${size}px`, height: `${size}px` };
@@ -1624,10 +1646,10 @@ export function DirectClientTable({
                                 </button>
                                 {client.paidServiceIsRebooking ? (
                                   <span
-                                    className="text-blue-600 text-lg"
+                                    className="text-blue-600"
                                     title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
                                   >
-                                    🔁
+                                    <RebookingIcon size={18} />
                                   </span>
                                 ) : null}
                                 {attendanceIcon}
