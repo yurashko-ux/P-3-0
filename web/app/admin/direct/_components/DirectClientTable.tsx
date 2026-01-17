@@ -859,17 +859,30 @@ export function DirectClientTable({
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "updatedAt",
-                          sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Останнє оновлення {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex flex-col items-start leading-none">
+                      <button
+                        className="hover:underline cursor-pointer text-left"
+                        onClick={() =>
+                          onSortChange(
+                            "updatedAt",
+                            sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Оновлення {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <button
+                        className="hover:underline cursor-pointer text-left mt-0.5"
+                        onClick={() =>
+                          onSortChange(
+                            "createdAt",
+                            sortBy === "createdAt" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Створення {sortBy === "createdAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <button
@@ -1089,9 +1102,10 @@ export function DirectClientTable({
                         {formatDate(client.firstContactDate)}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.updatedAt
-                          ? formatDate(client.updatedAt)
-                          : '-'}
+                        <span className="flex flex-col leading-none">
+                          <span>{client.updatedAt ? formatDate(client.updatedAt) : '-'}</span>
+                          <span className="opacity-70">{client.createdAt ? formatDate(client.createdAt) : '-'}</span>
+                        </span>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.instagramUsername === 'NO INSTAGRAM' || client.instagramUsername?.startsWith('no_instagram_') ? (
