@@ -265,24 +265,6 @@ export async function GET(req: NextRequest) {
                 ? (groups.find((g: any) => (g?.groupType === 'consultation') && (g?.kyivDay || '') === consultDay) || null)
                 : null;
 
-            // #region agent log
-            try {
-              // Лог для кейсу з ❌ у таблиці: хочемо зрозуміти, чи KV-група цього дня справді "arrived".
-              const dbAtt = (c as any).consultationAttended ?? null;
-              const dbCancelled = (c as any).consultationCancelled ?? null;
-              if (dbAtt === false) {
-                const gAtt = consultGroup ? ((consultGroup as any).attendance ?? null) : null;
-                const gStatus = consultGroup ? ((consultGroup as any).attendanceStatus ?? null) : null;
-                const anyArrivedConsult = groups.some((g: any) => g?.groupType === 'consultation' && (g?.attendance === 1 || g?.attendanceStatus === 'arrived'));
-                const arrivedDays = groups
-                  .filter((g: any) => g?.groupType === 'consultation' && (g?.attendance === 1 || g?.attendanceStatus === 'arrived'))
-                  .slice(0, 5)
-                  .map((g: any) => ({ kyivDay: String(g?.kyivDay || ''), datetime: String(g?.datetime || ''), attendance: g?.attendance ?? null }));
-                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H1',location:'direct/clients/route.ts:mapClient',message:'DB має consultationAttended=false; перевіряємо KV consultGroup для дня bookingDate',data:{clientId:String((c as any).id||''),altegioClientId:Number((c as any).altegioClientId||0),consultationBookingDate:String((c as any).consultationBookingDate||''),consultDay:String(consultDay||''),db:{consultationAttended:dbAtt,consultationCancelled:dbCancelled},groupFound:!!consultGroup,group:{kyivDay:consultGroup?String((consultGroup as any).kyivDay||''):'',attendance:gAtt,attendanceStatus:String(gStatus||'')},anyArrivedConsult,arrivedDays,groupsCount:groups.length},timestamp:Date.now()})}).catch(()=>{});
-              }
-            } catch {}
-            // #endregion agent log
-
             // ВАЖЛИВО: attendance в UI має відповідати KV-групі того ДНЯ, який показуємо.
             // Тому для відповіді /clients ми пріоритезуємо KV-групу (як у модалці "Webhook-и"),
             // але НЕ перетираємо true на false.
