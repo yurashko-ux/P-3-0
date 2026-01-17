@@ -56,7 +56,7 @@ export default function middleware(req: NextRequest) {
           path: '/',
           sameSite: 'lax',
           httpOnly: false,
-          secure: true,
+          secure: isHttps,
           maxAge: 60 * 60 * 24 * 30, // 30 днів
         });
         return res;
@@ -88,7 +88,7 @@ export default function middleware(req: NextRequest) {
           path: '/',
           sameSite: 'lax',
           httpOnly: false,
-          secure: true,
+          secure: isHttps,
           maxAge: 60 * 60 * 24 * 30, // 30 днів
         });
         return res;
@@ -181,7 +181,7 @@ export default function middleware(req: NextRequest) {
           path: '/',
           sameSite: 'lax',
           httpOnly: false,
-          secure: true,
+          secure: isHttps,
           maxAge: 60 * 60 * 24 * 7, // 7 днів
         });
 
