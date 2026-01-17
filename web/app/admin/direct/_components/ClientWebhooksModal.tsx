@@ -32,6 +32,9 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
 
   useEffect(() => {
     if (isOpen && altegioClientId) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'ClientWebhooksModal.tsx:useEffect',message:'client_webhooks_modal_open',data:{hasAltegioClientId:!!altegioClientId,altegioClientId:altegioClientId??null,clientNameLen:typeof clientName==='string'?clientName.length:null,isClientNamePlaceholder:clientName==='-'},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
       loadWebhooks();
     } else if (isOpen && !altegioClientId) {
       setError('У клієнта немає Altegio ID');
