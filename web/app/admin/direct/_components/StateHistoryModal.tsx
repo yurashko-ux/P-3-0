@@ -187,6 +187,10 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
       const data = await res.json();
       
       if (data.ok) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1',location:'StateHistoryModal.tsx:loadHistory',message:'Fetched state-history payload summary',data:{hasData:!!data?.data,currentState:String(data?.data?.currentState||''),historyLen:Array.isArray(data?.data?.history)?data.data.history.length:0,historyStates:Array.isArray(data?.data?.history)?data.data.history.map((h:any)=>String(h?.state||'')).slice(0,20):[]},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion agent log
+
         // Фільтруємо записи зі станом "no-instagram" (видалений стан)
         const filteredHistory = (data.data.history || []).filter(
           (log: StateHistoryLog) => log.state !== 'no-instagram'
@@ -194,6 +198,15 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
         setHistory(filteredHistory);
         // Якщо поточний стан - "no-instagram", не показуємо його
         const currentStateValue = data.data.currentState === 'no-instagram' ? null : data.data.currentState;
+
+        // #region agent log
+        try {
+          const lastHistoryState = filteredHistory.length ? String(filteredHistory[filteredHistory.length - 1]?.state || '') : '';
+          const cs = currentStateValue ? String(currentStateValue) : '';
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'StateHistoryModal.tsx:loadHistory',message:'currentState vs lastHistoryState',data:{currentState:cs,lastHistoryState,lastHistoryDiff:cs!==lastHistoryState},timestamp:Date.now()})}).catch(()=>{});
+        } catch {}
+        // #endregion agent log
+
         setCurrentState(currentStateValue);
         setCurrentStateMasterName(data.data.currentStateMasterName);
         setCurrentStateDate(data.data.currentStateDate);
