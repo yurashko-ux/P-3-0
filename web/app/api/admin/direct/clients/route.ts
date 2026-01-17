@@ -235,7 +235,6 @@ export async function GET(req: NextRequest) {
                 ...c,
                 serviceMasterName: undefined,
                 serviceMasterAltegioStaffId: null,
-                // @ts-expect-error computed field for UI
                 serviceSecondaryMasterName: undefined,
               };
             } else {
@@ -250,7 +249,6 @@ export async function GET(req: NextRequest) {
                     ...c,
                     serviceMasterName: String(primary.staffName),
                     serviceMasterAltegioStaffId: primary.staffId ?? null,
-                    // @ts-expect-error computed field for UI
                     serviceSecondaryMasterName: secondary?.staffName ? String(secondary.staffName) : undefined,
                   };
                 } else {
@@ -258,7 +256,6 @@ export async function GET(req: NextRequest) {
                     ...c,
                     serviceMasterName: undefined,
                     serviceMasterAltegioStaffId: null,
-                    // @ts-expect-error computed field for UI
                     serviceSecondaryMasterName: undefined,
                   };
                 }
