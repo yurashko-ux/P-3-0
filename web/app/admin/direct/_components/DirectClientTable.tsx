@@ -12,29 +12,6 @@ import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
 
-function RebookingIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5" />
-      <path
-        d="M16.5 8.5h-4a1 1 0 1 1 0-2h2.8A6.5 6.5 0 0 0 7.5 12a1 1 0 1 1-2 0 8.5 8.5 0 0 1 9.9-8.3V3.5a1 1 0 0 1 2 0v5Z"
-        fill="#ffffff"
-      />
-      <path
-        d="M7.5 15.5h4a1 1 0 1 1 0 2H8.7A6.5 6.5 0 0 0 16.5 12a1 1 0 1 1 2 0 8.5 8.5 0 0 1-9.9 8.3v.2a1 1 0 0 1-2 0v-5Z"
-        fill="#ffffff"
-      />
-    </svg>
-  );
-}
-
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const iconStyle = { width: `${size}px`, height: `${size}px` };
@@ -1647,10 +1624,10 @@ export function DirectClientTable({
                                 </button>
                                 {client.paidServiceIsRebooking ? (
                                   <span
-                                    className="text-blue-600"
+                                    className="text-purple-700 text-lg"
                                     title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
                                   >
-                                    <RebookingIcon size={18} />
+                                    🔁
                                   </span>
                                 ) : null}
                                 {attendanceIcon}
