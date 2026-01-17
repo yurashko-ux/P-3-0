@@ -34,8 +34,9 @@ export async function GET(req: NextRequest) {
     // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
     const isManychatClient = !clientInfo?.altegioClientId;
     
-    // Спочатку видаляємо "no-instagram"
-    let filteredHistory = info.history.filter(log => log.state !== 'no-instagram');
+    // Спочатку видаляємо "no-instagram" та прибираємо застарілий стан `consultation`
+    // (факт приходу на консультацію показуємо ✅ у колонці дати консультації)
+    let filteredHistory = info.history.filter(log => log.state !== 'no-instagram' && log.state !== 'consultation');
     
     // Фільтруємо "lead" та "client" - залишаємо тільки найстаріші
     const sortedHistory = [...filteredHistory].sort((a, b) => 
@@ -157,7 +158,9 @@ export async function GET(req: NextRequest) {
     }
 
     // РАДИКАЛЬНЕ ПРАВИЛО: для Altegio клієнтів - не повертаємо поточний стан "lead"
+    // Також нормалізуємо застарілий стан `consultation` -> `consultation-booked`
     let currentStateValue = info.currentState === 'no-instagram' ? null : info.currentState;
+    if (currentStateValue === 'consultation') currentStateValue = 'consultation-booked';
     if (!isManychatClient && currentStateValue === 'lead') {
       currentStateValue = null; // Не показуємо "lead" для Altegio клієнтів
     }
