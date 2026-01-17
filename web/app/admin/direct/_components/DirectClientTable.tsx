@@ -1497,12 +1497,16 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
-                            const appointmentDate = new Date(client.paidServiceDate);
-                            const now = new Date();
-                            now.setHours(0, 0, 0, 0); // Порівнюємо тільки дати, без часу
-                            appointmentDate.setHours(0, 0, 0, 0);
-                            const isPast = appointmentDate < now;
-                            const isPastOrToday = appointmentDate <= now;
+                            const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
+                              timeZone: 'Europe/Kyiv',
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                            });
+                            const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
+                            const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
+                            const isPast = paidKyivDay < todayKyivDay;
+                            const isPastOrToday = paidKyivDay <= todayKyivDay;
                             const dateStr = formatDate(client.paidServiceDate);
                             
                             // Форматуємо дату створення запису для tooltip
@@ -1525,6 +1529,14 @@ export function DirectClientTable({
                                 attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">❓</span>;
                               }
                             }
+
+                            const isPendingAttendance = client.paidServiceAttended == null;
+                            const pendingIcon =
+                              !client.paidServiceCancelled && !isPastOrToday && isPendingAttendance
+                                ? (
+                                  <span className="text-gray-700 text-lg" title="Присутність: Очікується">⏳</span>
+                                )
+                                : null;
                             
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
@@ -1548,6 +1560,7 @@ export function DirectClientTable({
                                 >
                                   {dateStr}
                                 </button>
+                                {pendingIcon}
                                 {client.paidServiceIsRebooking ? (
                                   <span
                                     className="text-purple-700 text-lg"
