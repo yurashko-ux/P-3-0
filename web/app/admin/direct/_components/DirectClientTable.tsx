@@ -1659,6 +1659,7 @@ export function DirectClientTable({
                           const full = (client.serviceMasterName || '').trim();
                           const name = shortPersonName(full);
                           if (!name) return '';
+                          const secondary = shortPersonName((client as any).serviceSecondaryMasterName);
 
                           let historyTitle = name;
                           try {
@@ -1675,14 +1676,21 @@ export function DirectClientTable({
                             // ignore
                           }
                           return (
-                            <button
-                              type="button"
-                              className="font-medium hover:underline text-left"
-                              title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
-                              onClick={() => setMasterHistoryClient(client)}
-                            >
-                              {name}
-                            </button>
+                            <span className="flex flex-col items-start leading-none">
+                              <button
+                                type="button"
+                                className="font-medium hover:underline text-left"
+                                title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
+                                onClick={() => setMasterHistoryClient(client)}
+                              >
+                                {name}
+                              </button>
+                              {secondary ? (
+                                <span className="text-[10px] leading-none opacity-70">
+                                  ({secondary})
+                                </span>
+                              ) : null}
+                            </span>
                           );
                         })()}
                       </td>

@@ -14,6 +14,7 @@ import {
   isAdminStaffName,
   computeServicesTotalCostUAH,
   pickNonAdminStaffFromGroup,
+  pickNonAdminStaffPairFromGroup,
 } from '@/lib/altegio/records-grouping';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -230,19 +231,37 @@ export async function GET(req: NextRequest) {
             // ВАЖЛИВО (оновлене правило): "Майстер" — ТІЛЬКИ для платних записів.
             // Якщо в клієнта немає paidServiceDate — в UI робимо колонку порожньою, навіть якщо в БД щось залишилось.
             if (!c.paidServiceDate) {
-              c = { ...c, serviceMasterName: undefined, serviceMasterAltegioStaffId: null };
+              c = {
+                ...c,
+                serviceMasterName: undefined,
+                serviceMasterAltegioStaffId: null,
+                // @ts-expect-error computed field for UI
+                serviceSecondaryMasterName: undefined,
+              };
             } else {
               const paidGroup = pickClosestGroup('paid', c.paidServiceDate);
               const chosen = paidGroup;
               if (chosen) {
-                const picked = pickNonAdminStaffFromGroup(chosen as any, 'latest');
-              if (picked?.staffName) {
-                c = {
-                  ...c,
-                  serviceMasterName: String(picked.staffName),
-                  serviceMasterAltegioStaffId: picked.staffId ?? null,
-                };
-              }
+                const pair = pickNonAdminStaffPairFromGroup(chosen as any, 'first');
+                const primary = pair[0] || null;
+                const secondary = pair[1] || null;
+                if (primary?.staffName) {
+                  c = {
+                    ...c,
+                    serviceMasterName: String(primary.staffName),
+                    serviceMasterAltegioStaffId: primary.staffId ?? null,
+                    // @ts-expect-error computed field for UI
+                    serviceSecondaryMasterName: secondary?.staffName ? String(secondary.staffName) : undefined,
+                  };
+                } else {
+                  c = {
+                    ...c,
+                    serviceMasterName: undefined,
+                    serviceMasterAltegioStaffId: null,
+                    // @ts-expect-error computed field for UI
+                    serviceSecondaryMasterName: undefined,
+                  };
+                }
               }
             }
           }

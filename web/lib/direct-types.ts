@@ -33,6 +33,7 @@ export type DirectClient = {
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію
   serviceMasterAltegioStaffId?: number; // Поточний майстер (Altegio staffId) з усіх записів (paid/consultation)
   serviceMasterName?: string; // Поточний майстер (Altegio staffName) з усіх записів (paid/consultation)
+  serviceSecondaryMasterName?: string; // Допоміжний майстер для платного запису (2-й не-адмін у paid-групі за день)
   serviceMasterHistory?: string; // Історія змін майстра (JSON): [{ kyivDay, masterName, source }]
   paidServiceIsRebooking?: boolean; // 🔁 Чи є поточний запис на платну послугу "перезаписом"
   paidServiceRebookFromKyivDay?: string; // YYYY-MM-DD (Europe/Kyiv) — день attended, після якого створено перезапис

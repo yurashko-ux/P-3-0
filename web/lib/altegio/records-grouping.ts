@@ -123,6 +123,47 @@ export function pickNonAdminStaffFromGroup(
   return { staffId: chosen.staffId ?? null, staffName: String(chosen.staffName) };
 }
 
+export function pickNonAdminStaffPairFromGroup(
+  group: RecordGroup,
+  mode: 'latest' | 'first' = 'latest'
+): Array<{ staffId: number | null; staffName: string }> {
+  const kyivDay = group.kyivDay;
+  const events = Array.isArray(group.events) ? group.events : [];
+
+  const relevant = events
+    .filter((e) => {
+      const name = (e.staffName || '').toString().trim();
+      if (!name) return false;
+      if (isUnknownStaffName(name)) return false;
+      if (isAdminStaffName(name)) return false;
+      // staff прив’язуємо до ДНЯ ВІЗИТУ (datetime) або day receivedAt, якщо datetime відсутній
+      const dayByDatetime = e.datetime ? kyivDayFromISO(e.datetime) : '';
+      const dayByReceivedAt = e.receivedAt ? kyivDayFromISO(e.receivedAt) : '';
+      if (!dayByDatetime && !dayByReceivedAt) return false;
+      return dayByDatetime === kyivDay || dayByReceivedAt === kyivDay;
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.receivedAt || a.datetime || 0).getTime();
+      const tb = new Date(b.receivedAt || b.datetime || 0).getTime();
+      return mode === 'first' ? ta - tb : tb - ta;
+    });
+
+  const out: Array<{ staffId: number | null; staffName: string }> = [];
+  const seen = new Set<string>();
+  for (const e of relevant) {
+    const staffName = (e.staffName || '').toString().trim();
+    if (!staffName) continue;
+    const staffId = e.staffId ?? null;
+    const key = staffId != null ? `id:${staffId}` : `name:${staffName.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ staffId, staffName });
+    if (out.length >= 2) break;
+  }
+
+  return out;
+}
+
 export function pickStaffFromGroup(
   group: RecordGroup,
   opts?: { mode?: 'latest' | 'first'; allowAdmin?: boolean }

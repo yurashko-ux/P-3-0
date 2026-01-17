@@ -268,7 +268,8 @@ export async function POST(req: NextRequest) {
           }
 
           // "Майстер" (загальний): беремо майстра з paid-групи (latest non-admin)
-          const picked = pickNonAdminStaffFromGroup(paidServiceInfo, 'latest');
+          // Бізнес-правило: головний майстер = перший не-адмін за receivedAt (для записів “в 4 руки”).
+          const picked = pickNonAdminStaffFromGroup(paidServiceInfo, 'first');
           if (picked?.staffName) {
             updates.serviceMasterName = picked.staffName;
             updates.serviceMasterAltegioStaffId = picked.staffId ?? null;
