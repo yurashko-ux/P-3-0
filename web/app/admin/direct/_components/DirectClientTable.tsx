@@ -1518,7 +1518,48 @@ export function DirectClientTable({
                               try {
                                 const shouldShowCross = !client.consultationCancelled && isPastOrToday && client.consultationAttended === false;
                                 if (shouldShowCross) {
+                                  const kyivDay = (iso: string) => {
+                                    try {
+                                      const d = new Date(iso);
+                                      if (isNaN(d.getTime())) return '';
+                                      return new Intl.DateTimeFormat('en-CA', {
+                                        timeZone: 'Europe/Kyiv',
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                      }).format(d);
+                                    } catch {
+                                      return '';
+                                    }
+                                  };
+
                                   fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H2',location:'DirectClientTable.tsx:consultationCell',message:'У таблиці показуємо ❌ для консультації',data:{clientId:String((client as any).id||''),altegioClientId:Number((client as any).altegioClientId||0),consultationBookingDate:String((client as any).consultationBookingDate||''),consultationAttended:(client as any).consultationAttended ?? null,consultationCancelled:(client as any).consultationCancelled ?? null,isPastOrToday:!!isPastOrToday},timestamp:Date.now()})}).catch(()=>{});
+
+                                  // Перевіряємо KV-агрегацію через /client-webhooks (це той самий data-source, що й модалка "Webhook-и").
+                                  const cid = String((client as any).id || '');
+                                  const acId = Number((client as any).altegioClientId || 0);
+                                  const bookingIso = String((client as any).consultationBookingDate || '');
+                                  const bookingDay = bookingIso ? kyivDay(bookingIso) : '';
+                                  const w: any = (window as any);
+                                  w.__attMismatchChecked = w.__attMismatchChecked || {};
+                                  if (cid && acId && bookingDay && !w.__attMismatchChecked[cid]) {
+                                    w.__attMismatchChecked[cid] = true;
+                                    fetch(`/api/admin/direct/client-webhooks?altegioClientId=${acId}`)
+                                      .then((r) => r.json())
+                                      .then((payload) => {
+                                        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+                                        const consultRows = rows.filter((r: any) => String(r?.status || '') === 'consultation-group');
+                                        const arrivedSameDay = consultRows.some((r: any) => {
+                                          const dt = String(r?.datetime || '');
+                                          const day = dt ? kyivDay(dt) : '';
+                                          return day && day === bookingDay && Number(r?.attendance) === 1;
+                                        });
+                                        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H3',location:'DirectClientTable.tsx:consultationCell',message:'Перевірка KV (/client-webhooks) для дня консультації при ❌',data:{clientId:cid,altegioClientId:acId,bookingDay,arrivedSameDay,consultRowsSample:consultRows.slice(0,5).map((r:any)=>({datetime:String(r?.datetime||''),attendance:r?.attendance??null}))},timestamp:Date.now()})}).catch(()=>{});
+                                      })
+                                      .catch((err) => {
+                                        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'att-mismatch',hypothesisId:'H3',location:'DirectClientTable.tsx:consultationCell',message:'Помилка перевірки KV (/client-webhooks)',data:{clientId:cid,altegioClientId:acId,err:String(err instanceof Error ? err.message : err)},timestamp:Date.now()})}).catch(()=>{});
+                                      });
+                                  }
                                 }
                               } catch {}
                               // #endregion agent log

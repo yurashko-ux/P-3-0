@@ -226,6 +226,51 @@ export async function GET(req: NextRequest) {
             } catch {}
             // #endregion agent log
 
+            // ВАЖЛИВО: attendance в UI має відповідати KV-групі того ДНЯ, який показуємо.
+            // Тому для відповіді /clients ми пріоритезуємо KV-групу (як у модалці "Webhook-и"),
+            // але НЕ перетираємо true на false.
+            const pickClosestConsultGroup = () => {
+              if (consultGroup) return consultGroup;
+              if (!groups.length) return null;
+              const bookingTs = new Date(c.consultationBookingDate as any).getTime();
+              if (!isFinite(bookingTs)) return null;
+              let best: any = null;
+              let bestDiff = Infinity;
+              for (const g of groups) {
+                if ((g as any)?.groupType !== 'consultation') continue;
+                const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+                if (!dt) continue;
+                const ts = new Date(dt).getTime();
+                if (!isFinite(ts)) continue;
+                const diff = Math.abs(ts - bookingTs);
+                if (diff < bestDiff) {
+                  bestDiff = diff;
+                  best = g;
+                }
+              }
+              // фолбек тільки якщо дуже близько (до 24 год)
+              if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
+              return null;
+            };
+
+            const cg = pickClosestConsultGroup();
+            if (cg) {
+              const attStatus = String((cg as any).attendanceStatus || '');
+              if (attStatus === 'arrived' || (cg as any).attendance === 1) {
+                c = { ...c, consultationAttended: true, consultationCancelled: false };
+              } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
+                if ((c as any).consultationAttended !== true) {
+                  c = { ...c, consultationAttended: false, consultationCancelled: false };
+                }
+              } else if (attStatus === 'cancelled' || (cg as any).attendance === -2) {
+                if ((c as any).consultationAttended !== true) {
+                  c = { ...c, consultationAttended: null, consultationCancelled: true };
+                } else {
+                  c = { ...c, consultationCancelled: false };
+                }
+              }
+            }
+
             if (consultGroup) {
               const events = Array.isArray((consultGroup as any).events) ? (consultGroup as any).events : [];
               const sorted = [...events].sort((a: any, b: any) => {
