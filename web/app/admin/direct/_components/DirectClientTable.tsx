@@ -1624,7 +1624,7 @@ export function DirectClientTable({
                                 </button>
                                 {client.paidServiceIsRebooking ? (
                                   <span
-                                    className="text-purple-700 text-lg"
+                                    className="text-blue-600 text-lg"
                                     title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
                                   >
                                     🔁
