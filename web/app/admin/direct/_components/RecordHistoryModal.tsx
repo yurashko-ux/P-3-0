@@ -157,7 +157,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                     <th className="text-xs">Майстри</th>
                     <th className="text-xs">Послуги</th>
                     {type === 'paid' ? <th className="text-xs text-right">Сума</th> : null}
-                    <th className="text-xs">Raw</th>
+                    <th className="text-xs">Подій</th>
                     <th className="text-xs"></th>
                   </tr>
                 </thead>

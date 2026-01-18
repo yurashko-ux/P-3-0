@@ -1385,11 +1385,18 @@ export function DirectClientTable({
                                 return "";
                               }
                               
-                              const now = new Date();
-                              now.setHours(0, 0, 0, 0);
-                              appointmentDate.setHours(0, 0, 0, 0);
-                              const isPast = appointmentDate < now;
-                              const isPastOrToday = appointmentDate <= now;
+                              // Порівнюємо по дню в Europe/Kyiv (як і для платних записів),
+                              // щоб “сьогодні” рахувалось як минуле/сьогоднішнє, а не майбутнє.
+                              const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
+                                timeZone: 'Europe/Kyiv',
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                              });
+                              const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
+                              const consultKyivDay = kyivDayFmt.format(appointmentDate); // YYYY-MM-DD
+                              const isPast = consultKyivDay < todayKyivDay;
+                              const isPastOrToday = consultKyivDay <= todayKyivDay;
                               const formattedDateStr = formatDate(dateStr);
                               const isOnline = client.isOnlineConsultation || false;
                               
@@ -1437,6 +1444,11 @@ export function DirectClientTable({
                                   attendanceIcon = <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">❌</span>;
                                 } else {
                                   attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)">❓</span>;
+                                }
+                              } else {
+                                // Майбутня консультація без attendance — очікується
+                                if (client.consultationAttended == null) {
+                                  attendanceIcon = <span className="text-gray-700 text-lg" title="Присутність: Очікується">⏳</span>;
                                 }
                               }
                               
