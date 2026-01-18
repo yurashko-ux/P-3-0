@@ -12,6 +12,22 @@ import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
 
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="4" y="4" width="16" height="16" rx="4" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
+      <circle cx="17" cy="7" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const iconStyle = { width: `${size}px`, height: `${size}px` };
@@ -1017,36 +1033,119 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[170px]">
                         <span className="flex flex-col leading-none">
-                          <span
-                            className="truncate"
-                            title={getFullName(client)}
-                          >
-                            {getFullName(client)}
-                          </span>
-                          <span className="opacity-80 mt-0.5 truncate" title={client.instagramUsername || ''}>
-                            {client.instagramUsername === 'NO INSTAGRAM' || client.instagramUsername?.startsWith('no_instagram_') ? (
-                              <span className="text-orange-600 font-semibold" title="Клієнт не має Instagram акаунту">
-                                NO INSTAGRAM
-                              </span>
-                            ) : client.instagramUsername?.startsWith('missing_instagram_') ? (
-                              <span className="text-red-600 font-semibold inline-flex items-center gap-1" title="Відсутній Instagram username">
-                                {client.instagramUsername}
-                                {client.telegramNotificationSent && (
-                                  <span className="text-blue-500" title="Повідомлення відправлено в Telegram">📱</span>
+                          {(() => {
+                            const first = (client.firstName || "").toString().trim();
+                            const last = (client.lastName || "").toString().trim();
+                            const hasName = Boolean(first || last);
+                            const fullName = getFullName(client);
+
+                            const username = (client.instagramUsername || "").toString();
+                            const isNoInstagram =
+                              username === "NO INSTAGRAM" || username.startsWith("no_instagram_");
+                            const isMissingInstagram = username.startsWith("missing_instagram_");
+                            const isNormalInstagram = Boolean(username) && !isNoInstagram && !isMissingInstagram;
+
+                            const renderInstagramTextAsIs = () => {
+                              // Коли ПІБ нема — залишаємо Instagram як є, щоб було зрозуміло хто це
+                              if (isNoInstagram) {
+                                return (
+                                  <span className="text-red-600 font-semibold" title="Клієнт не має Instagram акаунту">
+                                    NO
+                                  </span>
+                                );
+                              }
+                              if (isMissingInstagram) {
+                                return (
+                                  <span className="text-gray-500 font-medium" title="Instagram відсутній">
+                                    missing
+                                  </span>
+                                );
+                              }
+                              if (isNormalInstagram) {
+                                return (
+                                  <a
+                                    href={`https://instagram.com/${username}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="link link-primary"
+                                    title={`https://instagram.com/${username}`}
+                                  >
+                                    {username}
+                                  </a>
+                                );
+                              }
+                              return <span className="text-gray-400">—</span>;
+                            };
+
+                            const renderInstagramIcon = () => {
+                              if (isNoInstagram) {
+                                return (
+                                  <span className="text-red-600 font-semibold" title="Клієнт не має Instagram акаунту">
+                                    NO
+                                  </span>
+                                );
+                              }
+                              if (isMissingInstagram) {
+                                return (
+                                  <span
+                                    className="inline-flex items-center"
+                                    title="Instagram відсутній"
+                                  >
+                                    <InstagramIcon className="w-4 h-4 text-gray-400" />
+                                    {client.telegramNotificationSent && (
+                                      <span className="ml-1 text-blue-500" title="Повідомлення відправлено в Telegram">
+                                        📱
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              }
+                              if (isNormalInstagram) {
+                                return (
+                                  <a
+                                    href={`https://instagram.com/${username}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center hover:opacity-80"
+                                    title={`https://instagram.com/${username}`}
+                                  >
+                                    <InstagramIcon className="w-4 h-4 text-pink-600" />
+                                  </a>
+                                );
+                              }
+                              return <span className="text-gray-400">—</span>;
+                            };
+
+                            if (!hasName) {
+                              return (
+                                <span className="opacity-90 mt-0.5 truncate" title={username}>
+                                  {renderInstagramTextAsIs()}
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <>
+                                {first ? (
+                                  <span className="truncate text-sm" title={fullName}>
+                                    {first}
+                                  </span>
+                                ) : null}
+                                {last ? (
+                                  <span className="truncate text-sm font-semibold" title={fullName}>
+                                    {last}
+                                  </span>
+                                ) : (
+                                  <span className="truncate text-sm font-semibold" title={fullName}>
+                                    {fullName}
+                                  </span>
                                 )}
-                              </span>
-                            ) : (
-                              <a
-                                href={`https://instagram.com/${client.instagramUsername}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="link link-primary"
-                                title={client.instagramUsername}
-                              >
-                                {client.instagramUsername}
-                              </a>
-                            )}
-                          </span>
+                                <span className="mt-0.5 inline-flex items-center">
+                                  {renderInstagramIcon()}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </span>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
