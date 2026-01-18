@@ -47,14 +47,55 @@ function looksInstagramSourced(firstName?: string | null, lastName?: string | nu
   return isAllCapsSingle;
 }
 
+function normalizeNameForCompare(v: string): string {
+  return v
+    .toLowerCase()
+    .replace(/[.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitName(fullName: string): { firstName: string | null; lastName: string | null } {
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  const firstName = parts[0] || null;
+  const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+  return { firstName, lastName };
+}
+
+function idSuffix(id: string | number): string {
+  const s = String(id);
+  return s.length <= 6 ? s : s.slice(-6);
+}
+
+async function dbg(payload: any) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'debug-session',
+      ...payload,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion agent log
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = await req.json().catch(() => ({}));
-  const dryRun = Boolean((body as any).dryRun);
-  const limit = Math.max(1, Math.min(Number((body as any).limit || 200), 2000));
+  const sp = req.nextUrl.searchParams;
+
+  const rawMode = String((body as any).mode || sp.get('mode') || '').trim(); // '' | 'all' | 'diff' | 'heuristic'
+  const mode = rawMode || 'diff';
+  const dryRun = String((body as any).dryRun ?? sp.get('dryRun') ?? 'false').toLowerCase() === 'true';
+  const onlySourceInstagram =
+    String((body as any).onlySourceInstagram ?? sp.get('onlySourceInstagram') ?? 'true').toLowerCase() === 'true';
+  const limit = Math.max(1, Math.min(Number((body as any).limit || sp.get('limit') || 200), 2000));
+  const runId = String((body as any).runId || sp.get('runId') || 'pre-fix');
 
   const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
   if (!companyIdStr) {
@@ -66,26 +107,58 @@ export async function POST(req: NextRequest) {
   }
 
   const clients = await getAllDirectClients();
-  const candidates = clients
+  const base = clients
     .filter((c) => typeof c.altegioClientId === 'number' && c.altegioClientId > 0)
-    .filter((c) => isBadNamePart(c.firstName) || isBadNamePart(c.lastName) || looksInstagramSourced(c.firstName, c.lastName))
-    .slice(0, limit);
+    .filter((c) => (onlySourceInstagram ? c.source === 'instagram' : true));
+
+  const candidates =
+    mode === 'all' || mode === 'diff'
+      ? base.slice(0, limit)
+      : base
+          .filter(
+            (c) =>
+              isBadNamePart(c.firstName) ||
+              isBadNamePart(c.lastName) ||
+              looksInstagramSourced(c.firstName, c.lastName)
+          )
+          .slice(0, limit);
 
   console.log(
-    `[direct/fix-names-from-altegio] Старт. Кандидатів: ${candidates.length} з ${clients.length}. dryRun=${dryRun}`
+    `[direct/fix-names-from-altegio] Старт. mode=${mode}, onlySourceInstagram=${onlySourceInstagram}, кандидатів: ${candidates.length} з ${clients.length}. dryRun=${dryRun}`
   );
 
   let updated = 0;
+  let checked = 0;
+  let sameName = 0;
+  let mismatched = 0;
   let fetched404 = 0;
   let fetchedErrors = 0;
   let noNameInAltegio = 0;
 
   const sample: Array<{ directClientId: string; altegioClientId: number; updated: boolean }> = [];
+  let dbgMismatchLogged = 0;
+  let dbgUpdatedLogged = 0;
+
+  await dbg({
+    runId,
+    hypothesisId: 'H1',
+    location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:start',
+    message: 'Старт масового виправлення імен',
+    data: {
+      mode,
+      dryRun,
+      onlySourceInstagram,
+      limit,
+      totalClients: clients.length,
+      candidates: candidates.length,
+    },
+  });
 
   for (const c of candidates) {
     const altegioId = c.altegioClientId!;
     try {
       const ac = await getClient(companyId, altegioId);
+      checked++;
       if (!ac) {
         fetched404++;
         continue;
@@ -95,17 +168,40 @@ export async function POST(req: NextRequest) {
         noNameInAltegio++;
         continue;
       }
-      const parts = fullName.split(/\s+/).filter(Boolean);
-      const firstName = parts[0] || null;
-      const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+      const { firstName, lastName } = splitName(fullName);
       if (!firstName) {
         noNameInAltegio++;
         continue;
       }
 
+      const directFull = normalizeNameForCompare([c.firstName, c.lastName].filter(Boolean).join(' '));
+      const altegioFull = normalizeNameForCompare(fullName);
       const shouldUpdate =
-        String(c.firstName || '').trim() !== String(firstName || '').trim() ||
-        String(c.lastName || '').trim() !== String(lastName || '').trim();
+        mode === 'diff'
+          ? directFull !== altegioFull
+          : String(c.firstName || '').trim() !== String(firstName || '').trim() ||
+            String(c.lastName || '').trim() !== String(lastName || '').trim();
+
+      if (mode === 'diff') {
+        if (shouldUpdate) mismatched++;
+        else sameName++;
+      }
+
+      if (shouldUpdate && dbgMismatchLogged < 5) {
+        dbgMismatchLogged++;
+        await dbg({
+          runId,
+          hypothesisId: 'H1',
+          location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:compare',
+          message: 'Знайдено розбіжність імен (без ПІБ)',
+          data: {
+            directIdSuffix: idSuffix(c.id),
+            altegioIdSuffix: idSuffix(altegioId),
+            directLen: directFull.length,
+            altegioLen: altegioFull.length,
+          },
+        });
+      }
 
       if (!dryRun && shouldUpdate) {
         await prisma.directClient.update({
@@ -117,16 +213,53 @@ export async function POST(req: NextRequest) {
           },
         });
         updated++;
+
+        if (dbgUpdatedLogged < 5) {
+          dbgUpdatedLogged++;
+          await dbg({
+            runId,
+            hypothesisId: 'H2',
+            location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:update',
+            message: 'Оновлено ім’я з Altegio (без ПІБ)',
+            data: {
+              directIdSuffix: idSuffix(c.id),
+              altegioIdSuffix: idSuffix(altegioId),
+            },
+          });
+        }
       }
 
       if (sample.length < 25) {
         sample.push({ directClientId: c.id, altegioClientId: altegioId, updated: Boolean(shouldUpdate) });
       }
     } catch (err: any) {
+      checked++;
       fetchedErrors++;
       console.warn('[direct/fix-names-from-altegio] ⚠️ Помилка для altegioClientId:', altegioId, err?.message || err);
     }
   }
+
+  await dbg({
+    runId,
+    hypothesisId: 'H2',
+    location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:done',
+    message: 'Завершено масове виправлення імен',
+    data: {
+      mode,
+      dryRun,
+      onlySourceInstagram,
+      limit,
+      totalClients: clients.length,
+      candidates: candidates.length,
+      checked,
+      updated,
+      sameName,
+      mismatched,
+      fetched404,
+      fetchedErrors,
+      noNameInAltegio,
+    },
+  });
 
   return NextResponse.json({
     ok: true,
@@ -134,7 +267,10 @@ export async function POST(req: NextRequest) {
     stats: {
       totalClients: clients.length,
       candidates: candidates.length,
+      checked,
       updated,
+      sameName,
+      mismatched,
       fetched404,
       fetchedErrors,
       noNameInAltegio,

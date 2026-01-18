@@ -38,6 +38,29 @@ export async function altegioFetch<T = any>(
   let url = altegioUrl(path);
   
   console.log(`[altegio/client] Initial URL: ${url}, path: ${path}`);
+
+  // Лімітуємо debug-логи, щоб не засмічувати файл при масових операціях
+  // (особливо для кнопки №47, де може бути сотні викликів).
+  // #region agent log
+  const __shouldDbg = (() => {
+    try {
+      // @ts-ignore
+      globalThis.__altegioDbgCount = (globalThis.__altegioDbgCount || 0) + 1;
+      // @ts-ignore
+      return globalThis.__altegioDbgCount <= 8;
+    } catch {
+      return false;
+    }
+  })();
+  const __dbg = (payload: any) => {
+    if (!__shouldDbg) return;
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'debug-session', runId: 'altegio-fetch', timestamp: Date.now(), ...payload }),
+    }).catch(() => {});
+  };
+  // #endregion agent log
   
   // Partner ID може передаватися як query параметр або окремий заголовок
   // Для публічних програм: якщо є PARTNER_TOKEN
@@ -61,6 +84,24 @@ export async function altegioFetch<T = any>(
   } else {
     console.log(`[altegio/client] Skipped partner_id: hasCompanyIdInPath=${hasCompanyIdInPath}, url already has partner_id=${url.includes('partner_id=')}`);
   }
+
+  __dbg({
+    hypothesisId: 'A1',
+    location: 'web/lib/altegio/client.ts:altegioFetch:init',
+    message: 'Altegio fetch init (sanitized)',
+    data: {
+      path,
+      method: (options.method || 'GET').toString(),
+      baseUrl: ALTEGIO_ENV.API_URL,
+      finalUrlHasPartnerId: url.includes('partner_id='),
+      hasCompanyIdInPath,
+      hasPartnerToken,
+      hasUserToken: !!ALTEGIO_ENV.USER_TOKEN,
+      userTokenLen: ALTEGIO_ENV.USER_TOKEN ? ALTEGIO_ENV.USER_TOKEN.length : 0,
+      partnerTokenLen: ALTEGIO_ENV.PARTNER_TOKEN ? ALTEGIO_ENV.PARTNER_TOKEN.length : 0,
+      partnerIdLen: partnerId ? String(partnerId).length : 0,
+    },
+  });
   
   const headers = altegioHeaders();
   // Важливо: наші заголовки (Accept, Authorization) мають пріоритет
@@ -109,6 +150,18 @@ export async function altegioFetch<T = any>(
         cache: 'no-store',
       });
 
+      __dbg({
+        hypothesisId: 'A2',
+        location: 'web/lib/altegio/client.ts:altegioFetch:response',
+        message: 'Altegio response (sanitized)',
+        data: {
+          path,
+          status: response.status,
+          ok: response.ok,
+          retryAfter: response.headers.get('retry-after') || response.headers.get('Retry-After') || null,
+        },
+      });
+
       // Обробка rate limiting (429 Too Many Requests)
       if (response.status === 429) {
         const retryAfter = response.headers.get('Retry-After');
@@ -143,6 +196,22 @@ export async function altegioFetch<T = any>(
       const json = await response.json().catch(() => ({}));
       return json as T;
     } catch (err) {
+      __dbg({
+        hypothesisId: 'A3',
+        location: 'web/lib/altegio/client.ts:altegioFetch:error',
+        message: 'Altegio fetch error (sanitized)',
+        data: {
+          path,
+          errName: err instanceof Error ? err.name : typeof err,
+          status: err instanceof AltegioHttpError ? err.status : null,
+          isEnvError:
+            err instanceof Error
+              ? err.message.includes('ALTEGIO_USER_TOKEN') ||
+                err.message.includes('ALTEGIO_PARTNER_TOKEN') ||
+                err.message.includes('Missing env')
+              : false,
+        },
+      });
       if (err instanceof AltegioHttpError) {
         lastError = err;
         if (attempt < retries && (err.status >= 500 || err.status === 429)) {

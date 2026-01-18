@@ -30,6 +30,16 @@ export function AdminToolsModal({
 }: AdminToolsModalProps) {
   if (!isOpen) return null;
 
+  const dbg = (payload: any) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'debug-session', timestamp: Date.now(), ...payload }),
+    }).catch(() => {});
+    // #endregion agent log
+  };
+
   const handleEndpoint = async (
     endpoint: string,
     method: "GET" | "POST" = "POST",
@@ -44,13 +54,53 @@ export function AdminToolsModal({
     setIsLoading(true);
     try {
       const options: RequestInit = { method };
-      if (body) {
+      const isFixNamesFromAltegio = endpoint === "/api/admin/direct/fix-names-from-altegio";
+      const effectiveBody =
+        isFixNamesFromAltegio && method === "POST" && !body ? { runId: "btn47" } : body;
+
+      if (isFixNamesFromAltegio) {
+        dbg({
+          runId: "btn47",
+          hypothesisId: "H47",
+          location: "AdminToolsModal.tsx:handleEndpoint:beforeFetch",
+          message: "Натиснуто кнопку №47 (виклик endpoint)",
+          data: { endpoint, method, hasBody: Boolean(effectiveBody) },
+        });
+      }
+
+      if (effectiveBody) {
         options.headers = { 'Content-Type': 'application/json' };
-        options.body = JSON.stringify(body);
+        options.body = JSON.stringify(effectiveBody);
       }
       
       const res = await fetch(endpoint, options);
       const data = await res.json();
+
+      if (isFixNamesFromAltegio) {
+        dbg({
+          runId: "btn47",
+          hypothesisId: "H47",
+          location: "AdminToolsModal.tsx:handleEndpoint:afterFetch",
+          message: "Відповідь кнопки №47",
+          data: {
+            status: res.status,
+            ok: Boolean(data?.ok),
+            stats: data?.stats
+              ? {
+                  totalClients: data.stats.totalClients,
+                  candidates: data.stats.candidates,
+                  checked: data.stats.checked,
+                  mismatched: data.stats.mismatched,
+                  sameName: data.stats.sameName,
+                  updated: data.stats.updated,
+                  fetched404: data.stats.fetched404,
+                  fetchedErrors: data.stats.fetchedErrors,
+                  noNameInAltegio: data.stats.noNameInAltegio,
+                }
+              : null,
+          },
+        });
+      }
       
       if (data.ok) {
         const message = successMessage
