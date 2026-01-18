@@ -76,6 +76,35 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
     return `${t}: ${clientName}`;
   }, [type, clientName]);
 
+  const attemptByRowKey = useMemo(() => {
+    // Рахуємо номер спроби консультації для кожного kyivDay:
+    // attempt = 1 + кількість no-show ДО цього дня.
+    // Показуємо цифру тільки якщо >=2 (і тільки для "Очікується" в UI нижче).
+    if (type !== 'consultation' || !Array.isArray(rows) || rows.length === 0) return new Map<string, number>();
+
+    const sortedAsc = [...rows].sort((a, b) => {
+      const da = (a.kyivDay || '').toString();
+      const db = (b.kyivDay || '').toString();
+      if (da < db) return -1;
+      if (da > db) return 1;
+      return 0;
+    });
+
+    let noShowCount = 0;
+    const map = new Map<string, number>();
+    for (const r of sortedAsc) {
+      const key = `${r.type}:${r.kyivDay}`;
+      map.set(key, 1 + noShowCount);
+
+      const isNoShow =
+        r.attendance === -1 ||
+        (r.attendanceStatus || '').toString() === 'no-show' ||
+        (r.attendanceLabel || '').toString().includes("Не з'явив");
+      if (isNoShow) noShowCount++;
+    }
+    return map;
+  }, [rows, type]);
+
   useEffect(() => {
     if (!isOpen) return;
     if (!altegioClientId) {
@@ -165,13 +194,28 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                   {rows.map((r) => {
                     const key = `${r.type}:${r.kyivDay}:${r.datetime || ''}:${r.receivedAt || ''}`;
                     const isExpanded = expandedKey === key;
+                    const attemptKey = `${r.type}:${r.kyivDay}`;
+                    const attempt = attemptByRowKey.get(attemptKey) ?? 1;
+                    const shouldShowAttemptInsteadOfHourglass =
+                      type === 'consultation' &&
+                      r.attendanceIcon === '⏳' &&
+                      attempt >= 2;
                     return (
                       <>
                         <tr key={key} className="hover">
                           <td className="text-xs whitespace-nowrap">{formatDateTime(r.datetime)}</td>
                           <td className="text-xs whitespace-nowrap" title={r.attendanceStatus}>
                             <span className="flex items-center gap-2">
-                              <span className="text-lg">{r.attendanceIcon}</span>
+                              {shouldShowAttemptInsteadOfHourglass ? (
+                                <span
+                                  className="inline-flex items-center justify-center rounded-full bg-white border border-blue-300 text-blue-600 font-bold text-[12px] w-[22px] h-[22px]"
+                                  title={`Повторна спроба консультації №${attempt}`}
+                                >
+                                  {attempt}
+                                </span>
+                              ) : (
+                                <span className="text-lg">{r.attendanceIcon}</span>
+                              )}
                               <span>{r.attendanceLabel}</span>
                             </span>
                           </td>
