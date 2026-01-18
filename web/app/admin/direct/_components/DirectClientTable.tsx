@@ -1182,6 +1182,42 @@ export function DirectClientTable({
                                 otherLogs.push(log);
                               }
                             }
+
+                            // Для клієнтів, які вже мають Altegio ID, але в історії станів ще не зʼявився "client"
+                            // (наприклад: клієнт прийшов з Manychat, а Altegio підʼєднався пізніше),
+                            // додаємо базовий "client" як синтетичний запис, щоб у таблиці було видно, що це вже клієнт.
+                            if (!isManychatClient && clientLogs.length === 0) {
+                              const syntheticClientLog: any = {
+                                id: 'synthetic-client',
+                                clientId: client.id,
+                                state: 'client',
+                                previousState: null,
+                                reason: 'derived-altegio-client',
+                                createdAt: client.createdAt || new Date().toISOString(),
+                              };
+                              clientLogs.unshift(syntheticClientLog);
+
+                              // #region agent log
+                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  sessionId: 'debug-session',
+                                  runId: 'state_client_postfix',
+                                  hypothesisId: 'S1',
+                                  location: 'web/app/admin/direct/_components/DirectClientTable.tsx:state:injectClient',
+                                  message: 'Injected synthetic client state for altegio client without clientLogs',
+                                  data: {
+                                    clientId: client.id,
+                                    altegioClientId: client.altegioClientId || null,
+                                    currentState,
+                                    last5StatesCount: states.length,
+                                  },
+                                  timestamp: Date.now(),
+                                }),
+                              }).catch(() => {});
+                              // #endregion agent log
+                            }
                             
                             // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
                             // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
