@@ -47,17 +47,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const dbgRunId = `attend_mismatch_${Date.now()}`;
-  const dbg = (payload: any) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: 'debug-session', runId: dbgRunId, timestamp: Date.now(), ...payload }),
-    }).catch(() => {});
-    // #endregion agent log
-  };
-
   try {
     const { searchParams } = req.nextUrl;
     const statusId = searchParams.get('statusId');
@@ -226,18 +215,6 @@ export async function GET(req: NextRequest) {
       const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
-      dbg({
-        hypothesisId: 'M0',
-        location: 'clients/route.ts:kvLoaded',
-        message: 'KV events loaded for attendance reconciliation',
-        data: {
-          clientsCount: clients.length,
-          recordsCount: rawItemsRecords.length,
-          webhookCount: rawItemsWebhook.length,
-          normalizedCount: normalizedEvents.length,
-        },
-      });
-
       clients = clients.map((c) => {
         // Дораховуємо "поточний Майстер" для UI з KV (щоб збігалось з модалкою "Webhook-и").
         // Бізнес-правило для колонки "Майстер": ігноруємо адмінів/невідомих, пріоритет = paid-запис (якщо він є).
@@ -306,97 +283,6 @@ export async function GET(req: NextRequest) {
               if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
               return null;
             };
-
-            // Діагностика: ловимо випадки, коли UI показує ❌ (DB=false),
-            // але найближча KV-група для цієї дати не має no-show (тобто pending/null).
-            // Це допоможе відрізнити "legacy false" від реального attendance=-1.
-            try {
-              const idSuffix = (s: any) => {
-                const str = String(s || '');
-                return str.length <= 6 ? str : str.slice(-6);
-              };
-
-              const consultG = c.consultationBookingDate ? pickClosestGroup('consultation', c.consultationBookingDate) : null;
-              const paidG = c.paidServiceDate ? pickClosestGroup('paid', c.paidServiceDate) : null;
-
-              const consultGroupSummary = consultG
-                ? {
-                    kyivDay: (consultG as any).kyivDay || null,
-                    attendance: (consultG as any).attendance ?? null,
-                    attendanceStatus: (consultG as any).attendanceStatus || null,
-                    eventsCount: Array.isArray((consultG as any).events) ? (consultG as any).events.length : null,
-                  }
-                : null;
-              const paidGroupSummary = paidG
-                ? {
-                    kyivDay: (paidG as any).kyivDay || null,
-                    attendance: (paidG as any).attendance ?? null,
-                    attendanceStatus: (paidG as any).attendanceStatus || null,
-                    eventsCount: Array.isArray((paidG as any).events) ? (paidG as any).events.length : null,
-                  }
-                : null;
-
-              const consultMismatch =
-                c.consultationBookingDate &&
-                c.consultationAttended === false &&
-                consultG &&
-                !(['no-show', 'arrived', 'cancelled'] as const).includes(String((consultG as any).attendanceStatus || '') as any) &&
-                ((consultG as any).attendance ?? null) == null;
-
-              const paidMismatch =
-                c.paidServiceDate &&
-                c.paidServiceAttended === false &&
-                paidG &&
-                !(['no-show', 'arrived', 'cancelled'] as const).includes(String((paidG as any).attendanceStatus || '') as any) &&
-                ((paidG as any).attendance ?? null) == null;
-
-              const consultMismatchTrue =
-                c.consultationBookingDate &&
-                c.consultationAttended === true &&
-                consultG &&
-                !(['no-show', 'arrived', 'cancelled'] as const).includes(String((consultG as any).attendanceStatus || '') as any) &&
-                ((consultG as any).attendance ?? null) == null;
-
-              const paidMismatchTrue =
-                c.paidServiceDate &&
-                c.paidServiceAttended === true &&
-                paidG &&
-                !(['no-show', 'arrived', 'cancelled'] as const).includes(String((paidG as any).attendanceStatus || '') as any) &&
-                ((paidG as any).attendance ?? null) == null;
-
-              if (consultMismatch || paidMismatch || consultMismatchTrue || paidMismatchTrue) {
-                dbg({
-                  hypothesisId: consultMismatchTrue || paidMismatchTrue ? 'M2' : 'M1',
-                  location: 'clients/route.ts:attendanceMismatch',
-                  message:
-                    consultMismatchTrue || paidMismatchTrue
-                      ? 'DB attended=true but closest KV group looks pending/null'
-                      : 'DB attended=false but closest KV group looks pending/null',
-                  data: {
-                    clientIdSuffix: idSuffix(c.id),
-                    altegioClientIdSuffix: idSuffix(c.altegioClientId),
-                    hasConsultMismatch: consultMismatch,
-                    hasPaidMismatch: paidMismatch,
-                    hasConsultMismatchTrue: consultMismatchTrue,
-                    hasPaidMismatchTrue: paidMismatchTrue,
-                    consultationBookingDate: c.consultationBookingDate ? String(c.consultationBookingDate).slice(0, 16) : null,
-                    paidServiceDate: c.paidServiceDate ? String(c.paidServiceDate).slice(0, 16) : null,
-                    db: {
-                      consultationAttended: c.consultationAttended ?? null,
-                      paidServiceAttended: c.paidServiceAttended ?? null,
-                      consultationCancelled: (c as any).consultationCancelled ?? null,
-                      paidServiceCancelled: (c as any).paidServiceCancelled ?? null,
-                    },
-                    kv: {
-                      consult: consultGroupSummary,
-                      paid: paidGroupSummary,
-                    },
-                  },
-                });
-              }
-            } catch (err) {
-              console.warn('[direct/clients] ⚠️ attendance mismatch debug failed:', err);
-            }
 
             // ВАЖЛИВО (оновлене правило): "Майстер" — ТІЛЬКИ для платних записів.
             // Якщо в клієнта немає paidServiceDate — в UI робимо колонку порожньою, навіть якщо в БД щось залишилось.

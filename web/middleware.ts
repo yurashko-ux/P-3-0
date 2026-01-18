@@ -11,21 +11,6 @@ export default function middleware(req: NextRequest) {
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
   const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || '';
 
-  const dbgRunId = `login_dbg_${Date.now()}`;
-  const dbg = (payload: any) => {
-    // #region agent log
-    try {
-      const isLocalHost = host.includes('localhost') || host.includes('127.0.0.1');
-      if (!isLocalHost) return;
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: 'debug-session', runId: dbgRunId, timestamp: Date.now(), ...payload }),
-      }).catch(() => {});
-    } catch {}
-    // #endregion agent log
-  };
-
   const isHttps = (() => {
     try {
       const xfProto = (req.headers.get('x-forwarded-proto') || '').toLowerCase();
@@ -35,19 +20,6 @@ export default function middleware(req: NextRequest) {
       return true;
     }
   })();
-
-  // Ловимо випадок, коли UI присилає token НЕ на /admin/login, а на /admin?... (може ламати логін)
-  if (pathname.startsWith('/admin')) {
-    const qTokenAny = url.searchParams.get('token');
-    if (qTokenAny) {
-      dbg({
-        hypothesisId: 'L6',
-        location: 'middleware.ts:/admin*',
-        message: 'token_query_on_admin_path',
-        data: { host, isHttps, pathname, tokenLen: String(qTokenAny || '').trim().length, hasAdminPass: !!ADMIN_PASS },
-      });
-    }
-  }
 
   // ===== ПЕРЕВІРКА ДОМЕНУ: Якщо finance-hob.vercel.app, дозволяємо тільки фінансовий звіт =====
   const isFinanceReportDomain = host === 'finance-hob.vercel.app';
@@ -183,26 +155,9 @@ export default function middleware(req: NextRequest) {
     const qToken = url.searchParams.get('token');
     if (qToken !== null) {
       const token = (qToken || '').trim();
-      dbg({
-        hypothesisId: 'L1',
-        location: 'middleware.ts:/admin/login',
-        message: 'admin_login_token_received',
-        data: {
-          host,
-          isHttps,
-          hasAdminPass: !!ADMIN_PASS,
-          tokenLen: token.length,
-        },
-      });
 
       // якщо ADMIN_PASS не заданий — не пускаємо, просимо адміна виставити змінну
       if (!ADMIN_PASS) {
-        dbg({
-          hypothesisId: 'L2',
-          location: 'middleware.ts:/admin/login',
-          message: 'admin_login_blocked_missing_env',
-          data: { host, isHttps },
-        });
         const back = new URL(url);
         back.searchParams.delete('token');
         back.searchParams.set('err', 'env'); // немає ADMIN_PASS у середовищі
@@ -217,17 +172,6 @@ export default function middleware(req: NextRequest) {
       cleanDest.search = '';
 
       if (token === ADMIN_PASS) {
-        dbg({
-          hypothesisId: 'L3',
-          location: 'middleware.ts:/admin/login',
-          message: 'admin_login_success_cookie_set',
-          data: {
-            host,
-            isHttps,
-            cookieName: 'admin_token',
-            secureFlag: isHttps,
-          },
-        });
         const res = NextResponse.redirect(cleanDest);
         res.cookies.set('admin_token', token, {
           path: '/',
@@ -239,12 +183,6 @@ export default function middleware(req: NextRequest) {
 
         return res;
       } else {
-        dbg({
-          hypothesisId: 'L4',
-          location: 'middleware.ts:/admin/login',
-          message: 'admin_login_wrong_token',
-          data: { host, isHttps, tokenLen: token.length, hasAdminPass: !!ADMIN_PASS },
-        });
         const back = new URL(url);
         back.searchParams.delete('token');
         back.searchParams.set('err', '1'); // невірний токен
@@ -259,12 +197,6 @@ export default function middleware(req: NextRequest) {
 
   // 3) Усі інші /admin/* — потрібен заданий ADMIN_PASS і валідна кука
   if (!ADMIN_PASS) {
-    dbg({
-      hypothesisId: 'L5',
-      location: 'middleware.ts:/admin/*',
-      message: 'admin_blocked_missing_env',
-      data: { host, isHttps, pathname },
-    });
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', 'env'); // підказка що нема ADMIN_PASS
@@ -273,12 +205,6 @@ export default function middleware(req: NextRequest) {
 
   const cookieToken = req.cookies.get('admin_token')?.value || '';
   if (cookieToken !== ADMIN_PASS) {
-    dbg({
-      hypothesisId: 'L7',
-      location: 'middleware.ts:/admin/*',
-      message: 'admin_cookie_mismatch_redirect_to_login',
-      data: { host, isHttps, pathname, hasAdminPass: !!ADMIN_PASS, cookieTokenLen: cookieToken.length },
-    });
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
