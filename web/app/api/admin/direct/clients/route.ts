@@ -495,8 +495,8 @@ export async function GET(req: NextRequest) {
                 }
               } else {
                 // KV каже "pending/невідомо": не маємо права показувати ❌ без підтвердження no-show.
-                // Тому якщо в БД лишився legacy false — нормалізуємо до null.
-                if ((c as any).consultationAttended === false) {
+                // Тому якщо в БД лишились legacy true/false — нормалізуємо до null (UI має відповідати KV).
+                if ((c as any).consultationAttended === false || (c as any).consultationAttended === true) {
                   c = { ...c, consultationAttended: null, consultationCancelled: false };
                 }
               }
@@ -566,7 +566,7 @@ export async function GET(req: NextRequest) {
             }
           } else {
             // pending/невідомо → якщо legacy false, прибираємо ❌
-            if ((c as any).paidServiceAttended === false) {
+            if ((c as any).paidServiceAttended === false || (c as any).paidServiceAttended === true) {
               c = { ...c, paidServiceAttended: null, paidServiceCancelled: false };
             }
           }
