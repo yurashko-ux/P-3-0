@@ -222,6 +222,40 @@ export async function GET(req: NextRequest) {
           if (c.altegioClientId) {
             const groups = groupsByClient.get(c.altegioClientId) || [];
 
+            // Номер спроби консультації: 2/3/… (збільшуємо ТІЛЬКИ після no-show).
+            // Правило: для поточної consultationBookingDate номер = 1 + кількість no-show консультацій ДО цієї дати (Europe/Kyiv).
+            // Переноси ДО дати (без no-show) не збільшують.
+            try {
+              if (c.consultationBookingDate) {
+                const currentDay = kyivDayFromISO(String(c.consultationBookingDate));
+                if (currentDay) {
+                  const noShowBefore = groups.filter((g: any) => {
+                    if (!g || g.groupType !== 'consultation') return false;
+                    const day = (g.kyivDay || '').toString();
+                    if (!day) return false;
+                    if (day >= currentDay) return false; // тільки ДО поточної дати
+                    // no-show = attendanceStatus 'no-show' (cancelled окремо) або attendance === -1
+                    const status = (g.attendanceStatus || '').toString();
+                    const att = (g.attendance ?? null) as any;
+                    return status === 'no-show' || att === -1;
+                  }).length;
+
+                  const attemptNumber = 1 + noShowBefore;
+                  if (attemptNumber >= 2) {
+                    c = { ...c, consultationAttemptNumber: attemptNumber };
+                  } else {
+                    c = { ...c, consultationAttemptNumber: undefined };
+                  }
+                } else {
+                  c = { ...c, consultationAttemptNumber: undefined };
+                }
+              } else {
+                c = { ...c, consultationAttemptNumber: undefined };
+              }
+            } catch (err) {
+              console.warn('[direct/clients] ⚠️ Не вдалося порахувати consultationAttemptNumber:', err);
+            }
+
             const pickClosestGroup = (groupType: 'paid' | 'consultation', targetISO: string) => {
               const targetTs = new Date(targetISO).getTime();
               if (!isFinite(targetTs)) return null;

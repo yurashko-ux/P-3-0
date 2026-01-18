@@ -1464,6 +1464,15 @@ export function DirectClientTable({
                                     >
                                       {formattedDateStr} {isOnline ? "💻" : "📅"}
                                     </button>
+                                    {typeof client.consultationAttemptNumber === 'number' &&
+                                    client.consultationAttemptNumber >= 2 ? (
+                                      <span
+                                        className="inline-flex items-center justify-center rounded-full bg-white border border-blue-300 text-blue-600 font-bold text-[12px] w-[20px] h-[20px]"
+                                        title={`Повторна спроба консультації №${client.consultationAttemptNumber}`}
+                                      >
+                                        {client.consultationAttemptNumber}
+                                      </span>
+                                    ) : null}
                                     {attendanceIcon}
                                   </span>
 

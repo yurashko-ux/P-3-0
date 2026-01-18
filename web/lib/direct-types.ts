@@ -29,6 +29,7 @@ export type DirectClient = {
   consultationBookingDate?: string; // ISO date - дата запису на консультацію
   consultationAttended?: boolean | null; // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
   consultationCancelled?: boolean; // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
+  consultationAttemptNumber?: number; // Номер спроби консультації (2/3/…), збільшуємо тільки після no-show
   consultationMasterId?: string; // ID майстра, який провів консультацію
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію
   serviceMasterAltegioStaffId?: number; // Поточний майстер (Altegio staffId) з усіх записів (paid/consultation)
