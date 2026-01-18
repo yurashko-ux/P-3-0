@@ -1250,6 +1250,50 @@ export function DirectClientTable({
                               // #endregion agent log
                             }
                             
+                            // Якщо є дата консультації (показуємо її в таблиці), але state-log ще не встиг записати `consultation-booked`,
+                            // додаємо derived-стан `consultation-booked`, щоб у колонці "Стан" був синій календарик.
+                            // ВАЖЛИВО: не додаємо, якщо консультації ігноруються (visits >= 2) — це правило вже узгоджене раніше.
+                            try {
+                              const shouldIgnoreConsult = (client.visits ?? 0) >= 2;
+                              const hasConsultDate = Boolean(client.consultationBookingDate);
+                              const hasConsultInLogs = consultationBookedLogs.length > 0;
+                              const hasConsultAsCurrent =
+                                currentState === 'consultation-booked' || currentState === 'consultation';
+
+                              if (!shouldIgnoreConsult && hasConsultDate && !hasConsultInLogs && !hasConsultAsCurrent) {
+                                const syntheticConsult: any = {
+                                  id: 'synthetic-consultation-booked',
+                                  clientId: client.id,
+                                  state: 'consultation-booked',
+                                  previousState: null,
+                                  reason: 'derived-consultation-booking-date',
+                                  createdAt: String(client.consultationBookingDate),
+                                };
+                                consultationBookedLogs.unshift(syntheticConsult);
+
+                                // #region agent log
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    sessionId: 'debug-session',
+                                    runId: 'consult_state_post',
+                                    hypothesisId: 'F6',
+                                    location: 'web/app/admin/direct/_components/DirectClientTable.tsx:state:injectConsultBooked',
+                                    message: 'Injected derived consultation-booked state from consultationBookingDate',
+                                    data: {
+                                      clientId: client.id,
+                                      altegioClientId: client.altegioClientId || null,
+                                      visits: client.visits ?? null,
+                                      currentState,
+                                    },
+                                    timestamp: Date.now(),
+                                  }),
+                                }).catch(() => {});
+                                // #endregion agent log
+                              }
+                            } catch {}
+
                             // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
                             // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
                             // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
