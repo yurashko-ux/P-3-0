@@ -582,16 +582,14 @@ export async function GET(req: NextRequest) {
       // Продовжуємо без історії станів
     }
     
-    // ВАЖЛИВО: консультації показуємо/рахуємо лише для НОВИХ клієнтів.
-    // Altegio рахує консультацію як “візит”, тому правило таке:
-    // - консультацію ігноруємо, якщо є ознаки платної послуги (paidServiceDate або paidServiceAttended=true),
-    //   або якщо visits >= 2 (точно не перший візит).
+    // ВАЖЛИВО: Altegio рахує консультацію як “візит”.
+    // Правило: консультацію показуємо, якщо visits = 0 або visits = 1.
+    // Ігноруємо консультацію тільки коли visits >= 2.
     // - не показуємо в колонці "Запис на консультацію"
     // - не дозволяємо відкривати "Історія консультацій"
     // - не ведемо лічильник спроб консультації
     clients = clients.map((c) => {
-      const hasPaid = !!c.paidServiceDate || c.paidServiceAttended === true;
-      const shouldIgnoreConsult = hasPaid || (c.visits ?? 0) >= 2;
+      const shouldIgnoreConsult = (c.visits ?? 0) >= 2;
       if (shouldIgnoreConsult) {
         return {
           ...c,

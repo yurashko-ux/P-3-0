@@ -339,11 +339,10 @@ export async function GET(req: NextRequest) {
 
     // Підрахунок по клієнтах/групах (по місяцю, Europe/Kyiv)
     for (const c of filteredClients) {
-      // Altegio рахує консультацію як “візит”, тому:
-      // - якщо є ознаки платної послуги (paidServiceDate або paidServiceAttended=true) — консультацію ігноруємо
-      // - або якщо visits >= 2 (точно не перший візит)
-      const hasPaid = !!c.paidServiceDate || c.paidServiceAttended === true;
-      const shouldIgnoreConsult = hasPaid || (c.visits ?? 0) >= 2;
+      // Altegio рахує консультацію як “візит”.
+      // Правило: консультацію показуємо, якщо visits = 0 або visits = 1.
+      // Ігноруємо консультацію тільки коли visits >= 2.
+      const shouldIgnoreConsult = (c.visits ?? 0) >= 2;
       const groups = c.altegioClientId ? (groupsByClient.get(c.altegioClientId) || []) : [];
       const groupsInMonthAll = groups.filter((g: any) => (g?.kyivDay || '').slice(0, 7) === month);
       // Для “повторних” клієнтів консультації ігноруємо повністю

@@ -64,18 +64,16 @@ export async function GET(req: NextRequest) {
 
     console.log(`[direct/record-history] 🔍 Fetching history for altegioClientId=${altegioClientId}, type=${type}`);
 
-    // ВАЖЛИВО: консультації ігноруємо для повторних клієнтів (visits > 0)
+    // ВАЖЛИВО: Altegio рахує консультацію як “візит”.
+    // Правило: консультацію показуємо, якщо visits = 0 або visits = 1.
+    // Ігноруємо консультацію тільки коли visits >= 2.
     if (type === 'consultation') {
       try {
         const client = await prisma.directClient.findFirst({
           where: { altegioClientId },
-          select: { visits: true, paidServiceDate: true, paidServiceAttended: true },
+          select: { visits: true },
         });
-        // Altegio рахує консультацію як “візит”, тому:
-        // - якщо є ознаки платної послуги (paidServiceDate або paidServiceAttended=true) — ігноруємо консультацію
-        // - або якщо visits >= 2 (точно не перший візит)
-        const hasPaid = !!client?.paidServiceDate || client?.paidServiceAttended === true;
-        const shouldIgnoreConsult = hasPaid || (client?.visits ?? 0) >= 2;
+        const shouldIgnoreConsult = (client?.visits ?? 0) >= 2;
         if (shouldIgnoreConsult) {
           return NextResponse.json({
             ok: true,
@@ -84,7 +82,7 @@ export async function GET(req: NextRequest) {
             total: 0,
             rows: [],
             debug: {
-              ignoredReason: 'repeat-client-hasPaid-or-visits>=2',
+              ignoredReason: 'repeat-client-visits>=2',
             },
           });
         }
