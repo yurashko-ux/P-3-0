@@ -1127,12 +1127,12 @@ export function DirectClientTable({
                             return (
                               <>
                                 {first ? (
-                                  <span className="truncate text-sm" title={fullName}>
+                                  <span className="truncate" title={fullName}>
                                     {first}
                                   </span>
                                 ) : null}
                                 <span className="mt-0.5 flex items-center justify-between gap-2">
-                                  <span className="truncate text-sm font-semibold" title={fullName}>
+                                  <span className="truncate font-semibold" title={fullName}>
                                     {last || fullName}
                                   </span>
                                   <span className="shrink-0">{renderInstagramIcon()}</span>
