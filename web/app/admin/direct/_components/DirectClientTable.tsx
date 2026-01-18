@@ -12,22 +12,6 @@ import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
 
-function InstagramIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect x="4" y="4" width="16" height="16" rx="4" stroke="currentColor" strokeWidth="2" />
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
-      <circle cx="17" cy="7" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const iconStyle = { width: `${size}px`, height: `${size}px` };
@@ -1045,98 +1029,63 @@ export function DirectClientTable({
                             const isMissingInstagram = username.startsWith("missing_instagram_");
                             const isNormalInstagram = Boolean(username) && !isNoInstagram && !isMissingInstagram;
 
-                            const renderInstagramTextAsIs = () => {
-                              // Коли ПІБ нема — залишаємо Instagram як є, щоб було зрозуміло хто це
-                              if (isNoInstagram) {
-                                return (
-                                  <span className="text-red-600 font-semibold" title="Клієнт не має Instagram акаунту">
-                                    NO
-                                  </span>
-                                );
-                              }
-                              if (isMissingInstagram) {
-                                return (
-                                  <span className="text-gray-500 font-medium" title="Instagram відсутній">
-                                    missing
-                                  </span>
-                                );
-                              }
-                              if (isNormalInstagram) {
-                                return (
-                                  <a
-                                    href={`https://instagram.com/${username}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="link link-primary"
-                                    title={`https://instagram.com/${username}`}
-                                  >
-                                    {username}
-                                  </a>
-                                );
-                              }
-                              return <span className="text-gray-400">—</span>;
-                            };
-
-                            const renderInstagramIcon = () => {
-                              if (isNoInstagram) {
-                                return (
-                                  <span className="text-red-600 font-semibold" title="Клієнт не має Instagram акаунту">
-                                    NO
-                                  </span>
-                                );
-                              }
-                              if (isMissingInstagram) {
-                                return (
-                                  <span
-                                    className="inline-flex items-center"
-                                    title="Instagram відсутній"
-                                  >
-                                    <InstagramIcon className="w-8 h-8 text-gray-400" />
-                                    {client.telegramNotificationSent && (
-                                      <span className="ml-1 text-blue-500" title="Повідомлення відправлено в Telegram">
-                                        📱
-                                      </span>
-                                    )}
-                                  </span>
-                                );
-                              }
-                              if (isNormalInstagram) {
-                                return (
-                                  <a
-                                    href={`https://instagram.com/${username}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center hover:opacity-80"
-                                    title={`https://instagram.com/${username}`}
-                                  >
-                                    <InstagramIcon className="w-8 h-8 text-pink-600" />
-                                  </a>
-                                );
-                              }
-                              return <span className="text-gray-400">—</span>;
-                            };
+                            const invalidIgLabel = isNoInstagram
+                              ? "NO"
+                              : isMissingInstagram
+                                ? "missing"
+                                : null;
 
                             if (!hasName) {
                               return (
-                                <span className="opacity-90 mt-0.5 truncate" title={username}>
-                                  {renderInstagramTextAsIs()}
-                                </span>
+                                <>
+                                  {isNormalInstagram ? (
+                                    <a
+                                      href={`https://instagram.com/${username}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="link link-primary truncate block"
+                                      title={`https://instagram.com/${username}`}
+                                    >
+                                      {username}
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-400 truncate block" title={username || ""}>
+                                      —
+                                    </span>
+                                  )}
+                                  {invalidIgLabel && (
+                                    <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">
+                                      {invalidIgLabel}
+                                    </span>
+                                  )}
+                                </>
                               );
                             }
 
+                            const nameOneLine = [first, last].filter(Boolean).join(" ").trim() || fullName;
+
                             return (
                               <>
-                                {first ? (
-                                  <span className="truncate" title={fullName}>
-                                    {first}
+                                {isNormalInstagram ? (
+                                  <a
+                                    href={`https://instagram.com/${username}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="link link-primary truncate block"
+                                    title={`https://instagram.com/${username}`}
+                                  >
+                                    {nameOneLine}
+                                  </a>
+                                ) : (
+                                  <span className="truncate block" title={nameOneLine}>
+                                    {nameOneLine}
                                   </span>
-                                ) : null}
-                                <span className="mt-0.5 flex items-center justify-between gap-2">
-                                  <span className="truncate font-semibold" title={fullName}>
-                                    {last || fullName}
+                                )}
+                                {invalidIgLabel && (
+                                  <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">
+                                    {invalidIgLabel}
                                   </span>
-                                  <span className="shrink-0">{renderInstagramIcon()}</span>
-                                </span>
+                                )}
                               </>
                             );
                           })()}
