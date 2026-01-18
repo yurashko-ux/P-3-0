@@ -20,6 +20,41 @@ export async function GET(req: NextRequest) {
     }
 
     const info = await getClientStateInfo(clientId);
+
+    // Якщо старі manychat-webhook логи записались з state=null (через історичний баг),
+    // мапимо їх у state='message', щоб UI показував зелену "Розмову" і не засмічував "Не встановлено".
+    // (Без змін БД — тільки у відповіді API)
+    const mappedHistory = (info.history || []).map((log: any) => {
+      const st = log?.state ?? null;
+      const reason = String(log?.reason || '');
+      if (st == null && reason.includes('manychat')) {
+        return { ...log, state: 'message' };
+      }
+      return log;
+    });
+
+    // #region agent log
+    try {
+      const beforeNull = (info.history || []).filter((l: any) => l?.state == null).length;
+      const afterNull = mappedHistory.filter((l: any) => l?.state == null).length;
+      const mappedToMessage = mappedHistory.filter((l: any) => l?.state === 'message').length;
+      if (beforeNull > 0) {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'debug-session',
+            runId: 'state_history_post',
+            hypothesisId: 'F7',
+            location: 'web/app/api/admin/direct/state-history/route.ts:mapNullManychat',
+            message: 'Mapped null state logs from manychat to message',
+            data: { clientId, beforeNull, afterNull, mappedToMessage },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+      }
+    } catch {}
+    // #endregion agent log
     
     // Отримуємо дірект-менеджера для стану "Лід"
     const directManager = await getDirectManager();
@@ -36,7 +71,7 @@ export async function GET(req: NextRequest) {
     
     // Спочатку видаляємо "no-instagram" та прибираємо застарілий стан `consultation`
     // (факт приходу на консультацію показуємо ✅ у колонці дати консультації)
-    let filteredHistory = info.history.filter(log => log.state !== 'no-instagram' && log.state !== 'consultation');
+    let filteredHistory = mappedHistory.filter((log: any) => log.state !== 'no-instagram' && log.state !== 'consultation');
     
     // Фільтруємо "lead" та "client" - залишаємо тільки найстаріші
     const sortedHistory = [...filteredHistory].sort((a, b) => 

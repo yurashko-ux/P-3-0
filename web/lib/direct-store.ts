@@ -879,8 +879,9 @@ export async function saveDirectClient(
       }
     }
 
-    // Логуємо зміну стану, якщо вона відбулася (якщо не пропущено логування)
-    if (!skipLogging && finalState !== previousState) {
+    // Логуємо зміну стану, якщо вона відбулася (і finalState заданий).
+    // Важливо: якщо finalState = undefined/null, не логуємо (інакше отримуємо спам "Не встановлено").
+    if (!skipLogging && finalState && finalState !== previousState) {
       // Додаємо masterId до метаданих для історії
       const logMetadata = {
         ...metadata,

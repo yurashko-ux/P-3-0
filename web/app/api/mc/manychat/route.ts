@@ -601,7 +601,8 @@ export async function POST(req: NextRequest) {
           const shouldSetMessageState = !lastMessageState || 
             (now.getTime() - new Date(lastMessageState.createdAt).getTime()) >= 24 * 60 * 60 * 1000; // 24 години в мілісекундах
           
-          if (shouldSetMessageState && (client.state === 'lead' || client.state === 'client')) {
+        // Якщо state відсутній (undefined) — це також "ранній" клієнт, якому треба показати "Розмова".
+        if (shouldSetMessageState && (!client.state || client.state === 'lead' || client.state === 'client')) {
             newState = 'message';
             console.log(`[manychat] Setting state to 'message' for client ${client.id} (last message state was ${lastMessageState ? new Date(lastMessageState.createdAt).toISOString() : 'never'})`);
           }
