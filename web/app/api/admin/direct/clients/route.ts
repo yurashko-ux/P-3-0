@@ -350,16 +350,35 @@ export async function GET(req: NextRequest) {
                 !(['no-show', 'arrived', 'cancelled'] as const).includes(String((paidG as any).attendanceStatus || '') as any) &&
                 ((paidG as any).attendance ?? null) == null;
 
-              if (consultMismatch || paidMismatch) {
+              const consultMismatchTrue =
+                c.consultationBookingDate &&
+                c.consultationAttended === true &&
+                consultG &&
+                !(['no-show', 'arrived', 'cancelled'] as const).includes(String((consultG as any).attendanceStatus || '') as any) &&
+                ((consultG as any).attendance ?? null) == null;
+
+              const paidMismatchTrue =
+                c.paidServiceDate &&
+                c.paidServiceAttended === true &&
+                paidG &&
+                !(['no-show', 'arrived', 'cancelled'] as const).includes(String((paidG as any).attendanceStatus || '') as any) &&
+                ((paidG as any).attendance ?? null) == null;
+
+              if (consultMismatch || paidMismatch || consultMismatchTrue || paidMismatchTrue) {
                 dbg({
-                  hypothesisId: 'M1',
+                  hypothesisId: consultMismatchTrue || paidMismatchTrue ? 'M2' : 'M1',
                   location: 'clients/route.ts:attendanceMismatch',
-                  message: 'DB attended=false but closest KV group looks pending/null',
+                  message:
+                    consultMismatchTrue || paidMismatchTrue
+                      ? 'DB attended=true but closest KV group looks pending/null'
+                      : 'DB attended=false but closest KV group looks pending/null',
                   data: {
                     clientIdSuffix: idSuffix(c.id),
                     altegioClientIdSuffix: idSuffix(c.altegioClientId),
                     hasConsultMismatch: consultMismatch,
                     hasPaidMismatch: paidMismatch,
+                    hasConsultMismatchTrue: consultMismatchTrue,
+                    hasPaidMismatchTrue: paidMismatchTrue,
                     consultationBookingDate: c.consultationBookingDate ? String(c.consultationBookingDate).slice(0, 16) : null,
                     paidServiceDate: c.paidServiceDate ? String(c.paidServiceDate).slice(0, 16) : null,
                     db: {

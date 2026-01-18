@@ -107,6 +107,41 @@ export async function GET(req: NextRequest) {
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
     const groups = groupsByClient.get(altegioClientId) || [];
 
+    // Діагностика: інколи attendance приходить як string ("1"), через що UI показує '-'.
+    // Логуємо лише технічні поля без PII.
+    try {
+      const samples: any[] = [];
+      for (const g of groups.slice(0, 4)) {
+        const evs = Array.isArray((g as any).events) ? (g as any).events : [];
+        for (const ev of evs.slice(0, 4)) {
+          const raw = (ev as any)?.raw;
+          const pick = (val: any) => ({
+            v: val ?? null,
+            t: val === null ? 'null' : typeof val,
+          });
+          samples.push({
+            kyivDay: (g as any).kyivDay || null,
+            groupType: (g as any).groupType || null,
+            normalizedAttendance: pick((ev as any)?.attendance),
+            rawAttendance: pick(raw?.attendance),
+            rawDataAttendance: pick(raw?.data?.attendance),
+            rawVisitAttendance: pick(raw?.visit_attendance),
+            rawDataVisitAttendance: pick(raw?.data?.visit_attendance),
+            rawBodyDataAttendance: pick(raw?.body?.data?.attendance),
+            rawBodyDataVisitAttendance: pick(raw?.body?.data?.visit_attendance),
+          });
+        }
+      }
+      dbg({
+        hypothesisId: 'A1',
+        location: 'client-webhooks/route.ts:attendanceRawSamples',
+        message: 'Raw attendance samples (types) for this client',
+        data: { altegioClientId, groups: groups.length, samples },
+      });
+    } catch (err) {
+      console.warn('[client-webhooks] ⚠️ attendance raw samples failed:', err);
+    }
+
     const tableRows = groups.map((g, idx) => ({
       receivedAt: g.receivedAt,
       datetime: g.datetime,
