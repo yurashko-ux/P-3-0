@@ -2,7 +2,7 @@
 // API endpoint для отримання webhook-ів конкретного клієнта
 
 import { NextRequest, NextResponse } from 'next/server';
-import { kvRead } from '@/lib/kv';
+import { getKvConfigStatus, kvRead } from '@/lib/kv';
 import { groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
@@ -34,6 +34,46 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const host = req.headers.get('host') || '';
+    const dbgRunId = `cw_${Date.now()}`;
+    const dbg = (payload: any) => {
+      // #region agent log
+      try {
+        const isLocalHost = host.includes('localhost') || host.includes('127.0.0.1');
+        if (!isLocalHost) return;
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: 'debug-session', runId: dbgRunId, timestamp: Date.now(), ...payload }),
+        }).catch(() => {});
+      } catch {}
+      // #endregion agent log
+    };
+
+    const kvStatus = getKvConfigStatus();
+    if (!kvStatus.hasBaseUrl || !kvStatus.hasReadToken) {
+      dbg({
+        hypothesisId: 'KV0',
+        location: 'client-webhooks/route.ts:kvMissing',
+        message: 'KV не налаштовано: не можемо читати altegio:webhook:log',
+        data: {
+          hasBaseUrl: kvStatus.hasBaseUrl,
+          hasReadToken: kvStatus.hasReadToken,
+          hasWriteToken: kvStatus.hasWriteToken,
+          baseCandidatesCount: kvStatus.baseCandidates.length,
+        },
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'KV не налаштовано локально. Додайте KV_REST_API_URL та KV_REST_API_READ_ONLY_TOKEN (або KV_REST_API_TOKEN) у web/.env.local і перезапустіть dev-сервер.',
+          debug: { kvStatus },
+        },
+        { status: 503 }
+      );
+    }
+
     const altegioClientIdParam = req.nextUrl.searchParams.get('altegioClientId');
     if (!altegioClientIdParam) {
       return NextResponse.json({ error: 'altegioClientId is required' }, { status: 400 });
@@ -52,6 +92,16 @@ export async function GET(req: NextRequest) {
     const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 999);
     
     console.log(`[client-webhooks] 📊 Found ${rawItemsWebhook.length} items in webhook:log, ${rawItemsRecords.length} items in records:log`);
+    dbg({
+      hypothesisId: 'KV1',
+      location: 'client-webhooks/route.ts:kvCounts',
+      message: 'Зчитали KV логи Altegio',
+      data: {
+        altegioClientId,
+        webhookItems: rawItemsWebhook.length,
+        recordsItems: rawItemsRecords.length,
+      },
+    });
     
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
@@ -79,8 +129,14 @@ export async function GET(req: NextRequest) {
     }));
 
     console.log(`[client-webhooks] ✅ Completed grouped fetch for altegioClientId: ${altegioClientId}, events=${normalizedEvents.length}, groups=${groups.length}`);
+    dbg({
+      hypothesisId: 'KV2',
+      location: 'client-webhooks/route.ts:grouped',
+      message: 'Згрупували події по клієнту/дню',
+      data: { altegioClientId, normalizedEvents: normalizedEvents.length, groups: groups.length },
+    });
     const cleanRows = tableRows;
-    
+
     return NextResponse.json({
       ok: true,
       altegioClientId,
@@ -91,6 +147,7 @@ export async function GET(req: NextRequest) {
         recordEvents: rawItemsRecords.length,
         normalized: normalizedEvents.length,
         groups: groups.length,
+        kvStatus,
       },
     });
   } catch (error) {
