@@ -69,9 +69,14 @@ export async function GET(req: NextRequest) {
       try {
         const client = await prisma.directClient.findFirst({
           where: { altegioClientId },
-          select: { visits: true },
+          select: { visits: true, paidServiceDate: true, paidServiceAttended: true },
         });
-        if ((client?.visits ?? 0) > 0) {
+        // Altegio рахує консультацію як “візит”, тому:
+        // - якщо є ознаки платної послуги (paidServiceDate або paidServiceAttended=true) — ігноруємо консультацію
+        // - або якщо visits >= 2 (точно не перший візит)
+        const hasPaid = !!client?.paidServiceDate || client?.paidServiceAttended === true;
+        const shouldIgnoreConsult = hasPaid || (client?.visits ?? 0) >= 2;
+        if (shouldIgnoreConsult) {
           return NextResponse.json({
             ok: true,
             altegioClientId,
@@ -79,7 +84,7 @@ export async function GET(req: NextRequest) {
             total: 0,
             rows: [],
             debug: {
-              ignoredReason: 'repeat-client-visits>0',
+              ignoredReason: 'repeat-client-hasPaid-or-visits>=2',
             },
           });
         }
