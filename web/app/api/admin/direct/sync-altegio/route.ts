@@ -116,10 +116,6 @@ export async function POST(req: NextRequest) {
     });
 
     if (altegioClient) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H4',location:'sync-altegio/route.ts:found',message:'sync_altegio_found_client',data:{directClientId:directClient.id,hasDirectFirstName:!!(directClient.firstName&&directClient.firstName.trim()),hasDirectLastName:!!(directClient.lastName&&directClient.lastName.trim()),willSetName:!!(altegioClient.name&&!directClient.firstName),willSetAltegioClientId:true},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
-
       const altegioName = (altegioClient.name || '').toString().trim();
       const shouldReplaceName =
         Boolean(altegioName) &&

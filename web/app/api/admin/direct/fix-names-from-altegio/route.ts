@@ -62,25 +62,6 @@ function splitName(fullName: string): { firstName: string | null; lastName: stri
   return { firstName, lastName };
 }
 
-function idSuffix(id: string | number): string {
-  const s = String(id);
-  return s.length <= 6 ? s : s.slice(-6);
-}
-
-async function dbg(payload: any) {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: 'debug-session',
-      ...payload,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion agent log
-}
-
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -95,7 +76,6 @@ export async function POST(req: NextRequest) {
   const onlySourceInstagram =
     String((body as any).onlySourceInstagram ?? sp.get('onlySourceInstagram') ?? 'true').toLowerCase() === 'true';
   const limit = Math.max(1, Math.min(Number((body as any).limit || sp.get('limit') || 200), 2000));
-  const runId = String((body as any).runId || sp.get('runId') || 'pre-fix');
 
   const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
   if (!companyIdStr) {
@@ -136,23 +116,6 @@ export async function POST(req: NextRequest) {
   let noNameInAltegio = 0;
 
   const sample: Array<{ directClientId: string; altegioClientId: number; updated: boolean }> = [];
-  let dbgMismatchLogged = 0;
-  let dbgUpdatedLogged = 0;
-
-  await dbg({
-    runId,
-    hypothesisId: 'H1',
-    location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:start',
-    message: 'Старт масового виправлення імен',
-    data: {
-      mode,
-      dryRun,
-      onlySourceInstagram,
-      limit,
-      totalClients: clients.length,
-      candidates: candidates.length,
-    },
-  });
 
   for (const c of candidates) {
     const altegioId = c.altegioClientId!;
@@ -187,22 +150,6 @@ export async function POST(req: NextRequest) {
         else sameName++;
       }
 
-      if (shouldUpdate && dbgMismatchLogged < 5) {
-        dbgMismatchLogged++;
-        await dbg({
-          runId,
-          hypothesisId: 'H1',
-          location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:compare',
-          message: 'Знайдено розбіжність імен (без ПІБ)',
-          data: {
-            directIdSuffix: idSuffix(c.id),
-            altegioIdSuffix: idSuffix(altegioId),
-            directLen: directFull.length,
-            altegioLen: altegioFull.length,
-          },
-        });
-      }
-
       if (!dryRun && shouldUpdate) {
         await prisma.directClient.update({
           where: { id: c.id },
@@ -213,20 +160,6 @@ export async function POST(req: NextRequest) {
           },
         });
         updated++;
-
-        if (dbgUpdatedLogged < 5) {
-          dbgUpdatedLogged++;
-          await dbg({
-            runId,
-            hypothesisId: 'H2',
-            location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:update',
-            message: 'Оновлено ім’я з Altegio (без ПІБ)',
-            data: {
-              directIdSuffix: idSuffix(c.id),
-              altegioIdSuffix: idSuffix(altegioId),
-            },
-          });
-        }
       }
 
       if (sample.length < 25) {
@@ -238,28 +171,6 @@ export async function POST(req: NextRequest) {
       console.warn('[direct/fix-names-from-altegio] ⚠️ Помилка для altegioClientId:', altegioId, err?.message || err);
     }
   }
-
-  await dbg({
-    runId,
-    hypothesisId: 'H2',
-    location: 'web/app/api/admin/direct/fix-names-from-altegio/route.ts:POST:done',
-    message: 'Завершено масове виправлення імен',
-    data: {
-      mode,
-      dryRun,
-      onlySourceInstagram,
-      limit,
-      totalClients: clients.length,
-      candidates: candidates.length,
-      checked,
-      updated,
-      sameName,
-      mismatched,
-      fetched404,
-      fetchedErrors,
-      noNameInAltegio,
-    },
-  });
 
   return NextResponse.json({
     ok: true,

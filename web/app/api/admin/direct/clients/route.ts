@@ -78,15 +78,11 @@ export async function GET(req: NextRequest) {
       clients = await getAllDirectClients();
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
 
-      // #region agent log
       try {
         const withAltegio = clients.filter((c) => !!c.altegioClientId);
         const withAltegioNoName = withAltegio.filter((c) => !(c.firstName && c.firstName.trim()) && !(c.lastName && c.lastName.trim()));
         const withAltegioSourceInstagram = withAltegio.filter((c) => c.source === 'instagram').length;
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H3',location:'clients/route.ts:afterGetAllDirectClients',message:'clients_snapshot_counts',data:{total:clients.length,withAltegio:withAltegio.length,withAltegioNoName:withAltegioNoName.length,withAltegioSourceInstagram,missingInstagramCount:clients.filter((c)=>typeof c.instagramUsername==='string'&&c.instagramUsername.startsWith('missing_instagram_')).length},timestamp:Date.now()})}).catch(()=>{});
       } catch {}
-      // #endregion agent log
-
       if (clients.length === 0) {
         console.warn('[direct/clients] GET: WARNING - getAllDirectClients() returned empty array!');
         // Перевіряємо, чи взагалі є клієнти в базі через прямий SQL запит

@@ -1673,9 +1673,6 @@ export function DirectClientTable({
                             <button
                               className="btn btn-xs btn-ghost text-info"
                               onClick={() => {
-                                // #region agent log
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H1',location:'DirectClientTable.tsx:webhooksButton',message:'open_webhooks_modal',data:{clientId:client.id,hasAltegioClientId:!!client.altegioClientId,altegioClientId:client.altegioClientId??null,source:client.source,hasFirstName:!!(client.firstName&&client.firstName.trim()),hasLastName:!!(client.lastName&&client.lastName.trim()),isMissingInstagramUsername:typeof client.instagramUsername==='string'&&client.instagramUsername.startsWith('missing_instagram_'),isNoInstagramUsername:typeof client.instagramUsername==='string'&&(client.instagramUsername==='NO INSTAGRAM'||client.instagramUsername.startsWith('no_instagram_')),state:client.state||null},timestamp:Date.now()})}).catch(()=>{});
-                                // #endregion agent log
                                 setWebhooksClient(client);
                               }}
                               title="Переглянути вебхуки клієнта"

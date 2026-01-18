@@ -343,15 +343,6 @@ export async function POST(req: NextRequest) {
       const duplicates = clientsWithRecords.filter(({ client }) => client.id !== clientToKeep.id);
       
       if (duplicates.length > 0) {
-        // #region agent log
-        try {
-          const keepIsMissingIg = clientToKeep.instagramUsername?.startsWith('missing_instagram_') || false;
-          const keepHasName = !!((clientToKeep.firstName && clientToKeep.firstName.trim()) || (clientToKeep.lastName && clientToKeep.lastName.trim()));
-          const dupeHasNameCount = duplicates.filter(({ client }) => !!((client.firstName && client.firstName.trim()) || (client.lastName && client.lastName.trim()))).length;
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H5',location:'merge-duplicates-by-name/route.ts:byAltegioId',message:'merge_by_altegio_id_decision',data:{altegioId,keepClientId:clientToKeep.id,keepIsMissingIg,keepHasName,duplicateCount:duplicates.length,dupeHasNameCount},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion agent log
-
         // Переносимо дані з дублікатів до клієнта, якого залишаємо
         let updatedClient = { ...clientToKeep };
         

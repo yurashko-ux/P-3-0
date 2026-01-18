@@ -10,7 +10,6 @@ export default function middleware(req: NextRequest) {
   const host = req.headers.get('host') || '';
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
   const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || '';
-  const runId = 'login-debug';
 
   const isHttps = (() => {
     try {
@@ -153,17 +152,9 @@ export default function middleware(req: NextRequest) {
 
   // 2) /admin/login — показуємо сторінку, але обробляємо ?token=
   if (pathname === '/admin/login') {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId,hypothesisId:'L1',location:'middleware.ts:/admin/login',message:'admin_login_page',data:{host,protocol:url.protocol,xfProto:(req.headers.get('x-forwarded-proto')||''),isHttps,hasAdminPass:!!ADMIN_PASS,hasTokenParam:req.nextUrl.searchParams.has('token')},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
-
     const qToken = url.searchParams.get('token');
     if (qToken !== null) {
       const token = (qToken || '').trim();
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId,hypothesisId:'L2',location:'middleware.ts:/admin/login',message:'admin_login_attempt',data:{host,protocol:url.protocol,xfProto:(req.headers.get('x-forwarded-proto')||''),isHttps,hasAdminPass:!!ADMIN_PASS,tokenLen:token.length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
 
       // якщо ADMIN_PASS не заданий — не пускаємо, просимо адміна виставити змінну
       if (!ADMIN_PASS) {
@@ -190,15 +181,8 @@ export default function middleware(req: NextRequest) {
           maxAge: 60 * 60 * 24 * 7, // 7 днів
         });
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId,hypothesisId:'L3',location:'middleware.ts:/admin/login',message:'admin_cookie_set_attempt',data:{host,isHttps,cookieName:'admin_token',secureFlag:isHttps,maxAge:60*60*24*7},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion agent log
-
         return res;
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId,hypothesisId:'L4',location:'middleware.ts:/admin/login',message:'admin_login_token_mismatch',data:{host,isHttps,hasAdminPass:!!ADMIN_PASS,tokenLen:token.length,adminPassLen:ADMIN_PASS?ADMIN_PASS.length:0},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion agent log
         const back = new URL(url);
         back.searchParams.delete('token');
         back.searchParams.set('err', '1'); // невірний токен
@@ -221,9 +205,6 @@ export default function middleware(req: NextRequest) {
 
   const cookieToken = req.cookies.get('admin_token')?.value || '';
   if (cookieToken !== ADMIN_PASS) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId,hypothesisId:'L5',location:'middleware.ts:/admin/*',message:'admin_auth_blocked',data:{pathname,host,isHttps,hasAdminPass:!!ADMIN_PASS,hasCookieToken:!!cookieToken,cookieLen:cookieToken?cookieToken.length:0,adminPassLen:ADMIN_PASS?ADMIN_PASS.length:0},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
