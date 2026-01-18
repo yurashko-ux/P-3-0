@@ -582,6 +582,27 @@ export async function GET(req: NextRequest) {
       // Продовжуємо без історії станів
     }
     
+    // ВАЖЛИВО: консультації показуємо/рахуємо лише для НОВИХ клієнтів.
+    // Якщо клієнт вже мав візити (visits > 0) — консультацію ігноруємо повністю:
+    // - не показуємо в колонці "Запис на консультацію"
+    // - не дозволяємо відкривати "Історія консультацій"
+    // - не ведемо лічильник спроб консультації
+    clients = clients.map((c) => {
+      if ((c.visits ?? 0) > 0) {
+        return {
+          ...c,
+          consultationDate: undefined,
+          consultationBookingDate: undefined,
+          consultationAttended: null,
+          consultationCancelled: false,
+          consultationMasterId: undefined,
+          consultationMasterName: undefined,
+          consultationAttemptNumber: undefined,
+        };
+      }
+      return c;
+    });
+
     // Додаємо останні 5 станів до кожного клієнта
     // getLast5StatesForClients вже відфільтрувала дублікати стану "client" та "lead"
     const clientsWithStates = clients.map(client => {

@@ -200,6 +200,7 @@ export async function GET(req: NextRequest) {
         instagramUsername: true,
         firstName: true,
         lastName: true,
+        visits: true,
         consultationBookingDate: true,
         consultationAttended: true,
         paidServiceDate: true,
@@ -338,8 +339,13 @@ export async function GET(req: NextRequest) {
 
     // Підрахунок по клієнтах/групах (по місяцю, Europe/Kyiv)
     for (const c of filteredClients) {
+      const isRepeatClient = (c.visits ?? 0) > 0;
       const groups = c.altegioClientId ? (groupsByClient.get(c.altegioClientId) || []) : [];
-      const groupsInMonth = groups.filter((g: any) => (g?.kyivDay || '').slice(0, 7) === month);
+      const groupsInMonthAll = groups.filter((g: any) => (g?.kyivDay || '').slice(0, 7) === month);
+      // Для повторних клієнтів консультації ігноруємо повністю
+      const groupsInMonth = isRepeatClient
+        ? groupsInMonthAll.filter((g: any) => g?.groupType !== 'consultation')
+        : groupsInMonthAll;
 
       // Визначаємо "клієнта у майстра" за найновішою групою в місяці
       let clientMasterId = unassignedId;
@@ -363,7 +369,7 @@ export async function GET(req: NextRequest) {
 
       const activeInMonth =
         (groupsInMonth && groupsInMonth.length > 0) ||
-        (!!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) ||
+        (!isRepeatClient && !!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) ||
         (!!c.paidServiceDate && kyivMonthKeyFromISO(c.paidServiceDate.toISOString()) === month);
 
       if (activeInMonth) {
@@ -376,7 +382,7 @@ export async function GET(req: NextRequest) {
           const picked = pickNonAdminStaffFromGroup(g, 'first');
           const mid = mapStaffToMasterId(picked);
 
-          if (g.groupType === 'consultation' && g.datetime) {
+          if (!isRepeatClient && g.groupType === 'consultation' && g.datetime) {
             ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultBooked += 1;
             if (g.attendanceStatus === 'arrived' || g.attendance === 1) {
               ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultAttended += 1;
@@ -393,7 +399,7 @@ export async function GET(req: NextRequest) {
           staffName: c.serviceMasterName || '',
         });
 
-        if (!!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) {
+        if (!isRepeatClient && !!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) {
           ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').consultBooked += 1;
           if (c.consultationAttended === true) {
             ensureRow(fallbackMid, rowsByMasterId.get(fallbackMid)?.masterName || 'Без майстра', rowsByMasterId.get(fallbackMid)?.role || 'unassigned').consultAttended += 1;

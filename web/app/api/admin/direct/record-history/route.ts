@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { computeServicesTotalCostUAH, groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -62,6 +63,30 @@ export async function GET(req: NextRequest) {
     }
 
     console.log(`[direct/record-history] 🔍 Fetching history for altegioClientId=${altegioClientId}, type=${type}`);
+
+    // ВАЖЛИВО: консультації ігноруємо для повторних клієнтів (visits > 0)
+    if (type === 'consultation') {
+      try {
+        const client = await prisma.directClient.findFirst({
+          where: { altegioClientId },
+          select: { visits: true },
+        });
+        if ((client?.visits ?? 0) > 0) {
+          return NextResponse.json({
+            ok: true,
+            altegioClientId,
+            type,
+            total: 0,
+            rows: [],
+            debug: {
+              ignoredReason: 'repeat-client-visits>0',
+            },
+          });
+        }
+      } catch (err) {
+        console.warn('[direct/record-history] ⚠️ Не вдалося перевірити visits (продовжуємо без фільтра):', err);
+      }
+    }
 
     // Беремо records:log як основне джерело (там найповніша історія).
     // webhook:log як доповнення (часто там менше івентів).
