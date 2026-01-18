@@ -123,25 +123,21 @@ function StateIcon({ state }: { state: string | null }) {
     );
   } else if (state === 'hair-extension') {
     return (
-      <span
-        title="Нарощування волосся"
-        className="inline-flex items-center justify-center w-6 h-6"
-        style={{ fontSize: '18px' }}
-      >
-        ✂️
-      </span>
+      <img 
+        src="/assets/image-client.png" 
+        alt="Нарощування волосся" 
+        className="w-6 h-6 object-contain"
+      />
     );
   } else if (state === 'other-services') {
     return (
-      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M10 6 L10 22 M18 6 L18 22" stroke="#ec4899" strokeWidth="2" strokeLinecap="round"/>
-        <circle cx="10" cy="6" r="2" fill="#ec4899"/>
-        <circle cx="18" cy="6" r="2" fill="#ec4899"/>
-        <path d="M10 8 Q14 10 18 8" stroke="#ec4899" strokeWidth="2" fill="none" strokeLinecap="round"/>
-        <path d="M10 12 Q14 14 18 12" stroke="#ec4899" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-        <rect x="6" y="16" width="16" height="8" rx="1" stroke="#ec4899" strokeWidth="1.5" fill="none"/>
-        <circle cx="14" cy="20" r="2" stroke="#ec4899" strokeWidth="1" fill="none"/>
-      </svg>
+      <span
+        title="Інші послуги"
+        className="inline-flex items-center justify-center w-6 h-6"
+        style={{ fontSize: '18px', transform: 'rotate(180deg)' }} // леза вгору
+      >
+        ✂️
+      </span>
     );
   } else if (state === 'all-good') {
     return (
