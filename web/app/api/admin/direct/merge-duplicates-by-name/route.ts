@@ -37,6 +37,16 @@ function isAltegioGeneratedInstagram(username?: string | null): boolean {
   return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
 }
 
+function isHumanInstagram(username?: string | null): boolean {
+  const u = String(username || '').trim();
+  if (!u) return false;
+  if (u === 'NO INSTAGRAM') return false;
+  if (u.startsWith('missing_instagram_')) return false;
+  if (u.startsWith('no_instagram_')) return false;
+  if (u.startsWith('altegio_')) return false;
+  return true;
+}
+
 async function reassignHistory(fromClientId: string, toClientId: string) {
   // Важливо: перед видаленням дублікату переносимо історію, бо в БД стоїть ON DELETE CASCADE.
   const movedMessages = await prisma.directMessage.updateMany({
@@ -347,9 +357,8 @@ export async function POST(req: NextRequest) {
         let updatedClient = { ...clientToKeep };
         
         for (const { client: duplicate } of duplicates) {
-          // Переносимо Instagram, якщо він "людський" (не missing_instagram_/no_instagram_)
-          if (updatedClient.instagramUsername.startsWith('missing_instagram_') && 
-              !duplicate.instagramUsername.startsWith('missing_instagram_')) {
+          // ПРАВИЛО: база — Altegio-клієнт. З Instagram/Manychat переносимо тільки instagramUsername + історію повідомлень/станів (+ lastMessageAt).
+          if (isHumanInstagram(duplicate.instagramUsername) && !isHumanInstagram(updatedClient.instagramUsername)) {
             updatedClient.instagramUsername = duplicate.instagramUsername;
           }
 
@@ -365,32 +374,8 @@ export async function POST(req: NextRequest) {
             console.warn('[merge-duplicates-by-name] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', err);
           }
           
-          // Переносимо дати, якщо їх немає
-          if (!updatedClient.visitDate && duplicate.visitDate) {
-            updatedClient.visitDate = duplicate.visitDate;
-            updatedClient.visitedSalon = duplicate.visitedSalon;
-          }
-          
-          if (!updatedClient.paidServiceDate && duplicate.paidServiceDate) {
-            updatedClient.paidServiceDate = duplicate.paidServiceDate;
-            updatedClient.signedUpForPaidService = duplicate.signedUpForPaidService;
-          }
-          
-          if (!updatedClient.consultationDate && duplicate.consultationDate) {
-            updatedClient.consultationDate = duplicate.consultationDate;
-          }
-          
-          if (!updatedClient.consultationBookingDate && duplicate.consultationBookingDate) {
-            updatedClient.consultationBookingDate = duplicate.consultationBookingDate;
-          }
-          
           if (!updatedClient.lastMessageAt && duplicate.lastMessageAt) {
             updatedClient.lastMessageAt = duplicate.lastMessageAt;
-          }
-          
-          // Переносимо коментар, якщо його немає
-          if (!updatedClient.comment && duplicate.comment) {
-            updatedClient.comment = duplicate.comment;
           }
         }
         
@@ -408,6 +393,15 @@ export async function POST(req: NextRequest) {
           console.log(
             `[merge-duplicates-by-name] 🧾 Спроба виправити імʼя з Altegio API: updated=${res.updated} reason=${res.reason} (altegioClientId=${updatedClient.altegioClientId})`
           );
+        }
+
+        // Після merge: синхронізуємо стан на основі записів Altegio (щоб "істина" була від Altegio)
+        if (updatedClient.altegioClientId) {
+          try {
+            await syncClientStateFromAltegioRecords(updatedClient.id, updatedClient.altegioClientId);
+          } catch (err) {
+            console.error(`[merge-duplicates-by-name] Failed to sync state for client ${updatedClient.id}:`, err);
+          }
         }
         
         // Видаляємо дублікати
@@ -561,38 +555,19 @@ export async function POST(req: NextRequest) {
             updatedClient.altegioClientId = duplicate.altegioClientId;
           }
           
-          // Переносимо Instagram, якщо він правильний
-          if (updatedClient.instagramUsername.startsWith('missing_instagram_') && 
-              !duplicate.instagramUsername.startsWith('missing_instagram_')) {
+          if (isHumanInstagram(duplicate.instagramUsername) && !isHumanInstagram(updatedClient.instagramUsername)) {
             updatedClient.instagramUsername = duplicate.instagramUsername;
           }
-          
-          // Переносимо дати, якщо їх немає
-          if (!updatedClient.visitDate && duplicate.visitDate) {
-            updatedClient.visitDate = duplicate.visitDate;
-            updatedClient.visitedSalon = duplicate.visitedSalon;
-          }
-          
-          if (!updatedClient.paidServiceDate && duplicate.paidServiceDate) {
-            updatedClient.paidServiceDate = duplicate.paidServiceDate;
-            updatedClient.signedUpForPaidService = duplicate.signedUpForPaidService;
-          }
-          
-          if (!updatedClient.consultationDate && duplicate.consultationDate) {
-            updatedClient.consultationDate = duplicate.consultationDate;
-          }
-          
-          if (!updatedClient.consultationBookingDate && duplicate.consultationBookingDate) {
-            updatedClient.consultationBookingDate = duplicate.consultationBookingDate;
-          }
-          
+
           if (!updatedClient.lastMessageAt && duplicate.lastMessageAt) {
             updatedClient.lastMessageAt = duplicate.lastMessageAt;
           }
-          
-          // Переносимо коментар, якщо його немає
-          if (!updatedClient.comment && duplicate.comment) {
-            updatedClient.comment = duplicate.comment;
+
+          // Переносимо історію повідомлень/станів перед delete cascade
+          try {
+            await reassignHistory(duplicate.id, updatedClient.id);
+          } catch (err) {
+            console.warn('[merge-duplicates-by-name] ⚠️ Не вдалося перенести історію повідомлень/станів (name-merge, не критично):', err);
           }
         }
         
