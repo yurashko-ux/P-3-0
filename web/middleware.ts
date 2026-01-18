@@ -21,6 +21,35 @@ export default function middleware(req: NextRequest) {
     }
   })();
 
+  // #region agent log
+  // LOGIN DEBUG: не логувати токени/паролі, лише довжини та прапори
+  if (pathname.startsWith('/admin')) {
+    const qTokenLen = (url.searchParams.get('token') || '').trim().length;
+    const cookieLen = (req.cookies.get('admin_token')?.value || '').length;
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'debug-session',
+        runId: 'login_issue_pre',
+        hypothesisId: 'L0',
+        location: 'web/middleware.ts:entry',
+        message: 'Admin path middleware entry',
+        data: {
+          host,
+          pathname,
+          isHttps,
+          hasAdminPass: Boolean(ADMIN_PASS),
+          qTokenLen,
+          cookieLen,
+          err: url.searchParams.get('err') || null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion agent log
+
   // ===== ПЕРЕВІРКА ДОМЕНУ: Якщо finance-hob.vercel.app, дозволяємо тільки фінансовий звіт =====
   const isFinanceReportDomain = host === 'finance-hob.vercel.app';
   
@@ -156,6 +185,27 @@ export default function middleware(req: NextRequest) {
     if (qToken !== null) {
       const token = (qToken || '').trim();
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: 'debug-session',
+          runId: 'login_issue_pre',
+          hypothesisId: 'L1',
+          location: 'web/middleware.ts:/admin/login',
+          message: 'Login token received on /admin/login',
+          data: {
+            host,
+            isHttps,
+            hasAdminPass: Boolean(ADMIN_PASS),
+            tokenLen: token.length,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion agent log
+
       // якщо ADMIN_PASS не заданий — не пускаємо, просимо адміна виставити змінну
       if (!ADMIN_PASS) {
         const back = new URL(url);
@@ -163,6 +213,23 @@ export default function middleware(req: NextRequest) {
         back.searchParams.set('err', 'env'); // немає ADMIN_PASS у середовищі
         const res = NextResponse.redirect(back);
         res.cookies.set('admin_token', '', { path: '/', maxAge: 0 });
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'debug-session',
+            runId: 'login_issue_pre',
+            hypothesisId: 'L2',
+            location: 'web/middleware.ts:/admin/login',
+            message: 'Login blocked: ADMIN_PASS missing in env',
+            data: { host, isHttps },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion agent log
+
         return res;
       }
 
@@ -181,6 +248,22 @@ export default function middleware(req: NextRequest) {
           maxAge: 60 * 60 * 24 * 7, // 7 днів
         });
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'debug-session',
+            runId: 'login_issue_pre',
+            hypothesisId: 'L3',
+            location: 'web/middleware.ts:/admin/login',
+            message: 'Login success: admin_token cookie set',
+            data: { host, isHttps, secureFlag: isHttps },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion agent log
+
         return res;
       } else {
         const back = new URL(url);
@@ -188,6 +271,23 @@ export default function middleware(req: NextRequest) {
         back.searchParams.set('err', '1'); // невірний токен
         const res = NextResponse.redirect(back);
         res.cookies.set('admin_token', '', { path: '/', maxAge: 0 });
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'debug-session',
+            runId: 'login_issue_pre',
+            hypothesisId: 'L4',
+            location: 'web/middleware.ts:/admin/login',
+            message: 'Login failed: token mismatch',
+            data: { host, isHttps, tokenLen: token.length, hasAdminPass: Boolean(ADMIN_PASS) },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion agent log
+
         return res;
       }
     }
@@ -200,6 +300,23 @@ export default function middleware(req: NextRequest) {
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', 'env'); // підказка що нема ADMIN_PASS
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'debug-session',
+        runId: 'login_issue_pre',
+        hypothesisId: 'L5',
+        location: 'web/middleware.ts:admin:guard',
+        message: 'Redirecting to /admin/login: ADMIN_PASS missing',
+        data: { host, pathname, isHttps },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion agent log
+
     return NextResponse.redirect(loginUrl);
   }
 
@@ -208,6 +325,23 @@ export default function middleware(req: NextRequest) {
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'debug-session',
+        runId: 'login_issue_pre',
+        hypothesisId: 'L6',
+        location: 'web/middleware.ts:admin:guard',
+        message: 'Redirecting to /admin/login: cookie mismatch',
+        data: { host, pathname, isHttps, cookieLen: cookieToken.length, hasAdminPass: Boolean(ADMIN_PASS) },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion agent log
+
     return NextResponse.redirect(loginUrl);
   }
 
