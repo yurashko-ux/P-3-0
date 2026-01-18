@@ -1113,6 +1113,37 @@ export function DirectClientTable({
                             // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
                             const isManychatClient = !client.altegioClientId;
                             
+                            // #region agent log
+                            // H6: консультація є (consultationBookingDate), але календарика в "Стан" немає, бо немає state='consultation-booked' в state logs/current state
+                            try {
+                              if (client.consultationBookingDate) {
+                                const hasConsultInHistory = (states || []).some((s: any) => (s?.state || '') === 'consultation-booked');
+                                const hasConsultCurrent = currentState === 'consultation-booked';
+                                if (!hasConsultInHistory && !hasConsultCurrent) {
+                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      sessionId: 'debug-session',
+                                      runId: 'consult_state_pre',
+                                      hypothesisId: 'H6',
+                                      location: 'web/app/admin/direct/_components/DirectClientTable.tsx:state:missingConsultIcon',
+                                      message: 'consultationBookingDate exists but no consultation-booked state in history/current',
+                                      data: {
+                                        clientId: client.id,
+                                        altegioClientId: client.altegioClientId || null,
+                                        visits: client.visits ?? null,
+                                        currentState,
+                                        statesCount: states.length,
+                                      },
+                                      timestamp: Date.now(),
+                                    }),
+                                  }).catch(() => {});
+                                }
+                              }
+                            } catch {}
+                            // #endregion agent log
+                            
                             // Якщо немає історії, показуємо поточний стан (якщо це не "lead" для Altegio клієнта)
                             if (states.length === 0) {
                               if (!isManychatClient && currentState === 'lead') {
