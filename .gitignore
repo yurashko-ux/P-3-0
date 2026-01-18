@@ -31,3 +31,6 @@ web/node_modules/.prisma/
 # Build caches
 .turbo/
 web/.turbo/
+
+# Cursor (локальні метадані та debug-логи)
+.cursor/
