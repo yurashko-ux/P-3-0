@@ -1091,7 +1091,7 @@ export function DirectClientTable({
                                     className="inline-flex items-center"
                                     title="Instagram відсутній"
                                   >
-                                    <InstagramIcon className="w-4 h-4 text-gray-400" />
+                                    <InstagramIcon className="w-8 h-8 text-gray-400" />
                                     {client.telegramNotificationSent && (
                                       <span className="ml-1 text-blue-500" title="Повідомлення відправлено в Telegram">
                                         📱
@@ -1109,7 +1109,7 @@ export function DirectClientTable({
                                     className="inline-flex items-center hover:opacity-80"
                                     title={`https://instagram.com/${username}`}
                                   >
-                                    <InstagramIcon className="w-4 h-4 text-pink-600" />
+                                    <InstagramIcon className="w-8 h-8 text-pink-600" />
                                   </a>
                                 );
                               }
@@ -1131,17 +1131,11 @@ export function DirectClientTable({
                                     {first}
                                   </span>
                                 ) : null}
-                                {last ? (
+                                <span className="mt-0.5 flex items-center justify-between gap-2">
                                   <span className="truncate text-sm font-semibold" title={fullName}>
-                                    {last}
+                                    {last || fullName}
                                   </span>
-                                ) : (
-                                  <span className="truncate text-sm font-semibold" title={fullName}>
-                                    {fullName}
-                                  </span>
-                                )}
-                                <span className="mt-0.5 inline-flex items-center">
-                                  {renderInstagramIcon()}
+                                  <span className="shrink-0">{renderInstagramIcon()}</span>
                                 </span>
                               </>
                             );
