@@ -81,12 +81,13 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
     );
   } else if (state === 'hair-extension') {
     return (
-      <img 
-        src="/assets/image-client.png" 
-        alt="Нарощування волосся" 
-        className="object-contain"
-        style={iconStyle}
-      />
+      <span
+        title="Нарощування волосся"
+        className="inline-flex items-center justify-center"
+        style={{ ...iconStyle, fontSize: `${Math.round(size * 0.72)}px` }}
+      >
+        ✂️
+      </span>
     );
   } else if (state === 'other-services') {
     return (
