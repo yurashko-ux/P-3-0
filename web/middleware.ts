@@ -36,6 +36,19 @@ export default function middleware(req: NextRequest) {
     }
   })();
 
+  // Ловимо випадок, коли UI присилає token НЕ на /admin/login, а на /admin?... (може ламати логін)
+  if (pathname.startsWith('/admin')) {
+    const qTokenAny = url.searchParams.get('token');
+    if (qTokenAny) {
+      dbg({
+        hypothesisId: 'L6',
+        location: 'middleware.ts:/admin*',
+        message: 'token_query_on_admin_path',
+        data: { host, isHttps, pathname, tokenLen: String(qTokenAny || '').trim().length, hasAdminPass: !!ADMIN_PASS },
+      });
+    }
+  }
+
   // ===== ПЕРЕВІРКА ДОМЕНУ: Якщо finance-hob.vercel.app, дозволяємо тільки фінансовий звіт =====
   const isFinanceReportDomain = host === 'finance-hob.vercel.app';
   
@@ -260,6 +273,12 @@ export default function middleware(req: NextRequest) {
 
   const cookieToken = req.cookies.get('admin_token')?.value || '';
   if (cookieToken !== ADMIN_PASS) {
+    dbg({
+      hypothesisId: 'L7',
+      location: 'middleware.ts:/admin/*',
+      message: 'admin_cookie_mismatch_redirect_to_login',
+      data: { host, isHttps, pathname, hasAdminPass: !!ADMIN_PASS, cookieTokenLen: cookieToken.length },
+    });
     const loginUrl = url.clone();
     loginUrl.pathname = '/admin/login';
     loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
