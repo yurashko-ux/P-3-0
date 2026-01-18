@@ -474,6 +474,12 @@ export async function GET(req: NextRequest) {
                 } else {
                   c = { ...c, consultationCancelled: false };
                 }
+              } else {
+                // KV каже "pending/невідомо": не маємо права показувати ❌ без підтвердження no-show.
+                // Тому якщо в БД лишився legacy false — нормалізуємо до null.
+                if ((c as any).consultationAttended === false) {
+                  c = { ...c, consultationAttended: null, consultationCancelled: false };
+                }
               }
             }
 
@@ -521,6 +527,33 @@ export async function GET(req: NextRequest) {
 
         const currentGroup = paidGroups.find((g: any) => (g?.kyivDay || '') === paidKyivDay) || null;
         if (!currentGroup) return c;
+
+        // Attendance для "Запис" має відповідати KV-групі цього дня.
+        // Не показуємо ❌ (paidServiceAttended=false), якщо KV не підтверджує no-show.
+        try {
+          const attStatus = String((currentGroup as any).attendanceStatus || '');
+          const attVal = (currentGroup as any).attendance ?? null;
+          if (attStatus === 'arrived' || attVal === 1) {
+            c = { ...c, paidServiceAttended: true, paidServiceCancelled: false };
+          } else if (attStatus === 'no-show' || attVal === -1) {
+            if ((c as any).paidServiceAttended !== true) {
+              c = { ...c, paidServiceAttended: false, paidServiceCancelled: false };
+            }
+          } else if (attStatus === 'cancelled' || attVal === -2) {
+            if ((c as any).paidServiceAttended !== true) {
+              c = { ...c, paidServiceAttended: null, paidServiceCancelled: true };
+            } else {
+              c = { ...c, paidServiceCancelled: false };
+            }
+          } else {
+            // pending/невідомо → якщо legacy false, прибираємо ❌
+            if ((c as any).paidServiceAttended === false) {
+              c = { ...c, paidServiceAttended: null, paidServiceCancelled: false };
+            }
+          }
+        } catch (err) {
+          console.warn('[direct/clients] ⚠️ Не вдалося нормалізувати paidServiceAttended з KV (не критично):', err);
+        }
 
         // Дораховуємо суму поточного платного запису (грн) по paid-групі цього дня.
         try {
