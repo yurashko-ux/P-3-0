@@ -201,7 +201,8 @@ export async function POST(req: NextRequest) {
               ...existingClient,
               altegioClientId: altegioClientId,
               instagramUsername: normalizedInstagram,
-              state: 'lead' as const,
+              // Altegio клієнт: тримаємо базовий стан "client" (а не "lead")
+              state: 'client' as const,
               ...(firstName && { firstName }),
               ...(lastName && { lastName }),
               updatedAt: new Date().toISOString(),
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
               lastName,
               altegioClientId: clientId,
               action: 'updated',
-              state: 'lead',
+              state: 'client',
             });
           }
         } else {
@@ -246,7 +247,7 @@ export async function POST(req: NextRequest) {
             lastName,
             altegioClientId: clientId,
             action: 'created',
-            state: 'lead',
+            state: 'client',
           });
           
           // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no"

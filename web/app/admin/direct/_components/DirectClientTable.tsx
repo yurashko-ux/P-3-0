@@ -1113,42 +1113,12 @@ export function DirectClientTable({
                             // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
                             const isManychatClient = !client.altegioClientId;
                             
-                            // #region agent log
-                            // H6: консультація є (consultationBookingDate), але календарика в "Стан" немає, бо немає state='consultation-booked' в state logs/current state
-                            try {
-                              if (client.consultationBookingDate) {
-                                const hasConsultInHistory = (states || []).some((s: any) => (s?.state || '') === 'consultation-booked');
-                                const hasConsultCurrent = currentState === 'consultation-booked';
-                                if (!hasConsultInHistory && !hasConsultCurrent) {
-                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      sessionId: 'debug-session',
-                                      runId: 'consult_state_pre',
-                                      hypothesisId: 'H6',
-                                      location: 'web/app/admin/direct/_components/DirectClientTable.tsx:state:missingConsultIcon',
-                                      message: 'consultationBookingDate exists but no consultation-booked state in history/current',
-                                      data: {
-                                        clientId: client.id,
-                                        altegioClientId: client.altegioClientId || null,
-                                        visits: client.visits ?? null,
-                                        currentState,
-                                        statesCount: states.length,
-                                      },
-                                      timestamp: Date.now(),
-                                    }),
-                                  }).catch(() => {});
-                                }
-                              }
-                            } catch {}
-                            // #endregion agent log
-                            
-                            // Якщо немає історії, показуємо поточний стан (якщо це не "lead" для Altegio клієнта)
+                            // Якщо немає історії, показуємо поточний стан
                             if (states.length === 0) {
-                              if (!isManychatClient && currentState === 'lead') {
-                                return null; // Не показуємо "lead" для Altegio клієнтів
-                              }
+                              // Стан "lead" видалено: трактуємо як "message"
+                              let stateToShow: any = currentState === 'lead' ? 'message' : currentState;
+                              // Якщо стан порожній, але є lastMessageAt — показуємо "Розмова"
+                              if (!stateToShow && client.lastMessageAt) stateToShow = 'message';
                               return (
                                 <button
                                   onClick={() => setStateHistoryClient(client)}
@@ -1156,7 +1126,7 @@ export function DirectClientTable({
                                   title="Натисніть, щоб переглянути історію станів"
                                 >
                                   <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
-                                    <StateIcon state={currentState} size={32} />
+                                    <StateIcon state={stateToShow} size={32} />
                                   </div>
                                 </button>
                               );
@@ -1187,6 +1157,13 @@ export function DirectClientTable({
                               // ВИДАЛЯЄМО "no-instagram" (це були червоні квадрати)
                               if (log.state === 'no-instagram') {
                                 continue; // Пропускаємо всі "no-instagram"
+                              }
+
+                              // Якщо історичний баг записав state=null, але клієнт має lastMessageAt,
+                              // трактуємо це як "Розмова", щоб не втрачати іконку.
+                              if ((!log.state || String(log.state).trim() === '') && client.lastMessageAt) {
+                                messageLogs.push({ ...(log as any), state: 'message' } as any);
+                                continue;
                               }
                               
                               if (log.state === 'lead') {
@@ -1227,27 +1204,6 @@ export function DirectClientTable({
                                 createdAt: client.createdAt || new Date().toISOString(),
                               };
                               clientLogs.unshift(syntheticClientLog);
-
-                              // #region agent log
-                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  sessionId: 'debug-session',
-                                  runId: 'state_client_postfix',
-                                  hypothesisId: 'S1',
-                                  location: 'web/app/admin/direct/_components/DirectClientTable.tsx:state:injectClient',
-                                  message: 'Injected synthetic client state for altegio client without clientLogs',
-                                  data: {
-                                    clientId: client.id,
-                                    altegioClientId: client.altegioClientId || null,
-                                    currentState,
-                                    last5StatesCount: states.length,
-                                  },
-                                  timestamp: Date.now(),
-                                }),
-                              }).catch(() => {});
-                              // #endregion agent log
                             }
                             
                             // Якщо є дата консультації (показуємо її в таблиці), але state-log ще не встиг записати `consultation-booked`,
@@ -1270,57 +1226,14 @@ export function DirectClientTable({
                                   createdAt: String(client.consultationBookingDate),
                                 };
                                 consultationBookedLogs.unshift(syntheticConsult);
-
-                                // #region agent log
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    sessionId: 'debug-session',
-                                    runId: 'consult_state_post',
-                                    hypothesisId: 'F6',
-                                    location: 'web/app/admin/direct/_components/DirectClientTable.tsx:state:injectConsultBooked',
-                                    message: 'Injected derived consultation-booked state from consultationBookingDate',
-                                    data: {
-                                      clientId: client.id,
-                                      altegioClientId: client.altegioClientId || null,
-                                      visits: client.visits ?? null,
-                                      currentState,
-                                    },
-                                    timestamp: Date.now(),
-                                  }),
-                                }).catch(() => {});
-                                // #endregion agent log
                               }
                             } catch {}
 
-                            // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
-                            // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
-                            // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
-                            let oldestMessageAsLead: typeof sortedStates[0] | null = null;
-                            if (messageLogs.length > 0 && leadLogs.length === 0) {
-                              // Перевіряємо, чи "message" найстаріший стан тільки якщо немає справжнього "lead"
-                              const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
-                              
-                              // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                              const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
-                              const olderThanMessage = allOtherStates.filter(log => 
-                                new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
-                              );
-                              
-                              // Якщо "message" найстаріший - відображаємо його як "Лід"
-                              if (olderThanMessage.length === 0) {
-                                oldestMessageAsLead = {
-                                  ...oldestMessage,
-                                  state: 'lead', // Відображаємо як "Лід"
-                                };
-                              }
-                            }
+                            // Стан "lead" видалено: не конвертуємо message -> lead
+                            const oldestMessageAsLead: typeof sortedStates[0] | null = null;
                             
-                            // Якщо перше повідомлення має відображатися як "Лід" - додаємо його
-                            if (oldestMessageAsLead) {
-                              filteredStates.push(oldestMessageAsLead);
-                            } else if (isManychatClient && leadLogs.length > 0) {
+                            // lead видалено: для Manychat-клієнтів не показуємо "lead" взагалі
+                            if (isManychatClient && leadLogs.length > 0) {
                               // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
                               const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
                               
@@ -1334,7 +1247,8 @@ export function DirectClientTable({
                               // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
                               if (olderThanLead.length === 0) {
                                 // "lead" найстаріший - додаємо його першим
-                                filteredStates.push(oldestLead);
+                                // state="lead" більше не використовуємо — показуємо як "message"
+                                filteredStates.push({ ...oldestLead, state: 'message' } as any);
                               }
                               // Якщо є стани старіші - не додаємо "lead"
                             }
@@ -1356,11 +1270,8 @@ export function DirectClientTable({
                               filteredStates.push(consultationRescheduledLogs[0]); // Тільки найстаріший "consultation-rescheduled"
                             }
                             
-                            // Додаємо всі інші стани (без "no-instagram")
-                            // Якщо перше повідомлення вже відображено як "Лід", не додаємо інші "message" стани
-                            const remainingMessageLogs = oldestMessageAsLead 
-                              ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
-                              : messageLogs;
+                            // Додаємо всі message-логи (потім все одно лишиться 1 через дедуп по іконці)
+                            const remainingMessageLogs = messageLogs;
                             filteredStates.push(...remainingMessageLogs);
                             
                             // Додаємо всі інші стани
@@ -1378,23 +1289,13 @@ export function DirectClientTable({
                             const statesToShow = [...filteredStates];
                             
                             // Перевіряємо, чи є "lead" та "client" в відфільтрованих станах
-                            const hasLeadInFiltered = filteredStates.some(log => log.state === 'lead');
+                            const hasLeadInFiltered = false;
                             const hasClientInFiltered = filteredStates.some(log => log.state === 'client');
                             
                             if (currentState !== lastHistoryState) {
                               // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
                               if (!isManychatClient && currentState === 'lead') {
                                 // Не додаємо "lead" для Altegio клієнтів
-                              } else if (currentState === 'lead' && !hasLeadInFiltered) {
-                                // Для Manychat клієнтів - додаємо "lead" тільки якщо його немає в історії
-                                statesToShow.push({
-                                  id: 'current',
-                                  clientId: client.id,
-                                  state: currentState,
-                                  previousState: lastHistoryState,
-                                  reason: 'current-state',
-                                  createdAt: new Date().toISOString(),
-                                });
                               } else if (currentState === 'client' && !hasClientInFiltered) {
                                 // Для "client" - додаємо тільки якщо його немає в історії (стан "client" має бути тільки один раз)
                                 statesToShow.push({
@@ -1405,12 +1306,12 @@ export function DirectClientTable({
                                   reason: 'current-state',
                                   createdAt: new Date().toISOString(),
                                 });
-                              } else if (currentState !== 'lead' && currentState !== 'client') {
+                              } else if (currentState !== 'client') {
                                 // Для всіх інших станів - завжди додаємо
                               statesToShow.push({
                                 id: 'current',
                                 clientId: client.id,
-                                state: currentState,
+                                state: currentState === 'lead' ? 'message' : currentState,
                                 previousState: lastHistoryState,
                                 reason: 'current-state',
                                 createdAt: new Date().toISOString(),
@@ -1424,8 +1325,8 @@ export function DirectClientTable({
                               // Видаляємо "no-instagram"
                               if (log.state === 'no-instagram') return false;
                               
-                              // Видаляємо "lead" для Altegio клієнтів
-                              if (!isManychatClient && log.state === 'lead') return false;
+                              // lead більше не використовуємо
+                              if (log.state === 'lead') return false;
                               
                               // Приховуємо null/undefined стани (вони показуються як "lead")
                               if (!log.state || log.state.trim() === '') return false;
@@ -1471,7 +1372,7 @@ export function DirectClientTable({
                                   });
                                   
                                   // Гарантуємо, що state не є "no-instagram" або "lead" для Altegio клієнтів
-                                  const stateToShow = (!isManychatClient && stateLog.state === 'lead') || stateLog.state === 'no-instagram'
+                                  const stateToShow = stateLog.state === 'no-instagram' || stateLog.state === 'lead'
                                     ? null
                                     : (stateLog.state || null);
                                   

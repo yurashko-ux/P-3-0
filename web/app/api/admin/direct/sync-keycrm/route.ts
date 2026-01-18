@@ -333,7 +333,8 @@ export async function POST(req: NextRequest) {
               firstName: nameData.firstName,
               lastName: nameData.lastName,
               source: 'instagram',
-              state: 'lead' as const, // Клієнти з KeyCRM (Instagram) мають стан "Лід"
+              // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
+              state: 'message' as const,
               firstContactDate: now,
               statusId: defaultStatus?.id || 'new',
               visitedSalon: false,
@@ -341,7 +342,7 @@ export async function POST(req: NextRequest) {
               createdAt: now,
               updatedAt: now,
             };
-            console.log(`[direct/sync-keycrm] Preparing new client: @${instagram} (state: lead)`);
+            console.log(`[direct/sync-keycrm] Preparing new client: @${instagram} (state: message)`);
           } else {
             // Оновлюємо існуючого клієнта (не змінюємо state, якщо він вже є)
             client = {

@@ -221,6 +221,39 @@ export async function GET(req: NextRequest) {
         try {
           if (c.altegioClientId) {
             const groups = groupsByClient.get(c.altegioClientId) || [];
+            // Якщо в БД немає consultationBookingDate, але в KV є consultation-group з датою —
+            // підставляємо дату в ВІДПОВІДЬ (без запису в БД), щоб таблиця показувала запис.
+            // Правило вибору:
+            // - беремо consultation-group з валідним datetime
+            // - пріоритет: найближча майбутня (або найближча в межах 14 днів)
+            // - якщо майбутніх нема — не чіпаємо (не підставляємо заднім числом)
+            if (!c.consultationBookingDate) {
+              try {
+                const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
+                const nowTs = Date.now();
+                let best: any = null;
+                let bestTs = Infinity;
+                for (const g of consultGroups) {
+                  const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+                  if (!dt) continue;
+                  const ts = new Date(dt).getTime();
+                  if (!isFinite(ts)) continue;
+                  const diff = ts - nowTs;
+                  // лише майбутні (або прямо зараз), і не далі ніж 14 днів
+                  if (diff < 0) continue;
+                  if (diff > 14 * 24 * 60 * 60 * 1000) continue;
+                  if (ts < bestTs) {
+                    bestTs = ts;
+                    best = g;
+                  }
+                }
+
+                if (best && isFinite(bestTs)) {
+                  const iso = new Date(bestTs).toISOString();
+                  c = { ...c, consultationBookingDate: iso };
+                }
+              } catch {}
+            }
 
             // Номер спроби консультації: 2/3/… (збільшуємо ТІЛЬКИ після no-show).
             // Правило: для поточної consultationBookingDate номер = 1 + кількість no-show консультацій ДО цієї дати (Europe/Kyiv).
@@ -609,7 +642,6 @@ export async function GET(req: NextRequest) {
     // getLast5StatesForClients вже відфільтрувала дублікати стану "client" та "lead"
     const clientsWithStates = clients.map(client => {
       const clientStates = statesMap.get(client.id) || [];
-      
       return {
       ...client,
         last5States: clientStates,

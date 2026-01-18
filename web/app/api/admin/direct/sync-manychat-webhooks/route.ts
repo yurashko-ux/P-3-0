@@ -369,7 +369,8 @@ export async function POST(req: NextRequest) {
             firstName,
             lastName,
             source: 'instagram',
-            state: 'lead' as const,
+            // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
+            state: 'message' as const,
             firstContactDate,
             statusId: defaultStatus?.id || 'new',
             masterId,

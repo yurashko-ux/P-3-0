@@ -27,7 +27,8 @@ type StateHistoryModalProps = {
 // Функція для отримання назви стану
 function getStateName(state: string | null): string {
   const stateNames: Record<string, string> = {
-    'lead': 'Лід',
+    // Стан "Лід" більше не використовуємо
+    'lead': 'Розмова',
     'client': 'Клієнт',
     // Стан `consultation` більше не використовуємо як окремий, але залишаємо мапінг для старих логів
     'consultation': 'Запис на консультацію',
@@ -268,17 +269,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                   {(() => {
                     const isManychatClient = !client.altegioClientId;
                     
-                    // Для Altegio клієнтів - НЕ показуємо поточний стан, якщо він "lead"
-                    if (!isManychatClient && currentState === 'lead') {
-                      return null;
-                    }
-                    
-                    // Для Manychat клієнтів - перевіряємо, чи є "lead" в історії
-                    const hasLeadInHistory = history.some(log => log.state === 'lead');
-                    // Не показуємо поточний стан "lead", якщо в історії вже є "lead"
-                    if (isManychatClient && currentState === 'lead' && hasLeadInHistory) {
-                      return null;
-                    }
+                    // Стан "lead" видалено — не робимо спеціальних хаків для нього
                     
                     // Не дублюємо поточний стан: якщо такий state вже є в історії — окремо зверху не показуємо.
                     const currentStateExistsInHistory = currentState ? history.some((h) => h.state === currentState) : false;
@@ -313,7 +304,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     );
                     
                     // Розділяємо на "lead", "client", consultation-related стани, "message" та інші стани
-                    const leadLogs = sortedHistory.filter(log => log.state === 'lead');
+                    const leadLogs: typeof sortedHistory = []; // lead більше не використовуємо
                     const clientLogs = sortedHistory.filter(log => log.state === 'client');
                     const messageLogs = sortedHistory.filter(log => log.state === 'message');
                     const consultationBookedLogs = sortedHistory.filter(log => log.state === 'consultation-booked');
@@ -330,28 +321,8 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       log.state !== 'consultation-rescheduled'
                     );
                     
-                    // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
-                    // Це працює для ВСІХ клієнтів (навіть з altegioClientId), бо перше повідомлення = перший контакт = Лід
-                    // АЛЕ: якщо є справжній "lead" стан, він має пріоритет
-                    let oldestMessageAsLead: typeof sortedHistory[0] | null = null;
-                    if (messageLogs.length > 0 && leadLogs.length === 0) {
-                      // Перевіряємо, чи "message" найстаріший стан тільки якщо немає справжнього "lead"
-                      const oldestMessage = messageLogs[0]; // Вже відсортовано від старіших до новіших
-                      
-                      // Перевіряємо, чи "message" найстаріший стан (перевіряємо проти всіх інших станів)
-                      const allOtherStates = [...clientLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
-                      const olderThanMessage = allOtherStates.filter(log => 
-                        new Date(log.createdAt).getTime() < new Date(oldestMessage.createdAt).getTime()
-                      );
-                      
-                      // Якщо "message" найстаріший - відображаємо його як "Лід"
-                      if (olderThanMessage.length === 0) {
-                        oldestMessageAsLead = {
-                          ...oldestMessage,
-                          state: 'lead', // Відображаємо як "Лід"
-                        };
-                      }
-                    }
+                    // Стан "lead" видалено: перше повідомлення лишається "Розмова" (message)
+                    const oldestMessageAsLead: typeof sortedHistory[0] | null = null;
                     
                     // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead" (крім якщо це перше повідомлення)
                     // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
@@ -359,25 +330,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     // для consultation-related станів - залишаємо тільки найстаріший (якщо є)
                     let filteredHistory: typeof sortedHistory = [];
                     
-                    // Якщо перше повідомлення має відображатися як "Лід" - додаємо його
-                    if (oldestMessageAsLead) {
-                      filteredHistory.push(oldestMessageAsLead);
-                    } else if (isManychatClient && leadLogs.length > 0) {
-                      // Знаходимо найстаріший "lead"
-                      const oldestLead = leadLogs[0]; // Вже відсортовано від старіших до новіших
-                      
-                      // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з consultation та message)
-                      const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
-                      const olderThanLead = allOtherStates.filter(log => 
-                        new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
-                      );
-                      
-                      // Якщо "lead" найстаріший - залишаємо його
-                      if (olderThanLead.length === 0) {
-                        filteredHistory.push(oldestLead);
-                      }
-                      // Якщо є стани старіші - не показуємо "lead"
-                    }
+                    // Стан "lead" видалено: нічого не додаємо тут
                     
                     // Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
                     if (clientLogs.length > 0) {
@@ -398,9 +351,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     
                     // Додаємо всі інші стани (без "no-instagram")
                     // Якщо перше повідомлення вже відображено як "Лід", не додаємо інші "message" стани
-                    const remainingMessageLogs = oldestMessageAsLead 
-                      ? messageLogs.filter(log => log.id !== oldestMessageAsLead.id)
-                      : messageLogs;
+                    const remainingMessageLogs = messageLogs;
                     // Уникаємо дублювання стану `message` — показуємо тільки один запис (найстаріший).
                     if (remainingMessageLogs.length > 0) {
                       filteredHistory.push(remainingMessageLogs[0]);

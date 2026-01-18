@@ -92,7 +92,8 @@ export async function POST(req: NextRequest) {
         firstName,
         lastName,
         source: (source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-        state: 'lead' as const, // Клієнти з ManyChat мають стан "Лід"
+        // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
+        state: 'message' as const,
         firstContactDate: now,
         statusId: defaultStatus?.id || 'new',
         visitedSalon: false,
@@ -108,6 +109,8 @@ export async function POST(req: NextRequest) {
         instagramUsername: normalizedInstagram, // Оновлюємо нормалізований username
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
+        // Якщо в історичних даних залишився "lead" — нормалізуємо до "message"
+        ...(client.state === 'lead' ? { state: 'message' as const } : {}),
         lastMessageAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

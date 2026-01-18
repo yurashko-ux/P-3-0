@@ -30,31 +30,12 @@ export async function GET(req: NextRequest) {
       if (st == null && reason.includes('manychat')) {
         return { ...log, state: 'message' };
       }
+      // Стан "lead" більше не використовуємо: у відображенні історії трактуємо як "message"
+      if (st === 'lead') {
+        return { ...log, state: 'message' };
+      }
       return log;
     });
-
-    // #region agent log
-    try {
-      const beforeNull = (info.history || []).filter((l: any) => l?.state == null).length;
-      const afterNull = mappedHistory.filter((l: any) => l?.state == null).length;
-      const mappedToMessage = mappedHistory.filter((l: any) => l?.state === 'message').length;
-      if (beforeNull > 0) {
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: 'debug-session',
-            runId: 'state_history_post',
-            hypothesisId: 'F7',
-            location: 'web/app/api/admin/direct/state-history/route.ts:mapNullManychat',
-            message: 'Mapped null state logs from manychat to message',
-            data: { clientId, beforeNull, afterNull, mappedToMessage },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-      }
-    } catch {}
-    // #endregion agent log
     
     // Отримуємо дірект-менеджера для стану "Лід"
     const directManager = await getDirectManager();
@@ -66,39 +47,26 @@ export async function GET(req: NextRequest) {
       select: { altegioClientId: true },
     });
     
-    // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
+    // Стан "lead" видалено: залишаємо логіку manychat/altegio лише для сумісності в інших місцях
     const isManychatClient = !clientInfo?.altegioClientId;
     
     // Спочатку видаляємо "no-instagram" та прибираємо застарілий стан `consultation`
     // (факт приходу на консультацію показуємо ✅ у колонці дати консультації)
     let filteredHistory = mappedHistory.filter((log: any) => log.state !== 'no-instagram' && log.state !== 'consultation');
+
     
-    // Фільтруємо "lead" та "client" - залишаємо тільки найстаріші
+    // Фільтруємо "client" - залишаємо тільки найстаріші
     const sortedHistory = [...filteredHistory].sort((a, b) => 
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
     
     // Розділяємо на категорії
-    const leadLogs = sortedHistory.filter(log => log.state === 'lead');
     const clientLogs = sortedHistory.filter(log => log.state === 'client');
     const otherLogs = sortedHistory.filter(log => 
-      log.state !== 'lead' && log.state !== 'client'
+      log.state !== 'client'
     );
     
     const finalFilteredHistory: typeof sortedHistory = [];
-    
-    // Для Manychat клієнтів - залишаємо тільки найстаріший "lead"
-    if (isManychatClient && leadLogs.length > 0) {
-      const oldestLead = leadLogs[0]; // Найстаріший "lead"
-      // Перевіряємо, чи є стани старіші за "lead"
-      const olderThanLead = otherLogs.filter(log => 
-        new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
-      );
-      // Якщо "lead" найстаріший - додаємо його
-      if (olderThanLead.length === 0) {
-        finalFilteredHistory.push(oldestLead);
-      }
-    }
     
     // Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
     if (clientLogs.length > 0) {
@@ -192,13 +160,11 @@ export async function GET(req: NextRequest) {
       currentStateDate = client.updatedAt.toISOString();
     }
 
-    // РАДИКАЛЬНЕ ПРАВИЛО: для Altegio клієнтів - не повертаємо поточний стан "lead"
+    // Стан "lead" видалено: поточний стан може бути тільки message/client/...
     // Також нормалізуємо застарілий стан `consultation` -> `consultation-booked`
     let currentStateValue = info.currentState === 'no-instagram' ? null : info.currentState;
     if (currentStateValue === 'consultation') currentStateValue = 'consultation-booked';
-    if (!isManychatClient && currentStateValue === 'lead') {
-      currentStateValue = null; // Не показуємо "lead" для Altegio клієнтів
-    }
+    if (currentStateValue === 'lead') currentStateValue = 'message';
     
     return NextResponse.json({
       ok: true,

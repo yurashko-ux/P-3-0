@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
         firstName: firstName || undefined,
         lastName: lastName || undefined,
         source: (source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-        state: 'lead' as const,
+        // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
+        state: 'message' as const,
         firstContactDate: now,
         statusId: defaultStatus?.id || 'new',
         visitedSalon: false,

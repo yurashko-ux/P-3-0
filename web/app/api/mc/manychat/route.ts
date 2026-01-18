@@ -565,7 +565,8 @@ export async function POST(req: NextRequest) {
           firstName: fullNameParts[0] || undefined,
           lastName: fullNameParts.slice(1).join(' ') || undefined,
           source: 'instagram',
-          state: 'lead' as const, // Клієнти з ManyChat мають стан "Лід"
+          // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
+          state: 'message' as const,
           firstContactDate: now,
           statusId: defaultStatus?.id || 'new',
           masterId,
@@ -602,7 +603,7 @@ export async function POST(req: NextRequest) {
             (now.getTime() - new Date(lastMessageState.createdAt).getTime()) >= 24 * 60 * 60 * 1000; // 24 години в мілісекундах
           
         // Якщо state відсутній (undefined) — це також "ранній" клієнт, якому треба показати "Розмова".
-        if (shouldSetMessageState && (!client.state || client.state === 'lead' || client.state === 'client')) {
+        if (shouldSetMessageState && (!client.state || client.state === 'client')) {
             newState = 'message';
             console.log(`[manychat] Setting state to 'message' for client ${client.id} (last message state was ${lastMessageState ? new Date(lastMessageState.createdAt).toISOString() : 'never'})`);
           }
