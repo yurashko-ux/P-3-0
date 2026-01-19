@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead, kvWrite } from '@/lib/kv';
+import { getAllDirectClients } from '@/lib/direct-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -131,23 +132,22 @@ export async function POST(req: NextRequest) {
   }
 
   const sp = req.nextUrl.searchParams;
-  const maxPages = Math.max(1, Math.min(50, Number(sp.get('maxPages') || 10) || 10));
-  const pageSize = Math.max(10, Math.min(200, Number(sp.get('pageSize') || 100) || 100));
   const onlyMissing = sp.get('onlyMissing') !== '0';
   const dryRun = sp.get('dryRun') === '1';
   const limit = Math.max(0, Number(sp.get('limit') || 0) || 0); // 0 = без ліміту
+  const delayMs = Math.max(0, Math.min(2000, Number(sp.get('delayMs') || 150) || 150));
 
   const startedAt = Date.now();
 
   const stats = {
-    maxPages,
-    pageSize,
     onlyMissing,
     dryRun,
     limit,
-    pagesFetched: 0,
-    subscribersScanned: 0,
-    withInstagram: 0,
+    delayMs,
+    clientsTotal: 0,
+    usernamesUnique: 0,
+    processed: 0,
+    foundSubscriber: 0,
     withAvatar: 0,
     saved: 0,
     skippedExists: 0,
@@ -156,113 +156,136 @@ export async function POST(req: NextRequest) {
     errors: 0,
   };
 
-  const errorDetails: Array<{ page: number; status: number; preview: string }> = [];
+  const errorDetails: Array<{ step: string; status: number; preview: string; username?: string; subscriberId?: string }> = [];
   let stoppedReason: string | null = null;
 
   const samples: Array<{ username: string; avatarUrl: string; action: string }> = [];
 
-  console.log('[backfill-instagram-avatars] ▶️ Старт:', { maxPages, pageSize, onlyMissing, dryRun, limit });
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  for (let page = 1; page <= maxPages; page++) {
-    const url = `https://api.manychat.com/fb/subscriber/getSubscribers?page=${page}&limit=${pageSize}`;
-    let data: any = null;
+  console.log('[backfill-instagram-avatars] ▶️ Старт:', { onlyMissing, dryRun, limit, delayMs });
+
+  // 1) Беремо usernames з нашої бази Direct (це швидкий і контрольований backfill без getSubscribers).
+  let clients: Array<{ instagramUsername: string }> = [];
+  try {
+    const all = await getAllDirectClients();
+    clients = all.map((c) => ({ instagramUsername: c.instagramUsername }));
+  } catch (err) {
+    console.error('[backfill-instagram-avatars] ❌ Не вдалося завантажити клієнтів з БД:', err);
+    return NextResponse.json(
+      { ok: false, error: 'Failed to load direct clients', details: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
+
+  stats.clientsTotal = clients.length;
+
+  const usernames = Array.from(
+    new Set(
+      clients
+        .map((c) => normalizeInstagram(c.instagramUsername) || c.instagramUsername?.trim()?.toLowerCase())
+        .filter((u): u is string => Boolean(u)),
+    ),
+  );
+  stats.usernamesUnique = usernames.length;
+
+  // 2) Для кожного username: findByName (GET) → subscriber_id → getInfo (GET) → avatar → KV
+  for (const username of usernames) {
+    if (limit > 0 && stats.saved >= limit) break;
+
+    // пропускаємо службові/порожні
+    if (!username || username === 'no instagram' || username.startsWith('no_instagram_') || username.startsWith('missing_instagram_')) {
+      stats.skippedNoInstagram += 1;
+      continue;
+    }
+
+    stats.processed += 1;
+
+    const key = directAvatarKey(username);
+    if (onlyMissing) {
+      try {
+        const existing = await kvRead.getRaw(key);
+        if (existing && typeof existing === 'string' && existing.trim()) {
+          stats.skippedExists += 1;
+          continue;
+        }
+      } catch {}
+    }
+
+    // findByName (судячи з тесту — endpoint існує, але POST не дозволений)
+    const findUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(username)}`;
+    let subscriberId: string | null = null;
     try {
-      const res = await fetch(url, {
+      const res = await fetch(findUrl, {
         method: 'GET',
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       const text = await res.text();
       if (!res.ok) {
         stats.errors += 1;
-        const preview = text.slice(0, 300);
-        console.warn('[backfill-instagram-avatars] ⚠️ ManyChat відповів помилкою:', {
-          page,
-          status: res.status,
-          preview,
-        });
-        if (errorDetails.length < 8) {
-          errorDetails.push({ page, status: res.status, preview });
-        }
-
-        // Часті “фатальні” випадки — зупиняємось одразу, щоб не робити зайвих запитів
-        if (res.status === 401 || res.status === 403) {
-          stoppedReason = 'manychat_unauthorized';
-          break;
-        }
-        if (res.status === 429) {
-          stoppedReason = 'manychat_rate_limited';
-          break;
-        }
-        continue;
+        if (errorDetails.length < 12) errorDetails.push({ step: 'findByName', status: res.status, preview: text.slice(0, 280), username });
+        if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+        if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+      } else {
+        const data = JSON.parse(text);
+        subscriberId = data?.data?.subscriber_id || data?.subscriber_id || data?.subscriber?.id || null;
       }
-      data = JSON.parse(text);
-      stats.pagesFetched += 1;
     } catch (err) {
       stats.errors += 1;
-      console.warn('[backfill-instagram-avatars] ⚠️ Помилка запиту ManyChat:', { page, err: String(err) });
-      if (errorDetails.length < 8) {
-        errorDetails.push({ page, status: 0, preview: `request_error: ${String(err).slice(0, 280)}` });
-      }
+      if (errorDetails.length < 12) errorDetails.push({ step: 'findByName', status: 0, preview: `request_error: ${String(err).slice(0, 260)}`, username });
+    }
+
+    if (!subscriberId) {
+      // Нема subscriber в ManyChat — пропускаємо
+      if (delayMs) await sleep(delayMs);
       continue;
     }
+    stats.foundSubscriber += 1;
 
-    const list = Array.isArray(data?.data) ? data.data : Array.isArray(data?.subscribers) ? data.subscribers : [];
-    if (!Array.isArray(list) || list.length === 0) {
-      console.log('[backfill-instagram-avatars] 🟡 Сторінка порожня, зупиняємось:', { page });
-      break;
+    const infoUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
+    let avatarUrl: string | null = null;
+    try {
+      const res = await fetch(infoUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        stats.errors += 1;
+        if (errorDetails.length < 12) errorDetails.push({ step: 'getInfo', status: res.status, preview: text.slice(0, 280), username, subscriberId });
+        if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+        if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+      } else {
+        const data = JSON.parse(text);
+        avatarUrl = pickAvatarUrl(data?.data ?? data) || pickAvatarUrl(data);
+      }
+    } catch (err) {
+      stats.errors += 1;
+      if (errorDetails.length < 12) errorDetails.push({ step: 'getInfo', status: 0, preview: `request_error: ${String(err).slice(0, 260)}`, username, subscriberId });
     }
 
-    for (const sub of list) {
-      stats.subscribersScanned += 1;
+    if (!avatarUrl) {
+      stats.skippedNoAvatar += 1;
+      if (delayMs) await sleep(delayMs);
+      continue;
+    }
+    stats.withAvatar += 1;
 
-      const username = pickInstagramUsername(sub);
-      if (!username) {
-        stats.skippedNoInstagram += 1;
+    if (!dryRun) {
+      try {
+        await kvWrite.setRaw(key, avatarUrl);
+      } catch (err) {
+        stats.errors += 1;
+        if (errorDetails.length < 12) errorDetails.push({ step: 'kvWrite', status: 0, preview: `kv_error: ${String(err).slice(0, 260)}`, username, subscriberId });
+        if (delayMs) await sleep(delayMs);
         continue;
-      }
-      stats.withInstagram += 1;
-
-      const avatarUrl = pickAvatarUrl(sub);
-      if (!avatarUrl) {
-        stats.skippedNoAvatar += 1;
-        continue;
-      }
-      stats.withAvatar += 1;
-
-      const key = directAvatarKey(username);
-      if (onlyMissing) {
-        try {
-          const existing = await kvRead.getRaw(key);
-          if (existing && typeof existing === 'string' && existing.trim()) {
-            stats.skippedExists += 1;
-            if (samples.length < 20) samples.push({ username, avatarUrl: existing.trim(), action: 'skip_exists' });
-            continue;
-          }
-        } catch {
-          // якщо читання KV впало — не блокуємо backfill, просто продовжуємо як overwrite
-        }
-      }
-
-      if (!dryRun) {
-        try {
-          await kvWrite.setRaw(key, avatarUrl);
-        } catch (err) {
-          stats.errors += 1;
-          console.warn('[backfill-instagram-avatars] ⚠️ Не вдалося записати в KV:', { username, key, err: String(err) });
-          continue;
-        }
-      }
-
-      stats.saved += 1;
-      if (samples.length < 20) samples.push({ username, avatarUrl, action: dryRun ? 'dry_run' : 'saved' });
-
-      if (limit > 0 && stats.saved >= limit) {
-        console.log('[backfill-instagram-avatars] ✅ Досягнуто ліміт, зупинка:', { limit });
-        break;
       }
     }
 
-    if (limit > 0 && stats.saved >= limit) break;
+    stats.saved += 1;
+    if (samples.length < 20) samples.push({ username, avatarUrl, action: dryRun ? 'dry_run' : 'saved' });
+
+    if (delayMs) await sleep(delayMs);
   }
 
   const finishedAt = Date.now();

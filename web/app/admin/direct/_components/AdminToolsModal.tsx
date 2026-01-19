@@ -587,7 +587,7 @@ export function AdminToolsModal({
         {
           icon: "🖼️",
           label: "Backfill аватарок Instagram (ManyChat → KV)",
-          endpoint: "/api/admin/direct/backfill-instagram-avatars?onlyMissing=1&maxPages=10&pageSize=100",
+          endpoint: "/api/admin/direct/backfill-instagram-avatars?onlyMissing=1&delayMs=150",
           method: "POST" as const,
           confirm:
             "Запустити backfill аватарок Instagram з ManyChat?\n\nВАЖЛИВО: ми НЕ робимо прямих запитів до Instagram і НЕ скрейпимо сторінки. Беремо avatar URL, який повертає ManyChat API, і зберігаємо в KV для показу в таблиці.\n\nЦе пройде по subscribers ManyChat і збереже avatar URL в KV.\nМоже зайняти кілька хвилин (залежить від кількості subscribers).",
