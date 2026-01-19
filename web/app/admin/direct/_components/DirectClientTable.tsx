@@ -958,8 +958,8 @@ export function DirectClientTable({
               <thead>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">№</th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
-                    <div className="flex flex-col items-start leading-none">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[92px] min-w-[92px]">
+                    <div className="flex flex-col items-start leading-none" title="Оновлення / Створення">
                       <button
                         className="hover:underline cursor-pointer text-left"
                         onClick={() =>
@@ -968,8 +968,9 @@ export function DirectClientTable({
                             sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
                           )
                         }
+                        title="Оновлення"
                       >
-                        Оновлення {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                        Оновл. {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -979,8 +980,9 @@ export function DirectClientTable({
                             sortBy === "createdAt" && sortOrder === "desc" ? "asc" : "desc"
                           )
                         }
+                        title="Створення"
                       >
-                        Створення {sortBy === "createdAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                        Створ. {sortBy === "createdAt" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
                     </div>
                   </th>
@@ -1193,7 +1195,8 @@ export function DirectClientTable({
                                       <img
                                         src={avatarSrc}
                                         alt=""
-                                        className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
+                                        className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50 origin-center"
+                                        style={{ transform: "scale(1.5)" }}
                                         loading="lazy"
                                         decoding="async"
                                         referrerPolicy="no-referrer"
@@ -1276,7 +1279,8 @@ export function DirectClientTable({
                                     <img
                                       src={avatarSrc}
                                       alt=""
-                                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
+                                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50 origin-center"
+                                      style={{ transform: "scale(1.5)" }}
                                       loading="lazy"
                                       decoding="async"
                                       referrerPolicy="no-referrer"
