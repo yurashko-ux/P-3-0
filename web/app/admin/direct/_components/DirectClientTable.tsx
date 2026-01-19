@@ -203,6 +203,57 @@ export function DirectClientTable({
   onClientUpdate,
   onRefresh,
 }: DirectClientTableProps) {
+  // #region agent log
+  // DEBUG: діагностика аватарок через локальний ndjson ingest (пише у .cursor/debug.log)
+  // Не логувати секрети/PII. Логуємо тільки username + технічні статуси.
+  const __avatarDebugSentRef =
+    (globalThis as any).__directAvatarDebugSentRef ||
+    ((globalThis as any).__directAvatarDebugSentRef = new Set<string>());
+
+  async function __logAvatarDebug(args: { runId: string; username: string; avatarSrc: string }) {
+    try {
+      const { runId, username, avatarSrc } = args;
+      const key = `${runId}:${username}`;
+      if (__avatarDebugSentRef.has(key)) return;
+      __avatarDebugSentRef.add(key);
+
+      const hasAdminToken = typeof document !== 'undefined' ? document.cookie.includes('admin_token=') : false;
+
+      let debugJson: any = null;
+      let status: number | null = null;
+      try {
+        const res = await fetch(`${avatarSrc}&debug=1&scan=1000`, { method: 'GET', credentials: 'include' });
+        status = res.status;
+        debugJson = await res.json().catch(() => null);
+      } catch (e) {
+        debugJson = { fetchError: String(e) };
+      }
+
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: 'debug-session',
+          runId,
+          hypothesisId: 'A|B|C|D',
+          location: 'DirectClientTable.tsx:avatar_onError',
+          message: 'Avatar image failed to load; fetched instagram-avatar debug',
+          data: {
+            username,
+            hasAdminToken,
+            avatarSrc: avatarSrc.slice(0, 140),
+            status,
+            debug: debugJson,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
+  // #endregion agent log
+
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
@@ -1149,6 +1200,9 @@ export function DirectClientTable({
                                         onError={(e) => {
                                           // Якщо аватарки немає в KV або URL протух — просто ховаємо, щоб не ламати UI
                                           (e.currentTarget as HTMLImageElement).style.display = "none";
+                                          // #region agent log
+                                          __logAvatarDebug({ runId: 'run1', username, avatarSrc }).catch(() => {});
+                                          // #endregion agent log
                                         }}
                                       />
                                     ) : null}
@@ -1228,6 +1282,9 @@ export function DirectClientTable({
                                       referrerPolicy="no-referrer"
                                       onError={(e) => {
                                         (e.currentTarget as HTMLImageElement).style.display = "none";
+                                        // #region agent log
+                                        __logAvatarDebug({ runId: 'run1', username, avatarSrc }).catch(() => {});
+                                        // #endregion agent log
                                       }}
                                     />
                                   ) : null}
