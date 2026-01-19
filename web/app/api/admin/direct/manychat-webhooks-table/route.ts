@@ -30,6 +30,7 @@ function extractDataFromRawBody(rawBody: string): {
   username: string | null; 
   fullName: string | null; 
   text: string | null;
+  subscriberId: string | null;
 } {
   try {
     const parsed = JSON.parse(rawBody);
@@ -39,6 +40,14 @@ function extractDataFromRawBody(rawBody: string): {
       parsed.handle || 
       parsed.user_name || 
       parsed.instagram_username ||
+      parsed?.subscriber?.username ||
+      null;
+
+    const subscriberId =
+      parsed?.subscriber?.id ||
+      parsed?.subscriber?.subscriber_id ||
+      parsed?.subscriber_id ||
+      parsed?.subscriberId ||
       null;
     
     const fullName = 
@@ -56,21 +65,27 @@ function extractDataFromRawBody(rawBody: string): {
       parsed.input ||
       null;
     
-    return { username, fullName, text };
+    return { username, fullName, text, subscriberId: subscriberId != null ? String(subscriberId) : null };
   } catch {
     // Якщо не вдалося розпарсити, спробуємо знайти в рядку
     try {
       const usernameMatch = rawBody.match(/"username"\s*:\s*"([^"]+)"/);
       const fullNameMatch = rawBody.match(/"full_name"\s*:\s*"([^"]+)"/);
       const textMatch = rawBody.match(/"text"\s*:\s*"([^"]+)"/);
+      const subscriberIdMatch =
+        rawBody.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*"([^"]+)"/i) ||
+        rawBody.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*(\d+)/i) ||
+        rawBody.match(/"subscriber_id"\s*:\s*"([^"]+)"/i) ||
+        rawBody.match(/"subscriber_id"\s*:\s*(\d+)/i);
       
       return {
         username: usernameMatch ? usernameMatch[1] : null,
         fullName: fullNameMatch ? fullNameMatch[1] : null,
         text: textMatch ? textMatch[1] : null,
+        subscriberId: subscriberIdMatch ? (subscriberIdMatch[1] || subscriberIdMatch[2] || null) : null,
       };
     } catch {
-      return { username: null, fullName: null, text: null };
+      return { username: null, fullName: null, text: null, subscriberId: null };
     }
   }
 }
@@ -140,6 +155,7 @@ export async function GET(req: NextRequest) {
     const tableRows = webhooks
       .map((webhook) => {
         const receivedAt = webhook.receivedAt as string | undefined;
+        const subscriberIdDirect = webhook.subscriberId as string | undefined;
         const rawBody = webhook.rawBody as string | undefined;
         const bodyLength = webhook.bodyLength as number | undefined;
         const headers = (webhook.headers as Record<string, unknown> | undefined) ?? undefined;
@@ -149,13 +165,14 @@ export async function GET(req: NextRequest) {
         }
 
         // Витягуємо дані з rawBody
-        const { username, fullName, text } = rawBody 
+        const { username, fullName, text, subscriberId } = rawBody 
           ? extractDataFromRawBody(rawBody)
-          : { username: null, fullName: null, text: null };
+          : { username: null, fullName: null, text: null, subscriberId: null };
 
         return {
           receivedAt,
           instagramUsername: username,
+          subscriberId: subscriberIdDirect || subscriberId,
           fullName: fullName || 'Невідомий клієнт',
           text: text || '-',
           bodyLength: bodyLength || 0,

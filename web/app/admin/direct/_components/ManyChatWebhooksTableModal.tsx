@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 interface ManyChatWebhookRow {
   receivedAt: string;
   instagramUsername: string | null;
+  subscriberId?: string | null;
   fullName: string;
   text: string;
   bodyLength: number;
@@ -147,6 +148,7 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
                   <tr>
                     <th className="text-xs">Дата вебхука</th>
                     <th className="text-xs">Instagram</th>
+                    <th className="text-xs">Subscriber ID</th>
                     <th className="text-xs">Ім'я</th>
                     <th className="text-xs">Повідомлення</th>
                     <th className="text-xs">Розмір</th>
@@ -172,6 +174,13 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
                       <td className="text-xs">
                         {webhook.instagramUsername ? (
                           <span className="badge badge-sm badge-success">@{webhook.instagramUsername}</span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="text-xs">
+                        {webhook.subscriberId ? (
+                          <span className="font-mono text-[11px]">{webhook.subscriberId}</span>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
@@ -212,8 +221,17 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
                 <div className="text-sm font-semibold">
                   Сирий webhook (обраний)
                   {selected.instagramUsername ? ` — @${selected.instagramUsername}` : ''}
+                  {selected.subscriberId ? ` — subscriber_id: ${selected.subscriberId}` : ''}
                 </div>
                 <div className="flex gap-2">
+                  <button
+                    className="btn btn-xs"
+                    onClick={() => copyToClipboard('raw', selected.subscriberId || '')}
+                    disabled={!selected.subscriberId}
+                    title="Скопіювати subscriber_id"
+                  >
+                    📋 ID
+                  </button>
                   <button
                     className="btn btn-xs"
                     onClick={() => copyToClipboard('headers', JSON.stringify(selected.headers || {}, null, 2))}

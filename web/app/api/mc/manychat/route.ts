@@ -460,9 +460,41 @@ export async function POST(req: NextRequest) {
     rawBodyText = await req.text();
     
     // Зберігаємо вебхук в лог для діагностики
+    const extractSubscriberId = (raw: string): string | null => {
+      const trimmed = raw.trim();
+      if (!trimmed) return null;
+      try {
+        const parsed = JSON.parse(trimmed) as any;
+        const direct =
+          parsed?.subscriber?.id ||
+          parsed?.subscriber?.subscriber_id ||
+          parsed?.subscriber_id ||
+          parsed?.subscriberId ||
+          parsed?.id ||
+          null;
+        if (direct != null && String(direct).trim()) return String(direct).trim();
+      } catch {
+        // ignore, fallback to regex below
+      }
+
+      // fallback regex: subscriber.id / subscriber_id
+      const m1 = raw.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*"([^"]+)"/i);
+      if (m1?.[1]) return m1[1].trim();
+      const m2 = raw.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*(\d+)/i);
+      if (m2?.[1]) return m2[1].trim();
+      const m3 = raw.match(/"subscriber_id"\s*:\s*"([^"]+)"/i);
+      if (m3?.[1]) return m3[1].trim();
+      const m4 = raw.match(/"subscriber_id"\s*:\s*(\d+)/i);
+      if (m4?.[1]) return m4[1].trim();
+      return null;
+    };
+
+    const subscriberId = extractSubscriberId(rawBodyText);
     const logEntry = {
       receivedAt: new Date().toISOString(),
-      rawBody: rawBodyText.substring(0, 2000), // Перші 2000 символів
+      subscriberId,
+      // Потрібно бачити subscriber.id, тому тримаємо більше. (Безпека: не зберігаємо безмежно)
+      rawBody: rawBodyText.substring(0, 20000), // Перші 20000 символів
       bodyLength: rawBodyText.length,
       headers: {
         'x-mc-token': req.headers.get('x-mc-token') || null,
