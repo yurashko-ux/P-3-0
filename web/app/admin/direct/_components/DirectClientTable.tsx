@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useId } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
@@ -133,9 +133,6 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
 
 // Компактні бейджі для типу контакту в колонці “Повне імʼя”
 function LeadBadgeIcon({ size = 14 }: { size?: number }) {
-  const rawId = useId();
-  // В SVG id має бути унікальним, інакше градієнти можуть конфліктувати між рядками таблиці
-  const gradId = `ig_${String(rawId).replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
     <svg
       width={size}
@@ -145,19 +142,8 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
       xmlns="http://www.w3.org/2000/svg"
       className="shrink-0"
     >
-      {/* Лід = Instagram (джерело/контакт), не “успішний” стан */}
-      <defs>
-        <linearGradient id={gradId} x1="2" y1="18" x2="18" y2="2" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FEDA75" />
-          <stop offset="0.35" stopColor="#FA7E1E" />
-          <stop offset="0.65" stopColor="#D62976" />
-          <stop offset="1" stopColor="#4F5BD5" />
-        </linearGradient>
-      </defs>
-      <rect x="2.2" y="2.2" width="15.6" height="15.6" rx="4" fill={`url(#${gradId})`} />
-      <rect x="6" y="6" width="8" height="8" rx="3" stroke="white" strokeWidth="1.4" />
-      <circle cx="10" cy="10" r="2.2" stroke="white" strokeWidth="1.4" />
-      <circle cx="14.1" cy="5.9" r="0.9" fill="white" />
+      {/* Лід = нейтральна “крапка” (синій як календарик у станах) */}
+      <circle cx="10" cy="10" r="7.2" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.2" />
     </svg>
   );
 }
