@@ -156,6 +156,9 @@ export async function POST(req: NextRequest) {
     errors: 0,
   };
 
+  const errorDetails: Array<{ page: number; status: number; preview: string }> = [];
+  let stoppedReason: string | null = null;
+
   const samples: Array<{ username: string; avatarUrl: string; action: string }> = [];
 
   console.log('[backfill-instagram-avatars] ▶️ Старт:', { maxPages, pageSize, onlyMissing, dryRun, limit });
@@ -171,11 +174,25 @@ export async function POST(req: NextRequest) {
       const text = await res.text();
       if (!res.ok) {
         stats.errors += 1;
+        const preview = text.slice(0, 300);
         console.warn('[backfill-instagram-avatars] ⚠️ ManyChat відповів помилкою:', {
           page,
           status: res.status,
-          preview: text.slice(0, 300),
+          preview,
         });
+        if (errorDetails.length < 8) {
+          errorDetails.push({ page, status: res.status, preview });
+        }
+
+        // Часті “фатальні” випадки — зупиняємось одразу, щоб не робити зайвих запитів
+        if (res.status === 401 || res.status === 403) {
+          stoppedReason = 'manychat_unauthorized';
+          break;
+        }
+        if (res.status === 429) {
+          stoppedReason = 'manychat_rate_limited';
+          break;
+        }
         continue;
       }
       data = JSON.parse(text);
@@ -183,6 +200,9 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       stats.errors += 1;
       console.warn('[backfill-instagram-avatars] ⚠️ Помилка запиту ManyChat:', { page, err: String(err) });
+      if (errorDetails.length < 8) {
+        errorDetails.push({ page, status: 0, preview: `request_error: ${String(err).slice(0, 280)}` });
+      }
       continue;
     }
 
@@ -254,6 +274,8 @@ export async function POST(req: NextRequest) {
     ok: true,
     stats: { ...stats, ms },
     samples,
+    errorDetails,
+    stoppedReason,
   });
 }
 
