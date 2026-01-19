@@ -4,6 +4,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import type { SyntheticEvent } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
@@ -177,7 +178,7 @@ function AvatarSlot({
   onError,
 }: {
   avatarSrc: string | null;
-  onError: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
+  onError: (e: SyntheticEvent<HTMLImageElement, Event>) => void;
 }) {
   // Завжди рендеримо однаковий слот, щоб рядки вирівнювались.
   // Якщо аватарки нема — лишається пустий кружок.
@@ -1012,6 +1013,8 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
+                  {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
+                  <th className="px-0 py-2 bg-base-200 sticky top-0 z-20 w-[44px] min-w-[44px]" />
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
                       <button
@@ -1138,7 +1141,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-8 text-gray-500">
+                    <td colSpan={14} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1153,6 +1156,31 @@ export function DirectClientTable({
                           <span>{client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}</span>
                           <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
+                      </td>
+                      {/* Фіксований кружок-слот, максимально близько до колонки дат */}
+                      <td className="px-0 py-1">
+                        {(() => {
+                          const username = (client.instagramUsername || "").toString();
+                          const isNoInstagram =
+                            username === "NO INSTAGRAM" || username.startsWith("no_instagram_");
+                          const isMissingInstagram = username.startsWith("missing_instagram_");
+                          const isNormalInstagram = Boolean(username) && !isNoInstagram && !isMissingInstagram;
+                          const avatarSrc = isNormalInstagram
+                            ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`
+                            : null;
+
+                          return (
+                            <AvatarSlot
+                              avatarSrc={avatarSrc}
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                                // #region agent log
+                                __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
+                                // #endregion agent log
+                              }}
+                            />
+                          );
+                        })()}
                       </td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap max-w-[160px]">
                         <span className="flex flex-col leading-none">
@@ -1179,9 +1207,6 @@ export function DirectClientTable({
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
-                            const avatarSrc = isNormalInstagram
-                              ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`
-                              : null;
 
                             if (!hasName) {
                               const visitsValue =
@@ -1216,17 +1241,7 @@ export function DirectClientTable({
 
                               return (
                                 <>
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <AvatarSlot
-                                      avatarSrc={avatarSrc}
-                                      onError={(e) => {
-                                        // Якщо аватарки немає в KV або URL протух — просто ховаємо, щоб не ламати UI
-                                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                                        // #region agent log
-                                        __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
-                                        // #endregion agent log
-                                      }}
-                                    />
+                                  <div className="flex items-center gap-1 min-w-0">
                                     {typeBadge}
                                     {isNormalInstagram ? (
                                       <a
@@ -1292,16 +1307,7 @@ export function DirectClientTable({
 
                             return (
                               <>
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <AvatarSlot
-                                    avatarSrc={avatarSrc}
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                                      // #region agent log
-                                      __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
-                                      // #endregion agent log
-                                    }}
-                                  />
+                                <div className="flex items-center gap-1 min-w-0">
                                   {typeBadge}
                                   {isNormalInstagram ? (
                                     <a
