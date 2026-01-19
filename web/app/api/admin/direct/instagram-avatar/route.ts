@@ -158,6 +158,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const usernameRaw = req.nextUrl.searchParams.get('username') || '';
+    const debug = req.nextUrl.searchParams.get('debug') === '1';
     const normalized = normalizeInstagram(usernameRaw) || usernameRaw.trim().toLowerCase();
     if (!normalized) {
       return NextResponse.json({ ok: false, error: 'username missing' }, { status: 400 });
@@ -166,23 +167,49 @@ export async function GET(req: NextRequest) {
     const key = directAvatarKey(normalized);
     const raw = await kvRead.getRaw(key);
     let url = typeof raw === 'string' ? raw.trim() : '';
+    const debugInfo: Record<string, unknown> = debug
+      ? {
+          username: normalized,
+          kv: {
+            avatarKey: key,
+            avatarHit: Boolean(url) && /^https?:\/\//i.test(url),
+          },
+          manychat: {
+            apiKeyPresent: Boolean(getManyChatApiKey()),
+            getInfo: null as null | Record<string, unknown>,
+          },
+          subscriber: {
+            fromKv: null as null | string,
+            fromLogs: null as null | string,
+            scannedLogs: 0,
+          },
+        }
+      : {};
 
     // Якщо в KV немає — пробуємо ліниво підтягнути з ManyChat по subscriber_id (якщо він уже збережений)
     if (!url || !/^https?:\/\//i.test(url)) {
       const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
       let subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
       const apiKey = getManyChatApiKey();
+      if (debug) {
+        (debugInfo.subscriber as any).fromKv = subscriberId || null;
+        (debugInfo.manychat as any).apiKeyPresent = Boolean(apiKey);
+      }
 
       // Якщо прямого мапінгу нема — пробуємо знайти subscriber_id у сирих webhook логах
       if (!subscriberId) {
         try {
-          const items = await kvRead.lrange('manychat:webhook:log', 0, 200);
+          const scanParam = req.nextUrl.searchParams.get('scan');
+          const scan = scanParam ? Math.min(Math.max(parseInt(scanParam, 10) || 200, 1), 2000) : 200;
+          const items = await kvRead.lrange('manychat:webhook:log', 0, scan - 1);
+          if (debug) (debugInfo.subscriber as any).scannedLogs = items.length;
           for (const it of items) {
             const entry = parseKvLogEntry(it);
             if (!entry) continue;
             const sid = pickSubscriberIdFromWebhookLogEntry(entry, normalized);
             if (sid) {
               subscriberId = sid;
+              if (debug) (debugInfo.subscriber as any).fromLogs = subscriberId;
               try {
                 await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
               } catch {
@@ -197,6 +224,7 @@ export async function GET(req: NextRequest) {
           }
         } catch (err) {
           console.warn('[direct/instagram-avatar] ⚠️ Не вдалося прочитати manychat:webhook:log:', err);
+          if (debug) (debugInfo.subscriber as any).logsError = err instanceof Error ? err.message : String(err);
         }
       }
 
@@ -216,6 +244,13 @@ export async function GET(req: NextRequest) {
           }).finally(() => clearTimeout(timeout));
 
           const text = await res.text();
+          if (debug) {
+            (debugInfo.manychat as any).getInfo = {
+              status: res.status,
+              ok: res.ok,
+              preview: text.slice(0, 220),
+            };
+          }
           if (!res.ok) {
             console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo не ок:', {
               status: res.status,
@@ -243,12 +278,16 @@ export async function GET(req: NextRequest) {
           }
         } catch (err) {
           console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo error:', err);
+          if (debug) (debugInfo.manychat as any).getInfo = { ok: false, error: err instanceof Error ? err.message : String(err) };
         }
       }
     }
 
     if (!url || !/^https?:\/\//i.test(url)) {
-      return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
+      return NextResponse.json(
+        debug ? { ok: false, error: 'not_found', debug: debugInfo } : { ok: false, error: 'not_found' },
+        { status: 404 },
+      );
     }
 
     const res = NextResponse.redirect(url, { status: 302 });
