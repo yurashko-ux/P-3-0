@@ -78,17 +78,29 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
     
     try {
       const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
-      const customSearchResponse = await fetch(customSearchUrl, {
-        method: 'POST',
+      // У твоєму акаунті ManyChat повертає 405 на POST, тому пробуємо GET з query params
+      const getUrl = `${customSearchUrl}?field_id=${encodeURIComponent(fieldId)}&field_value=${encodeURIComponent(cleanInstagram)}`;
+      let customSearchResponse = await fetch(getUrl, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          field_id: fieldId,
-          field_value: cleanInstagram,
-        }),
       });
+
+      // fallback: якщо раптом GET не підтримується — пробуємо POST
+      if (customSearchResponse.status === 405) {
+        customSearchResponse = await fetch(customSearchUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            field_id: fieldId,
+            field_value: cleanInstagram,
+          }),
+        });
+      }
 
       if (customSearchResponse.ok) {
         const data = await customSearchResponse.json();

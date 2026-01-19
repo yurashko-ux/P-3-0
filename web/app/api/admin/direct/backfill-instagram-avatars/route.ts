@@ -355,23 +355,56 @@ export async function POST(req: NextRequest) {
         for (const value of valuesToTry) {
           if (subscriberId) break;
           try {
-            const res = await fetch(customSearchUrl, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ field_id: fieldId, field_value: value }),
-            });
-            const text = await res.text();
-            if (!res.ok) {
-              // Для шумних 404/400 не спамимо errorDetails, але 401/429 ловимо
-              if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
-              if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
-              continue;
+            // ManyChat може очікувати GET замість POST (у тебе POST дає 405)
+            const tryPostFirst = true;
+            if (tryPostFirst) {
+              const res = await fetch(customSearchUrl, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${apiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ field_id: fieldId, field_value: value }),
+              });
+              const text = await res.text();
+              if (res.status === 405) {
+                // fallback на GET
+                const getUrl = `${customSearchUrl}?field_id=${encodeURIComponent(fieldId)}&field_value=${encodeURIComponent(value)}`;
+                const res2 = await fetch(getUrl, {
+                  method: 'GET',
+                  headers: { Authorization: `Bearer ${apiKey}` },
+                });
+                const text2 = await res2.text();
+                if (!res2.ok) {
+                  if (res2.status === 401 || res2.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+                  if (res2.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+                  continue;
+                }
+                const data2 = JSON.parse(text2);
+                subscriberId = pickSubscriberId(data2);
+              } else if (!res.ok) {
+                if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+                if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+                continue;
+              } else {
+                const data = JSON.parse(text);
+                subscriberId = pickSubscriberId(data);
+              }
+            } else {
+              const getUrl = `${customSearchUrl}?field_id=${encodeURIComponent(fieldId)}&field_value=${encodeURIComponent(value)}`;
+              const res = await fetch(getUrl, {
+                method: 'GET',
+                headers: { Authorization: `Bearer ${apiKey}` },
+              });
+              const text = await res.text();
+              if (!res.ok) {
+                if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+                if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+                continue;
+              }
+              const data = JSON.parse(text);
+              subscriberId = pickSubscriberId(data);
             }
-            const data = JSON.parse(text);
-            subscriberId = pickSubscriberId(data);
           } catch {
             // ignore
           }
