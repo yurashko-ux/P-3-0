@@ -147,7 +147,8 @@ function pickSubscriberId(findByNameResponse: any): string | null {
 }
 
 async function fetchManychatCustomFields(apiKey: string): Promise<any | null> {
-  const url = 'https://api.manychat.com/fb/subscriber/getCustomFields';
+  // У багатьох акаунтах працює саме page/getCustomFields (а subscriber/getCustomFields може бути 404)
+  const url = 'https://api.manychat.com/fb/page/getCustomFields';
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -162,43 +163,6 @@ async function fetchManychatCustomFields(apiKey: string): Promise<any | null> {
   } catch (err) {
     console.warn('[backfill-instagram-avatars] ⚠️ getCustomFields error:', err);
     return null;
-  }
-}
-
-async function findSubscriberIdByInstagram(apiKey: string, username: string): Promise<{ subscriberId: string | null; debugPreview?: string; status?: number }> {
-  const url = 'https://api.manychat.com/fb/subscriber/findByInstagram';
-  // Найчастіше username у ManyChat видимий як “Opted‑In for Instagram” (не custom field).
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ instagram: username }),
-    });
-    const text = await res.text();
-
-    if (res.status === 405) {
-      // fallback на GET (як у випадку інших endpoints)
-      const getUrl = `${url}?instagram=${encodeURIComponent(username)}`;
-      const res2 = await fetch(getUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      const text2 = await res2.text();
-      let data2: any = null;
-      try { data2 = JSON.parse(text2); } catch { data2 = null; }
-      const subscriberId = pickSubscriberId(data2);
-      return { subscriberId, debugPreview: text2.slice(0, 500), status: res2.status };
-    }
-
-    let data: any = null;
-    try { data = JSON.parse(text); } catch { data = null; }
-    const subscriberId = pickSubscriberId(data);
-    return { subscriberId, debugPreview: text.slice(0, 500), status: res.status };
-  } catch (err) {
-    return { subscriberId: null, debugPreview: `request_error: ${String(err).slice(0, 500)}`, status: 0 };
   }
 }
 
@@ -237,6 +201,49 @@ function buildCustomFieldCandidates(customFieldsResponse: any): string[] {
   }
 
   return out;
+}
+
+function buildNameQueries(username: string, firstName?: string | null, lastName?: string | null): string[] {
+  const out: string[] = [];
+  const push = (v: any) => {
+    const s = typeof v === 'string' ? v.trim() : '';
+    if (!s) return;
+    if (out.includes(s)) return;
+    out.push(s);
+  };
+
+  // 1) інстаграм хендл (часто НЕ шукається як name, але дешево перевірити)
+  push(username);
+  push(`@${username}`);
+
+  // 2) імʼя/прізвище з Direct (ManyChat реально шукається по "name")
+  const fn = (firstName || '').trim();
+  const ln = (lastName || '').trim();
+  const full = [fn, ln].filter(Boolean).join(' ').trim();
+  if (full) push(full);
+  if (fn) push(fn);
+  if (ln) push(ln);
+
+  return out;
+}
+
+function pickSubscriberFromFindByNameResponse(
+  findByNameResponse: any,
+  expectedInstagram: string,
+): { subscriberId: string | null; avatarUrl: string | null } {
+  const expected = normalizeInstagram(expectedInstagram) || expectedInstagram.trim().toLowerCase();
+  const arr = Array.isArray(findByNameResponse?.data) ? findByNameResponse.data : [];
+
+  for (const item of arr) {
+    const ig = pickInstagramUsername(item);
+    if (!ig) continue;
+    if (ig === expected) {
+      const subscriberId = item?.subscriber_id || item?.id || null;
+      return { subscriberId: subscriberId ? String(subscriberId) : null, avatarUrl: pickAvatarUrl(item) };
+    }
+  }
+
+  return { subscriberId: null, avatarUrl: null };
 }
 
 export async function POST(req: NextRequest) {
@@ -299,10 +306,10 @@ export async function POST(req: NextRequest) {
   });
 
   // 1) Беремо usernames з нашої бази Direct (це швидкий і контрольований backfill без getSubscribers).
-  let clients: Array<{ instagramUsername: string }> = [];
+  let clients: Array<{ instagramUsername: string; firstName?: string | null; lastName?: string | null }> = [];
   try {
     const all = await getAllDirectClients();
-    clients = all.map((c) => ({ instagramUsername: c.instagramUsername }));
+    clients = all.map((c) => ({ instagramUsername: c.instagramUsername, firstName: c.firstName ?? null, lastName: c.lastName ?? null }));
   } catch (err) {
     console.error('[backfill-instagram-avatars] ❌ Не вдалося завантажити клієнтів з БД:', err);
     return NextResponse.json(
@@ -313,17 +320,18 @@ export async function POST(req: NextRequest) {
 
   stats.clientsTotal = clients.length;
 
-  const usernames = Array.from(
-    new Set(
-      clients
-        .map((c) => normalizeInstagram(c.instagramUsername) || c.instagramUsername?.trim()?.toLowerCase())
-        .filter((u): u is string => Boolean(u)),
-    ),
-  );
-  stats.usernamesUnique = usernames.length;
+  const unique = new Map<string, { username: string; firstName?: string | null; lastName?: string | null }>();
+  for (const c of clients) {
+    const u = normalizeInstagram(c.instagramUsername) || c.instagramUsername?.trim()?.toLowerCase();
+    if (!u) continue;
+    if (!unique.has(u)) unique.set(u, { username: u, firstName: c.firstName ?? null, lastName: c.lastName ?? null });
+  }
+  const entries = Array.from(unique.values());
+  stats.usernamesUnique = entries.length;
 
-  // 2) Для кожного username: findByInstagram → findByName (GET) → findByCustomField → getInfo (GET) → avatar → KV
-  for (const username of usernames) {
+  // 2) Для кожного username: findByName (GET, кілька запитів) → match по ig_username → avatar → KV
+  for (const entry of entries) {
+    const username = entry.username;
     if (limit > 0 && stats.saved >= limit) break;
 
     // пропускаємо службові/порожні
@@ -351,36 +359,33 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    // findByInstagram (краще відповідає “Opted‑In for Instagram”)
     // findByName (судячи з тесту — endpoint існує, але POST не дозволений)
     let subscriberId: string | null = null;
+    let avatarUrlFromSearch: string | null = null;
+    const queries = buildNameQueries(username, entry.firstName, entry.lastName);
     try {
-      const ig = await findSubscriberIdByInstagram(apiKey, username);
-      if (ig.subscriberId) {
-        subscriberId = ig.subscriberId;
-      } else if (ig.status && ig.status !== 404 && ig.status !== 400) {
-        // 400 може бути “not found”/валідація, не шумимо; інше — корисно для діагностики
-        if (errorDetails.length < 12) errorDetails.push({ step: 'findByInstagram', status: ig.status || 0, preview: (ig.debugPreview || '').slice(0, 280), username });
-      }
-    } catch {}
+      for (const q of queries) {
+        if (subscriberId) break;
+        const findUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(q)}`;
+        const res = await fetch(findUrl, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          stats.errors += 1;
+          if (errorDetails.length < 12) errorDetails.push({ step: `findByName(${q})`, status: res.status, preview: text.slice(0, 280), username });
+          if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+          if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+          continue;
+        }
 
-    const findUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(username)}`;
-    try {
-      const res = await fetch(findUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      const text = await res.text();
-      if (!res.ok) {
-        stats.errors += 1;
-        if (errorDetails.length < 12) errorDetails.push({ step: 'findByName', status: res.status, preview: text.slice(0, 280), username });
-        if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
-        if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
-      } else {
         const data = JSON.parse(text);
-        subscriberId = subscriberId || pickSubscriberId(data);
+        const matched = pickSubscriberFromFindByNameResponse(data, username);
+        subscriberId = matched.subscriberId;
+        avatarUrlFromSearch = matched.avatarUrl;
         if (!subscriberId && samplesNotFound.length < 8) {
-          samplesNotFound.push({ username, preview: text.slice(0, 500) });
+          samplesNotFound.push({ username, preview: `q=${q} :: ${text.slice(0, 500)}` });
         }
       }
     } catch (err) {
@@ -463,26 +468,29 @@ export async function POST(req: NextRequest) {
     }
     stats.foundSubscriber += 1;
 
-    const infoUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
-    let avatarUrl: string | null = null;
-    try {
-      const res = await fetch(infoUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      const text = await res.text();
-      if (!res.ok) {
+    // Часто profile_pic вже приходить у findByName → не обовʼязково дергати getInfo
+    let avatarUrl: string | null = avatarUrlFromSearch;
+    if (!avatarUrl) {
+      const infoUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
+      try {
+        const res = await fetch(infoUrl, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          stats.errors += 1;
+          if (errorDetails.length < 12) errorDetails.push({ step: 'getInfo', status: res.status, preview: text.slice(0, 280), username, subscriberId });
+          if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+          if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+        } else {
+          const data = JSON.parse(text);
+          avatarUrl = pickAvatarUrl(data?.data ?? data) || pickAvatarUrl(data);
+        }
+      } catch (err) {
         stats.errors += 1;
-        if (errorDetails.length < 12) errorDetails.push({ step: 'getInfo', status: res.status, preview: text.slice(0, 280), username, subscriberId });
-        if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
-        if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
-      } else {
-        const data = JSON.parse(text);
-        avatarUrl = pickAvatarUrl(data?.data ?? data) || pickAvatarUrl(data);
+        if (errorDetails.length < 12) errorDetails.push({ step: 'getInfo', status: 0, preview: `request_error: ${String(err).slice(0, 260)}`, username, subscriberId });
       }
-    } catch (err) {
-      stats.errors += 1;
-      if (errorDetails.length < 12) errorDetails.push({ step: 'getInfo', status: 0, preview: `request_error: ${String(err).slice(0, 260)}`, username, subscriberId });
     }
 
     if (!avatarUrl) {

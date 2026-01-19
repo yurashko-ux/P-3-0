@@ -89,61 +89,10 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
     });
   }
 
-  // Метод 1.5: findByInstagram — найкращий варіант, якщо username видно як “Opted‑In for Instagram”, але custom fields пусті
-  if (!results.some((r) => r.success && r.subscriberId)) {
-    try {
-      const url = `https://api.manychat.com/fb/subscriber/findByInstagram`;
-      // Спершу POST (як в тестах), далі fallback на GET якщо ManyChat повертає 405
-      let res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ instagram: cleanInstagram }),
-      });
-      let text = await res.text();
-
-      if (res.status === 405) {
-        const getUrl = `${url}?instagram=${encodeURIComponent(cleanInstagram)}`;
-        res = await fetch(getUrl, {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${apiKey}` },
-        });
-        text = await res.text();
-      }
-
-      if (res.ok) {
-        let data: any = null;
-        try { data = JSON.parse(text); } catch { data = text; }
-        const subscriberId = (data as any)?.data?.subscriber_id || (data as any)?.subscriber_id || (data as any)?.subscriber?.id || null;
-        results.push({
-          method: 'findByInstagram',
-          success: Boolean(subscriberId),
-          subscriberId,
-          status: res.status,
-          preview: typeof text === 'string' ? text.slice(0, 400) : null,
-        });
-      } else {
-        results.push({
-          method: 'findByInstagram',
-          success: false,
-          error: `${res.status}: ${text}`,
-        });
-      }
-    } catch (err) {
-      results.push({
-        method: 'findByInstagram',
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
   // Метод 2: findByCustomField - через реальні field_id з getCustomFields
   let customFields: any[] = [];
   try {
-    const customFieldsUrl = `https://api.manychat.com/fb/subscriber/getCustomFields`;
+    const customFieldsUrl = `https://api.manychat.com/fb/page/getCustomFields`;
     const res = await fetch(customFieldsUrl, {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}` },
