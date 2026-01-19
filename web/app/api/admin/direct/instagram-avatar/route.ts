@@ -72,6 +72,85 @@ function pickAvatarUrlFromManychatResponse(anyResponse: unknown): string | null 
   return null;
 }
 
+function parseKvLogEntry(raw: unknown): Record<string, unknown> | null {
+  try {
+    if (raw == null) return null;
+    if (typeof raw === 'string') {
+      return JSON.parse(raw) as Record<string, unknown>;
+    }
+    if (typeof raw === 'object') {
+      const obj = raw as any;
+      if (typeof obj.value === 'string') {
+        return JSON.parse(obj.value) as Record<string, unknown>;
+      }
+      return obj as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function pickSubscriberIdFromWebhookLogEntry(entry: Record<string, unknown>, username: string): string | null {
+  try {
+    const direct = (entry as any)?.subscriberId;
+    if (direct != null && String(direct).trim()) return String(direct).trim();
+
+    const rawBody = typeof (entry as any)?.rawBody === 'string' ? ((entry as any).rawBody as string) : '';
+    if (!rawBody) return null;
+
+    // Шукаємо username і subscriber_id у сирому body (JSON або form-encoded)
+    try {
+      const parsed = JSON.parse(rawBody) as any;
+      const u =
+        (parsed?.username || parsed?.handle || parsed?.instagram_username || parsed?.ig_username || null) as string | null;
+      const uNorm = (u || '').trim().toLowerCase().replace(/^@/, '');
+      if (uNorm && uNorm !== username) return null;
+      const sid =
+        parsed?.subscriber?.id ||
+        parsed?.subscriber?.subscriber_id ||
+        parsed?.subscriber_id ||
+        parsed?.subscriberId ||
+        null;
+      if (sid != null && String(sid).trim()) return String(sid).trim();
+    } catch {
+      // not json
+    }
+
+    try {
+      const params = new URLSearchParams(rawBody);
+      const u =
+        params.get('username') ||
+        params.get('handle') ||
+        params.get('instagram_username') ||
+        params.get('ig_username') ||
+        null;
+      const uNorm = (u || '').trim().toLowerCase().replace(/^@/, '');
+      if (uNorm && uNorm !== username) return null;
+      const sid =
+        params.get('subscriber[id]') ||
+        params.get('subscriber_id') ||
+        params.get('subscriberId') ||
+        params.get('subscriber.id') ||
+        null;
+      if (sid && String(sid).trim()) return String(sid).trim();
+    } catch {
+      // ignore
+    }
+
+    // regex fallback
+    const m =
+      rawBody.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*"([^"]+)"/i) ||
+      rawBody.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*(\d+)/i) ||
+      rawBody.match(/"subscriber_id"\s*:\s*"([^"]+)"/i) ||
+      rawBody.match(/"subscriber_id"\s*:\s*(\d+)/i);
+    if (m?.[1]) return m[1].trim();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -91,8 +170,36 @@ export async function GET(req: NextRequest) {
     // Якщо в KV немає — пробуємо ліниво підтягнути з ManyChat по subscriber_id (якщо він уже збережений)
     if (!url || !/^https?:\/\//i.test(url)) {
       const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
-      const subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
+      let subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
       const apiKey = getManyChatApiKey();
+
+      // Якщо прямого мапінгу нема — пробуємо знайти subscriber_id у сирих webhook логах
+      if (!subscriberId) {
+        try {
+          const items = await kvRead.lrange('manychat:webhook:log', 0, 200);
+          for (const it of items) {
+            const entry = parseKvLogEntry(it);
+            if (!entry) continue;
+            const sid = pickSubscriberIdFromWebhookLogEntry(entry, normalized);
+            if (sid) {
+              subscriberId = sid;
+              try {
+                await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
+              } catch {
+                // некритично
+              }
+              console.log('[direct/instagram-avatar] 🔎 Знайшов subscriber_id у manychat:webhook:log', {
+                username: normalized,
+                subscriberId,
+              });
+              break;
+            }
+          }
+        } catch (err) {
+          console.warn('[direct/instagram-avatar] ⚠️ Не вдалося прочитати manychat:webhook:log:', err);
+        }
+      }
+
       if (subscriberId && apiKey) {
         const apiUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
         console.log('[direct/instagram-avatar] 🖼️ KV miss → пробую ManyChat getInfo…', {
