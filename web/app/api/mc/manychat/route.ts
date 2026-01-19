@@ -463,6 +463,23 @@ export async function POST(req: NextRequest) {
     const extractSubscriberId = (raw: string): string | null => {
       const trimmed = raw.trim();
       if (!trimmed) return null;
+
+      // 1) x-www-form-urlencoded / querystring (subscriber[id]=... або subscriber_id=...)
+      // ManyChat інколи шле External Request саме так.
+      try {
+        const params = new URLSearchParams(trimmed);
+        const v =
+          params.get('subscriber[id]') ||
+          params.get('subscriber_id') ||
+          params.get('subscriberId') ||
+          params.get('subscriber.id') ||
+          params.get('subscriber[id]'.replace('[', '%5B').replace(']', '%5D')) || // на всякий випадок
+          null;
+        if (v && String(v).trim()) return String(v).trim();
+      } catch {
+        // ignore
+      }
+
       try {
         const parsed = JSON.parse(trimmed) as any;
         const direct =

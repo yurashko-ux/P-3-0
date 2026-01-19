@@ -67,7 +67,41 @@ function extractDataFromRawBody(rawBody: string): {
     
     return { username, fullName, text, subscriberId: subscriberId != null ? String(subscriberId) : null };
   } catch {
-    // Якщо не вдалося розпарсити, спробуємо знайти в рядку
+    // 1) Якщо це x-www-form-urlencoded — витягнемо з params
+    try {
+      const params = new URLSearchParams(rawBody);
+      const username =
+        params.get('username') ||
+        params.get('handle') ||
+        params.get('instagram_username') ||
+        params.get('ig_username') ||
+        null;
+      const fullName =
+        params.get('full_name') ||
+        params.get('fullName') ||
+        params.get('name') ||
+        null;
+      const text =
+        params.get('text') ||
+        params.get('message') ||
+        params.get('last_input_text') ||
+        params.get('input') ||
+        null;
+      const subscriberId =
+        params.get('subscriber[id]') ||
+        params.get('subscriber_id') ||
+        params.get('subscriberId') ||
+        params.get('subscriber.id') ||
+        null;
+
+      if (username || fullName || text || subscriberId) {
+        return { username, fullName, text, subscriberId: subscriberId ? String(subscriberId) : null };
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2) Якщо не вдалося розпарсити, спробуємо знайти в рядку (JSON-подібний текст)
     try {
       const usernameMatch = rawBody.match(/"username"\s*:\s*"([^"]+)"/);
       const fullNameMatch = rawBody.match(/"full_name"\s*:\s*"([^"]+)"/);
