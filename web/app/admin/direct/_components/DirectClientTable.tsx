@@ -131,6 +131,56 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
   }
 }
 
+// Компактні бейджі для типу контакту в колонці “Повне імʼя”
+function LeadBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+    >
+      {/* Лід = “розмова/контакт” */}
+      <path
+        d="M10 2.25c4.142 0 7.5 2.91 7.5 6.5 0 1.715-.774 3.277-2.055 4.435-.1.09-.161.219-.161.355v3.2a.75.75 0 0 1-1.1.664l-3.04-1.6a.75.75 0 0 0-.35-.086H10c-4.142 0-7.5-2.91-7.5-6.5S5.858 2.25 10 2.25Z"
+        fill="#10b981"
+        stroke="#059669"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <circle cx="7.2" cy="9.1" r="0.9" fill="#064e3b" />
+      <circle cx="10" cy="9.1" r="0.9" fill="#064e3b" />
+      <circle cx="12.8" cy="9.1" r="0.9" fill="#064e3b" />
+    </svg>
+  );
+}
+
+function ClientBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+    >
+      {/* Клієнт = “профіль” */}
+      <circle cx="10" cy="10" r="7.6" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.2" />
+      <circle cx="10" cy="8.2" r="2.2" fill="#111827" opacity="0.85" />
+      <path
+        d="M5.9 14.85c1.22-2.1 2.84-3.05 4.1-3.05s2.88.95 4.1 3.05"
+        stroke="#111827"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+    </svg>
+  );
+}
+
 type DirectClientTableProps = {
   clients: DirectClient[];
   statuses: DirectStatus[];
@@ -1035,24 +1085,42 @@ export function DirectClientTable({
                                 ? "missing"
                                 : null;
 
+                            // Бейдж “Лід/Клієнт” має змінюватись автоматично, коли зʼявляється Altegio ID
+                            const isClientType = Boolean(client.altegioClientId);
+                            const typeBadgeTitle = isClientType
+                              ? "Клієнт (є Altegio ID)"
+                              : "Лід (ще без Altegio ID)";
+                            const typeBadge = (
+                              <span
+                                className="shrink-0"
+                                title={typeBadgeTitle}
+                                aria-label={typeBadgeTitle}
+                              >
+                                {isClientType ? <ClientBadgeIcon /> : <LeadBadgeIcon />}
+                              </span>
+                            );
+
                             if (!hasName) {
                               return (
                                 <>
-                                  {isNormalInstagram ? (
-                                    <a
-                                      href={`https://instagram.com/${username}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="link link-primary truncate block"
-                                      title={`https://instagram.com/${username}`}
-                                    >
-                                      {username}
-                                    </a>
-                                  ) : (
-                                    <span className="text-gray-400 truncate block" title={username || ""}>
-                                      —
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    {typeBadge}
+                                    {isNormalInstagram ? (
+                                      <a
+                                        href={`https://instagram.com/${username}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="link link-primary truncate block min-w-0"
+                                        title={`https://instagram.com/${username}`}
+                                      >
+                                        {username}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-400 truncate block min-w-0" title={username || ""}>
+                                        —
+                                      </span>
+                                    )}
+                                  </div>
                                   {invalidIgLabel && (
                                     <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">
                                       {invalidIgLabel}
@@ -1066,21 +1134,24 @@ export function DirectClientTable({
 
                             return (
                               <>
-                                {isNormalInstagram ? (
-                                  <a
-                                    href={`https://instagram.com/${username}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="link link-primary truncate block"
-                                    title={`https://instagram.com/${username}`}
-                                  >
-                                    {nameOneLine}
-                                  </a>
-                                ) : (
-                                  <span className="truncate block" title={nameOneLine}>
-                                    {nameOneLine}
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-1 min-w-0">
+                                  {typeBadge}
+                                  {isNormalInstagram ? (
+                                    <a
+                                      href={`https://instagram.com/${username}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="link link-primary truncate block min-w-0"
+                                      title={`https://instagram.com/${username}`}
+                                    >
+                                      {nameOneLine}
+                                    </a>
+                                  ) : (
+                                    <span className="truncate block min-w-0" title={nameOneLine}>
+                                      {nameOneLine}
+                                    </span>
+                                  )}
+                                </div>
                                 {invalidIgLabel && (
                                   <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">
                                     {invalidIgLabel}
@@ -1119,6 +1190,8 @@ export function DirectClientTable({
                               let stateToShow: any = currentState === 'lead' ? 'message' : currentState;
                               // Якщо стан порожній, але є lastMessageAt — показуємо "Розмова"
                               if (!stateToShow && client.lastMessageAt) stateToShow = 'message';
+                              // У колонці “Стан” більше не показуємо `client` — тип (лід/клієнт) тепер видно в “Повне імʼя”
+                              if (stateToShow === 'client') return null;
                               return (
                                 <button
                                   onClick={() => setStateHistoryClient(client)}
@@ -1191,20 +1264,8 @@ export function DirectClientTable({
                               }
                             }
 
-                            // Для клієнтів, які вже мають Altegio ID, але в історії станів ще не зʼявився "client"
-                            // (наприклад: клієнт прийшов з Manychat, а Altegio підʼєднався пізніше),
-                            // додаємо базовий "client" як синтетичний запис, щоб у таблиці було видно, що це вже клієнт.
-                            if (!isManychatClient && clientLogs.length === 0) {
-                              const syntheticClientLog: any = {
-                                id: 'synthetic-client',
-                                clientId: client.id,
-                                state: 'client',
-                                previousState: null,
-                                reason: 'derived-altegio-client',
-                                createdAt: client.createdAt || new Date().toISOString(),
-                              };
-                              clientLogs.unshift(syntheticClientLog);
-                            }
+                            // `client` у колонці “Стан” більше не показуємо (тип контакту тепер видно біля імені),
+                            // тому синтетичний `client` тут не додаємо.
                             
                             // Якщо є дата консультації (показуємо її в таблиці), але state-log ще не встиг записати `consultation-booked`,
                             // додаємо derived-стан `consultation-booked`, щоб у колонці "Стан" був синій календарик.
@@ -1253,10 +1314,7 @@ export function DirectClientTable({
                               // Якщо є стани старіші - не додаємо "lead"
                             }
                             
-                            // Для ВСІХ клієнтів: залишаємо тільки найстаріший "client"
-                            if (clientLogs.length > 0) {
-                              filteredStates.push(clientLogs[0]); // Тільки найстаріший "client"
-                            }
+                            // `client` у колонці “Стан” не показуємо — не додаємо його в `filteredStates`.
                             
                             // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
                             // Стан `consultation` більше не показуємо в UI (факт приходу дивимось по ✅ у даті консультації).
@@ -1288,24 +1346,10 @@ export function DirectClientTable({
                             // Додаємо поточний стан, якщо він відрізняється
                             const statesToShow = [...filteredStates];
                             
-                            // Перевіряємо, чи є "lead" та "client" в відфільтрованих станах
-                            const hasLeadInFiltered = false;
-                            const hasClientInFiltered = filteredStates.some(log => log.state === 'client');
-                            
                             if (currentState !== lastHistoryState) {
                               // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
                               if (!isManychatClient && currentState === 'lead') {
                                 // Не додаємо "lead" для Altegio клієнтів
-                              } else if (currentState === 'client' && !hasClientInFiltered) {
-                                // Для "client" - додаємо тільки якщо його немає в історії (стан "client" має бути тільки один раз)
-                                statesToShow.push({
-                                  id: 'current',
-                                  clientId: client.id,
-                                  state: currentState,
-                                  previousState: lastHistoryState,
-                                  reason: 'current-state',
-                                  createdAt: new Date().toISOString(),
-                                });
                               } else if (currentState !== 'client') {
                                 // Для всіх інших станів - завжди додаємо
                               statesToShow.push({
@@ -1324,6 +1368,9 @@ export function DirectClientTable({
                             const finalStatesToShow = statesToShow.filter(log => {
                               // Видаляємо "no-instagram"
                               if (log.state === 'no-instagram') return false;
+                              
+                              // `client` більше не відображаємо в колонці “Стан”
+                              if (log.state === 'client') return false;
                               
                               // lead більше не використовуємо
                               if (log.state === 'lead') return false;
