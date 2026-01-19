@@ -1143,6 +1143,9 @@ export function DirectClientTable({
                       Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                    Телефон
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">Дії</th>
                 </tr>
               </thead>
@@ -1352,13 +1355,6 @@ export function DirectClientTable({
                             );
                           })()}
                         </span>
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
-                        {client.phone ? (
-                          <span className="font-mono">{client.phone}</span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col items-center leading-none">
@@ -1978,6 +1974,13 @@ export function DirectClientTable({
                           onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
                           title={client.comment || "Коментар..."}
                         />
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                        {client.phone ? (
+                          <span className="font-mono">{client.phone}</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs">
                         <div className="flex gap-1">
