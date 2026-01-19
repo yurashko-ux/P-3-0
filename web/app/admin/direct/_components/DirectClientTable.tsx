@@ -1224,9 +1224,12 @@ export function DirectClientTable({
                                 client.visits !== null && client.visits !== undefined ? client.visits : null;
                               const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
                               const instagramUrl = `https://instagram.com/${username}`;
-                              const altegioSearchQuery = client.altegioClientId
-                                ? String(client.altegioClientId)
-                                : (fullName && fullName !== "-" ? fullName : "").toString().trim();
+                              const phoneQuery = (client.phone || "").toString().trim();
+                              const fallbackNameQuery = (fullName && fullName !== "-" ? fullName : "").toString().trim();
+                              const fallbackIgQuery = isNormalInstagram ? username : "";
+                              const altegioSearchQuery = isClientType
+                                ? (phoneQuery || fallbackNameQuery || fallbackIgQuery)
+                                : (fallbackNameQuery || fallbackIgQuery);
                               const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
                               const typeBadge = isClientType ? (
                                 <a
@@ -1292,9 +1295,12 @@ export function DirectClientTable({
                               client.visits !== null && client.visits !== undefined ? client.visits : null;
                             const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
                             const instagramUrl = `https://instagram.com/${username}`;
-                            const altegioSearchQuery = client.altegioClientId
-                              ? String(client.altegioClientId)
-                              : (nameOneLine && nameOneLine !== "-" ? nameOneLine : "").toString().trim();
+                            const phoneQuery = (client.phone || "").toString().trim();
+                            const fallbackNameQuery = (nameOneLine && nameOneLine !== "-" ? nameOneLine : "").toString().trim();
+                            const fallbackIgQuery = isNormalInstagram ? username : "";
+                            const altegioSearchQuery = isClientType
+                              ? (phoneQuery || fallbackNameQuery || fallbackIgQuery)
+                              : (fallbackNameQuery || fallbackIgQuery);
                             const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
                             const typeBadge = isClientType ? (
                               <a
