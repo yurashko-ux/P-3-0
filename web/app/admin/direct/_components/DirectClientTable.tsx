@@ -214,6 +214,35 @@ export function DirectClientTable({
   const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
 
+  async function copyToClipboard(text: string) {
+    const value = (text || "").toString();
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch (err) {
+      // fallback нижче
+      console.warn("[DirectClientTable] Не вдалося скопіювати через navigator.clipboard, пробуємо fallback:", err);
+    }
+
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.left = "-1000px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch (err) {
+      console.error("[DirectClientTable] ❌ Не вдалося скопіювати у буфер:", err);
+    }
+  }
+
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     try {
@@ -1081,17 +1110,25 @@ export function DirectClientTable({
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
-                            const typeBadge = (
-                              <span
-                                className="shrink-0"
-                                title={typeBadgeTitle}
-                                aria-label={typeBadgeTitle}
-                              >
-                                {isClientType ? <ClientBadgeIcon /> : <LeadBadgeIcon />}
-                              </span>
-                            );
 
                             if (!hasName) {
+                              const copyValue = (fullName || username || "").toString().trim();
+                              const typeBadge = (
+                                <button
+                                  type="button"
+                                  className="shrink-0 hover:opacity-80 transition-opacity"
+                                  title={`${typeBadgeTitle}\nНатисніть, щоб скопіювати повне імʼя`}
+                                  aria-label={`${typeBadgeTitle}. Скопіювати повне імʼя`}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void copyToClipboard(copyValue);
+                                  }}
+                                >
+                                  {isClientType ? <ClientBadgeIcon /> : <LeadBadgeIcon />}
+                                </button>
+                              );
+
                               return (
                                 <>
                                   <div className="flex items-center gap-1 min-w-0">
@@ -1122,6 +1159,22 @@ export function DirectClientTable({
                             }
 
                             const nameOneLine = [first, last].filter(Boolean).join(" ").trim() || fullName;
+                            const copyValue = (nameOneLine || fullName || username || "").toString().trim();
+                            const typeBadge = (
+                              <button
+                                type="button"
+                                className="shrink-0 hover:opacity-80 transition-opacity"
+                                title={`${typeBadgeTitle}\nНатисніть, щоб скопіювати повне імʼя`}
+                                aria-label={`${typeBadgeTitle}. Скопіювати повне імʼя`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void copyToClipboard(copyValue);
+                                }}
+                              >
+                                {isClientType ? <ClientBadgeIcon /> : <LeadBadgeIcon />}
+                              </button>
+                            );
 
                             return (
                               <>
