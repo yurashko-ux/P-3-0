@@ -985,7 +985,7 @@ export function DirectClientTable({
               <thead>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">№</th>
-                  <th className="px-1 pr-1 sm:px-2 sm:pr-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[92px] min-w-[92px]">
+                  <th className="px-1 pr-0.5 sm:px-2 sm:pr-0.5 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[92px] min-w-[92px]">
                     <div className="flex flex-col items-start leading-none" title="Оновлення / Створення">
                       <button
                         className="hover:underline cursor-pointer text-left"
@@ -1014,7 +1014,7 @@ export function DirectClientTable({
                     </div>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="pl-1 pr-0 py-2 bg-base-200 sticky top-0 z-20 w-[40px] min-w-[40px] max-w-[40px]" />
+                  <th className="px-0.5 py-2 bg-base-200 sticky top-0 z-20 w-[44px] min-w-[44px] max-w-[44px]" />
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
                       <button
@@ -1151,14 +1151,14 @@ export function DirectClientTable({
                       key={client.id}
                     >
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
-                      <td className="px-1 pr-1 sm:px-2 sm:pr-1 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 pr-0.5 sm:px-2 sm:pr-0.5 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
                           <span>{client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}</span>
                           <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="pl-1 pr-0 py-1 w-[40px] min-w-[40px] max-w-[40px]">
+                      <td className="px-0.5 py-1 w-[44px] min-w-[44px] max-w-[44px]">
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
