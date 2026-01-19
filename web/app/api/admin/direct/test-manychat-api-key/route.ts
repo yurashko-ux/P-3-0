@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
   let apiTest: any = null;
   if (foundKey) {
     const tests: any[] = [];
+    const testName = (req.nextUrl.searchParams.get('name') || 'test').trim();
     
     // Тест 1: Старий формат (може не працювати)
     try {
@@ -164,24 +165,51 @@ export async function GET(req: NextRequest) {
 
     // Тест 4: findByName (простий тест)
     try {
-      const testUrl4 = 'https://api.manychat.com/fb/subscriber/findByName';
+      // Актуальний варіант: GET + query string (у тебе POST дає 405)
+      const testUrl4 = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(testName)}`;
       const testResponse4 = await fetch(testUrl4, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${foundKey}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'test' }),
       });
       const responseText4 = await testResponse4.text();
+      let parsed4: any = null;
+      try { parsed4 = JSON.parse(responseText4); } catch {}
+      const subscriberId =
+        parsed4?.data?.subscriber_id ||
+        parsed4?.subscriber_id ||
+        parsed4?.subscriber?.id ||
+        null;
       tests.push({
         url: testUrl4,
-        method: 'POST',
+        method: 'GET',
         status: testResponse4.status,
         statusText: testResponse4.statusText,
         ok: testResponse4.ok,
         responsePreview: responseText4.substring(0, 500),
+        subscriberId,
       });
+
+      // Якщо є subscriber_id — пробуємо getInfo (там часто є profile_pic)
+      if (subscriberId) {
+        const testUrl5 = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(String(subscriberId))}`;
+        const testResponse5 = await fetch(testUrl5, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${foundKey}`,
+          },
+        });
+        const responseText5 = await testResponse5.text();
+        tests.push({
+          url: testUrl5,
+          method: 'GET',
+          status: testResponse5.status,
+          statusText: testResponse5.statusText,
+          ok: testResponse5.ok,
+          responsePreview: responseText5.substring(0, 800),
+        });
+      }
     } catch (err) {
       tests.push({
         url: 'https://api.manychat.com/fb/subscriber/findByName',
