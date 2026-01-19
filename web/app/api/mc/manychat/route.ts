@@ -278,6 +278,63 @@ function pickAvatarUrlFromRaw(raw: unknown): string | null {
 }
 
 const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+const directSubscriberKey = (username: string) => `direct:ig-subscriber:${username.toLowerCase()}`;
+
+function getManyChatApiKey(): string | null {
+  const key = getEnvValue(
+    'MANYCHAT_API_KEY',
+    'ManyChat_API_Key',
+    'MANYCHAT_API_TOKEN',
+    'MC_API_KEY',
+    'MANYCHAT_APIKEY',
+  );
+  const t = typeof key === 'string' ? key.trim() : '';
+  return t ? t : null;
+}
+
+function pickSubscriberIdFromRaw(raw: unknown, rawText?: string | null): string | null {
+  // 1) JSON обʼєкт (payload)
+  try {
+    const obj = raw && typeof raw === 'object' ? (raw as any) : null;
+    const direct =
+      obj?.subscriber?.id ||
+      obj?.subscriber?.subscriber_id ||
+      obj?.subscriber_id ||
+      obj?.subscriberId ||
+      null;
+    if (direct != null && String(direct).trim()) return String(direct).trim();
+  } catch {
+    // ignore
+  }
+
+  const text = typeof rawText === 'string' ? rawText : null;
+  if (!text) return null;
+
+  // 2) x-www-form-urlencoded (subscriber[id]=... або subscriber_id=...)
+  try {
+    const params = new URLSearchParams(text);
+    const v =
+      params.get('subscriber[id]') ||
+      params.get('subscriber_id') ||
+      params.get('subscriberId') ||
+      params.get('subscriber.id') ||
+      null;
+    if (v && String(v).trim()) return String(v).trim();
+  } catch {
+    // ignore
+  }
+
+  // 3) regex (на випадок “майже JSON”)
+  const m1 = text.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*"([^"]+)"/i);
+  if (m1?.[1]) return m1[1].trim();
+  const m2 = text.match(/"subscriber"\s*:\s*\{[\s\S]*?"id"\s*:\s*(\d+)/i);
+  if (m2?.[1]) return m2[1].trim();
+  const m3 = text.match(/"subscriber_id"\s*:\s*"([^"]+)"/i);
+  if (m3?.[1]) return m3[1].trim();
+  const m4 = text.match(/"subscriber_id"\s*:\s*(\d+)/i);
+  if (m4?.[1]) return m4[1].trim();
+  return null;
+}
 
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
   const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
@@ -645,13 +702,86 @@ export async function POST(req: NextRequest) {
 
         // MVP: пробуємо витягнути аватарку з raw payload і зберегти в KV (для показу в таблиці)
         try {
-          const avatarUrl = pickAvatarUrlFromRaw(payload);
-          if (avatarUrl) {
-            await kvWrite.setRaw(directAvatarKey(normalizedInstagram), avatarUrl);
-            console.log('[manychat] 🖼️ Збережено аватарку Instagram в KV:', {
+          const existing = await kvRead.getRaw(directAvatarKey(normalizedInstagram));
+          const existingStr = typeof existing === 'string' ? existing.trim() : '';
+          const hasValidExisting = Boolean(existingStr) && /^https?:\/\//i.test(existingStr);
+
+          // 1) Найдешевше: витягнути URL з webhook payload
+          const avatarFromWebhook = pickAvatarUrlFromRaw(payload);
+          if (avatarFromWebhook && /^https?:\/\//i.test(avatarFromWebhook)) {
+            await kvWrite.setRaw(directAvatarKey(normalizedInstagram), avatarFromWebhook);
+            console.log('[manychat] 🖼️ Збережено аватарку Instagram з webhook в KV:', {
               username: normalizedInstagram,
               key: directAvatarKey(normalizedInstagram),
             });
+          } else if (!hasValidExisting) {
+            // 2) Якщо в payload нема аватарки — пробуємо підтягнути через ManyChat API по subscriber_id
+            const subscriberId = pickSubscriberIdFromRaw(payload, rawText);
+            if (subscriberId) {
+              // Запамʼятаємо subscriber_id для діагностики/бекфілу
+              try {
+                await kvWrite.setRaw(directSubscriberKey(normalizedInstagram), String(subscriberId));
+              } catch {}
+
+              const apiKey = getManyChatApiKey();
+              if (!apiKey) {
+                console.warn('[manychat] 🖼️ Нема MANYCHAT API key — не можу підтягнути аватарку по subscriber_id', {
+                  username: normalizedInstagram,
+                  subscriberId,
+                });
+              } else {
+                const url = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(String(subscriberId))}`;
+                console.log('[manychat] 🖼️ Підтягуємо аватарку через ManyChat getInfo…', {
+                  username: normalizedInstagram,
+                  subscriberId,
+                });
+                try {
+                  const controller = new AbortController();
+                  const timeout = setTimeout(() => controller.abort(), 6000);
+                  const res = await fetch(url, {
+                    method: 'GET',
+                    headers: { Authorization: `Bearer ${apiKey}` },
+                    signal: controller.signal,
+                  }).finally(() => clearTimeout(timeout));
+
+                  const text = await res.text();
+                  if (!res.ok) {
+                    console.warn('[manychat] 🖼️ getInfo не ок (аватар не підтягнувся):', {
+                      status: res.status,
+                      preview: text.slice(0, 240),
+                      username: normalizedInstagram,
+                      subscriberId,
+                    });
+                  } else {
+                    let parsed: any = null;
+                    try {
+                      parsed = JSON.parse(text);
+                    } catch {
+                      parsed = null;
+                    }
+                    const avatarFromApi = pickAvatarUrlFromRaw(parsed?.data ?? parsed);
+                    if (avatarFromApi && /^https?:\/\//i.test(avatarFromApi)) {
+                      await kvWrite.setRaw(directAvatarKey(normalizedInstagram), avatarFromApi);
+                      console.log('[manychat] 🖼️ Збережено аватарку Instagram з ManyChat API в KV:', {
+                        username: normalizedInstagram,
+                        key: directAvatarKey(normalizedInstagram),
+                      });
+                    } else {
+                      console.warn('[manychat] 🖼️ getInfo успішний, але аватарку не знайшов у відповіді', {
+                        username: normalizedInstagram,
+                        subscriberId,
+                      });
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[manychat] 🖼️ Помилка getInfo (некритично):', err);
+                }
+              }
+            } else {
+              console.log('[manychat] 🖼️ subscriber_id не знайдено у webhook — аватарку не підтягую', {
+                username: normalizedInstagram,
+              });
+            }
           }
         } catch (avatarErr) {
           console.warn('[manychat] 🖼️ Не вдалося зберегти аватарку в KV (некритично):', avatarErr);
