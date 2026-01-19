@@ -259,10 +259,20 @@ async function kvGetRaw(key: string) {
         (parsed as any).data ??
         null;
       if (typeof candidate === 'string') return candidate;
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) return String(candidate);
       if (candidate && typeof candidate === 'object') {
         const nested = (candidate as any).value ?? (candidate as any).result ?? null;
         if (typeof nested === 'string') return nested;
+        if (typeof nested === 'number' && Number.isFinite(nested)) return String(nested);
         if (nested && typeof nested === 'object') {
+          // частий кейс: { result: { value: { value: "..." } } } або { result: { value: 123 } }
+          const deep =
+            (nested as any).value ??
+            (nested as any).result ??
+            (nested as any).data ??
+            null;
+          if (typeof deep === 'string') return deep;
+          if (typeof deep === 'number' && Number.isFinite(deep)) return String(deep);
           try {
             return JSON.stringify(nested);
           } catch {
