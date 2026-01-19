@@ -973,17 +973,6 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
                       <button
-                        className="hover:underline cursor-pointer text-left"
-                        onClick={() =>
-                          onSortChange(
-                            "visits",
-                            sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Візити {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
                         onClick={() =>
                           onSortChange(
@@ -1229,9 +1218,6 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col items-center leading-none">
                           <span className="text-center">
-                            {client.visits !== null && client.visits !== undefined ? client.visits : '-'}
-                          </span>
-                          <span className="opacity-80 mt-0.5 text-center">
                             {client.spent !== null && client.spent !== undefined
                               ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
                               : '-'}
