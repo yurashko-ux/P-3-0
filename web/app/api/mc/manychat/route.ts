@@ -216,6 +216,69 @@ function extractTextFromRaw(raw: unknown, visited: WeakSet<Record<string, unknow
   return null;
 }
 
+function pickAvatarUrlFromRaw(raw: unknown): string | null {
+  const visited = new WeakSet<Record<string, unknown>>();
+  const avatarKeyHints = [
+    'avatar',
+    'profile_pic',
+    'profilepic',
+    'profile_picture',
+    'picture',
+    'photo',
+    'image',
+    'profile_photo',
+  ];
+
+  const isLikelyUrl = (value: string): boolean => {
+    const v = value.trim();
+    if (!/^https?:\/\//i.test(v)) return false;
+    return true;
+  };
+
+  const walk = (node: unknown, depth: number): string | null => {
+    if (node == null) return null;
+    if (depth > 8) return null;
+
+    if (typeof node === 'string') {
+      return isLikelyUrl(node) ? node.trim() : null;
+    }
+
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const found = walk(item, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    if (typeof node !== 'object') return null;
+
+    const rec = node as Record<string, unknown>;
+    if (visited.has(rec)) return null;
+    visited.add(rec);
+
+    // 1) Спочатку шукаємо значення в “очевидних” ключах.
+    for (const [k, v] of Object.entries(rec)) {
+      const key = k.toLowerCase();
+      if (!avatarKeyHints.some((h) => key.includes(h))) continue;
+      const candidate = walk(v, depth + 1);
+      if (candidate) return candidate;
+    }
+
+    // 2) Потім — будь-який URL в піддереві.
+    for (const v of Object.values(rec)) {
+      const candidate = walk(v, depth + 1);
+      if (candidate) return candidate;
+    }
+
+    return null;
+  };
+
+  return walk(raw, 0);
+}
+
+const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
   const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
 
@@ -530,6 +593,20 @@ export async function POST(req: NextRequest) {
         // Продовжуємо виконання webhook, просто пропускаємо синхронізацію
       } else {
         console.log('[manychat] Processing Direct client sync for:', normalizedInstagram, '(original:', message.handle, ')');
+
+        // MVP: пробуємо витягнути аватарку з raw payload і зберегти в KV (для показу в таблиці)
+        try {
+          const avatarUrl = pickAvatarUrlFromRaw(payload);
+          if (avatarUrl) {
+            await kvWrite.setRaw(directAvatarKey(normalizedInstagram), avatarUrl);
+            console.log('[manychat] 🖼️ Збережено аватарку Instagram в KV:', {
+              username: normalizedInstagram,
+              key: directAvatarKey(normalizedInstagram),
+            });
+          }
+        } catch (avatarErr) {
+          console.warn('[manychat] 🖼️ Не вдалося зберегти аватарку в KV (некритично):', avatarErr);
+        }
         
         let client = await getDirectClientByInstagram(normalizedInstagram);
       

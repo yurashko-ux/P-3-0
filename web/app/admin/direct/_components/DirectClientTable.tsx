@@ -1100,6 +1100,9 @@ export function DirectClientTable({
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
+                            const avatarSrc = isNormalInstagram
+                              ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`
+                              : null;
 
                             if (!hasName) {
                               const visitsValue =
@@ -1135,6 +1138,20 @@ export function DirectClientTable({
                               return (
                                 <>
                                   <div className="flex items-center gap-1 min-w-0">
+                                    {avatarSrc ? (
+                                      <img
+                                        src={avatarSrc}
+                                        alt=""
+                                        className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200"
+                                        loading="lazy"
+                                        decoding="async"
+                                        referrerPolicy="no-referrer"
+                                        onError={(e) => {
+                                          // Якщо аватарки немає в KV або URL протух — просто ховаємо, щоб не ламати UI
+                                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                                        }}
+                                      />
+                                    ) : null}
                                     {typeBadge}
                                     {isNormalInstagram ? (
                                       <a
@@ -1201,6 +1218,19 @@ export function DirectClientTable({
                             return (
                               <>
                                 <div className="flex items-center gap-1 min-w-0">
+                                  {avatarSrc ? (
+                                    <img
+                                      src={avatarSrc}
+                                      alt=""
+                                      className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200"
+                                      loading="lazy"
+                                      decoding="async"
+                                      referrerPolicy="no-referrer"
+                                      onError={(e) => {
+                                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                                      }}
+                                    />
+                                  ) : null}
                                   {typeBadge}
                                   {isNormalInstagram ? (
                                     <a
