@@ -13,6 +13,14 @@ const CRON_SECRET = process.env.CRON_SECRET || '';
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+
+  // Додатково: дозволяємо одноразову авторизацію через ?token= (як /admin/login)
+  // Це зручно для відкриття endpoint напряму в браузері, якщо cookie не підтягується.
+  if (ADMIN_PASS) {
+    const qToken = (req.nextUrl.searchParams.get('token') || '').trim();
+    if (qToken && qToken === ADMIN_PASS) return true;
+  }
+
   if (CRON_SECRET) {
     const authHeader = req.headers.get('authorization');
     if (authHeader === `Bearer ${CRON_SECRET}`) return true;
@@ -133,6 +141,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Якщо зайшли через ?token= — поставимо cookie, щоб наступні відкриття працювали без токена
+    const qToken = (req.nextUrl.searchParams.get('token') || '').trim();
+    const shouldSetCookie = Boolean(ADMIN_PASS) && Boolean(qToken) && qToken === ADMIN_PASS;
+
     const limitParam = req.nextUrl.searchParams.get('limit');
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 100, 1), 1000) : 100;
     const includeRaw = req.nextUrl.searchParams.get('includeRaw') === '1';
@@ -219,11 +231,24 @@ export async function GET(req: NextRequest) {
         return new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime();
       });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       ok: true,
       total: tableRows.length,
       rows: tableRows,
     });
+
+    if (shouldSetCookie) {
+      // Аналогічно до middleware: cookie доступна в браузері (не httpOnly), щоб UI міг працювати.
+      res.cookies.set('admin_token', qToken, {
+        path: '/',
+        sameSite: 'lax',
+        httpOnly: false,
+        secure: true,
+        maxAge: 60 * 60 * 24 * 7, // 7 днів
+      });
+    }
+
+    return res;
   } catch (error) {
     console.error('[direct/manychat-webhooks-table] GET error:', error);
     return NextResponse.json(
