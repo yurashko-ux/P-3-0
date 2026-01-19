@@ -76,12 +76,27 @@ function parseKvLogEntry(raw: unknown): Record<string, unknown> | null {
   try {
     if (raw == null) return null;
     if (typeof raw === 'string') {
-      return JSON.parse(raw) as Record<string, unknown>;
+      const once = JSON.parse(raw) as any;
+      // інколи значення зберігається як JSON-рядок всередині JSON (double-encoded)
+      if (typeof once === 'string') {
+        const twice = JSON.parse(once) as any;
+        if (twice && typeof twice === 'object' && !Array.isArray(twice)) return twice as Record<string, unknown>;
+        return null;
+      }
+      if (once && typeof once === 'object' && !Array.isArray(once)) return once as Record<string, unknown>;
+      return null;
     }
     if (typeof raw === 'object') {
       const obj = raw as any;
       if (typeof obj.value === 'string') {
-        return JSON.parse(obj.value) as Record<string, unknown>;
+        const once = JSON.parse(obj.value) as any;
+        if (typeof once === 'string') {
+          const twice = JSON.parse(once) as any;
+          if (twice && typeof twice === 'object' && !Array.isArray(twice)) return twice as Record<string, unknown>;
+          return null;
+        }
+        if (once && typeof once === 'object' && !Array.isArray(once)) return once as Record<string, unknown>;
+        return null;
       }
       return obj as Record<string, unknown>;
     }
@@ -93,12 +108,10 @@ function parseKvLogEntry(raw: unknown): Record<string, unknown> | null {
 
 function pickSubscriberIdFromWebhookLogEntry(entry: Record<string, unknown>, username: string): string | null {
   try {
-    const direct = (entry as any)?.subscriberId;
-    if (direct != null && String(direct).trim()) return String(direct).trim();
-
     const rawBody = typeof (entry as any)?.rawBody === 'string' ? ((entry as any).rawBody as string) : '';
     if (!rawBody) return null;
 
+    // ВАЖЛИВО: звіряємо username, щоб не підхопити subscriber_id чужого запису.
     // Шукаємо username і subscriber_id у сирому body (JSON або form-encoded)
     try {
       const parsed = JSON.parse(rawBody) as any;
@@ -106,6 +119,9 @@ function pickSubscriberIdFromWebhookLogEntry(entry: Record<string, unknown>, use
         (parsed?.username || parsed?.handle || parsed?.instagram_username || parsed?.ig_username || null) as string | null;
       const uNorm = (u || '').trim().toLowerCase().replace(/^@/, '');
       if (uNorm && uNorm !== username) return null;
+      // якщо username співпав — можемо брати subscriberId із top-level entry
+      const direct = (entry as any)?.subscriberId;
+      if (direct != null && String(direct).trim()) return String(direct).trim();
       const sid =
         parsed?.subscriber?.id ||
         parsed?.subscriber?.subscriber_id ||
@@ -127,6 +143,8 @@ function pickSubscriberIdFromWebhookLogEntry(entry: Record<string, unknown>, use
         null;
       const uNorm = (u || '').trim().toLowerCase().replace(/^@/, '');
       if (uNorm && uNorm !== username) return null;
+      const direct = (entry as any)?.subscriberId;
+      if (direct != null && String(direct).trim()) return String(direct).trim();
       const sid =
         params.get('subscriber[id]') ||
         params.get('subscriber_id') ||

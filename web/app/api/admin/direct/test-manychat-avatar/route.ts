@@ -170,14 +170,26 @@ export async function GET(req: NextRequest) {
     }
 
     // Якщо передали username — збережемо в KV для таблиці (щоб одразу зʼявилась)
+    // і перевіримо readback, щоб не було "savedToKv: true" без реального запису.
+    let kvSave = { attempted: false, subscriberSaved: false, avatarSaved: false, readBackAvatar: null as null | string };
     if (normalizedUsername) {
+      kvSave.attempted = true;
       try {
         await kvWrite.setRaw(directSubscriberKey(normalizedUsername), subscriberIdRaw);
         await kvWrite.setRaw(directAvatarKey(normalizedUsername), avatarUrl);
+        kvSave.subscriberSaved = true;
+        kvSave.avatarSaved = true;
+        try {
+          const { kvRead } = await import('@/lib/kv');
+          const rb = await kvRead.getRaw(directAvatarKey(normalizedUsername));
+          kvSave.readBackAvatar = typeof rb === 'string' ? rb.slice(0, 180) : rb ? String(rb).slice(0, 180) : null;
+        } catch {}
         await agentLog('C', 'test-manychat-avatar:kv', 'Saved subscriber+avatar to KV', {
           username: normalizedUsername,
         });
       } catch (err) {
+        kvSave.avatarSaved = false;
+        kvSave.subscriberSaved = false;
         await agentLog('C', 'test-manychat-avatar:kv', 'Failed to save to KV', {
           username: normalizedUsername,
           error: err instanceof Error ? err.message : String(err),
@@ -209,7 +221,8 @@ export async function GET(req: NextRequest) {
       subscriber_id: subscriberIdRaw,
       ig_username: igUsername || null,
       avatarUrl,
-      savedToKv: Boolean(normalizedUsername),
+      savedToKv: kvSave.attempted ? (kvSave.avatarSaved && kvSave.subscriberSaved) : false,
+      kv: kvSave.attempted ? kvSave : undefined,
     });
   } catch (err) {
     await agentLog('D', 'test-manychat-avatar:error', 'Unhandled error', {
