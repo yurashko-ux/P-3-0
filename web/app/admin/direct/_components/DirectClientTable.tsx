@@ -390,6 +390,17 @@ export function DirectClientTable({
     }
   };
 
+  // Короткий формат дати для економії місця в колонці “Оновлення / Створення”: 11.11.26
+  const formatDateShortYear = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit" });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const formatUAHExact = (amountUAH: number): string => {
     const n = Math.round(amountUAH);
     return `${n.toLocaleString('uk-UA')} грн`;
@@ -1081,11 +1092,11 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
-                          <span>{client.updatedAt ? formatDate(client.updatedAt) : '-'}</span>
-                          <span className="opacity-70">{client.createdAt ? formatDate(client.createdAt) : '-'}</span>
+                          <span>{client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}</span>
+                          <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[240px] sm:max-w-[320px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[200px] sm:max-w-[260px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
