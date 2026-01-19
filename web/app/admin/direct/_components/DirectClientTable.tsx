@@ -214,34 +214,13 @@ export function DirectClientTable({
   const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
 
-  async function copyToClipboard(text: string) {
-    const value = (text || "").toString();
-    if (!value) return;
+  const altegioClientsBaseUrl =
+    "https://app.alteg.io/clients/1169323/base/?fields%5B0%5D=name&fields%5B1%5D=phone&fields%5B2%5D=email&fields%5B3%5D=sold_amount&fields%5B4%5D=visits_count&fields%5B5%5D=discount&fields%5B6%5D=last_visit_date&fields%5B7%5D=first_visit_date&order_by=id&order_by_direction=desc&page=1&page_size=25&segment=&operation=AND&filters%5B0%5D%5Boperation%5D=OR&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B1%5D%5Btype%5D=quick_search&filters%5B1%5D%5Bstate%5D%5Bvalue%5D=";
 
-    try {
-      await navigator.clipboard.writeText(value);
-      return;
-    } catch (err) {
-      // fallback нижче
-      console.warn("[DirectClientTable] Не вдалося скопіювати через navigator.clipboard, пробуємо fallback:", err);
-    }
-
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = value;
-      ta.setAttribute("readonly", "true");
-      ta.style.position = "fixed";
-      ta.style.top = "-1000px";
-      ta.style.left = "-1000px";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    } catch (err) {
-      console.error("[DirectClientTable] ❌ Не вдалося скопіювати у буфер:", err);
-    }
-  }
+  const buildAltegioClientsSearchUrl = (fullName: string) => {
+    const q = (fullName || "").toString().trim();
+    return `${altegioClientsBaseUrl}${encodeURIComponent(q)}`;
+  };
 
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -1096,7 +1075,7 @@ export function DirectClientTable({
                           <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[200px] sm:max-w-[260px]">
+                      <td className="px-0 sm:px-1 py-1 text-xs whitespace-nowrap max-w-[160px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1126,21 +1105,31 @@ export function DirectClientTable({
                               const visitsValue =
                                 client.visits !== null && client.visits !== undefined ? client.visits : null;
                               const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
-                              const copyValue = (fullName || username || "").toString().trim();
-                              const typeBadge = (
-                                <button
-                                  type="button"
+                              const instagramUrl = `https://instagram.com/${username}`;
+                              const safeNameForSearch = (fullName && fullName !== "-" ? fullName : "").toString().trim();
+                              const altegioUrl = buildAltegioClientsSearchUrl(safeNameForSearch);
+                              const typeBadge = isClientType ? (
+                                <a
+                                  href={altegioUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="shrink-0 hover:opacity-80 transition-opacity"
-                                  title={`${typeBadgeTitle}\nНатисніть, щоб скопіювати повне імʼя`}
-                                  aria-label={`${typeBadgeTitle}. Скопіювати повне імʼя`}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    void copyToClipboard(copyValue);
-                                  }}
+                                  title={`${typeBadgeTitle}\nВідкрити в Altegio (Клієнтська база)`}
+                                  aria-label={`${typeBadgeTitle}. Відкрити в Altegio`}
                                 >
-                                  {isClientType ? <ClientBadgeIcon /> : <LeadBadgeIcon />}
-                                </button>
+                                  <ClientBadgeIcon />
+                                </a>
+                              ) : (
+                                <a
+                                  href={instagramUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="shrink-0 hover:opacity-80 transition-opacity"
+                                  title="Відкрити Instagram"
+                                  aria-label="Відкрити Instagram"
+                                >
+                                  <LeadBadgeIcon />
+                                </a>
                               );
 
                               return (
@@ -1182,21 +1171,31 @@ export function DirectClientTable({
                             const visitsValue =
                               client.visits !== null && client.visits !== undefined ? client.visits : null;
                             const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
-                            const copyValue = (nameOneLine || fullName || username || "").toString().trim();
-                            const typeBadge = (
-                              <button
-                                type="button"
+                            const instagramUrl = `https://instagram.com/${username}`;
+                            const safeNameForSearch = (nameOneLine && nameOneLine !== "-" ? nameOneLine : "").toString().trim();
+                            const altegioUrl = buildAltegioClientsSearchUrl(safeNameForSearch);
+                            const typeBadge = isClientType ? (
+                              <a
+                                href={altegioUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="shrink-0 hover:opacity-80 transition-opacity"
-                                title={`${typeBadgeTitle}\nНатисніть, щоб скопіювати повне імʼя`}
-                                aria-label={`${typeBadgeTitle}. Скопіювати повне імʼя`}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  void copyToClipboard(copyValue);
-                                }}
+                                title={`${typeBadgeTitle}\nВідкрити в Altegio (Клієнтська база)`}
+                                aria-label={`${typeBadgeTitle}. Відкрити в Altegio`}
                               >
-                                {isClientType ? <ClientBadgeIcon /> : <LeadBadgeIcon />}
-                              </button>
+                                <ClientBadgeIcon />
+                              </a>
+                            ) : (
+                              <a
+                                href={instagramUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 hover:opacity-80 transition-opacity"
+                                title="Відкрити Instagram"
+                                aria-label="Відкрити Instagram"
+                              >
+                                <LeadBadgeIcon />
+                              </a>
                             );
 
                             return (
