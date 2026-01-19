@@ -945,7 +945,18 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
-                      <span>Повне імʼя</span>
+                      <button
+                        className="hover:underline cursor-pointer text-left"
+                        onClick={() =>
+                          onSortChange(
+                            "visits",
+                            sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                        title="Сортувати по кількості відвідувань"
+                      >
+                        Повне імʼя {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
                         onClick={() =>
@@ -1112,6 +1123,9 @@ export function DirectClientTable({
                               : "Лід (ще без Altegio ID)";
 
                             if (!hasName) {
+                              const visitsValue =
+                                client.visits !== null && client.visits !== undefined ? client.visits : null;
+                              const visitsSuffix = visitsValue !== null ? ` (${visitsValue})` : "";
                               const copyValue = (fullName || username || "").toString().trim();
                               const typeBadge = (
                                 <button
@@ -1142,10 +1156,11 @@ export function DirectClientTable({
                                         title={`https://instagram.com/${username}`}
                                       >
                                         {username}
+                                        {visitsSuffix}
                                       </a>
                                     ) : (
                                       <span className="text-gray-400 truncate block min-w-0" title={username || ""}>
-                                        —
+                                        —{visitsSuffix}
                                       </span>
                                     )}
                                   </div>
@@ -1159,6 +1174,9 @@ export function DirectClientTable({
                             }
 
                             const nameOneLine = [first, last].filter(Boolean).join(" ").trim() || fullName;
+                            const visitsValue =
+                              client.visits !== null && client.visits !== undefined ? client.visits : null;
+                            const visitsSuffix = visitsValue !== null ? ` (${visitsValue})` : "";
                             const copyValue = (nameOneLine || fullName || username || "").toString().trim();
                             const typeBadge = (
                               <button
@@ -1189,10 +1207,12 @@ export function DirectClientTable({
                                       title={`https://instagram.com/${username}`}
                                     >
                                       {nameOneLine}
+                                      {visitsSuffix}
                                     </a>
                                   ) : (
                                     <span className="truncate block min-w-0" title={nameOneLine}>
                                       {nameOneLine}
+                                      {visitsSuffix}
                                     </span>
                                   )}
                                 </div>
