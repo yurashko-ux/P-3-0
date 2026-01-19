@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useId } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
@@ -133,6 +133,9 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
 
 // Компактні бейджі для типу контакту в колонці “Повне імʼя”
 function LeadBadgeIcon({ size = 14 }: { size?: number }) {
+  const rawId = useId();
+  // В SVG id має бути унікальним, інакше градієнти можуть конфліктувати між рядками таблиці
+  const gradId = `ig_${String(rawId).replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
     <svg
       width={size}
@@ -142,17 +145,19 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
       xmlns="http://www.w3.org/2000/svg"
       className="shrink-0"
     >
-      {/* Лід = “розмова/контакт” */}
-      <path
-        d="M10 2.25c4.142 0 7.5 2.91 7.5 6.5 0 1.715-.774 3.277-2.055 4.435-.1.09-.161.219-.161.355v3.2a.75.75 0 0 1-1.1.664l-3.04-1.6a.75.75 0 0 0-.35-.086H10c-4.142 0-7.5-2.91-7.5-6.5S5.858 2.25 10 2.25Z"
-        fill="#10b981"
-        stroke="#059669"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-      <circle cx="7.2" cy="9.1" r="0.9" fill="#064e3b" />
-      <circle cx="10" cy="9.1" r="0.9" fill="#064e3b" />
-      <circle cx="12.8" cy="9.1" r="0.9" fill="#064e3b" />
+      {/* Лід = Instagram (джерело/контакт), не “успішний” стан */}
+      <defs>
+        <linearGradient id={gradId} x1="2" y1="18" x2="18" y2="2" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FEDA75" />
+          <stop offset="0.35" stopColor="#FA7E1E" />
+          <stop offset="0.65" stopColor="#D62976" />
+          <stop offset="1" stopColor="#4F5BD5" />
+        </linearGradient>
+      </defs>
+      <rect x="2.2" y="2.2" width="15.6" height="15.6" rx="4" fill={`url(#${gradId})`} />
+      <rect x="6" y="6" width="8" height="8" rx="3" stroke="white" strokeWidth="1.4" />
+      <circle cx="10" cy="10" r="2.2" stroke="white" strokeWidth="1.4" />
+      <circle cx="14.1" cy="5.9" r="0.9" fill="white" />
     </svg>
   );
 }
