@@ -43,6 +43,53 @@ export async function GET(req: NextRequest) {
 
     const results: any[] = [];
 
+    // Тест 0: page/getInfo — перевіряємо, що ключ валідний і бачимо дані акаунту ManyChat
+    try {
+      console.log(`[test-detailed] ===== TEST 0: page/getInfo =====`);
+      const pageInfoUrl = `https://api.manychat.com/fb/page/getInfo`;
+      console.log(`[test-detailed] URL: ${pageInfoUrl}`);
+
+      const pageInfoResponse = await fetch(pageInfoUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${manychatApiKey}`,
+        },
+      });
+
+      const pageInfoText = await pageInfoResponse.text();
+      console.log(`[test-detailed] Response status: ${pageInfoResponse.status}`);
+      console.log(`[test-detailed] Response text (first 500 chars):`, pageInfoText.substring(0, 500));
+
+      let pageInfoData: any = null;
+      try {
+        pageInfoData = JSON.parse(pageInfoText);
+      } catch {
+        pageInfoData = pageInfoText;
+      }
+
+      results.push({
+        method: 'page/getInfo',
+        status: pageInfoResponse.status,
+        statusText: pageInfoResponse.statusText,
+        ok: pageInfoResponse.ok,
+        request: {
+          url: pageInfoUrl,
+          method: 'GET',
+        },
+        response: {
+          raw: pageInfoText,
+          parsed: pageInfoData,
+        },
+      });
+    } catch (err) {
+      console.error(`[test-detailed] page/getInfo error:`, err);
+      results.push({
+        method: 'page/getInfo',
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    }
+
     // Тест 1: findByName - спробуємо GET з query параметрами
     try {
       console.log(`[test-detailed] ===== TEST 1: findByName (GET) =====`);
