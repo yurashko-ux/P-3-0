@@ -1085,7 +1085,7 @@ export function DirectClientTable({
                           <span className="opacity-70">{client.createdAt ? formatDate(client.createdAt) : '-'}</span>
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[170px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap max-w-[240px] sm:max-w-[320px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1114,7 +1114,7 @@ export function DirectClientTable({
                             if (!hasName) {
                               const visitsValue =
                                 client.visits !== null && client.visits !== undefined ? client.visits : null;
-                              const visitsSuffix = visitsValue !== null ? ` (${visitsValue})` : "";
+                              const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
                               const copyValue = (fullName || username || "").toString().trim();
                               const typeBadge = (
                                 <button
@@ -1141,15 +1141,20 @@ export function DirectClientTable({
                                         href={`https://instagram.com/${username}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="link link-primary truncate block min-w-0"
+                                        className="link link-primary flex items-center gap-1 min-w-0"
                                         title={`https://instagram.com/${username}`}
                                       >
-                                        {username}
-                                        {visitsSuffix}
+                                        <span className="truncate min-w-0">{username}</span>
+                                        {visitsSuffix ? (
+                                          <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
+                                        ) : null}
                                       </a>
                                     ) : (
-                                      <span className="text-gray-400 truncate block min-w-0" title={username || ""}>
-                                        —{visitsSuffix}
+                                      <span className="text-gray-400 flex items-center gap-1 min-w-0" title={username || ""}>
+                                        <span className="truncate min-w-0">—</span>
+                                        {visitsSuffix ? (
+                                          <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
+                                        ) : null}
                                       </span>
                                     )}
                                   </div>
@@ -1165,7 +1170,7 @@ export function DirectClientTable({
                             const nameOneLine = [first, last].filter(Boolean).join(" ").trim() || fullName;
                             const visitsValue =
                               client.visits !== null && client.visits !== undefined ? client.visits : null;
-                            const visitsSuffix = visitsValue !== null ? ` (${visitsValue})` : "";
+                            const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
                             const copyValue = (nameOneLine || fullName || username || "").toString().trim();
                             const typeBadge = (
                               <button
@@ -1192,16 +1197,20 @@ export function DirectClientTable({
                                       href={`https://instagram.com/${username}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="link link-primary truncate block min-w-0"
+                                      className="link link-primary flex items-center gap-1 min-w-0"
                                       title={`https://instagram.com/${username}`}
                                     >
-                                      {nameOneLine}
-                                      {visitsSuffix}
+                                      <span className="truncate min-w-0">{nameOneLine}</span>
+                                      {visitsSuffix ? (
+                                        <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
+                                      ) : null}
                                     </a>
                                   ) : (
-                                    <span className="truncate block min-w-0" title={nameOneLine}>
-                                      {nameOneLine}
-                                      {visitsSuffix}
+                                    <span className="flex items-center gap-1 min-w-0" title={nameOneLine}>
+                                      <span className="truncate min-w-0">{nameOneLine}</span>
+                                      {visitsSuffix ? (
+                                        <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
+                                      ) : null}
                                     </span>
                                   )}
                                 </div>
