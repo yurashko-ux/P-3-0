@@ -1190,7 +1190,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap max-w-[160px]">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap max-w-[220px] sm:max-w-[320px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1788,13 +1788,13 @@ export function DirectClientTable({
                                   {(() => {
                                     const consultant = shortPersonName(client.consultationMasterName);
                                     if (!consultant) return (
-                                      <span className="text-[10px] leading-none opacity-50 max-w-[160px] truncate text-center">
+                                      <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-center">
                                         невідомо
                                       </span>
                                     );
                                     return (
                                       <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[160px] truncate text-center"
+                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
                                         title={`Консультував: ${consultant}`}
                                       >
                                         {consultant}
@@ -1892,13 +1892,13 @@ export function DirectClientTable({
 
                                 {typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? (
                                   <span
-                                    className="text-[10px] leading-none opacity-70 max-w-[160px] truncate text-center"
+                                    className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
                                     title={`Сума запису: ${formatUAHExact(client.paidServiceTotalCost)}`}
                                   >
                                     {formatUAHThousands(client.paidServiceTotalCost)}
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] leading-none opacity-50 max-w-[160px] truncate text-center">
+                                  <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-center">
                                     невідомо
                                   </span>
                                 )}
