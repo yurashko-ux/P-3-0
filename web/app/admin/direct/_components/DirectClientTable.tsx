@@ -985,7 +985,7 @@ export function DirectClientTable({
               <thead>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[76px] min-w-[76px]">
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[60px] min-w-[60px]">
                     <div className="flex flex-col items-start leading-none" title="Оновлення / Створення">
                       <button
                         className="hover:underline cursor-pointer text-left"
