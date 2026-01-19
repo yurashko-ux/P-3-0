@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
   const dryRun = sp.get('dryRun') === '1';
   const limit = Math.max(0, Number(sp.get('limit') || 0) || 0); // 0 = без ліміту
   const delayMs = Math.max(0, Math.min(2000, Number(sp.get('delayMs') || 150) || 150));
+  const force = sp.get('force') === '1';
 
   const startedAt = Date.now();
 
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
     dryRun,
     limit,
     delayMs,
+    force,
     clientsTotal: 0,
     usernamesUnique: 0,
     processed: 0,
@@ -151,6 +153,7 @@ export async function POST(req: NextRequest) {
     withAvatar: 0,
     saved: 0,
     skippedExists: 0,
+    invalidExisting: 0,
     skippedNoAvatar: 0,
     skippedNoInstagram: 0,
     errors: 0,
@@ -202,12 +205,18 @@ export async function POST(req: NextRequest) {
     stats.processed += 1;
 
     const key = directAvatarKey(username);
-    if (onlyMissing) {
+    if (onlyMissing && !force) {
       try {
         const existing = await kvRead.getRaw(key);
-        if (existing && typeof existing === 'string' && existing.trim()) {
+        const existingStr = typeof existing === 'string' ? existing.trim() : '';
+        const isValidUrl = Boolean(existingStr) && /^https?:\/\//i.test(existingStr);
+        if (isValidUrl) {
           stats.skippedExists += 1;
           continue;
+        }
+        // Якщо значення є, але не схоже на URL — вважаємо “битим” і перезаписуємо.
+        if (existingStr) {
+          stats.invalidExisting += 1;
         }
       } catch {}
     }
