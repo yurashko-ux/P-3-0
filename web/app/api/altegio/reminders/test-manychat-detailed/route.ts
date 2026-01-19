@@ -120,6 +120,74 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Тест 1.5: findByInstagram - якщо username видно як “Opted‑In for Instagram”, але custom fields пусті
+    try {
+      console.log(`[test-detailed] ===== TEST 1.5: findByInstagram (POST/GET) =====`);
+      const url = `https://api.manychat.com/fb/subscriber/findByInstagram`;
+      console.log(`[test-detailed] URL: ${url}`);
+      console.log(`[test-detailed] Body:`, JSON.stringify({ instagram: cleanInstagram }));
+
+      let res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${manychatApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ instagram: cleanInstagram }),
+      });
+      let text = await res.text();
+      let usedMethod: 'POST' | 'GET' = 'POST';
+      let usedUrl = url;
+
+      if (res.status === 405) {
+        usedMethod = 'GET';
+        usedUrl = `${url}?instagram=${encodeURIComponent(cleanInstagram)}`;
+        console.log(`[test-detailed] POST returned 405, retrying GET: ${usedUrl}`);
+        res = await fetch(usedUrl, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${manychatApiKey}` },
+        });
+        text = await res.text();
+      }
+
+      console.log(`[test-detailed] Response status: ${res.status}`);
+      console.log(`[test-detailed] Response text (first 500 chars):`, text.substring(0, 500));
+
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
+
+      const extractedSubscriberId =
+        parsed?.data?.subscriber_id ||
+        parsed?.subscriber_id ||
+        parsed?.subscriber?.id ||
+        parsed?.data?.id ||
+        parsed?.id;
+
+      results.push({
+        method: 'findByInstagram',
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        request: {
+          url: usedUrl,
+          method: usedMethod,
+          body: usedMethod === 'POST' ? { instagram: cleanInstagram } : undefined,
+        },
+        response: {
+          raw: text,
+          parsed,
+          subscriberId: extractedSubscriberId,
+        },
+      });
+    } catch (err) {
+      console.error(`[test-detailed] findByInstagram error:`, err);
+      results.push({
+        method: 'findByInstagram',
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    }
+
     // Тест 2: getCustomFields - детальний лог
     try {
       console.log(`[test-detailed] ===== TEST 2: getCustomFields =====`);
