@@ -580,6 +580,40 @@ export function AdminToolsModal({
         },
       ],
     },
+    // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
+      category: "Instagram (ManyChat)",
+      items: [
+        {
+          icon: "🖼️",
+          label: "Backfill аватарок Instagram (ManyChat → KV)",
+          endpoint: "/api/admin/direct/backfill-instagram-avatars?onlyMissing=1&maxPages=10&pageSize=100",
+          method: "POST" as const,
+          confirm:
+            "Запустити backfill аватарок Instagram з ManyChat?\n\nЦе пройде по subscribers ManyChat і збереже avatar URL в KV для показу в таблиці.\nМоже зайняти кілька хвилин (залежить від кількості subscribers).",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            const sample = Array.isArray(data?.samples) ? data.samples : [];
+            const sampleLines = sample.slice(0, 15).map((x: any) => `  - ${x.username} (${x.action})`).join("\n");
+            return (
+              `✅ Backfill завершено!\n\n` +
+              `Сторінок: ${s.pagesFetched || 0}/${s.maxPages || 0}\n` +
+              `Перевірено subscribers: ${s.subscribersScanned || 0}\n` +
+              `З Instagram: ${s.withInstagram || 0}\n` +
+              `З аватаркою: ${s.withAvatar || 0}\n` +
+              `Збережено: ${s.saved || 0}\n` +
+              `Пропущено (вже було в KV): ${s.skippedExists || 0}\n` +
+              `Пропущено (без аватарки): ${s.skippedNoAvatar || 0}\n` +
+              `Пропущено (без Instagram): ${s.skippedNoInstagram || 0}\n` +
+              `Помилок: ${s.errors || 0}\n` +
+              `Час: ${s.ms || 0} ms\n\n` +
+              (sampleLines ? `Приклади:\n${sampleLines}\n\n` : '') +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+      ],
+    },
   ];
 
   return (
