@@ -43,6 +43,55 @@ export async function GET(req: NextRequest) {
 
     const results: any[] = [];
 
+    // Допоміжні функції для витягування аватарки/IG з відповідей
+    const normalizeIg = (v: any) => {
+      const s = typeof v === 'string' ? v.trim() : '';
+      return s ? s.replace(/^@/, '').toLowerCase() : '';
+    };
+
+    const pickFirstString = (...vals: any[]) => {
+      for (const v of vals) {
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+      return null;
+    };
+
+    const extractBestSubscriber = () => {
+      const expected = normalizeIg(cleanInstagram);
+      let fallback: any | null = null;
+
+      for (const r of results) {
+        if (r?.method !== 'findByName') continue;
+        const parsed = r?.response?.parsed;
+        const arr = Array.isArray(parsed?.data) ? parsed.data : [];
+        for (const item of arr) {
+          if (!fallback) fallback = item;
+          const ig = normalizeIg(item?.ig_username || item?.instagram_username || item?.username);
+          if (ig && expected && ig === expected) {
+            return {
+              matched: true,
+              subscriberId: String(item?.subscriber_id || item?.id || ''),
+              ig_username: item?.ig_username || null,
+              profile_pic: item?.profile_pic || item?.profile_pic_url || null,
+              name: item?.name || null,
+            };
+          }
+        }
+      }
+
+      if (fallback) {
+        return {
+          matched: false,
+          subscriberId: String(fallback?.subscriber_id || fallback?.id || ''),
+          ig_username: fallback?.ig_username || null,
+          profile_pic: pickFirstString(fallback?.profile_pic, fallback?.profile_pic_url) || null,
+          name: fallback?.name || null,
+        };
+      }
+
+      return null;
+    };
+
     // Тест 0: page/getInfo — перевіряємо, що ключ валідний і бачимо дані акаунту ManyChat
     try {
       console.log(`[test-detailed] ===== TEST 0: page/getInfo =====`);
@@ -350,12 +399,14 @@ export async function GET(req: NextRequest) {
     // Підсумок
     const successfulResults = results.filter((r) => r.ok && r.response?.subscriberId);
     const found = successfulResults.length > 0;
+    const avatarResult = extractBestSubscriber();
 
     return NextResponse.json({
       ok: true,
       instagram: cleanInstagram,
       apiKeyInfo,
       found,
+      avatarResult,
       successfulResults: successfulResults.map((r) => ({
         method: r.method,
         subscriberId: r.response?.subscriberId,
