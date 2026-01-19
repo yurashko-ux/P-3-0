@@ -1142,7 +1142,7 @@ export function DirectClientTable({
                                       <img
                                         src={avatarSrc}
                                         alt=""
-                                        className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200"
+                                        className="w-6 h-6 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
                                         loading="lazy"
                                         decoding="async"
                                         referrerPolicy="no-referrer"
@@ -1222,7 +1222,7 @@ export function DirectClientTable({
                                     <img
                                       src={avatarSrc}
                                       alt=""
-                                      className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200"
+                                      className="w-6 h-6 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
                                       loading="lazy"
                                       decoding="async"
                                       referrerPolicy="no-referrer"
