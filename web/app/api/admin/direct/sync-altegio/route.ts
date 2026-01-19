@@ -117,16 +117,20 @@ export async function POST(req: NextRequest) {
 
     if (altegioClient) {
       const altegioName = (altegioClient.name || '').toString().trim();
+      const altegioPhone = (altegioClient.phone || '').toString().trim();
       const shouldReplaceName =
         Boolean(altegioName) &&
         (isBadNamePart(directClient.firstName) ||
           isBadNamePart(directClient.lastName) ||
           looksInstagramSourced(directClient.firstName, directClient.lastName));
+      const shouldReplacePhone =
+        Boolean(altegioPhone) && (!directClient.phone || directClient.phone !== altegioPhone);
 
       // Оновлюємо Direct клієнта з даними Altegio
       const updated: typeof directClient = {
         ...directClient,
         altegioClientId: altegioClient.id,
+        ...(shouldReplacePhone && { phone: altegioPhone }),
         ...(shouldReplaceName && {
           firstName: altegioName.split(' ')[0],
           lastName: altegioName.split(' ').slice(1).join(' '),

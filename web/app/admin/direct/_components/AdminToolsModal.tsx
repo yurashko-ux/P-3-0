@@ -616,6 +616,44 @@ export function AdminToolsModal({
         },
       ],
     },
+    // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
+      category: "Телефони (Altegio)",
+      items: [
+        {
+          icon: "📞",
+          label: "Backfill телефонів (Altegio → Prisma)",
+          endpoint: "/api/admin/direct/backfill-altegio-phones?onlyMissing=1&delayMs=250",
+          method: "POST" as const,
+          confirm:
+            "Запустити backfill телефонів з Altegio в Prisma?\n\nЗа замовчуванням: onlyMissing=1 (оновлюємо тільки порожні телефони).\n\nПідказка: для примусового перезапису — додайте &force=1.\n\nМоже зайняти кілька хвилин (залежить від кількості клієнтів).",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            const sample = Array.isArray(data?.samples) ? data.samples : [];
+            const sampleLines = sample
+              .slice(0, 15)
+              .map((x: any) => `  - ${x.instagramUsername} (Altegio ID: ${x.altegioClientId}) (${x.action})`)
+              .join("\n");
+            return (
+              `✅ Backfill телефонів завершено!\n\n` +
+              `Всього клієнтів: ${s.totalClients || 0}\n` +
+              `З Altegio ID: ${s.targets || 0}\n` +
+              `Оброблено: ${s.processed || 0}\n` +
+              `Оновлено: ${s.updated || 0}\n` +
+              `Пропущено (без Altegio ID): ${s.skippedNoAltegioId || 0}\n` +
+              `Пропущено (вже було): ${s.skippedExists || 0}\n` +
+              `Пропущено (нема телефону): ${s.skippedNoPhone || 0}\n` +
+              `Пропущено (без змін): ${s.skippedNoChange || 0}\n` +
+              `404/не знайдено: ${s.fetchedNotFound || 0}\n` +
+              `Помилок: ${s.errors || 0}\n` +
+              `Час: ${s.ms || 0} ms\n\n` +
+              (sampleLines ? `Приклади:\n${sampleLines}\n\n` : "") +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+      ],
+    },
   ];
 
   return (

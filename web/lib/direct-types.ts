@@ -8,6 +8,7 @@ export type DirectClient = {
   instagramUsername: string; // Нікнейм в Instagram
   firstName?: string;
   lastName?: string;
+  phone?: string; // Телефон з Altegio (зберігаємо як приходить з API)
   spent?: number; // Загальна сума витрат клієнта (з Altegio API)
   visits?: number; // Кількість візитів клієнта (з Altegio API)
   source: 'instagram' | 'tiktok' | 'other'; // Джерело реклами

@@ -36,6 +36,7 @@ model DirectClient {
   instagramUsername      String    // Нікнейм в Instagram (унікальний)
   firstName              String?   // Ім'я
   lastName               String?   // Прізвище
+  phone                  String?   // Телефон з Altegio (зберігаємо як приходить з API)
   spent                  Int?      // Загальна сума витрат клієнта (з Altegio API)
   visits                 Int?      // Кількість візитів клієнта (з Altegio API)
   source                 String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'

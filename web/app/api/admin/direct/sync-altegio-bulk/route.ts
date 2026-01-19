@@ -386,6 +386,9 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
+          // Телефон з Altegio (беремо з fullClientData, бо саме там найчастіше є phone)
+          const phoneFromAltegio = (fullClientData?.phone ?? altegioClient?.phone ?? '').toString().trim();
+
           // Перевіряємо на дублікати
           const normalizedInstagram = normalizeInstagram(instagramUsername);
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
@@ -459,6 +462,7 @@ export async function POST(req: NextRequest) {
                 ...(shouldUpdateInstagram && { instagramUsername: normalizedInstagram }),
                 ...(firstName && !existingClient.firstName && { firstName }),
                 ...(lastName && !existingClient.lastName && { lastName }),
+                ...(phoneFromAltegio && existingClient.phone !== phoneFromAltegio && { phone: phoneFromAltegio }),
                 updatedAt: new Date().toISOString(),
               };
               await saveDirectClient(updated);
@@ -484,6 +488,7 @@ export async function POST(req: NextRequest) {
               instagramUsername: normalizedInstagram,
               firstName,
               lastName,
+              ...(phoneFromAltegio ? { phone: phoneFromAltegio } : {}),
               source: 'instagram' as const,
               state: (determinedState || 'client') as 'consultation' | 'hair-extension' | 'other-services' | 'client', // Встановлюємо стан на основі послуг
               firstContactDate: now,
