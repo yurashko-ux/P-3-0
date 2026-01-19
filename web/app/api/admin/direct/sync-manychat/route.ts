@@ -112,11 +112,10 @@ export async function POST(req: NextRequest) {
         // Якщо в історичних даних залишився "lead" — нормалізуємо до "message"
         ...(client.state === 'lead' ? { state: 'message' as const } : {}),
         lastMessageAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       };
     }
 
-    await saveDirectClient(client);
+    await saveDirectClient(client, 'sync-manychat', { instagramUsername: normalizedInstagram }, { touchUpdatedAt: false });
 
     return NextResponse.json({ ok: true, client, created: !client.createdAt || client.createdAt === client.updatedAt });
   } catch (error) {

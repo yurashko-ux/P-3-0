@@ -156,7 +156,6 @@ export async function POST(req: NextRequest) {
           data: {
             firstName,
             lastName,
-            updatedAt: new Date(),
           },
         });
         updated++;

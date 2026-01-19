@@ -387,7 +387,7 @@ export async function POST(req: NextRequest) {
         // Зберігаємо клієнтів через saveDirectClient (правильно оновлює індекс з retry логікою)
         for (const client of batch) {
           try {
-            await saveDirectClient(client);
+            await saveDirectClient(client, 'sync-keycrm', { source: 'keycrm' }, { touchUpdatedAt: false });
             console.log(`[direct/sync-keycrm] ✅ Saved client ${client.id} (@${client.instagramUsername})`);
             syncedClients++;
           } catch (err) {

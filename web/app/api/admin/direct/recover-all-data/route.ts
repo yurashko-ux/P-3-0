@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
                     updatedAt: client.updatedAt || new Date().toISOString(),
                   };
                   
-                  await saveDirectClient(directClient);
+                  await saveDirectClient(directClient, 'recover-all-data', { source: 'admin' }, { touchUpdatedAt: false });
                   stats.clients.migrated++;
                   console.log(`[recover-all-data] ✅ Migrated client ${id}: @${directClient.instagramUsername}`);
                 }

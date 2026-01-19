@@ -735,7 +735,7 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     };
 
-    await saveDirectClient(client);
+    await saveDirectClient(client, 'direct-clients-post', { source: 'ui' }, { touchUpdatedAt: false });
 
     return NextResponse.json({ ok: true, client });
   } catch (error) {

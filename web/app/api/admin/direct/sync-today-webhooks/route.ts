@@ -874,7 +874,7 @@ export async function POST(req: NextRequest) {
               ...(lastName && { lastName }),
               updatedAt: new Date().toISOString(),
             };
-            await saveDirectClient(updated);
+            await saveDirectClient(updated, 'sync-today-webhooks', { altegioClientId: parseInt(String(clientId), 10) }, { touchUpdatedAt: false });
             
             // Діагностика для цільового клієнта
             if (clientId === TARGET_CLIENT_ID) {
@@ -1041,7 +1041,7 @@ export async function POST(req: NextRequest) {
                         altegioClientId: clientId,
                         staffName,
                         datetime,
-                      });
+                      }, { touchUpdatedAt: false });
                       
                       console.log(`[sync-today-webhooks] ✅ Set consultation-booked state for client ${updated.id} (status: ${status}, attendance: ${attendance})`);
                     }
@@ -1068,7 +1068,7 @@ export async function POST(req: NextRequest) {
                           staffName,
                           datetime,
                           oldDate: updated.consultationBookingDate,
-                        });
+                        }, { touchUpdatedAt: false });
                         
                         console.log(`[sync-today-webhooks] ✅ Updated consultationBookingDate for client ${updated.id} (${updated.consultationBookingDate} -> ${datetime})`);
                       }
@@ -1100,7 +1100,7 @@ export async function POST(req: NextRequest) {
                         currentState: updated.state,
                         hadConsultationBefore,
                         attendance,
-                      });
+                      }, { touchUpdatedAt: false });
                       
                       console.log(`[sync-today-webhooks] ✅ Set consultationBookingDate (fallback) for client ${updated.id} (state: ${updated.state}, ${updated.consultationBookingDate || 'null'} -> ${datetime})`);
                     } else if ((status === 'create' || status === 'update') && datetime && attendance !== 1 && !updated.consultationBookingDate) {
@@ -1127,7 +1127,7 @@ export async function POST(req: NextRequest) {
                         hadConsultationBefore,
                         attendance,
                         reason: 'consultationBookingDate was missing after all blocks',
-                      });
+                      }, { touchUpdatedAt: false });
                       
                       console.log(`[sync-today-webhooks] ✅ Set missing consultationBookingDate for client ${updated.id} (${datetime})`);
                     }
@@ -1199,7 +1199,7 @@ export async function POST(req: NextRequest) {
                               masterId: master.id,
                               masterName: master.name,
                               datetime,
-                            });
+                            }, { touchUpdatedAt: false });
                             
                             console.log(`[sync-today-webhooks] ✅ Marked consultation attended for client ${updated.id}, master: ${master.name}`);
                           } else {
@@ -1348,7 +1348,7 @@ export async function POST(req: NextRequest) {
                             needsPaidServiceDate,
                           };
                           
-                          await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata);
+                          await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata, { touchUpdatedAt: false });
                           
                           if (needsStateUpdate && finalState) {
                             console.log(`[sync-today-webhooks] ✅ Updated client ${currentClient.id} state from '${previousState}' to '${finalState}' based on services`);
@@ -1422,7 +1422,7 @@ export async function POST(req: NextRequest) {
                       updatedAt: new Date().toISOString(),
                     };
                     const { saveDirectClient } = await import('@/lib/direct-store');
-                    await saveDirectClient(updatedDuplicate);
+                    await saveDirectClient(updatedDuplicate, 'sync-today-webhooks-duplicate', { altegioClientId: parseInt(String(clientId), 10) }, { touchUpdatedAt: false });
                     
                     // Оновлюємо results - замінюємо updated на правильний ID
                     results.clients = results.clients.filter((c: any) => c.id !== existingClientId);
@@ -1480,7 +1480,7 @@ export async function POST(req: NextRequest) {
             createdAt: now,
             updatedAt: now,
           };
-          await saveDirectClient(newClient);
+          await saveDirectClient(newClient, 'sync-today-webhooks-create', { altegioClientId: parseInt(String(clientId), 10) }, { touchUpdatedAt: false });
           results.created++;
           results.clients.push({
             id: newClient.id,

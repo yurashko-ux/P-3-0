@@ -127,7 +127,7 @@ async function fixOnlineConsultations() {
                 altegioClientId: client.altegioClientId,
                 instagramUsername: client.instagramUsername,
                 reason: `Нормалізація consultationBookingDate: "${client.consultationBookingDate}" -> "${normalized}"`,
-              });
+              }, { touchUpdatedAt: false });
               
               normalizedCount++;
               console.log(
@@ -525,7 +525,7 @@ async function fixOnlineConsultations() {
             altegioClientId: client.altegioClientId,
             instagramUsername: client.instagramUsername,
             reason: 'Оновлення isOnlineConsultation та consultationBookingDate на основі webhook історії',
-          });
+          }, { touchUpdatedAt: false });
 
           updatedCount++;
           console.log(
@@ -585,7 +585,7 @@ async function fixOnlineConsultations() {
               altegioClientId: client.altegioClientId,
               instagramUsername: client.instagramUsername,
               reason: 'Встановлення consultationBookingDate на основі webhook історії (консультація без consultationBookingDate)',
-            });
+            }, { touchUpdatedAt: false });
 
             updatedCount++;
             console.log(

@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
           altegioClientId: client.altegioClientId,
           phoneMasked: maskPhone(phone),
           reason: force ? 'force=1' : onlyMissing ? 'onlyMissing=1' : 'overwrite',
-        });
+        }, { touchUpdatedAt: false });
 
         updated++;
         if (samples.length < 10) {

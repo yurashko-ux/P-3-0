@@ -217,7 +217,6 @@ export async function POST(req: NextRequest) {
             data: {
               paidServiceDate: latestPaidServiceDate,
               signedUpForPaidService: true,
-              updatedAt: new Date().toISOString(),
             },
           });
           

@@ -69,7 +69,7 @@ model DirectClient {
   signedUpForPaidServiceAfterConsultation Boolean @default(false) // Записалась на послугу після консультації
   telegramNotificationSent Boolean  @default(false) // Чи було відправлено повідомлення в Telegram про відсутній Instagram
   createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
   // Зв'язок зі статусом
   status DirectStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)

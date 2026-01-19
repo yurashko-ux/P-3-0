@@ -138,7 +138,12 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date().toISOString(),
       };
 
-      await saveDirectClient(updated);
+      await saveDirectClient(
+        updated,
+        'sync-altegio',
+        { altegioClientId: altegioClient.id },
+        { touchUpdatedAt: false }
+      );
       return NextResponse.json({ ok: true, client: updated, altegioClient });
     } else {
       return NextResponse.json({ ok: true, client: directClient, altegioClient: null, message: 'Client not found in Altegio' });

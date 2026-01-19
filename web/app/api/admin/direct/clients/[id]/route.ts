@@ -74,10 +74,11 @@ export async function PATCH(
       id: client.id, // Не дозволяємо змінювати ID
       instagramUsername: client.instagramUsername, // Не дозволяємо змінювати username
       createdAt: client.createdAt, // Не дозволяємо змінювати дату створення
-      updatedAt: new Date().toISOString(),
+      // НЕ рухаємо updatedAt від ручних правок в UI (щоб таблиця не “пливла”).
+      updatedAt: client.updatedAt,
     };
 
-    await saveDirectClient(updated);
+    await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, { touchUpdatedAt: false });
     return NextResponse.json({ ok: true, client: updated });
   } catch (error) {
     console.error(`[direct/clients/${params.id}] PATCH error:`, error);

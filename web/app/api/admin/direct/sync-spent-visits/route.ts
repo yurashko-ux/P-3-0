@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
           spent,
           visits,
           reason: 'Synced from Altegio API',
-        });
+        }, { touchUpdatedAt: false });
 
         updatedCount++;
         console.log(`[direct/sync-spent-visits] ✅ Updated client ${client.id} (${client.instagramUsername}): spent=${spent}, visits=${visits}`);

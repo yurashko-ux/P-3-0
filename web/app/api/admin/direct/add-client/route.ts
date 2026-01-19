@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         createdAt: now,
         updatedAt: now,
       };
-      await saveDirectClient(client);
+      await saveDirectClient(client, 'add-client', { source: 'admin' }, { touchUpdatedAt: false });
       
       return NextResponse.json({
         ok: true,
@@ -71,9 +71,8 @@ export async function POST(req: NextRequest) {
         ...client,
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
-        updatedAt: new Date().toISOString(),
       };
-      await saveDirectClient(updated);
+      await saveDirectClient(updated, 'add-client', { source: 'admin' }, { touchUpdatedAt: false });
       
       return NextResponse.json({
         ok: true,

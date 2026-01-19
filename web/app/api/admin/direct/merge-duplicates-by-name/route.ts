@@ -75,7 +75,8 @@ async function applyNameFromAltegioIfPossible(directClientId: string, altegioCli
     if (!firstName) return { updated: false, reason: 'no_first' as const };
     await prisma.directClient.update({
       where: { id: directClientId },
-      data: { firstName, lastName, updatedAt: new Date() },
+      // НЕ рухаємо updatedAt від адмінських/синхронізаційних операцій (щоб таблиця не “пливла”).
+      data: { firstName, lastName },
     });
     return { updated: true, reason: 'ok' as const };
   } catch (err) {
@@ -183,13 +184,12 @@ async function syncClientStateFromAltegioRecords(clientId: string, altegioClient
       const updated = {
         ...client,
         state: newState,
-        updatedAt: new Date().toISOString(),
       };
       
       await saveDirectClient(updated, 'merge-duplicates-sync-state', {
         altegioClientId,
         services: services.map((s: any) => s.title || s.name),
-      });
+      }, { touchUpdatedAt: false });
       
       console.log(`[merge-duplicates-by-name] ✅ Synced state for client ${clientId}: ${client.state || 'null'} → ${newState}`);
     }
@@ -379,8 +379,7 @@ export async function POST(req: NextRequest) {
           }
         }
         
-        updatedClient.updatedAt = new Date().toISOString();
-        await saveDirectClient(updatedClient, 'merge-duplicates-by-altegio-id');
+        await saveDirectClient(updatedClient, 'merge-duplicates-by-altegio-id', { altegioClientId: altegioId }, { touchUpdatedAt: false });
 
         // Після злиття: пріоритезуємо імʼя з Altegio API, якщо поточне виглядає як інстаграмне/плейсхолдер.
         if (
@@ -571,8 +570,7 @@ export async function POST(req: NextRequest) {
           }
         }
         
-        updatedClient.updatedAt = new Date().toISOString();
-        await saveDirectClient(updatedClient);
+        await saveDirectClient(updatedClient, 'merge-duplicates-by-name', { name }, { touchUpdatedAt: false });
         
         // Видаляємо дублікати
         const { deleteDirectClient } = await import('@/lib/direct-store');

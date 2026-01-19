@@ -404,7 +404,7 @@ export async function POST(req: NextRequest) {
           webhookReceivedAt: webhook.receivedAt as string,
           fullName,
           text,
-        });
+        }, { touchUpdatedAt: false });
 
         results.processed++;
       } catch (error) {

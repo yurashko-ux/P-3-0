@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
                 
                 if (client && typeof client === 'object' && client.id && client.instagramUsername) {
                   try {
-                    await saveDirectClient(client as DirectClient);
+                    await saveDirectClient(client as DirectClient, 'migrate-data', { source: 'kv' }, { touchUpdatedAt: false });
                     stats.clients.migrated++;
                   } catch (saveErr) {
                     // Якщо помилка про unique constraint, це означає що клієнт вже існує - це нормально

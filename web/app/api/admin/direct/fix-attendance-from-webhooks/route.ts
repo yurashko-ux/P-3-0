@@ -193,7 +193,7 @@ export async function GET(req: NextRequest) {
                 datetime,
                 attendance,
                 reason: 'consultation attendance update from webhook history',
-              });
+              }, { touchUpdatedAt: false });
               
               consultationUpdated++;
               updated.push(`${client.instagramUsername || client.firstName}: consultationAttended = ${updates.consultationAttended}`);
@@ -233,7 +233,7 @@ export async function GET(req: NextRequest) {
                 datetime,
                 attendance,
                 reason: 'paid service attendance update from webhook history',
-              });
+              }, { touchUpdatedAt: false });
               
               paidServiceUpdated++;
               updated.push(`${client.instagramUsername || client.firstName}: paidServiceAttended = ${updates.paidServiceAttended}`);

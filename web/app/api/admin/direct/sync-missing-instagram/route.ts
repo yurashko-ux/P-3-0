@@ -207,7 +207,7 @@ export async function POST(req: NextRequest) {
               ...(lastName && { lastName }),
               updatedAt: new Date().toISOString(),
             };
-            await saveDirectClient(updated);
+            await saveDirectClient(updated, 'sync-missing-instagram', { altegioClientId }, { touchUpdatedAt: false });
             results.updated++;
             results.clients.push({
               id: updated.id,
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
             createdAt: now,
             updatedAt: now,
           };
-          await saveDirectClient(newClient);
+          await saveDirectClient(newClient, 'sync-missing-instagram', { altegioClientId }, { touchUpdatedAt: false });
           results.created++;
           results.clients.push({
             id: newClient.id,

@@ -273,10 +273,15 @@ export async function POST(req: NextRequest) {
             }
             
             // Зберігаємо клієнта без повторного логування (бо вже залоговано через logMultipleStates)
-            await saveDirectClient(updated, 'manual-update-states', metadata, true);
+            // І НЕ рухаємо updatedAt (щоб таблиця не “пливла” від адмінського перерахунку)
+            await saveDirectClient(updated, 'manual-update-states', metadata, {
+              skipLogging: true,
+              touchUpdatedAt: false,
+            });
           } else {
             // Звичайне логування для одного стану
-            await saveDirectClient(updated, 'manual-update-states', metadata);
+            // НЕ рухаємо updatedAt (щоб таблиця не “пливла” від адмінського перерахунку)
+            await saveDirectClient(updated, 'manual-update-states', metadata, { touchUpdatedAt: false });
           }
           
           updatedCount++;

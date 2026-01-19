@@ -590,9 +590,18 @@ export async function saveDirectClient(
   client: DirectClient,
   reason?: string,
   metadata?: Record<string, any>,
-  skipLogging?: boolean
+  skipLoggingOrOptions?: boolean | { skipLogging?: boolean; touchUpdatedAt?: boolean }
 ): Promise<void> {
   try {
+    const options =
+      typeof skipLoggingOrOptions === 'object' && skipLoggingOrOptions
+        ? skipLoggingOrOptions
+        : { skipLogging: Boolean(skipLoggingOrOptions) };
+    const skipLogging = Boolean((options as any).skipLogging);
+    // За замовчуванням updatedAt “торкаємо”.
+    // Для admin/backfill/UI-правок передаємо touchUpdatedAt=false, щоб таблиця не “пливла”.
+    const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
+
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
     
@@ -674,7 +683,7 @@ export async function saveDirectClient(
           createdAt: existingByUsername.createdAt < data.firstContactDate 
             ? existingByUsername.createdAt 
             : new Date(data.firstContactDate),
-          updatedAt: new Date(),
+          ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
         },
       });
       console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
@@ -692,7 +701,7 @@ export async function saveDirectClient(
           where: { id: client.id },
           data: {
             ...dataWithCorrectState,
-            updatedAt: new Date(),
+            ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
           },
         });
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);

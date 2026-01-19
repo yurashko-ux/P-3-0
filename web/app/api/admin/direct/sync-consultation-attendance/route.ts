@@ -190,7 +190,6 @@ export async function POST(req: NextRequest) {
             where: { id: client.id },
             data: {
               consultationAttended: newConsultationAttended,
-              updatedAt: new Date().toISOString(),
             },
           });
           

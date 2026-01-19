@@ -465,7 +465,7 @@ export async function POST(req: NextRequest) {
                 ...(phoneFromAltegio && existingClient.phone !== phoneFromAltegio && { phone: phoneFromAltegio }),
                 updatedAt: new Date().toISOString(),
               };
-              await saveDirectClient(updated);
+              await saveDirectClient(updated, 'sync-altegio-bulk', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false });
               totalUpdated++;
               syncedClientIds.push(existingClientId);
               
@@ -500,7 +500,7 @@ export async function POST(req: NextRequest) {
               updatedAt: now,
             };
 
-            await saveDirectClient(newClient);
+            await saveDirectClient(newClient, 'sync-altegio-bulk', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false });
             totalCreated++;
             syncedClientIds.push(newClient.id);
             existingInstagramMap.set(normalizedInstagram, newClient.id);
