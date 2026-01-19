@@ -1195,8 +1195,7 @@ export function DirectClientTable({
                                       <img
                                         src={avatarSrc}
                                         alt=""
-                                        className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50 origin-center"
-                                        style={{ transform: "scale(1.5)" }}
+                                        className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
                                         loading="lazy"
                                         decoding="async"
                                         referrerPolicy="no-referrer"
@@ -1279,8 +1278,7 @@ export function DirectClientTable({
                                     <img
                                       src={avatarSrc}
                                       alt=""
-                                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50 origin-center"
-                                      style={{ transform: "scale(1.5)" }}
+                                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
                                       loading="lazy"
                                       decoding="async"
                                       referrerPolicy="no-referrer"
