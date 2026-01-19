@@ -166,16 +166,6 @@ async function fetchManychatCustomFields(apiKey: string): Promise<any | null> {
 }
 
 function buildCustomFieldCandidates(customFieldsResponse: any): string[] {
-  const base = [
-    // “магічні”/поширені ідентифікатори (у багатьох акаунтах працюють як field_id)
-    'ig_username',
-    'instagram_username',
-    'instagram',
-    'username',
-    'Instagram Username',
-    'Instagram',
-  ];
-
   const out: string[] = [];
   const push = (v: any) => {
     if (v == null) return;
@@ -184,8 +174,6 @@ function buildCustomFieldCandidates(customFieldsResponse: any): string[] {
     if (out.includes(s)) return;
     out.push(s);
   };
-
-  for (const v of base) push(v);
 
   // Якщо ManyChat повернув список полів — додаємо id полів, назва яких схожа на instagram/ig
   const list = Array.isArray(customFieldsResponse?.data)
@@ -197,10 +185,17 @@ function buildCustomFieldCandidates(customFieldsResponse: any): string[] {
   for (const f of list) {
     const name = (f?.name || f?.title || '').toString().toLowerCase();
     const key = (f?.key || f?.field_id || '').toString().toLowerCase();
-    const looksIg = name.includes('instagram') || name.includes('ig') || key.includes('instagram') || key.includes('ig');
+    const looksIg =
+      name.includes('instagram') ||
+      name.includes('insta') ||
+      name.includes('ig') ||
+      key.includes('instagram') ||
+      key.includes('insta') ||
+      key.includes('ig');
     if (!looksIg) continue;
-    push(f?.id);
+    // Важливо: ManyChat очікує реальний field_id (часто це числовий/внутрішній id), а не “назву поля”
     push(f?.field_id);
+    push(f?.id);
     push(f?.key);
   }
 

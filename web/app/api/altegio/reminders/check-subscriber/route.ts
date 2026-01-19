@@ -6,6 +6,26 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+function extractManychatCustomFields(customFieldsResponse: any): any[] {
+  const d = customFieldsResponse;
+  const candidates = [
+    d?.data?.fields,
+    d?.fields,
+    d?.data,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+  return [];
+}
+
+function pickFieldId(field: any): string | null {
+  const raw = field?.field_id ?? field?.id ?? field?.key ?? field?.name ?? null;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s ? s : null;
+}
+
 async function findSubscriberInManyChat(instagram: string, apiKey: string) {
   const results: any[] = [];
 
@@ -69,60 +89,112 @@ async function findSubscriberInManyChat(instagram: string, apiKey: string) {
     });
   }
 
-  // Метод 2: findByCustomField - якщо getSubscribers не спрацював
-  const customFieldIds = ['ig_username', 'instagram_username', 'instagram', 'username', 'Instagram Username', 'Instagram'];
-  
-  for (const fieldId of customFieldIds) {
+  // Метод 2: findByCustomField - через реальні field_id з getCustomFields
+  let customFields: any[] = [];
+  try {
+    const customFieldsUrl = `https://api.manychat.com/fb/subscriber/getCustomFields`;
+    const res = await fetch(customFieldsUrl, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const text = await res.text();
+    if (res.ok) {
+      const data = JSON.parse(text);
+      customFields = extractManychatCustomFields(data);
+      results.push({
+        method: 'getCustomFields',
+        success: true,
+        fieldsCount: customFields.length,
+      });
+    } else {
+      results.push({
+        method: 'getCustomFields',
+        success: false,
+        error: `${res.status}: ${text}`,
+      });
+    }
+  } catch (err) {
+    results.push({
+      method: 'getCustomFields',
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Вибираємо поля, які найбільш схожі на “instagram / ig”
+  const instagramFields = customFields
+    .map((f: any) => {
+      const name = (f?.name ?? f?.title ?? f?.label ?? '').toString().toLowerCase();
+      const key = (f?.key ?? f?.field_id ?? f?.id ?? '').toString().toLowerCase();
+      const looksIg =
+        name.includes('instagram') ||
+        name.includes('insta') ||
+        name.includes('ig') ||
+        key.includes('instagram') ||
+        key.includes('insta') ||
+        key.includes('ig');
+      return { f, looksIg };
+    })
+    .filter((x: any) => x.looksIg)
+    .map((x: any) => x.f);
+
+  const fieldsToTry = instagramFields.length > 0 ? instagramFields : customFields;
+  const valuesToTry = [cleanInstagram, `@${cleanInstagram}`];
+
+  for (const field of fieldsToTry) {
     // Якщо вже знайшли subscriber, зупиняємося
     if (results.some((r) => r.success && r.subscriberId)) break;
-    
+
+    const fieldId = pickFieldId(field);
+    if (!fieldId) continue;
+
     try {
       const customSearchUrl = `https://api.manychat.com/fb/subscriber/findByCustomField`;
-      // У твоєму акаунті ManyChat повертає 405 на POST, тому пробуємо GET з query params
-      const getUrl = `${customSearchUrl}?field_id=${encodeURIComponent(fieldId)}&field_value=${encodeURIComponent(cleanInstagram)}`;
-      let customSearchResponse = await fetch(getUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-        },
-      });
 
-      // fallback: якщо раптом GET не підтримується — пробуємо POST
-      if (customSearchResponse.status === 405) {
-        customSearchResponse = await fetch(customSearchUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            field_id: fieldId,
-            field_value: cleanInstagram,
-          }),
+      for (const fieldValue of valuesToTry) {
+        if (results.some((r) => r.success && r.subscriberId)) break;
+
+        // У твоєму акаунті ManyChat повертає 405 на POST, тому спочатку пробуємо GET з query params
+        const getUrl = `${customSearchUrl}?field_id=${encodeURIComponent(fieldId)}&field_value=${encodeURIComponent(fieldValue)}`;
+        let customSearchResponse = await fetch(getUrl, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${apiKey}` },
         });
-      }
 
-      if (customSearchResponse.ok) {
-        const data = await customSearchResponse.json();
-        const subscriberId = data?.data?.subscriber_id || data?.subscriber_id || data?.subscriber?.id;
-        if (subscriberId) {
-          results.push({
-            method: `findByCustomField (${fieldId})`,
-            success: true,
-            data: data,
-            subscriberId: subscriberId,
+        // fallback: якщо раптом GET не підтримується — пробуємо POST
+        if (customSearchResponse.status === 405) {
+          customSearchResponse = await fetch(customSearchUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              field_id: fieldId,
+              field_value: fieldValue,
+            }),
           });
-          break; // Знайшли subscriber, зупиняємося
         }
-      } else {
-        const errorText = await customSearchResponse.text();
-        // Не додаємо помилку, якщо це просто "not found"
-        if (customSearchResponse.status !== 404) {
+
+        if (customSearchResponse.ok) {
+          const data = await customSearchResponse.json();
+          const subscriberId = data?.data?.subscriber_id || data?.subscriber_id || data?.subscriber?.id;
           results.push({
-            method: `findByCustomField (${fieldId})`,
-            success: false,
-            error: `${customSearchResponse.status}: ${errorText}`,
+            method: `findByCustomField (${fieldId} = ${fieldValue})`,
+            success: Boolean(subscriberId),
+            subscriberId: subscriberId || null,
           });
+          if (subscriberId) break;
+        } else {
+          const errorText = await customSearchResponse.text();
+          // Логуємо 400/401/403/429 як корисні, а "не знайдено" не засмічуємо
+          if (customSearchResponse.status !== 404) {
+            results.push({
+              method: `findByCustomField (${fieldId} = ${fieldValue})`,
+              success: false,
+              error: `${customSearchResponse.status}: ${errorText}`,
+            });
+          }
         }
       }
     } catch (err) {
@@ -182,13 +254,13 @@ export async function GET(req: NextRequest) {
           }
         : {
             status: '❌ Subscriber не знайдено',
-            message: 'Користувач не взаємодіяв з ManyChat ботом. Потрібно:',
+            message:
+              'Не вдалося знайти subscriber через ManyChat API. Це НЕ обовʼязково означає, що користувач не писав боту — частіше це означає, що Instagram handle збережений в іншому custom field або у іншому форматі.',
             steps: [
-              `1. Відкрий Instagram на акаунті @${instagram}`,
-              '2. Знайди ManyChat бот (або сторінку, яка використовує ManyChat)',
-              '3. Напиши будь-яке повідомлення боту',
-              '4. Або натисни на кнопку в автоматизації ManyChat',
-              '5. Після цього спробуй перевірити знову',
+              '1. В ManyChat відкрий Contacts → знайди цього користувача (якщо знаєш імʼя/номер/ID)',
+              `2. Перевір, де саме збережений Instagram username (@${instagram}) — в якому custom field (і як називається поле)`,
+              `3. Запусти діагностику custom fields: https://p-3-0.vercel.app/api/altegio/reminders/test-manychat-detailed?instagram=${encodeURIComponent(instagram)}`,
+              `4. Після цього повтори перевірку: https://p-3-0.vercel.app/api/altegio/reminders/check-subscriber?instagram=${encodeURIComponent(instagram)}`,
             ],
           },
     });
