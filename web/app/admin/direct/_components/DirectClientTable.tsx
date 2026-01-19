@@ -1201,7 +1201,7 @@ export function DirectClientTable({
                                           // Якщо аватарки немає в KV або URL протух — просто ховаємо, щоб не ламати UI
                                           (e.currentTarget as HTMLImageElement).style.display = "none";
                                           // #region agent log
-                                          __logAvatarDebug({ runId: 'run1', username, avatarSrc }).catch(() => {});
+                                          __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
                                           // #endregion agent log
                                         }}
                                       />
@@ -1283,7 +1283,7 @@ export function DirectClientTable({
                                       onError={(e) => {
                                         (e.currentTarget as HTMLImageElement).style.display = "none";
                                         // #region agent log
-                                        __logAvatarDebug({ runId: 'run1', username, avatarSrc }).catch(() => {});
+                                        __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
                                         // #endregion agent log
                                       }}
                                     />
