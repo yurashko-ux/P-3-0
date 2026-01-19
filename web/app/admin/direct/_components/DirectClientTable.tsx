@@ -986,6 +986,8 @@ export function DirectClientTable({
                 <col style={{ width: 36 }} />
                 <col style={{ width: 60 }} />
                 <col style={{ width: 44 }} />
+                {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
+                <col style={{ width: 520 }} />
               </colgroup>
               <thead>
                 <tr className="bg-base-200">
@@ -1190,7 +1192,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap max-w-[220px] sm:max-w-[320px]">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
