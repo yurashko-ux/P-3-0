@@ -172,6 +172,32 @@ function ClientBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+function AvatarSlot({
+  avatarSrc,
+  onError,
+}: {
+  avatarSrc: string | null;
+  onError: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
+}) {
+  // Завжди рендеримо однаковий слот, щоб рядки вирівнювались.
+  // Якщо аватарки нема — лишається пустий кружок.
+  return (
+    <div className="w-10 h-10 rounded-full shrink-0 border border-slate-200 bg-slate-50 overflow-hidden">
+      {avatarSrc ? (
+        <img
+          src={avatarSrc}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={onError}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 type DirectClientTableProps = {
   clients: DirectClient[];
   statuses: DirectStatus[];
@@ -1128,7 +1154,7 @@ export function DirectClientTable({
                           <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
                       </td>
-                      <td className="px-0 sm:px-1 py-1 text-xs whitespace-nowrap max-w-[160px]">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap max-w-[160px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1190,24 +1216,17 @@ export function DirectClientTable({
 
                               return (
                                 <>
-                                  <div className="flex items-center gap-1 min-w-0">
-                                    {avatarSrc ? (
-                                      <img
-                                        src={avatarSrc}
-                                        alt=""
-                                        className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
-                                        loading="lazy"
-                                        decoding="async"
-                                        referrerPolicy="no-referrer"
-                                        onError={(e) => {
-                                          // Якщо аватарки немає в KV або URL протух — просто ховаємо, щоб не ламати UI
-                                          (e.currentTarget as HTMLImageElement).style.display = "none";
-                                          // #region agent log
-                                          __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
-                                          // #endregion agent log
-                                        }}
-                                      />
-                                    ) : null}
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <AvatarSlot
+                                      avatarSrc={avatarSrc}
+                                      onError={(e) => {
+                                        // Якщо аватарки немає в KV або URL протух — просто ховаємо, щоб не ламати UI
+                                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                                        // #region agent log
+                                        __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
+                                        // #endregion agent log
+                                      }}
+                                    />
                                     {typeBadge}
                                     {isNormalInstagram ? (
                                       <a
@@ -1273,23 +1292,16 @@ export function DirectClientTable({
 
                             return (
                               <>
-                                <div className="flex items-center gap-1 min-w-0">
-                                  {avatarSrc ? (
-                                    <img
-                                      src={avatarSrc}
-                                      alt=""
-                                      className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 bg-slate-50"
-                                      loading="lazy"
-                                      decoding="async"
-                                      referrerPolicy="no-referrer"
-                                      onError={(e) => {
-                                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                                        // #region agent log
-                                        __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
-                                        // #endregion agent log
-                                      }}
-                                    />
-                                  ) : null}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <AvatarSlot
+                                    avatarSrc={avatarSrc}
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                                      // #region agent log
+                                      __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
+                                      // #endregion agent log
+                                    }}
+                                  />
                                   {typeBadge}
                                   {isNormalInstagram ? (
                                     <a
