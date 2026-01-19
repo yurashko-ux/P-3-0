@@ -11,6 +11,8 @@ interface ManyChatWebhookRow {
   fullName: string;
   text: string;
   bodyLength: number;
+  rawBody?: string | null;
+  headers?: Record<string, unknown> | null;
 }
 
 interface ManyChatWebhooksTableModalProps {
@@ -22,6 +24,8 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
   const [webhooks, setWebhooks] = useState<ManyChatWebhookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ManyChatWebhookRow | null>(null);
+  const [copied, setCopied] = useState<'raw' | 'headers' | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -33,8 +37,9 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
     try {
       setLoading(true);
       setError(null);
+      setSelected(null);
       
-      const response = await fetch('/api/admin/direct/manychat-webhooks-table?limit=1000');
+      const response = await fetch('/api/admin/direct/manychat-webhooks-table?limit=1000&includeRaw=1');
       const data = await response.json();
       
       if (data.ok) {
@@ -46,6 +51,16 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
       setError(err instanceof Error ? err.message : 'Помилка завантаження webhook-ів');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function copyToClipboard(label: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label === 'raw' ? 'raw' : 'headers');
+      setTimeout(() => setCopied(null), 900);
+    } catch (err) {
+      alert(`Не вдалося скопіювати: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -135,11 +150,17 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
                     <th className="text-xs">Ім'я</th>
                     <th className="text-xs">Повідомлення</th>
                     <th className="text-xs">Розмір</th>
+                    <th className="text-xs">RAW</th>
                   </tr>
                 </thead>
                 <tbody>
                   {webhooks.map((webhook, index) => (
-                    <tr key={`${webhook.receivedAt}-${index}`} className="hover">
+                    <tr
+                      key={`${webhook.receivedAt}-${index}`}
+                      className={`hover cursor-pointer ${selected?.receivedAt === webhook.receivedAt ? 'bg-blue-50' : ''}`}
+                      onClick={() => setSelected(webhook)}
+                      title="Натисніть, щоб подивитися сирий payload"
+                    >
                       <td className="text-xs whitespace-nowrap">
                         <div className="flex flex-col">
                           <span>{formatDate(webhook.receivedAt)}</span>
@@ -166,10 +187,63 @@ export function ManyChatWebhooksTableModal({ isOpen, onClose }: ManyChatWebhooks
                       <td className="text-xs text-gray-400">
                         {webhook.bodyLength} байт
                       </td>
+                      <td className="text-xs">
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelected(webhook);
+                          }}
+                          title="Відкрити сирий webhook"
+                        >
+                          🧾
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {!loading && !error && selected && (
+            <div className="mt-4 border rounded-lg bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">
+                  Сирий webhook (обраний)
+                  {selected.instagramUsername ? ` — @${selected.instagramUsername}` : ''}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn btn-xs"
+                    onClick={() => copyToClipboard('headers', JSON.stringify(selected.headers || {}, null, 2))}
+                  >
+                    {copied === 'headers' ? '✅ Headers' : '📋 Headers'}
+                  </button>
+                  <button
+                    className="btn btn-xs btn-primary"
+                    onClick={() => copyToClipboard('raw', selected.rawBody || '')}
+                    disabled={!selected.rawBody}
+                  >
+                    {copied === 'raw' ? '✅ RAW' : '📋 RAW'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">Headers</div>
+                  <pre className="text-[11px] whitespace-pre-wrap break-words max-h-[220px] overflow-auto bg-white border rounded p-2">
+                    {JSON.stringify(selected.headers || {}, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">RAW body</div>
+                  <pre className="text-[11px] whitespace-pre-wrap break-words max-h-[220px] overflow-auto bg-white border rounded p-2">
+                    {selected.rawBody || '—'}
+                  </pre>
+                </div>
+              </div>
             </div>
           )}
 

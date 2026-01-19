@@ -399,7 +399,7 @@ export function AdminToolsModal({
         },
         {
           icon: "📱",
-          label: "Таблиця вебхуків ManyChat",
+          label: "Сирі вебхуки ManyChat",
           endpoint: "modal:manychat-webhooks",
           method: "GET" as const,
           isModal: true,

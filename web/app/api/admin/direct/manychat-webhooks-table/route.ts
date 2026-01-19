@@ -86,6 +86,7 @@ export async function GET(req: NextRequest) {
   try {
     const limitParam = req.nextUrl.searchParams.get('limit');
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 100, 1), 1000) : 100;
+    const includeRaw = req.nextUrl.searchParams.get('includeRaw') === '1';
 
     // Отримуємо вебхуки
     const rawItems = await kvRead.lrange('manychat:webhook:log', 0, limit - 1);
@@ -141,6 +142,7 @@ export async function GET(req: NextRequest) {
         const receivedAt = webhook.receivedAt as string | undefined;
         const rawBody = webhook.rawBody as string | undefined;
         const bodyLength = webhook.bodyLength as number | undefined;
+        const headers = (webhook.headers as Record<string, unknown> | undefined) ?? undefined;
         
         if (!receivedAt) {
           return null;
@@ -157,6 +159,7 @@ export async function GET(req: NextRequest) {
           fullName: fullName || 'Невідомий клієнт',
           text: text || '-',
           bodyLength: bodyLength || 0,
+          ...(includeRaw ? { rawBody: rawBody || null, headers: headers || null } : {}),
         };
       })
       .filter((row): row is NonNullable<typeof row> => row !== null)
