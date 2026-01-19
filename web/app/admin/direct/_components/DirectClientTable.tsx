@@ -981,7 +981,7 @@ export function DirectClientTable({
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-2 sm:p-4">
           <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 60px)', overflowY: 'auto' }}>
-            <table className="table table-xs sm:table-sm w-full border-collapse">
+            <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <thead>
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">№</th>
@@ -1014,7 +1014,7 @@ export function DirectClientTable({
                     </div>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0 py-2 bg-base-200 sticky top-0 z-20 w-[44px] min-w-[44px]" />
+                  <th className="px-0 py-2 bg-base-200 sticky top-0 z-20 w-[40px] min-w-[40px] max-w-[40px]" />
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
                       <button
@@ -1158,7 +1158,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="px-0 py-1">
+                      <td className="px-0 py-1 w-[40px] min-w-[40px] max-w-[40px]">
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
