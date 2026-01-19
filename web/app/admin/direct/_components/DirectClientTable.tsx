@@ -295,8 +295,8 @@ export function DirectClientTable({
   const altegioClientsBaseUrl =
     "https://app.alteg.io/clients/1169323/base/?fields%5B0%5D=name&fields%5B1%5D=phone&fields%5B2%5D=email&fields%5B3%5D=sold_amount&fields%5B4%5D=visits_count&fields%5B5%5D=discount&fields%5B6%5D=last_visit_date&fields%5B7%5D=first_visit_date&order_by=id&order_by_direction=desc&page=1&page_size=25&segment=&operation=AND&filters%5B0%5D%5Boperation%5D=OR&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B1%5D%5Btype%5D=quick_search&filters%5B1%5D%5Bstate%5D%5Bvalue%5D=";
 
-  const buildAltegioClientsSearchUrl = (fullName: string) => {
-    const q = (fullName || "").toString().trim();
+  const buildAltegioClientsSearchUrl = (query: string) => {
+    const q = (query || "").toString().trim();
     return `${altegioClientsBaseUrl}${encodeURIComponent(q)}`;
   };
 
@@ -1218,8 +1218,10 @@ export function DirectClientTable({
                                 client.visits !== null && client.visits !== undefined ? client.visits : null;
                               const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
                               const instagramUrl = `https://instagram.com/${username}`;
-                              const safeNameForSearch = (fullName && fullName !== "-" ? fullName : "").toString().trim();
-                              const altegioUrl = buildAltegioClientsSearchUrl(safeNameForSearch);
+                              const altegioSearchQuery = client.altegioClientId
+                                ? String(client.altegioClientId)
+                                : (fullName && fullName !== "-" ? fullName : "").toString().trim();
+                              const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
                               const typeBadge = isClientType ? (
                                 <a
                                   href={altegioUrl}
@@ -1284,8 +1286,10 @@ export function DirectClientTable({
                               client.visits !== null && client.visits !== undefined ? client.visits : null;
                             const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
                             const instagramUrl = `https://instagram.com/${username}`;
-                            const safeNameForSearch = (nameOneLine && nameOneLine !== "-" ? nameOneLine : "").toString().trim();
-                            const altegioUrl = buildAltegioClientsSearchUrl(safeNameForSearch);
+                            const altegioSearchQuery = client.altegioClientId
+                              ? String(client.altegioClientId)
+                              : (nameOneLine && nameOneLine !== "-" ? nameOneLine : "").toString().trim();
+                            const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
                             const typeBadge = isClientType ? (
                               <a
                                 href={altegioUrl}
