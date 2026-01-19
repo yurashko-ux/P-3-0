@@ -244,13 +244,19 @@ export async function GET(req: NextRequest) {
         fieldsResponseData = fieldsResponseText;
       }
 
-      const fields = fieldsResponseData?.data?.fields || fieldsResponseData?.fields || [];
-      const instagramFields = fields.filter((f: any) => 
-        f.name?.toLowerCase().includes('instagram') || 
-        f.field_id?.toLowerCase().includes('instagram') ||
-        f.label?.toLowerCase().includes('instagram') ||
-        f.id?.toString().includes('instagram')
-      );
+      // page/getCustomFields у твоєму акаунті повертає data як масив полів (а не data.fields)
+      const fields = Array.isArray(fieldsResponseData?.data?.fields)
+        ? fieldsResponseData.data.fields
+        : Array.isArray(fieldsResponseData?.fields)
+          ? fieldsResponseData.fields
+          : Array.isArray(fieldsResponseData?.data)
+            ? fieldsResponseData.data
+            : [];
+
+      const instagramFields = fields.filter((f: any) => {
+        const name = (f?.name || f?.label || f?.caption || '').toString().toLowerCase();
+        return name.includes('instagram') || name.includes('ig');
+      });
 
       results.push({
         method: 'getCustomFields',
@@ -291,7 +297,8 @@ export async function GET(req: NextRequest) {
 
           console.log(`[test-detailed] Request body:`, JSON.stringify(requestBody, null, 2));
 
-          const customSearchResponse = await fetch(customSearchUrl, {
+          // У твоєму акаунті POST може давати 405, тому маємо fallback на GET з query params
+          let customSearchResponse = await fetch(customSearchUrl, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${manychatApiKey}`,
@@ -299,6 +306,15 @@ export async function GET(req: NextRequest) {
             },
             body: JSON.stringify(requestBody),
           });
+          if (customSearchResponse.status === 405) {
+            const getUrl = `${customSearchUrl}?field_id=${encodeURIComponent(String(fieldId))}&field_value=${encodeURIComponent(cleanInstagram)}`;
+            customSearchResponse = await fetch(getUrl, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${manychatApiKey}`,
+              },
+            });
+          }
 
           const customResponseText = await customSearchResponse.text();
           console.log(`[test-detailed] Response status: ${customSearchResponse.status}`);
