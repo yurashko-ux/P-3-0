@@ -146,6 +146,67 @@ function pickSubscriberId(findByNameResponse: any): string | null {
   return null;
 }
 
+async function fetchManychatCustomFields(apiKey: string): Promise<any | null> {
+  const url = 'https://api.manychat.com/fb/subscriber/getCustomFields';
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      console.warn('[backfill-instagram-avatars] ⚠️ getCustomFields failed:', { status: res.status, preview: text.slice(0, 200) });
+      return null;
+    }
+    return JSON.parse(text);
+  } catch (err) {
+    console.warn('[backfill-instagram-avatars] ⚠️ getCustomFields error:', err);
+    return null;
+  }
+}
+
+function buildCustomFieldCandidates(customFieldsResponse: any): string[] {
+  const base = [
+    // “магічні”/поширені ідентифікатори (у багатьох акаунтах працюють як field_id)
+    'ig_username',
+    'instagram_username',
+    'instagram',
+    'username',
+    'Instagram Username',
+    'Instagram',
+  ];
+
+  const out: string[] = [];
+  const push = (v: any) => {
+    if (v == null) return;
+    const s = String(v).trim();
+    if (!s) return;
+    if (out.includes(s)) return;
+    out.push(s);
+  };
+
+  for (const v of base) push(v);
+
+  // Якщо ManyChat повернув список полів — додаємо id полів, назва яких схожа на instagram/ig
+  const list = Array.isArray(customFieldsResponse?.data)
+    ? customFieldsResponse.data
+    : Array.isArray(customFieldsResponse?.fields)
+      ? customFieldsResponse.fields
+      : [];
+
+  for (const f of list) {
+    const name = (f?.name || f?.title || '').toString().toLowerCase();
+    const key = (f?.key || f?.field_id || '').toString().toLowerCase();
+    const looksIg = name.includes('instagram') || name.includes('ig') || key.includes('instagram') || key.includes('ig');
+    if (!looksIg) continue;
+    push(f?.id);
+    push(f?.field_id);
+    push(f?.key);
+  }
+
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -196,6 +257,14 @@ export async function POST(req: NextRequest) {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   console.log('[backfill-instagram-avatars] ▶️ Старт:', { onlyMissing, dryRun, limit, delayMs });
+
+  // Підготовка: пробуємо отримати custom fields (щоб краще знаходити subscriber по IG username)
+  const customFieldsResp = await fetchManychatCustomFields(apiKey);
+  const customFieldCandidates = buildCustomFieldCandidates(customFieldsResp);
+  console.log('[backfill-instagram-avatars] ℹ️ customFieldCandidates:', {
+    count: customFieldCandidates.length,
+    preview: customFieldCandidates.slice(0, 12),
+  });
 
   // 1) Беремо usernames з нашої бази Direct (це швидкий і контрольований backfill без getSubscribers).
   let clients: Array<{ instagramUsername: string }> = [];
@@ -274,6 +343,41 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       stats.errors += 1;
       if (errorDetails.length < 12) errorDetails.push({ step: 'findByName', status: 0, preview: `request_error: ${String(err).slice(0, 260)}`, username });
+    }
+
+    // Fallback: findByCustomField (часто IG username зберігається як custom field)
+    if (!subscriberId) {
+      const customSearchUrl = 'https://api.manychat.com/fb/subscriber/findByCustomField';
+      const valuesToTry = [username, `@${username}`];
+
+      for (const fieldId of customFieldCandidates) {
+        if (subscriberId) break;
+        for (const value of valuesToTry) {
+          if (subscriberId) break;
+          try {
+            const res = await fetch(customSearchUrl, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ field_id: fieldId, field_value: value }),
+            });
+            const text = await res.text();
+            if (!res.ok) {
+              // Для шумних 404/400 не спамимо errorDetails, але 401/429 ловимо
+              if (res.status === 401 || res.status === 403) { stoppedReason = 'manychat_unauthorized'; break; }
+              if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
+              continue;
+            }
+            const data = JSON.parse(text);
+            subscriberId = pickSubscriberId(data);
+          } catch {
+            // ignore
+          }
+        }
+        if (stoppedReason) break;
+      }
     }
 
     if (!subscriberId) {
