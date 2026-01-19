@@ -169,6 +169,30 @@ function pickSubscriberIdFromWebhookLogEntry(entry: Record<string, unknown>, use
   }
 }
 
+function normalizeSubscriberId(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = typeof raw === 'string' ? raw.trim() : typeof raw === 'number' ? String(raw) : '';
+  if (!s) return null;
+
+  // якщо в KV/логах прийшло як JSON-рядок {"value":"209..."} — пробуємо розпарсити
+  try {
+    if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('"') && s.endsWith('"'))) {
+      const parsed = JSON.parse(s) as any;
+      const cand = parsed?.value ?? parsed?.result ?? parsed?.data ?? parsed;
+      const candStr = typeof cand === 'string' ? cand.trim() : typeof cand === 'number' ? String(cand) : '';
+      if (candStr) {
+        const m = candStr.match(/\d+/);
+        if (m?.[0]) return m[0];
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const m = s.match(/\d+/);
+  return m?.[0] ?? null;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -211,11 +235,14 @@ export async function GET(req: NextRequest) {
     if (!url || !/^https?:\/\//i.test(url)) {
       const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
       let subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
+      const subscriberIdNormalized = normalizeSubscriberId(subscriberId);
       const apiKey = getManyChatApiKey();
       if (debug) {
         (debugInfo.subscriber as any).fromKv = subscriberId || null;
+        (debugInfo.subscriber as any).fromKvNormalized = subscriberIdNormalized;
         (debugInfo.manychat as any).apiKeyPresent = Boolean(apiKey);
       }
+      subscriberId = subscriberIdNormalized || subscriberId;
 
       // Якщо прямого мапінгу нема — пробуємо знайти subscriber_id у сирих webhook логах
       if (!subscriberId) {
@@ -229,7 +256,7 @@ export async function GET(req: NextRequest) {
             if (!entry) continue;
             const sid = pickSubscriberIdFromWebhookLogEntry(entry, normalized);
             if (sid) {
-              subscriberId = sid;
+              subscriberId = normalizeSubscriberId(sid) || sid;
               if (debug) (debugInfo.subscriber as any).fromLogs = subscriberId;
               try {
                 await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);

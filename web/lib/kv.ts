@@ -244,6 +244,48 @@ async function kvGetRaw(key: string) {
 
   if (!text) return null;
 
+  // Деякі бекенди повертають вкладений JSON як рядок (double-encoding).
+  // Напр.: "{\"value\":\"2092133604\"}" або "{\"result\":null}"
+  const unwrapJsonStringValue = (raw: string, depth = 2): string | null => {
+    let s = raw.trim();
+    if (!s) return null;
+    for (let i = 0; i < depth; i += 1) {
+      if (!((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('"') && s.endsWith('"')))) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(s) as any;
+        if (parsed == null) return null;
+        if (typeof parsed === 'string') {
+          s = parsed;
+          continue;
+        }
+        if (typeof parsed === 'number' && Number.isFinite(parsed)) return String(parsed);
+        if (typeof parsed === 'object') {
+          if ('result' in parsed && parsed.result === null) return null;
+          if ('value' in parsed && parsed.value === null) return null;
+          if ('data' in parsed && parsed.data === null) return null;
+          const cand = parsed.value ?? parsed.result ?? parsed.data ?? null;
+          if (typeof cand === 'string') return cand;
+          if (typeof cand === 'number' && Number.isFinite(cand)) return String(cand);
+          // якщо там ще один шар object/строки — продовжимо unwrap на наступній ітерації
+          s = (() => {
+            try {
+              return JSON.stringify(cand);
+            } catch {
+              return '';
+            }
+          })();
+          if (!s) return null;
+          continue;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
   try {
     const parsed = JSON.parse(text);
     if (typeof parsed === 'string') return parsed;
@@ -258,7 +300,10 @@ async function kvGetRaw(key: string) {
         (parsed as any).value ??
         (parsed as any).data ??
         null;
-      if (typeof candidate === 'string') return candidate;
+      if (typeof candidate === 'string') {
+        const unwrapped = unwrapJsonStringValue(candidate);
+        return unwrapped ?? candidate;
+      }
       if (typeof candidate === 'number' && Number.isFinite(candidate)) return String(candidate);
       if (candidate && typeof candidate === 'object') {
         const nested = (candidate as any).value ?? (candidate as any).result ?? null;
