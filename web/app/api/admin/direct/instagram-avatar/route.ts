@@ -159,6 +159,8 @@ export async function GET(req: NextRequest) {
   try {
     const usernameRaw = req.nextUrl.searchParams.get('username') || '';
     const debug = req.nextUrl.searchParams.get('debug') === '1';
+    const fetchRemote = req.nextUrl.searchParams.get('fetch') === '1';
+    const allowRemoteFetch = debug || fetchRemote;
     const normalized = normalizeInstagram(usernameRaw) || usernameRaw.trim().toLowerCase();
     if (!normalized) {
       return NextResponse.json({ ok: false, error: 'username missing' }, { status: 400 });
@@ -186,7 +188,8 @@ export async function GET(req: NextRequest) {
         }
       : {};
 
-    // Якщо в KV немає — пробуємо ліниво підтягнути з ManyChat по subscriber_id (якщо він уже збережений)
+    // Якщо в KV немає — (опційно) пробуємо підтягнути з ManyChat по subscriber_id.
+    // ВАЖЛИВО: не робимо це за замовчуванням, щоб не вбити ManyChat по RPS під час рендеру таблиці.
     if (!url || !/^https?:\/\//i.test(url)) {
       const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
       let subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
@@ -228,7 +231,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (subscriberId && apiKey) {
+      if (allowRemoteFetch && subscriberId && apiKey) {
         const apiUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
         console.log('[direct/instagram-avatar] 🖼️ KV miss → пробую ManyChat getInfo…', {
           username: normalized,
@@ -250,6 +253,11 @@ export async function GET(req: NextRequest) {
               ok: res.ok,
               preview: text.slice(0, 220),
             };
+          }
+          if (res.status === 429) {
+            // Не заспамлюємо ManyChat при RPS ліміті.
+            // У debug/fetch режимі повертаємо 404 + debug, щоб було видно причину.
+            console.warn('[direct/instagram-avatar] ⚠️ ManyChat rate limit (429)', { username: normalized });
           }
           if (!res.ok) {
             console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo не ок:', {

@@ -248,6 +248,11 @@ async function kvGetRaw(key: string) {
     const parsed = JSON.parse(text);
     if (typeof parsed === 'string') return parsed;
     if (parsed && typeof parsed === 'object') {
+      // Upstash/Vercel KV може повертати 200 з {"result":null} для відсутнього ключа.
+      // У такому випадку це miss, а не строкове значення.
+      if ('result' in (parsed as any) && (parsed as any).result === null) return null;
+      if ('value' in (parsed as any) && (parsed as any).value === null) return null;
+      if ('data' in (parsed as any) && (parsed as any).data === null) return null;
       const candidate =
         (parsed as any).result ??
         (parsed as any).value ??
