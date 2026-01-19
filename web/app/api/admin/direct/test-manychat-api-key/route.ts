@@ -176,11 +176,18 @@ export async function GET(req: NextRequest) {
       const responseText4 = await testResponse4.text();
       let parsed4: any = null;
       try { parsed4 = JSON.parse(responseText4); } catch {}
-      const subscriberId =
-        parsed4?.data?.subscriber_id ||
-        parsed4?.subscriber_id ||
-        parsed4?.subscriber?.id ||
+      const pickId = (obj: any): any =>
+        obj?.data?.subscriber_id ||
+        obj?.data?.id ||
+        obj?.subscriber_id ||
+        obj?.subscriberId ||
+        obj?.subscriber?.id ||
+        obj?.subscriber?.subscriber_id ||
         null;
+      let subscriberId = pickId(parsed4);
+      if (!subscriberId && Array.isArray(parsed4?.data) && parsed4.data.length > 0) {
+        subscriberId = pickId(parsed4.data[0]);
+      }
       tests.push({
         url: testUrl4,
         method: 'GET',

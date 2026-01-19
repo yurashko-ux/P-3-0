@@ -118,6 +118,34 @@ function pickAvatarUrl(sub: any): string | null {
   }
 }
 
+function pickSubscriberId(findByNameResponse: any): string | null {
+  const d = findByNameResponse;
+  const direct =
+    d?.data?.subscriber_id ||
+    d?.data?.id ||
+    d?.subscriber_id ||
+    d?.subscriberId ||
+    d?.subscriber?.id ||
+    d?.subscriber?.subscriber_id ||
+    null;
+  if (direct != null) return String(direct);
+
+  // Часто ManyChat повертає data як масив
+  const arr = Array.isArray(d?.data) ? d.data : Array.isArray(d?.subscribers) ? d.subscribers : null;
+  if (Array.isArray(arr) && arr.length > 0) {
+    const first = arr[0];
+    const v =
+      first?.subscriber_id ||
+      first?.id ||
+      first?.subscriberId ||
+      first?.subscriber?.id ||
+      null;
+    if (v != null) return String(v);
+  }
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -161,6 +189,7 @@ export async function POST(req: NextRequest) {
 
   const errorDetails: Array<{ step: string; status: number; preview: string; username?: string; subscriberId?: string }> = [];
   let stoppedReason: string | null = null;
+  const samplesNotFound: Array<{ username: string; preview: string }> = [];
 
   const samples: Array<{ username: string; avatarUrl: string; action: string }> = [];
 
@@ -237,7 +266,10 @@ export async function POST(req: NextRequest) {
         if (res.status === 429) { stoppedReason = 'manychat_rate_limited'; break; }
       } else {
         const data = JSON.parse(text);
-        subscriberId = data?.data?.subscriber_id || data?.subscriber_id || data?.subscriber?.id || null;
+        subscriberId = pickSubscriberId(data);
+        if (!subscriberId && samplesNotFound.length < 8) {
+          samplesNotFound.push({ username, preview: text.slice(0, 500) });
+        }
       }
     } catch (err) {
       stats.errors += 1;
@@ -308,6 +340,7 @@ export async function POST(req: NextRequest) {
     samples,
     errorDetails,
     stoppedReason,
+    samplesNotFound,
   });
 }
 
