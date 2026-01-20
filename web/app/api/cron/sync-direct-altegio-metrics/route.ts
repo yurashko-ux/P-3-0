@@ -53,12 +53,13 @@ async function runSync(req: NextRequest) {
 
     try {
       const res = await fetchAltegioClientMetrics({ altegioClientId: client.altegioClientId });
-      if (!res.ok) {
-        if (res.error.toLowerCase().includes('not found')) {
+      if (res.ok === false) {
+        const errText = res.error || 'unknown_error';
+        if (errText.toLowerCase().includes('not found')) {
           fetchedNotFound++;
           continue;
         }
-        throw new Error(res.error);
+        throw new Error(errText);
       }
 
       const nextPhone = res.metrics.phone ? res.metrics.phone : null;
