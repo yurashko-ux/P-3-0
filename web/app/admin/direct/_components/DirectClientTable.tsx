@@ -1436,7 +1436,7 @@ export function DirectClientTable({
 
                               {showStatus ? (
                                 <span
-                                  className="inline-flex max-w-[120px] items-center rounded-full bg-base-200 px-2 py-0.5 text-[11px] font-normal leading-none text-gray-800"
+                                  className="inline-flex max-w-[120px] items-center rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-normal leading-none text-gray-900 border border-gray-300/60"
                                   title={statusNameRaw}
                                 >
                                   <span className="truncate">{statusNameRaw}</span>
