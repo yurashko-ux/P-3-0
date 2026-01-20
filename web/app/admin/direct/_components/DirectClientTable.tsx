@@ -524,11 +524,6 @@ export function DirectClientTable({
     return firstWord || firstPerson;
   };
 
-  const getStatusColor = (statusId: string) => {
-    const status = statuses.find((s) => s.id === statusId);
-    return status?.color || "#6b7280";
-  };
-
   const getFullName = (client: DirectClient) => {
     const isBadNamePart = (v?: string) => {
       if (!v) return true;
@@ -541,14 +536,6 @@ export function DirectClientTable({
     };
     const parts = [client.firstName, client.lastName].filter((p) => !isBadNamePart(p));
     return parts.length ? parts.join(" ") : "-";
-  };
-
-  const handleStatusChange = async (client: DirectClient, newStatusId: string) => {
-    await onClientUpdate(client.id, { statusId: newStatusId });
-  };
-
-  const handleFieldUpdate = async (client: DirectClient, field: keyof DirectClient, value: any) => {
-    await onClientUpdate(client.id, { [field]: value });
   };
 
   const clientsWithChatOverrides = useMemo(() => {
@@ -1195,32 +1182,6 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[180px]">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "statusId",
-                          sortBy === "statusId" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Статус {sortBy === "statusId" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold min-w-[200px]">
-                    <button
-                      className="hover:underline cursor-pointer"
-                      onClick={() =>
-                        onSortChange(
-                          "comment",
-                          sortBy === "comment" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Коментар {sortBy === "comment" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     Телефон
                   </th>
@@ -1230,7 +1191,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="text-center py-8 text-gray-500">
+                    <td colSpan={12} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -2108,33 +2069,6 @@ export function DirectClientTable({
                             </span>
                           );
                         })()}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[180px]">
-                        <select
-                          className="select select-xs select-bordered w-full min-w-[160px]"
-                          value={client.statusId}
-                          onChange={(e) => handleStatusChange(client, e.target.value)}
-                          style={{ 
-                            borderColor: getStatusColor(client.statusId),
-                            backgroundColor: getStatusColor(client.statusId) + "20"
-                          }}
-                        >
-                          {statuses.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs min-w-[200px]">
-                        <input
-                          type="text"
-                          className="input input-xs input-bordered w-full min-w-[180px]"
-                          placeholder="Коментар..."
-                          value={client.comment || ""}
-                          onChange={(e) => handleFieldUpdate(client, "comment", e.target.value || undefined)}
-                          title={client.comment || "Коментар..."}
-                        />
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.phone ? (
