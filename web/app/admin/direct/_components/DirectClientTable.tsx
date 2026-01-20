@@ -1493,12 +1493,18 @@ export function DirectClientTable({
                           return (
                             <div className="flex items-center gap-2">
                               <button
-                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
+                                className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
                                 title={needs ? 'Є нові повідомлення — відкрити історію' : 'Відкрити історію повідомлень'}
                                 type="button"
                               >
                                 {total}
+                                {needs ? (
+                                  <span
+                                    className="absolute -top-[2px] -right-[2px] w-[8px] h-[8px] rounded-full bg-red-600 border-2 border-white"
+                                    title="Є нові вхідні повідомлення"
+                                  />
+                                ) : null}
                               </button>
 
                               {showStatus ? (
