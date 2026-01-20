@@ -1418,16 +1418,15 @@ export function DirectClientTable({
                           const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
                           const showStatus = Boolean(statusNameRaw) && hasStatus;
 
-                          const countClass = needs
-                            ? 'bg-sky-200 text-sky-900'
-                            : hasStatus
-                              ? 'bg-gray-200 text-gray-900'
-                              : 'bg-transparent text-gray-700';
+                          // Фон лічильника НЕ залежить від статусу:
+                          // - сірий завжди
+                          // - голубий тільки якщо зʼявились нові
+                          const countClass = needs ? 'bg-sky-200 text-sky-900' : 'bg-gray-200 text-gray-900';
 
                           return (
-                            <div className="flex flex-col items-start gap-1">
+                            <div className="flex items-center gap-2">
                               <button
-                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 font-semibold tabular-nums hover:opacity-80 transition-opacity ${countClass}`}
+                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
                                 title={needs ? 'Є нові повідомлення — відкрити історію' : 'Відкрити історію повідомлень'}
                                 type="button"
@@ -1437,7 +1436,7 @@ export function DirectClientTable({
 
                               {showStatus ? (
                                 <span
-                                  className="inline-flex max-w-[120px] items-center rounded-full bg-base-200 px-2 py-0.5 text-[11px] leading-none text-gray-800"
+                                  className="inline-flex max-w-[120px] items-center rounded-full bg-base-200 px-2 py-0.5 text-[11px] font-normal leading-none text-gray-800"
                                   title={statusNameRaw}
                                 >
                                   <span className="truncate">{statusNameRaw}</span>
