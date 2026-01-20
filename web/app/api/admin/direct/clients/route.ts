@@ -778,10 +778,43 @@ export async function GET(req: NextRequest) {
         return clientsWithStates;
       }
     })();
+
+    // Додаємо похідне поле: daysSinceLastVisit (по днях Europe/Kyiv).
+    // UI показує лише число днів.
+    const clientsWithDaysSinceLastVisit = (() => {
+      try {
+        const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+        const toDayIndex = (day: string): number => {
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+          if (!m) return NaN;
+          const y = Number(m[1]);
+          const mo = Number(m[2]);
+          const d = Number(m[3]);
+          if (!y || !mo || !d) return NaN;
+          return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
+        };
+        const todayIdx = toDayIndex(todayKyivDay);
+        if (!Number.isFinite(todayIdx)) return clientsWithChatMeta;
+
+        return clientsWithChatMeta.map((c) => {
+          const iso = ((c as any).lastVisitAt || '').toString().trim();
+          if (!iso) return { ...c, daysSinceLastVisit: undefined };
+          const day = kyivDayFromISO(iso);
+          const idx = toDayIndex(day);
+          if (!Number.isFinite(idx)) return { ...c, daysSinceLastVisit: undefined };
+          const diff = todayIdx - idx;
+          const daysSinceLastVisit = diff < 0 ? 0 : diff;
+          return { ...c, daysSinceLastVisit };
+        });
+      } catch (err) {
+        console.warn('[direct/clients] ⚠️ Не вдалося порахувати daysSinceLastVisit (не критично):', err);
+        return clientsWithChatMeta;
+      }
+    })();
     
     const response = { 
       ok: true, 
-      clients: clientsWithChatMeta, 
+      clients: clientsWithDaysSinceLastVisit, 
       debug: { 
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

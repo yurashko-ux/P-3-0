@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { fetchAltegioClientMetrics } from '@/lib/altegio/metrics';
+import { fetchAltegioLastVisitMap } from '@/lib/altegio/last-visit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,12 +36,37 @@ async function runSync(req: NextRequest) {
   const allClients = await getAllDirectClients();
   const targets = allClients.filter((c) => typeof c.altegioClientId === 'number' && (c.altegioClientId || 0) > 0);
 
+  // Підтягуємо дати останніх візитів з Altegio ОДНИМ проходом (clients/search) — щоб не робити 300+ запитів.
+  // ВАЖЛИВО: беремо last_visit_date (має відповідати “успішному візиту” у Altegio).
+  let lastVisitMap: Map<number, string> | null = null;
+  try {
+    const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+    const companyId = parseInt(companyIdStr, 10);
+    if (!companyId || Number.isNaN(companyId)) {
+      console.warn('[cron/sync-direct-altegio-metrics] ⚠️ ALTEGIO_COMPANY_ID не налаштовано — пропускаємо lastVisitAt');
+      lastVisitMap = null;
+    } else {
+      const lvPages = Math.max(1, Math.min(500, Number(req.nextUrl.searchParams.get('lvPages') || '60') || 60));
+      const lvPageSize = Math.max(10, Math.min(200, Number(req.nextUrl.searchParams.get('lvPageSize') || '100') || 100));
+      lastVisitMap = await fetchAltegioLastVisitMap({
+        companyId,
+        pageSize: lvPageSize,
+        maxPages: lvPages,
+        delayMs: 150,
+      });
+    }
+  } catch (err) {
+    console.warn('[cron/sync-direct-altegio-metrics] ⚠️ Не вдалося завантажити lastVisitMap (не критично):', err);
+    lastVisitMap = null;
+  }
+
   let processed = 0;
   let updated = 0;
   let skippedNoAltegioId = allClients.length - targets.length;
   let skippedNoChange = 0;
   let fetchedNotFound = 0;
   let errors = 0;
+  let lastVisitUpdated = 0;
 
   const samples: Array<{ directClientId: string; altegioClientId: number; action: string; changedKeys?: string[] }> = [];
   const errorDetails: Array<{ directClientId: string; altegioClientId: number; error: string }> = [];
@@ -82,6 +108,23 @@ async function runSync(req: NextRequest) {
         changedKeys.push('spent');
       }
 
+      // lastVisitAt: оновлюємо, якщо Altegio дав last_visit_date для цього altegioClientId.
+      // Не “затираємо” на null, якщо ключ не знайдений (щоб не втрачати дані при часткових вибірках).
+      try {
+        if (lastVisitMap && lastVisitMap.size > 0) {
+          const lv = lastVisitMap.get(client.altegioClientId);
+          if (lv) {
+            const current = (client as any).lastVisitAt ? String((client as any).lastVisitAt) : '';
+            const currentTs = current ? new Date(current).getTime() : NaN;
+            const nextTs = new Date(lv).getTime();
+            if (Number.isFinite(nextTs) && (!Number.isFinite(currentTs) || currentTs !== nextTs)) {
+              updates.lastVisitAt = new Date(nextTs).toISOString();
+              changedKeys.push('lastVisitAt');
+            }
+          }
+        }
+      } catch {}
+
       if (changedKeys.length === 0) {
         skippedNoChange++;
         continue;
@@ -102,6 +145,7 @@ async function runSync(req: NextRequest) {
       );
 
       updated++;
+      if (changedKeys.includes('lastVisitAt')) lastVisitUpdated++;
       if (samples.length < 20) {
         samples.push({
           directClientId: client.id,
@@ -136,6 +180,8 @@ async function runSync(req: NextRequest) {
     skippedNoChange,
     fetchedNotFound,
     errors,
+    lastVisitMapSize: lastVisitMap?.size || 0,
+    lastVisitUpdated,
     ms,
   });
 
@@ -150,6 +196,8 @@ async function runSync(req: NextRequest) {
       skippedNoChange,
       fetchedNotFound,
       errors,
+      lastVisitMapSize: lastVisitMap?.size || 0,
+      lastVisitUpdated,
       ms,
     },
     samples,

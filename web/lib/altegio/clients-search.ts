@@ -21,7 +21,8 @@ export async function getClientsPaginated(
     const body = JSON.stringify({
       page,
       page_size: pageSize,
-      fields: ['id', 'name', 'phone', 'email', 'custom_fields', 'card_number', 'note'],
+      // ВАЖЛИВО: last_visit_date потрібен для “Днів з останнього візиту”
+      fields: ['id', 'name', 'phone', 'email', 'custom_fields', 'card_number', 'note', 'last_visit_date'],
       order_by: 'last_visit_date',
       order_by_direction: 'desc',
     });

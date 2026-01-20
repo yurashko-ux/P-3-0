@@ -11,6 +11,8 @@ export type DirectClient = {
   phone?: string; // Телефон з Altegio (зберігаємо як приходить з API)
   spent?: number; // Загальна сума витрат клієнта (з Altegio API)
   visits?: number; // Кількість візитів клієнта (з Altegio API)
+  lastVisitAt?: string; // ISO date - дата останнього успішного візиту (Altegio last_visit_date)
+  daysSinceLastVisit?: number; // Днів з останнього візиту (рахується в API для UI)
   source: 'instagram' | 'tiktok' | 'other'; // Джерело реклами
   state?: 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message'; // Системний стан: Лід, Клієнт, Консультація, Запис на консультацію, Клієнт не з'явився, Перенос дати запису на консультацію, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого, Повідомлення
   firstContactDate: string; // ISO date - дата першого контакту

@@ -1105,6 +1105,8 @@ export function DirectClientTable({
                 <col style={{ width: 160 }} />
                 {/* Продажі */}
                 <col style={{ width: 92 }} />
+                {/* Днів з останнього візиту */}
+                <col style={{ width: 56 }} />
                 {/* Переписка */}
                 <col style={{ width: 120 }} />
                 {/* Послуга */}
@@ -1185,6 +1187,12 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
+                  <th
+                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[56px] min-w-[56px] max-w-[56px] text-center"
+                    title="Днів з останнього візиту (Altegio)"
+                  >
+                    Днів
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
                     Переписка
                   </th>
@@ -1249,7 +1257,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="text-center py-8 text-gray-500">
+                    <td colSpan={13} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1485,7 +1493,13 @@ export function DirectClientTable({
                           </span>
                         </span>
                       </td>
-                      {/* Переписка (після “Продажі”): число повідомлень (клік → історія) + текст-статус */}
+                      {/* Днів з останнього візиту (після “Продажі”) */}
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[56px] min-w-[56px] max-w-[56px] text-center tabular-nums">
+                        {typeof (client as any).daysSinceLastVisit === 'number'
+                          ? (client as any).daysSinceLastVisit
+                          : '-'}
+                      </td>
+                      {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
                           {(() => {
                           const total =
