@@ -1051,6 +1051,12 @@ export function DirectClientTable({
                 <col style={{ width: 44 }} />
                 {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
                 <col style={{ width: 160 }} />
+                {/* Продажі */}
+                <col style={{ width: 92 }} />
+                {/* Переписка */}
+                <col style={{ width: 120 }} />
+                {/* Послуга */}
+                <col style={{ width: 96 }} />
               </colgroup>
               <thead>
                 <tr className="bg-base-200">
@@ -1130,7 +1136,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
                     Переписка
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-center w-[96px] min-w-[96px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-right w-[96px] min-w-[96px]">
                     <button
                       className="hover:underline cursor-pointer w-full text-center"
                       onClick={() =>
@@ -1315,27 +1321,27 @@ export function DirectClientTable({
                                 <>
                                   <div className="flex items-center gap-1 min-w-0">
                                     {typeBadge}
-                                    {isNormalInstagram ? (
-                                      <a
-                                        href={`https://instagram.com/${username}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                                  {isNormalInstagram ? (
+                                    <a
+                                      href={`https://instagram.com/${username}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
                                         className="link link-primary flex items-center gap-1 min-w-0"
-                                        title={`https://instagram.com/${username}`}
-                                      >
+                                      title={`https://instagram.com/${username}`}
+                                    >
                                         <span className="truncate min-w-0">{username}</span>
                                         {visitsSuffix ? (
                                           <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                         ) : null}
-                                      </a>
-                                    ) : (
+                                    </a>
+                                  ) : (
                                       <span className="text-gray-400 flex items-center gap-1 min-w-0" title={username || ""}>
                                         <span className="truncate min-w-0">—</span>
                                         {visitsSuffix ? (
                                           <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                         ) : null}
-                                      </span>
-                                    )}
+                                    </span>
+                                  )}
                                   </div>
                                   {invalidIgLabel && (
                                     <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">
@@ -1386,27 +1392,27 @@ export function DirectClientTable({
                               <>
                                 <div className="flex items-center gap-1 min-w-0">
                                   {typeBadge}
-                                  {isNormalInstagram ? (
-                                    <a
-                                      href={`https://instagram.com/${username}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
+                                {isNormalInstagram ? (
+                                  <a
+                                    href={`https://instagram.com/${username}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                       className="link link-primary flex items-center gap-1 min-w-0"
-                                      title={`https://instagram.com/${username}`}
-                                    >
+                                    title={`https://instagram.com/${username}`}
+                                  >
                                       <span className="truncate min-w-0">{nameOneLine}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
-                                    </a>
-                                  ) : (
+                                  </a>
+                                ) : (
                                     <span className="flex items-center gap-1 min-w-0" title={nameOneLine}>
                                       <span className="truncate min-w-0">{nameOneLine}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
-                                    </span>
-                                  )}
+                                  </span>
+                                )}
                                 </div>
                                 {invalidIgLabel && (
                                   <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">
@@ -1429,7 +1435,7 @@ export function DirectClientTable({
                       </td>
                       {/* Переписка (після “Продажі”): число повідомлень (клік → історія) + текст-статус */}
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
-                        {(() => {
+                          {(() => {
                           const total =
                             typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
                           const needs = Boolean((client as any).chatNeedsAttention);
@@ -1439,7 +1445,7 @@ export function DirectClientTable({
                           const showStatus = Boolean(statusNameRaw) && hasStatus;
                           const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
                           const badgeCfg = getChatBadgeStyle(badgeKey);
-
+                            
                           // Фон лічильника НЕ залежить від статусу:
                           // - сірий завжди
                           // - голубий тільки якщо зʼявились нові
@@ -1451,14 +1457,14 @@ export function DirectClientTable({
                           const countClass =
                             needs || !hasStatus ? 'bg-[#2AABEE] text-white' : 'bg-gray-200 text-gray-900';
 
-                          return (
+                              return (
                             <div className="flex items-center gap-2">
-                              <button
+                                <button
                                 className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
                                 title={needs ? 'Є нові повідомлення — відкрити історію' : 'Відкрити історію повідомлень'}
                                 type="button"
-                              >
+                                >
                                 {total}
                                 {needs ? (
                                   <span
@@ -1466,7 +1472,7 @@ export function DirectClientTable({
                                     title="Є нові вхідні повідомлення"
                                   />
                                 ) : null}
-                              </button>
+                                </button>
 
                               {showStatus ? (
                                 <span
@@ -1484,7 +1490,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-center w-[96px] min-w-[96px]">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-right w-[96px] min-w-[96px]">
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -1514,9 +1520,19 @@ export function DirectClientTable({
                           const paidKyivDay = paidDate && !isNaN(paidDate.getTime()) ? kyivDayFmt.format(paidDate) : null;
                           const paidIsActive = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
 
-                          // “Червона дата” = ❌ (attendance=false) у відповідній колонці дати
-                          const consultNoShow = client.consultationAttended === false;
-                          const paidNoShow = client.paidServiceAttended === false;
+                          // “Червона дата” (проблема) = дата ≤ сьогодні (Kyiv), не скасовано, і attended !== true
+                          const consultProblem = Boolean(
+                            consultKyivDay &&
+                              consultKyivDay <= todayKyivDay &&
+                              !client.consultationCancelled &&
+                              client.consultationAttended !== true
+                          );
+                          const paidProblem = Boolean(
+                            paidKyivDay &&
+                              paidKyivDay <= todayKyivDay &&
+                              !client.paidServiceCancelled &&
+                              client.paidServiceAttended !== true
+                          );
 
                           // “Перезапис” — використовуємо існуючу логіку з колонки дат
                           const hasPaidReschedule = Boolean((client as any).paidServiceIsRebooking);
@@ -1524,31 +1540,31 @@ export function DirectClientTable({
                             (typeof client.consultationAttemptNumber === 'number' && client.consultationAttemptNumber >= 2) ||
                             (Array.isArray(client.last5States) &&
                               client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
-
+                            
                           // 1) Override: коли дата стала “червоною” — показуємо або 🔁 (перезапис), або ❗️ (немає перезапису).
                           // Пріоритет: платна послуга, потім консультація.
-                          if (paidNoShow && client.paidServiceDate) {
+                          if (paidProblem && client.paidServiceDate) {
                             const title = hasPaidReschedule ? 'Перезапис' : 'Немає перезапису';
                             return (
-                              <div className="flex items-center justify-center">
-                                <span title={title} className="text-[20px] leading-none">
+                              <div className="flex items-center justify-end">
+                                <span title={title} className="text-[24px] leading-none">
                                   {hasPaidReschedule ? '🔁' : '❗️'}
                                 </span>
                               </div>
                             );
                           }
 
-                          if (consultNoShow && client.consultationBookingDate) {
-                            const title = hasConsultReschedule ? 'Перезапис' : 'Немає перезапису';
+                          if (consultProblem && client.consultationBookingDate) {
+                            const title = hasConsultReschedule ? 'Перезапис' : 'Дата консультації не призначена';
                             return (
-                              <div className="flex items-center justify-center">
-                                <span title={title} className="text-[20px] leading-none">
+                              <div className="flex items-center justify-end">
+                                <span title={title} className="text-[24px] leading-none">
                                   {hasConsultReschedule ? '🔁' : '❗️'}
                                 </span>
                               </div>
                             );
-                          }
-
+                            }
+                            
                           // 2) Нормальний режим: максимум 3 іконки (актуальні послуги + статус)
                           const icons: Array<{ key: string; node: any }> = [];
 
@@ -1562,7 +1578,7 @@ export function DirectClientTable({
                                   title="Актуальна консультація"
                                   onClick={() => setStateHistoryClient(client)}
                                 >
-                                  <StateIcon state="consultation-booked" size={24} />
+                                  <StateIcon state="consultation-booked" size={28} />
                                 </button>
                               ),
                             });
@@ -1581,13 +1597,13 @@ export function DirectClientTable({
                                     title={serviceState === 'hair-extension' ? 'Нарощування волосся' : 'Інші послуги'}
                                     onClick={() => setStateHistoryClient(client)}
                                   >
-                                    <StateIcon state={serviceState} size={24} />
+                                  <StateIcon state={serviceState} size={28} />
                                   </button>
                                 ),
                               });
                             }
-                          }
-
+                            }
+                            
                           // 3) Статуси після консультації (тимчасові іконки)
                           const consultWas = client.consultationAttended === true;
                           const hasPaidAny = Boolean(client.paidServiceDate);
@@ -1595,7 +1611,7 @@ export function DirectClientTable({
                             icons.push({
                               key: 'no-sale',
                               node: (
-                                <span title="Немає продажі" className="text-[20px] leading-none">
+                                <span title="Немає продажі" className="text-[24px] leading-none">
                                   💸
                                 </span>
                               ),
@@ -1605,7 +1621,7 @@ export function DirectClientTable({
                             icons.push({
                               key: 'new-client',
                               node: (
-                                <span title="Новий клієнт" className="text-[20px] leading-none">
+                                <span title="Новий клієнт" className="text-[24px] leading-none">
                                   🆕
                                 </span>
                               ),
@@ -1615,15 +1631,15 @@ export function DirectClientTable({
                           const shown = icons.slice(0, 3);
                           if (shown.length === 0) return '';
                           return (
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center justify-end gap-1">
                               {shown.map((i) => (
                                 <span key={i.key} className="inline-flex items-center justify-center">
                                   {i.node}
                                 </span>
                               ))}
-                            </div>
-                          );
-                        })()}
+                                      </div>
+                            );
+                          })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (
