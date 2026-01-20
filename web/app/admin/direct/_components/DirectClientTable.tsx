@@ -1501,7 +1501,7 @@ export function DirectClientTable({
                                 {total}
                                 {needs ? (
                                   <span
-                                    className="absolute -top-[2px] -right-[2px] w-[8px] h-[8px] rounded-full bg-red-600 border-2 border-white"
+                                    className="absolute -top-[1px] -right-[1px] w-[4px] h-[4px] rounded-full bg-red-600"
                                     title="Є нові вхідні повідомлення"
                                   />
                                 ) : null}
