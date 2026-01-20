@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import type { DirectChatStatus, DirectClient, DirectClientChatStatusLog } from '@/lib/direct-types';
+import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 
 interface Message {
   receivedAt: string;
@@ -36,7 +37,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
   const [createMode, setCreateMode] = useState(false);
   const [newStatusName, setNewStatusName] = useState('');
-  const [newStatusColor, setNewStatusColor] = useState('#6b7280');
+  const [newStatusBadgeKey, setNewStatusBadgeKey] = useState<string>('badge_1');
 
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
@@ -172,7 +173,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       const res = await fetch('/api/admin/direct/chat-statuses', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, color: newStatusColor }),
+        body: JSON.stringify({ name, badgeKey: newStatusBadgeKey }),
       });
       const data = await res.json().catch(() => ({}));
       if (!data?.ok) {
@@ -181,7 +182,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       }
       setCreateMode(false);
       setNewStatusName('');
-      setNewStatusColor('#6b7280');
+      setNewStatusBadgeKey('badge_1');
       await loadChatPanel();
     } catch (err) {
       setChatStatusError(err instanceof Error ? err.message : String(err));
@@ -391,7 +392,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                 <div className="text-xs text-gray-600 mt-1">
                   Поточний: {currentStatus ? (
                     <span className="inline-flex items-center gap-2" title={currentStatus.name}>
-                      <span className="inline-block w-[10px] h-[10px] rounded-full" style={{ backgroundColor: currentStatus.color }} />
+                      <ChatBadgeIcon badgeKey={(currentStatus as any).badgeKey} size={16} />
                       <span className="truncate">{currentStatus.name}</span>
                     </span>
                   ) : (
@@ -437,17 +438,25 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                       placeholder="Напр.: Консультація уточнити"
                     />
                   </label>
-                  <label className="form-control w-full mb-2">
-                    <div className="label py-0">
-                      <span className="label-text text-xs">Колір</span>
+                  <div className="mb-2">
+                    <div className="text-xs mb-1">Бейдж</div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {CHAT_BADGE_KEYS.map((k) => {
+                        const isSelected = newStatusBadgeKey === k;
+                        return (
+                          <button
+                            key={k}
+                            type="button"
+                            className={`btn btn-xs ${isSelected ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setNewStatusBadgeKey(k)}
+                            title={`Обрати ${k}`}
+                          >
+                            <ChatBadgeIcon badgeKey={k} size={16} />
+                          </button>
+                        );
+                      })}
                     </div>
-                    <input
-                      type="color"
-                      className="w-full h-8 p-0 border rounded"
-                      value={newStatusColor}
-                      onChange={(e) => setNewStatusColor(e.target.value)}
-                    />
-                  </label>
+                  </div>
                   <button className="btn btn-xs btn-primary" onClick={createChatStatus} disabled={chatStatusLoading}>
                     Зберегти
                   </button>
@@ -479,7 +488,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                         disabled={chatStatusLoading}
                         title={s.name}
                       >
-                        <span className="inline-block w-[10px] h-[10px] rounded-full" style={{ backgroundColor: s.color }} />
+                        <ChatBadgeIcon badgeKey={(s as any).badgeKey} size={16} />
                         <span className="truncate">{s.name}</span>
                       </button>
                     );

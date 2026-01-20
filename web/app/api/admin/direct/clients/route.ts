@@ -700,7 +700,7 @@ export async function GET(req: NextRequest) {
     // Додаємо інфо для колонки "Переписка":
     // - messagesTotal: кількість повідомлень у DirectMessage (поки що це основні вхідні з ManyChat webhook)
     // - chatNeedsAttention: якщо є нові ВХІДНІ після (chatStatusCheckedAt ?? chatStatusSetAt)
-    // - chatStatusName/chatStatusColor: для tooltip/бейджа
+    // - chatStatusName/chatStatusBadgeKey: для tooltip/бейджа
     const clientsWithChatMeta = await (async () => {
       try {
         const ids = clientsWithStates.map((c) => c.id);
@@ -744,11 +744,11 @@ export async function GET(req: NextRequest) {
           statusIds.length > 0
             ? await prisma.directChatStatus.findMany({
                 where: { id: { in: statusIds } },
-                select: { id: true, name: true, color: true, isActive: true },
+                select: { id: true, name: true, badgeKey: true, isActive: true },
               })
             : [];
-        const statusMap = new Map<string, { name: string; color: string; isActive: boolean }>();
-        for (const s of statuses) statusMap.set(s.id, { name: s.name, color: s.color, isActive: s.isActive });
+        const statusMap = new Map<string, { name: string; badgeKey: string; isActive: boolean }>();
+        for (const s of statuses) statusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1', isActive: s.isActive });
 
         return clientsWithStates.map((c) => {
           const messagesTotal = totalMap.get(c.id) ?? 0;
@@ -770,7 +770,7 @@ export async function GET(req: NextRequest) {
             messagesTotal,
             chatNeedsAttention,
             chatStatusName: st?.name || undefined,
-            chatStatusColor: st?.color || undefined,
+            chatStatusBadgeKey: st?.badgeKey || undefined,
           };
         });
       } catch (err) {

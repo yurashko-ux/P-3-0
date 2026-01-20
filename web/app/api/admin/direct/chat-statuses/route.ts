@@ -10,6 +10,8 @@ export const dynamic = 'force-dynamic';
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
+const ALLOWED_BADGE_KEYS = Array.from({ length: 10 }, (_, i) => `badge_${i + 1}`);
+
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
@@ -52,18 +54,24 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const name = (body?.name || '').toString().trim();
-    const color = (body?.color || '').toString().trim() || '#6b7280';
+    const badgeKey = (body?.badgeKey || '').toString().trim() || 'badge_1';
     const orderRaw = body?.order;
     const order = typeof orderRaw === 'number' ? orderRaw : Number(orderRaw);
 
     if (!name) {
       return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 });
     }
+    if (!ALLOWED_BADGE_KEYS.includes(badgeKey)) {
+      return NextResponse.json(
+        { ok: false, error: `badgeKey is invalid. Allowed: ${ALLOWED_BADGE_KEYS.join(', ')}` },
+        { status: 400 }
+      );
+    }
 
     const created = await prisma.directChatStatus.create({
       data: {
         name,
-        color,
+        badgeKey,
         order: Number.isFinite(order) ? order : 0,
         isActive: true,
       },
@@ -72,7 +80,7 @@ export async function POST(req: NextRequest) {
     console.log('[direct/chat-statuses] ✅ Created chat status:', {
       id: created.id,
       name: created.name,
-      color: created.color,
+      badgeKey: (created as any).badgeKey,
       order: created.order,
     });
 

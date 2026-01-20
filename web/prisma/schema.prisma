@@ -119,6 +119,7 @@ model DirectChatStatus {
   id        String   @id @default(uuid())
   name      String   // Довга назва (в UI буде tooltip)
   color     String   @default("#6b7280") // Колір бейджа (hex)
+  badgeKey  String   @default("badge_1") // Вибір бейджа з фіксованого набору (10 шт)
   order     Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

@@ -12,6 +12,7 @@ import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
+import { ChatBadgeIcon, ChatCloudIcon } from "./ChatBadgeIcon";
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -1065,6 +1066,9 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
+                    Переписка
+                  </th>
                   <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-center w-[176px] min-w-[176px]">
                     <button
                       className="hover:underline cursor-pointer w-full text-center"
@@ -1077,9 +1081,6 @@ export function DirectClientTable({
                     >
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
-                  </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
-                    Переписка
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <button
@@ -1374,6 +1375,46 @@ export function DirectClientTable({
                           </span>
                         </span>
                       </td>
+                      {/* Переписка (після “Продажі”): зелена хмарка + бейдж статусу + індикатор (сіра/червона) + лічильник */}
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
+                        {(() => {
+                          const total =
+                            typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
+                          const needs = Boolean((client as any).chatNeedsAttention);
+                          const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
+                          const name = ((client as any).chatStatusName || '').toString().trim() || 'Без статусу';
+
+                          return (
+                            <div className="flex items-center gap-2">
+                              <button
+                                className="hover:opacity-80 transition-opacity"
+                                onClick={() => setMessagesHistoryClient(client)}
+                                title="Відкрити історію повідомлень"
+                                type="button"
+                              >
+                                <ChatCloudIcon size={18} />
+                              </button>
+
+                              {badgeKey ? <ChatBadgeIcon badgeKey={badgeKey} size={16} title={name} /> : null}
+
+                              <span
+                                className={`inline-block w-[8px] h-[8px] rounded-full ${
+                                  needs ? 'bg-red-600' : 'bg-gray-400'
+                                }`}
+                                title={
+                                  needs
+                                    ? 'Є нові вхідні повідомлення — потрібна увага'
+                                    : 'Немає нових вхідних повідомлень'
+                                }
+                              />
+
+                              <span className="tabular-nums" title={`Повідомлень: ${total}`}>
+                                {total}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-right w-[176px] min-w-[176px]">
                         <div className="flex w-full items-center justify-end gap-1">
                           {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
@@ -1651,47 +1692,6 @@ export function DirectClientTable({
                             );
                           })()}
                         </div>
-                      </td>
-                      {/* Нова колонка: Переписка (статус + лічильник + індикатор нових вхідних) */}
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
-                        {(() => {
-                          const total = typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
-                          const needs = Boolean((client as any).chatNeedsAttention);
-                          const color = ((client as any).chatStatusColor || '').toString().trim() || '#9ca3af';
-                          const name = ((client as any).chatStatusName || '').toString().trim() || 'Без статусу';
-
-                          if (!total) {
-                            return (
-                              <button
-                                className="text-gray-400 hover:underline"
-                                onClick={() => setMessagesHistoryClient(client)}
-                                title="Відкрити історію повідомлень"
-                              >
-                                —
-                              </button>
-                            );
-                          }
-
-                          return (
-                            <button
-                              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-                              onClick={() => setMessagesHistoryClient(client)}
-                              title={`${name}\nПовідомлень: ${total}\nНатисніть, щоб відкрити історію`}
-                            >
-                              <span
-                                className="inline-block w-[10px] h-[10px] rounded-full"
-                                style={{ backgroundColor: color }}
-                              />
-                              {needs ? (
-                                <span
-                                  className="inline-block w-[8px] h-[8px] rounded-full bg-red-600"
-                                  title="Є нові вхідні повідомлення — потрібна увага"
-                                />
-                              ) : null}
-                              <span className="tabular-nums">{total}</span>
-                            </button>
-                          );
-                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (

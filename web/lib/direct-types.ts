@@ -50,7 +50,7 @@ export type DirectClient = {
   chatStatusSetAt?: string; // ISO - коли статус реально змінився
   chatStatusCheckedAt?: string; // ISO - коли адмін підтвердив актуальність
   chatStatusName?: string; // Назва статусу (для tooltip у таблиці)
-  chatStatusColor?: string; // Колір статусу (hex) для бейджа-крапки
+  chatStatusBadgeKey?: string; // badgeKey (1..10) для відображення бейджа
   messagesTotal?: number; // Кількість повідомлень (з DirectMessage)
   chatNeedsAttention?: boolean; // Чи є нові вхідні після останнього підтвердження
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
@@ -64,6 +64,7 @@ export type DirectChatStatus = {
   id: string;
   name: string;
   color: string;
+  badgeKey: string;
   order: number;
   isActive: boolean;
   createdAt: string;

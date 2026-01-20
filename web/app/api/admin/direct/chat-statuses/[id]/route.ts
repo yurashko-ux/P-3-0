@@ -10,6 +10,8 @@ export const dynamic = 'force-dynamic';
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
+const ALLOWED_BADGE_KEYS = Array.from({ length: 10 }, (_, i) => `badge_${i + 1}`);
+
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
@@ -38,7 +40,16 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
     const data: any = {};
 
     if (body?.name !== undefined) data.name = (body.name || '').toString().trim();
-    if (body?.color !== undefined) data.color = (body.color || '').toString().trim() || '#6b7280';
+    if (body?.badgeKey !== undefined) {
+      const badgeKey = (body.badgeKey || '').toString().trim();
+      if (!ALLOWED_BADGE_KEYS.includes(badgeKey)) {
+        return NextResponse.json(
+          { ok: false, error: `badgeKey is invalid. Allowed: ${ALLOWED_BADGE_KEYS.join(', ')}` },
+          { status: 400 }
+        );
+      }
+      data.badgeKey = badgeKey;
+    }
     if (body?.order !== undefined) {
       const n = typeof body.order === 'number' ? body.order : Number(body.order);
       if (Number.isFinite(n)) data.order = n;
