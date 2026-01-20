@@ -103,12 +103,40 @@ export async function GET(req: NextRequest) {
     const filtered = allGroups.filter((g) => g.groupType === type);
 
     const rows = filtered.map((g) => {
+      const recordCreatedAt = (() => {
+        try {
+          const events = Array.isArray((g as any)?.events) ? (g as any).events : [];
+          const toTs = (e: any) => new Date(e?.receivedAt || e?.datetime || 0).getTime();
+
+          let bestCreate = Infinity;
+          for (const e of events) {
+            const status = (e?.status || '').toString();
+            if (status !== 'create') continue;
+            const ts = toTs(e);
+            if (isFinite(ts) && ts < bestCreate) bestCreate = ts;
+          }
+          if (bestCreate !== Infinity) return new Date(bestCreate).toISOString();
+
+          let bestAny = Infinity;
+          for (const e of events) {
+            const ts = toTs(e);
+            if (isFinite(ts) && ts < bestAny) bestAny = ts;
+          }
+          if (bestAny !== Infinity) return new Date(bestAny).toISOString();
+
+          return null;
+        } catch {
+          return null;
+        }
+      })();
+
       const ui = attendanceUi(g.attendance, g.attendanceStatus);
       const totalCost = computeServicesTotalCostUAH(g.services || []);
       return {
         kyivDay: g.kyivDay,
         type: g.groupType,
         datetime: g.datetime,
+        createdAt: recordCreatedAt,
         receivedAt: g.receivedAt,
         attendance: g.attendance,
         attendanceStatus: g.attendanceStatus,

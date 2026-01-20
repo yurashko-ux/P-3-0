@@ -317,6 +317,35 @@ export async function GET(req: NextRequest) {
               return null;
             };
 
+            const pickRecordCreatedAtISOFromGroup = (group: any): string | null => {
+              try {
+                const events = Array.isArray(group?.events) ? group.events : [];
+                const toTs = (e: any) => new Date(e?.receivedAt || e?.datetime || 0).getTime();
+
+                // 1) Найперша подія зі статусом create
+                let bestCreate = Infinity;
+                for (const e of events) {
+                  const status = (e?.status || '').toString();
+                  if (status !== 'create') continue;
+                  const ts = toTs(e);
+                  if (isFinite(ts) && ts < bestCreate) bestCreate = ts;
+                }
+                if (bestCreate !== Infinity) return new Date(bestCreate).toISOString();
+
+                // 2) Фолбек: найперша подія будь-якого статусу
+                let bestAny = Infinity;
+                for (const e of events) {
+                  const ts = toTs(e);
+                  if (isFinite(ts) && ts < bestAny) bestAny = ts;
+                }
+                if (bestAny !== Infinity) return new Date(bestAny).toISOString();
+
+                return null;
+              } catch {
+                return null;
+              }
+            };
+
             // ВАЖЛИВО (оновлене правило): "Майстер" — ТІЛЬКИ для платних записів.
             // Якщо в клієнта немає paidServiceDate — в UI робимо колонку порожньою, навіть якщо в БД щось залишилось.
             if (!c.paidServiceDate) {
@@ -329,6 +358,12 @@ export async function GET(req: NextRequest) {
             } else {
               const paidGroup = pickClosestGroup('paid', c.paidServiceDate);
               const chosen = paidGroup;
+              const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(chosen);
+              if (paidRecordCreatedAt) {
+                c = { ...c, paidServiceRecordCreatedAt: paidRecordCreatedAt };
+              } else {
+                c = { ...c, paidServiceRecordCreatedAt: undefined };
+              }
               if (chosen) {
                 const pair = pickNonAdminStaffPairFromGroup(chosen as any, 'first');
                 const primary = pair[0] || null;
@@ -396,6 +431,19 @@ export async function GET(req: NextRequest) {
               if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
               return null;
             };
+
+            // Дата створення запису (для tooltip у таблиці): беремо earliest "create" з KV-івентів по цій даті.
+            try {
+              const chosenConsult = pickClosestConsultGroup();
+              const consultRecordCreatedAt = pickRecordCreatedAtISOFromGroup(chosenConsult);
+              if (consultRecordCreatedAt) {
+                c = { ...c, consultationRecordCreatedAt: consultRecordCreatedAt };
+              } else {
+                c = { ...c, consultationRecordCreatedAt: undefined };
+              }
+            } catch {
+              c = { ...c, consultationRecordCreatedAt: undefined };
+            }
 
             const cg = pickClosestConsultGroup();
             if (cg) {

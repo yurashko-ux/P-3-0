@@ -1699,8 +1699,10 @@ export function DirectClientTable({
                               const formattedDateStr = formatDate(dateStr);
                               const isOnline = client.isOnlineConsultation || false;
                               
-                              // Форматуємо дату створення запису для tooltip
-                              const createdAtDate = client.updatedAt ? new Date(client.updatedAt) : null;
+                              // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
+                              const createdAtDate = client.consultationRecordCreatedAt
+                                ? new Date(client.consultationRecordCreatedAt)
+                                : null;
                               const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
                                 ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
                                 : null;
@@ -1829,8 +1831,10 @@ export function DirectClientTable({
                             const isPastOrToday = paidKyivDay <= todayKyivDay;
                             const dateStr = formatDate(client.paidServiceDate);
                             
-                            // Форматуємо дату створення запису для tooltip
-                            const createdAtDate = client.updatedAt ? new Date(client.updatedAt) : null;
+                            // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
+                            const createdAtDate = client.paidServiceRecordCreatedAt
+                              ? new Date(client.paidServiceRecordCreatedAt)
+                              : null;
                             const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
                               ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
                               : null;

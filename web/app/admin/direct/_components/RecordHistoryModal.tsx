@@ -11,6 +11,7 @@ type RecordHistoryRow = {
   kyivDay: string;
   type: RecordHistoryType;
   datetime: string | null;
+  createdAt: string | null;
   receivedAt: string | null;
   attendance: number | null; // 1 | 0 | -1 | -2 | null
   attendanceStatus: string;
@@ -182,6 +183,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                 <thead>
                   <tr>
                     <th className="text-xs">Дата візиту</th>
+                    <th className="text-xs">Створено</th>
                     <th className="text-xs">Статус</th>
                     <th className="text-xs">Майстри</th>
                     <th className="text-xs">Послуги</th>
@@ -204,6 +206,9 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                       <>
                         <tr key={key} className="hover">
                           <td className="text-xs whitespace-nowrap">{formatDateTime(r.datetime)}</td>
+                          <td className="text-xs whitespace-nowrap" title="Дата створення запису (за webhooks/records log)">
+                            {formatDateTime(r.createdAt)}
+                          </td>
                           <td className="text-xs whitespace-nowrap" title={r.attendanceStatus}>
                             <span className="flex items-center gap-2">
                               {shouldShowAttemptInsteadOfHourglass ? (
@@ -251,7 +256,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                         </tr>
                         {isExpanded && (
                           <tr key={`${key}-expanded`}>
-                            <td colSpan={type === 'paid' ? 7 : 6} className="bg-base-100">
+                            <td colSpan={type === 'paid' ? 8 : 7} className="bg-base-100">
                               <div className="p-2">
                                 <div className="text-xs text-gray-600 mb-2">
                                   Raw події (останні/перші 50)
