@@ -28,6 +28,7 @@ export function getChatBadgeStyle(badgeKey: string | null | undefined) {
 
 export function ChatBadgeIcon({ badgeKey, title, size = 16 }: { badgeKey: string | null | undefined; title?: string; size?: number }) {
   const cfg = getChatBadgeStyle(badgeKey);
+  const keyLabel = (badgeKey || '').toString().trim() || 'badge_1';
   return (
     <span
       className="inline-flex items-center justify-center rounded-full font-bold leading-none shrink-0"
@@ -39,7 +40,7 @@ export function ChatBadgeIcon({ badgeKey, title, size = 16 }: { badgeKey: string
         color: cfg.fg,
         fontSize: Math.max(9, Math.round(size * 0.55)),
       }}
-      aria-label={title || key}
+      aria-label={title || keyLabel}
     >
       {cfg.label}
     </span>
