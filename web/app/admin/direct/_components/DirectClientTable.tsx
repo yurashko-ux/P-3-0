@@ -1486,9 +1486,9 @@ export function DirectClientTable({
                           // - якщо статус НЕ встановлено → голубий
                           // - якщо статус встановлено і нових нема → сірий
                           // - якщо є нові → голубий (незалежно від статусу)
-                          // Більш насичений “голубий” як у прикладі (суцільний синій + білий текст)
+                          // Ідентичний “телеграмний” голубий (hex), щоб вигляд був як на скріні
                           const countClass =
-                            needs || !hasStatus ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900';
+                            needs || !hasStatus ? 'bg-[#2AABEE] text-white' : 'bg-gray-200 text-gray-900';
 
                           return (
                             <div className="flex items-center gap-2">
