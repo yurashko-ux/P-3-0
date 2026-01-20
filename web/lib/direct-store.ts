@@ -994,8 +994,9 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
     });
 
     const res = await fetchAltegioClientMetrics({ altegioClientId: params.altegioClientId });
-    if (!res.ok) {
-      throw new Error(res.error);
+    if (res.ok === false) {
+      const errText = res.error || 'unknown_error';
+      throw new Error(errText);
     }
 
     const current = await getDirectClient(params.directClientId);
