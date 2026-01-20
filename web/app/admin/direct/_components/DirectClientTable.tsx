@@ -12,6 +12,7 @@ import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
+import { getChatBadgeStyle } from "./ChatBadgeIcon";
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -1417,6 +1418,8 @@ export function DirectClientTable({
                           const hasStatus = Boolean(statusId);
                           const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
                           const showStatus = Boolean(statusNameRaw) && hasStatus;
+                          const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
+                          const badgeCfg = getChatBadgeStyle(badgeKey);
 
                           // Фон лічильника НЕ залежить від статусу:
                           // - сірий завжди
@@ -1436,8 +1439,12 @@ export function DirectClientTable({
 
                               {showStatus ? (
                                 <span
-                                  className="inline-flex max-w-[120px] items-center rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-normal leading-none text-gray-900 border border-gray-300/60"
+                                  className="inline-flex max-w-[120px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none"
                                   title={statusNameRaw}
+                                  style={{
+                                    backgroundColor: badgeCfg.bg,
+                                    color: badgeCfg.fg,
+                                  }}
                                 >
                                   <span className="truncate">{statusNameRaw}</span>
                                 </span>

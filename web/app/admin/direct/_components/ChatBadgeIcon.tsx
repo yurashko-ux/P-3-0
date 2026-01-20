@@ -21,9 +21,13 @@ const badgeStyle: Record<string, { bg: string; fg: string; label: string }> = {
   badge_10: { bg: '#111827', fg: '#ffffff', label: '10' },
 };
 
-export function ChatBadgeIcon({ badgeKey, title, size = 16 }: { badgeKey: string | null | undefined; title?: string; size?: number }) {
+export function getChatBadgeStyle(badgeKey: string | null | undefined) {
   const key = (badgeKey || '').toString().trim() || 'badge_1';
-  const cfg = badgeStyle[key] || badgeStyle.badge_1;
+  return badgeStyle[key] || badgeStyle.badge_1;
+}
+
+export function ChatBadgeIcon({ badgeKey, title, size = 16 }: { badgeKey: string | null | undefined; title?: string; size?: number }) {
+  const cfg = getChatBadgeStyle(badgeKey);
   return (
     <span
       className="inline-flex items-center justify-center rounded-full font-bold leading-none shrink-0"
