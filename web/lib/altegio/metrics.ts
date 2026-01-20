@@ -1,0 +1,63 @@
+// web/lib/altegio/metrics.ts
+// Допоміжні функції для витягування “метрик” клієнта з Altegio API (phone / visits / spent)
+
+import { assertAltegioEnv } from '@/lib/altegio/env';
+import { getClient } from '@/lib/altegio/clients';
+
+export type AltegioClientMetrics = {
+  phone?: string | null;
+  visits?: number | null;
+  spent?: number | null;
+};
+
+function safeTrimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function safeNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+/**
+ * Витягує (phone/visits/spent) для конкретного клієнта з Altegio API.
+ * Важливо: тільки fetch, без запису в Prisma.
+ */
+export async function fetchAltegioClientMetrics(params: {
+  altegioClientId: number;
+}): Promise<{ ok: true; metrics: AltegioClientMetrics } | { ok: false; error: string }> {
+  try {
+    assertAltegioEnv();
+    const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+    const companyId = parseInt(companyIdStr, 10);
+    if (!companyId || Number.isNaN(companyId)) {
+      return { ok: false, error: 'ALTEGIO_COMPANY_ID not configured' };
+    }
+
+    const client = await getClient(companyId, params.altegioClientId);
+    if (!client) {
+      return { ok: false, error: 'Altegio client not found' };
+    }
+
+    const phone = safeTrimString((client as any).phone) || null;
+    const visits = safeNumber((client as any).visits);
+    const spent = safeNumber((client as any).spent);
+
+    return {
+      ok: true,
+      metrics: {
+        phone,
+        visits,
+        spent,
+      },
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+}
+

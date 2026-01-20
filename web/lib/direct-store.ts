@@ -5,6 +5,7 @@ import { prisma } from './prisma';
 import type { DirectClient, DirectStatus } from './direct-types';
 import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
+import { fetchAltegioClientMetrics } from './altegio/metrics';
 
 // Конвертація з Prisma моделі в DirectClient
 function prismaClientToDirectClient(dbClient: any): DirectClient {
@@ -596,7 +597,7 @@ export async function saveDirectClient(
   client: DirectClient,
   reason?: string,
   metadata?: Record<string, any>,
-  skipLoggingOrOptions?: boolean | { skipLogging?: boolean; touchUpdatedAt?: boolean }
+  skipLoggingOrOptions?: boolean | { skipLogging?: boolean; touchUpdatedAt?: boolean; skipAltegioMetricsSync?: boolean }
 ): Promise<void> {
   try {
     const options =
@@ -607,6 +608,7 @@ export async function saveDirectClient(
     // За замовчуванням updatedAt “торкаємо”.
     // Для admin/backfill/UI-правок передаємо touchUpdatedAt=false, щоб таблиця не “пливла”.
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
+    const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
 
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
@@ -628,7 +630,8 @@ export async function saveDirectClient(
       select: { id: true, altegioClientId: true, state: true },
     });
     
-    const hasAltegioId = existingClientCheck?.altegioClientId || data.altegioClientId;
+    const previousAltegioClientId = existingClientCheck?.altegioClientId || null;
+    const hasAltegioId = previousAltegioClientId || data.altegioClientId;
     
     if (finalState === 'lead') {
       if (hasAltegioId) {
@@ -717,6 +720,24 @@ export async function saveDirectClient(
           data: dataWithCorrectState,
         });
         console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
+      }
+    }
+
+    // Якщо клієнт ВПЕРШЕ отримав altegioClientId — одразу підтягнемо phone/visits/spent з Altegio API.
+    // Важливо: не блокуємо бізнес-логіку (у разі помилки просто залогуємо), і НЕ рухаємо updatedAt.
+    if (!skipAltegioMetricsSync && !previousAltegioClientId && data.altegioClientId) {
+      try {
+        await syncAltegioClientMetricsOnce({
+          directClientId: clientIdForLog,
+          altegioClientId: data.altegioClientId,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn('[direct-store] ⚠️ Не вдалося одразу підтягнути метрики з Altegio (продовжуємо):', {
+          directClientId: clientIdForLog,
+          altegioClientId: data.altegioClientId,
+          error: msg,
+        });
       }
     }
     
@@ -916,6 +937,145 @@ export async function saveDirectClient(
     }
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client.id}:`, err);
+    throw err;
+  }
+}
+
+async function syncAltegioClientMetricsOnce(params: { directClientId: string; altegioClientId: number }) {
+  const now = Date.now();
+  const lockKey = `direct:altegio-metrics-sync:${params.directClientId}`;
+
+  const { kvRead, kvWrite } = await import('@/lib/kv');
+
+  const lockRaw = await kvRead.getRaw(lockKey);
+  let lock: any = null;
+  if (lockRaw) {
+    try {
+      lock = JSON.parse(lockRaw);
+    } catch {
+      lock = null;
+    }
+  }
+
+  const inFlightUntil = lock?.inFlightUntil ? Number(lock.inFlightUntil) : 0;
+  const syncedAt = lock?.syncedAt ? String(lock.syncedAt) : '';
+
+  if (syncedAt) {
+    console.log('[direct-store] ⏭️ Altegio-метрики вже синхронізовані (перший раз), пропускаємо', {
+      directClientId: params.directClientId,
+      altegioClientId: params.altegioClientId,
+      syncedAt,
+    });
+    return;
+  }
+
+  if (inFlightUntil && inFlightUntil > now) {
+    console.log('[direct-store] ⏭️ Altegio-метрики вже “в роботі”, пропускаємо', {
+      directClientId: params.directClientId,
+      altegioClientId: params.altegioClientId,
+      inFlightUntil,
+    });
+    return;
+  }
+
+  await kvWrite.setRaw(
+    lockKey,
+    JSON.stringify({
+      inFlightUntil: now + 60_000,
+      startedAt: new Date(now).toISOString(),
+      altegioClientId: params.altegioClientId,
+    })
+  );
+
+  try {
+    console.log('[direct-store] 🔄 Перший синк метрик з Altegio (phone/visits/spent)', {
+      directClientId: params.directClientId,
+      altegioClientId: params.altegioClientId,
+    });
+
+    const res = await fetchAltegioClientMetrics({ altegioClientId: params.altegioClientId });
+    if (!res.ok) {
+      throw new Error(res.error);
+    }
+
+    const current = await getDirectClient(params.directClientId);
+    if (!current) {
+      throw new Error('Direct client not found after save');
+    }
+
+    const nextPhone = res.metrics.phone ? res.metrics.phone : null;
+    const nextVisits = res.metrics.visits ?? null;
+    const nextSpent = res.metrics.spent ?? null;
+
+    const updates: Partial<DirectClient> = {};
+    if (nextPhone && (!current.phone || current.phone.trim() !== nextPhone)) {
+      updates.phone = nextPhone;
+    }
+    if (nextVisits !== null && current.visits !== nextVisits) {
+      updates.visits = nextVisits;
+    }
+    if (nextSpent !== null && current.spent !== nextSpent) {
+      updates.spent = nextSpent;
+    }
+
+    const changedKeys = Object.keys(updates);
+    if (changedKeys.length === 0) {
+      console.log('[direct-store] ✅ Altegio-метрики: змін немає (але синк вважаємо завершеним)', {
+        directClientId: params.directClientId,
+        altegioClientId: params.altegioClientId,
+      });
+      await kvWrite.setRaw(
+        lockKey,
+        JSON.stringify({
+          syncedAt: new Date().toISOString(),
+          inFlightUntil: 0,
+          altegioClientId: params.altegioClientId,
+          result: 'no_changes',
+        })
+      );
+      return;
+    }
+
+    const updated: DirectClient = {
+      ...current,
+      ...updates,
+      // НЕ рухаємо updatedAt, щоб таблиця не “пливла” від технічного синку метрик
+      updatedAt: current.updatedAt,
+    };
+
+    await saveDirectClient(
+      updated,
+      'altegio-metrics-first-link',
+      { altegioClientId: params.altegioClientId, changedKeys },
+      { touchUpdatedAt: false, skipAltegioMetricsSync: true }
+    );
+
+    console.log('[direct-store] ✅ Altegio-метрики синхронізовано (перший раз)', {
+      directClientId: params.directClientId,
+      altegioClientId: params.altegioClientId,
+      changedKeys,
+    });
+
+    await kvWrite.setRaw(
+      lockKey,
+      JSON.stringify({
+        syncedAt: new Date().toISOString(),
+        inFlightUntil: 0,
+        altegioClientId: params.altegioClientId,
+        changedKeys,
+      })
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await kvWrite.setRaw(
+      lockKey,
+      JSON.stringify({
+        inFlightUntil: 0,
+        lastErrorAt: new Date().toISOString(),
+        lastError: msg.slice(0, 500),
+        altegioClientId: params.altegioClientId,
+      })
+    );
     throw err;
   }
 }
