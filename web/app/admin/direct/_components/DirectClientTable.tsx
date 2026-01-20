@@ -943,6 +943,7 @@ export function DirectClientTable({
         client={messagesHistoryClient}
         isOpen={!!messagesHistoryClient}
         onClose={() => setMessagesHistoryClient(null)}
+        onChatStatusUpdated={() => void onRefresh()}
       />
 
       {/* Модальне вікно вебхуків клієнта */}
@@ -1077,6 +1078,9 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
+                    Переписка
+                  </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <button
                       className="hover:underline cursor-pointer"
@@ -1151,7 +1155,7 @@ export function DirectClientTable({
               <tbody>
                 {uniqueClients.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-8 text-gray-500">
+                    <td colSpan={14} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -1388,6 +1392,8 @@ export function DirectClientTable({
                               if (!stateToShow && client.lastMessageAt) stateToShow = 'message';
                               // У колонці “Стан” більше не показуємо `client` — тип (лід/клієнт) тепер видно в “Повне імʼя”
                               if (stateToShow === 'client') return null;
+                              // Переписку тепер показуємо в окремій колонці “Переписка”
+                              if (stateToShow === 'message') return null;
                               return (
                                 <button
                                   onClick={() => setStateHistoryClient(client)}
@@ -1570,6 +1576,9 @@ export function DirectClientTable({
                               
                               // lead більше не використовуємо
                               if (log.state === 'lead') return false;
+
+                              // Переписку (message) відображаємо в окремій колонці “Переписка”
+                              if (log.state === 'message') return false;
                               
                               // Приховуємо null/undefined стани (вони показуються як "lead")
                               if (!log.state || log.state.trim() === '') return false;
@@ -1622,14 +1631,8 @@ export function DirectClientTable({
                                   // Якщо state null після фільтрації, не показуємо іконку
                                   if (!stateToShow) return null;
                                   
-                                  // Визначаємо, який обробник кліку використовувати
-                                  const isMessageState = stateToShow === 'message';
-                                  const onClickHandler = isMessageState
-                                    ? () => setMessagesHistoryClient(client)
-                                    : () => setStateHistoryClient(client);
-                                  const tooltipText = isMessageState
-                                    ? `${formattedDate}\nНатисніть, щоб переглянути історію повідомлень`
-                                    : `${formattedDate}\nНатисніть, щоб переглянути історію станів`;
+                                  const onClickHandler = () => setStateHistoryClient(client);
+                                  const tooltipText = `${formattedDate}\nНатисніть, щоб переглянути історію станів`;
                                   
                                   return (
                                     <button
@@ -1648,6 +1651,47 @@ export function DirectClientTable({
                             );
                           })()}
                         </div>
+                      </td>
+                      {/* Нова колонка: Переписка (статус + лічильник + індикатор нових вхідних) */}
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
+                        {(() => {
+                          const total = typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
+                          const needs = Boolean((client as any).chatNeedsAttention);
+                          const color = ((client as any).chatStatusColor || '').toString().trim() || '#9ca3af';
+                          const name = ((client as any).chatStatusName || '').toString().trim() || 'Без статусу';
+
+                          if (!total) {
+                            return (
+                              <button
+                                className="text-gray-400 hover:underline"
+                                onClick={() => setMessagesHistoryClient(client)}
+                                title="Відкрити історію повідомлень"
+                              >
+                                —
+                              </button>
+                            );
+                          }
+
+                          return (
+                            <button
+                              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                              onClick={() => setMessagesHistoryClient(client)}
+                              title={`${name}\nПовідомлень: ${total}\nНатисніть, щоб відкрити історію`}
+                            >
+                              <span
+                                className="inline-block w-[10px] h-[10px] rounded-full"
+                                style={{ backgroundColor: color }}
+                              />
+                              {needs ? (
+                                <span
+                                  className="inline-block w-[8px] h-[8px] rounded-full bg-red-600"
+                                  title="Є нові вхідні повідомлення — потрібна увага"
+                                />
+                              ) : null}
+                              <span className="tabular-nums">{total}</span>
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (

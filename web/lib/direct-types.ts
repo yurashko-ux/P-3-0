@@ -46,11 +46,40 @@ export type DirectClient = {
   isOnlineConsultation?: boolean; // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation?: boolean; // Записалась на послугу після консультації
   telegramNotificationSent?: boolean; // Чи було відправлено повідомлення в Telegram про відсутній Instagram
+  chatStatusId?: string; // Поточний статус переписки (id з DirectChatStatus)
+  chatStatusSetAt?: string; // ISO - коли статус реально змінився
+  chatStatusCheckedAt?: string; // ISO - коли адмін підтвердив актуальність
+  chatStatusName?: string; // Назва статусу (для tooltip у таблиці)
+  chatStatusColor?: string; // Колір статусу (hex) для бейджа-крапки
+  messagesTotal?: number; // Кількість повідомлень (з DirectMessage)
+  chatNeedsAttention?: boolean; // Чи є нові вхідні після останнього підтвердження
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt?: string; // ISO date - останнє повідомлення
   createdAt: string; // ISO date - коли створено запис
   updatedAt: string; // ISO date - останнє оновлення
   last5States?: DirectClientStateLog[]; // Останні 5 станів для відображення в таблиці
+};
+
+export type DirectChatStatus = {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type DirectClientChatStatusLog = {
+  id: string;
+  clientId: string;
+  fromStatusId?: string | null;
+  toStatusId?: string | null;
+  changedAt: string;
+  changedBy?: string | null;
+  note?: string | null;
+  fromStatus?: Pick<DirectChatStatus, 'id' | 'name' | 'color'> | null;
+  toStatus?: Pick<DirectChatStatus, 'id' | 'name' | 'color'> | null;
 };
 
 export type DirectStatus = {

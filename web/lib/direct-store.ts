@@ -45,6 +45,9 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     isOnlineConsultation: dbClient.isOnlineConsultation || false,
     signedUpForPaidServiceAfterConsultation: dbClient.signedUpForPaidServiceAfterConsultation || false,
     telegramNotificationSent: dbClient.telegramNotificationSent ?? false,
+    chatStatusId: dbClient.chatStatusId || undefined,
+    chatStatusSetAt: dbClient.chatStatusSetAt?.toISOString?.() || undefined,
+    chatStatusCheckedAt: dbClient.chatStatusCheckedAt?.toISOString?.() || undefined,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -89,6 +92,9 @@ function directClientToPrisma(client: DirectClient) {
     isOnlineConsultation: client.isOnlineConsultation || false,
     signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation || false,
     telegramNotificationSent: client.telegramNotificationSent ?? false,
+    chatStatusId: client.chatStatusId || null,
+    chatStatusSetAt: client.chatStatusSetAt ? new Date(client.chatStatusSetAt) : null,
+    chatStatusCheckedAt: client.chatStatusCheckedAt ? new Date(client.chatStatusCheckedAt) : null,
   };
 }
 

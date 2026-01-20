@@ -7,6 +7,7 @@ import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
 import { kvRead } from '@/lib/kv';
+import { prisma } from '@/lib/prisma';
 import {
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -695,10 +696,92 @@ export async function GET(req: NextRequest) {
         last5States: clientStates,
       };
     });
+
+    // Додаємо інфо для колонки "Переписка":
+    // - messagesTotal: кількість повідомлень у DirectMessage (поки що це основні вхідні з ManyChat webhook)
+    // - chatNeedsAttention: якщо є нові ВХІДНІ після (chatStatusCheckedAt ?? chatStatusSetAt)
+    // - chatStatusName/chatStatusColor: для tooltip/бейджа
+    const clientsWithChatMeta = await (async () => {
+      try {
+        const ids = clientsWithStates.map((c) => c.id);
+        if (!ids.length) return clientsWithStates;
+
+        const [totalCounts, lastIncoming] = await Promise.all([
+          prisma.directMessage.groupBy({
+            by: ['clientId'],
+            where: { clientId: { in: ids } },
+            _count: { _all: true },
+          }),
+          prisma.directMessage.groupBy({
+            by: ['clientId'],
+            where: { clientId: { in: ids }, direction: 'incoming' },
+            _max: { receivedAt: true },
+          }),
+        ]);
+
+        const totalMap = new Map<string, number>();
+        for (const r of totalCounts) {
+          totalMap.set(r.clientId, (r as any)?._count?._all ?? 0);
+        }
+
+        const lastIncomingMap = new Map<string, Date>();
+        for (const r of lastIncoming) {
+          const dt = (r as any)?._max?.receivedAt as Date | null | undefined;
+          if (dt instanceof Date && !isNaN(dt.getTime())) {
+            lastIncomingMap.set(r.clientId, dt);
+          }
+        }
+
+        const statusIds = Array.from(
+          new Set(
+            clientsWithStates
+              .map((c) => (c as any).chatStatusId)
+              .filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
+          )
+        );
+
+        const statuses =
+          statusIds.length > 0
+            ? await prisma.directChatStatus.findMany({
+                where: { id: { in: statusIds } },
+                select: { id: true, name: true, color: true, isActive: true },
+              })
+            : [];
+        const statusMap = new Map<string, { name: string; color: string; isActive: boolean }>();
+        for (const s of statuses) statusMap.set(s.id, { name: s.name, color: s.color, isActive: s.isActive });
+
+        return clientsWithStates.map((c) => {
+          const messagesTotal = totalMap.get(c.id) ?? 0;
+          const lastIn = lastIncomingMap.get(c.id) ?? null;
+
+          const checkedAtIso = (c as any).chatStatusCheckedAt as string | undefined;
+          const setAtIso = (c as any).chatStatusSetAt as string | undefined;
+          const thresholdIso = (checkedAtIso || setAtIso || '').toString().trim();
+          const thresholdTs = thresholdIso ? new Date(thresholdIso).getTime() : NaN;
+
+          const chatNeedsAttention =
+            lastIn && Number.isFinite(thresholdTs) ? lastIn.getTime() > thresholdTs : false;
+
+          const stId = ((c as any).chatStatusId || '').toString().trim() || '';
+          const st = stId ? statusMap.get(stId) : null;
+
+          return {
+            ...c,
+            messagesTotal,
+            chatNeedsAttention,
+            chatStatusName: st?.name || undefined,
+            chatStatusColor: st?.color || undefined,
+          };
+        });
+      } catch (err) {
+        console.warn('[direct/clients] ⚠️ Не вдалося додати метадані переписки (не критично):', err);
+        return clientsWithStates;
+      }
+    })();
     
     const response = { 
       ok: true, 
-      clients: clientsWithStates, 
+      clients: clientsWithChatMeta, 
       debug: { 
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

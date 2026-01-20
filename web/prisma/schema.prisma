@@ -68,11 +68,17 @@ model DirectClient {
   isOnlineConsultation  Boolean   @default(false) // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation Boolean @default(false) // Записалась на послугу після консультації
   telegramNotificationSent Boolean  @default(false) // Чи було відправлено повідомлення в Telegram про відсутній Instagram
+  chatStatusId            String?   // Статус переписки (вибір адміна)
+  chatStatusSetAt         DateTime? // Коли встановили статус переписки (тільки якщо реально змінився)
+  chatStatusCheckedAt     DateTime? // Коли адмін підтвердив актуальність (навіть якщо статус не змінювався)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
   // Зв'язок зі статусом
   status DirectStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+
+  // Зв'язок зі статусом переписки
+  chatStatus DirectChatStatus? @relation(fields: [chatStatusId], references: [id], onDelete: SetNull)
   
   // Зв'язок з відповідальним (майстром)
   master DirectMaster? @relation(fields: [masterId], references: [id], onDelete: SetNull)
@@ -82,6 +88,9 @@ model DirectClient {
 
   // Зв'язок з повідомленнями
   messages DirectMessage[]
+
+  // Історія змін статусів переписки
+  chatStatusLogs DirectClientChatStatusLog[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -100,7 +109,47 @@ model DirectClient {
   @@index([paidServiceCancelled])
   @@index([paidServiceTotalCost])
   @@index([consultationCancelled])
+  @@index([chatStatusId])
+  @@index([chatStatusCheckedAt])
   @@map("direct_clients")
+}
+
+// Статуси переписки (для класифікації переписок)
+model DirectChatStatus {
+  id        String   @id @default(uuid())
+  name      String   // Довга назва (в UI буде tooltip)
+  color     String   @default("#6b7280") // Колір бейджа (hex)
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients DirectClient[]
+  fromLogs DirectClientChatStatusLog[] @relation("DirectChatStatusFrom")
+  toLogs   DirectClientChatStatusLog[] @relation("DirectChatStatusTo")
+
+  @@index([order])
+  @@index([isActive])
+  @@map("direct_chat_statuses")
+}
+
+// Історія змін статусів переписки (пишемо тільки коли статус реально змінюється)
+model DirectClientChatStatusLog {
+  id           String   @id @default(uuid())
+  clientId     String
+  fromStatusId String?
+  toStatusId   String?
+  changedAt    DateTime @default(now())
+  changedBy    String?  // поки що: 'admin'
+  note         String?
+
+  client     DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fromStatus DirectChatStatus? @relation("DirectChatStatusFrom", fields: [fromStatusId], references: [id], onDelete: SetNull)
+  toStatus   DirectChatStatus? @relation("DirectChatStatusTo", fields: [toStatusId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([changedAt])
+  @@map("direct_client_chat_status_logs")
 }
 
 // Відповідальні (майстри та дірект-менеджери)
