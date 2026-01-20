@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { DirectChatStatus, DirectClient, DirectClientChatStatusLog } from '@/lib/direct-types';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 
@@ -41,6 +41,88 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
+
+  function dayKeyFromDateString(dateString: string): string {
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return '';
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function formatDayHeaderFromKey(dayKey: string): string {
+    try {
+      const [y, m, d] = dayKey.split('-').map((x) => Number(x));
+      if (!y || !m || !d) return dayKey;
+      const dt = new Date(y, m - 1, d);
+      const now = new Date();
+      const sameYear = dt.getFullYear() === now.getFullYear();
+      return new Intl.DateTimeFormat('uk-UA', {
+        day: 'numeric',
+        month: 'long',
+        ...(sameYear ? {} : { year: 'numeric' }),
+      }).format(dt);
+    } catch {
+      return dayKey;
+    }
+  }
+
+  function formatTimeHHMM(dateString: string): string {
+    try {
+      const dt = new Date(dateString);
+      if (isNaN(dt.getTime())) return '';
+      return dt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  }
+
+  const groupedMessages = useMemo(() => {
+    const arr = Array.isArray(messages) ? messages : [];
+    const out: Array<{ dayKey: string; items: Message[] }> = [];
+    let lastKey = '';
+    for (const msg of arr) {
+      const k = dayKeyFromDateString(msg.receivedAt) || 'unknown';
+      if (!out.length || k !== lastKey) {
+        out.push({ dayKey: k, items: [msg] });
+        lastKey = k;
+      } else {
+        out[out.length - 1].items.push(msg);
+      }
+    }
+    return out;
+  }, [messages]);
+
+  function ChatAvatar40({ username }: { username: string }) {
+    const u = (username || '').toString().trim();
+    const isNoInstagram = u === 'NO INSTAGRAM' || u.startsWith('no_instagram_');
+    const isMissingInstagram = u.startsWith('missing_instagram_');
+    const isNormalInstagram = Boolean(u) && !isNoInstagram && !isMissingInstagram;
+    const avatarSrc = isNormalInstagram
+      ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`
+      : null;
+
+    return (
+      <span className="w-10 h-10 rounded-full bg-base-200 overflow-hidden border border-base-300 shrink-0">
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt=""
+            className="w-10 h-10 object-cover"
+            onError={(e) => {
+              // Ховаємо <img>, але залишаємо слот (щоб верстка не “стрибала”)
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        ) : null}
+      </span>
+    );
+  }
 
   useEffect(() => {
     if (isOpen && client) {
@@ -295,7 +377,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
           <div className="flex-1 overflow-hidden flex gap-4">
             {/* Ліва колонка: повідомлення */}
-            <div className="flex-1 min-w-0 overflow-y-auto pr-2">
+            <div className="flex-1 min-w-0 overflow-y-auto pr-2 bg-white">
               {loading ? (
                 <div className="text-center p-8">
                   <div className="loading loading-spinner loading-lg"></div>
@@ -332,55 +414,48 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {messages.map((message, index) => {
-                    const isOutgoing = message.direction === 'outgoing';
+                <div className="p-2 sm:p-3 space-y-3">
+                  {groupedMessages.map((g, gi) => {
+                    const dayLabel = g.dayKey === 'unknown' ? '' : formatDayHeaderFromKey(g.dayKey);
                     return (
-                      <div key={message.id || `${message.receivedAt}-${index}`} className="border-b border-gray-200 pb-4 last:border-b-0">
-                        <div className={`flex items-start gap-3 ${isOutgoing ? 'flex-row-reverse' : ''}`}>
-                          <div className="flex-1">
-                            <div className={`flex items-center gap-2 mb-1 ${isOutgoing ? 'justify-end' : ''}`}>
-                              {isOutgoing && (
-                                <span className="text-xs font-medium text-blue-600">
-                                  Ви
-                                </span>
-                              )}
-                              <span className="text-xs font-medium text-gray-600">
-                                {formatDate(message.receivedAt)}
-                              </span>
-                              <span className="text-xs text-gray-400">
-                                ({formatRelativeTime(message.receivedAt)})
-                              </span>
-                              {!isOutgoing && (
-                                <span className="text-xs font-medium text-gray-600">
-                                  Клієнт
-                                </span>
-                              )}
-                            </div>
-                            <div className={`rounded-lg p-3 text-sm ${
-                              isOutgoing
-                                ? 'bg-blue-100 text-blue-900 ml-auto max-w-[80%]'
-                                : 'bg-gray-100'
-                            }`}>
-                              {message.text}
-                            </div>
+                      <div key={`${g.dayKey}-${gi}`} className="space-y-2">
+                        {dayLabel ? (
+                          <div className="flex justify-center py-1">
+                            <span className="text-[12px] text-gray-500 bg-base-200 rounded-full px-3 py-1">
+                              {dayLabel}
+                            </span>
                           </div>
+                        ) : null}
+                        <div className="space-y-2">
+                          {g.items.map((message, index) => {
+                            const isOutgoing = message.direction === 'outgoing';
+                            const timeHHMM = formatTimeHHMM(message.receivedAt);
+                            const key = message.id || `${message.receivedAt}-${gi}-${index}`;
+                            return (
+                              <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+                                {!isOutgoing ? (
+                                  <ChatAvatar40 username={client.instagramUsername || ''} />
+                                ) : null}
+                                <div
+                                  className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+                                    isOutgoing ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-900'
+                                  }`}
+                                  title={message.receivedAt ? formatDate(message.receivedAt) : ''}
+                                >
+                                  <div>{message.text}</div>
+                                  {timeHHMM ? (
+                                    <div className="mt-1 flex justify-end">
+                                      <span className="text-[10px] text-gray-500">{timeHHMM}</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              )}
-
-              {!loading && !error && messages.length > 0 && (
-                <div className="mt-4 text-sm text-gray-500">
-                  Всього повідомлень: {messages.length}
-                  <p className="text-xs mt-1 text-gray-400">
-                    {messages.some(m => m.direction === 'outgoing')
-                      ? 'Показуються всі повідомлення (включно з нашими відповідями через ManyChat API)'
-                      : 'Показуються тільки повідомлення від клієнта (через ManyChat вебхуки). Для повної історії налаштуйте MANYCHAT_API_KEY'
-                    }
-                  </p>
                 </div>
               )}
             </div>
