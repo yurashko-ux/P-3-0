@@ -1130,7 +1130,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
                     Переписка
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-center w-[176px] min-w-[176px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-center w-[96px] min-w-[96px]">
                     <button
                       className="hover:underline cursor-pointer w-full text-center"
                       onClick={() =>
@@ -1140,7 +1140,7 @@ export function DirectClientTable({
                         )
                       }
                     >
-                      Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Послуга {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
@@ -1484,283 +1484,146 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-right w-[176px] min-w-[176px]">
-                        <div className="flex w-full items-center justify-end gap-1">
-                          {/* Відображаємо останні 5 станів (або менше, якщо їх немає) */}
-                          {(() => {
-                            const states = client.last5States || [];
-                            const currentState = client.state || 'lead';
-                            
-                            // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
-                            const isManychatClient = !client.altegioClientId;
-                            
-                            // Якщо немає історії, показуємо поточний стан
-                            if (states.length === 0) {
-                              // Стан "lead" видалено: трактуємо як "message"
-                              let stateToShow: any = currentState === 'lead' ? 'message' : currentState;
-                              // Якщо стан порожній, але є lastMessageAt — показуємо "Розмова"
-                              if (!stateToShow && client.lastMessageAt) stateToShow = 'message';
-                              // У колонці “Стан” більше не показуємо `client` — тип (лід/клієнт) тепер видно в “Повне імʼя”
-                              if (stateToShow === 'client') return null;
-                              // Переписку тепер показуємо в окремій колонці “Переписка”
-                              if (stateToShow === 'message') return null;
-                              return (
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-center w-[96px] min-w-[96px]">
+                        {(() => {
+                          const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
+                            timeZone: 'Europe/Kyiv',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                          });
+                          const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
+
+                          const parseMaybeIsoDate = (raw: any): Date | null => {
+                            if (!raw) return null;
+                            const dateValue = typeof raw === 'string' ? raw.trim() : String(raw);
+                            const isoDateMatch = dateValue.match(
+                              /\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/
+                            );
+                            const d = new Date(isoDateMatch ? isoDateMatch[0] : dateValue);
+                            return isNaN(d.getTime()) ? null : d;
+                          };
+
+                          // Консультація (календар) — привʼязуємо до consultationBookingDate
+                          const consultDate = parseMaybeIsoDate(client.consultationBookingDate);
+                          const consultKyivDay = consultDate ? kyivDayFmt.format(consultDate) : null;
+                          const consultIsActive = Boolean(consultKyivDay && consultKyivDay >= todayKyivDay);
+
+                          // Платна послуга (нарощування/інші) — привʼязуємо до paidServiceDate
+                          const paidDate = client.paidServiceDate ? new Date(client.paidServiceDate) : null;
+                          const paidKyivDay = paidDate && !isNaN(paidDate.getTime()) ? kyivDayFmt.format(paidDate) : null;
+                          const paidIsActive = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
+
+                          // “Червона дата” = ❌ (attendance=false) у відповідній колонці дати
+                          const consultNoShow = client.consultationAttended === false;
+                          const paidNoShow = client.paidServiceAttended === false;
+
+                          // “Перезапис” — використовуємо існуючу логіку з колонки дат
+                          const hasPaidReschedule = Boolean((client as any).paidServiceIsRebooking);
+                          const hasConsultReschedule =
+                            (typeof client.consultationAttemptNumber === 'number' && client.consultationAttemptNumber >= 2) ||
+                            (Array.isArray(client.last5States) &&
+                              client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
+
+                          // 1) Override: коли дата стала “червоною” — показуємо або 🔁 (перезапис), або ❗️ (немає перезапису).
+                          // Пріоритет: платна послуга, потім консультація.
+                          if (paidNoShow && client.paidServiceDate) {
+                            const title = hasPaidReschedule ? 'Перезапис' : 'Немає перезапису';
+                            return (
+                              <div className="flex items-center justify-center">
+                                <span title={title} className="text-[20px] leading-none">
+                                  {hasPaidReschedule ? '🔁' : '❗️'}
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          if (consultNoShow && client.consultationBookingDate) {
+                            const title = hasConsultReschedule ? 'Перезапис' : 'Немає перезапису';
+                            return (
+                              <div className="flex items-center justify-center">
+                                <span title={title} className="text-[20px] leading-none">
+                                  {hasConsultReschedule ? '🔁' : '❗️'}
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // 2) Нормальний режим: максимум 3 іконки (актуальні послуги + статус)
+                          const icons: Array<{ key: string; node: any }> = [];
+
+                          if (consultIsActive) {
+                            icons.push({
+                              key: 'consultation',
+                              node: (
                                 <button
+                                  type="button"
+                                  className="hover:opacity-70 transition-opacity"
+                                  title="Актуальна консультація"
                                   onClick={() => setStateHistoryClient(client)}
-                                  className="hover:opacity-70 transition-opacity cursor-pointer"
-                                  title="Натисніть, щоб переглянути історію станів"
                                 >
-                                  <div className="tooltip" data-tip={new Date(client.createdAt).toLocaleDateString('uk-UA')}>
-                                    <StateIcon state={stateToShow} size={32} />
-                                  </div>
+                                  <StateIcon state="consultation-booked" size={24} />
                                 </button>
-                              );
-                            }
-                            
-                            // Спочатку сортуємо від старіших до новіших для правильної фільтрації
-                            const sortedStates = [...states].sort((a, b) => 
-                              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                            );
-                            
-                            // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead"
-                            // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
-                            // для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
-                            // ВИДАЛЯЄМО ВСІ "no-instagram" (це були червоні квадрати, які потім стали чорними лійками)
-                            // НОВЕ ПРАВИЛО: Якщо найстаріший стан - "message", відображаємо його як "Лід"
-                            const filteredStates: typeof sortedStates = [];
-                            const leadLogs: typeof sortedStates = [];
-                            const messageLogs: typeof sortedStates = [];
-                            const clientLogs: typeof sortedStates = [];
-                            const consultationBookedLogs: typeof sortedStates = [];
-                            const consultationNoShowLogs: typeof sortedStates = [];
-                            const consultationRescheduledLogs: typeof sortedStates = [];
-                            const otherLogs: typeof sortedStates = [];
-                            
-                            for (let i = 0; i < sortedStates.length; i++) {
-                              const log = sortedStates[i];
-                              
-                              // ВИДАЛЯЄМО "no-instagram" (це були червоні квадрати)
-                              if (log.state === 'no-instagram') {
-                                continue; // Пропускаємо всі "no-instagram"
-                              }
+                              ),
+                            });
+                          }
 
-                              // Якщо історичний баг записав state=null, але клієнт має lastMessageAt,
-                              // трактуємо це як "Розмова", щоб не втрачати іконку.
-                              if ((!log.state || String(log.state).trim() === '') && client.lastMessageAt) {
-                                messageLogs.push({ ...(log as any), state: 'message' } as any);
-                                continue;
-                              }
-                              
-                              if (log.state === 'lead') {
-                                // Для Altegio клієнтів - ПРИХОВУЄМО ВСІ "lead"
-                                if (!isManychatClient) {
-                                  continue; // Пропускаємо всі "lead" для Altegio клієнтів
-                                }
-                                // Для Manychat клієнтів - збираємо "lead" окремо
-                                leadLogs.push(log);
-                              } else if (log.state === 'message') {
-                                // Збираємо "message" окремо для перевірки, чи це перше повідомлення
-                                messageLogs.push(log);
-                              } else if (log.state === 'client') {
-                                // Збираємо "client" окремо для фільтрації дублікатів
-                                clientLogs.push(log);
-                              } else if (log.state === 'consultation-booked') {
-                                consultationBookedLogs.push(log);
-                              } else if (log.state === 'consultation-no-show') {
-                                consultationNoShowLogs.push(log);
-                              } else if (log.state === 'consultation-rescheduled') {
-                                consultationRescheduledLogs.push(log);
-                              } else {
-                                // Всі інші стани збираємо окремо
-                                otherLogs.push(log);
-                              }
-                            }
-
-                            // `client` у колонці “Стан” більше не показуємо (тип контакту тепер видно біля імені),
-                            // тому синтетичний `client` тут не додаємо.
-                            
-                            // Якщо є дата консультації (показуємо її в таблиці), але state-log ще не встиг записати `consultation-booked`,
-                            // додаємо derived-стан `consultation-booked`, щоб у колонці "Стан" був синій календарик.
-                            // ВАЖЛИВО: не додаємо, якщо консультації ігноруються (visits >= 2) — це правило вже узгоджене раніше.
-                            try {
-                              const shouldIgnoreConsult = (client.visits ?? 0) >= 2;
-                              const hasConsultDate = Boolean(client.consultationBookingDate);
-                              const hasConsultInLogs = consultationBookedLogs.length > 0;
-                              const hasConsultAsCurrent =
-                                currentState === 'consultation-booked' || currentState === 'consultation';
-
-                              if (!shouldIgnoreConsult && hasConsultDate && !hasConsultInLogs && !hasConsultAsCurrent) {
-                                const syntheticConsult: any = {
-                                  id: 'synthetic-consultation-booked',
-                                  clientId: client.id,
-                                  state: 'consultation-booked',
-                                  previousState: null,
-                                  reason: 'derived-consultation-booking-date',
-                                  createdAt: String(client.consultationBookingDate),
-                                };
-                                consultationBookedLogs.unshift(syntheticConsult);
-                              }
-                            } catch {}
-
-                            // Стан "lead" видалено: не конвертуємо message -> lead
-                            const oldestMessageAsLead: typeof sortedStates[0] | null = null;
-                            
-                            // lead видалено: для Manychat-клієнтів не показуємо "lead" взагалі
-                            if (isManychatClient && leadLogs.length > 0) {
-                              // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але тільки якщо він дійсно найстаріший
-                              const oldestLead = leadLogs[0]; // Найстаріший "lead" (вже відсортовано)
-                              
-                              // Перевіряємо, чи є стани старіші за "lead" (враховуючи всі стани, включно з message)
-                              const allOtherStates = [...clientLogs, ...messageLogs, ...consultationBookedLogs, ...consultationNoShowLogs, ...consultationRescheduledLogs, ...otherLogs];
-                              const olderThanLead = allOtherStates.filter(log => 
-                                new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
-                              );
-                              
-                              // Якщо "lead" найстаріший - залишаємо його (він початковий стан)
-                              // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
-                              if (olderThanLead.length === 0) {
-                                // "lead" найстаріший - додаємо його першим
-                                // state="lead" більше не використовуємо — показуємо як "message"
-                                filteredStates.push({ ...oldestLead, state: 'message' } as any);
-                              }
-                              // Якщо є стани старіші - не додаємо "lead"
-                            }
-                            
-                            // `client` у колонці “Стан” не показуємо — не додаємо його в `filteredStates`.
-                            
-                            // Для consultation-related станів - залишаємо тільки найстаріший (якщо є)
-                            // Стан `consultation` більше не показуємо в UI (факт приходу дивимось по ✅ у даті консультації).
-                            if (consultationBookedLogs.length > 0) {
-                              filteredStates.push(consultationBookedLogs[0]); // Тільки найстаріший "consultation-booked"
-                            }
-                            if (consultationNoShowLogs.length > 0) {
-                              filteredStates.push(consultationNoShowLogs[0]); // Тільки найстаріший "consultation-no-show"
-                            }
-                            if (consultationRescheduledLogs.length > 0) {
-                              filteredStates.push(consultationRescheduledLogs[0]); // Тільки найстаріший "consultation-rescheduled"
-                            }
-                            
-                            // Додаємо всі message-логи (потім все одно лишиться 1 через дедуп по іконці)
-                            const remainingMessageLogs = messageLogs;
-                            filteredStates.push(...remainingMessageLogs);
-                            
-                            // Додаємо всі інші стани
-                            filteredStates.push(...otherLogs);
-                            
-                            // Сортуємо від старіших до новіших для подальшої обробки
-                            filteredStates.sort((a, b) => 
-                              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                            );
-                            
-                            // Останній стан з історії
-                            const lastHistoryState = filteredStates[filteredStates.length - 1]?.state || null;
-                            
-                            // Додаємо поточний стан, якщо він відрізняється
-                            const statesToShow = [...filteredStates];
-                            
-                            if (currentState !== lastHistoryState) {
-                              // Для Altegio клієнтів - НЕ додаємо поточний стан, якщо він "lead"
-                              if (!isManychatClient && currentState === 'lead') {
-                                // Не додаємо "lead" для Altegio клієнтів
-                              } else if (currentState !== 'client') {
-                                // Для всіх інших станів - завжди додаємо
-                              statesToShow.push({
-                                id: 'current',
-                                clientId: client.id,
-                                state: currentState === 'lead' ? 'message' : currentState,
-                                previousState: lastHistoryState,
-                                reason: 'current-state',
-                                createdAt: new Date().toISOString(),
+                          if (paidIsActive) {
+                            const serviceState =
+                              client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
+                            if (serviceState) {
+                              icons.push({
+                                key: 'paid-service',
+                                node: (
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity"
+                                    title={serviceState === 'hair-extension' ? 'Нарощування волосся' : 'Інші послуги'}
+                                    onClick={() => setStateHistoryClient(client)}
+                                  >
+                                    <StateIcon state={serviceState} size={24} />
+                                  </button>
+                                ),
                               });
                             }
-                            }
-                            
-                            // Фінальна перевірка: видаляємо всі "lead" для Altegio клієнтів та "no-instagram" для всіх
-                            // Також приховуємо невідомі стани, які можуть показуватись як чорні лійки (image-lead.png)
-                            const finalStatesToShow = statesToShow.filter(log => {
-                              // Видаляємо "no-instagram"
-                              if (log.state === 'no-instagram') return false;
-                              
-                              // `client` більше не відображаємо в колонці “Стан”
-                              if (log.state === 'client') return false;
-                              
-                              // lead більше не використовуємо
-                              if (log.state === 'lead') return false;
+                          }
 
-                              // Переписку (message) відображаємо в окремій колонці “Переписка”
-                              if (log.state === 'message') return false;
-                              
-                              // Приховуємо null/undefined стани (вони показуються як "lead")
-                              if (!log.state || log.state.trim() === '') return false;
-                              
-                              return true;
+                          // 3) Статуси після консультації (тимчасові іконки)
+                          const consultWas = client.consultationAttended === true;
+                          const hasPaidAny = Boolean(client.paidServiceDate);
+                          if (consultWas && !hasPaidAny) {
+                            icons.push({
+                              key: 'no-sale',
+                              node: (
+                                <span title="Немає продажі" className="text-[20px] leading-none">
+                                  💸
+                                </span>
+                              ),
                             });
+                          }
+                          if (consultWas && hasPaidAny) {
+                            icons.push({
+                              key: 'new-client',
+                              node: (
+                                <span title="Новий клієнт" className="text-[20px] leading-none">
+                                  🆕
+                                </span>
+                              ),
+                            });
+                          }
 
-                            // Дедуплікація для колонки “Стан”:
-                            // важливо: деякі різні state можуть виглядати однаково (наприклад `consultation` та `consultation-booked`).
-                            // Тому дедуп робимо по ключу іконки (iconKey), а не по raw state.
-                            const iconKeyForState = (st: any): string => {
-                              const s = (st || '').toString();
-                              if (!s) return '';
-                              // `consultation` більше не використовуємо як окремий стан, у UI він = `consultation-booked`
-                              if (s === 'consultation') return 'consultation-booked';
-                              return s;
-                            };
-
-                            const dedupedStatesToShow = (() => {
-                              const out: typeof finalStatesToShow = [];
-                              const seen = new Set<string>();
-                              for (let i = finalStatesToShow.length - 1; i >= 0; i--) {
-                                const stRaw = finalStatesToShow[i]?.state;
-                                const key = iconKeyForState(stRaw);
-                                if (!key) continue;
-                                if (seen.has(key)) continue;
-                                seen.add(key);
-                                out.push(finalStatesToShow[i]);
-                              }
-                              return out.reverse();
-                            })();
-                            
-                            return (
-                              <>
-                                {dedupedStatesToShow.slice(-5).map((stateLog, idx) => {
-                                  const stateDate = new Date(stateLog.createdAt);
-                                  const formattedDate = stateDate.toLocaleDateString('uk-UA', {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  });
-                                  
-                                  // Гарантуємо, що state не є "no-instagram" або "lead" для Altegio клієнтів
-                                  const stateToShow = stateLog.state === 'no-instagram' || stateLog.state === 'lead'
-                                    ? null
-                                    : (stateLog.state || null);
-                                  
-                                  // Якщо state null після фільтрації, не показуємо іконку
-                                  if (!stateToShow) return null;
-                                  
-                                  const onClickHandler = () => setStateHistoryClient(client);
-                                  const tooltipText = `${formattedDate}\nНатисніть, щоб переглянути історію станів`;
-                                  
-                                  return (
-                                    <button
-                                      key={stateLog.id || `state-${idx}`}
-                                      onClick={onClickHandler}
-                                      className="hover:opacity-70 transition-opacity cursor-pointer"
-                                      title={tooltipText}
-                                    >
-                                      <div className="tooltip tooltip-top" data-tip={formattedDate}>
-                                        <StateIcon state={stateToShow} size={28} />
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </>
-                            );
-                          })()}
-                        </div>
+                          const shown = icons.slice(0, 3);
+                          if (shown.length === 0) return '';
+                          return (
+                            <div className="flex items-center justify-center gap-1">
+                              {shown.map((i) => (
+                                <span key={i.key} className="inline-flex items-center justify-center">
+                                  {i.node}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {client.consultationBookingDate ? (
