@@ -45,6 +45,10 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusBadgeKey, setNewStatusBadgeKey] = useState<string>('badge_1');
 
+  const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
+  const [editStatusName, setEditStatusName] = useState<string>('');
+  const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
+
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
 
@@ -277,6 +281,56 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setCreateMode(false);
       setNewStatusName('');
       setNewStatusBadgeKey('badge_1');
+      await loadChatPanel();
+    } catch (err) {
+      setChatStatusError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setChatStatusLoading(false);
+    }
+  }
+
+  function startEditStatus(status: DirectChatStatus) {
+    setCreateMode(false);
+    setChatStatusError(null);
+    setEditingStatusId(status.id);
+    setEditStatusName((status.name || '').toString());
+    setEditStatusBadgeKey(((status as any).badgeKey || 'badge_1').toString());
+  }
+
+  function cancelEditStatus() {
+    setEditingStatusId(null);
+    setEditStatusName('');
+    setEditStatusBadgeKey('badge_1');
+  }
+
+  async function saveEditStatus() {
+    if (!editingStatusId) return;
+    try {
+      const name = editStatusName.trim();
+      if (!name) {
+        setChatStatusError('Вкажіть назву статусу');
+        return;
+      }
+      if (name.length > NEW_STATUS_NAME_MAX_LEN) {
+        setChatStatusError(`Занадто довга назва (макс. ${NEW_STATUS_NAME_MAX_LEN} символи)`);
+        return;
+      }
+
+      setChatStatusLoading(true);
+      setChatStatusError(null);
+
+      const res = await fetch(`/api/admin/direct/chat-statuses/${encodeURIComponent(editingStatusId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, badgeKey: editStatusBadgeKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data?.ok) {
+        setChatStatusError(data?.error || 'Не вдалося зберегти зміни статусу');
+        return;
+      }
+
+      cancelEditStatus();
       await loadChatPanel();
     } catch (err) {
       setChatStatusError(err instanceof Error ? err.message : String(err));
@@ -578,17 +632,29 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                   </button>
                   {chatStatuses.map((s) => {
                     const isSelected = selectedStatusId === s.id;
+                    const isEditing = editingStatusId === s.id;
                     return (
-                      <button
-                        key={s.id}
-                        className={`btn btn-xs justify-start ${isSelected ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => void setClientChatStatus(s.id)}
-                        disabled={chatStatusLoading}
-                        title={s.name}
-                      >
-                        <ChatBadgeIcon badgeKey={(s as any).badgeKey} size={16} />
-                        <span className="truncate">{s.name}</span>
-                      </button>
+                      <div key={s.id} className="flex items-stretch gap-1">
+                        <button
+                          className={`btn btn-xs justify-start flex-1 ${isSelected ? 'btn-primary' : 'btn-outline'}`}
+                          onClick={() => void setClientChatStatus(s.id)}
+                          disabled={chatStatusLoading || isEditing}
+                          title={s.name}
+                          type="button"
+                        >
+                          <ChatBadgeIcon badgeKey={(s as any).badgeKey} size={16} />
+                          <span className="truncate">{s.name}</span>
+                        </button>
+                        <button
+                          className="btn btn-xs btn-ghost"
+                          onClick={() => startEditStatus(s)}
+                          disabled={chatStatusLoading}
+                          title="Редагувати статус"
+                          type="button"
+                        >
+                          ✎
+                        </button>
+                      </div>
                     );
                   })}
                   {chatStatuses.length === 0 && !chatStatusLoading ? (
@@ -596,6 +662,54 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                   ) : null}
                 </div>
               </div>
+
+              {editingStatusId ? (
+                <div className="mb-4 p-3 rounded border bg-base-100">
+                  <div className="text-xs font-semibold mb-2">Редагування статусу</div>
+                  <label className="form-control w-full mb-2">
+                    <div className="label py-0">
+                      <span className="label-text text-xs">Назва</span>
+                    </div>
+                    <input
+                      className="input input-xs input-bordered w-full"
+                      value={editStatusName}
+                      onChange={(e) => setEditStatusName(e.target.value)}
+                      maxLength={NEW_STATUS_NAME_MAX_LEN}
+                      placeholder="Назва статусу"
+                    />
+                    <div className="mt-1 text-[10px] text-gray-500">
+                      Залишилось: {Math.max(0, NEW_STATUS_NAME_MAX_LEN - editStatusName.length)}
+                    </div>
+                  </label>
+                  <div className="mb-2">
+                    <div className="text-xs mb-1">Бейдж</div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {CHAT_BADGE_KEYS.map((k) => {
+                        const isSelected = editStatusBadgeKey === k;
+                        return (
+                          <button
+                            key={k}
+                            type="button"
+                            className={`btn btn-xs ${isSelected ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setEditStatusBadgeKey(k)}
+                            title={`Обрати ${k}`}
+                          >
+                            <ChatBadgeIcon badgeKey={k} size={16} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="btn btn-xs btn-primary" onClick={saveEditStatus} disabled={chatStatusLoading}>
+                      Зберегти
+                    </button>
+                    <button className="btn btn-xs" onClick={cancelEditStatus} disabled={chatStatusLoading}>
+                      Скасувати
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <div className="text-xs font-semibold mb-2">Історія статусів</div>
