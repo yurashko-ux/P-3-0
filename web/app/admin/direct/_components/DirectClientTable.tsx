@@ -133,6 +133,58 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
   }
 }
 
+function MissingRebookBadge({ size = 24 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="Відсутній перезапис"
+    >
+      <circle cx="12" cy="12" r="11" fill="#FEE2E2" stroke="#EF4444" strokeWidth="1.5" />
+      <path
+        d="M7.5 12a4.5 4.5 0 0 1 7.7-3.2"
+        stroke="#B91C1C"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M15.2 8.8l.1 3.1-3.1-.1"
+        stroke="#B91C1C"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 16l8-8"
+        stroke="#B91C1C"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ConsultDateMissingBadge({ size = 24 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="Дата консультації не призначена"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="3" fill="#FFE4E6" stroke="#F43F5E" strokeWidth="1.5" />
+      <path d="M7 2.8V6.2M17 2.8V6.2" stroke="#E11D48" strokeWidth="2" strokeLinecap="round" />
+      <path d="M3 8.5H21" stroke="#F43F5E" strokeWidth="1.5" />
+      <path d="M9 13l6 6M15 13l-6 6" stroke="#BE123C" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // Компактні бейджі для типу контакту в колонці “Повне імʼя”
 function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   return (
@@ -1520,19 +1572,10 @@ export function DirectClientTable({
                           const paidKyivDay = paidDate && !isNaN(paidDate.getTime()) ? kyivDayFmt.format(paidDate) : null;
                           const paidIsActive = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
 
-                          // “Червона дата” (проблема) = дата ≤ сьогодні (Kyiv), не скасовано, і attended !== true
-                          const consultProblem = Boolean(
-                            consultKyivDay &&
-                              consultKyivDay <= todayKyivDay &&
-                              !client.consultationCancelled &&
-                              client.consultationAttended !== true
-                          );
-                          const paidProblem = Boolean(
-                            paidKyivDay &&
-                              paidKyivDay <= todayKyivDay &&
-                              !client.paidServiceCancelled &&
-                              client.paidServiceAttended !== true
-                          );
+                          // “Минуле/сьогодні” для послуги: якщо дата ≤ сьогодні (Kyiv) — замість іконки послуги показуємо
+                          // або Перезапис (🔁), або відповідний статус (без залежності від ✅/❓/❌ і навіть якщо 🚫).
+                          const consultPastOrToday = Boolean(consultKyivDay && consultKyivDay <= todayKyivDay);
+                          const paidPastOrToday = Boolean(paidKyivDay && paidKyivDay <= todayKyivDay);
 
                           // “Перезапис” — використовуємо існуючу логіку з колонки дат
                           const hasPaidReschedule = Boolean((client as any).paidServiceIsRebooking);
@@ -1540,27 +1583,39 @@ export function DirectClientTable({
                             (typeof client.consultationAttemptNumber === 'number' && client.consultationAttemptNumber >= 2) ||
                             (Array.isArray(client.last5States) &&
                               client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
-                            
-                          // 1) Override: коли дата стала “червоною” — показуємо або 🔁 (перезапис), або ❗️ (немає перезапису).
+                              
+                          // 1) Override: минуле/сьогодні — показуємо або 🔁 (перезапис), або бейдж.
                           // Пріоритет: платна послуга, потім консультація.
-                          if (paidProblem && client.paidServiceDate) {
-                            const title = hasPaidReschedule ? 'Перезапис' : 'Немає перезапису';
+                          if (paidPastOrToday && client.paidServiceDate) {
+                            const title = hasPaidReschedule ? 'Перезапис' : 'Відсутній перезапис';
                             return (
                               <div className="flex items-center justify-end">
-                                <span title={title} className="text-[24px] leading-none">
-                                  {hasPaidReschedule ? '🔁' : '❗️'}
-                                </span>
+                                {hasPaidReschedule ? (
+                                  <span title={title} className="text-[24px] leading-none">
+                                    🔁
+                                  </span>
+                                ) : (
+                                  <span title={title} className="inline-flex">
+                                    <MissingRebookBadge />
+                                  </span>
+                                )}
                               </div>
                             );
                           }
 
-                          if (consultProblem && client.consultationBookingDate) {
+                          if (consultPastOrToday && client.consultationBookingDate) {
                             const title = hasConsultReschedule ? 'Перезапис' : 'Дата консультації не призначена';
                             return (
                               <div className="flex items-center justify-end">
-                                <span title={title} className="text-[24px] leading-none">
-                                  {hasConsultReschedule ? '🔁' : '❗️'}
-                                </span>
+                                {hasConsultReschedule ? (
+                                  <span title={title} className="text-[24px] leading-none">
+                                    🔁
+                                  </span>
+                                ) : (
+                                  <span title={title} className="inline-flex">
+                                    <ConsultDateMissingBadge />
+                                  </span>
+                                )}
                               </div>
                             );
                             }
@@ -1601,6 +1656,16 @@ export function DirectClientTable({
                                   </button>
                                 ),
                               });
+                            } else {
+                              // Є актуальний запис, але тип послуги не визначений у state → показуємо generic “платна послуга”
+                              icons.push({
+                                key: 'paid-service-generic',
+                                node: (
+                                  <span title="Платна послуга (тип невідомий)" className="text-[24px] leading-none">
+                                    ✂️
+                                  </span>
+                                ),
+                              });
                             }
                             }
                             
@@ -1630,7 +1695,7 @@ export function DirectClientTable({
 
                           const shown = icons.slice(0, 3);
                           if (shown.length === 0) return '';
-                          return (
+                                  return (
                             <div className="flex items-center justify-end gap-1">
                               {shown.map((i) => (
                                 <span key={i.key} className="inline-flex items-center justify-center">
