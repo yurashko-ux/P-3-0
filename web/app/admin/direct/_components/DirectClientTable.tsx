@@ -1482,7 +1482,12 @@ export function DirectClientTable({
                           // Фон лічильника НЕ залежить від статусу:
                           // - сірий завжди
                           // - голубий тільки якщо зʼявились нові
-                          const countClass = needs ? 'bg-sky-200 text-sky-900' : 'bg-gray-200 text-gray-900';
+                          // НОВЕ ПРАВИЛО:
+                          // - якщо статус НЕ встановлено → голубий
+                          // - якщо статус встановлено і нових нема → сірий
+                          // - якщо є нові → голубий (незалежно від статусу)
+                          const countClass =
+                            needs || !hasStatus ? 'bg-sky-200 text-sky-900' : 'bg-gray-200 text-gray-900';
 
                           return (
                             <div className="flex items-center gap-2">
