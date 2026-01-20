@@ -11,6 +11,7 @@ const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 const ALLOWED_BADGE_KEYS = Array.from({ length: 10 }, (_, i) => `badge_${i + 1}`);
+const STATUS_NAME_MAX_LEN = 24;
 
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
@@ -39,7 +40,16 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
     const body = await req.json().catch(() => ({}));
     const data: any = {};
 
-    if (body?.name !== undefined) data.name = (body.name || '').toString().trim();
+    if (body?.name !== undefined) {
+      const name = (body.name || '').toString().trim();
+      if (name.length > STATUS_NAME_MAX_LEN) {
+        return NextResponse.json(
+          { ok: false, error: `name is too long (max ${STATUS_NAME_MAX_LEN})` },
+          { status: 400 }
+        );
+      }
+      data.name = name;
+    }
     if (body?.badgeKey !== undefined) {
       const badgeKey = (body.badgeKey || '').toString().trim();
       if (!ALLOWED_BADGE_KEYS.includes(badgeKey)) {

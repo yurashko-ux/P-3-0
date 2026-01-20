@@ -12,7 +12,6 @@ import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
-import { ChatBadgeIcon, ChatCloudIcon } from "./ChatBadgeIcon";
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -290,6 +289,8 @@ export function DirectClientTable({
   const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
   const [masterHistoryClient, setMasterHistoryClient] = useState<DirectClient | null>(null);
+  // Локальні оверрайди для UI переписки, щоб не перезавантажувати всю таблицю після зміни статусу
+  const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
 
@@ -508,6 +509,14 @@ export function DirectClientTable({
     await onClientUpdate(client.id, { [field]: value });
   };
 
+  const clientsWithChatOverrides = useMemo(() => {
+    if (!chatUiOverrides || Object.keys(chatUiOverrides).length === 0) return clients;
+    return clients.map((c) => {
+      const o = chatUiOverrides[c.id];
+      return o ? ({ ...c, ...o } as DirectClient) : c;
+    });
+  }, [clients, chatUiOverrides]);
+
   // Унікалізуємо клієнтів за instagramUsername, щоб не було дублів
   // ПРИМІТКА: Об'єднання за altegioClientId відбувається на рівні бази даних через endpoint merge-duplicates-by-name
   const uniqueClients = useMemo(() => {
@@ -515,7 +524,7 @@ export function DirectClientTable({
 
     const normalize = (username: string) => username.trim().toLowerCase();
 
-    for (const client of clients) {
+    for (const client of clientsWithChatOverrides) {
       const key = normalize(client.instagramUsername);
       if (!map.has(key)) {
         map.set(key, client);
@@ -523,7 +532,7 @@ export function DirectClientTable({
     }
 
     return Array.from(map.values());
-  }, [clients]);
+  }, [clientsWithChatOverrides]);
 
   // KPI-таблиця: робимо максимально компактно — ховаємо рядки, де всі значення = 0
   const compactStatsRows = useMemo(() => {
@@ -944,7 +953,30 @@ export function DirectClientTable({
         client={messagesHistoryClient}
         isOpen={!!messagesHistoryClient}
         onClose={() => setMessagesHistoryClient(null)}
-        onChatStatusUpdated={() => void onRefresh()}
+        onChatStatusUpdated={(u) => {
+          const clientId = (u?.clientId || '').toString().trim();
+          if (!clientId) return;
+          setChatUiOverrides((prev) => ({
+            ...prev,
+            [clientId]: {
+              chatStatusId: u.chatStatusId || undefined,
+              chatStatusName: u.chatStatusName,
+              chatStatusBadgeKey: u.chatStatusBadgeKey,
+              chatNeedsAttention: u.chatNeedsAttention,
+            } as any,
+          }));
+          // Якщо модалка відкрита саме для цього клієнта — оновлюємо також обʼєкт в модалці
+          setMessagesHistoryClient((prev) => {
+            if (!prev || prev.id !== clientId) return prev;
+            return {
+              ...prev,
+              chatStatusId: u.chatStatusId || undefined,
+              chatStatusName: u.chatStatusName,
+              chatStatusBadgeKey: u.chatStatusBadgeKey,
+              chatNeedsAttention: u.chatNeedsAttention,
+            } as any;
+          });
+        }}
       />
 
       {/* Модальне вікно вебхуків клієнта */}
@@ -1375,42 +1407,42 @@ export function DirectClientTable({
                           </span>
                         </span>
                       </td>
-                      {/* Переписка (після “Продажі”): зелена хмарка + бейдж статусу + індикатор (сіра/червона) + лічильник */}
+                      {/* Переписка (після “Продажі”): число повідомлень (клік → історія) + текст-статус */}
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
                         {(() => {
                           const total =
                             typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
                           const needs = Boolean((client as any).chatNeedsAttention);
-                          const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
-                          const name = ((client as any).chatStatusName || '').toString().trim() || 'Без статусу';
+                          const statusId = (client.chatStatusId || '').toString().trim();
+                          const hasStatus = Boolean(statusId);
+                          const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
+                          const showStatus = Boolean(statusNameRaw) && hasStatus;
+
+                          const countClass = needs
+                            ? 'bg-sky-200 text-sky-900'
+                            : hasStatus
+                              ? 'bg-gray-200 text-gray-900'
+                              : 'bg-transparent text-gray-700';
 
                           return (
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col items-start gap-1">
                               <button
-                                className="hover:opacity-80 transition-opacity"
+                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 font-semibold tabular-nums hover:opacity-80 transition-opacity ${countClass}`}
                                 onClick={() => setMessagesHistoryClient(client)}
-                                title="Відкрити історію повідомлень"
+                                title={needs ? 'Є нові повідомлення — відкрити історію' : 'Відкрити історію повідомлень'}
                                 type="button"
                               >
-                                <ChatCloudIcon size={18} />
+                                {total}
                               </button>
 
-                              {badgeKey ? <ChatBadgeIcon badgeKey={badgeKey} size={16} title={name} /> : null}
-
-                              <span
-                                className={`inline-block w-[8px] h-[8px] rounded-full ${
-                                  needs ? 'bg-red-600' : 'bg-gray-400'
-                                }`}
-                                title={
-                                  needs
-                                    ? 'Є нові вхідні повідомлення — потрібна увага'
-                                    : 'Немає нових вхідних повідомлень'
-                                }
-                              />
-
-                              <span className="tabular-nums" title={`Повідомлень: ${total}`}>
-                                {total}
-                              </span>
+                              {showStatus ? (
+                                <span
+                                  className="inline-flex max-w-[120px] items-center rounded-full bg-base-200 px-2 py-0.5 text-[11px] leading-none text-gray-800"
+                                  title={statusNameRaw}
+                                >
+                                  <span className="truncate">{statusNameRaw}</span>
+                                </span>
+                              ) : null}
                             </div>
                           );
                         })()}

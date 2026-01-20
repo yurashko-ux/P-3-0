@@ -21,7 +21,13 @@ interface MessagesHistoryModalProps {
   client: DirectClient | null;
   isOpen: boolean;
   onClose: () => void;
-  onChatStatusUpdated?: () => void;
+  onChatStatusUpdated?: (update: {
+    clientId: string;
+    chatStatusId: string | null;
+    chatStatusName?: string;
+    chatStatusBadgeKey?: string;
+    chatNeedsAttention?: boolean;
+  }) => void;
 }
 
 export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpdated }: MessagesHistoryModalProps) {
@@ -41,6 +47,8 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
+
+  const NEW_STATUS_NAME_MAX_LEN = 24;
 
   function dayKeyFromDateString(dateString: string): string {
     try {
@@ -249,6 +257,10 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         setChatStatusError('Вкажіть назву статусу');
         return;
       }
+      if (name.length > NEW_STATUS_NAME_MAX_LEN) {
+        setChatStatusError(`Занадто довга назва (макс. ${NEW_STATUS_NAME_MAX_LEN} символи)`);
+        return;
+      }
       setChatStatusLoading(true);
       setChatStatusError(null);
 
@@ -295,7 +307,14 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setNeedsAttention(false);
 
       await loadChatPanel();
-      onChatStatusUpdated?.();
+      const st = nextStatusId ? chatStatuses.find((s) => s.id === nextStatusId) : null;
+      onChatStatusUpdated?.({
+        clientId: client.id,
+        chatStatusId: nextStatusId,
+        chatStatusName: st?.name,
+        chatStatusBadgeKey: (st as any)?.badgeKey,
+        chatNeedsAttention: false,
+      });
     } catch (err) {
       setChatStatusError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -510,8 +529,12 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                       className="input input-xs input-bordered w-full"
                       value={newStatusName}
                       onChange={(e) => setNewStatusName(e.target.value)}
+                      maxLength={NEW_STATUS_NAME_MAX_LEN}
                       placeholder="Напр.: Консультація уточнити"
                     />
+                    <div className="mt-1 text-[10px] text-gray-500">
+                      Залишилось: {Math.max(0, NEW_STATUS_NAME_MAX_LEN - newStatusName.length)}
+                    </div>
                   </label>
                   <div className="mb-2">
                     <div className="text-xs mb-1">Бейдж</div>
