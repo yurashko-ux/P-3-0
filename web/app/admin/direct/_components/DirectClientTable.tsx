@@ -987,7 +987,7 @@ export function DirectClientTable({
                 <col style={{ width: 60 }} />
                 <col style={{ width: 44 }} />
                 {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
-                <col style={{ width: 200 }} />
+                <col style={{ width: 180 }} />
               </colgroup>
               <thead>
                 <tr className="bg-base-200">
