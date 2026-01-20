@@ -177,9 +177,11 @@ function ClientBadgeIcon({ size = 14 }: { size?: number }) {
 function AvatarSlot({
   avatarSrc,
   onError,
+  onLoad,
 }: {
   avatarSrc: string | null;
   onError: (e: SyntheticEvent<HTMLImageElement, Event>) => void;
+  onLoad?: () => void;
 }) {
   // Завжди рендеримо однаковий слот, щоб рядки вирівнювались.
   // Якщо аватарки нема — лишається пустий кружок.
@@ -193,6 +195,7 @@ function AvatarSlot({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
+          onLoad={onLoad}
           onError={onError}
         />
       ) : null}
@@ -233,15 +236,53 @@ export function DirectClientTable({
 }: DirectClientTableProps) {
   // #region agent log
   // DEBUG: діагностика аватарок через локальний ndjson ingest (пише у .cursor/debug.log)
-  // Не логувати секрети/PII. Логуємо тільки username + технічні статуси.
+  // Не логувати секрети/PII. Username не пишемо у логи — тільки хеш + технічні статуси.
   const __avatarDebugSentRef =
     (globalThis as any).__directAvatarDebugSentRef ||
     ((globalThis as any).__directAvatarDebugSentRef = new Set<string>());
 
+  function __hashUsername(raw: string): string {
+    const s = (raw || '').toString();
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+    return `u_${(h >>> 0).toString(16)}`;
+  }
+
+  function __redactAvatarSrc(raw: string): string {
+    try {
+      const u = new URL(raw, typeof window !== 'undefined' ? window.location.origin : 'https://p-3-0.vercel.app');
+      if (u.searchParams.has('username')) u.searchParams.set('username', '<redacted>');
+      return u.toString().slice(0, 220);
+    } catch {
+      return (raw || '').toString().slice(0, 220);
+    }
+  }
+
+  function __pickAvatarDebugSummary(debugJson: any) {
+    const d = debugJson && typeof debugJson === 'object' ? debugJson : null;
+    const kv = d?.debug?.kv || d?.kv || null;
+    const manychat = d?.debug?.manychat || d?.manychat || null;
+    const subscriber = d?.debug?.subscriber || d?.subscriber || null;
+    return {
+      ok: d?.ok,
+      error: typeof d?.error === 'string' ? d.error : undefined,
+      // KV
+      avatarHit: kv?.avatarHit ?? kv?.avatarHit === false ? kv.avatarHit : undefined,
+      // subscriber resolution
+      subscriberFromKvPresent: subscriber?.fromKv != null,
+      subscriberFromLogsPresent: subscriber?.fromLogs != null,
+      scannedLogs: typeof subscriber?.scannedLogs === 'number' ? subscriber.scannedLogs : undefined,
+      // ManyChat call status (без PII)
+      manychatGetInfoStatus: typeof manychat?.getInfo?.status === 'number' ? manychat.getInfo.status : undefined,
+      manychatGetInfoOk: typeof manychat?.getInfo?.ok === 'boolean' ? manychat.getInfo.ok : undefined,
+    };
+  }
+
   async function __logAvatarDebug(args: { runId: string; username: string; avatarSrc: string }) {
     try {
       const { runId, username, avatarSrc } = args;
-      const key = `${runId}:${username}`;
+      const usernameHash = __hashUsername(username);
+      const key = `${runId}:${usernameHash}`;
       if (__avatarDebugSentRef.has(key)) return;
       __avatarDebugSentRef.add(key);
 
@@ -263,15 +304,15 @@ export function DirectClientTable({
         body: JSON.stringify({
           sessionId: 'debug-session',
           runId,
-          hypothesisId: 'A|B|C|D',
-          location: 'DirectClientTable.tsx:avatar_onError',
-          message: 'Avatar image failed to load; fetched instagram-avatar debug',
+          hypothesisId: 'H1|H2|H3|H4',
+          location: 'DirectClientTable.tsx:__logAvatarDebug',
+          message: 'Avatar debug snapshot (sanitized)',
           data: {
-            username,
+            usernameHash,
             hasAdminToken,
-            avatarSrc: avatarSrc.slice(0, 140),
+            avatarSrc: __redactAvatarSrc(avatarSrc),
             status,
-            debug: debugJson,
+            debug: __pickAvatarDebugSummary(debugJson),
           },
           timestamp: Date.now(),
         }),
@@ -1220,10 +1261,27 @@ export function DirectClientTable({
                           return (
                             <AvatarSlot
                               avatarSrc={avatarSrc}
+                              onLoad={() => {
+                                // #region agent log
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    sessionId: 'debug-session',
+                                    runId: 'avatar-load-1',
+                                    hypothesisId: 'H3',
+                                    location: 'DirectClientTable.tsx:AvatarSlot_onLoad',
+                                    message: 'Avatar loaded',
+                                    data: { hasAvatarSrc: Boolean(avatarSrc) },
+                                    timestamp: Date.now(),
+                                  }),
+                                }).catch(() => {});
+                                // #endregion agent log
+                              }}
                               onError={(e) => {
                                 (e.currentTarget as HTMLImageElement).style.display = "none";
                                 // #region agent log
-                                __logAvatarDebug({ runId: 'post-fix-1', username, avatarSrc }).catch(() => {});
+                                __logAvatarDebug({ runId: 'avatar-fail-1', username, avatarSrc }).catch(() => {});
                                 // #endregion agent log
                               }}
                             />
