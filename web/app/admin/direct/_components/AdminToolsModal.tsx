@@ -654,6 +654,43 @@ export function AdminToolsModal({
         },
       ],
     },
+    // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
+      category: "Візити (Altegio)",
+      items: [
+        {
+          icon: "📅",
+          label: "Оновити lastVisitAt (Altegio → Prisma, FORCE)",
+          endpoint: "/api/admin/direct/sync-last-visit?onlyMissing=0&delayMs=150",
+          method: "POST" as const,
+          confirm:
+            "Оновити lastVisitAt для ВСІХ клієнтів з Altegio?\n\nFORCE режим: onlyMissing=0 — перезаписуємо lastVisitAt, якщо в Altegio є новіша дата.\n\nЦе потрібно для коректної колонки «Днів з останнього візиту».\n\nupdatedAt НЕ змінюємо.\n\nМоже зайняти кілька хвилин.",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            const sample = Array.isArray(data?.samples) ? data.samples : [];
+            const sampleLines = sample
+              .slice(0, 15)
+              .map((x: any) => `  - Altegio ID: ${x.altegioClientId} (${x.action}) ${x.lastVisitAt ? `→ ${x.lastVisitAt}` : ''}`)
+              .join("\n");
+            return (
+              `✅ Синхронізація lastVisitAt завершена!\n\n` +
+              `Всього клієнтів: ${s.totalClients || 0}\n` +
+              `З Altegio ID: ${s.targets || 0}\n` +
+              `Оброблено: ${s.processed || 0}\n` +
+              `Оновлено: ${s.updated || 0}\n` +
+              `Пропущено (без Altegio ID): ${s.skippedNoAltegioId || 0}\n` +
+              `Пропущено (нема lastVisit в Altegio): ${s.skippedNoLastVisit || 0}\n` +
+              `Пропущено (вже було): ${s.skippedExists || 0}\n` +
+              `Пропущено (без змін): ${s.skippedNoChange || 0}\n` +
+              `Помилок: ${s.errors || 0}\n` +
+              `Час: ${s.ms || 0} ms\n\n` +
+              (sampleLines ? `Приклади:\n${sampleLines}\n\n` : "") +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+      ],
+    },
   ];
 
   return (
