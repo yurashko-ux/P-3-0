@@ -313,6 +313,15 @@ export function DirectClientTable({
   onClientUpdate,
   onRefresh,
 }: DirectClientTableProps) {
+  // #region agent log
+  const __debugRefs =
+    (globalThis as any).__directServiceOverflowRefs ||
+    ((globalThis as any).__directServiceOverflowRefs = {
+      tdById: new Map<string, HTMLTableCellElement>(),
+      statusById: new Map<string, HTMLSpanElement>(),
+    });
+  // #endregion agent log
+
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
@@ -325,6 +334,25 @@ export function DirectClientTable({
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
+
+  // #region agent log
+  useEffect(() => {
+    try {
+      const ids = Array.from(__debugRefs.statusById.keys()).slice(0, 50);
+      let overflowCount = 0;
+      for (const id of ids) {
+        const td = __debugRefs.tdById.get(id);
+        const st = __debugRefs.statusById.get(id);
+        if (!td || !st) continue;
+        const tdRect = td.getBoundingClientRect();
+        const stRect = st.getBoundingClientRect();
+        const overflow = stRect.right > tdRect.right + 1;
+        if (overflow) overflowCount++;
+      }
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/DirectClientTable.tsx:overflowCheck',message:'Перевірка overflow статусу переписки (чи налазить на Послугу)',data:{checked:ids.length,overflowCount},timestamp:Date.now(),sessionId:'debug-session',runId:'service-overflow-postfix-1',hypothesisId:'H_overlap'})}).catch(()=>{});
+    } catch {}
+  }, [clients]);
+  // #endregion agent log
 
   const altegioClientsBaseUrl =
     "https://app.alteg.io/clients/1169323/base/?fields%5B0%5D=name&fields%5B1%5D=phone&fields%5B2%5D=email&fields%5B3%5D=sold_amount&fields%5B4%5D=visits_count&fields%5B5%5D=discount&fields%5B6%5D=last_visit_date&fields%5B7%5D=first_visit_date&order_by=id&order_by_direction=desc&page=1&page_size=25&segment=&operation=AND&filters%5B0%5D%5Boperation%5D=OR&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B1%5D%5Btype%5D=quick_search&filters%5B1%5D%5Bstate%5D%5Bvalue%5D=";
@@ -1437,7 +1465,15 @@ export function DirectClientTable({
                           : '-'}
                       </td>
                       {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px]">
+                      <td
+                        className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px] overflow-hidden"
+                        ref={(el) => {
+                          try {
+                            if (!el) return;
+                            __debugRefs.tdById.set(String(client.id), el);
+                          } catch {}
+                        }}
+                      >
                           {(() => {
                           const total =
                             typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
@@ -1461,7 +1497,7 @@ export function DirectClientTable({
                             needs || !hasStatus ? 'bg-[#2AABEE] text-white' : 'bg-gray-200 text-gray-900';
 
                               return (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
                                 <button
                                 className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
@@ -1478,11 +1514,17 @@ export function DirectClientTable({
 
                               {showStatus ? (
                                 <span
-                                  className="inline-flex max-w-[120px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none"
+                                  className="inline-flex min-w-0 max-w-[78px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden"
                                   title={statusNameRaw}
                                   style={{
                                     backgroundColor: badgeCfg.bg,
                                     color: badgeCfg.fg,
+                                  }}
+                                  ref={(el) => {
+                                    try {
+                                      if (!el) return;
+                                      __debugRefs.statusById.set(String(client.id), el);
+                                    } catch {}
                                   }}
                                 >
                                   <span className="truncate">{statusNameRaw}</span>
