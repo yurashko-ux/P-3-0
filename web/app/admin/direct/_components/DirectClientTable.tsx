@@ -1199,13 +1199,10 @@ export function DirectClientTable({
                     const activityKeys = client.lastActivityKeys ?? [];
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
-                    const hasSuffixAny = (suffixes: string[]) =>
-                      activityKeys.some((k) => suffixes.some((s) => k.endsWith(s)));
 
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
                     const showConsultDot = hasPrefix('consultation');
-                    const showServiceDot = hasActivity('state') || hasSuffixAny(['Attended', 'Cancelled']);
 
                     return (
                       <tr key={client.id}>
@@ -1537,7 +1534,6 @@ export function DirectClientTable({
                                     <MissingRebookBadge />
                                   </span>
                                 )}
-                                {showServiceDot ? <ActivityDot title="Тригер: змінилась послуга/стан" /> : null}
                               </div>
                             );
                           }
@@ -1555,7 +1551,6 @@ export function DirectClientTable({
                                     <ConsultDateMissingBadge />
                                   </span>
                                 )}
-                                {showServiceDot ? <ActivityDot title="Тригер: змінилась послуга/стан" /> : null}
                               </div>
                             );
                             }
@@ -1634,15 +1629,7 @@ export function DirectClientTable({
                           }
 
                           const shown = icons.slice(0, 3);
-                          if (shown.length === 0) {
-                            return showServiceDot ? (
-                              <div className="flex items-center justify-end">
-                                <ActivityDot title="Тригер: змінилась послуга/стан" />
-                              </div>
-                            ) : (
-                              ''
-                            );
-                          }
+                          if (shown.length === 0) return '';
                                   return (
                             <div className="flex items-center justify-end gap-1">
                               {shown.map((i) => (
@@ -1650,7 +1637,6 @@ export function DirectClientTable({
                                   {i.node}
                                 </span>
                               ))}
-                              {showServiceDot ? <ActivityDot title="Тригер: змінилась послуга/стан" /> : null}
                                       </div>
                             );
                           })()}
