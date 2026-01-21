@@ -142,6 +142,39 @@ async function run(req: NextRequest) {
 
       if (Number.isFinite(currentTs) && currentTs === nextTs) {
         skippedNoChange++;
+        // Для таргет‑виклику: повертаємо зразок навіть якщо змін нема (щоб мати 100% runtime‑доказ по “Днів”)
+        if (hasTarget && samples.length < 20) {
+          let computedDaysSinceLastVisit: number | null = null;
+          try {
+            const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+            const lastKyivDay = kyivDayFromISO(current || new Date(nextTs).toISOString());
+            const toDayIndex = (day: string): number => {
+              const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+              if (!m) return NaN;
+              const y = Number(m[1]);
+              const mo = Number(m[2]);
+              const d = Number(m[3]);
+              if (!y || !mo || !d) return NaN;
+              return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
+            };
+            const diff = toDayIndex(todayKyivDay) - toDayIndex(lastKyivDay);
+            computedDaysSinceLastVisit = Number.isFinite(diff) ? (diff < 0 ? 0 : diff) : null;
+          } catch {}
+
+          samples.push({
+            directClientId: client.id,
+            altegioClientId: client.altegioClientId,
+            action: 'no_change',
+            lastVisitAt: current || new Date(nextTs).toISOString(),
+            ...(computedDaysSinceLastVisit != null ? { computedDaysSinceLastVisit } : {}),
+          } as any);
+
+          // #region agent log
+          try {
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/sync-last-visit/route.ts:no_change',message:'Target had no change; computed days for proof',data:{altegioClientId:String(client.altegioClientId||''),computedDaysSinceLastVisit},timestamp:Date.now(),sessionId:'debug-session',runId:'days-4',hypothesisId:'H_days_compute'})}).catch(()=>{});
+          } catch {}
+          // #endregion agent log
+        }
         continue;
       }
 
