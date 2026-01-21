@@ -617,6 +617,11 @@ export async function saveDirectClient(
 
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
+
+    // #region agent log
+    // Логуємо тільки технічні прапори/ключі (без PII).
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'web/lib/direct-store.ts:saveDirectClient:entry',message:'Enter saveDirectClient',data:{reason:reason||'',touchUpdatedAt,skipAltegioMetricsSync,hasAltegioClientId:typeof (client as any).altegioClientId==='number',willSetPhone:typeof (client as any).phone==='string'&&String((client as any).phone).length>0,willSetVisits:typeof (client as any).visits==='number',willSetSpent:typeof (client as any).spent==='number'},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     
     // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
     // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу

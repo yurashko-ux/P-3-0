@@ -32,6 +32,9 @@ async function runSync(req: NextRequest) {
   const limit = Math.max(0, Math.min(5000, Number(req.nextUrl.searchParams.get('limit') || '0') || 0));
 
   console.log('[cron/sync-direct-altegio-metrics] Старт', { delayMs, limit });
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'web/app/api/cron/sync-direct-altegio-metrics/route.ts:runSync:start',message:'Cron sync start',data:{okCron:true,delayMs,limit,hasCompanyId:!!process.env.ALTEGIO_COMPANY_ID},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
 
   const allClients = await getAllDirectClients();
   const targets = allClients.filter((c) => typeof c.altegioClientId === 'number' && (c.altegioClientId || 0) > 0);
@@ -129,6 +132,12 @@ async function runSync(req: NextRequest) {
         skippedNoChange++;
         continue;
       }
+
+      // #region agent log
+      if (processed <= 3) {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'web/app/api/cron/sync-direct-altegio-metrics/route.ts:runSync:decision',message:'Prepared updates for client',data:{idx:processed,altegioClientId:client.altegioClientId,changedKeys,hasPhoneUpdate:changedKeys.includes('phone'),hasVisitsUpdate:changedKeys.includes('visits'),hasSpentUpdate:changedKeys.includes('spent')},timestamp:Date.now()})}).catch(()=>{});
+      }
+      // #endregion agent log
 
       const updatedClient = {
         ...client,
