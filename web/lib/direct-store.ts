@@ -998,7 +998,7 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
   );
 
   try {
-    console.log('[direct-store] 🔄 Перший синк метрик з Altegio (phone/visits/spent)', {
+    console.log('[direct-store] 🔄 Перший синк метрик з Altegio (phone/visits/spent + lastVisitAt)', {
       directClientId: params.directClientId,
       altegioClientId: params.altegioClientId,
     });
@@ -1007,6 +1007,27 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
     if (res.ok === false) {
       const errText = res.error || 'unknown_error';
       throw new Error(errText);
+    }
+
+    // Паралельно пробуємо дістати last_visit_date (через getClient() всередині clients.ts).
+    // Не ламаємо синк, якщо не вдалось — просто пропускаємо lastVisitAt.
+    let nextLastVisitAt: string | null = null;
+    try {
+      const { getClient } = await import('@/lib/altegio/clients');
+      const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+      const companyId = parseInt(companyIdStr, 10);
+      if (companyId && !Number.isNaN(companyId)) {
+        const altegioClient = await getClient(companyId, params.altegioClientId);
+        const raw = (altegioClient as any)?.last_visit_date ?? (altegioClient as any)?.lastVisitDate ?? null;
+        const s = raw ? String(raw).trim() : '';
+        if (s) {
+          const d = new Date(s);
+          if (!isNaN(d.getTime())) nextLastVisitAt = d.toISOString();
+        }
+      }
+    } catch (err) {
+      console.warn('[direct-store] ⚠️ Не вдалося витягнути last_visit_date (не критично):', err);
+      nextLastVisitAt = null;
     }
 
     const current = await getDirectClient(params.directClientId);
@@ -1027,6 +1048,14 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
     }
     if (nextSpent !== null && current.spent !== nextSpent) {
       updates.spent = nextSpent;
+    }
+    if (nextLastVisitAt) {
+      const cur = (current as any).lastVisitAt ? String((current as any).lastVisitAt) : '';
+      const curTs = cur ? new Date(cur).getTime() : NaN;
+      const nextTs = new Date(nextLastVisitAt).getTime();
+      if (Number.isFinite(nextTs) && (!Number.isFinite(curTs) || curTs !== nextTs)) {
+        (updates as any).lastVisitAt = nextLastVisitAt;
+      }
     }
 
     const changedKeys = Object.keys(updates);

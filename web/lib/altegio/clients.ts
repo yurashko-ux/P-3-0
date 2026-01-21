@@ -403,6 +403,8 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             'spent',
             'visits',
             'balance',
+            // Дата останнього візиту (щоб не робити окремий visits/search для одного клієнта)
+            'last_visit_date',
           ],
         }),
       },
