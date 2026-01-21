@@ -341,6 +341,11 @@ export async function updateInstagramForAltegioClient(
 ): Promise<DirectClient | null> {
   console.log(`[direct-store] 🔥🔥🔥 updateInstagramForAltegioClient CALLED - VERSION 2025-12-28-1635 🔥🔥🔥`);
   try {
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:entry',message:'entry',data:{altegioClientId,instagramLen:String(instagramUsername||'').length},timestamp:Date.now()})}).catch(()=>{});
+    } catch {}
+    // #endregion agent log
     const normalized = normalizeInstagram(instagramUsername);
     if (!normalized) {
       console.error(`[direct-store] Invalid Instagram username: ${instagramUsername}`);
@@ -362,6 +367,12 @@ export async function updateInstagramForAltegioClient(
     const existingByInstagram = await prisma.directClient.findFirst({
       where: { instagramUsername: normalized },
     });
+
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:lookup',message:'lookups',data:{altegioClientId,normalized,foundByAltegio:Boolean(existingClient),foundByIg:Boolean(existingByInstagram),sameId:existingByInstagram?existingByInstagram.id===existingClient.id:null,byAltegioId:String(existingClient?.id||'').slice(0,12),byIgId:String(existingByInstagram?.id||'').slice(0,12)},timestamp:Date.now()})}).catch(()=>{});
+    } catch {}
+    // #endregion agent log
 
     console.log(`[direct-store] 🔍 Checking for existing client with Instagram "${normalized}":`, existingByInstagram ? {
       id: existingByInstagram.id,
@@ -387,6 +398,11 @@ export async function updateInstagramForAltegioClient(
       // Оновлюємо Altegio ID в існуючому клієнті з правильним Instagram (якщо його немає)
       // Видаляємо поточного клієнта з неправильним Instagram
       console.log(`[direct-store] ⚠️ Instagram ${normalized} already exists for client ${existingByInstagram.id}, merging clients...`);
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:mergePath',message:'merge branch taken',data:{altegioClientId,keep:'instagram',delete:'altegio',keepId:String(existingByInstagram.id).slice(0,12),deleteId:String(existingClient.id).slice(0,12),keepPhonePresent:Boolean(existingByInstagram.phone&&existingByInstagram.phone.trim()),delPhonePresent:Boolean(existingClient.phone&&existingClient.phone.trim())},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
       
       // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
       const mergeUpdateData: any = {
