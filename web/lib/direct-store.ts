@@ -18,6 +18,8 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     spent: dbClient.spent ?? undefined,
     visits: dbClient.visits ?? undefined,
     lastVisitAt: dbClient.lastVisitAt?.toISOString?.() || undefined,
+    lastActivityAt: dbClient.lastActivityAt?.toISOString?.() || undefined,
+    lastActivityKeys: Array.isArray(dbClient.lastActivityKeys) ? dbClient.lastActivityKeys : undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
     state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
@@ -66,6 +68,8 @@ function directClientToPrisma(client: DirectClient) {
     spent: client.spent ?? null,
     visits: client.visits ?? null,
     lastVisitAt: client.lastVisitAt ? new Date(client.lastVisitAt) : null,
+    lastActivityAt: client.lastActivityAt ? new Date(client.lastActivityAt) : null,
+    lastActivityKeys: (client.lastActivityKeys as any) ?? null,
     source: client.source || 'instagram',
     state: client.state || null,
     firstContactDate: new Date(client.firstContactDate),
@@ -238,6 +242,8 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
           spent: dbClient.spent ?? undefined,
           visits: dbClient.visits ?? undefined,
           lastVisitAt: dbClient.lastVisitAt?.toISOString?.() || undefined,
+          lastActivityAt: dbClient.lastActivityAt?.toISOString?.() || undefined,
+          lastActivityKeys: Array.isArray(dbClient.lastActivityKeys) ? dbClient.lastActivityKeys : undefined,
           source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
           state: (dbClient.state as 'lead' | 'client' | 'consultation') || undefined,
           firstContactDate: dbClient.firstContactDate.toISOString(),
@@ -615,6 +621,65 @@ export async function saveDirectClient(
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
     const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
 
+    const computeActivityKeys = (prev: any | null, finalState: string | null | undefined): string[] => {
+      const keys: string[] = [];
+      const push = (k: string) => {
+        if (!keys.includes(k)) keys.push(k);
+      };
+
+      const eqDate = (a: Date | null | undefined, b: string | null | undefined) => {
+        if (!a && !b) return true;
+        const at = a instanceof Date && !isNaN(a.getTime()) ? a.getTime() : NaN;
+        const bt = b ? new Date(String(b)).getTime() : NaN;
+        if (!Number.isFinite(at) && !Number.isFinite(bt)) return true;
+        if (!Number.isFinite(at) || !Number.isFinite(bt)) return false;
+        return at === bt;
+      };
+
+      const eqScalar = (a: any, b: any) => {
+        if (a === null || a === undefined) return b === null || b === undefined;
+        if (b === null || b === undefined) return false;
+        return a === b;
+      };
+
+      // ВАЖЛИВО: дивимось лише на поля, які передали ЯВНО (не undefined),
+      // щоб не отримувати хибні тригери від “часткових” save'ів.
+      if ((client as any).lastMessageAt !== undefined) {
+        if (!eqDate(prev?.lastMessageAt ?? null, (client as any).lastMessageAt ?? null)) push('message');
+      }
+
+      if ((client as any).paidServiceDate !== undefined) {
+        if (!eqDate(prev?.paidServiceDate ?? null, (client as any).paidServiceDate ?? null)) push('paidServiceDate');
+      }
+      if ((client as any).paidServiceAttended !== undefined) {
+        if (!eqScalar(prev?.paidServiceAttended ?? null, (client as any).paidServiceAttended ?? null)) push('paidServiceAttended');
+      }
+      if ((client as any).paidServiceCancelled !== undefined) {
+        if (!eqScalar(prev?.paidServiceCancelled ?? false, (client as any).paidServiceCancelled ?? false)) push('paidServiceCancelled');
+      }
+      if ((client as any).paidServiceTotalCost !== undefined) {
+        if (!eqScalar(prev?.paidServiceTotalCost ?? null, (client as any).paidServiceTotalCost ?? null)) push('paidServiceTotalCost');
+      }
+
+      if ((client as any).consultationBookingDate !== undefined) {
+        if (!eqDate(prev?.consultationBookingDate ?? null, (client as any).consultationBookingDate ?? null)) push('consultationBookingDate');
+      }
+      if ((client as any).consultationAttended !== undefined) {
+        if (!eqScalar(prev?.consultationAttended ?? null, (client as any).consultationAttended ?? null)) push('consultationAttended');
+      }
+      if ((client as any).consultationCancelled !== undefined) {
+        if (!eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false)) push('consultationCancelled');
+      }
+
+      // state: фіксуємо зміну навіть якщо finalState було скориговано правилами.
+      if (finalState !== undefined && finalState !== null) {
+        if (!eqScalar(prev?.state ?? null, finalState)) push('state');
+      }
+
+      if (keys.length === 0) keys.push('other');
+      return keys;
+    };
+
     // ВАЖЛИВО: метрики з Altegio (phone/visits/spent/lastVisitAt) не можна випадково затирати.
     // Багато шляхів (вебхуки/сервісні синки) передають client без цих полів (undefined),
     // а `directClientToPrisma` перетворює undefined → null і це затирає значення в БД.
@@ -625,6 +690,8 @@ export async function saveDirectClient(
       if (client.visits === undefined) delete next.visits;
       if (client.spent === undefined) delete next.spent;
       if ((client as any).lastVisitAt === undefined) delete next.lastVisitAt;
+      if (client.lastActivityAt === undefined) delete next.lastActivityAt;
+      if (client.lastActivityKeys === undefined) delete next.lastActivityKeys;
       return next;
     };
 
@@ -702,16 +769,22 @@ export async function saveDirectClient(
       
       // Якщо існує клієнт з таким username, оновлюємо його (об'єднуємо дані)
       // Беремо найранішу дату створення та найпізнішу дату оновлення
+      const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByUsername, finalState) : null;
+      const updateData: any = applyMetricsPatch({
+        ...dataWithCorrectState,
+        id: existingByUsername.id, // Зберігаємо існуючий ID
+        createdAt: existingByUsername.createdAt < data.firstContactDate 
+          ? existingByUsername.createdAt 
+          : new Date(data.firstContactDate),
+        ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+      });
+      if (touchUpdatedAt) {
+        updateData.lastActivityAt = new Date();
+        updateData.lastActivityKeys = activityKeys;
+      }
       await prisma.directClient.update({
         where: { instagramUsername: normalizedUsername },
-        data: applyMetricsPatch({
-          ...dataWithCorrectState,
-          id: existingByUsername.id, // Зберігаємо існуючий ID
-          createdAt: existingByUsername.createdAt < data.firstContactDate 
-            ? existingByUsername.createdAt 
-            : new Date(data.firstContactDate),
-          ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-        }),
+        data: updateData,
       });
       console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
     } else {
@@ -724,18 +797,30 @@ export async function saveDirectClient(
         previousState = existingById.state;
         
         // Оновлюємо існуючий запис
+        const activityKeys = touchUpdatedAt ? computeActivityKeys(existingById, finalState) : null;
+        const updateData: any = applyMetricsPatch({
+          ...dataWithCorrectState,
+          ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+        });
+        if (touchUpdatedAt) {
+          updateData.lastActivityAt = new Date();
+          updateData.lastActivityKeys = activityKeys;
+        }
         await prisma.directClient.update({
           where: { id: client.id },
-          data: applyMetricsPatch({
-            ...dataWithCorrectState,
-            ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-          }),
+          data: updateData,
         });
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
       } else {
         // Створюємо новий запис (для нового клієнта previousState = null)
+        const activityKeys = touchUpdatedAt ? computeActivityKeys(null, finalState) : null;
+        const createData: any = applyMetricsPatch(dataWithCorrectState);
+        if (touchUpdatedAt) {
+          createData.lastActivityAt = new Date();
+          createData.lastActivityKeys = activityKeys;
+        }
         await prisma.directClient.create({
-          data: applyMetricsPatch(dataWithCorrectState),
+          data: createData,
         });
         console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
       }

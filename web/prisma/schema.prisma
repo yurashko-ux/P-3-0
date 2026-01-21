@@ -40,6 +40,8 @@ model DirectClient {
   spent                  Int?      // Загальна сума витрат клієнта (з Altegio API)
   visits                 Int?      // Кількість візитів клієнта (з Altegio API)
   lastVisitAt            DateTime? // Дата останнього успішного візиту (з Altegio last_visit_date)
+  lastActivityAt         DateTime? // Коли була остання “реальна активність” (що підняла клієнта вгору)
+  lastActivityKeys       Json?     // Які поля/тригери змінились в останній активності
   source                 String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'
   state                  String?   // Системний стан: 'lead' | 'client' | 'consultation'
   firstContactDate       DateTime  // Дата першого контакту
@@ -99,6 +101,7 @@ model DirectClient {
   @@index([masterId])
   @@index([altegioClientId])
   @@index([lastVisitAt])
+  @@index([lastActivityAt])
   @@index([state])
   @@index([source])
   @@index([firstContactDate])
