@@ -4,7 +4,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import type { SyntheticEvent } from "react";
+import type { SyntheticEvent, ReactNode } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
@@ -255,13 +255,30 @@ function AvatarSlot({
   );
 }
 
-function ActivityDot({ title }: { title: string }) {
+function CornerRedDot({ title }: { title: string }) {
   return (
     <span
-      className="inline-block w-[6px] h-[6px] rounded-full bg-red-600"
+      className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-red-600 border border-white"
       title={title}
       aria-label={title}
     />
+  );
+}
+
+function WithCornerRedDot({
+  show,
+  title,
+  children,
+}: {
+  show: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="relative inline-flex">
+      {children}
+      {show ? <CornerRedDot title={title} /> : null}
+    </span>
   );
 }
 
@@ -1445,7 +1462,6 @@ export function DirectClientTable({
 
                               return (
                             <div className="flex items-center gap-2">
-                              {showMessageDot ? <ActivityDot title="Тригер: нове повідомлення" /> : null}
                                 <button
                                 className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
@@ -1453,10 +1469,9 @@ export function DirectClientTable({
                                 type="button"
                                 >
                                 {total}
-                                {needs ? (
-                                  <span
-                                    className="absolute -top-[2px] -right-[2px] w-[8px] h-[8px] rounded-full bg-red-600 border border-white"
-                                    title="Є нові вхідні повідомлення"
+                                {needs || showMessageDot ? (
+                                  <CornerRedDot
+                                    title={needs ? 'Є нові вхідні повідомлення' : 'Тригер: нове повідомлення'}
                                   />
                                 ) : null}
                                 </button>
@@ -1750,10 +1765,33 @@ export function DirectClientTable({
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
                               const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                               
+                              const consultDotTitle = 'Тригер: змінилась консультація';
+                              const showDotOnConsultDate = Boolean(showConsultDot && !attendanceIcon);
+
                               return (
                                 <span className="flex flex-col items-center">
                                   <span className="flex items-center gap-1">
-                                    <button
+                                    {showDotOnConsultDate ? (
+                                      <WithCornerRedDot show={true} title={consultDotTitle}>
+                                        <button
+                                          className={
+                                            isPast
+                                              ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                              : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                          }
+                                          title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
+                                          onClick={() => {
+                                            if (!client.altegioClientId) return;
+                                            setRecordHistoryType('consultation');
+                                            setRecordHistoryClient(client);
+                                          }}
+                                          disabled={!client.altegioClientId}
+                                        >
+                                          {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                        </button>
+                                      </WithCornerRedDot>
+                                    ) : (
+                                      <button
                                       className={
                                         isPast
                                           ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
@@ -1769,7 +1807,7 @@ export function DirectClientTable({
                                     >
                                       {formattedDateStr} {isOnline ? "💻" : "📅"}
                                     </button>
-                                    {showConsultDot ? <ActivityDot title="Тригер: змінилась консультація" /> : null}
+                                    )}
                                     {typeof client.consultationAttemptNumber === 'number' &&
                                     client.consultationAttemptNumber >= 2 ? (
                                       <span
@@ -1779,7 +1817,11 @@ export function DirectClientTable({
                                         {client.consultationAttemptNumber}
                                       </span>
                                     ) : null}
-                                    {attendanceIcon}
+                                    {attendanceIcon ? (
+                                      <WithCornerRedDot show={Boolean(showConsultDot)} title={consultDotTitle}>
+                                        {attendanceIcon}
+                                      </WithCornerRedDot>
+                                    ) : null}
                                   </span>
 
                                   {(() => {
@@ -1858,10 +1900,40 @@ export function DirectClientTable({
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                             
+                            const paidDotTitle = 'Тригер: змінився запис';
+                            const showDotOnPaidAttendance = Boolean(showPaidDot && attendanceIcon);
+                            const showDotOnPaidPending = Boolean(showPaidDot && !attendanceIcon && pendingIcon);
+                            const showDotOnPaidRebook = Boolean(
+                              showPaidDot && !attendanceIcon && !pendingIcon && client.paidServiceIsRebooking
+                            );
+                            const showDotOnPaidDate = Boolean(
+                              showPaidDot && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
+                            );
+
                             return (
                               <span className="flex flex-col items-center">
                                 <span className="flex items-center gap-1">
-                                <button
+                                {showDotOnPaidDate ? (
+                                  <WithCornerRedDot show={true} title={paidDotTitle}>
+                                    <button
+                                      className={
+                                        isPast
+                                          ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                          : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                      }
+                                      title={`${tooltipTitle}\nНатисніть, щоб переглянути історію записів`}
+                                      onClick={() => {
+                                        if (!client.altegioClientId) return;
+                                        setRecordHistoryType('paid');
+                                        setRecordHistoryClient(client);
+                                      }}
+                                      disabled={!client.altegioClientId}
+                                    >
+                                      {dateStr}
+                                    </button>
+                                  </WithCornerRedDot>
+                                ) : (
+                                  <button
                                   className={
                                     isPast
                                       ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
@@ -1877,17 +1949,27 @@ export function DirectClientTable({
                                 >
                                   {dateStr}
                                 </button>
-                                {showPaidDot ? <ActivityDot title="Тригер: змінився запис" /> : null}
-                                {pendingIcon}
-                                {client.paidServiceIsRebooking ? (
-                                  <span
-                                    className="text-purple-700 text-lg"
-                                    title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
-                                  >
-                                    🔁
-                                  </span>
+                                )}
+                                {pendingIcon ? (
+                                  <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle}>
+                                    {pendingIcon}
+                                  </WithCornerRedDot>
                                 ) : null}
-                                {attendanceIcon}
+                                {client.paidServiceIsRebooking ? (
+                                  <WithCornerRedDot show={showDotOnPaidRebook} title={paidDotTitle}>
+                                    <span
+                                      className="text-purple-700 text-lg"
+                                      title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
+                                    >
+                                      🔁
+                                    </span>
+                                  </WithCornerRedDot>
+                                ) : null}
+                                {attendanceIcon ? (
+                                  <WithCornerRedDot show={showDotOnPaidAttendance} title={paidDotTitle}>
+                                    {attendanceIcon}
+                                  </WithCornerRedDot>
+                                ) : null}
                                 </span>
 
                                 {typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? (
