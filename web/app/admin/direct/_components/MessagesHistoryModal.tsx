@@ -141,6 +141,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
   useEffect(() => {
     if (isOpen && client) {
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:useEffect_open',message:'Modal opened -> loadMessages+loadChatPanel',data:{clientId:String(client.id||'').slice(0,12),hasClient:true},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_reload'})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
       loadMessages();
       void loadChatPanel();
     }
@@ -151,6 +156,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
     setSelectedStatusId((client.chatStatusId || null) as any);
     setNeedsAttention(Boolean((client as any).chatNeedsAttention));
     setStatusAnchorMessageId(((client as any).chatStatusAnchorMessageId || null) as any);
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:useEffect_client',message:'Client prop changed (may trigger reload due to deps)',data:{clientId:String(client.id||'').slice(0,12),chatStatusId:String(client.chatStatusId||''),anchorId:String((client as any).chatStatusAnchorMessageId||''),anchorPresent:Boolean((client as any).chatStatusAnchorMessageId)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_reload'})}).catch(()=>{});
+    } catch {}
+    // #endregion agent log
   }, [client?.id, client?.chatStatusId, (client as any)?.chatNeedsAttention]);
 
   async function loadMessages() {
@@ -159,6 +169,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
     try {
       setLoading(true);
       setError(null);
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:loadMessages_start',message:'loadMessages start',data:{clientId:String(client.id||'').slice(0,12),igPresent:Boolean(client.instagramUsername)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_reload'})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
       
       const instagramUsername = client.instagramUsername;
       if (!instagramUsername) {
@@ -194,6 +209,14 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
           type: msg.type,
         }));
         setMessages(convertedMessages);
+        // #region agent log
+        try {
+          const idsCount = convertedMessages.filter((m) => m.id != null).length;
+          const anchor = statusAnchorMessageId;
+          const matchById = Boolean(anchor && convertedMessages.some((m) => m.id && String(m.id) === String(anchor)));
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:loadMessages_manychat',message:'ManyChat messages loaded',data:{count:convertedMessages.length,idsCount,anchorPresent:Boolean(anchor),anchorMatched:matchById,firstHasId:Boolean(convertedMessages[0]?.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
+        } catch {}
+        // #endregion agent log
         return;
       }
       
@@ -215,6 +238,15 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       
       if (data.ok) {
         setMessages(data.messages || []);
+        // #region agent log
+        try {
+          const arr: any[] = Array.isArray(data.messages) ? data.messages : [];
+          const idsCount = arr.filter((m) => m && m.id != null).length;
+          const anchor = statusAnchorMessageId;
+          const matchById = Boolean(anchor && arr.some((m) => m && m.id && String(m.id) === String(anchor)));
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:loadMessages_fallback',message:'Fallback messages loaded',data:{count:arr.length,idsCount,anchorPresent:Boolean(anchor),anchorMatched:matchById,firstHasId:Boolean(arr[0]?.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
+        } catch {}
+        // #endregion agent log
       } else {
         setError(data.error || 'Помилка завантаження повідомлень');
       }
@@ -348,6 +380,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
     try {
       setChatStatusLoading(true);
       setChatStatusError(null);
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:setClientChatStatus_start',message:'Set chat status clicked',data:{clientId:String(client.id||'').slice(0,12),toStatusId:String(nextStatusId||''),messagesCount:messages.length,lastMsgHasId:Boolean(messages[messages.length-1]?.id),lastReceivedAt:messages[messages.length-1]?.receivedAt?true:false},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_reload'})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
 
       const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(client.id)}/chat-status`, {
         method: 'POST',
@@ -372,6 +409,13 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       if (data?.changed) {
         setStatusAnchorMessageId(anchorId);
       }
+      // #region agent log
+      try {
+        const last = messages[messages.length - 1] || null;
+        const matchInCurrent = Boolean(anchorId && messages.some((m) => m.id && String(m.id) === String(anchorId)));
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:setClientChatStatus_done',message:'Set chat status response',data:{changed:Boolean(data?.changed),anchorIdPresent:Boolean(anchorId),anchorMatchedInCurrent:matchInCurrent,lastMsgHasId:Boolean(last?.id),lastMsgIdPresent:Boolean(last?.id),statusId:String(nextStatusId||'')},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
 
       await loadChatPanel();
       const st = nextStatusId ? chatStatuses.find((s) => s.id === nextStatusId) : null;
