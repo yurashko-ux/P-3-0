@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { fetchAltegioClientMetrics } from '@/lib/altegio/metrics';
 import { fetchAltegioLastVisitMap } from '@/lib/altegio/last-visit';
+import { kvWrite } from '@/lib/kv';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,23 @@ async function runSync(req: NextRequest) {
   if (!okCron(req)) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 });
   }
+
+  // KV heartbeat: зберігаємо факт запуску крону для діагностики (без PII).
+  // Якщо KV недоступний — просто пропускаємо.
+  try {
+    const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+    const via = isVercelCron ? 'vercel' : 'secret';
+    await kvWrite.setRaw(
+      'direct:cron:sync-direct-altegio-metrics:lastRun',
+      JSON.stringify({
+        phase: 'start',
+        via,
+        startedAt: new Date().toISOString(),
+        delayMs: req.nextUrl.searchParams.get('delayMs') || null,
+        limit: req.nextUrl.searchParams.get('limit') || null,
+      })
+    );
+  } catch {}
 
   const startedAt = Date.now();
   const delayMs = Math.max(0, Math.min(2000, Number(req.nextUrl.searchParams.get('delayMs') || '200') || 200));
@@ -193,6 +211,32 @@ async function runSync(req: NextRequest) {
     lastVisitUpdated,
     ms,
   });
+
+  try {
+    const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+    const via = isVercelCron ? 'vercel' : 'secret';
+    await kvWrite.setRaw(
+      'direct:cron:sync-direct-altegio-metrics:lastRun',
+      JSON.stringify({
+        phase: 'done',
+        via,
+        finishedAt: new Date().toISOString(),
+        stats: {
+          totalClients: allClients.length,
+          targets: targets.length,
+          processed,
+          updated,
+          skippedNoAltegioId,
+          skippedNoChange,
+          fetchedNotFound,
+          errors,
+          lastVisitMapSize: lastVisitMap?.size || 0,
+          lastVisitUpdated,
+          ms,
+        },
+      })
+    );
+  } catch {}
 
   return NextResponse.json({
     ok: true,
