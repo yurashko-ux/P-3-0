@@ -1645,6 +1645,16 @@ export function DirectClientTable({
 
                           const shown = icons.slice(0, 3);
                           if (shown.length === 0) return '';
+                          // #region agent log
+                          try {
+                            const keys = shown.map((x) => x.key);
+                            const hasWeird = keys.length >= 2;
+                            if (hasWeird) {
+                              const safeId = String((client as any).id || '').slice(0, 16);
+                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/DirectClientTable.tsx:serviceIcons',message:'Service column icons computed',data:{clientId:safeId,icons:keys,consultIsActive,paidIsActive,consultPastOrToday,paidPastOrToday,consultAttended:(client as any).consultationAttended??null,paidDatePresent:Boolean(client.paidServiceDate),consultDatePresent:Boolean(client.consultationBookingDate),state:(client as any).state||null},timestamp:Date.now(),sessionId:'debug-session',runId:'service-order-1',hypothesisId:'H_service_order'})}).catch(()=>{});
+                            }
+                          } catch {}
+                          // #endregion agent log
                                   return (
                             <div className="flex items-center justify-end gap-1">
                               {shown.map((i) => (
