@@ -53,6 +53,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     chatStatusSetAt: dbClient.chatStatusSetAt?.toISOString?.() || undefined,
     chatStatusCheckedAt: dbClient.chatStatusCheckedAt?.toISOString?.() || undefined,
     chatStatusAnchorMessageId: dbClient.chatStatusAnchorMessageId || undefined,
+    chatStatusAnchorMessageReceivedAt: dbClient.chatStatusAnchorMessageReceivedAt?.toISOString?.() || undefined,
     chatStatusAnchorSetAt: dbClient.chatStatusAnchorSetAt?.toISOString?.() || undefined,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
@@ -105,6 +106,9 @@ function directClientToPrisma(client: DirectClient) {
     chatStatusSetAt: client.chatStatusSetAt ? new Date(client.chatStatusSetAt) : null,
     chatStatusCheckedAt: client.chatStatusCheckedAt ? new Date(client.chatStatusCheckedAt) : null,
     chatStatusAnchorMessageId: client.chatStatusAnchorMessageId || null,
+    chatStatusAnchorMessageReceivedAt: client.chatStatusAnchorMessageReceivedAt
+      ? new Date(client.chatStatusAnchorMessageReceivedAt)
+      : null,
     chatStatusAnchorSetAt: client.chatStatusAnchorSetAt ? new Date(client.chatStatusAnchorSetAt) : null,
   };
 }
@@ -267,6 +271,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
           chatStatusSetAt: dbClient.chatStatusSetAt?.toISOString?.() || undefined,
           chatStatusCheckedAt: dbClient.chatStatusCheckedAt?.toISOString?.() || undefined,
           chatStatusAnchorMessageId: dbClient.chatStatusAnchorMessageId || undefined,
+          chatStatusAnchorMessageReceivedAt: dbClient.chatStatusAnchorMessageReceivedAt?.toISOString?.() || undefined,
           chatStatusAnchorSetAt: dbClient.chatStatusAnchorSetAt?.toISOString?.() || undefined,
           createdAt: dbClient.createdAt.toISOString(),
           updatedAt: dbClient.updatedAt.toISOString(),
@@ -702,6 +707,7 @@ export async function saveDirectClient(
       if (client.lastActivityAt === undefined) delete next.lastActivityAt;
       if (client.lastActivityKeys === undefined) delete next.lastActivityKeys;
       if (client.chatStatusAnchorMessageId === undefined) delete next.chatStatusAnchorMessageId;
+      if (client.chatStatusAnchorMessageReceivedAt === undefined) delete next.chatStatusAnchorMessageReceivedAt;
       if (client.chatStatusAnchorSetAt === undefined) delete next.chatStatusAnchorSetAt;
       return next;
     };

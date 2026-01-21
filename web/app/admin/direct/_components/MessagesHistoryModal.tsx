@@ -28,6 +28,7 @@ interface MessagesHistoryModalProps {
     chatStatusBadgeKey?: string;
     chatNeedsAttention?: boolean;
     chatStatusAnchorMessageId?: string | null;
+    chatStatusAnchorMessageReceivedAt?: string | null;
     chatStatusAnchorSetAt?: string | null;
   }) => void;
 }
@@ -54,6 +55,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
   const [statusAnchorMessageId, setStatusAnchorMessageId] = useState<string | null>(null);
+  const [statusAnchorReceivedAt, setStatusAnchorReceivedAt] = useState<string | null>(null);
 
   const NEW_STATUS_NAME_MAX_LEN = 24;
 
@@ -113,6 +115,16 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
     return out;
   }, [messages]);
 
+  function toMsSafe(dateString: string | null | undefined): number | null {
+    try {
+      if (!dateString) return null;
+      const ms = new Date(String(dateString)).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    } catch {
+      return null;
+    }
+  }
+
   function ChatAvatar40({ username }: { username: string }) {
     const u = (username || '').toString().trim();
     const isNoInstagram = u === 'NO INSTAGRAM' || u.startsWith('no_instagram_');
@@ -149,13 +161,14 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       loadMessages();
       void loadChatPanel();
     }
-  }, [isOpen, client]);
+  }, [isOpen, client?.id]);
 
   useEffect(() => {
     if (!client) return;
     setSelectedStatusId((client.chatStatusId || null) as any);
     setNeedsAttention(Boolean((client as any).chatNeedsAttention));
     setStatusAnchorMessageId(((client as any).chatStatusAnchorMessageId || null) as any);
+    setStatusAnchorReceivedAt(((client as any).chatStatusAnchorMessageReceivedAt || null) as any);
     // #region agent log
     try {
       fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:useEffect_client',message:'Client prop changed (may trigger reload due to deps)',data:{clientId:String(client.id||'').slice(0,12),chatStatusId:String(client.chatStatusId||''),anchorId:String((client as any).chatStatusAnchorMessageId||''),anchorPresent:Boolean((client as any).chatStatusAnchorMessageId)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_reload'})}).catch(()=>{});
@@ -194,9 +207,8 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       
       // Якщо API Key не налаштовано, показуємо помилку
       if (!apiData.ok && apiData.error && apiData.error.includes('API Key not configured')) {
-        setError(`API Key не налаштовано. Діагностика: ${JSON.stringify(apiData.diagnostics || {}, null, 2)}`);
+        // Не зупиняємось — пробуємо fallback по вебхуках, щоб UI працював локально без ключа.
         setDiagnostics(apiData.diagnostics);
-        return;
       }
       
       if (apiData.ok && apiData.messages && apiData.messages.length > 0) {
@@ -238,6 +250,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       
       if (data.ok) {
         setMessages(data.messages || []);
+        setError(null);
         // #region agent log
         try {
           const arr: any[] = Array.isArray(data.messages) ? data.messages : [];
@@ -406,14 +419,31 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         data?.client?.chatStatusAnchorMessageId != null ? String(data.client.chatStatusAnchorMessageId) : null;
       const anchorSetAt =
         data?.client?.chatStatusAnchorSetAt != null ? String(data.client.chatStatusAnchorSetAt) : null;
+      const anchorReceivedAt =
+        data?.client?.chatStatusAnchorMessageReceivedAt != null
+          ? String(data.client.chatStatusAnchorMessageReceivedAt)
+          : null;
       if (data?.changed) {
         setStatusAnchorMessageId(anchorId);
+        setStatusAnchorReceivedAt(anchorReceivedAt);
       }
       // #region agent log
       try {
         const last = messages[messages.length - 1] || null;
         const matchInCurrent = Boolean(anchorId && messages.some((m) => m.id && String(m.id) === String(anchorId)));
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:setClientChatStatus_done',message:'Set chat status response',data:{changed:Boolean(data?.changed),anchorIdPresent:Boolean(anchorId),anchorMatchedInCurrent:matchInCurrent,lastMsgHasId:Boolean(last?.id),lastMsgIdPresent:Boolean(last?.id),statusId:String(nextStatusId||'')},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
+        const anchorMs = anchorReceivedAt ? new Date(anchorReceivedAt).getTime() : NaN;
+        const minDeltaMs = (() => {
+          if (!Number.isFinite(anchorMs)) return null;
+          let best: number | null = null;
+          for (const m of messages) {
+            const ms = m?.receivedAt ? new Date(String(m.receivedAt)).getTime() : NaN;
+            if (!Number.isFinite(ms)) continue;
+            const d = Math.abs(ms - anchorMs);
+            if (best == null || d < best) best = d;
+          }
+          return best;
+        })();
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:setClientChatStatus_done',message:'Set chat status response',data:{changed:Boolean(data?.changed),anchorIdPresent:Boolean(anchorId),anchorReceivedAtPresent:Boolean(anchorReceivedAt),anchorMatchedInCurrent:matchInCurrent,minDeltaMs,hadMessages:messages.length>0,lastMsgHasId:Boolean(last?.id),statusId:String(nextStatusId||'')},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
       } catch {}
       // #endregion agent log
 
@@ -426,6 +456,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         chatStatusBadgeKey: (st as any)?.badgeKey,
         chatNeedsAttention: false,
         chatStatusAnchorMessageId: data?.changed ? anchorId : undefined,
+        chatStatusAnchorMessageReceivedAt: data?.changed ? anchorReceivedAt : undefined,
         chatStatusAnchorSetAt: data?.changed ? anchorSetAt : undefined,
       });
     } catch (err) {
@@ -568,6 +599,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                                 message.id &&
                                 String(message.id) === String(statusAnchorMessageId)
                             );
+                            const anchorMs = toMsSafe(statusAnchorReceivedAt);
+                            const msgMs = toMsSafe(message.receivedAt);
+                            const isAnchorByTime = Boolean(
+                              !isAnchor && anchorMs != null && msgMs != null && Math.abs(msgMs - anchorMs) <= 2000
+                            );
                             return (
                               <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!isOutgoing ? (
@@ -579,7 +615,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                                   } relative`}
                                   title={message.receivedAt ? formatDate(message.receivedAt) : ''}
                                 >
-                                  {isAnchor ? (
+                                  {isAnchor || isAnchorByTime ? (
                                     <span
                                       className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-red-600 border border-white"
                                       title="Статус встановлено на цьому повідомленні"

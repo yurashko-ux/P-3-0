@@ -1013,6 +1013,9 @@ export function DirectClientTable({
               ...(u.chatStatusAnchorMessageId !== undefined
                 ? { chatStatusAnchorMessageId: u.chatStatusAnchorMessageId ?? undefined }
                 : {}),
+              ...(u.chatStatusAnchorMessageReceivedAt !== undefined
+                ? { chatStatusAnchorMessageReceivedAt: u.chatStatusAnchorMessageReceivedAt ?? undefined }
+                : {}),
               ...(u.chatStatusAnchorSetAt !== undefined
                 ? { chatStatusAnchorSetAt: u.chatStatusAnchorSetAt ?? undefined }
                 : {}),
@@ -1029,6 +1032,9 @@ export function DirectClientTable({
               chatNeedsAttention: u.chatNeedsAttention,
               ...(u.chatStatusAnchorMessageId !== undefined
                 ? { chatStatusAnchorMessageId: u.chatStatusAnchorMessageId ?? undefined }
+                : {}),
+              ...(u.chatStatusAnchorMessageReceivedAt !== undefined
+                ? { chatStatusAnchorMessageReceivedAt: u.chatStatusAnchorMessageReceivedAt ?? undefined }
                 : {}),
               ...(u.chatStatusAnchorSetAt !== undefined
                 ? { chatStatusAnchorSetAt: u.chatStatusAnchorSetAt ?? undefined }

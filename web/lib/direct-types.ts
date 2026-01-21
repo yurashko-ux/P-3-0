@@ -54,6 +54,7 @@ export type DirectClient = {
   chatStatusSetAt?: string; // ISO - коли статус реально змінився
   chatStatusCheckedAt?: string; // ISO - коли адмін підтвердив актуальність
   chatStatusAnchorMessageId?: string; // id повідомлення, на якому зафіксовано зміну статусу (крапка в чаті)
+  chatStatusAnchorMessageReceivedAt?: string; // ISO receivedAt повідомлення, на якому зафіксовано зміну статусу
   chatStatusAnchorSetAt?: string; // ISO - коли зафіксували anchor
   chatStatusName?: string; // Назва статусу (для tooltip у таблиці)
   chatStatusBadgeKey?: string; // badgeKey (1..10) для відображення бейджа

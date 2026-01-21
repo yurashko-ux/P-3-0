@@ -53,6 +53,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusSetAt: true,
         chatStatusCheckedAt: true,
         chatStatusAnchorMessageId: true,
+        chatStatusAnchorMessageReceivedAt: true,
         chatStatusAnchorSetAt: true,
       },
     });
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
       ? await prisma.directMessage.findFirst({
           where: { clientId },
           orderBy: { createdAt: 'desc' },
-          select: { id: true },
+          select: { id: true, receivedAt: true },
         })
       : null;
 
@@ -97,6 +98,9 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusCheckedAt: now,
         chatStatusSetAt: changed ? (nextStatusId ? now : null) : existing.chatStatusSetAt,
         chatStatusAnchorMessageId: changed ? (lastMessage?.id ?? null) : existing.chatStatusAnchorMessageId,
+        chatStatusAnchorMessageReceivedAt: changed
+          ? (lastMessage?.receivedAt ?? null)
+          : existing.chatStatusAnchorMessageReceivedAt,
         chatStatusAnchorSetAt: changed ? now : existing.chatStatusAnchorSetAt,
       },
       select: {
@@ -105,6 +109,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusSetAt: true,
         chatStatusCheckedAt: true,
         chatStatusAnchorMessageId: true,
+        chatStatusAnchorMessageReceivedAt: true,
         chatStatusAnchorSetAt: true,
       },
     });
@@ -112,7 +117,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
     if (changed) {
       // #region agent log
       try {
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/[id]/chat-status/route.ts:changed',message:'Chat status changed; anchor stored',data:{clientId:String(clientId||'').slice(0,12),from:String(prevStatusId||''),to:String(nextStatusId||''),anchorIdPresent:Boolean(updated.chatStatusAnchorMessageId)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/[id]/chat-status/route.ts:changed',message:'Chat status changed; anchor stored',data:{clientId:String(clientId||'').slice(0,12),from:String(prevStatusId||''),to:String(nextStatusId||''),anchorIdPresent:Boolean(updated.chatStatusAnchorMessageId),anchorReceivedAtPresent:Boolean((updated as any).chatStatusAnchorMessageReceivedAt)},timestamp:Date.now(),sessionId:'debug-session',runId:'chat-anchor-1',hypothesisId:'H_anchor_mismatch'})}).catch(()=>{});
       } catch {}
       // #endregion agent log
       await prisma.directClientChatStatusLog.create({
