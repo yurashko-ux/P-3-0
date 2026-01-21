@@ -826,6 +826,7 @@ export async function GET(req: NextRequest) {
         const todayIdx = toDayIndex(todayKyivDay);
         if (!Number.isFinite(todayIdx)) return clientsWithChatMeta;
 
+        let logged = 0;
         return clientsWithChatMeta.map((c) => {
           const iso = ((c as any).lastVisitAt || '').toString().trim();
           if (!iso) return { ...c, daysSinceLastVisit: undefined };
@@ -834,6 +835,15 @@ export async function GET(req: NextRequest) {
           if (!Number.isFinite(idx)) return { ...c, daysSinceLastVisit: undefined };
           const diff = todayIdx - idx;
           const daysSinceLastVisit = diff < 0 ? 0 : diff;
+          // #region agent log
+          try {
+            const altegioClientId = ((c as any).altegioClientId || '').toString().trim();
+            if (logged < 5 && altegioClientId && daysSinceLastVisit >= 10) {
+              logged++;
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/route.ts:daysSinceLastVisit',message:'Computed daysSinceLastVisit (anomaly sample)',data:{clientId:String((c as any).id||'').slice(0,12),altegioClientId:String(altegioClientId).slice(0,12),lastVisitAt:String(iso).slice(0,32),lastVisitKyivDay:String(day),todayKyivDay:String(todayKyivDay),daysSinceLastVisit},timestamp:Date.now(),sessionId:'debug-session',runId:'days-1',hypothesisId:'H_lastVisit_stale_or_parse'})}).catch(()=>{});
+            }
+          } catch {}
+          // #endregion agent log
           return { ...c, daysSinceLastVisit };
         });
       } catch (err) {
