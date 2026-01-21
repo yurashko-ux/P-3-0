@@ -13,6 +13,16 @@ function pickLastVisitISO(c: Client): string | null {
 
   const s = raw ? String(raw).trim() : '';
   if (!s) return null;
+
+  // Altegio часто віддає last_visit_date як "YYYY-MM-DD HH:mm:ss" (без таймзони).
+  // Для задачі “днів з останнього візиту” нам критична саме ДАТА по Києву, не точний час.
+  // Тому беремо YYYY-MM-DD і зберігаємо як ISO з “полуднем” (щоб уникнути зсувів при DST/UTC).
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  if (m?.[1]) {
+    return `${m[1]}T12:00:00.000Z`;
+  }
+
+  // Fallback: якщо прийшов інший формат, пробуємо стандартний парсинг.
   const d = new Date(s);
   if (isNaN(d.getTime())) return null;
   return d.toISOString();

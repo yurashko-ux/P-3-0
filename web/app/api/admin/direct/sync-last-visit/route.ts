@@ -65,7 +65,9 @@ async function run(req: NextRequest) {
   const delayMs = Math.max(0, Math.min(2000, Number(req.nextUrl.searchParams.get('delayMs') || '150') || 150));
   const lvPages = Math.max(1, Math.min(500, Number(req.nextUrl.searchParams.get('lvPages') || '60') || 60));
   const lvPageSize = Math.max(10, Math.min(200, Number(req.nextUrl.searchParams.get('lvPageSize') || '100') || 100));
-  const onlyMissing = (req.nextUrl.searchParams.get('onlyMissing') || '1') === '1';
+  const targetAltegioClientId = Number(req.nextUrl.searchParams.get('altegioClientId') || '');
+  const hasTarget = Boolean(targetAltegioClientId && Number.isFinite(targetAltegioClientId));
+  const onlyMissing = (req.nextUrl.searchParams.get('onlyMissing') || (hasTarget ? '0' : '1')) === '1';
   const dryRun = (req.nextUrl.searchParams.get('dryRun') || '0') === '1';
 
   console.log('[admin/sync-last-visit] Старт', {
@@ -76,6 +78,7 @@ async function run(req: NextRequest) {
     lvPageSize,
     onlyMissing,
     dryRun,
+    targetAltegioClientId: hasTarget ? targetAltegioClientId : null,
   });
 
   const lastVisitMap = await fetchAltegioLastVisitMap({
@@ -86,7 +89,10 @@ async function run(req: NextRequest) {
   });
 
   const allClients = await getAllDirectClients();
-  const targets = allClients.filter((c) => typeof c.altegioClientId === 'number' && (c.altegioClientId || 0) > 0);
+  const targetsAll = allClients.filter((c) => typeof c.altegioClientId === 'number' && (c.altegioClientId || 0) > 0);
+  const targets = hasTarget
+    ? targetsAll.filter((c) => Number(c.altegioClientId) === Number(targetAltegioClientId))
+    : targetsAll;
 
   let processed = 0;
   let updated = 0;
@@ -124,6 +130,14 @@ async function run(req: NextRequest) {
         skippedNoLastVisit++;
         continue;
       }
+
+      // #region agent log
+      try {
+        if (hasTarget) {
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/sync-last-visit/route.ts:target',message:'sync-last-visit target evaluation',data:{directClientId:String(client.id||'').slice(0,16),altegioClientId:String(client.altegioClientId||'').slice(0,16),currentLastVisitAt:String(current||'').slice(0,32),lv:String(lv||'').slice(0,32),dryRun,onlyMissing},timestamp:Date.now(),sessionId:'debug-session',runId:'days-3',hypothesisId:'H_lastVisit_stale_or_parse'})}).catch(()=>{});
+        }
+      } catch {}
+      // #endregion agent log
 
       if (Number.isFinite(currentTs) && currentTs === nextTs) {
         skippedNoChange++;
