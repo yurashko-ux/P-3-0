@@ -27,6 +27,8 @@ interface MessagesHistoryModalProps {
     chatStatusName?: string;
     chatStatusBadgeKey?: string;
     chatNeedsAttention?: boolean;
+    chatStatusAnchorMessageId?: string | null;
+    chatStatusAnchorSetAt?: string | null;
   }) => void;
 }
 
@@ -51,6 +53,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
+  const [statusAnchorMessageId, setStatusAnchorMessageId] = useState<string | null>(null);
 
   const NEW_STATUS_NAME_MAX_LEN = 24;
 
@@ -147,6 +150,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
     if (!client) return;
     setSelectedStatusId((client.chatStatusId || null) as any);
     setNeedsAttention(Boolean((client as any).chatNeedsAttention));
+    setStatusAnchorMessageId(((client as any).chatStatusAnchorMessageId || null) as any);
   }, [client?.id, client?.chatStatusId, (client as any)?.chatNeedsAttention]);
 
   async function loadMessages() {
@@ -359,6 +363,15 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setSelectedStatusId(nextStatusId);
       // Після підтвердження/зміни статусу — прибираємо індикатор уваги
       setNeedsAttention(false);
+      // Якщо статус реально змінився — API повертає client з anchor полями, оновимо локально,
+      // щоб крапка зʼявилась одразу в чаті.
+      const anchorId =
+        data?.client?.chatStatusAnchorMessageId != null ? String(data.client.chatStatusAnchorMessageId) : null;
+      const anchorSetAt =
+        data?.client?.chatStatusAnchorSetAt != null ? String(data.client.chatStatusAnchorSetAt) : null;
+      if (data?.changed) {
+        setStatusAnchorMessageId(anchorId);
+      }
 
       await loadChatPanel();
       const st = nextStatusId ? chatStatuses.find((s) => s.id === nextStatusId) : null;
@@ -368,6 +381,8 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         chatStatusName: st?.name,
         chatStatusBadgeKey: (st as any)?.badgeKey,
         chatNeedsAttention: false,
+        chatStatusAnchorMessageId: data?.changed ? anchorId : undefined,
+        chatStatusAnchorSetAt: data?.changed ? anchorSetAt : undefined,
       });
     } catch (err) {
       setChatStatusError(err instanceof Error ? err.message : String(err));
@@ -504,6 +519,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                             const isOutgoing = message.direction === 'outgoing';
                             const timeHHMM = formatTimeHHMM(message.receivedAt);
                             const key = message.id || `${message.receivedAt}-${gi}-${index}`;
+                            const isAnchor = Boolean(
+                              statusAnchorMessageId &&
+                                message.id &&
+                                String(message.id) === String(statusAnchorMessageId)
+                            );
                             return (
                               <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!isOutgoing ? (
@@ -512,9 +532,16 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                                 <div
                                   className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
                                     isOutgoing ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-900'
-                                  }`}
+                                  } relative`}
                                   title={message.receivedAt ? formatDate(message.receivedAt) : ''}
                                 >
+                                  {isAnchor ? (
+                                    <span
+                                      className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-red-600 border border-white"
+                                      title="Статус встановлено на цьому повідомленні"
+                                      aria-label="Статус встановлено на цьому повідомленні"
+                                    />
+                                  ) : null}
                                   <div>{message.text}</div>
                                   {timeHHMM ? (
                                     <div className="mt-1 flex justify-end">

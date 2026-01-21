@@ -53,6 +53,8 @@ export type DirectClient = {
   chatStatusId?: string; // Поточний статус переписки (id з DirectChatStatus)
   chatStatusSetAt?: string; // ISO - коли статус реально змінився
   chatStatusCheckedAt?: string; // ISO - коли адмін підтвердив актуальність
+  chatStatusAnchorMessageId?: string; // id повідомлення, на якому зафіксовано зміну статусу (крапка в чаті)
+  chatStatusAnchorSetAt?: string; // ISO - коли зафіксували anchor
   chatStatusName?: string; // Назва статусу (для tooltip у таблиці)
   chatStatusBadgeKey?: string; // badgeKey (1..10) для відображення бейджа
   messagesTotal?: number; // Кількість повідомлень (з DirectMessage)

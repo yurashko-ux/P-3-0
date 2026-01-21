@@ -965,6 +965,12 @@ export function DirectClientTable({
               chatStatusName: u.chatStatusName,
               chatStatusBadgeKey: u.chatStatusBadgeKey,
               chatNeedsAttention: u.chatNeedsAttention,
+              ...(u.chatStatusAnchorMessageId !== undefined
+                ? { chatStatusAnchorMessageId: u.chatStatusAnchorMessageId ?? undefined }
+                : {}),
+              ...(u.chatStatusAnchorSetAt !== undefined
+                ? { chatStatusAnchorSetAt: u.chatStatusAnchorSetAt ?? undefined }
+                : {}),
             } as any,
           }));
           // Якщо модалка відкрита саме для цього клієнта — оновлюємо також обʼєкт в модалці
@@ -976,6 +982,12 @@ export function DirectClientTable({
               chatStatusName: u.chatStatusName,
               chatStatusBadgeKey: u.chatStatusBadgeKey,
               chatNeedsAttention: u.chatNeedsAttention,
+              ...(u.chatStatusAnchorMessageId !== undefined
+                ? { chatStatusAnchorMessageId: u.chatStatusAnchorMessageId ?? undefined }
+                : {}),
+              ...(u.chatStatusAnchorSetAt !== undefined
+                ? { chatStatusAnchorSetAt: u.chatStatusAnchorSetAt ?? undefined }
+                : {}),
             } as any;
           });
         }}

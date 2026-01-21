@@ -52,6 +52,8 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusId: true,
         chatStatusSetAt: true,
         chatStatusCheckedAt: true,
+        chatStatusAnchorMessageId: true,
+        chatStatusAnchorSetAt: true,
       },
     });
 
@@ -77,6 +79,16 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
       }
     }
 
+    // Якщо статус реально змінився — “якоримо” його на останньому повідомленні в чаті на цей момент.
+    // Якщо змін немає (це “Підтвердити”) — anchor НЕ рухаємо.
+    const lastMessage = changed
+      ? await prisma.directMessage.findFirst({
+          where: { clientId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        })
+      : null;
+
     const updated = await prisma.directClient.update({
       where: { id: clientId },
       // НЕ чіпаємо updatedAt тут свідомо
@@ -84,12 +96,16 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusId: nextStatusId,
         chatStatusCheckedAt: now,
         chatStatusSetAt: changed ? (nextStatusId ? now : null) : existing.chatStatusSetAt,
+        chatStatusAnchorMessageId: changed ? (lastMessage?.id ?? null) : existing.chatStatusAnchorMessageId,
+        chatStatusAnchorSetAt: changed ? now : existing.chatStatusAnchorSetAt,
       },
       select: {
         id: true,
         chatStatusId: true,
         chatStatusSetAt: true,
         chatStatusCheckedAt: true,
+        chatStatusAnchorMessageId: true,
+        chatStatusAnchorSetAt: true,
       },
     });
 

@@ -74,6 +74,8 @@ model DirectClient {
   chatStatusId            String?   // Статус переписки (вибір адміна)
   chatStatusSetAt         DateTime? // Коли встановили статус переписки (тільки якщо реально змінився)
   chatStatusCheckedAt     DateTime? // Коли адмін підтвердив актуальність (навіть якщо статус не змінювався)
+  chatStatusAnchorMessageId String? // На якому повідомленні зафіксували статус переписки (останнє на момент зміни)
+  chatStatusAnchorSetAt   DateTime? // Коли зафіксували “якір” для статусу переписки
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
@@ -116,6 +118,7 @@ model DirectClient {
   @@index([consultationCancelled])
   @@index([chatStatusId])
   @@index([chatStatusCheckedAt])
+  @@index([chatStatusAnchorMessageId])
   @@map("direct_clients")
 }
 
