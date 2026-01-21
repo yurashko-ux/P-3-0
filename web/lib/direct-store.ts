@@ -352,6 +352,82 @@ export async function updateInstagramForAltegioClient(
       return null;
     }
 
+    const syncIdentityFromAltegio = async (directClientId: string) => {
+      // Тягнемо phone/visits/spent + імʼя з Altegio після привʼязки IG.
+      // ВАЖЛИВО: не рухаємо updatedAt (це адмін-дія), не логуємо PII.
+      try {
+        const { fetchAltegioClientMetrics } = await import('@/lib/altegio/metrics');
+        const { getClient } = await import('@/lib/altegio/clients');
+        const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+        const companyId = parseInt(companyIdStr, 10);
+
+        const current = await getDirectClient(directClientId);
+        if (!current) return;
+
+        const updates: Partial<DirectClient> = {};
+
+        // phone/visits/spent
+        try {
+          const m = await fetchAltegioClientMetrics({ altegioClientId });
+          if (m.ok) {
+            const nextPhone = m.metrics.phone ? String(m.metrics.phone).trim() : '';
+            if (nextPhone && (!current.phone || current.phone.trim() !== nextPhone)) {
+              updates.phone = nextPhone;
+            }
+            if (m.metrics.visits !== null && m.metrics.visits !== undefined && current.visits !== m.metrics.visits) {
+              updates.visits = m.metrics.visits;
+            }
+            if (m.metrics.spent !== null && m.metrics.spent !== undefined && current.spent !== m.metrics.spent) {
+              updates.spent = m.metrics.spent;
+            }
+          }
+        } catch {}
+
+        // name (як в Altegio): беремо перше слово як firstName, решту як lastName
+        try {
+          if (companyId && !Number.isNaN(companyId)) {
+            const a = await getClient(companyId, altegioClientId);
+            const full = (a as any)?.name ? String((a as any).name).trim() : '';
+            if (full && !full.includes('{{') && !full.includes('}}')) {
+              const parts = full.split(/\s+/).filter(Boolean);
+              const firstName = parts[0] || '';
+              const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
+              if (firstName && (!current.firstName || current.firstName.trim() !== firstName)) {
+                updates.firstName = firstName;
+              }
+              if (lastName && (!current.lastName || current.lastName.trim() !== lastName)) {
+                updates.lastName = lastName;
+              }
+            }
+          }
+        } catch {}
+
+        const changedKeys = Object.keys(updates);
+        if (!changedKeys.length) return;
+
+        const next: DirectClient = {
+          ...current,
+          ...updates,
+          updatedAt: current.updatedAt, // не рухаємо
+        };
+
+        // #region agent log
+        try {
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_missing_phone',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:syncIdentity',message:'sync identity from Altegio after IG link',data:{directClientId:String(directClientId).slice(0,12),altegioClientId,changedKeys,phoneWillBeSet:changedKeys.includes('phone'),firstNameWillBeSet:changedKeys.includes('firstName'),lastNameWillBeSet:changedKeys.includes('lastName')},timestamp:Date.now()})}).catch(()=>{});
+        } catch {}
+        // #endregion agent log
+
+        await saveDirectClient(
+          next,
+          'instagram-link-sync-identity',
+          { altegioClientId, changedKeys },
+          { touchUpdatedAt: false, skipAltegioMetricsSync: true }
+        );
+      } catch {
+        // ignore
+      }
+    };
+
     // Знаходимо клієнта за altegioClientId
     const existingClient = await prisma.directClient.findFirst({
       where: { altegioClientId },
@@ -406,7 +482,7 @@ export async function updateInstagramForAltegioClient(
       
       // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
       const mergeUpdateData: any = {
-      updatedAt: new Date(),
+      // не рухаємо updatedAt (це адмін-дія)
     };
     
       const wasAddingAltegioId = !existingByInstagram.altegioClientId && altegioClientId;
@@ -473,12 +549,13 @@ export async function updateInstagramForAltegioClient(
       const result = prismaClientToDirectClient(updated);
       console.log(`[direct-store] ✅ Merged clients: kept ${existingByInstagram.id}, deleted ${existingClient.id}`);
       console.log(`[direct-store] 📊 Final state: ${result.state}`);
+      await syncIdentityFromAltegio(existingByInstagram.id);
       return result;
     } else {
       // Просто оновлюємо Instagram username (немає конфлікту)
       const updateData: any = {
         instagramUsername: normalized,
-        updatedAt: new Date(),
+        // не рухаємо updatedAt (це адмін-дія)
       };
       
       // Якщо клієнт мав missing_instagram_* username і ми оновлюємо на реальний Instagram, оновлюємо стан на 'client'
@@ -512,6 +589,7 @@ export async function updateInstagramForAltegioClient(
       const result = prismaClientToDirectClient(updated);
       console.log(`[direct-store] ✅ Updated Instagram for client ${existingClient.id} (Altegio ID: ${altegioClientId}) to ${normalized}`);
       console.log(`[direct-store] 📊 State after update: ${result.state} (was: ${previousState})`);
+      await syncIdentityFromAltegio(existingClient.id);
       return result;
       } catch (updateErr: any) {
         // Якщо виникла помилка unique constraint, спробуємо об'єднати клієнтів
@@ -528,7 +606,7 @@ export async function updateInstagramForAltegioClient(
             
             // Об'єднуємо клієнтів
             const mergeUpdateData: any = {
-              updatedAt: new Date(),
+              // не рухаємо updatedAt (це адмін-дія)
             };
             
             const wasAddingAltegioId = !existingByInstagramRetry.altegioClientId && altegioClientId;
@@ -589,6 +667,7 @@ export async function updateInstagramForAltegioClient(
             const result = prismaClientToDirectClient(updated);
             console.log(`[direct-store] ✅ Merged clients after unique constraint error: kept ${existingByInstagramRetry.id}, deleted ${existingClient.id}`);
             console.log(`[direct-store] 📊 Final state: ${result.state}`);
+            await syncIdentityFromAltegio(existingByInstagramRetry.id);
             return result;
           }
         }
