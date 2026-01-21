@@ -82,24 +82,6 @@ function pickAvatarUrl(anyResponse: unknown): string | null {
 const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
 const directSubscriberKey = (username: string) => `direct:ig-subscriber:${username.toLowerCase()}`;
 
-async function agentLog(hypothesisId: string, location: string, message: string, data: Record<string, unknown>) {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: 'debug-session',
-      runId: 'test-manychat-avatar-1',
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion agent log
-}
-
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -115,12 +97,6 @@ export async function GET(req: NextRequest) {
   }
 
   const apiKey = getManyChatApiKey();
-  await agentLog('A', 'test-manychat-avatar:entry', 'Start getInfo', {
-    hasApiKey: Boolean(apiKey),
-    subscriberId: subscriberIdRaw,
-    username: normalizedUsername || null,
-    redirect,
-  });
 
   if (!apiKey) {
     return NextResponse.json({ ok: false, error: 'MANYCHAT_API_KEY missing on server' }, { status: 500 });
@@ -147,13 +123,6 @@ export async function GET(req: NextRequest) {
 
     const avatarUrl = pickAvatarUrl(parsed);
     const igUsername = pickFirstString(parsed?.data?.ig_username, parsed?.data?.username);
-
-    await agentLog('B', 'test-manychat-avatar:getInfo', 'ManyChat getInfo finished', {
-      status: res.status,
-      ok: res.ok,
-      hasAvatarUrl: Boolean(avatarUrl),
-      igUsername: igUsername ? String(igUsername).slice(0, 80) : null,
-    });
 
     if (!res.ok) {
       return NextResponse.json(
@@ -184,16 +153,9 @@ export async function GET(req: NextRequest) {
           const rb = await kvRead.getRaw(directAvatarKey(normalizedUsername));
           kvSave.readBackAvatar = typeof rb === 'string' ? rb.slice(0, 180) : rb ? String(rb).slice(0, 180) : null;
         } catch {}
-        await agentLog('C', 'test-manychat-avatar:kv', 'Saved subscriber+avatar to KV', {
-          username: normalizedUsername,
-        });
       } catch (err) {
         kvSave.avatarSaved = false;
         kvSave.subscriberSaved = false;
-        await agentLog('C', 'test-manychat-avatar:kv', 'Failed to save to KV', {
-          username: normalizedUsername,
-          error: err instanceof Error ? err.message : String(err),
-        });
       }
     }
 
@@ -225,9 +187,6 @@ export async function GET(req: NextRequest) {
       kv: kvSave.attempted ? kvSave : undefined,
     });
   } catch (err) {
-    await agentLog('D', 'test-manychat-avatar:error', 'Unhandled error', {
-      error: err instanceof Error ? err.message : String(err),
-    });
     return NextResponse.json(
       { ok: false, error: 'internal_error', message: err instanceof Error ? err.message : String(err) },
       { status: 500 },

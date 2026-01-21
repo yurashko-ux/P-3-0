@@ -670,25 +670,10 @@ export async function GET(req: NextRequest) {
     // - не показуємо в колонці "Запис на консультацію"
     // - не дозволяємо відкривати "Історія консультацій"
     // - не ведемо лічильник спроб консультації
-    // #region agent log
-    let __dbgIgnoredConsultCount = 0;
-    let __dbgKeptConsultDespiteVisitsCount = 0;
-    // #endregion agent log
     clients = clients.map((c) => {
       const hadConsult = Boolean((c as any).consultationBookingDate);
       const shouldIgnoreConsult = (c.visits ?? 0) >= 2 && !hadConsult;
       if (shouldIgnoreConsult) {
-        // #region agent log
-        try {
-          const hadConsultDate = Boolean((c as any).consultationDate);
-          const hadConsultAttend = (c as any).consultationAttended !== null && (c as any).consultationAttended !== undefined;
-          const hadPaid = Boolean((c as any).paidServiceDate);
-          if (hadConsult || hadConsultDate || hadConsultAttend) {
-            __dbgIgnoredConsultCount += 1;
-            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/route.ts:ignoreConsult',message:'Поля консультації скинуті через visits>=2',data:{clientId:String((c as any).id||'').slice(0,12),visits:c.visits??null,hadConsult,hadConsultDate,hadConsultAttend,hadPaid},timestamp:Date.now(),sessionId:'debug-session',runId:'consult-missing-1',hypothesisId:'H_ignore_consult'})}).catch(()=>{});
-          }
-        } catch {}
-        // #endregion agent log
         return {
           ...c,
           consultationDate: undefined,
@@ -700,22 +685,8 @@ export async function GET(req: NextRequest) {
           consultationAttemptNumber: undefined,
         };
       }
-      // #region agent log
-      try {
-        if ((c.visits ?? 0) >= 2 && hadConsult) {
-          __dbgKeptConsultDespiteVisitsCount += 1;
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/route.ts:keepConsult',message:'Консультацію залишено, навіть якщо visits>=2 (бо є consultationBookingDate)',data:{clientId:String((c as any).id||'').slice(0,12),visits:c.visits??null,consultationBookingDatePresent:true},timestamp:Date.now(),sessionId:'debug-session',runId:'consult-missing-postfix-1',hypothesisId:'H_fix_keep_consult'})}).catch(()=>{});
-        }
-      } catch {}
-      // #endregion agent log
       return c;
     });
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/route.ts:ignoreConsultSummary',message:'Підсумок ігнорування консультації',data:{ignoredWithConsultFields:__dbgIgnoredConsultCount,clientsReturned:clients.length},timestamp:Date.now(),sessionId:'debug-session',runId:'consult-missing-1',hypothesisId:'H_ignore_consult'})}).catch(()=>{});
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/route.ts:keepConsultSummary',message:'Підсумок збереження консультації при visits>=2',data:{keptWithConsultFields:__dbgKeptConsultDespiteVisitsCount,clientsReturned:clients.length},timestamp:Date.now(),sessionId:'debug-session',runId:'consult-missing-postfix-1',hypothesisId:'H_fix_keep_consult'})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
 
     // Додаємо останні 5 станів до кожного клієнта
     // getLast5StatesForClients вже відфільтрувала дублікати стану "client" та "lead"
@@ -826,7 +797,6 @@ export async function GET(req: NextRequest) {
         const todayIdx = toDayIndex(todayKyivDay);
         if (!Number.isFinite(todayIdx)) return clientsWithChatMeta;
 
-        let logged = 0;
         return clientsWithChatMeta.map((c) => {
           const iso = ((c as any).lastVisitAt || '').toString().trim();
           if (!iso) return { ...c, daysSinceLastVisit: undefined };
@@ -835,15 +805,6 @@ export async function GET(req: NextRequest) {
           if (!Number.isFinite(idx)) return { ...c, daysSinceLastVisit: undefined };
           const diff = todayIdx - idx;
           const daysSinceLastVisit = diff < 0 ? 0 : diff;
-          // #region agent log
-          try {
-            const altegioClientId = ((c as any).altegioClientId || '').toString().trim();
-            if (logged < 5 && altegioClientId && daysSinceLastVisit >= 10) {
-              logged++;
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/clients/route.ts:daysSinceLastVisit',message:'Computed daysSinceLastVisit (anomaly sample)',data:{clientId:String((c as any).id||'').slice(0,12),altegioClientId:String(altegioClientId).slice(0,12),lastVisitAt:String(iso).slice(0,32),lastVisitKyivDay:String(day),todayKyivDay:String(todayKyivDay),daysSinceLastVisit},timestamp:Date.now(),sessionId:'debug-session',runId:'days-1',hypothesisId:'H_lastVisit_stale_or_parse'})}).catch(()=>{});
-            }
-          } catch {}
-          // #endregion agent log
           return { ...c, daysSinceLastVisit };
         });
       } catch (err) {

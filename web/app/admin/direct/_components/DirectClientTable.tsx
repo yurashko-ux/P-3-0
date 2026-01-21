@@ -313,15 +313,6 @@ export function DirectClientTable({
   onClientUpdate,
   onRefresh,
 }: DirectClientTableProps) {
-  // #region agent log
-  const __debugRefs =
-    (globalThis as any).__directServiceOverflowRefs ||
-    ((globalThis as any).__directServiceOverflowRefs = {
-      tdById: new Map<string, HTMLTableCellElement>(),
-      statusById: new Map<string, HTMLSpanElement>(),
-    });
-  // #endregion agent log
-
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
@@ -334,25 +325,6 @@ export function DirectClientTable({
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
-
-  // #region agent log
-  useEffect(() => {
-    try {
-      const ids = Array.from(__debugRefs.statusById.keys()).slice(0, 50);
-      let overflowCount = 0;
-      for (const id of ids) {
-        const td = __debugRefs.tdById.get(id);
-        const st = __debugRefs.statusById.get(id);
-        if (!td || !st) continue;
-        const tdRect = td.getBoundingClientRect();
-        const stRect = st.getBoundingClientRect();
-        const overflow = stRect.right > tdRect.right + 1;
-        if (overflow) overflowCount++;
-      }
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/DirectClientTable.tsx:overflowCheck',message:'Перевірка overflow статусу переписки (чи налазить на Послугу)',data:{checked:ids.length,overflowCount},timestamp:Date.now(),sessionId:'debug-session',runId:'service-overflow-postfix-1',hypothesisId:'H_overlap'})}).catch(()=>{});
-    } catch {}
-  }, [clients]);
-  // #endregion agent log
 
   const altegioClientsBaseUrl =
     "https://app.alteg.io/clients/1169323/base/?fields%5B0%5D=name&fields%5B1%5D=phone&fields%5B2%5D=email&fields%5B3%5D=sold_amount&fields%5B4%5D=visits_count&fields%5B5%5D=discount&fields%5B6%5D=last_visit_date&fields%5B7%5D=first_visit_date&order_by=id&order_by_direction=desc&page=1&page_size=25&segment=&operation=AND&filters%5B0%5D%5Boperation%5D=OR&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B1%5D%5Btype%5D=quick_search&filters%5B1%5D%5Bstate%5D%5Bvalue%5D=";
@@ -1473,12 +1445,6 @@ export function DirectClientTable({
                       {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
                       <td
                         className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px] overflow-hidden"
-                        ref={(el) => {
-                          try {
-                            if (!el) return;
-                            __debugRefs.tdById.set(String(client.id), el);
-                          } catch {}
-                        }}
                       >
                           {(() => {
                           const total =
@@ -1525,12 +1491,6 @@ export function DirectClientTable({
                                   style={{
                                     backgroundColor: badgeCfg.bg,
                                     color: badgeCfg.fg,
-                                  }}
-                                  ref={(el) => {
-                                    try {
-                                      if (!el) return;
-                                      __debugRefs.statusById.set(String(client.id), el);
-                                    } catch {}
                                   }}
                                 >
                                   <span className="truncate">{statusNameRaw}</span>
@@ -1671,15 +1631,6 @@ export function DirectClientTable({
 
                           const picked = pickServiceIcon();
                           if (!picked) return '';
-                          // #region agent log
-                          try {
-                            const safeId = String((client as any).id || '').slice(0, 16);
-                            const bothActive = Boolean(consultIsActive && paidIsActive);
-                            if (bothActive || picked.key !== 'consultation') {
-                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/DirectClientTable.tsx:servicePickOne',message:'Service column picked single icon',data:{clientId:safeId,picked:picked.key,consultIsActive,paidIsActive,bothActive,paidDatePresent:Boolean(client.paidServiceDate),consultDatePresent:Boolean(client.consultationBookingDate),state:(client as any).state||null},timestamp:Date.now(),sessionId:'debug-session',runId:'service-single-1',hypothesisId:'H_service_single'})}).catch(()=>{});
-                            }
-                          } catch {}
-                          // #endregion agent log
                           return (
                             <div className="flex items-center justify-end">
                               <span className="inline-flex items-center justify-center">{picked.node}</span>

@@ -161,12 +161,6 @@ export async function GET(req: NextRequest) {
     lastVisitDebug = { error: err instanceof Error ? err.message : String(err) };
   }
 
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/api/admin/direct/debug-altegio-metrics/route.ts:lastVisitDebug',message:'Altegio last_visit_* debug (safe)',data:{altegioClientId:String(altegioClientId).slice(0,12),hasDebug:Boolean(lastVisitDebug)},timestamp:Date.now(),sessionId:'debug-session',runId:'days-2',hypothesisId:'H_sync_source_mismatch'})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
-
   const db = directClient
     ? {
         directClientId: directClient.id,
