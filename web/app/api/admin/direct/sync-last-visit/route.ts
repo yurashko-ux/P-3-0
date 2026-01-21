@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { fetchAltegioLastVisitMap } from '@/lib/altegio/last-visit';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -167,7 +168,31 @@ async function run(req: NextRequest) {
 
       updated++;
       if (samples.length < 20) {
-        samples.push({ directClientId: client.id, altegioClientId: client.altegioClientId, action: 'saved', lastVisitAt: updatedClient.lastVisitAt });
+        // Обчислюємо “Днів” так само, як у /api/admin/direct/clients (по днях Europe/Kyiv)
+        let computedDaysSinceLastVisit: number | null = null;
+        try {
+          const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+          const lastKyivDay = kyivDayFromISO(updatedClient.lastVisitAt);
+          const toDayIndex = (day: string): number => {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+            if (!m) return NaN;
+            const y = Number(m[1]);
+            const mo = Number(m[2]);
+            const d = Number(m[3]);
+            if (!y || !mo || !d) return NaN;
+            return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
+          };
+          const diff = toDayIndex(todayKyivDay) - toDayIndex(lastKyivDay);
+          computedDaysSinceLastVisit = Number.isFinite(diff) ? (diff < 0 ? 0 : diff) : null;
+        } catch {}
+
+        samples.push({
+          directClientId: client.id,
+          altegioClientId: client.altegioClientId,
+          action: 'saved',
+          lastVisitAt: updatedClient.lastVisitAt,
+          ...(computedDaysSinceLastVisit != null ? { computedDaysSinceLastVisit } : {}),
+        } as any);
       }
     } catch (err) {
       errors++;
