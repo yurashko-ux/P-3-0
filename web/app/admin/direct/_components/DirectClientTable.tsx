@@ -1612,100 +1612,73 @@ export function DirectClientTable({
                             );
                             }
                             
-                          // 2) Нормальний режим: максимум 3 іконки (актуальні послуги + статус)
-                          const icons: Array<{ key: string; node: any }> = [];
-
-                          if (consultIsActive) {
-                            icons.push({
-                              key: 'consultation',
-                              node: (
-                                <button
-                                  type="button"
-                                  className="hover:opacity-70 transition-opacity"
-                                  title="Актуальна консультація"
-                                  onClick={() => setStateHistoryClient(client)}
-                                >
-                                  <StateIcon state="consultation-booked" size={28} />
-                                </button>
-                              ),
-                            });
-                          }
-
-                          if (paidIsActive) {
-                            const serviceState =
-                              client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
-                            if (serviceState) {
-                              icons.push({
-                                key: 'paid-service',
+                          // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Послуга”.
+                          // Пріоритет: консультація (якщо актуальна) → інакше платний запис (якщо актуальний).
+                          // Без 🆕/💸 — це створювало “NEW” і візуальний хаос.
+                          const pickServiceIcon = (): { key: string; node: any } | null => {
+                            if (consultIsActive) {
+                              return {
+                                key: 'consultation',
                                 node: (
                                   <button
                                     type="button"
                                     className="hover:opacity-70 transition-opacity"
-                                    title={serviceState === 'hair-extension' ? 'Нарощування волосся' : 'Інші послуги'}
+                                    title="Актуальна консультація"
                                     onClick={() => setStateHistoryClient(client)}
                                   >
-                                  <StateIcon state={serviceState} size={28} />
+                                    <StateIcon state="consultation-booked" size={28} />
                                   </button>
                                 ),
-                              });
-                            } else {
-                              // Є актуальний запис, але тип послуги не визначений у state → показуємо generic “платна послуга”
-                              icons.push({
+                              };
+                            }
+
+                            if (paidIsActive) {
+                              const serviceState =
+                                client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
+                              if (serviceState) {
+                                return {
+                                  key: 'paid-service',
+                                  node: (
+                                    <button
+                                      type="button"
+                                      className="hover:opacity-70 transition-opacity"
+                                      title={serviceState === 'hair-extension' ? 'Нарощування волосся' : 'Інші послуги'}
+                                      onClick={() => setStateHistoryClient(client)}
+                                    >
+                                      <StateIcon state={serviceState} size={28} />
+                                    </button>
+                                  ),
+                                };
+                              }
+                              return {
                                 key: 'paid-service-generic',
                                 node: (
                                   <span title="Платна послуга (тип невідомий)" className="text-[24px] leading-none">
                                     ✂️
                                   </span>
                                 ),
-                              });
+                              };
                             }
-                            }
-                            
-                          // 3) Статуси після консультації (тимчасові іконки)
-                          const consultWas = client.consultationAttended === true;
-                          const hasPaidAny = Boolean(client.paidServiceDate);
-                          if (consultWas && !hasPaidAny) {
-                            icons.push({
-                              key: 'no-sale',
-                              node: (
-                                <span title="Немає продажі" className="text-[24px] leading-none">
-                                  💸
-                                </span>
-                              ),
-                            });
-                          }
-                          if (consultWas && hasPaidAny) {
-                            icons.push({
-                              key: 'new-client',
-                              node: (
-                                <span title="Новий клієнт" className="text-[24px] leading-none">
-                                  🆕
-                                </span>
-                              ),
-                            });
-                          }
 
-                          const shown = icons.slice(0, 3);
-                          if (shown.length === 0) return '';
+                            return null;
+                          };
+
+                          const picked = pickServiceIcon();
+                          if (!picked) return '';
                           // #region agent log
                           try {
-                            const keys = shown.map((x) => x.key);
-                            const hasWeird = keys.length >= 2;
-                            if (hasWeird) {
-                              const safeId = String((client as any).id || '').slice(0, 16);
-                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/DirectClientTable.tsx:serviceIcons',message:'Service column icons computed',data:{clientId:safeId,icons:keys,consultIsActive,paidIsActive,consultPastOrToday,paidPastOrToday,consultAttended:(client as any).consultationAttended??null,paidDatePresent:Boolean(client.paidServiceDate),consultDatePresent:Boolean(client.consultationBookingDate),state:(client as any).state||null},timestamp:Date.now(),sessionId:'debug-session',runId:'service-order-1',hypothesisId:'H_service_order'})}).catch(()=>{});
+                            const safeId = String((client as any).id || '').slice(0, 16);
+                            const bothActive = Boolean(consultIsActive && paidIsActive);
+                            if (bothActive || picked.key !== 'consultation') {
+                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web/app/admin/direct/_components/DirectClientTable.tsx:servicePickOne',message:'Service column picked single icon',data:{clientId:safeId,picked:picked.key,consultIsActive,paidIsActive,bothActive,paidDatePresent:Boolean(client.paidServiceDate),consultDatePresent:Boolean(client.consultationBookingDate),state:(client as any).state||null},timestamp:Date.now(),sessionId:'debug-session',runId:'service-single-1',hypothesisId:'H_service_single'})}).catch(()=>{});
                             }
                           } catch {}
                           // #endregion agent log
-                                  return (
-                            <div className="flex items-center justify-end gap-1">
-                              {shown.map((i) => (
-                                <span key={i.key} className="inline-flex items-center justify-center">
-                                  {i.node}
-                                </span>
-                              ))}
-                                      </div>
-                            );
+                          return (
+                            <div className="flex items-center justify-end">
+                              <span className="inline-flex items-center justify-center">{picked.node}</span>
+                            </div>
+                          );
                           })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
