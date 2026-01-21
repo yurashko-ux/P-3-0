@@ -10,7 +10,13 @@ import { kvWrite } from '@/lib/kv';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+
 function okCron(req: NextRequest) {
+  // 0) Дозволяємо ручний запуск з адмін-кукою (для діагностики / форс-рану)
+  const adminToken = req.cookies.get('admin_token')?.value || '';
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+
   // 1) Дозволяємо офіційний крон Vercel
   const isVercelCron = req.headers.get('x-vercel-cron') === '1';
   if (isVercelCron) return true;
