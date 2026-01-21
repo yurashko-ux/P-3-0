@@ -182,8 +182,8 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
               <table className="table table-zebra table-sm w-full">
                 <thead>
                   <tr>
-                    <th className="text-xs">Дата візиту</th>
                     <th className="text-xs">Створено</th>
+                    <th className="text-xs">Дата візиту</th>
                     <th className="text-xs">Статус</th>
                     <th className="text-xs">Майстри</th>
                     <th className="text-xs">Послуги</th>
@@ -205,10 +205,10 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                     return (
                       <>
                         <tr key={key} className="hover">
-                          <td className="text-xs whitespace-nowrap">{formatDateTime(r.datetime)}</td>
                           <td className="text-xs whitespace-nowrap" title="Дата створення запису (за webhooks/records log)">
                             {formatDateTime(r.createdAt)}
                           </td>
+                          <td className="text-xs whitespace-nowrap">{formatDateTime(r.datetime)}</td>
                           <td className="text-xs whitespace-nowrap" title={r.attendanceStatus}>
                             <span className="flex items-center gap-2">
                               {shouldShowAttemptInsteadOfHourglass ? (
