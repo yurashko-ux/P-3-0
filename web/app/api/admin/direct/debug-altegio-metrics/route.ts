@@ -14,6 +14,9 @@ export async function GET(req: NextRequest) {
   const clientId = (req.nextUrl.searchParams.get('clientId') || '').toString().trim();
   const instagramUsernameRaw = (req.nextUrl.searchParams.get('instagramUsername') || '').toString().trim();
 
+  let directClient: { id: string; instagramUsername: string; altegioClientId: number | null; phone: string | null; visits: number | null; spent: number | null } | null =
+    null;
+
   let altegioClientId = Number(altegioClientIdRaw);
   if (!altegioClientId || Number.isNaN(altegioClientId)) {
     // Підтягуємо altegioClientId з БД за clientId або instagramUsername
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
 
       const dc = await prisma.directClient.findFirst({
         where,
-        select: { id: true, instagramUsername: true, altegioClientId: true },
+        select: { id: true, instagramUsername: true, altegioClientId: true, phone: true, visits: true, spent: true },
       });
 
       if (!dc?.altegioClientId) {
@@ -47,12 +50,21 @@ export async function GET(req: NextRequest) {
         );
       }
       altegioClientId = dc.altegioClientId;
+      directClient = dc;
     } catch (err) {
       return NextResponse.json(
         { ok: false, error: err instanceof Error ? err.message : String(err) },
         { status: 500 }
       );
     }
+  } else {
+    // Якщо передали altegioClientId напряму — спробуємо знайти відповідний Direct клієнт
+    try {
+      directClient = await prisma.directClient.findFirst({
+        where: { altegioClientId },
+        select: { id: true, instagramUsername: true, altegioClientId: true, phone: true, visits: true, spent: true },
+      });
+    } catch {}
   }
 
   const res = await fetchAltegioClientMetrics({ altegioClientId });
@@ -60,9 +72,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: res.error }, { status: 500 });
   }
 
+  const db = directClient
+    ? {
+        directClientId: directClient.id,
+        instagramUsername: directClient.instagramUsername,
+        altegioClientId: directClient.altegioClientId,
+        phonePresent: Boolean(directClient.phone && directClient.phone.trim()),
+        phoneLength: directClient.phone ? directClient.phone.length : 0,
+        visits: directClient.visits ?? null,
+        spent: directClient.spent ?? null,
+      }
+    : null;
+
   return NextResponse.json({
     ok: true,
     altegioClientId,
+    db,
     parsed: {
       phonePresent: Boolean(res.metrics.phone),
       visitsPresent: res.metrics.visits !== null && res.metrics.visits !== undefined,
@@ -70,6 +95,16 @@ export async function GET(req: NextRequest) {
       visitsValue: res.metrics.visits ?? null,
       spentIsZero: (res.metrics.spent ?? null) === 0,
     },
+    compare: db
+      ? {
+          phoneEqual:
+            Boolean(directClient?.phone && directClient.phone.trim()) && Boolean(res.metrics.phone)
+              ? directClient!.phone!.trim() === res.metrics.phone
+              : false,
+          visitsEqual: (directClient?.visits ?? null) === (res.metrics.visits ?? null),
+          spentEqual: (directClient?.spent ?? null) === (res.metrics.spent ?? null),
+        }
+      : null,
   });
 }
 
