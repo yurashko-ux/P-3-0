@@ -615,6 +615,24 @@ export async function saveDirectClient(
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
     const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
 
+    // ВАЖЛИВО: метрики з Altegio (phone/visits/spent/lastVisitAt) не можна випадково затирати.
+    // Багато шляхів (вебхуки/сервісні синки) передають client без цих полів (undefined),
+    // а `directClientToPrisma` перетворює undefined → null і це затирає значення в БД.
+    // Тому для UPDATE ми “вирізаємо” ці поля з data, якщо вони не передані явно.
+    const applyMetricsPatch = (data: any) => {
+      const next = { ...data };
+      if (client.phone === undefined) delete next.phone;
+      if (client.visits === undefined) delete next.visits;
+      if (client.spent === undefined) delete next.spent;
+      if ((client as any).lastVisitAt === undefined) delete next.lastVisitAt;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'post-fix',hypothesisId:'F',location:'web/lib/direct-store.ts:saveDirectClient:applyMetricsPatch',message:'applyMetricsPatch()',data:{reason:reason||'',metricsIncluded:{phone:client.phone!==undefined,visits:client.visits!==undefined,spent:client.spent!==undefined,lastVisitAt:(client as any).lastVisitAt!==undefined}},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
+
+      return next;
+    };
+
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
 
@@ -696,14 +714,14 @@ export async function saveDirectClient(
       // Беремо найранішу дату створення та найпізнішу дату оновлення
       await prisma.directClient.update({
         where: { instagramUsername: normalizedUsername },
-        data: {
+        data: applyMetricsPatch({
           ...dataWithCorrectState,
           id: existingByUsername.id, // Зберігаємо існуючий ID
           createdAt: existingByUsername.createdAt < data.firstContactDate 
             ? existingByUsername.createdAt 
             : new Date(data.firstContactDate),
           ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-        },
+        }),
       });
       console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
     } else {
@@ -718,16 +736,16 @@ export async function saveDirectClient(
         // Оновлюємо існуючий запис
         await prisma.directClient.update({
           where: { id: client.id },
-          data: {
+          data: applyMetricsPatch({
             ...dataWithCorrectState,
             ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-          },
+          }),
         });
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
       } else {
         // Створюємо новий запис (для нового клієнта previousState = null)
         await prisma.directClient.create({
-          data: dataWithCorrectState,
+          data: applyMetricsPatch(dataWithCorrectState),
         });
         console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
       }
