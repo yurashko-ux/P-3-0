@@ -13,6 +13,48 @@ import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
+import { useSearchParams } from "next/navigation";
+
+type ChatStatusUiVariant = "v1" | "v2";
+
+function normalizeChatStatusUiVariant(raw: string | null | undefined): ChatStatusUiVariant | null {
+  const v = (raw || "").toString().trim().toLowerCase();
+  if (v === "v2") return "v2";
+  if (v === "v1") return "v1";
+  return null;
+}
+
+function useChatStatusUiVariant(): ChatStatusUiVariant {
+  const searchParams = useSearchParams();
+  const urlRaw = searchParams?.get("chatStatusUi") || null;
+  const urlVariant = normalizeChatStatusUiVariant(urlRaw);
+
+  const [variant, setVariant] = useState<ChatStatusUiVariant>("v1");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = "direct:chatStatusUi";
+
+    if (urlVariant) {
+      setVariant(urlVariant);
+      try {
+        window.localStorage.setItem(key, urlVariant);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      const saved = normalizeChatStatusUiVariant(window.localStorage.getItem(key));
+      if (saved) setVariant(saved);
+    } catch {
+      // ignore
+    }
+  }, [urlVariant]);
+
+  return variant;
+}
 
 // Компонент для відображення піктограми стану
 function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
@@ -313,6 +355,7 @@ export function DirectClientTable({
   onClientUpdate,
   onRefresh,
 }: DirectClientTableProps) {
+  const chatStatusUiVariant = useChatStatusUiVariant();
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
@@ -1484,14 +1527,31 @@ export function DirectClientTable({
 
                               {showStatus ? (
                                 <span
-                                  className="inline-flex min-w-0 max-w-[78px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden"
+                                  className={
+                                    chatStatusUiVariant === 'v2'
+                                      ? 'inline-flex min-w-0 max-w-[92px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
+                                      : 'inline-flex min-w-0 max-w-[78px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
+                                  }
                                   title={statusNameRaw}
                                   style={{
                                     backgroundColor: badgeCfg.bg,
                                     color: badgeCfg.fg,
                                   }}
                                 >
-                                  <span className="truncate">{statusNameRaw}</span>
+                                  {chatStatusUiVariant === 'v2' ? (
+                                    <span
+                                      className="min-w-0 break-words overflow-hidden"
+                                      style={{
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical',
+                                      }}
+                                    >
+                                      {statusNameRaw}
+                                    </span>
+                                  ) : (
+                                    <span className="truncate">{statusNameRaw}</span>
+                                  )}
                                 </span>
                               ) : null}
                             </div>
