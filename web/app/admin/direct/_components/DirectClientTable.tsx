@@ -1293,7 +1293,15 @@ export function DirectClientTable({
                               (() => {
                                 const keys = (client.lastActivityKeys ?? []).join(', ') || '-';
                                 const at = (client.lastActivityAt || '').toString().trim() || '-';
-                                return `lastActivityAt: ${at}\nlastActivityKeys: ${keys}`;
+                                if (!debugActivity) return `lastActivityAt: ${at}\nlastActivityKeys: ${keys}`;
+                                return [
+                                  `lastActivityAt: ${at}`,
+                                  `lastActivityKeys: ${keys}`,
+                                  `clientId: ${String(client.id).slice(0, 18)}`,
+                                  `altegioClientId: ${client.altegioClientId ?? '-'}`,
+                                  `state: ${client.state ?? '-'}`,
+                                  `masterId: ${client.masterId ?? '-'}`,
+                                ].join('\n');
                               })()
                             }
                           >
