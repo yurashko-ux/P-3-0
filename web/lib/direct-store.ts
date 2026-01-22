@@ -730,6 +730,14 @@ export async function saveDirectClient(
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
     const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
 
+    // #region agent log
+    try {
+      // ВАЖЛИВО: не логуємо PII (імена/телефони/текст повідомлень). Логуємо тільки структуру.
+      const definedKeys = Object.keys(client as any).filter((k) => (client as any)[k] !== undefined);
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activity-keys-1',hypothesisId:'H_other_due_to_untracked_or_no_change',location:'web/lib/direct-store.ts:saveDirectClient:entry',message:'saveDirectClient entry',data:{clientId:String((client as any).id||'').slice(0,12),reason:String(reason||''),touchUpdatedAt,skipAltegioMetricsSync,definedKeysCount:definedKeys.length,definedKeys:definedKeys.slice(0,40)},timestamp:Date.now()})}).catch(()=>{});
+    } catch {}
+    // #endregion agent log
+
     const computeActivityKeys = (prev: any | null, finalState: string | null | undefined): string[] => {
       const keys: string[] = [];
       const push = (k: string) => {
@@ -784,6 +792,23 @@ export async function saveDirectClient(
       if (finalState !== undefined && finalState !== null) {
         if (!eqScalar(prev?.state ?? null, finalState)) push('state');
       }
+
+      // #region agent log
+      try {
+        const flags = {
+          message: (client as any).lastMessageAt !== undefined ? !eqDate(prev?.lastMessageAt ?? null, (client as any).lastMessageAt ?? null) : null,
+          paidServiceDate: (client as any).paidServiceDate !== undefined ? !eqDate(prev?.paidServiceDate ?? null, (client as any).paidServiceDate ?? null) : null,
+          paidServiceAttended: (client as any).paidServiceAttended !== undefined ? !eqScalar(prev?.paidServiceAttended ?? null, (client as any).paidServiceAttended ?? null) : null,
+          paidServiceCancelled: (client as any).paidServiceCancelled !== undefined ? !eqScalar(prev?.paidServiceCancelled ?? false, (client as any).paidServiceCancelled ?? false) : null,
+          paidServiceTotalCost: (client as any).paidServiceTotalCost !== undefined ? !eqScalar(prev?.paidServiceTotalCost ?? null, (client as any).paidServiceTotalCost ?? null) : null,
+          consultationBookingDate: (client as any).consultationBookingDate !== undefined ? !eqDate(prev?.consultationBookingDate ?? null, (client as any).consultationBookingDate ?? null) : null,
+          consultationAttended: (client as any).consultationAttended !== undefined ? !eqScalar(prev?.consultationAttended ?? null, (client as any).consultationAttended ?? null) : null,
+          consultationCancelled: (client as any).consultationCancelled !== undefined ? !eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false) : null,
+          state: finalState !== undefined && finalState !== null ? !eqScalar(prev?.state ?? null, finalState) : null,
+        };
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activity-keys-1',hypothesisId:'H_why_other',location:'web/lib/direct-store.ts:saveDirectClient:computeActivityKeys',message:'computed activity keys',data:{clientId:String(prev?.id||client.id||'').slice(0,12),finalState:finalState??null,keys,flags},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
 
       if (keys.length === 0) keys.push('other');
       return keys;
