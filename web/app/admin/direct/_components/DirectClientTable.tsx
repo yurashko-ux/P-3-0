@@ -1721,23 +1721,45 @@ export function DirectClientTable({
                               }
                               
                               // Визначаємо значок attendance
+                              // Правило:
+                              // - ✅/❌/🚫 показуємо одразу, незалежно від дня
+                              // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
+                              // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
+                              const attIconCls = "text-[14px] leading-none";
                               let attendanceIcon = null;
                               if (client.consultationCancelled) {
-                                attendanceIcon = <span className="text-orange-600 text-lg" title="Скасовано до дати консультації">🚫</span>;
-                              } else
-                              if (isPastOrToday) {
-                                if (client.consultationAttended === true) {
-                                  attendanceIcon = <span className="text-green-600 text-lg" title="Клієнтка прийшла на консультацію">✅</span>;
-                                } else if (client.consultationAttended === false) {
-                                  attendanceIcon = <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на консультацію">❌</span>;
-                                } else {
-                                  attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)">❓</span>;
-                                }
+                                attendanceIcon = (
+                                  <span className={`text-orange-600 ${attIconCls}`} title="Скасовано до дати консультації">
+                                    🚫
+                                  </span>
+                                );
+                              } else if (client.consultationAttended === true) {
+                                attendanceIcon = (
+                                  <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на консультацію">
+                                    ✅
+                                  </span>
+                                );
+                              } else if (client.consultationAttended === false) {
+                                attendanceIcon = (
+                                  <span className={`text-red-600 ${attIconCls}`} title="Клієнтка не з'явилася на консультацію">
+                                    ❌
+                                  </span>
+                                );
+                              } else if (isPast) {
+                                attendanceIcon = (
+                                  <span
+                                    className={`text-gray-500 ${attIconCls}`}
+                                    title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)"
+                                  >
+                                    ❓
+                                  </span>
+                                );
                               } else {
-                                // Майбутня консультація без attendance — очікується
-                                if (client.consultationAttended == null) {
-                                  attendanceIcon = <span className="text-gray-700 text-lg" title="Присутність: Очікується">⏳</span>;
-                                }
+                                attendanceIcon = (
+                                  <span className={`text-gray-700 ${attIconCls}`} title="Присутність: Очікується">
+                                    ⏳
+                                  </span>
+                                );
                               }
                               
                               const baseTitle = isPast 
@@ -1855,27 +1877,49 @@ export function DirectClientTable({
                               : null;
                             
                             // Визначаємо значок attendance
+                            // Правило:
+                            // - ✅/❌/🚫 показуємо одразу, незалежно від дня
+                            // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
+                            // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
+                            const attIconCls = "text-[14px] leading-none";
                             let attendanceIcon = null;
                             if (client.paidServiceCancelled) {
-                              attendanceIcon = <span className="text-orange-600 text-lg" title="Скасовано до дати запису">🚫</span>;
-                            } else
-                            if (isPastOrToday) {
-                              if (client.paidServiceAttended === true) {
-                                attendanceIcon = <span className="text-green-600 text-lg" title="Клієнтка прийшла на платну послугу">✅</span>;
-                              } else if (client.paidServiceAttended === false) {
-                                attendanceIcon = <span className="text-red-600 text-lg" title="Клієнтка не з'явилася на платну послугу">❌</span>;
-                              } else {
-                                attendanceIcon = <span className="text-gray-500 text-lg" title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)">❓</span>;
-                              }
+                              attendanceIcon = (
+                                <span className={`text-orange-600 ${attIconCls}`} title="Скасовано до дати запису">
+                                  🚫
+                                </span>
+                              );
+                            } else if (client.paidServiceAttended === true) {
+                              attendanceIcon = (
+                                <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на платну послугу">
+                                  ✅
+                                </span>
+                              );
+                            } else if (client.paidServiceAttended === false) {
+                              attendanceIcon = (
+                                <span className={`text-red-600 ${attIconCls}`} title="Клієнтка не з'явилася на платну послугу">
+                                  ❌
+                                </span>
+                              );
+                            } else if (isPast) {
+                              attendanceIcon = (
+                                <span
+                                  className={`text-gray-500 ${attIconCls}`}
+                                  title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)"
+                                >
+                                  ❓
+                                </span>
+                              );
+                            } else {
+                              attendanceIcon = (
+                                <span className={`text-gray-700 ${attIconCls}`} title="Присутність: Очікується">
+                                  ⏳
+                                </span>
+                              );
                             }
 
-                            const isPendingAttendance = client.paidServiceAttended == null;
-                            const pendingIcon =
-                              !client.paidServiceCancelled && !isPastOrToday && isPendingAttendance
-                                ? (
-                                  <span className="text-gray-700 text-lg" title="Присутність: Очікується">⏳</span>
-                                )
-                                : null;
+                            // pendingIcon більше не потрібен, бо ⏳ входить в attendanceIcon (сьогодні/майбутнє при null)
+                            const pendingIcon = null;
                             
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
@@ -1938,7 +1982,7 @@ export function DirectClientTable({
                                 {client.paidServiceIsRebooking ? (
                                   <WithCornerRedDot show={showDotOnPaidRebook} title={paidDotTitle}>
                                     <span
-                                      className="text-purple-700 text-lg"
+                                      className="text-purple-700 text-[14px] leading-none"
                                       title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
                                     >
                                       🔁
