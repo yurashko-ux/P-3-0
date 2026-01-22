@@ -1278,6 +1278,9 @@ export function DirectClientTable({
                         hasPrefix('serviceMaster') ||
                         hasPrefix('consultationMaster')
                     );
+                    const paidCostChanged = hasActivity('paidServiceTotalCost');
+                    const paidAttendanceChanged = Boolean(hasActivity('paidServiceAttended') || hasActivity('paidServiceCancelled'));
+                    const paidDateChanged = Boolean(hasActivity('paidServiceDate'));
                     const consultMasterChanged = hasPrefix('consultationMaster');
                     const consultAttendanceChanged = Boolean(
                       hasActivity('consultationAttended') || hasActivity('consultationCancelled')
@@ -2103,23 +2106,26 @@ export function DirectClientTable({
                             const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                             
                             const paidDotTitle = 'Тригер: змінився запис';
-                            const showDotOnPaidAttendance = Boolean(showPaidDot && attendanceIcon);
-                            const showDotOnPaidPending = Boolean(showPaidDot && !attendanceIcon && pendingIcon);
+                            // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
+                            // Для attendance-іконки крапочку ставимо лише коли змінилась присутність/скасування (або fallback "other"+today для ❌).
+                            const showDotOnPaidAttendance = Boolean(attendanceIcon && paidAttendanceChanged);
+                            const showDotOnPaidPending = Boolean(!attendanceIcon && pendingIcon && paidAttendanceChanged);
                             const showDotOnPaidRebook = Boolean(
                               showPaidDot && !attendanceIcon && !pendingIcon && client.paidServiceIsRebooking
                             );
                             const showDotOnPaidDate = Boolean(
-                              showPaidDot && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
+                              paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
                             );
                             const paidHasAttendanceSignal = Boolean(
                               client.paidServiceCancelled ||
                                 client.paidServiceAttended === true ||
                                 client.paidServiceAttended === false
                             );
-                            const showPaidDotEffective = Boolean(
-                              showPaidDot ||
+                            const showPaidAttendanceDotEffective = Boolean(
+                              paidAttendanceChanged ||
                                 (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && paidHasAttendanceSignal)
                             );
+                            const showPaidCostDot = Boolean(paidCostChanged);
                             // #region agent log
                             try {
                               const shouldLog =
@@ -2127,7 +2133,7 @@ export function DirectClientTable({
                                 updatedKyivDayRow === todayKyivDayRow &&
                                 client.paidServiceAttended === false;
                               if (shouldLog) {
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activitydot-postfix',hypothesisId:'H_activityDot',location:'DirectClientTable.tsx:paidDot',message:'paid dot decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),updatedKyivDayRow,todayKyivDayRow,paidServiceAttended:client.paidServiceAttended,showPaidDot,showPaidDotEffective},timestamp:Date.now()})}).catch(()=>{});
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activitydot-postfix',hypothesisId:'H_paid_total_cost_dot_placement',location:'DirectClientTable.tsx:paidDot',message:'paid dot decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),updatedKyivDayRow,todayKyivDayRow,paidServiceAttended:client.paidServiceAttended,paidCostChanged,paidAttendanceChanged,paidDateChanged,showPaidAttendanceDotEffective,showPaidCostDot},timestamp:Date.now()})}).catch(()=>{});
                               }
                             } catch {}
                             // #endregion agent log
@@ -2175,7 +2181,7 @@ export function DirectClientTable({
                                   </WithCornerRedDot>
                                 ) : null}
                                 {attendanceIcon ? (
-                                  <WithCornerRedDot show={showPaidDotEffective} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                  <WithCornerRedDot show={showPaidAttendanceDotEffective} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {attendanceIcon}
                                   </WithCornerRedDot>
                                 ) : null}
@@ -2186,7 +2192,15 @@ export function DirectClientTable({
                                     className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
                                     title={`Сума запису: ${formatUAHExact(client.paidServiceTotalCost)}`}
                                   >
-                                    {formatUAHThousands(client.paidServiceTotalCost)}
+                                    <span className="inline-flex items-center">
+                                      <span>{formatUAHThousands(client.paidServiceTotalCost)}</span>
+                                      {showPaidCostDot ? (
+                                        <span
+                                          className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                          title={'Тригер: змінилась сума запису'}
+                                        />
+                                      ) : null}
+                                    </span>
                                   </span>
                                 ) : (
                                   <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-center">

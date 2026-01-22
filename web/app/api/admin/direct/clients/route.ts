@@ -548,6 +548,11 @@ export async function GET(req: NextRequest) {
           if (computed > 0) {
             const current = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
             if (!current || current !== computed) {
+              // #region agent log
+              try {
+                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'paid-totalcost-override-1',hypothesisId:'H_override_paid_total_cost_in_clients_route',location:'web/app/api/admin/direct/clients/route.ts:paidServiceTotalCost',message:'overriding paidServiceTotalCost in response from KV group services',data:{directClientId:String((c as any).id||'').slice(0,18),altegioClientId:c.altegioClientId,paidKyivDay,servicesCount:Array.isArray((currentGroup as any).services)?(currentGroup as any).services.length:0,currentStored:current,computed},timestamp:Date.now()})}).catch(()=>{});
+              } catch {}
+              // #endregion agent log
               c = { ...c, paidServiceTotalCost: computed };
             }
           }
