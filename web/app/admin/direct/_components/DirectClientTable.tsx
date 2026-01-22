@@ -1271,6 +1271,15 @@ export function DirectClientTable({
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
                     const showConsultDot = hasPrefix('consultation');
+                    const activityIsOtherOnly = activityKeys.length === 1 && activityKeys[0] === 'other';
+                    const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
+                      timeZone: 'Europe/Kyiv',
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                    });
+                    const todayKyivDayRow = kyivDayFmtRow.format(new Date());
+                    const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(client.updatedAt)) : '';
 
                     return (
                       <tr key={client.id}>
@@ -1889,6 +1898,10 @@ export function DirectClientTable({
                               
                               const consultDotTitle = 'Тригер: змінилась консультація';
                               const showDotOnConsultDate = Boolean(showConsultDot && !attendanceIcon);
+                          const showConsultDotEffective = Boolean(
+                            showConsultDot ||
+                              (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && client.consultationAttended === false)
+                          );
 
                               return (
                                 <span className="flex flex-col items-center">
@@ -1940,7 +1953,7 @@ export function DirectClientTable({
                                       </span>
                                     ) : null}
                                     {attendanceIcon ? (
-                                      <WithCornerRedDot show={Boolean(showConsultDot)} title={consultDotTitle}>
+                                      <WithCornerRedDot show={showConsultDotEffective} title={consultDotTitle}>
                                         {attendanceIcon}
                                       </WithCornerRedDot>
                                     ) : null}
@@ -2053,6 +2066,10 @@ export function DirectClientTable({
                             const showDotOnPaidDate = Boolean(
                               showPaidDot && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
                             );
+                            const showPaidDotEffective = Boolean(
+                              showPaidDot ||
+                                (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && client.paidServiceAttended === false)
+                            );
 
                             return (
                               <span className="flex flex-col items-center">
@@ -2110,7 +2127,7 @@ export function DirectClientTable({
                                   </WithCornerRedDot>
                                 ) : null}
                                 {attendanceIcon ? (
-                                  <WithCornerRedDot show={showDotOnPaidAttendance} title={paidDotTitle}>
+                                  <WithCornerRedDot show={showPaidDotEffective} title={paidDotTitle}>
                                     {attendanceIcon}
                                   </WithCornerRedDot>
                                 ) : null}
