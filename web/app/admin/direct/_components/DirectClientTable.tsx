@@ -1922,7 +1922,9 @@ export function DirectClientTable({
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
                               const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                               
-                              const consultDotTitle = 'Тригер: змінилась консультація';
+                              const consultDotTitle = hasPrefix('consultationMaster')
+                                ? 'Тригер: змінився майстер консультації'
+                                : 'Тригер: змінилась консультація';
                               const showDotOnConsultDate = Boolean(showConsultDot && !attendanceIcon);
                           const consultHasAttendanceSignal = Boolean(
                             client.consultationCancelled ||
@@ -2002,7 +2004,8 @@ export function DirectClientTable({
                                   </span>
 
                                   {(() => {
-                                    const consultant = shortPersonName(client.consultationMasterName);
+                                    const consultantFull = (client.consultationMasterName || '').toString().trim();
+                                    const consultant = shortPersonName(consultantFull);
                                     if (!consultant) return (
                                       <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-center">
                                         невідомо
@@ -2011,7 +2014,7 @@ export function DirectClientTable({
                                     return (
                                       <span
                                         className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
-                                        title={`Консультував: ${consultant}`}
+                                        title={`Консультував: ${consultantFull}`}
                                       >
                                         {consultant}
                                       </span>
