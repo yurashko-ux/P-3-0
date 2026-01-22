@@ -39,18 +39,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = req.nextUrl;
   const altegioClientIdRaw = (searchParams.get('altegioClientId') || '').toString().trim();
-  const staffName = (searchParams.get('staffName') || '').toString().trim();
+  const staffNameRaw = (searchParams.get('staffName') || '').toString().trim();
 
   const altegioClientId = parseInt(altegioClientIdRaw, 10);
   if (!Number.isFinite(altegioClientId)) {
     return NextResponse.json(
       { ok: false, error: 'altegioClientId must be a number' },
-      { status: 400 }
-    );
-  }
-  if (!staffName) {
-    return NextResponse.json(
-      { ok: false, error: 'staffName is required' },
       { status: 400 }
     );
   }
@@ -62,13 +56,77 @@ export async function GET(req: NextRequest) {
     }
 
     const masters = await getAllDirectMasters();
-    const master = masters.find((m) => m.name === staffName) || null;
-    if (!master) {
+    const normalizeName = (s: string) =>
+      s
+        .toLowerCase()
+        .trim()
+        .replace(/[’‘`ʼ]/g, "'")
+        .replace(/\s+/g, ' ')
+        .replace(/[^\p{L}\p{N}\s'_-]+/gu, '');
+
+    const staffName = staffNameRaw;
+    const staffNorm = staffName ? normalizeName(staffName) : '';
+
+    const enriched = masters.map((m) => ({
+      id: m.id,
+      name: m.name,
+      norm: normalizeName(m.name || ''),
+    }));
+
+    const pickMaster = (): { id: string; name: string } | null => {
+      if (!staffNorm) return null;
+
+      // 1) exact
+      const exact = enriched.find((m) => m.norm === staffNorm);
+      if (exact) return { id: exact.id, name: exact.name };
+
+      // 2) startsWith (either direction)
+      const starts = enriched.filter((m) => m.norm.startsWith(staffNorm) || staffNorm.startsWith(m.norm));
+      if (starts.length === 1) return { id: starts[0].id, name: starts[0].name };
+
+      // 3) includes
+      const includes = enriched.filter((m) => m.norm.includes(staffNorm) || staffNorm.includes(m.norm));
+      if (includes.length === 1) return { id: includes[0].id, name: includes[0].name };
+
+      // 4) first token match (e.g. "Мар'яна" should match "Мар'яна Сас")
+      const firstToken = staffNorm.split(' ')[0] || '';
+      if (firstToken) {
+        const tokenMatches = enriched.filter((m) => m.norm.split(' ')[0] === firstToken || m.norm.startsWith(firstToken));
+        if (tokenMatches.length === 1) return { id: tokenMatches[0].id, name: tokenMatches[0].name };
+      }
+
+      return null;
+    };
+
+    const picked = pickMaster();
+    if (!picked) {
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'master-other-1',hypothesisId:'H_master_name_mismatch',location:'debug-trigger-master-other:pickMaster',message:'master not found',data:{altegioClientId,staffNameProvided:Boolean(staffNameRaw),staffNameLen:staffNameRaw.length,mastersCount:masters.length},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
+
+      const suggestions = staffNorm
+        ? enriched
+            .filter((m) => m.norm.includes(staffNorm) || staffNorm.includes(m.norm) || m.norm.startsWith(staffNorm))
+            .slice(0, 10)
+            .map((m) => m.name)
+        : enriched.slice(0, 10).map((m) => m.name);
+
       return NextResponse.json(
-        { ok: false, error: 'Master not found by name', staffNameLen: staffName.length },
+        {
+          ok: false,
+          error: 'Master not found by name',
+          staffNameLen: staffNameRaw.length,
+          mastersCount: masters.length,
+          suggestions,
+          note: 'Спробуй передати staffName рівно як в suggestions, або лише перше слово (імʼя).',
+        },
         { status: 404 }
       );
     }
+
+    const master = { id: picked.id, name: picked.name };
 
     const prevMasterId = client.masterId || null;
     const nextMasterId = master.id;
@@ -96,7 +154,7 @@ export async function GET(req: NextRequest) {
       directClientId: client.id,
       prevMasterId,
       nextMasterId,
-      staffNameLen: staffName.length,
+      staffNameLen: staffNameRaw.length,
     });
 
     // ВАЖЛИВО: викликаємо без touchUpdatedAt=false, щоб він “піднявся” і спрацював computeActivityKeys.
