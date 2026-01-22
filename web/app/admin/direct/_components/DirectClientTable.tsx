@@ -2212,13 +2212,24 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
                         {(() => {
-                          // Колонка "Майстер" — ТІЛЬКИ для платних записів.
-                          if (!client.paidServiceDate) return '';
+                          // Колонка "Майстер":
+                          // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
+                          // - Якщо serviceMasterName відсутній — показуємо відповідального (masterId) як fallback,
+                          //   щоб тригер masterId мав “місце в UI” для крапочки.
                           const full = (client.serviceMasterName || '').trim();
-                          const name = shortPersonName(full);
-                          if (!name) return '';
+                          const paidMasterName = shortPersonName(full);
+                          const responsibleRaw =
+                            client.masterId ? (masters.find((m) => m.id === client.masterId)?.name || '') : '';
+                          const responsibleName = shortPersonName(responsibleRaw);
+
+                          const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
+                          const showResponsibleMaster = Boolean(!showPaidMaster && responsibleName);
+
+                          if (!showPaidMaster && !showResponsibleMaster) return '';
+
                           const secondary = shortPersonName((client as any).serviceSecondaryMasterName);
 
+                          const name = showPaidMaster ? paidMasterName : responsibleName;
                           let historyTitle = name;
                           try {
                             const raw = client.serviceMasterHistory ? JSON.parse(client.serviceMasterHistory) : null;
@@ -2249,14 +2260,23 @@ export function DirectClientTable({
                                 title="Тригер: змінився майстер"
                                 dotClassName="-top-[5px] -right-[4px]"
                               >
-                                <button
-                                  type="button"
-                                  className="font-medium hover:underline text-left"
-                                  title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
-                                  onClick={() => setMasterHistoryClient(client)}
-                                >
-                                  {name}
-                                </button>
+                                {showPaidMaster ? (
+                                  <button
+                                    type="button"
+                                    className="font-medium hover:underline text-left"
+                                    title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
+                                    onClick={() => setMasterHistoryClient(client)}
+                                  >
+                                    {name}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="font-medium text-left"
+                                    title={`Відповідальний: ${name}`}
+                                  >
+                                    {name}
+                                  </span>
+                                )}
                               </WithCornerRedDot>
                               {secondary ? (
                                 <span className="text-[10px] leading-none opacity-70">
