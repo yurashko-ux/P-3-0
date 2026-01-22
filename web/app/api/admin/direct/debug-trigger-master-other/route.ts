@@ -38,8 +38,28 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = req.nextUrl;
-  const altegioClientIdRaw = (searchParams.get('altegioClientId') || '').toString().trim();
-  const staffNameRaw = (searchParams.get('staffName') || '').toString().trim();
+
+  // Дружній парсер: якщо користувач вставив URL, де `=` та `&` були percent-encoded
+  // (наприклад `?altegioClientId%3D123%26staffName%3DМар%27яна`), спробуємо витягнути параметри.
+  const pickParam = (key: string): string => {
+    const direct = (searchParams.get(key) || '').toString().trim();
+    if (direct) return direct;
+
+    try {
+      const rawSearch = req.nextUrl.search || '';
+      if (!rawSearch) return '';
+      const decoded = decodeURIComponent(rawSearch);
+      // decoded починається з "?" — не критично
+      const m = decoded.match(new RegExp(`${key}=([^&]+)`));
+      if (m && m[1]) return String(m[1]).trim();
+    } catch {
+      // ignore
+    }
+    return '';
+  };
+
+  const altegioClientIdRaw = pickParam('altegioClientId');
+  const staffNameRaw = pickParam('staffName');
 
   const altegioClientId = parseInt(altegioClientIdRaw, 10);
   if (!Number.isFinite(altegioClientId)) {
