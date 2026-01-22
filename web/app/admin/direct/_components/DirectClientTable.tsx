@@ -1487,7 +1487,11 @@ export function DirectClientTable({
                       </td>
                       {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
                       <td
-                        className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px] overflow-hidden"
+                        className={
+                          chatStatusUiVariant === 'v2'
+                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal w-[120px] min-w-[120px]"
+                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[120px] min-w-[120px] overflow-hidden"
+                        }
                       >
                           {(() => {
                           const total =
