@@ -1900,9 +1900,14 @@ export function DirectClientTable({
                               
                               const consultDotTitle = 'Тригер: змінилась консультація';
                               const showDotOnConsultDate = Boolean(showConsultDot && !attendanceIcon);
+                          const consultHasAttendanceSignal = Boolean(
+                            client.consultationCancelled ||
+                              client.consultationAttended === true ||
+                              client.consultationAttended === false
+                          );
                           const showConsultDotEffective = Boolean(
                             showConsultDot ||
-                              (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && client.consultationAttended === false)
+                              (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && consultHasAttendanceSignal)
                           );
                               // #region agent log
                               try {
@@ -2079,9 +2084,14 @@ export function DirectClientTable({
                             const showDotOnPaidDate = Boolean(
                               showPaidDot && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
                             );
+                            const paidHasAttendanceSignal = Boolean(
+                              client.paidServiceCancelled ||
+                                client.paidServiceAttended === true ||
+                                client.paidServiceAttended === false
+                            );
                             const showPaidDotEffective = Boolean(
                               showPaidDot ||
-                                (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && client.paidServiceAttended === false)
+                                (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && paidHasAttendanceSignal)
                             );
                             // #region agent log
                             try {
