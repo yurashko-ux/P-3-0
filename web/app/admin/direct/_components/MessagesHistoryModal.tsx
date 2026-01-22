@@ -372,6 +372,12 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setSelectedStatusId(nextStatusId);
       // Після підтвердження/зміни статусу — прибираємо індикатор уваги
       setNeedsAttention(false);
+
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'chatdot-pre',hypothesisId:'H_chatDot',location:'web/app/admin/direct/_components/MessagesHistoryModal.tsx:setClientChatStatus',message:'status set/confirmed',data:{clientId:String(client.id).slice(0,18),nextStatusId:nextStatusId?String(nextStatusId).slice(0,18):null,changed:Boolean(data?.changed),checkedAtPresent:Boolean(data?.client?.chatStatusCheckedAt),setAtPresent:Boolean(data?.client?.chatStatusSetAt),logTarget:'debug1'},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion agent log
       // Якщо статус реально змінився — API повертає client з anchor полями, оновимо локально,
       // щоб крапка зʼявилась одразу в чаті.
       const anchorId =

@@ -1521,6 +1521,25 @@ export function DirectClientTable({
                           const showStatus = Boolean(statusNameRaw) && hasStatus;
                           const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
                           const badgeCfg = getChatBadgeStyle(badgeKey);
+
+                          // #region agent log
+                          try {
+                            if (typeof window !== 'undefined') {
+                              const key = '__p3_chatdot_logged_v1';
+                              const w = window as any;
+                              if (!w[key]) w[key] = {};
+                              const cid = String(client.id || '');
+                              // log once per client per page load, and only for suspicious cases to avoid spam
+                              const shouldLog =
+                                (needs === true) ||
+                                (hasStatus === true && (client as any).chatStatusCheckedAt == null && (client as any).chatStatusSetAt == null);
+                              if (shouldLog && !w[key][cid]) {
+                                w[key][cid] = true;
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'chatdot-pre',hypothesisId:'H_chatDot',location:'web/app/admin/direct/_components/DirectClientTable.tsx:chatCell',message:'chat dot snapshot',data:{clientId:String(cid).slice(0,18),needs,hasStatus,total,checkedAtPresent:Boolean((client as any).chatStatusCheckedAt),setAtPresent:Boolean((client as any).chatStatusSetAt),logTarget:'debug1'},timestamp:Date.now()})}).catch(()=>{});
+                              }
+                            }
+                          } catch {}
+                          // #endregion agent log
                             
                           // Фон лічильника НЕ залежить від статусу:
                           // - сірий завжди
