@@ -13,6 +13,7 @@ export default function AltegioLanding() {
     companies?: Array<{ id: number; name: string; [key: string]: any }>;
     error?: string;
     env?: any;
+    imagePngDebug?: any;
     debug?: any;
     programType?: string;
     recommendation?: string;

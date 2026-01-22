@@ -185,12 +185,17 @@ export async function GET(req: NextRequest) {
       note: 'debug: master change only',
     });
 
+    const after = await getDirectClientByAltegioId(altegioClientId);
+
     return NextResponse.json({
       ok: true,
       altegioClientId,
       directClientId: client.id,
       prevMasterId,
       nextMasterId,
+      lastActivityKeys: after?.lastActivityKeys ?? null,
+      lastActivityAt: after?.lastActivityAt ?? null,
+      updatedAt: after?.updatedAt ?? null,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
