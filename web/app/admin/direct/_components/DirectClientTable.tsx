@@ -1278,6 +1278,11 @@ export function DirectClientTable({
                         hasPrefix('serviceMaster') ||
                         hasPrefix('consultationMaster')
                     );
+                    const consultMasterChanged = hasPrefix('consultationMaster');
+                    const consultAttendanceChanged = Boolean(
+                      hasActivity('consultationAttended') || hasActivity('consultationCancelled')
+                    );
+                    const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
                     const activityIsOtherOnly = activityKeys.length === 1 && activityKeys[0] === 'other';
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
@@ -1922,27 +1927,25 @@ export function DirectClientTable({
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
                               const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
                               
-                              const consultDotTitle = hasPrefix('consultationMaster')
-                                ? 'Тригер: змінився майстер консультації'
-                                : 'Тригер: змінилась консультація';
-                              const showDotOnConsultDate = Boolean(showConsultDot && !attendanceIcon);
+                              const consultMasterDotTitle = 'Тригер: змінився майстер консультації';
+                              const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
+                              const consultDateDotTitle = 'Тригер: змінилась дата консультації';
+
+                              const showDotOnConsultDate = Boolean(consultDateChanged && !attendanceIcon);
                           const consultHasAttendanceSignal = Boolean(
                             client.consultationCancelled ||
                               client.consultationAttended === true ||
                               client.consultationAttended === false
                           );
-                          const showConsultDotEffective = Boolean(
-                            showConsultDot ||
+                          // Для ✅/❌/🚫: підсвічуємо тільки якщо змінилась присутність (або fallback "other"+today).
+                          const showConsultAttendanceDotEffective = Boolean(
+                            consultAttendanceChanged ||
                               (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && consultHasAttendanceSignal)
                           );
                               // #region agent log
                               try {
-                                const shouldLog =
-                                  activityIsOtherOnly &&
-                                  updatedKyivDayRow === todayKyivDayRow &&
-                                  client.consultationAttended === false;
-                                if (shouldLog) {
-                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activitydot-postfix',hypothesisId:'H_activityDot',location:'DirectClientTable.tsx:consultDot',message:'consult dot decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),updatedKyivDayRow,todayKyivDayRow,consultationAttended:client.consultationAttended,showConsultDot,showConsultDotEffective},timestamp:Date.now()})}).catch(()=>{});
+                                if (debugActivity && (consultMasterChanged || consultAttendanceChanged || consultDateChanged || activityIsOtherOnly)) {
+                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'consultmasterdot-1',hypothesisId:'H_consult_master_dot_placement',location:'DirectClientTable.tsx:consultDotPlacement',message:'consult dot placement decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),consultMasterChanged,consultAttendanceChanged,consultDateChanged,showDotOnConsultDate,showConsultAttendanceDotEffective},timestamp:Date.now()})}).catch(()=>{});
                                 }
                               } catch {}
                               // #endregion agent log
@@ -1951,7 +1954,7 @@ export function DirectClientTable({
                                 <span className="flex flex-col items-center">
                                   <span className="flex items-center gap-1">
                                     {showDotOnConsultDate ? (
-                                      <WithCornerRedDot show={true} title={consultDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                      <WithCornerRedDot show={true} title={consultDateDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                         <button
                                           className={
                                             isPast
@@ -1997,7 +2000,7 @@ export function DirectClientTable({
                                       </span>
                                     ) : null}
                                     {attendanceIcon ? (
-                                      <WithCornerRedDot show={showConsultDotEffective} title={consultDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                      <WithCornerRedDot show={showConsultAttendanceDotEffective} title={consultAttendanceDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                         {attendanceIcon}
                                       </WithCornerRedDot>
                                     ) : null}
@@ -2012,12 +2015,14 @@ export function DirectClientTable({
                                       </span>
                                     );
                                     return (
-                                      <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
-                                        title={`Консультував: ${consultantFull}`}
-                                      >
-                                        {consultant}
-                                      </span>
+                                      <WithCornerRedDot show={consultMasterChanged} title={consultMasterDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                        <span
+                                          className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
+                                          title={`Консультував: ${consultantFull}`}
+                                        >
+                                          {consultant}
+                                        </span>
+                                      </WithCornerRedDot>
                                     );
                                   })()}
                                 </span>
