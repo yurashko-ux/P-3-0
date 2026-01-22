@@ -54,7 +54,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const altegioClientId = safeParseInt(searchParams.get('altegioClientId') || '');
   const kind = ((searchParams.get('kind') || '').toString().trim() as Kind) || 'consult';
-  const action = ((searchParams.get('action') || '').toString().trim() as Action) || 'cycle_attendance';
+  const actionRaw = (searchParams.get('action') || '').toString().trim();
+  const action = (actionRaw as Action) || 'cycle_attendance';
+  const dateMode = (searchParams.get('dateMode') || '').toString().trim(); // keep|today|future
 
   if (!altegioClientId) {
     return NextResponse.json({ ok: false, error: 'altegioClientId must be a number' }, { status: 400 });
@@ -62,8 +64,11 @@ export async function GET(req: NextRequest) {
   if (kind !== 'consult' && kind !== 'paid') {
     return NextResponse.json({ ok: false, error: 'kind must be consult|paid' }, { status: 400 });
   }
-  if (!['cycle_attendance', 'cycle_cancelled', 'touch_date'].includes(action)) {
-    return NextResponse.json({ ok: false, error: 'action must be cycle_attendance|cycle_cancelled|touch_date' }, { status: 400 });
+  if (!['cycle_attendance', 'cycle_cancelled', 'touch_date', 'set_expected'].includes(actionRaw || action)) {
+    return NextResponse.json(
+      { ok: false, error: 'action must be cycle_attendance|cycle_cancelled|touch_date|set_expected' },
+      { status: 400 }
+    );
   }
 
   try {
@@ -79,7 +84,10 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'Client has no consultationBookingDate' }, { status: 400 });
       }
 
-      if (action === 'touch_date') {
+      if ((actionRaw || action) === 'set_expected') {
+        updates.consultationAttended = null;
+        updates.consultationCancelled = false;
+      } else if (action === 'touch_date') {
         updates.consultationBookingDate = addMinutesIso(client.consultationBookingDate, 5);
       } else if (action === 'cycle_cancelled') {
         const prev = Boolean(client.consultationCancelled);
@@ -90,12 +98,21 @@ export async function GET(req: NextRequest) {
         const next = prev === null || prev === undefined ? true : prev === true ? false : null;
         updates.consultationAttended = next;
       }
+
+      if (dateMode === 'today') {
+        updates.consultationBookingDate = new Date().toISOString();
+      } else if (dateMode === 'future') {
+        updates.consultationBookingDate = addMinutesIso(new Date().toISOString(), 60);
+      }
     } else {
       if (!client.paidServiceDate) {
         return NextResponse.json({ ok: false, error: 'Client has no paidServiceDate' }, { status: 400 });
       }
 
-      if (action === 'touch_date') {
+      if ((actionRaw || action) === 'set_expected') {
+        updates.paidServiceAttended = null;
+        updates.paidServiceCancelled = false;
+      } else if (action === 'touch_date') {
         updates.paidServiceDate = addMinutesIso(client.paidServiceDate, 5);
       } else if (action === 'cycle_cancelled') {
         const prev = Boolean(client.paidServiceCancelled);
@@ -105,6 +122,12 @@ export async function GET(req: NextRequest) {
         const prev = client.paidServiceAttended;
         const next = prev === null || prev === undefined ? true : prev === true ? false : null;
         updates.paidServiceAttended = next;
+      }
+
+      if (dateMode === 'today') {
+        updates.paidServiceDate = new Date().toISOString();
+      } else if (dateMode === 'future') {
+        updates.paidServiceDate = addMinutesIso(new Date().toISOString(), 60);
       }
     }
 
