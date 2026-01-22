@@ -1953,27 +1953,7 @@ export function DirectClientTable({
                               return (
                                 <span className="flex flex-col items-center">
                                   <span className="flex items-center gap-1">
-                                    {showDotOnConsultDate ? (
-                                      <WithCornerRedDot show={true} title={consultDateDotTitle} dotClassName="-top-[5px] -right-[4px]">
-                                        <button
-                                          className={
-                                            isPast
-                                              ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                              : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                          }
-                                          title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
-                                          onClick={() => {
-                                            if (!client.altegioClientId) return;
-                                            setRecordHistoryType('consultation');
-                                            setRecordHistoryClient(client);
-                                          }}
-                                          disabled={!client.altegioClientId}
-                                        >
-                                          {formattedDateStr} {isOnline ? "💻" : "📅"}
-                                        </button>
-                                      </WithCornerRedDot>
-                                    ) : (
-                                      <button
+                                    <button
                                       className={
                                         isPast
                                           ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
@@ -1987,9 +1967,18 @@ export function DirectClientTable({
                                       }}
                                       disabled={!client.altegioClientId}
                                     >
-                                      {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                      <span className="inline-flex items-center">
+                                        <span>
+                                          {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                        </span>
+                                        {showDotOnConsultDate ? (
+                                          <span
+                                            className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                            title={consultDateDotTitle}
+                                          />
+                                        ) : null}
+                                      </span>
                                     </button>
-                                    )}
                                     {typeof client.consultationAttemptNumber === 'number' &&
                                     client.consultationAttemptNumber >= 2 ? (
                                       <span
@@ -2146,27 +2135,7 @@ export function DirectClientTable({
                             return (
                               <span className="flex flex-col items-center">
                                 <span className="flex items-center gap-1">
-                                {showDotOnPaidDate ? (
-                                  <WithCornerRedDot show={true} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
-                                    <button
-                                      className={
-                                        isPast
-                                          ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                          : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                      }
-                                      title={`${tooltipTitle}\nНатисніть, щоб переглянути історію записів`}
-                                      onClick={() => {
-                                        if (!client.altegioClientId) return;
-                                        setRecordHistoryType('paid');
-                                        setRecordHistoryClient(client);
-                                      }}
-                                      disabled={!client.altegioClientId}
-                                    >
-                                      {dateStr}
-                                    </button>
-                                  </WithCornerRedDot>
-                                ) : (
-                                  <button
+                                <button
                                   className={
                                     isPast
                                       ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
@@ -2180,9 +2149,16 @@ export function DirectClientTable({
                                   }}
                                   disabled={!client.altegioClientId}
                                 >
-                                  {dateStr}
+                                  <span className="inline-flex items-center">
+                                    <span>{dateStr}</span>
+                                    {showDotOnPaidDate ? (
+                                      <span
+                                        className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                        title={paidDotTitle}
+                                      />
+                                    ) : null}
+                                  </span>
                                 </button>
-                                )}
                                 {pendingIcon ? (
                                   <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {pendingIcon}
@@ -2269,29 +2245,36 @@ export function DirectClientTable({
 
                           return (
                             <span className="flex flex-col items-start leading-none">
-                              <WithCornerRedDot
-                                show={showMasterDot}
-                                title="Тригер: змінився майстер"
-                                dotClassName="-top-[5px] -right-[4px]"
-                              >
-                                {showPaidMaster ? (
-                                  <button
-                                    type="button"
-                                    className="font-medium hover:underline text-left"
-                                    title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
-                                    onClick={() => setMasterHistoryClient(client)}
-                                  >
-                                    {name}
-                                  </button>
-                                ) : (
-                                  <span
-                                    className="font-medium text-left"
-                                    title={`Відповідальний: ${name}`}
-                                  >
-                                    {name}
+                              {showPaidMaster ? (
+                                <button
+                                  type="button"
+                                  className="font-medium hover:underline text-left"
+                                  title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
+                                  onClick={() => setMasterHistoryClient(client)}
+                                >
+                                  <span className="inline-flex items-center">
+                                    <span>{name}</span>
+                                    {showMasterDot ? (
+                                      <span
+                                        className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                        title="Тригер: змінився майстер"
+                                      />
+                                    ) : null}
                                   </span>
-                                )}
-                              </WithCornerRedDot>
+                                </button>
+                              ) : (
+                                <span className="font-medium text-left" title={`Відповідальний: ${name}`}>
+                                  <span className="inline-flex items-center">
+                                    <span>{name}</span>
+                                    {showMasterDot ? (
+                                      <span
+                                        className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                        title="Тригер: змінився майстер"
+                                      />
+                                    ) : null}
+                                  </span>
+                                </span>
+                              )}
                               {secondary ? (
                                 <span className="text-[10px] leading-none opacity-70">
                                   ({secondary})
