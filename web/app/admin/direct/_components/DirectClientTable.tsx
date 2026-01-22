@@ -2015,14 +2015,20 @@ export function DirectClientTable({
                                       </span>
                                     );
                                     return (
-                                      <WithCornerRedDot show={consultMasterChanged} title={consultMasterDotTitle} dotClassName="-top-[5px] -right-[4px]">
-                                        <span
-                                          className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
-                                          title={`Консультував: ${consultantFull}`}
-                                        >
-                                          {consultant}
+                                      <span
+                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
+                                        title={`Консультував: ${consultantFull}`}
+                                      >
+                                        <span className="inline-flex items-center">
+                                          <span>{consultant}</span>
+                                          {consultMasterChanged ? (
+                                            <span
+                                              className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                              title={consultMasterDotTitle}
+                                            />
+                                          ) : null}
                                         </span>
-                                      </WithCornerRedDot>
+                                      </span>
                                     );
                                   })()}
                                 </span>
