@@ -1362,6 +1362,9 @@ export function DirectClientTable({
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
+                            const typeBadgeTitleWithId = isClientType
+                              ? `Клієнт (є Altegio ID)\nAltegio ID: ${client.altegioClientId}`
+                              : typeBadgeTitle;
 
                             if (!hasName) {
                               const visitsValue =
@@ -1381,8 +1384,8 @@ export function DirectClientTable({
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="shrink-0 hover:opacity-80 transition-opacity"
-                                  title={`${typeBadgeTitle}\nВідкрити в Altegio (Клієнтська база)`}
-                                  aria-label={`${typeBadgeTitle}. Відкрити в Altegio`}
+                                  title={`${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`}
+                                  aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
                                 >
                                   <ClientBadgeIcon />
                                 </a>
@@ -1452,8 +1455,8 @@ export function DirectClientTable({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="shrink-0 hover:opacity-80 transition-opacity"
-                                title={`${typeBadgeTitle}\nВідкрити в Altegio (Клієнтська база)`}
-                                aria-label={`${typeBadgeTitle}. Відкрити в Altegio`}
+                                title={`${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`}
+                                aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
                               >
                                 <ClientBadgeIcon />
                               </a>
