@@ -60,6 +60,8 @@ export async function GET(req: NextRequest) {
 
   const altegioClientIdRaw = pickParam('altegioClientId');
   const staffNameRaw = pickParam('staffName');
+  const forceRaw = (searchParams.get('force') || '').toString().trim();
+  const force = forceRaw === '1' || forceRaw.toLowerCase() === 'true';
 
   const altegioClientId = parseInt(altegioClientIdRaw, 10);
   if (!Number.isFinite(altegioClientId)) {
@@ -119,7 +121,7 @@ export async function GET(req: NextRequest) {
     };
 
     const picked = pickMaster();
-    if (!picked) {
+    if (!picked && staffName) {
       // #region agent log
       try {
         fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'master-other-1',hypothesisId:'H_master_name_mismatch',location:'debug-trigger-master-other:pickMaster',message:'master not found',data:{altegioClientId,staffNameProvided:Boolean(staffNameRaw),staffNameLen:staffNameRaw.length,mastersCount:masters.length},timestamp:Date.now()})}).catch(()=>{});
@@ -146,12 +148,25 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const master = { id: picked.id, name: picked.name };
+    // Якщо staffName не передали — робимо toggle: беремо будь-якого іншого активного майстра.
+    const currentMasterId = client.masterId || null;
+    const togglePick = (): { id: string; name: string } | null => {
+      const alt = enriched.find((m) => m.id && m.id !== currentMasterId);
+      return alt ? { id: alt.id, name: alt.name } : null;
+    };
+
+    const master = picked ? { id: picked.id, name: picked.name } : togglePick();
+    if (!master) {
+      return NextResponse.json(
+        { ok: false, error: 'No alternative master available', mastersCount: masters.length },
+        { status: 400 }
+      );
+    }
 
     const prevMasterId = client.masterId || null;
     const nextMasterId = master.id;
 
-    if (prevMasterId === nextMasterId) {
+    if (prevMasterId === nextMasterId && !force) {
       return NextResponse.json({
         ok: true,
         note: 'No changes (master already set)',
@@ -159,6 +174,7 @@ export async function GET(req: NextRequest) {
         directClientId: client.id,
         prevMasterId,
         nextMasterId,
+        hint: 'Додай force=1 або не передавай staffName, щоб endpoint автоматично вибрав іншого майстра.',
       });
     }
 
