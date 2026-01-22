@@ -602,7 +602,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                 </div>
                 {needsAttention ? (
                   <div className="mt-2 text-xs text-red-600 flex items-center gap-2">
-                    <span className="inline-block w-[8px] h-[8px] rounded-full bg-red-600" />
+                    <span className="inline-block w-[8px] h-[8px] rounded-full bg-red-600 border border-white" />
                     Є нові вхідні повідомлення — потрібна увага
                   </div>
                 ) : null}

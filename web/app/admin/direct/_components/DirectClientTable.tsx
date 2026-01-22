@@ -297,10 +297,10 @@ function AvatarSlot({
   );
 }
 
-function CornerRedDot({ title }: { title: string }) {
+function CornerRedDot({ title, className }: { title: string; className?: string }) {
   return (
     <span
-      className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-red-600 border border-white"
+      className={`absolute ${className || '-top-[4px] -right-[4px]'} w-[8px] h-[8px] rounded-full bg-red-600 border border-white`}
       title={title}
       aria-label={title}
     />
@@ -311,15 +311,17 @@ function WithCornerRedDot({
   show,
   title,
   children,
+  dotClassName,
 }: {
   show: boolean;
   title: string;
   children: ReactNode;
+  dotClassName?: string;
 }) {
   return (
     <span className="relative inline-flex">
       {children}
-      {show ? <CornerRedDot title={title} /> : null}
+      {show ? <CornerRedDot title={title} className={dotClassName} /> : null}
     </span>
   );
 }
@@ -1918,7 +1920,7 @@ export function DirectClientTable({
                                 <span className="flex flex-col items-center">
                                   <span className="flex items-center gap-1">
                                     {showDotOnConsultDate ? (
-                                      <WithCornerRedDot show={true} title={consultDotTitle}>
+                                      <WithCornerRedDot show={true} title={consultDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                         <button
                                           className={
                                             isPast
@@ -1964,7 +1966,7 @@ export function DirectClientTable({
                                       </span>
                                     ) : null}
                                     {attendanceIcon ? (
-                                      <WithCornerRedDot show={showConsultDotEffective} title={consultDotTitle}>
+                                      <WithCornerRedDot show={showConsultDotEffective} title={consultDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                         {attendanceIcon}
                                       </WithCornerRedDot>
                                     ) : null}
@@ -2097,7 +2099,7 @@ export function DirectClientTable({
                               <span className="flex flex-col items-center">
                                 <span className="flex items-center gap-1">
                                 {showDotOnPaidDate ? (
-                                  <WithCornerRedDot show={true} title={paidDotTitle}>
+                                  <WithCornerRedDot show={true} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     <button
                                       className={
                                         isPast
@@ -2134,12 +2136,12 @@ export function DirectClientTable({
                                 </button>
                                 )}
                                 {pendingIcon ? (
-                                  <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle}>
+                                  <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {pendingIcon}
                                   </WithCornerRedDot>
                                 ) : null}
                                 {client.paidServiceIsRebooking ? (
-                                  <WithCornerRedDot show={showDotOnPaidRebook} title={paidDotTitle}>
+                                  <WithCornerRedDot show={showDotOnPaidRebook} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     <span
                                       className="text-purple-700 text-[14px] leading-none"
                                       title={`Перезапис 🔁\nСтворено в день: ${client.paidServiceRebookFromKyivDay || '-'}\nАтрибутовано: ${shortPersonName(client.paidServiceRebookFromMasterName) || '-'}`}
@@ -2149,7 +2151,7 @@ export function DirectClientTable({
                                   </WithCornerRedDot>
                                 ) : null}
                                 {attendanceIcon ? (
-                                  <WithCornerRedDot show={showPaidDotEffective} title={paidDotTitle}>
+                                  <WithCornerRedDot show={showPaidDotEffective} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {attendanceIcon}
                                   </WithCornerRedDot>
                                 ) : null}
