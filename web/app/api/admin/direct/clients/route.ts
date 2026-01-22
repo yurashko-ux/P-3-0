@@ -370,12 +370,24 @@ export async function GET(req: NextRequest) {
                 const primary = pair[0] || null;
                 const secondary = pair[1] || null;
                 if (primary?.staffName) {
+                  // Якщо майстер уже заданий в БД (і це не адмін/пусто) — не перетираємо.
+                  // Це дозволяє точково виправляти 1-2 кейси без “авто-переобчислення” з KV.
+                  const currentName = (c.serviceMasterName || '').toString().trim();
+                  const shouldReplace = !currentName || isAdminStaffName(currentName);
+                  if (!shouldReplace) {
+                    // залишаємо як є, але вторинного майстра можемо дорахувати (не критично)
+                    c = {
+                      ...c,
+                      serviceSecondaryMasterName: secondary?.staffName ? String(secondary.staffName) : c.serviceSecondaryMasterName,
+                    };
+                  } else {
                   c = {
                     ...c,
                     serviceMasterName: String(primary.staffName),
                     serviceMasterAltegioStaffId: primary.staffId ?? null,
                     serviceSecondaryMasterName: secondary?.staffName ? String(secondary.staffName) : undefined,
                   };
+                  }
                 } else {
                   c = {
                     ...c,
