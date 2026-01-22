@@ -85,6 +85,40 @@ export async function GET(req: NextRequest) {
       }
 
       if ((actionRaw || action) === 'set_expected') {
+        // Гарантовано створюємо тригер для ⏳:
+        // якщо вже стоїть attended=null і cancelled=false, робимо 2-кроковий перехід null -> false -> null,
+        // щоб фінально залишився ⏳, але lastActivityKeys включив consultationAttended.
+        const alreadyExpected =
+          (client.consultationAttended === null || client.consultationAttended === undefined) &&
+          Boolean(client.consultationCancelled) === false;
+
+        if (alreadyExpected) {
+          const step1 = {
+            ...client,
+            consultationAttended: false,
+            consultationCancelled: false,
+            updatedAt: nowIso,
+          };
+          await saveDirectClient(step1, `debug-trigger-consult-set_expected-step1`, { altegioClientId, kind, action: 'set_expected' });
+          const step2 = {
+            ...step1,
+            consultationAttended: null,
+            updatedAt: nowIso,
+          };
+          await saveDirectClient(step2, `debug-trigger-consult-set_expected-step2`, { altegioClientId, kind, action: 'set_expected' });
+          const after = await getDirectClientByAltegioId(altegioClientId);
+          return NextResponse.json({
+            ok: true,
+            altegioClientId,
+            kind,
+            action: 'set_expected',
+            note: 'Already expected, forced trigger via null->false->null',
+            lastActivityKeys: after?.lastActivityKeys ?? null,
+            lastActivityAt: after?.lastActivityAt ?? null,
+            updatedAt: after?.updatedAt ?? null,
+          });
+        }
+
         updates.consultationAttended = null;
         updates.consultationCancelled = false;
       } else if (action === 'touch_date') {
@@ -110,6 +144,37 @@ export async function GET(req: NextRequest) {
       }
 
       if ((actionRaw || action) === 'set_expected') {
+        const alreadyExpected =
+          (client.paidServiceAttended === null || client.paidServiceAttended === undefined) &&
+          Boolean(client.paidServiceCancelled) === false;
+
+        if (alreadyExpected) {
+          const step1 = {
+            ...client,
+            paidServiceAttended: false,
+            paidServiceCancelled: false,
+            updatedAt: nowIso,
+          };
+          await saveDirectClient(step1, `debug-trigger-paid-set_expected-step1`, { altegioClientId, kind, action: 'set_expected' });
+          const step2 = {
+            ...step1,
+            paidServiceAttended: null,
+            updatedAt: nowIso,
+          };
+          await saveDirectClient(step2, `debug-trigger-paid-set_expected-step2`, { altegioClientId, kind, action: 'set_expected' });
+          const after = await getDirectClientByAltegioId(altegioClientId);
+          return NextResponse.json({
+            ok: true,
+            altegioClientId,
+            kind,
+            action: 'set_expected',
+            note: 'Already expected, forced trigger via null->false->null',
+            lastActivityKeys: after?.lastActivityKeys ?? null,
+            lastActivityAt: after?.lastActivityAt ?? null,
+            updatedAt: after?.updatedAt ?? null,
+          });
+        }
+
         updates.paidServiceAttended = null;
         updates.paidServiceCancelled = false;
       } else if (action === 'touch_date') {
