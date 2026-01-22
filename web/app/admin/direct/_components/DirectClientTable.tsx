@@ -356,6 +356,8 @@ export function DirectClientTable({
   onRefresh,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
+  const searchParams = useSearchParams();
+  const debugActivity = (searchParams?.get("debugActivity") || "").toString().trim() === "1";
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
@@ -1286,6 +1288,11 @@ export function DirectClientTable({
                           >
                             {client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}
                           </span>
+                          {debugActivity ? (
+                            <span className="mt-0.5 text-[10px] leading-none opacity-70 max-w-[120px] truncate">
+                              keys: {(client.lastActivityKeys ?? []).join(', ') || '-'}
+                            </span>
+                          ) : null}
                           <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
                       </td>
