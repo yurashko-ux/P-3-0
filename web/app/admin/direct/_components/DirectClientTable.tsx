@@ -1554,7 +1554,9 @@ export function DirectClientTable({
                                       {statusNameRaw}
                                     </span>
                                   ) : (
-                                    <span className="truncate">{statusNameRaw}</span>
+                                    <span className="overflow-hidden whitespace-nowrap text-clip">
+                                      {statusNameRaw}
+                                    </span>
                                   )}
                                 </span>
                               ) : null}
