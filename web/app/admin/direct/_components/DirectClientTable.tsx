@@ -1902,6 +1902,17 @@ export function DirectClientTable({
                             showConsultDot ||
                               (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && client.consultationAttended === false)
                           );
+                              // #region agent log
+                              try {
+                                const shouldLog =
+                                  activityIsOtherOnly &&
+                                  updatedKyivDayRow === todayKyivDayRow &&
+                                  client.consultationAttended === false;
+                                if (shouldLog) {
+                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activitydot-postfix',hypothesisId:'H_activityDot',location:'DirectClientTable.tsx:consultDot',message:'consult dot decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),updatedKyivDayRow,todayKyivDayRow,consultationAttended:client.consultationAttended,showConsultDot,showConsultDotEffective},timestamp:Date.now()})}).catch(()=>{});
+                                }
+                              } catch {}
+                              // #endregion agent log
 
                               return (
                                 <span className="flex flex-col items-center">
@@ -2070,6 +2081,17 @@ export function DirectClientTable({
                               showPaidDot ||
                                 (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && client.paidServiceAttended === false)
                             );
+                            // #region agent log
+                            try {
+                              const shouldLog =
+                                activityIsOtherOnly &&
+                                updatedKyivDayRow === todayKyivDayRow &&
+                                client.paidServiceAttended === false;
+                              if (shouldLog) {
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activitydot-postfix',hypothesisId:'H_activityDot',location:'DirectClientTable.tsx:paidDot',message:'paid dot decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),updatedKyivDayRow,todayKyivDayRow,paidServiceAttended:client.paidServiceAttended,showPaidDot,showPaidDotEffective},timestamp:Date.now()})}).catch(()=>{});
+                              }
+                            } catch {}
+                            // #endregion agent log
 
                             return (
                               <span className="flex flex-col items-center">
