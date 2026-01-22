@@ -1275,7 +1275,17 @@ export function DirectClientTable({
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
-                          <span>{client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}</span>
+                          <span
+                            title={
+                              (() => {
+                                const keys = (client.lastActivityKeys ?? []).join(', ') || '-';
+                                const at = (client.lastActivityAt || '').toString().trim() || '-';
+                                return `lastActivityAt: ${at}\nlastActivityKeys: ${keys}`;
+                              })()
+                            }
+                          >
+                            {client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}
+                          </span>
                           <span className="opacity-70">{client.createdAt ? formatDateShortYear(client.createdAt) : '-'}</span>
                         </span>
                       </td>
