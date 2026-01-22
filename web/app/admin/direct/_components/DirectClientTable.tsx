@@ -1481,9 +1481,27 @@ export function DirectClientTable({
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
                       <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[56px] min-w-[56px] max-w-[56px] text-center tabular-nums">
-                        {typeof (client as any).daysSinceLastVisit === 'number'
-                          ? (client as any).daysSinceLastVisit
-                          : '-'}
+                        {(() => {
+                          const raw = (client as any).daysSinceLastVisit;
+                          const hasDays = typeof raw === "number" && Number.isFinite(raw);
+                          const days = hasDays ? (raw as number) : null;
+
+                          const cls = (() => {
+                            if (!hasDays) return "bg-gray-200 text-gray-900";
+                            if (days! <= 60) return "bg-gray-200 text-gray-900";
+                            if (days! <= 90) return "bg-amber-200 text-amber-900";
+                            return "bg-red-200 text-red-900";
+                          })();
+
+                          return (
+                            <span
+                              className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
+                              title={hasDays ? `Днів з останнього візиту: ${days}` : "Днів з останнього візиту: -"}
+                            >
+                              {hasDays ? days : "-"}
+                            </span>
+                          );
+                        })()}
                       </td>
                       {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
                       <td
