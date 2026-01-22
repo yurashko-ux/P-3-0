@@ -1365,6 +1365,14 @@ export function DirectClientTable({
                             const typeBadgeTitleWithId = isClientType
                               ? `Клієнт (є Altegio ID)\nAltegio ID: ${client.altegioClientId}`
                               : typeBadgeTitle;
+                            // #region agent log
+                            try {
+                              if (debugActivity && isClientType) {
+                                const includesId = typeBadgeTitleWithId.includes('Altegio ID:');
+                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'badge-tooltip-1',hypothesisId:'H_badge_title_missing_id',location:'DirectClientTable.tsx:clientBadge:title',message:'client badge tooltip computed',data:{clientId:String(client.id).slice(0,18),isClientType,altegioClientId:client.altegioClientId??null,includesId,titleLen:typeBadgeTitleWithId.length},timestamp:Date.now()})}).catch(()=>{});
+                              }
+                            } catch {}
+                            // #endregion agent log
 
                             if (!hasName) {
                               const visitsValue =
