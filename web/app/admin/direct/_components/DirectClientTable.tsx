@@ -1273,6 +1273,11 @@ export function DirectClientTable({
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
                     const showConsultDot = hasPrefix('consultation');
+                    const showMasterDot = Boolean(
+                      hasActivity('masterId') ||
+                        hasPrefix('serviceMaster') ||
+                        hasPrefix('consultationMaster')
+                    );
                     const activityIsOtherOnly = activityKeys.length === 1 && activityKeys[0] === 'other';
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
@@ -2230,14 +2235,20 @@ export function DirectClientTable({
                           }
                           return (
                             <span className="flex flex-col items-start leading-none">
-                              <button
-                                type="button"
-                                className="font-medium hover:underline text-left"
-                                title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
-                                onClick={() => setMasterHistoryClient(client)}
+                              <WithCornerRedDot
+                                show={showMasterDot}
+                                title="Тригер: змінився майстер"
+                                dotClassName="-top-[5px] -right-[4px]"
                               >
-                                {name}
-                              </button>
+                                <button
+                                  type="button"
+                                  className="font-medium hover:underline text-left"
+                                  title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
+                                  onClick={() => setMasterHistoryClient(client)}
+                                >
+                                  {name}
+                                </button>
+                              </WithCornerRedDot>
                               {secondary ? (
                                 <span className="text-[10px] leading-none opacity-70">
                                   ({secondary})

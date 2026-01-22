@@ -788,10 +788,41 @@ export async function saveDirectClient(
         if (!eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false)) push('consultationCancelled');
       }
 
+      // Майстер (UI: колонка "Майстер" + фільтр/сортування)
+      if ((client as any).masterId !== undefined) {
+        if (!eqScalar(prev?.masterId ?? null, (client as any).masterId ?? null)) push('masterId');
+      }
+
+      // Майстер з Altegio (UI: колонка "Майстер" для платних записів)
+      if ((client as any).serviceMasterName !== undefined) {
+        if (!eqScalar(prev?.serviceMasterName ?? null, (client as any).serviceMasterName ?? null)) push('serviceMasterName');
+      }
+      if ((client as any).serviceMasterAltegioStaffId !== undefined) {
+        if (!eqScalar(prev?.serviceMasterAltegioStaffId ?? null, (client as any).serviceMasterAltegioStaffId ?? null))
+          push('serviceMasterAltegioStaffId');
+      }
+      if ((client as any).serviceMasterHistory !== undefined) {
+        if (!eqScalar(prev?.serviceMasterHistory ?? null, (client as any).serviceMasterHistory ?? null)) push('serviceMasterHistory');
+      }
+      if ((client as any).serviceSecondaryMasterName !== undefined) {
+        if (!eqScalar((prev as any)?.serviceSecondaryMasterName ?? null, (client as any).serviceSecondaryMasterName ?? null))
+          push('serviceSecondaryMasterName');
+      }
+
+      // Майстер консультації (UI: в колонці "Запис на консультацію" в tooltip/історії)
+      if ((client as any).consultationMasterId !== undefined) {
+        if (!eqScalar(prev?.consultationMasterId ?? null, (client as any).consultationMasterId ?? null)) push('consultationMasterId');
+      }
+      if ((client as any).consultationMasterName !== undefined) {
+        if (!eqScalar(prev?.consultationMasterName ?? null, (client as any).consultationMasterName ?? null)) push('consultationMasterName');
+      }
+
       // state: фіксуємо зміну навіть якщо finalState було скориговано правилами.
       if (finalState !== undefined && finalState !== null) {
         if (!eqScalar(prev?.state ?? null, finalState)) push('state');
       }
+
+      if (keys.length === 0) keys.push('other');
 
       // #region agent log
       try {
@@ -804,13 +835,26 @@ export async function saveDirectClient(
           consultationBookingDate: (client as any).consultationBookingDate !== undefined ? !eqDate(prev?.consultationBookingDate ?? null, (client as any).consultationBookingDate ?? null) : null,
           consultationAttended: (client as any).consultationAttended !== undefined ? !eqScalar(prev?.consultationAttended ?? null, (client as any).consultationAttended ?? null) : null,
           consultationCancelled: (client as any).consultationCancelled !== undefined ? !eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false) : null,
+          masterId: (client as any).masterId !== undefined ? !eqScalar(prev?.masterId ?? null, (client as any).masterId ?? null) : null,
+          serviceMasterName: (client as any).serviceMasterName !== undefined ? !eqScalar(prev?.serviceMasterName ?? null, (client as any).serviceMasterName ?? null) : null,
+          serviceMasterAltegioStaffId:
+            (client as any).serviceMasterAltegioStaffId !== undefined
+              ? !eqScalar(prev?.serviceMasterAltegioStaffId ?? null, (client as any).serviceMasterAltegioStaffId ?? null)
+              : null,
+          serviceMasterHistory:
+            (client as any).serviceMasterHistory !== undefined
+              ? !eqScalar(prev?.serviceMasterHistory ?? null, (client as any).serviceMasterHistory ?? null)
+              : null,
+          consultationMasterName:
+            (client as any).consultationMasterName !== undefined
+              ? !eqScalar(prev?.consultationMasterName ?? null, (client as any).consultationMasterName ?? null)
+              : null,
           state: finalState !== undefined && finalState !== null ? !eqScalar(prev?.state ?? null, finalState) : null,
         };
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activity-keys-1',hypothesisId:'H_why_other',location:'web/lib/direct-store.ts:saveDirectClient:computeActivityKeys',message:'computed activity keys',data:{clientId:String(prev?.id||client.id||'').slice(0,12),finalState:finalState??null,keys,flags},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activity-keys-2',hypothesisId:'H_why_other',location:'web/lib/direct-store.ts:saveDirectClient:computeActivityKeys',message:'computed activity keys (post-fallback)',data:{clientId:String(prev?.id||client.id||'').slice(0,12),finalState:finalState??null,keys,flags},timestamp:Date.now()})}).catch(()=>{});
       } catch {}
       // #endregion agent log
 
-      if (keys.length === 0) keys.push('other');
       return keys;
     };
 
