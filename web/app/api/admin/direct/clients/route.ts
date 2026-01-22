@@ -755,16 +755,23 @@ export async function GET(req: NextRequest) {
           const messagesTotal = totalMap.get(c.id) ?? 0;
           const lastIn = lastIncomingMap.get(c.id) ?? null;
 
+          const stId = ((c as any).chatStatusId || '').toString().trim() || '';
+          const st = stId ? statusMap.get(stId) : null;
+          
           const checkedAtIso = (c as any).chatStatusCheckedAt as string | undefined;
           const setAtIso = (c as any).chatStatusSetAt as string | undefined;
           const thresholdIso = (checkedAtIso || setAtIso || '').toString().trim();
           const thresholdTs = thresholdIso ? new Date(thresholdIso).getTime() : NaN;
 
-          const chatNeedsAttention =
-            lastIn && Number.isFinite(thresholdTs) ? lastIn.getTime() > thresholdTs : false;
-
-          const stId = ((c as any).chatStatusId || '').toString().trim() || '';
-          const st = stId ? statusMap.get(stId) : null;
+          // Правило:
+          // - якщо є threshold (checkedAt/setAt) → needsAttention лише коли є нові вхідні ПІСЛЯ threshold
+          // - якщо threshold нема і статус НЕ встановлено → needsAttention коли є хоча б одне вхідне (lastIn)
+          const chatNeedsAttention = (() => {
+            if (!lastIn) return false;
+            if (Number.isFinite(thresholdTs)) return lastIn.getTime() > thresholdTs;
+            const hasStatus = Boolean(stId);
+            return !hasStatus;
+          })();
 
           return {
             ...c,

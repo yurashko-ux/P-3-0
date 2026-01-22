@@ -1477,10 +1477,8 @@ export function DirectClientTable({
                                 type="button"
                                 >
                                 {total}
-                                {needs || showMessageDot ? (
-                                  <CornerRedDot
-                                    title={needs ? 'Є нові вхідні повідомлення' : 'Тригер: нове повідомлення'}
-                                  />
+                                {needs ? (
+                                  <CornerRedDot title="Є нові вхідні повідомлення" />
                                 ) : null}
                                 </button>
 
