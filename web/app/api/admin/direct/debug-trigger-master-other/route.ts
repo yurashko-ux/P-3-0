@@ -122,12 +122,6 @@ export async function GET(req: NextRequest) {
 
     const picked = pickMaster();
     if (!picked && staffName) {
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'master-other-1',hypothesisId:'H_master_name_mismatch',location:'debug-trigger-master-other:pickMaster',message:'master not found',data:{altegioClientId,staffNameProvided:Boolean(staffNameRaw),staffNameLen:staffNameRaw.length,mastersCount:masters.length},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion agent log
-
       const suggestions = staffNorm
         ? enriched
             .filter((m) => m.norm.includes(staffNorm) || staffNorm.includes(m.norm) || m.norm.startsWith(staffNorm))

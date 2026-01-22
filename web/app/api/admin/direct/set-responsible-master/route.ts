@@ -117,12 +117,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'set-master-1',hypothesisId:'H_set_two_masters',location:'set-responsible-master:entry',message:'request parsed',data:{count:altegioClientIds.length,dryRun,masterNameLen:masterName.length,masterId:String(picked.id).slice(0,12)},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
-
   const results: Array<{ altegioClientId: number; ok: boolean; changed: boolean; prevMasterId: string | null; nextMasterId: string | null; error?: string }> = [];
 
   for (const altegioClientId of altegioClientIds) {
@@ -158,14 +152,6 @@ export async function GET(req: NextRequest) {
       });
     }
   }
-
-  // #region agent log
-  try {
-    const changedCount = results.filter((r) => r.ok && r.changed).length;
-    const errCount = results.filter((r) => !r.ok).length;
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'set-master-2',hypothesisId:'H_set_two_masters',location:'set-responsible-master:result',message:'done',data:{dryRun,changedCount,errCount},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
 
   return NextResponse.json({
     ok: true,

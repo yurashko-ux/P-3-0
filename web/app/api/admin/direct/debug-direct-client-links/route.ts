@@ -36,10 +36,7 @@ export async function GET(req: NextRequest) {
   const normalizedIg = instagramRaw ? (normalizeInstagram(instagramRaw) || instagramRaw.toLowerCase()) : '';
 
   if ((!altegioClientId || Number.isNaN(altegioClientId)) && !normalizedIg) {
-    return NextResponse.json(
-      { ok: false, error: 'Provide altegioClientId or instagramUsername' },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: 'Provide altegioClientId or instagramUsername' }, { status: 400 });
   }
 
   const whereOr: any[] = [];
@@ -67,7 +64,11 @@ export async function GET(req: NextRequest) {
     ? await Promise.all([
         prisma.directMessage.groupBy({ by: ['clientId'], where: { clientId: { in: ids } }, _count: { _all: true } }),
         prisma.directClientStateLog.groupBy({ by: ['clientId'], where: { clientId: { in: ids } }, _count: { _all: true } }),
-        prisma.directClientChatStatusLog.groupBy({ by: ['clientId'], where: { clientId: { in: ids } }, _count: { _all: true } }),
+        prisma.directClientChatStatusLog.groupBy({
+          by: ['clientId'],
+          where: { clientId: { in: ids } },
+          _count: { _all: true },
+        }),
       ])
     : [[], [], []];
 
@@ -94,12 +95,6 @@ export async function GET(req: NextRequest) {
     stateLogsCount: stateMap.get(c.id) ?? 0,
     chatStatusLogsCount: chatMap.get(c.id) ?? 0,
   }));
-
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/app/api/admin/direct/debug-direct-client-links/route.ts:GET',message:'debug links queried',data:{altegioClientId:Number.isFinite(altegioClientId)?altegioClientId:null,hasIg:Boolean(normalizedIg),count:payload.length,ids:payload.map(x=>String(x.id).slice(0,12))},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
 
   return NextResponse.json({
     ok: true,

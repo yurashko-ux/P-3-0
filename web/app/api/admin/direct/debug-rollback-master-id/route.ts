@@ -84,12 +84,6 @@ export async function GET(req: NextRequest) {
   const sinceMs = Math.max(1, sinceHours) * 60 * 60 * 1000;
   const sinceDate = new Date(now - sinceMs);
 
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'rollback-master-1',hypothesisId:'H_rollback_masterId',location:'debug-rollback-master-id:entry',message:'request',data:{sinceHours,limit,dryRun,apply},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
-
   try {
     const directManager = await getDirectManager();
     const directManagerId = directManager?.id || null;
@@ -115,12 +109,6 @@ export async function GET(req: NextRequest) {
     const filtered = candidates
       .filter((c) => looksLikeExactMasterIdOnly(c.lastActivityKeys as any))
       .slice(0, Math.max(1, Math.min(2000, limit)));
-
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'rollback-master-2',hypothesisId:'H_rollback_masterId',location:'debug-rollback-master-id:candidates',message:'candidates filtered',data:{candidatesTotal:candidates.length,filtered:filtered.length,sinceISO:sinceDate.toISOString()},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
 
     const changes: Array<{
       clientId: string;
@@ -162,12 +150,6 @@ export async function GET(req: NextRequest) {
         }
       }
     }
-
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'rollback-master-3',hypothesisId:'H_rollback_masterId',location:'debug-rollback-master-id:result',message:'result',data:{changes:changes.length,errors:errors.length,applied:Boolean(apply && !dryRun)},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
 
     return NextResponse.json({
       ok: true,

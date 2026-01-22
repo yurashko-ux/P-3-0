@@ -113,12 +113,6 @@ export async function GET(req: NextRequest) {
 
   const next = { ...current, ...updates, updatedAt: current.updatedAt };
 
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-2',hypothesisId:'H_fix_405',location:'web/app/api/admin/direct/fix-client-identity-from-altegio-get/route.ts:GET',message:'GET repair executed',data:{altegioClientId,directClientId:String(current.id).slice(0,12),changedKeys},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
-
   await saveDirectClient(
     next as any,
     'admin-fix-identity-from-altegio-get',

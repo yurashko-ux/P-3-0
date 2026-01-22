@@ -1378,15 +1378,7 @@ export function DirectClientTable({
                             const typeBadgeTitleWithId = isClientType
                               ? `Клієнт (є Altegio ID)\nAltegio ID: ${client.altegioClientId}`
                               : typeBadgeTitle;
-                            // #region agent log
-                            try {
-                              if (debugActivity && isClientType) {
-                                const includesId = typeBadgeTitleWithId.includes('Altegio ID:');
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'badge-tooltip-1',hypothesisId:'H_badge_title_missing_id',location:'DirectClientTable.tsx:clientBadge:title',message:'client badge tooltip computed',data:{clientId:String(client.id).slice(0,18),isClientType,altegioClientId:client.altegioClientId??null,includesId,titleLen:typeBadgeTitleWithId.length},timestamp:Date.now()})}).catch(()=>{});
-                              }
-                            } catch {}
-                            // #endregion agent log
-
+                            // debug logs removed
                             if (!hasName) {
                               const visitsValue =
                                 client.visits !== null && client.visits !== undefined ? client.visits : null;
@@ -1582,24 +1574,7 @@ export function DirectClientTable({
                           const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
                           const badgeCfg = getChatBadgeStyle(badgeKey);
 
-                          // #region agent log
-                          try {
-                            if (typeof window !== 'undefined') {
-                              const key = '__p3_chatdot_logged_v1';
-                              const w = window as any;
-                              if (!w[key]) w[key] = {};
-                              const cid = String(client.id || '');
-                              // log once per client per page load, and only for suspicious cases to avoid spam
-                              const shouldLog =
-                                (needs === true) ||
-                                (hasStatus === true && (client as any).chatStatusCheckedAt == null && (client as any).chatStatusSetAt == null);
-                              if (shouldLog && !w[key][cid]) {
-                                w[key][cid] = true;
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'chatdot-pre',hypothesisId:'H_chatDot',location:'web/app/admin/direct/_components/DirectClientTable.tsx:chatCell',message:'chat dot snapshot',data:{clientId:String(cid).slice(0,18),needs,hasStatus,total,checkedAtPresent:Boolean((client as any).chatStatusCheckedAt),setAtPresent:Boolean((client as any).chatStatusSetAt),logTarget:'debug1'},timestamp:Date.now()})}).catch(()=>{});
-                              }
-                            }
-                          } catch {}
-                          // #endregion agent log
+                          // debug logs removed
                             
                           // Фон лічильника НЕ залежить від статусу:
                           // - сірий завжди
@@ -1945,13 +1920,7 @@ export function DirectClientTable({
                             consultAttendanceChanged ||
                               (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && consultHasAttendanceSignal)
                           );
-                              // #region agent log
-                              try {
-                                if (debugActivity && (consultMasterChanged || consultAttendanceChanged || consultDateChanged || activityIsOtherOnly)) {
-                                  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'consultmasterdot-1',hypothesisId:'H_consult_master_dot_placement',location:'DirectClientTable.tsx:consultDotPlacement',message:'consult dot placement decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),consultMasterChanged,consultAttendanceChanged,consultDateChanged,showDotOnConsultDate,showConsultAttendanceDotEffective},timestamp:Date.now()})}).catch(()=>{});
-                                }
-                              } catch {}
-                              // #endregion agent log
+                              // debug logs removed
 
                               return (
                                 <span className="flex flex-col items-center">
@@ -2126,17 +2095,6 @@ export function DirectClientTable({
                                 (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && paidHasAttendanceSignal)
                             );
                             const showPaidCostDot = Boolean(paidCostChanged);
-                            // #region agent log
-                            try {
-                              const shouldLog =
-                                activityIsOtherOnly &&
-                                updatedKyivDayRow === todayKyivDayRow &&
-                                client.paidServiceAttended === false;
-                              if (shouldLog) {
-                                fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activitydot-postfix',hypothesisId:'H_paid_total_cost_dot_placement',location:'DirectClientTable.tsx:paidDot',message:'paid dot decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),updatedKyivDayRow,todayKyivDayRow,paidServiceAttended:client.paidServiceAttended,paidCostChanged,paidAttendanceChanged,paidDateChanged,showPaidAttendanceDotEffective,showPaidCostDot},timestamp:Date.now()})}).catch(()=>{});
-                              }
-                            } catch {}
-                            // #endregion agent log
 
                             return (
                               <span className="flex flex-col items-center">
@@ -2249,13 +2207,7 @@ export function DirectClientTable({
                             // ignore
                           }
 
-                          // #region agent log
-                          try {
-                            if (debugActivity) {
-                              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'masterdot-1',hypothesisId:'H_master_dot_ui',location:'DirectClientTable.tsx:masterDot',message:'master dot render decision',data:{clientId:String(client.id).slice(0,18),activityKeys:(client.lastActivityKeys??[]),showMasterDot,hasPaidServiceDate:Boolean(client.paidServiceDate),serviceMasterNameLen:full.length},timestamp:Date.now()})}).catch(()=>{});
-                            }
-                          } catch {}
-                          // #endregion agent log
+                          // debug logs removed
 
                           return (
                             <span className="flex flex-col items-start leading-none">

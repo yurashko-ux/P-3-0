@@ -341,11 +341,6 @@ export async function updateInstagramForAltegioClient(
 ): Promise<DirectClient | null> {
   console.log(`[direct-store] 🔥🔥🔥 updateInstagramForAltegioClient CALLED - VERSION 2025-12-28-1635 🔥🔥🔥`);
   try {
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:entry',message:'entry',data:{altegioClientId,instagramLen:String(instagramUsername||'').length},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
     const normalized = normalizeInstagram(instagramUsername);
     if (!normalized) {
       console.error(`[direct-store] Invalid Instagram username: ${instagramUsername}`);
@@ -411,12 +406,6 @@ export async function updateInstagramForAltegioClient(
           updatedAt: current.updatedAt, // не рухаємо
         };
 
-        // #region agent log
-        try {
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_missing_phone',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:syncIdentity',message:'sync identity from Altegio after IG link',data:{directClientId:String(directClientId).slice(0,12),altegioClientId,changedKeys,phoneWillBeSet:changedKeys.includes('phone'),firstNameWillBeSet:changedKeys.includes('firstName'),lastNameWillBeSet:changedKeys.includes('lastName')},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion agent log
-
         await saveDirectClient(
           next,
           'instagram-link-sync-identity',
@@ -444,12 +433,6 @@ export async function updateInstagramForAltegioClient(
       where: { instagramUsername: normalized },
     });
 
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:lookup',message:'lookups',data:{altegioClientId,normalized,foundByAltegio:Boolean(existingClient),foundByIg:Boolean(existingByInstagram),sameId:existingByInstagram?existingByInstagram.id===existingClient.id:null,byAltegioId:String(existingClient?.id||'').slice(0,12),byIgId:String(existingByInstagram?.id||'').slice(0,12)},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
-
     console.log(`[direct-store] 🔍 Checking for existing client with Instagram "${normalized}":`, existingByInstagram ? {
       id: existingByInstagram.id,
       instagramUsername: existingByInstagram.instagramUsername,
@@ -474,11 +457,6 @@ export async function updateInstagramForAltegioClient(
       // Оновлюємо Altegio ID в існуючому клієнті з правильним Instagram (якщо його немає)
       // Видаляємо поточного клієнта з неправильним Instagram
       console.log(`[direct-store] ⚠️ Instagram ${normalized} already exists for client ${existingByInstagram.id}, merging clients...`);
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_merge_direction',location:'web/lib/direct-store.ts:updateInstagramForAltegioClient:mergePath',message:'merge branch taken',data:{altegioClientId,keep:'instagram',delete:'altegio',keepId:String(existingByInstagram.id).slice(0,12),deleteId:String(existingClient.id).slice(0,12),keepPhonePresent:Boolean(existingByInstagram.phone&&existingByInstagram.phone.trim()),delPhonePresent:Boolean(existingClient.phone&&existingClient.phone.trim())},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion agent log
       
       // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
       const mergeUpdateData: any = {
@@ -730,14 +708,6 @@ export async function saveDirectClient(
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
     const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
 
-    // #region agent log
-    try {
-      // ВАЖЛИВО: не логуємо PII (імена/телефони/текст повідомлень). Логуємо тільки структуру.
-      const definedKeys = Object.keys(client as any).filter((k) => (client as any)[k] !== undefined);
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activity-keys-1',hypothesisId:'H_other_due_to_untracked_or_no_change',location:'web/lib/direct-store.ts:saveDirectClient:entry',message:'saveDirectClient entry',data:{clientId:String((client as any).id||'').slice(0,12),reason:String(reason||''),touchUpdatedAt,skipAltegioMetricsSync,definedKeysCount:definedKeys.length,definedKeys:definedKeys.slice(0,40)},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
-
     const computeActivityKeys = (prev: any | null, finalState: string | null | undefined): string[] => {
       const keys: string[] = [];
       const push = (k: string) => {
@@ -823,37 +793,6 @@ export async function saveDirectClient(
       }
 
       if (keys.length === 0) keys.push('other');
-
-      // #region agent log
-      try {
-        const flags = {
-          message: (client as any).lastMessageAt !== undefined ? !eqDate(prev?.lastMessageAt ?? null, (client as any).lastMessageAt ?? null) : null,
-          paidServiceDate: (client as any).paidServiceDate !== undefined ? !eqDate(prev?.paidServiceDate ?? null, (client as any).paidServiceDate ?? null) : null,
-          paidServiceAttended: (client as any).paidServiceAttended !== undefined ? !eqScalar(prev?.paidServiceAttended ?? null, (client as any).paidServiceAttended ?? null) : null,
-          paidServiceCancelled: (client as any).paidServiceCancelled !== undefined ? !eqScalar(prev?.paidServiceCancelled ?? false, (client as any).paidServiceCancelled ?? false) : null,
-          paidServiceTotalCost: (client as any).paidServiceTotalCost !== undefined ? !eqScalar(prev?.paidServiceTotalCost ?? null, (client as any).paidServiceTotalCost ?? null) : null,
-          consultationBookingDate: (client as any).consultationBookingDate !== undefined ? !eqDate(prev?.consultationBookingDate ?? null, (client as any).consultationBookingDate ?? null) : null,
-          consultationAttended: (client as any).consultationAttended !== undefined ? !eqScalar(prev?.consultationAttended ?? null, (client as any).consultationAttended ?? null) : null,
-          consultationCancelled: (client as any).consultationCancelled !== undefined ? !eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false) : null,
-          masterId: (client as any).masterId !== undefined ? !eqScalar(prev?.masterId ?? null, (client as any).masterId ?? null) : null,
-          serviceMasterName: (client as any).serviceMasterName !== undefined ? !eqScalar(prev?.serviceMasterName ?? null, (client as any).serviceMasterName ?? null) : null,
-          serviceMasterAltegioStaffId:
-            (client as any).serviceMasterAltegioStaffId !== undefined
-              ? !eqScalar(prev?.serviceMasterAltegioStaffId ?? null, (client as any).serviceMasterAltegioStaffId ?? null)
-              : null,
-          serviceMasterHistory:
-            (client as any).serviceMasterHistory !== undefined
-              ? !eqScalar(prev?.serviceMasterHistory ?? null, (client as any).serviceMasterHistory ?? null)
-              : null,
-          consultationMasterName:
-            (client as any).consultationMasterName !== undefined
-              ? !eqScalar(prev?.consultationMasterName ?? null, (client as any).consultationMasterName ?? null)
-              : null,
-          state: finalState !== undefined && finalState !== null ? !eqScalar(prev?.state ?? null, finalState) : null,
-        };
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'activity-keys-2',hypothesisId:'H_why_other',location:'web/lib/direct-store.ts:saveDirectClient:computeActivityKeys',message:'computed activity keys (post-fallback)',data:{clientId:String(prev?.id||client.id||'').slice(0,12),finalState:finalState??null,keys,flags},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion agent log
 
       return keys;
     };

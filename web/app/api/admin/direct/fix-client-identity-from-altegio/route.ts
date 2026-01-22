@@ -104,12 +104,6 @@ export async function POST(req: NextRequest) {
     updatedAt: current.updatedAt, // не рухаємо
   };
 
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'merge-1',hypothesisId:'H_missing_phone',location:'web/app/api/admin/direct/fix-client-identity-from-altegio/route.ts:POST',message:'identity fix executed',data:{altegioClientId,directClientId:String(current.id).slice(0,12),changedKeys,phoneWillBeSet:changedKeys.includes('phone')},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion agent log
-
   await saveDirectClient(
     next as any,
     'admin-fix-identity-from-altegio',

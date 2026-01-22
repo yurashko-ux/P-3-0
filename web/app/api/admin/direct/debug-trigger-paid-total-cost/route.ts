@@ -84,12 +84,6 @@ export async function GET(req: NextRequest) {
       next = (uah ?? 25000) > 0 ? (uah ?? 25000) : null;
     }
 
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'paid-total-cost-1',hypothesisId:'H_paid_total_cost_trigger',location:'debug-trigger-paid-total-cost:entry',message:'request parsed',data:{altegioClientId,action,force,prev,next},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
-
     // Якщо значення вже таке саме — UI/lastActivityKeys може не змінитись.
     // Для дебагу інколи треба “форснути” тригер, але фінально залишити next.
     if ((prev ?? null) === (next ?? null) && force) {
@@ -99,12 +93,6 @@ export async function GET(req: NextRequest) {
       const step2 = { ...step1, paidServiceTotalCost: next };
       await saveDirectClient(step2, 'debug-trigger-paid-total-cost-step2', { altegioClientId, action, next });
       const after = await getDirectClientByAltegioId(altegioClientId);
-
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'paid-total-cost-2',hypothesisId:'H_paid_total_cost_trigger',location:'debug-trigger-paid-total-cost:forced',message:'forced trigger done',data:{altegioClientId,prev,next,lastActivityKeys:after?.lastActivityKeys??null},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion agent log
 
       return NextResponse.json({
         ok: true,
@@ -122,12 +110,6 @@ export async function GET(req: NextRequest) {
     const updated = { ...client, paidServiceTotalCost: next };
     await saveDirectClient(updated, 'debug-trigger-paid-total-cost', { altegioClientId, action, prev, next });
     const after = await getDirectClientByAltegioId(altegioClientId);
-
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'paid-total-cost-3',hypothesisId:'H_paid_total_cost_trigger',location:'debug-trigger-paid-total-cost:save',message:'saved',data:{altegioClientId,prev,next,lastActivityKeys:after?.lastActivityKeys??null},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion agent log
 
     return NextResponse.json({
       ok: true,
