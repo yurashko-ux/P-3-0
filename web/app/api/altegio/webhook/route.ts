@@ -166,6 +166,29 @@ async function hadOnlyConsultationsBeforePaidService(altegioClientId: number, cu
  * Webhook endpoint для Altegio
  * Отримує сповіщення про події в Altegio (appointments, clients, etc.)
  */
+// Хелпер для синхронізації lastVisitAt з Altegio API
+async function syncLastVisitAtFromAltegio(altegioClientId: number): Promise<string | undefined> {
+  try {
+    const { getClient } = await import('@/lib/altegio/clients');
+    const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+    const companyId = parseInt(companyIdStr, 10);
+    if (companyId && !Number.isNaN(companyId)) {
+      const altegioClient = await getClient(companyId, altegioClientId);
+      const raw = (altegioClient as any)?.last_visit_date ?? (altegioClient as any)?.lastVisitDate ?? null;
+      const s = raw ? String(raw).trim() : '';
+      if (s) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+          return d.toISOString();
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[altegio/webhook] ⚠️ Не вдалося витягнути lastVisitAt з Altegio (не критично):', err);
+  }
+  return undefined;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -513,6 +536,17 @@ export async function POST(req: NextRequest) {
                   if (attendance === 1) {
                     updates.consultationAttended = true;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in block 2.3.2 for client ${existingClient.id}`);
+                    
+                    // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                    if (existingClient.altegioClientId) {
+                      const lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                      if (lastVisitAt) {
+                        updates.lastVisitAt = lastVisitAt;
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:520',message:'Synced lastVisitAt for consultation attendance=1',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                        // #endregion
+                      }
+                    }
                   } else if (attendance === -1) {
                     // Встановлюємо false тільки якщо consultationAttended ще не встановлено як true
                     // Це запобігає перезапису true на false, якщо раніше був вебхук з attendance = 1
@@ -568,6 +602,17 @@ export async function POST(req: NextRequest) {
                   if (attendance === 1) {
                     updates.consultationAttended = true;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in missing date block for client ${existingClient.id}`);
+                    
+                    // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                    if (existingClient.altegioClientId) {
+                      const lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                      if (lastVisitAt) {
+                        updates.lastVisitAt = lastVisitAt;
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:607',message:'Synced lastVisitAt for consultation attendance=1 (missing date)',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                        // #endregion
+                      }
+                    }
                   } else if (attendance === -1) {
                     // Встановлюємо false тільки якщо consultationAttended ще не встановлено як true
                     // Це запобігає перезапису true на false, якщо раніше був вебхук з attendance = 1
@@ -665,6 +710,14 @@ export async function POST(req: NextRequest) {
                   if (!isPastOrToday) {
                     console.log(`[altegio/webhook] ⏭️ Skipping consultation attendance for ${existingClient.id}: consultation date ${datetime} is in the future`);
                   } else {
+                    // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                    let lastVisitAt: string | undefined = undefined;
+                    if (existingClient.altegioClientId) {
+                      lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                      // #region agent log
+                      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:700',message:'Synced lastVisitAt for consultation attendance=1 (block 2.5)',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                      // #endregion
+                    }
                     // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
                     const { getStateHistory } = await import('@/lib/direct-state-log');
                     const history = await getStateHistory(existingClient.id);
@@ -679,6 +732,15 @@ export async function POST(req: NextRequest) {
                           existingClient.state === 'consultation'
                             ? 'consultation-booked'
                             : existingClient.state;
+                        // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                        let lastVisitAt: string | undefined = undefined;
+                        if (existingClient.altegioClientId) {
+                          lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                          // #region agent log
+                          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:730',message:'Synced lastVisitAt for consultation attendance=1 (with master)',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                          // #endregion
+                        }
+                        
                         const updates: Partial<typeof existingClient> = {
                           state: normalizedState,
                           consultationAttended: true,
@@ -690,6 +752,7 @@ export async function POST(req: NextRequest) {
                           isOnlineConsultation: isOnlineConsultation,
                           masterId: master.id, // Оновлюємо відповідального
                           masterManuallySet: false, // Автоматичне призначення
+                          ...(lastVisitAt && { lastVisitAt }),
                           updatedAt: new Date().toISOString(),
                         };
                         
@@ -710,6 +773,15 @@ export async function POST(req: NextRequest) {
                       } else {
                         console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
                         // Навіть якщо майстра не знайдено, встановлюємо consultationAttended = true
+                        // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                        let lastVisitAt: string | undefined = undefined;
+                        if (existingClient.altegioClientId) {
+                          lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                          // #region agent log
+                          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:765',message:'Synced lastVisitAt for consultation attendance=1 (no master)',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                          // #endregion
+                        }
+                        
                         const normalizedState =
                           existingClient.state === 'consultation'
                             ? 'consultation-booked'
@@ -720,6 +792,7 @@ export async function POST(req: NextRequest) {
                           consultationDate: datetime,
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
                           isOnlineConsultation: isOnlineConsultation,
+                          ...(lastVisitAt && { lastVisitAt }),
                           updatedAt: new Date().toISOString(),
                         };
                         const updated: typeof existingClient = {
@@ -736,8 +809,18 @@ export async function POST(req: NextRequest) {
                     } else {
                       // Якщо консультація вже є в історії, все одно оновлюємо consultationAttended, якщо він не встановлений
                       if (existingClient.consultationAttended !== true) {
+                        // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                        let lastVisitAt: string | undefined = undefined;
+                        if (existingClient.altegioClientId) {
+                          lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                          // #region agent log
+                          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:795',message:'Synced lastVisitAt for consultation attendance=1 (existing consultation)',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                          // #endregion
+                        }
+                        
                         const updates: Partial<typeof existingClient> = {
                           consultationAttended: true,
+                          ...(lastVisitAt && { lastVisitAt }),
                           updatedAt: new Date().toISOString(),
                         };
                         const updated: typeof existingClient = {
@@ -765,10 +848,20 @@ export async function POST(req: NextRequest) {
                   
                   // Встановлюємо consultationAttended навіть для майбутніх дат (якщо вже відмічено в Altegio)
                   if (existingClient.consultationAttended !== true) {
+                    // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                    let lastVisitAt: string | undefined = undefined;
+                    if (existingClient.altegioClientId) {
+                      lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                      // #region agent log
+                      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:824',message:'Synced lastVisitAt for consultation attendance=1 (fallback)',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                      // #endregion
+                    }
+                    
                     const updates: Partial<typeof existingClient> = {
                       consultationAttended: true,
                       consultationBookingDate: existingClient.consultationBookingDate || datetime,
                       isOnlineConsultation: isOnlineConsultation,
+                      ...(lastVisitAt && { lastVisitAt }),
                       updatedAt: new Date().toISOString(),
                     };
                     const updated: typeof existingClient = {
@@ -941,6 +1034,17 @@ export async function POST(req: NextRequest) {
                   if (attendance === 1) {
                     updates.paidServiceAttended = true;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to true (attendance = 1) for client ${existingClient.id}`);
+                    
+                    // Синхронізуємо lastVisitAt з Altegio при attendance = 1
+                    if (existingClient.altegioClientId) {
+                      const lastVisitAt = await syncLastVisitAtFromAltegio(existingClient.altegioClientId);
+                      if (lastVisitAt) {
+                        updates.lastVisitAt = lastVisitAt;
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:957',message:'Synced lastVisitAt for paid service attendance=1',data:{clientId:existingClient.id,altegioClientId:existingClient.altegioClientId,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+                        // #endregion
+                      }
+                    }
                   } else if (attendance === -1) {
                     updates.paidServiceAttended = false;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to false (attendance = -1, no-show) for client ${existingClient.id}`);
@@ -2316,12 +2420,41 @@ export async function POST(req: NextRequest) {
             // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
             // Бо Altegio - це клієнтська база, там лише клієнти, а не ліди
             const clientState = 'client' as const;
+            
+            // Спробуємо отримати lastVisitAt з Altegio API
+            let lastVisitAt: string | undefined = undefined;
+            try {
+              const { getClient } = await import('@/lib/altegio/clients');
+              const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+              const companyId = parseInt(companyIdStr, 10);
+              if (companyId && !Number.isNaN(companyId)) {
+                const altegioClient = await getClient(companyId, parseInt(String(clientId), 10));
+                const raw = (altegioClient as any)?.last_visit_date ?? (altegioClient as any)?.lastVisitDate ?? null;
+                const s = raw ? String(raw).trim() : '';
+                if (s) {
+                  const d = new Date(s);
+                  if (!isNaN(d.getTime())) {
+                    lastVisitAt = d.toISOString();
+                  }
+                }
+              }
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2320',message:'Fetched lastVisitAt for new client',data:{clientId,hasLastVisitAt:!!lastVisitAt,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+            } catch (err) {
+              console.warn('[altegio/webhook] ⚠️ Не вдалося витягнути lastVisitAt при створенні клієнта (не критично):', err);
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2333',message:'Failed to fetch lastVisitAt for new client',data:{clientId,error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+              // #endregion
+            }
+            
             const newClient = {
               id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               instagramUsername: normalizedInstagram,
               firstName,
               lastName,
               ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
+              ...(lastVisitAt && { lastVisitAt }), // Додаємо lastVisitAt з Altegio
               source: 'instagram' as const,
               state: clientState,
               firstContactDate: now,

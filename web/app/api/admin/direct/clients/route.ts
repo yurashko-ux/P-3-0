@@ -78,6 +78,13 @@ export async function GET(req: NextRequest) {
     try {
       clients = await getAllDirectClients();
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
+      
+      // #region agent log
+      const withLastVisitAt = clients.filter(c => !!(c as any).lastVisitAt);
+      const withAltegioId = clients.filter(c => !!c.altegioClientId);
+      const withAltegioButNoLastVisit = clients.filter(c => !!c.altegioClientId && !(c as any).lastVisitAt);
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:80',message:'Clients loaded from database',data:{total:clients.length,withLastVisitAt:withLastVisitAt.length,withAltegioId:withAltegioId.length,withAltegioButNoLastVisit:withAltegioButNoLastVisit.length,sampleClients:clients.slice(0,5).map(c=>({id:c.id,hasLastVisitAt:!!(c as any).lastVisitAt,lastVisitAt:(c as any).lastVisitAt,hasAltegioClientId:!!c.altegioClientId,altegioClientId:c.altegioClientId}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       try {
         const withAltegio = clients.filter((c) => !!c.altegioClientId);
@@ -816,19 +823,74 @@ export async function GET(req: NextRequest) {
           return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
         };
         const todayIdx = toDayIndex(todayKyivDay);
-        if (!Number.isFinite(todayIdx)) return clientsWithChatMeta;
+        if (!Number.isFinite(todayIdx)) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:819',message:'todayIdx is not finite',data:{todayKyivDay,todayIdx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+          return clientsWithChatMeta;
+        }
 
-        return clientsWithChatMeta.map((c) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:821',message:'Starting daysSinceLastVisit calculation',data:{totalClients:clientsWithChatMeta.length,todayKyivDay,todayIdx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+
+        const result = clientsWithChatMeta.map((c, index) => {
           const iso = ((c as any).lastVisitAt || '').toString().trim();
-          if (!iso) return { ...c, daysSinceLastVisit: undefined };
+          
+          // #region agent log
+          if (index < 5) { // Логуємо перші 5 клієнтів для діагностики
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:828',message:'Processing client for daysSinceLastVisit',data:{clientId:c.id,hasLastVisitAt:!!(c as any).lastVisitAt,lastVisitAtRaw:(c as any).lastVisitAt,lastVisitAtIso:iso,hasAltegioClientId:!!c.altegioClientId,altegioClientId:c.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          }
+          // #endregion
+          
+          if (!iso) {
+            // #region agent log
+            if (index < 5) {
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:833',message:'Client has no lastVisitAt ISO',data:{clientId:c.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            }
+            // #endregion
+            return { ...c, daysSinceLastVisit: undefined };
+          }
           const day = kyivDayFromISO(iso);
           const idx = toDayIndex(day);
-          if (!Number.isFinite(idx)) return { ...c, daysSinceLastVisit: undefined };
+          
+          // #region agent log
+          if (index < 5) {
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:840',message:'Calculated day and index',data:{clientId:c.id,iso,day,idx,isFinite:Number.isFinite(idx)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          }
+          // #endregion
+          
+          if (!Number.isFinite(idx)) {
+            // #region agent log
+            if (index < 5) {
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:845',message:'Index is not finite',data:{clientId:c.id,iso,day,idx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            }
+            // #endregion
+            return { ...c, daysSinceLastVisit: undefined };
+          }
           const diff = todayIdx - idx;
           const daysSinceLastVisit = diff < 0 ? 0 : diff;
+          
+          // #region agent log
+          if (index < 5) {
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:852',message:'Calculated daysSinceLastVisit',data:{clientId:c.id,diff,daysSinceLastVisit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          }
+          // #endregion
+          
           return { ...c, daysSinceLastVisit };
         });
+
+        // #region agent log
+        const withDays = result.filter(c => typeof (c as any).daysSinceLastVisit === 'number');
+        const withoutDays = result.filter(c => typeof (c as any).daysSinceLastVisit !== 'number');
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:860',message:'Days calculation summary',data:{total:result.length,withDays:withDays.length,withoutDays:withoutDays.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+
+        return result;
       } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:865',message:'Error calculating daysSinceLastVisit',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         console.warn('[direct/clients] ⚠️ Не вдалося порахувати daysSinceLastVisit (не критично):', err);
         return clientsWithChatMeta;
       }
