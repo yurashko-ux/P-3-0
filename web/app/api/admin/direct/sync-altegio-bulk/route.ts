@@ -502,8 +502,8 @@ export async function POST(req: NextRequest) {
 
             await saveDirectClient(newClient, 'sync-altegio-bulk', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false });
             
-            // Якщо lastVisitAt відсутній, спробуємо синхронізувати з Altegio
-            if (!newClient.lastVisitAt && altegioClient.id) {
+            // Синхронізуємо lastVisitAt з Altegio для нового клієнта
+            if (altegioClient.id) {
               try {
                 const { getClient } = await import('@/lib/altegio/clients');
                 const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
