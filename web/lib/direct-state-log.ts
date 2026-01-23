@@ -89,9 +89,9 @@ export async function logStateChange(
       }
     }
 
-    // ПРАВИЛО: Запобігаємо дублікатам станів "client", "lead" та consultation-related станів
+    // ПРАВИЛО: Запобігаємо дублікатам станів "client" та consultation-related станів
     // Перевіряємо ПІСЛЯ перевірки існування таблиці
-    const singleOccurrenceStates = ['client', 'lead', 'consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
+    const singleOccurrenceStates = ['client', 'consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled'];
     
     if (singleOccurrenceStates.includes(newState || '')) {
       // Отримуємо інформацію про клієнта
@@ -117,16 +117,11 @@ export async function logStateChange(
         if (newState === 'client') {
           console.log(`[direct-state-log] ⚠️ Skipping duplicate 'client' state log for client ${clientId} (already exists in history)`);
           return;
-        } else if (newState === 'lead' && isManychatClient) {
-          // Для Manychat клієнтів: "lead" може бути тільки один раз
-          console.log(`[direct-state-log] ⚠️ Skipping duplicate 'lead' state log for Manychat client ${clientId} (already exists in history)`);
-          return;
         } else if (newState === 'consultation' || newState === 'consultation-booked' || newState === 'consultation-no-show' || newState === 'consultation-rescheduled') {
           // Consultation-related стани можуть бути тільки один раз
           console.log(`[direct-state-log] ⚠️ Skipping duplicate '${newState}' state log for client ${clientId} (already exists in history)`);
           return;
         }
-        // Для Altegio клієнтів "lead" не повинно бути взагалі, але це вже перевіряється в saveDirectClient
       }
     }
 
@@ -410,13 +405,11 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
       
       // РАДИКАЛЬНЕ ФІЛЬТРУВАННЯ:
       // 1. Видаляємо всі "no-instagram"
-      // 2. Для Altegio клієнтів - видаляємо ВСІ "lead"
-      // 3. Для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
-      // 4. Для ВСІХ клієнтів - залишаємо тільки найстаріший "client" (подібно до "lead")
+      // 2. Видаляємо всі "lead" (стан більше не використовується)
+      // 3. Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
       const filteredLogs: DirectClientStateLog[] = [];
       
-      // Спочатку видаляємо "no-instagram" та розділяємо на "lead", "client" та інші
-      const leadLogs: DirectClientStateLog[] = [];
+      // Спочатку видаляємо "no-instagram" та "lead", розділяємо на "client" та інші
       const clientLogs: DirectClientStateLog[] = [];
       const otherLogs: DirectClientStateLog[] = [];
       
@@ -426,14 +419,8 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
           continue;
         }
         
-        // Для Altegio клієнтів - видаляємо ВСІ "lead"
-        if (log.state === 'lead' && !isManychatClient) {
-          continue;
-        }
-        
-        // Для Manychat клієнтів - збираємо "lead" окремо
-        if (log.state === 'lead' && isManychatClient) {
-          leadLogs.push(log);
+        // Видаляємо всі "lead" (стан більше не використовується)
+        if (log.state === 'lead') {
           continue;
         }
         
@@ -445,26 +432,6 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
         
         // Всі інші стани збираємо окремо
         otherLogs.push(log);
-      }
-      
-      // Для Manychat клієнтів: залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
-      if (isManychatClient && leadLogs.length > 0) {
-        // Сортуємо "lead" від старіших до новіших
-        leadLogs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-        const oldestLead = leadLogs[0]; // Найстаріший "lead"
-        
-        // Перевіряємо, чи є стани старіші за "lead"
-        const olderThanLead = otherLogs.filter(log => 
-          new Date(log.createdAt).getTime() < new Date(oldestLead.createdAt).getTime()
-        );
-        
-        // Якщо "lead" найстаріший - залишаємо його (він початковий стан)
-        // Якщо є стани старіші - не показуємо "lead" (він не є початковим станом)
-        if (olderThanLead.length === 0) {
-          // "lead" найстаріший - додаємо його
-          filteredLogs.push(oldestLead);
-        }
-        // Якщо є стани старіші - не додаємо "lead"
       }
       
       // Для ВСІХ клієнтів: залишаємо тільки найстаріший "client" (стан "client" має бути тільки один раз)
@@ -504,23 +471,7 @@ export async function getLast5StatesForClients(clientIds: string[]): Promise<Map
         const directManager = await getDirectManager();
         const directManagerId = directManager?.id;
         
-        for (const clientInfo of clientsInfo) {
-          // Додаємо початковий "lead" ТІЛЬКИ для Manychat клієнтів
-          const isManychatClient = !clientInfo.altegioClientId;
-          if (isManychatClient && (clientInfo.state === 'lead' || !clientInfo.state)) {
-            const initialLeadLog: DirectClientStateLog = {
-              id: `initial-lead-${clientInfo.id}`,
-              clientId: clientInfo.id,
-              state: 'lead',
-              previousState: null,
-              reason: 'initial',
-              metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
-              createdAt: clientInfo.createdAt.toISOString(),
-            };
-            
-            result.set(clientInfo.id, [initialLeadLog]);
-          }
-        }
+        // Стан "lead" більше не використовується - не додаємо початковий "lead"
       } catch (infoErr) {
         console.warn('[direct-state-log] Failed to get client info for initial states:', infoErr);
       }
@@ -573,47 +524,7 @@ export async function getClientStateInfo(clientId: string): Promise<{
     const initialMasterId = clientWithMaster?.masterId;
     const currentState = clientWithMaster?.state;
     
-    // Отримуємо дірект-менеджера для стану "Лід"
-    const { getDirectManager } = await import('@/lib/direct-masters/store');
-    const directManager = await getDirectManager();
-    const directManagerId = directManager?.id;
-    
-    // Якщо історії немає або перший запис не є "Лід", додаємо початковий стан "Лід"
-    // Клієнти з ManyChat/Instagram завжди починають зі стану "Лід"
-    // Для стану "Лід" завжди використовуємо дірект-менеджера
-    const hasLeadState = history.some(log => log.state === 'lead');
-    const firstHistoryState = history.length > 0 ? history[history.length - 1] : null;
-    
-    // Якщо немає історії або перший стан не "Лід", додаємо початковий "Лід"
-    if (!hasLeadState && (history.length === 0 || firstHistoryState?.previousState === null)) {
-      const initialLeadLog: DirectClientStateLog = {
-        id: `initial-lead-${clientId}`,
-        clientId,
-        state: 'lead',
-        previousState: null,
-        reason: 'initial',
-        metadata: directManagerId ? JSON.stringify({ masterId: directManagerId }) : undefined,
-        createdAt: client.createdAt.toISOString(),
-      };
-      
-      // Додаємо на початок історії (найстаріший запис)
-      history.push(initialLeadLog);
-    }
-    
-    // Виправляємо метадані для всіх записів зі станом "Лід" - завжди встановлюємо дірект-менеджера
-    for (const log of history) {
-      if (log.state === 'lead' && directManagerId) {
-        try {
-          const metadata = log.metadata ? JSON.parse(log.metadata) : {};
-          if (metadata.masterId !== directManagerId) {
-            log.metadata = JSON.stringify({ masterId: directManagerId });
-          }
-        } catch {
-          // Якщо не вдалося розпарсити метадані, встановлюємо нові
-          log.metadata = JSON.stringify({ masterId: directManagerId });
-        }
-      }
-    }
+    // Стан "lead" більше не використовується - не додаємо початковий "lead" та не виправляємо метадані
 
     // Перевіряємо, чи потрібно додати пропущену консультацію для клієнтів з нарощуванням
     if (currentState === 'hair-extension' && clientWithMaster?.altegioClientId) {

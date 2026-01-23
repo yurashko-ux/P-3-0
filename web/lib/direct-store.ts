@@ -21,7 +21,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     lastActivityAt: dbClient.lastActivityAt?.toISOString?.() || undefined,
     lastActivityKeys: Array.isArray(dbClient.lastActivityKeys) ? dbClient.lastActivityKeys : undefined,
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-    state: (dbClient.state as 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
+    state: (dbClient.state as 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
     masterId: dbClient.masterId || undefined,
@@ -253,7 +253,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
           lastActivityAt: dbClient.lastActivityAt?.toISOString?.() || undefined,
           lastActivityKeys: Array.isArray(dbClient.lastActivityKeys) ? dbClient.lastActivityKeys : undefined,
           source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-          state: (dbClient.state as 'lead' | 'client' | 'consultation') || undefined,
+          state: (dbClient.state as 'client' | 'consultation') || undefined,
           firstContactDate: dbClient.firstContactDate.toISOString(),
           statusId: dbClient.statusId,
           masterId: dbClient.masterId || undefined,
@@ -579,7 +579,7 @@ export async function updateInstagramForAltegioClient(
         await logStateChange(
           existingClient.id,
           'client',
-            previousState || 'lead',
+            previousState || 'client',
           'instagram-update',
           {
             altegioClientId,
@@ -685,7 +685,7 @@ export async function updateInstagramForAltegioClient(
               await logStateChange(
                 existingClient.id,
                 'client',
-                existingClient.state || 'lead',
+                existingClient.state || 'client',
                 'instagram-update-merge',
                 {
                   altegioClientId,
@@ -715,19 +715,6 @@ export async function updateInstagramForAltegioClient(
   }
 }
 
-/**
- * Перевіряє, чи клієнт вже мав стан "lead" в історії
- */
-async function hasLeadStateInHistory(clientId: string): Promise<boolean> {
-  try {
-    const { getStateHistory } = await import('@/lib/direct-state-log');
-    const history = await getStateHistory(clientId);
-    return history.some(log => log.state === 'lead');
-  } catch (err) {
-    console.warn(`[direct-store] Failed to check lead state history for ${clientId}:`, err);
-    return false; // У разі помилки дозволяємо встановлення "lead"
-  }
-}
 
 /**
  * Перевіряє, чи клієнт вже мав стан "client" в історії
@@ -840,11 +827,15 @@ export async function saveDirectClient(
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
     
-    // ПРАВИЛО 1: Клієнти з Altegio не можуть мати стан "lead"
-    // ПРАВИЛО 2: Клієнт не може мати стан "lead" більше одного разу
-    // ПРАВИЛО 3: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
-    type DirectClientState = 'lead' | 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
+    // ПРАВИЛО: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
+    type DirectClientState = 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
+    
+    // Якщо клієнт намагається встановити 'lead' (старий стан), замінюємо на 'client'
     let finalState: DirectClientState | undefined = client.state;
+    if ((client.state as any) === 'lead') {
+      finalState = 'client';
+      console.log(`[direct-store] ⚠️ Client ${client.id} attempted to set 'lead' state, changed to 'client'`);
+    }
     
     // Перевіряємо, чи клієнт має altegioClientId (поточний або в базі)
     const existingClientCheck = await prisma.directClient.findFirst({
@@ -860,24 +851,7 @@ export async function saveDirectClient(
     const previousAltegioClientId = existingClientCheck?.altegioClientId || null;
     const hasAltegioId = previousAltegioClientId || data.altegioClientId;
     
-    if (finalState === 'lead') {
-      if (hasAltegioId) {
-        // Клієнт з Altegio не може бути "lead"
-        finalState = 'client';
-        console.log(`[direct-store] ⚠️ Client ${existingClientCheck?.id || client.id} has altegioClientId, changing state from 'lead' to 'client'`);
-      } else if (existingClientCheck) {
-        // Перевіряємо, чи клієнт вже мав стан "lead" в історії
-        const hadLeadBefore = await hasLeadStateInHistory(existingClientCheck.id);
-        if (hadLeadBefore) {
-          // Клієнт вже мав стан "lead", не дозволяємо встановити його знову
-          const currentState = existingClientCheck.state as DirectClientState | null;
-          finalState = (currentState && ['lead', 'client', 'consultation', 'hair-extension', 'other-services', 'all-good', 'too-expensive'].includes(currentState)) 
-            ? currentState 
-            : 'client';
-          console.log(`[direct-store] ⚠️ Client ${existingClientCheck.id} already had 'lead' state in history, keeping current state: ${finalState}`);
-        }
-      }
-    } else if (finalState === 'client' && hasAltegioId) {
+    if (finalState === 'client' && hasAltegioId) {
       // Для Altegio клієнтів: стан "client" встановлюється тільки один раз
       if (existingClientCheck) {
         const hadClientBefore = await hasClientStateInHistory(existingClientCheck.id);
@@ -987,7 +961,7 @@ export async function saveDirectClient(
     }
     
     // Якщо встановлюється altegioClientId, перевіряємо старі вебхуки для синхронізації дат та станів
-    if (data.altegioClientId && (!data.paidServiceDate || !data.consultationBookingDate || client.state === 'client' || client.state === 'lead')) {
+    if (data.altegioClientId && (!data.paidServiceDate || !data.consultationBookingDate || client.state === 'client')) {
       const existingClientAfterSave = await prisma.directClient.findFirst({
         where: {
           OR: [
@@ -1122,7 +1096,7 @@ export async function saveDirectClient(
               }
 
               // Оновлюємо стан
-              if (latestState && (updatedClient.state === 'client' || updatedClient.state === 'lead' || !updatedClient.state)) {
+              if (latestState && (updatedClient.state === 'client' || !updatedClient.state)) {
                 let finalState = latestState;
                 
                 // Якщо є консультація і клієнт не прийшов - встановлюємо consultation-booked

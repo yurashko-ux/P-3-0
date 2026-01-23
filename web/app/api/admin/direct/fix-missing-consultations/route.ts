@@ -316,7 +316,7 @@ export async function POST(req: NextRequest) {
               
               if (!existingConsultation) {
                 // Знаходимо попередній стан перед нарощуванням (або lead, якщо немає)
-                const previousState = hairExtensionLog.previousState || 'lead';
+                const previousState = hairExtensionLog.previousState || 'client';
                 
                 // Створюємо запис про консультацію ПЕРЕД нарощуванням
                 // Консультація має бути раніше за нарощування, тому віднімаємо 1 хвилину
@@ -397,7 +397,7 @@ export async function POST(req: NextRequest) {
                 const consultationDateBeforeHair = new Date(consultationDate);
                 consultationDateBeforeHair.setMinutes(consultationDateBeforeHair.getMinutes() - 1);
                 
-                const previousState = hairExtensionLog.previousState || 'lead';
+                const previousState = hairExtensionLog.previousState || 'client';
                 const consultationLogId = `missing-consultation-${client.id}-${Date.now()}`;
                 const metadata = hairExtensionLog.metadata || (client.masterId ? JSON.stringify({ masterId: client.masterId }) : undefined);
                 

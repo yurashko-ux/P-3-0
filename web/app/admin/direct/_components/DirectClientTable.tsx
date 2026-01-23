@@ -167,7 +167,7 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
     return (
       <img 
         src="/assets/image-lead.png" 
-        alt="Лід" 
+        alt="Невідомий стан" 
         className="object-contain"
         style={iconStyle}
       />
@@ -1863,14 +1863,16 @@ export function DirectClientTable({
                           // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Стан”.
                           // Пріоритет: платний запис (якщо актуальний) → інакше консультація (якщо актуальна).
                           // Без 🆕/💸 — це створювало “NEW” і візуальний хаос.
-                          const pickServiceIcon = (): { key: string; node: any } | null => {
-                            if (paidIsActive) {
-                              const serviceState =
-                                client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
-                              if (serviceState) {
-                                return {
-                                  key: 'paid-service',
-                                  node: (
+                          // Спрощена логіка: якщо є платна послуга - показуємо її стан, якщо немає - показуємо стан консультації
+                          
+                          // Якщо є платна послуга - показуємо її стан
+                          if (client.paidServiceDate) {
+                            const serviceState =
+                              client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
+                            if (serviceState) {
+                              return (
+                                <div className="flex items-center justify-end">
+                                  <span className="inline-flex items-center justify-center">
                                     <button
                                       type="button"
                                       className="hover:opacity-70 transition-opacity"
@@ -1879,12 +1881,14 @@ export function DirectClientTable({
                                     >
                                       <StateIcon state={serviceState} size={28} />
                                     </button>
-                                  ),
-                                };
-                              }
-                              return {
-                                key: 'paid-service-generic',
-                                node: (
+                                  </span>
+                                </div>
+                              );
+                            }
+                            // Платна послуга (тип невідомий)
+                            return (
+                              <div className="flex items-center justify-end">
+                                <span className="inline-flex items-center justify-center">
                                   <span 
                                     title="Платна послуга (тип невідомий)" 
                                     className="text-[24px] leading-none inline-flex items-center justify-center"
@@ -1892,48 +1896,41 @@ export function DirectClientTable({
                                   >
                                     ✂️
                                   </span>
-                                ),
-                              };
-                            }
+                                </span>
+                              </div>
+                            );
+                          }
 
-                            if (consultIsActive) {
-                              return {
-                                key: 'consultation',
-                                node: (
+                          // Якщо немає платної послуги, але є консультація - показуємо стан консультації
+                          if (client.consultationBookingDate) {
+                            return (
+                              <div className="flex items-center justify-end">
+                                <span className="inline-flex items-center justify-center">
                                   <button
                                     type="button"
                                     className="hover:opacity-70 transition-opacity"
-                                    title="Актуальна консультація"
+                                    title="Консультація"
                                     onClick={() => setStateHistoryClient(client)}
                                   >
                                     <StateIcon state="consultation-booked" size={28} />
                                   </button>
-                                ),
-                              };
-                            }
-
-                            return null;
-                          };
-
-                          const picked = pickServiceIcon();
-                          if (!picked) {
-                            // Fallback: якщо немає активних записів, показуємо client.state
-                            if (!paidIsActive && !consultIsActive && client.state) {
-                              return (
-                                <div className="flex items-center justify-end">
-                                  <span className="inline-flex items-center justify-center">
-                                    <StateIcon state={client.state} size={28} />
-                                  </span>
-                                </div>
-                              );
-                            }
-                            return '';
+                                </span>
+                              </div>
+                            );
                           }
-                          return (
-                            <div className="flex items-center justify-end">
-                              <span className="inline-flex items-center justify-center">{picked.node}</span>
-                            </div>
-                          );
+
+                          // Якщо немає ні платної послуги, ні консультації - показуємо client.state
+                          if (client.state) {
+                            return (
+                              <div className="flex items-center justify-end">
+                                <span className="inline-flex items-center justify-center">
+                                  <StateIcon state={client.state} size={28} />
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return '';
                           })()}
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">

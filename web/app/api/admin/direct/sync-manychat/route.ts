@@ -109,8 +109,7 @@ export async function POST(req: NextRequest) {
         instagramUsername: normalizedInstagram, // Оновлюємо нормалізований username
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
-        // Якщо в історичних даних залишився "lead" — нормалізуємо до "message"
-        ...(client.state === 'lead' ? { state: 'message' as const } : {}),
+        // Стан "lead" більше не використовується - залишаємо поточний стан
         lastMessageAt: new Date().toISOString(),
       };
     }

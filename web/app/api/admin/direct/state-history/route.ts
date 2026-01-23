@@ -30,9 +30,9 @@ export async function GET(req: NextRequest) {
       if (st == null && reason.includes('manychat')) {
         return { ...log, state: 'message' };
       }
-      // Стан "lead" більше не використовуємо: у відображенні історії трактуємо як "message"
+      // Стан "lead" більше не використовується - фільтруємо його
       if (st === 'lead') {
-        return { ...log, state: 'message' };
+        return null; // Пропускаємо записи зі станом "lead"
       }
       return log;
     });
@@ -88,13 +88,8 @@ export async function GET(req: NextRequest) {
         let masterId: string | undefined = undefined;
         let masterName: string | undefined = undefined;
 
-        // Для стану "Лід" завжди використовуємо дірект-менеджера
-        if (log.state === 'lead') {
-          if (directManager) {
-            masterId = directManager.id;
-            masterName = directManager.name;
-          }
-        } else {
+        // Стан "lead" більше не використовується - обробляємо всі стани однаково
+        {
           // Для інших станів спробуємо отримати masterId з метаданих
           if (log.metadata) {
             try {
@@ -135,13 +130,8 @@ export async function GET(req: NextRequest) {
       select: { masterId: true, updatedAt: true },
     });
     
-    if (info.currentState === 'lead') {
-      // Для стану "Лід" завжди використовуємо дірект-менеджера
-      if (directManager) {
-        currentStateMasterId = directManager.id;
-        currentStateMasterName = directManager.name;
-      }
-    } else {
+    // Стан "lead" більше не використовується - обробляємо всі стани однаково
+    {
       // Для інших станів отримуємо з клієнта
       if (client?.masterId) {
         currentStateMasterId = client.masterId;

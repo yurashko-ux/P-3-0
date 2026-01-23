@@ -1427,8 +1427,8 @@ export async function POST(req: NextRequest) {
                     signedUpForPaidService = false;
                   }
                   
-                  // Клієнти з Altegio завжди мають стан "client" (не "lead")
-                  const clientState = isMissingInstagramReal ? ('lead' as const) : ('client' as const);
+                  // Клієнти з Altegio завжди мають стан "client"
+                  const clientState = 'client' as const;
                   
                   const updated = {
                     ...existingClientByAltegioId,
@@ -1514,7 +1514,7 @@ export async function POST(req: NextRequest) {
                       }
                       
                       // Встановлюємо altegioClientId, якщо його ще немає
-                      const clientState = isMissingInstagramReal ? ('lead' as const) : ('client' as const);
+                      const clientState = 'client' as const;
                       
                       const updated = {
                         ...existingClientByName,
@@ -1585,7 +1585,7 @@ export async function POST(req: NextRequest) {
                         firstName,
                         lastName,
                         source: 'instagram' as const,
-                        state: 'lead' as const,
+                        state: 'client' as const,
                         firstContactDate: now,
                         statusId: defaultStatus.id,
                         masterId,
@@ -2323,8 +2323,8 @@ export async function POST(req: NextRequest) {
               fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2217',message:'Updating existing client from Altegio webhook',data:{clientId:existingClientId,existingAltegioClientId:existingClient.altegioClientId,newAltegioClientId:parseInt(String(clientId),10),existingFirstName:existingClient.firstName,existingLastName:existingClient.lastName,altegioFirstName:firstName,altegioLastName:lastName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
               // #endregion
               
-              // Встановлюємо стан "lead" якщо Instagram відсутній, інакше "client"
-              const clientState = isMissingInstagram ? ('lead' as const) : ('client' as const);
+              // Встановлюємо стан "client" (стан "lead" більше не використовується)
+              const clientState = 'client' as const;
               
               // ВАЖЛИВО: Оновлюємо ім'я з Altegio тільки якщо:
               // 1. Клієнт ще не має altegioClientId (перший раз отримуємо дані з Altegio)

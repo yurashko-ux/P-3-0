@@ -27,8 +27,7 @@ type StateHistoryModalProps = {
 // Функція для отримання назви стану
 function getStateName(state: string | null): string {
   const stateNames: Record<string, string> = {
-    // Стан "Лід" більше не використовуємо
-    'lead': 'Розмова',
+    // Стан "lead" більше не використовується - видалено
     'client': 'Клієнт',
     // Стан `consultation` більше не використовуємо як окремий, але залишаємо мапінг для старих логів
     'consultation': 'Запис на консультацію',
@@ -161,7 +160,7 @@ function StateIcon({ state }: { state: string | null }) {
     return (
       <img 
         src="/assets/image-lead.png" 
-        alt="Лід" 
+        alt="Невідомий стан" 
         className="w-6 h-6 object-contain"
       />
     );
@@ -298,20 +297,19 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                     // РАДИКАЛЬНЕ ПРАВИЛО: "Лід" тільки для клієнтів з Manychat (БЕЗ altegioClientId)
                     const isManychatClient = !client.altegioClientId;
                     
-                    // Спочатку сортуємо за датою (від старіших до новіших), щоб знайти найстаріший "lead"
+                    // Сортуємо за датою (від старіших до новіших)
                     const sortedHistory = [...history].sort((a, b) => 
                       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                     );
                     
-                    // Розділяємо на "lead", "client", consultation-related стани, "message" та інші стани
-                    const leadLogs: typeof sortedHistory = []; // lead більше не використовуємо
+                    // Розділяємо на "client", consultation-related стани, "message" та інші стани
+                    // Стан "lead" більше не використовується
                     const clientLogs = sortedHistory.filter(log => log.state === 'client');
                     const messageLogs = sortedHistory.filter(log => log.state === 'message');
                     const consultationBookedLogs = sortedHistory.filter(log => log.state === 'consultation-booked');
                     const consultationNoShowLogs = sortedHistory.filter(log => log.state === 'consultation-no-show');
                     const consultationRescheduledLogs = sortedHistory.filter(log => log.state === 'consultation-rescheduled');
                     const otherLogs = sortedHistory.filter(log => 
-                      log.state !== 'lead' && 
                       log.state !== 'client' && 
                       log.state !== 'message' &&
                       log.state !== 'no-instagram' &&
@@ -321,16 +319,8 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                       log.state !== 'consultation-rescheduled'
                     );
                     
-                    // Стан "lead" видалено: перше повідомлення лишається "Розмова" (message)
-                    const oldestMessageAsLead: typeof sortedHistory[0] | null = null;
-                    
-                    // ФІЛЬТРУЄМО: для Altegio клієнтів - видаляємо ВСІ "lead" (крім якщо це перше повідомлення)
-                    // для Manychat клієнтів - залишаємо тільки найстаріший "lead", але ТІЛЬКИ якщо він дійсно найстаріший
-                    // для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
-                    // для consultation-related станів - залишаємо тільки найстаріший (якщо є)
+                    // Стан "lead" більше не використовується - фільтруємо історію
                     let filteredHistory: typeof sortedHistory = [];
-                    
-                    // Стан "lead" видалено: нічого не додаємо тут
                     
                     // Для ВСІХ клієнтів - залишаємо тільки найстаріший "client"
                     if (clientLogs.length > 0) {

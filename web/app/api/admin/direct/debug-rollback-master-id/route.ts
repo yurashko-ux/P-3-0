@@ -124,9 +124,9 @@ export async function GET(req: NextRequest) {
       let nextMasterId: string | null = null;
       let source: 'stateLog' | 'directManagerLead' | 'none' = 'none';
 
-      if (String(c.state || '').trim() === 'lead') {
-        nextMasterId = directManagerId;
-        source = 'directManagerLead';
+      // Стан "lead" більше не використовується - пропускаємо
+      if (false) {
+        // Цей блок більше не виконується
       } else {
         nextMasterId = await pickMasterIdFromStateLogs(c.id);
         source = nextMasterId ? 'stateLog' : 'none';

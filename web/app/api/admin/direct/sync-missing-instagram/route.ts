@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Якщо немає Instagram, створюємо/оновлюємо клієнта зі станом "lead"
+        // Якщо немає Instagram, створюємо/оновлюємо клієнта зі станом "client"
         const normalizedInstagram = isExplicitNoInstagram ? `no_instagram_${clientId}` : `missing_instagram_${clientId}`;
         const shouldSendNotification = !isExplicitNoInstagram;
 
