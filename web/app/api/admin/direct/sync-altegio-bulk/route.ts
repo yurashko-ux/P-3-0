@@ -501,6 +501,36 @@ export async function POST(req: NextRequest) {
             };
 
             await saveDirectClient(newClient, 'sync-altegio-bulk', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false });
+            
+            // Якщо lastVisitAt відсутній, спробуємо синхронізувати з Altegio
+            if (!newClient.lastVisitAt && altegioClient.id) {
+              try {
+                const { getClient } = await import('@/lib/altegio/clients');
+                const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+                const companyId = parseInt(companyIdStr, 10);
+                if (companyId && !Number.isNaN(companyId)) {
+                  const altegioClientData = await getClient(companyId, altegioClient.id);
+                  const raw = (altegioClientData as any)?.last_visit_date ?? (altegioClientData as any)?.lastVisitDate ?? null;
+                  const s = raw ? String(raw).trim() : '';
+                  if (s) {
+                    const d = new Date(s);
+                    if (!isNaN(d.getTime())) {
+                      const syncedLastVisitAt = d.toISOString();
+                      const clientWithLastVisit = {
+                        ...newClient,
+                        lastVisitAt: syncedLastVisitAt,
+                        updatedAt: newClient.updatedAt, // Не рухаємо updatedAt
+                      };
+                      await saveDirectClient(clientWithLastVisit, 'sync-altegio-bulk-sync-last-visit', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false, skipAltegioMetricsSync: true });
+                      console.log(`[sync-altegio-bulk] ✅ Synced lastVisitAt for new client ${newClient.id}: ${syncedLastVisitAt}`);
+                    }
+                  }
+                }
+              } catch (err) {
+                console.warn(`[sync-altegio-bulk] ⚠️ Не вдалося синхронізувати lastVisitAt для нового клієнта ${newClient.id} (не критично):`, err);
+              }
+            }
+            
             totalCreated++;
             syncedClientIds.push(newClient.id);
             existingInstagramMap.set(normalizedInstagram, newClient.id);

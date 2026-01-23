@@ -1174,7 +1174,7 @@ export function DirectClientTable({
                 <col style={{ width: 56 }} />
                 {/* Переписка */}
                 <col style={{ width: 120 }} />
-                {/* Послуга */}
+                {/* Стан */}
                 <col style={{ width: 96 }} />
               </colgroup>
               <thead>
@@ -1271,7 +1271,7 @@ export function DirectClientTable({
                         )
                       }
                     >
-                      Послуга {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
@@ -1860,26 +1860,10 @@ export function DirectClientTable({
                             );
                             }
                             
-                          // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Послуга”.
-                          // Пріоритет: консультація (якщо актуальна) → інакше платний запис (якщо актуальний).
+                          // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Стан”.
+                          // Пріоритет: платний запис (якщо актуальний) → інакше консультація (якщо актуальна).
                           // Без 🆕/💸 — це створювало “NEW” і візуальний хаос.
                           const pickServiceIcon = (): { key: string; node: any } | null => {
-                            if (consultIsActive) {
-                              return {
-                                key: 'consultation',
-                                node: (
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity"
-                                    title="Актуальна консультація"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <StateIcon state="consultation-booked" size={28} />
-                                  </button>
-                                ),
-                              };
-                            }
-
                             if (paidIsActive) {
                               const serviceState =
                                 client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
@@ -1904,6 +1888,22 @@ export function DirectClientTable({
                                   <span title="Платна послуга (тип невідомий)" className="text-[24px] leading-none">
                                     ✂️
                                   </span>
+                                ),
+                              };
+                            }
+
+                            if (consultIsActive) {
+                              return {
+                                key: 'consultation',
+                                node: (
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity"
+                                    title="Актуальна консультація"
+                                    onClick={() => setStateHistoryClient(client)}
+                                  >
+                                    <StateIcon state="consultation-booked" size={28} />
+                                  </button>
                                 ),
                               };
                             }

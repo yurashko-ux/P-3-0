@@ -2468,6 +2468,24 @@ export async function POST(req: NextRequest) {
             await saveDirectClient(newClient);
             console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState}, statusId: ${defaultStatus.id})`);
 
+            // Якщо lastVisitAt відсутній, але є altegioClientId, спробуємо синхронізувати
+            if (!lastVisitAt && newClient.altegioClientId) {
+              try {
+                const syncedLastVisitAt = await syncLastVisitAtFromAltegio(newClient.altegioClientId);
+                if (syncedLastVisitAt) {
+                  const clientWithLastVisit = {
+                    ...newClient,
+                    lastVisitAt: syncedLastVisitAt,
+                    updatedAt: newClient.updatedAt, // Не рухаємо updatedAt
+                  };
+                  await saveDirectClient(clientWithLastVisit, 'altegio-webhook-sync-last-visit', { altegioClientId: newClient.altegioClientId }, { touchUpdatedAt: false, skipAltegioMetricsSync: true });
+                  console.log(`[altegio/webhook] ✅ Synced lastVisitAt for new client ${newClient.id}: ${syncedLastVisitAt}`);
+                }
+              } catch (err) {
+                console.warn(`[altegio/webhook] ⚠️ Не вдалося синхронізувати lastVisitAt для нового клієнта ${newClient.id} (не критично):`, err);
+              }
+            }
+
             // Якщо створено клієнта без Instagram, відправляємо повідомлення
             // АЛЕ: якщо Instagram = "no", не відправляємо повідомлення (бо "no" означає, що у клієнтки немає Instagram)
             const isSavedNoInstagram = (normalizedInstagram || '').startsWith('no_instagram_');

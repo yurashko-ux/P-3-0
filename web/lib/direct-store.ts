@@ -1273,11 +1273,42 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
         const s = raw ? String(raw).trim() : '';
         if (s) {
           const d = new Date(s);
-          if (!isNaN(d.getTime())) nextLastVisitAt = d.toISOString();
+          if (!isNaN(d.getTime())) {
+            nextLastVisitAt = d.toISOString();
+            console.log('[direct-store] ✅ Отримано lastVisitAt з Altegio API', {
+              directClientId: params.directClientId,
+              altegioClientId: params.altegioClientId,
+              lastVisitAt: nextLastVisitAt,
+            });
+          } else {
+            console.warn('[direct-store] ⚠️ Не вдалося розпарсити last_visit_date (невалідна дата):', {
+              directClientId: params.directClientId,
+              altegioClientId: params.altegioClientId,
+              raw,
+              s,
+            });
+          }
+        } else {
+          console.log('[direct-store] ℹ️ last_visit_date відсутній в Altegio для клієнта', {
+            directClientId: params.directClientId,
+            altegioClientId: params.altegioClientId,
+          });
         }
+      } else {
+        console.warn('[direct-store] ⚠️ ALTEGIO_COMPANY_ID не налаштовано або невалідний:', {
+          directClientId: params.directClientId,
+          altegioClientId: params.altegioClientId,
+          companyIdStr,
+          companyId,
+        });
       }
     } catch (err) {
-      console.warn('[direct-store] ⚠️ Не вдалося витягнути last_visit_date (не критично):', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[direct-store] ⚠️ Не вдалося витягнути last_visit_date (не критично):', {
+        directClientId: params.directClientId,
+        altegioClientId: params.altegioClientId,
+        error: msg,
+      });
       nextLastVisitAt = null;
     }
 
