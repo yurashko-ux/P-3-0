@@ -367,6 +367,7 @@ export function DirectClientTable({
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
   const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
+  const [pinnedClientIds, setPinnedClientIds] = useState<Set<string>>(new Set());
   const [masterHistoryClient, setMasterHistoryClient] = useState<DirectClient | null>(null);
   // Локальні оверрайди для UI переписки, щоб не перезавантажувати всю таблицю після зміни статусу
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
@@ -597,8 +598,14 @@ export function DirectClientTable({
       }
     }
 
-    return Array.from(map.values());
-  }, [clientsWithChatOverrides]);
+    const allClients = Array.from(map.values());
+    
+    // Переміщуємо закріплені клієнтів на верх
+    const pinned = allClients.filter((c) => pinnedClientIds.has(c.id));
+    const unpinned = allClients.filter((c) => !pinnedClientIds.has(c.id));
+    
+    return [...pinned, ...unpinned];
+  }, [clientsWithChatOverrides, pinnedClientIds]);
 
   // KPI-таблиця: робимо максимально компактно — ховаємо рядки, де всі значення = 0
   const compactStatsRows = useMemo(() => {
@@ -1376,7 +1383,7 @@ export function DirectClientTable({
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
                             const typeBadgeTitleWithId = isClientType
-                              ? `Клієнт (є Altegio ID)\nAltegio ID: ${client.altegioClientId}`
+                              ? `Altegio ID: ${client.altegioClientId}`
                               : typeBadgeTitle;
                             // debug logs removed
                             if (!hasName) {
@@ -1392,16 +1399,37 @@ export function DirectClientTable({
                                 : (fallbackNameQuery || fallbackIgQuery);
                               const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
                               const typeBadge = isClientType ? (
-                                <a
-                                  href={altegioUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="shrink-0 hover:opacity-80 transition-opacity"
-                                  title={`${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`}
-                                  aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    // Ctrl+Click або Cmd+Click - відкриваємо посилання
+                                    if (e.ctrlKey || e.metaKey) {
+                                      window.open(altegioUrl, '_blank', 'noopener,noreferrer');
+                                      return;
+                                    }
+                                    // Звичайний клік - переміщуємо на верх
+                                    setPinnedClientIds((prev) => {
+                                      const newSet = new Set(prev);
+                                      if (newSet.has(client.id)) {
+                                        newSet.delete(client.id);
+                                      } else {
+                                        newSet.add(client.id);
+                                      }
+                                      return newSet;
+                                    });
+                                  }}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    window.open(altegioUrl, '_blank', 'noopener,noreferrer');
+                                  }}
+                                  className="shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
+                                  title={`${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)\n\nКлік: перемістити на верх\nCtrl+Клік або Правий клік: відкрити в Altegio`}
+                                  aria-label={`${typeBadgeTitleWithId}. Клік для переміщення на верх, Ctrl+Клік для відкриття в Altegio`}
                                 >
                                   <ClientBadgeIcon />
-                                </a>
+                                </button>
                               ) : (
                                 <a
                                   href={instagramUrl}
@@ -1463,16 +1491,37 @@ export function DirectClientTable({
                               : (fallbackNameQuery || fallbackIgQuery);
                             const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
                             const typeBadge = isClientType ? (
-                              <a
-                                href={altegioUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="shrink-0 hover:opacity-80 transition-opacity"
-                                title={`${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`}
-                                aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  // Ctrl+Click або Cmd+Click - відкриваємо посилання
+                                  if (e.ctrlKey || e.metaKey) {
+                                    window.open(altegioUrl, '_blank', 'noopener,noreferrer');
+                                    return;
+                                  }
+                                  // Звичайний клік - переміщуємо на верх
+                                  setPinnedClientIds((prev) => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(client.id)) {
+                                      newSet.delete(client.id);
+                                    } else {
+                                      newSet.add(client.id);
+                                    }
+                                    return newSet;
+                                  });
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  window.open(altegioUrl, '_blank', 'noopener,noreferrer');
+                                }}
+                                className="shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
+                                title={`${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)\n\nКлік: перемістити на верх\nCtrl+Клік або Правий клік: відкрити в Altegio`}
+                                aria-label={`${typeBadgeTitleWithId}. Клік для переміщення на верх, Ctrl+Клік для відкриття в Altegio`}
                               >
                                 <ClientBadgeIcon />
-                              </a>
+                              </button>
                             ) : (
                               <a
                                 href={instagramUrl}
