@@ -102,8 +102,7 @@ export async function POST(req: NextRequest) {
       (c) => c.altegioClientId && (
         !c.paidServiceDate || 
         !c.consultationBookingDate || 
-        c.state === 'client' || 
-        c.state === 'lead'
+        c.state === 'client'
       )
     );
     console.log(`[cron/sync-paid-service-dates] Found ${clientsToCheck.length} clients that need sync (missing dates or need state update)`);
@@ -292,7 +291,7 @@ export async function POST(req: NextRequest) {
             finalState = determineStateFromServices(chosenForState.services) || 'other-services';
           }
 
-          if (finalState && client.state !== finalState && (client.state === 'client' || client.state === 'lead' || !client.state)) {
+          if (finalState && client.state !== finalState && (client.state === 'client' || !client.state)) {
             updates.state = finalState as any;
           }
         }
