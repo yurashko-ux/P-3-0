@@ -67,73 +67,43 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
       logIds: logsWithoutInclude.map(l => l.id),
     });
 
-    // Тепер завантажуємо з include
-    let logs;
-    try {
-      logs = await prisma.directClientChatStatusLog.findMany({
-        where: { clientId },
-        orderBy: [{ changedAt: 'desc' }],
-        take: limit,
-        include: {
-          fromStatus: { select: { id: true, name: true, color: true } },
-          toStatus: { select: { id: true, name: true, color: true } },
-        },
-      });
-      
-      console.log(`[direct/chat-status-history] ✅ Retrieved ${logs.length} logs WITH include for client ${clientId}`);
-      
-      // Якщо include повернув менше записів, ніж без include - це проблема, використовуємо fallback
-      if (logs.length < logsWithoutInclude.length) {
-        console.error(`[direct/chat-status-history] ⚠️ WARNING: Include returned ${logs.length} logs but without include found ${logsWithoutInclude.length} logs! Using fallback.`);
-        // Встановлюємо null, щоб спрацював fallback
-        logs = null;
-      }
-    } catch (includeErr) {
-      console.error('[direct/chat-status-history] ❌ Error with include, falling back to manual status loading:', includeErr);
-      console.error('[direct/chat-status-history] ❌ Include error details:', {
-        error: includeErr instanceof Error ? includeErr.message : String(includeErr),
-        stack: includeErr instanceof Error ? includeErr.stack : undefined,
-      });
-      logs = null; // Встановлюємо null, щоб спрацював fallback
-    }
+    // ВАЖЛИВО: Prisma include з nullable foreign keys може повертати порожній результат
+    // якщо якісь статуси були видалені. Тому завжди використовуємо fallback підхід
+    // (завантажуємо статуси окремо), щоб гарантувати, що всі логи повертаються.
+    // Це також працює швидше, бо не потрібно робити складний JOIN.
     
-    // Якщо include не спрацював (помилка або менше результатів), використовуємо fallback
-    if (!logs || logs.length < logsWithoutInclude.length) {
-      console.log(`[direct/chat-status-history] 🔄 Using fallback: include returned ${logs?.length || 0}, but we found ${logsWithoutInclude.length} logs without include`);
-      
-      // Завантажуємо статуси окремо
-      const statusIds = new Set<string>();
-      logsWithoutInclude.forEach(log => {
-        if (log.fromStatusId) statusIds.add(log.fromStatusId);
-        if (log.toStatusId) statusIds.add(log.toStatusId);
-      });
-      
-      const statuses = statusIds.size > 0 
-        ? await prisma.directChatStatus.findMany({
-            where: { id: { in: Array.from(statusIds) } },
-            select: { id: true, name: true, color: true },
-          }).catch((statusErr) => {
-            console.error('[direct/chat-status-history] ⚠️ Error loading statuses separately:', statusErr);
-            return [];
-          })
-        : [];
-      
-      const statusMap = new Map(statuses.map(s => [s.id, s]));
-      
-      logs = logsWithoutInclude.map(log => ({
-        id: log.id,
-        clientId: log.clientId,
-        fromStatusId: log.fromStatusId,
-        toStatusId: log.toStatusId,
-        changedAt: log.changedAt.toISOString(),
-        changedBy: log.changedBy,
-        note: log.note,
-        fromStatus: log.fromStatusId ? (statusMap.get(log.fromStatusId) || null) : null,
-        toStatus: log.toStatusId ? (statusMap.get(log.toStatusId) || null) : null,
-      }));
-      
-      console.log(`[direct/chat-status-history] ✅ Fallback: loaded ${logs.length} logs with manually fetched statuses (${statuses.length} statuses found)`);
-    }
+    // Завантажуємо статуси окремо
+    const statusIds = new Set<string>();
+    logsWithoutInclude.forEach(log => {
+      if (log.fromStatusId) statusIds.add(log.fromStatusId);
+      if (log.toStatusId) statusIds.add(log.toStatusId);
+    });
+    
+    const statuses = statusIds.size > 0 
+      ? await prisma.directChatStatus.findMany({
+          where: { id: { in: Array.from(statusIds) } },
+          select: { id: true, name: true, color: true },
+        }).catch((statusErr) => {
+          console.error('[direct/chat-status-history] ⚠️ Error loading statuses separately:', statusErr);
+          return [];
+        })
+      : [];
+    
+    const statusMap = new Map(statuses.map(s => [s.id, s]));
+    
+    const logs = logsWithoutInclude.map(log => ({
+      id: log.id,
+      clientId: log.clientId,
+      fromStatusId: log.fromStatusId,
+      toStatusId: log.toStatusId,
+      changedAt: log.changedAt.toISOString(),
+      changedBy: log.changedBy,
+      note: log.note,
+      fromStatus: log.fromStatusId ? (statusMap.get(log.fromStatusId) || null) : null,
+      toStatus: log.toStatusId ? (statusMap.get(log.toStatusId) || null) : null,
+    }));
+    
+    console.log(`[direct/chat-status-history] ✅ Loaded ${logs.length} logs with manually fetched statuses (${statuses.length} statuses found from ${statusIds.size} unique status IDs)`);
 
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status-history/route.ts:70',message:'Chat status logs retrieved',data:{clientId,totalLogs:logs.length,logIds:logs.map(l=>l.id),logsWithoutIncludeCount:logsWithoutInclude.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
