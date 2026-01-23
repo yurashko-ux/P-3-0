@@ -1824,41 +1824,6 @@ export function DirectClientTable({
                             (Array.isArray(client.last5States) &&
                               client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
                               
-                          // 1) Override: минуле/сьогодні — показуємо або 🔁 (перезапис), або бейдж.
-                          // Пріоритет: платна послуга, потім консультація.
-                          if (paidPastOrToday && client.paidServiceDate) {
-                            const title = hasPaidReschedule ? 'Перезапис' : 'Відсутній перезапис';
-                            return (
-                              <div className="flex items-center justify-end gap-1">
-                                {hasPaidReschedule ? (
-                                  <span title={title} className="text-[24px] leading-none">
-                                    🔁
-                                  </span>
-                                ) : (
-                                  <span title={title} className="inline-flex">
-                                    <MissingRebookBadge />
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          }
-
-                          if (consultPastOrToday && client.consultationBookingDate) {
-                            const title = hasConsultReschedule ? 'Перезапис' : 'Дата консультації не призначена';
-                            return (
-                              <div className="flex items-center justify-end gap-1">
-                                {hasConsultReschedule ? (
-                                  <span title={title} className="text-[24px] leading-none">
-                                    🔁
-                                  </span>
-                                ) : (
-                                  <span title={title} className="inline-flex">
-                                    <ConsultDateMissingBadge />
-                                  </span>
-                                )}
-                              </div>
-                            );
-                            }
                             
                           // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Стан”.
                           // Пріоритет: платний запис (якщо актуальний) → інакше консультація (якщо актуальна).
