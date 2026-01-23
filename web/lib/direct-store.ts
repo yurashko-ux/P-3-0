@@ -1391,6 +1391,23 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
 /**
  * Видалити клієнта
  */
+/**
+ * Переносить історію повідомлень та станів з одного клієнта до іншого
+ * Використовується при злитті записів клієнтів
+ */
+export async function moveClientHistory(fromClientId: string, toClientId: string): Promise<{ movedMessages: number; movedStateLogs: number }> {
+  // Важливо: перед видаленням дублікату переносимо історію, бо в БД стоїть ON DELETE CASCADE.
+  const movedMessages = await prisma.directMessage.updateMany({
+    where: { clientId: fromClientId },
+    data: { clientId: toClientId },
+  });
+  const movedStateLogs = await prisma.directClientStateLog.updateMany({
+    where: { clientId: fromClientId },
+    data: { clientId: toClientId },
+  });
+  return { movedMessages: movedMessages.count, movedStateLogs: movedStateLogs.count };
+}
+
 export async function deleteDirectClient(id: string): Promise<void> {
   try {
     await prisma.directClient.delete({
