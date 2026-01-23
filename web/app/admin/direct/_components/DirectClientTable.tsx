@@ -1943,6 +1943,7 @@ export function DirectClientTable({
                               const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
                               const consultKyivDay = kyivDayFmt.format(appointmentDate); // YYYY-MM-DD
                               const isPast = consultKyivDay < todayKyivDay;
+                              const isToday = consultKyivDay === todayKyivDay;
                               const isPastOrToday = consultKyivDay <= todayKyivDay;
                               const formattedDateStr = formatDate(dateStr);
                               const isOnline = client.isOnlineConsultation || false;
@@ -1983,7 +1984,7 @@ export function DirectClientTable({
                               
                               // Визначаємо значок attendance
                               // Правило:
-                              // - ✅/❌/🚫 показуємо одразу, незалежно від дня
+                              // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                               // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
                               // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
                               const attIconCls = "text-[14px] leading-none";
@@ -1994,13 +1995,14 @@ export function DirectClientTable({
                                     🚫
                                   </span>
                                 );
-                              } else if (client.consultationAttended === true) {
+                              } else if (client.consultationAttended === true && isPast) {
+                                // Зелена галочка тільки для минулих дат (клієнт не може прийти в майбутньому)
                                 attendanceIcon = (
                                   <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на консультацію">
                                     ✅
                                   </span>
                                 );
-                              } else if (client.consultationAttended === false) {
+                              } else if (client.consultationAttended === false && isPast) {
                                 attendanceIcon = (
                                   <span className={`text-red-600 ${attIconCls}`} title="Клієнтка не з'явилася на консультацію">
                                     ❌
@@ -2050,7 +2052,9 @@ export function DirectClientTable({
                                   <span className="flex items-center gap-1">
                                     <button
                                       className={
-                                        isPast
+                                        isToday
+                                          ? "text-green-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                          : isPast
                                           ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
                                           : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
                                       }
@@ -2138,6 +2142,7 @@ export function DirectClientTable({
                             const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
                             const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
                             const isPast = paidKyivDay < todayKyivDay;
+                            const isToday = paidKyivDay === todayKyivDay;
                             const isPastOrToday = paidKyivDay <= todayKyivDay;
                             const dateStr = formatDate(client.paidServiceDate);
                             
@@ -2151,7 +2156,7 @@ export function DirectClientTable({
                             
                             // Визначаємо значок attendance
                             // Правило:
-                            // - ✅/❌/🚫 показуємо одразу, незалежно від дня
+                            // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                             // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
                             // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
                             const attIconCls = "text-[14px] leading-none";
@@ -2162,13 +2167,14 @@ export function DirectClientTable({
                                   🚫
                                 </span>
                               );
-                            } else if (client.paidServiceAttended === true) {
+                            } else if (client.paidServiceAttended === true && isPast) {
+                              // Зелена галочка тільки для минулих дат (клієнт не може прийти в майбутньому)
                               attendanceIcon = (
                                 <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на платну послугу">
                                   ✅
                                 </span>
                               );
-                            } else if (client.paidServiceAttended === false) {
+                            } else if (client.paidServiceAttended === false && isPast) {
                               attendanceIcon = (
                                 <span className={`text-red-600 ${attIconCls}`} title="Клієнтка не з'явилася на платну послугу">
                                   ❌
@@ -2224,7 +2230,9 @@ export function DirectClientTable({
                                 <span className="flex items-center gap-1">
                                 <button
                                   className={
-                                    isPast
+                                    isToday
+                                      ? "text-green-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                      : isPast
                                       ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
                                       : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
                                   }
