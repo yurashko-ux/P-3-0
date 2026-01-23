@@ -1830,6 +1830,91 @@ export function DirectClientTable({
                           // Без 🆕/💸 — це створювало “NEW” і візуальний хаос.
                           // Спрощена логіка: якщо є платна послуга - показуємо її стан, якщо немає - показуємо стан консультації
                           
+                          // Перевірка строго минулих дат (не включаючи сьогодні)
+                          const isPaidPast = Boolean(paidKyivDay && paidKyivDay < todayKyivDay);
+                          const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
+
+                          // Нова логіка відображення стану з пріоритетами:
+                          
+                          // 1. Червона дата запису (минула) + перезапис
+                          if (client.paidServiceDate && isPaidPast) {
+                            if ((client as any).paidServiceIsRebooking) {
+                              return (
+                                <div className="flex items-center justify-end">
+                                  <span className="inline-flex items-center justify-center">
+                                    <span 
+                                      title="Є перезапис" 
+                                      className="text-[24px] leading-none inline-flex items-center justify-center"
+                                    >
+                                      🔁
+                                    </span>
+                                  </span>
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="flex items-center justify-end">
+                                  <span className="inline-flex items-center justify-center">
+                                    <span 
+                                      title="Немає перезапису" 
+                                      className="text-[24px] leading-none inline-flex items-center justify-center"
+                                    >
+                                      ⚠️
+                                    </span>
+                                  </span>
+                                </div>
+                              );
+                            }
+                          }
+
+                          // 2. Успішна консультація без запису (Не продали)
+                          if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
+                            return (
+                              <div className="flex items-center justify-end">
+                                <span className="inline-flex items-center justify-center">
+                                  <span 
+                                    title="Не продали" 
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  >
+                                    💔
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // 3. Attendance = -1 для минулої дати (no-show)
+                          if (client.paidServiceDate && isPaidPast && client.paidServiceAttended === false) {
+                            return (
+                              <div className="flex items-center justify-end">
+                                <span className="inline-flex items-center justify-center">
+                                  <span 
+                                    title="Клієнтка не з'явилася на платну послугу" 
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  >
+                                    ❌
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // 4. Attendance = -1 для майбутньої дати або скасовано
+                          if (client.paidServiceDate && !isPaidPast && (client.paidServiceAttended === false || client.paidServiceCancelled)) {
+                            return (
+                              <div className="flex items-center justify-end">
+                                <span className="inline-flex items-center justify-center">
+                                  <span 
+                                    title="Скасовано" 
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  >
+                                    🚫
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
                           // Якщо є платна послуга - показуємо її стан
                           if (client.paidServiceDate) {
                             const serviceState =
