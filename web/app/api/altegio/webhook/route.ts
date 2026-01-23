@@ -2241,7 +2241,7 @@ export async function POST(req: NextRequest) {
                   try {
                     const duplicateClient = existingDirectClients.find((c) => c.id === duplicateClientId);
                     if (duplicateClient) {
-                      const { kv } = await import('@/lib/kv');
+                      const { kvRead, kvWrite } = await import('@/lib/kv');
                       const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
                       const oldUsername = duplicateClient.instagramUsername;
                       const newUsername = normalizedInstagram;
@@ -2255,13 +2255,13 @@ export async function POST(req: NextRequest) {
                         const newKey = directAvatarKey(newUsername);
                         
                         try {
-                          const oldAvatar = await kv.getRaw(oldKey);
+                          const oldAvatar = await kvRead.getRaw(oldKey);
                           if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
                             // Перевіряємо, чи вже є аватарка для нового username
-                            const existingNewAvatar = await kv.getRaw(newKey);
+                            const existingNewAvatar = await kvRead.getRaw(newKey);
                             if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
                               // Копіюємо аватарку на новий ключ
-                              await kv.setRaw(newKey, oldAvatar);
+                              await kvWrite.setRaw(newKey, oldAvatar);
                               console.log(`[altegio/webhook] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}"`);
                             } else {
                               console.log(`[altegio/webhook] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо`);
