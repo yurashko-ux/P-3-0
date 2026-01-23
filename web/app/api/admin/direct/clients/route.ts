@@ -461,26 +461,28 @@ export async function GET(req: NextRequest) {
             const cg = pickClosestConsultGroup();
             if (cg) {
               const attStatus = String((cg as any).attendanceStatus || '');
+              // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
+              // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
               if (attStatus === 'arrived' || (cg as any).attendance === 1) {
                 c = { ...c, consultationAttended: true, consultationCancelled: false };
               } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
+                // Встановлюємо false тільки якщо в БД ще не встановлено true
                 if ((c as any).consultationAttended !== true) {
                   c = { ...c, consultationAttended: false, consultationCancelled: false };
                 }
               } else if (attStatus === 'cancelled' || (cg as any).attendance === -2) {
+                // Встановлюємо null тільки якщо в БД ще не встановлено true
                 if ((c as any).consultationAttended !== true) {
                   c = { ...c, consultationAttended: null, consultationCancelled: true };
                 } else {
                   c = { ...c, consultationCancelled: false };
                 }
-              } else {
-                // KV каже "pending/невідомо": не маємо права показувати ❌ без підтвердження no-show.
-                // Тому якщо в БД лишились legacy true/false — нормалізуємо до null (UI має відповідати KV).
-                if ((c as any).consultationAttended === false || (c as any).consultationAttended === true) {
-                  c = { ...c, consultationAttended: null, consultationCancelled: false };
-                }
               }
+              // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
+              // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
             }
+            // Якщо групу не знайдено - також НЕ змінюємо значення з БД
+            // Це дозволяє зберегти встановлені раніше значення для старих записів
 
             if (consultGroup) {
               const events = Array.isArray((consultGroup as any).events) ? (consultGroup as any).events : [];
@@ -528,28 +530,28 @@ export async function GET(req: NextRequest) {
         if (!currentGroup) return c;
 
         // Attendance для "Запис" має відповідати KV-групі цього дня.
-        // Не показуємо ❌ (paidServiceAttended=false), якщо KV не підтверджує no-show.
+        // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
+        // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
         try {
           const attStatus = String((currentGroup as any).attendanceStatus || '');
           const attVal = (currentGroup as any).attendance ?? null;
           if (attStatus === 'arrived' || attVal === 1) {
             c = { ...c, paidServiceAttended: true, paidServiceCancelled: false };
           } else if (attStatus === 'no-show' || attVal === -1) {
+            // Встановлюємо false тільки якщо в БД ще не встановлено true
             if ((c as any).paidServiceAttended !== true) {
               c = { ...c, paidServiceAttended: false, paidServiceCancelled: false };
             }
           } else if (attStatus === 'cancelled' || attVal === -2) {
+            // Встановлюємо null тільки якщо в БД ще не встановлено true
             if ((c as any).paidServiceAttended !== true) {
               c = { ...c, paidServiceAttended: null, paidServiceCancelled: true };
             } else {
               c = { ...c, paidServiceCancelled: false };
             }
-          } else {
-            // pending/невідомо → якщо legacy false, прибираємо ❌
-            if ((c as any).paidServiceAttended === false || (c as any).paidServiceAttended === true) {
-              c = { ...c, paidServiceAttended: null, paidServiceCancelled: false };
-            }
           }
+          // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
+          // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
         } catch (err) {
           console.warn('[direct/clients] ⚠️ Не вдалося нормалізувати paidServiceAttended з KV (не критично):', err);
         }
