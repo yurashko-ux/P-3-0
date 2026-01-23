@@ -248,6 +248,10 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       const sData = await sRes.json().catch(() => ({}));
       const hData = await hRes.json().catch(() => ({}));
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'MessagesHistoryModal.tsx:251',message:'Chat status history response received',data:{clientId:client.id,statusOk:sData?.ok,historyOk:hData?.ok,historyTotal:hData?.total,historyLogsCount:Array.isArray(hData?.logs)?hData.logs.length:0,historyError:hData?.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+
       if (!sData?.ok) {
         setChatStatusError(sData?.error || 'Не вдалося завантажити статуси переписки');
         setChatStatuses([]);
@@ -256,11 +260,20 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       }
 
       if (!hData?.ok) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'MessagesHistoryModal.tsx:262',message:'Chat history response not ok',data:{clientId:client.id,error:hData?.error,status:hData?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
         setChatHistory([]);
       } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'MessagesHistoryModal.tsx:266',message:'Chat history set',data:{clientId:client.id,logsCount:Array.isArray(hData.logs)?hData.logs.length:0,firstLogId:Array.isArray(hData.logs)&&hData.logs.length>0?hData.logs[0].id:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
         setChatHistory(Array.isArray(hData.logs) ? hData.logs : []);
       }
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'MessagesHistoryModal.tsx:270',message:'Error loading chat panel',data:{clientId:client?.id,error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       setChatStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       setChatStatusLoading(false);

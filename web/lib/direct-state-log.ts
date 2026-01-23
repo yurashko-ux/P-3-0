@@ -130,16 +130,30 @@ export async function logStateChange(
       }
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-state-log.ts:133',message:'Creating state log entry',data:{clientId,newState,previousState,reason:reason||'unknown',hasMetadata:!!metadata},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
+    const logData = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      clientId,
+      state: newState || null,
+      previousState: previousState || null,
+      reason: reason || "unknown",
+      metadata: metadata ? JSON.stringify(metadata) : null,
+    };
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-state-log.ts:142',message:'State log data prepared',data:{logId:logData.id,clientId,state:logData.state,previousState:logData.previousState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     await prisma.directClientStateLog.create({
-      data: {
-        id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        clientId,
-        state: newState || null,
-        previousState: previousState || null,
-        reason: reason || "unknown",
-        metadata: metadata ? JSON.stringify(metadata) : null,
-      },
+      data: logData,
     });
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-state-log.ts:150',message:'State log created successfully',data:{clientId,logId:logData.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     console.log(`[direct-state-log] ✅ Logged state change for client ${clientId}: ${previousState || 'null'} → ${newState || 'null'} (reason: ${reason || 'unknown'})`);
   } catch (err) {

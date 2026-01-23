@@ -1167,12 +1167,20 @@ export async function saveDirectClient(
 
     // Логуємо зміну стану, якщо вона відбулася (і finalState заданий).
     // Важливо: якщо finalState = undefined/null, не логуємо (інакше отримуємо спам "Не встановлено").
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1170',message:'Checking if state change should be logged',data:{skipLogging,hasFinalState:!!finalState,finalState,previousState,stateChanged:finalState !== previousState,clientId:clientIdForLog,reason:reason||'saveDirectClient'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    
     if (!skipLogging && finalState && finalState !== previousState) {
       // Додаємо masterId до метаданих для історії
       const logMetadata = {
         ...metadata,
         masterId: client.masterId,
       };
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1177',message:'Calling logStateChange',data:{clientId:clientIdForLog,finalState,previousState,reason:reason||'saveDirectClient',hasMetadata:!!metadata},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       
       await logStateChange(
         clientIdForLog,
@@ -1181,6 +1189,14 @@ export async function saveDirectClient(
         reason || 'saveDirectClient',
         logMetadata
       );
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1188',message:'logStateChange completed',data:{clientId:clientIdForLog},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+    } else {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1192',message:'Skipping state change log',data:{skipLogging,hasFinalState:!!finalState,finalState,previousState,stateChanged:finalState !== previousState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
     }
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client.id}:`, err);
