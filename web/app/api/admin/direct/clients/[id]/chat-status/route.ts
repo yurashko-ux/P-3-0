@@ -132,24 +132,32 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
       fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:125',message:'Chat status log data prepared',data:{clientId,fromStatusId:logData.fromStatusId,toStatusId:logData.toStatusId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
       // #endregion
       
-      await prisma.directClientChatStatusLog.create({
+      const createdLog = await prisma.directClientChatStatusLog.create({
         data: logData,
       });
       
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:133',message:'Chat status log created successfully',data:{clientId,fromStatusId:prevStatusId,toStatusId:nextStatusId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:133',message:'Chat status log created successfully',data:{clientId,logId:createdLog.id,fromStatusId:prevStatusId,toStatusId:nextStatusId,changedAt:createdLog.changedAt.toISOString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
       // #endregion
       
       console.log('[direct/chat-status] ✅ Status changed:', { clientId, from: prevStatusId, to: nextStatusId });
       console.log('[direct/chat-status] ✅ Chat status log created:', { 
         clientId, 
-        logId: (await prisma.directClientChatStatusLog.findFirst({
-          where: { clientId, changedAt: now },
-          orderBy: { changedAt: 'desc' },
-          select: { id: true },
-        }))?.id || 'unknown',
+        logId: createdLog.id,
         fromStatusId: prevStatusId, 
-        toStatusId: nextStatusId 
+        toStatusId: nextStatusId,
+        changedAt: createdLog.changedAt.toISOString(),
+      });
+      
+      // Перевіряємо, чи запис дійсно зберігся в БД
+      const verifyLog = await prisma.directClientChatStatusLog.findUnique({
+        where: { id: createdLog.id },
+        select: { id: true, clientId: true, fromStatusId: true, toStatusId: true },
+      });
+      console.log('[direct/chat-status] 🔍 Verification query result:', { 
+        found: !!verifyLog,
+        logId: verifyLog?.id,
+        clientId: verifyLog?.clientId,
       });
     } else {
       // #region agent log
