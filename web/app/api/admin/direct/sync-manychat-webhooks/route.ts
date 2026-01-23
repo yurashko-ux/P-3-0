@@ -387,14 +387,30 @@ export async function POST(req: NextRequest) {
           // Оновлюємо існуючого клієнта
           const receivedAt = webhook.receivedAt as string;
           
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-manychat-webhooks/route.ts:387',message:'Updating existing client from ManyChat',data:{clientId:client.id,hasAltegioClientId:!!client.altegioClientId,altegioClientId:client.altegioClientId,existingFirstName:client.firstName,existingLastName:client.lastName,manychatFirstName:firstName,manychatLastName:lastName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // ВАЖЛИВО: Якщо клієнт має altegioClientId, не перезаписуємо ім'я з ManyChat
+          // Пріоритет має ім'я з Altegio
+          const shouldUpdateName = !client.altegioClientId; // Оновлюємо ім'я тільки якщо немає altegioClientId
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-manychat-webhooks/route.ts:395',message:'Name update decision',data:{shouldUpdateName,hasAltegioClientId:!!client.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
           client = {
             ...client,
             instagramUsername: normalizedInstagram,
-            ...(firstName && { firstName }),
-            ...(lastName && { lastName }),
+            ...(shouldUpdateName && firstName && { firstName }),
+            ...(shouldUpdateName && lastName && { lastName }),
             lastMessageAt: receivedAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-manychat-webhooks/route.ts:405',message:'Client after update',data:{clientId:client.id,firstName:client.firstName,lastName:client.lastName,hasAltegioClientId:!!client.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           
           results.updated++;
         }

@@ -2215,18 +2215,37 @@ export async function POST(req: NextRequest) {
             // Оновлюємо існуючого клієнта
             const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
             if (existingClient) {
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2217',message:'Updating existing client from Altegio webhook',data:{clientId:existingClientId,existingAltegioClientId:existingClient.altegioClientId,newAltegioClientId:parseInt(String(clientId),10),existingFirstName:existingClient.firstName,existingLastName:existingClient.lastName,altegioFirstName:firstName,altegioLastName:lastName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+              
               // Встановлюємо стан "lead" якщо Instagram відсутній, інакше "client"
               const clientState = isMissingInstagram ? ('lead' as const) : ('client' as const);
+              
+              // ВАЖЛИВО: Оновлюємо ім'я з Altegio тільки якщо:
+              // 1. Клієнт ще не має altegioClientId (перший раз отримуємо дані з Altegio)
+              // 2. АБО ім'я відсутнє/порожнє (заповнюємо порожні поля)
+              const shouldUpdateName = !existingClient.altegioClientId || !existingClient.firstName || !existingClient.lastName;
+              
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2228',message:'Name update decision from Altegio',data:{shouldUpdateName,hasExistingAltegioClientId:!!existingClient.altegioClientId,hasExistingFirstName:!!existingClient.firstName,hasExistingLastName:!!existingClient.lastName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+              
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: parseInt(String(clientId), 10),
                 instagramUsername: normalizedInstagram,
                 state: clientState,
-                ...(firstName && { firstName }),
-                ...(lastName && { lastName }),
+                ...(shouldUpdateName && firstName && { firstName }),
+                ...(shouldUpdateName && lastName && { lastName }),
                 ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
                 updatedAt: new Date().toISOString(),
               };
+              
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2240',message:'Client after Altegio update',data:{clientId:existingClientId,firstName:updated.firstName,lastName:updated.lastName,altegioClientId:updated.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+              
               await saveDirectClient(updated);
               console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState})`);
               
