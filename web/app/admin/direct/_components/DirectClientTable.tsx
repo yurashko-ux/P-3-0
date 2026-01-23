@@ -381,7 +381,7 @@ export function DirectClientTable({
     return `${altegioClientsBaseUrl}${encodeURIComponent(q)}`;
   };
 
-  // Функція для перетворення ключів активності в читабельний текст
+  // Функція для отримання ОДНОГО найважливішого трігера з масиву ключів
   const getTriggerDescription = (activityKeys: string[]): string => {
     if (!activityKeys || activityKeys.length === 0) return '';
     
@@ -397,11 +397,36 @@ export function DirectClientTable({
       other: 'Інші зміни',
     };
     
-    const descriptions = activityKeys
-      .filter(key => triggerMap[key]) // Фільтруємо тільки відомі ключі (без майстрів та стану)
-      .map(key => triggerMap[key]);
+    // Пріоритети трігерів (вищий номер = вищий пріоритет)
+    const priority: Record<string, number> = {
+      message: 10, // Найважливіший
+      paidServiceDate: 8,
+      consultationBookingDate: 8,
+      paidServiceAttended: 6,
+      consultationAttended: 6,
+      paidServiceCancelled: 5,
+      consultationCancelled: 5,
+      paidServiceTotalCost: 4,
+      other: 1,
+    };
     
-    return descriptions.join(', ') || '';
+    // Фільтруємо тільки відомі ключі та знаходимо найважливіший
+    const validKeys = activityKeys.filter(key => triggerMap[key]);
+    if (validKeys.length === 0) return '';
+    
+    // Якщо один ключ - повертаємо його
+    if (validKeys.length === 1) {
+      return triggerMap[validKeys[0]];
+    }
+    
+    // Якщо кілька ключів - повертаємо найважливіший за пріоритетом
+    const sortedByPriority = validKeys.sort((a, b) => {
+      const priorityA = priority[a] || 0;
+      const priorityB = priority[b] || 0;
+      return priorityB - priorityA; // Вищий пріоритет спочатку
+    });
+    
+    return triggerMap[sortedByPriority[0]];
   };
 
   // Форматування дати та часу для lastActivityAt
