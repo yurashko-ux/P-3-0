@@ -998,6 +998,11 @@ export async function POST(req: NextRequest) {
                 const hasPaidServiceDateChange = updates.paidServiceDate && existingClient.paidServiceDate !== updates.paidServiceDate;
                 const hasSignedUpChange = updates.signedUpForPaidService !== undefined && existingClient.signedUpForPaidService !== updates.signedUpForPaidService;
                 
+                // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх
+                // Використовуємо touchUpdatedAt: false, якщо змінюються тільки стан або майстер (без інших змін)
+                const shouldTouchUpdatedAt = hasPaidServiceDateChange || hasSignedUpChange || 
+                  (hasConsultation && hasHairExtension && finalState === 'hair-extension');
+                
                 if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange) {
                   const updated: typeof existingClient = {
                     ...existingClient,
@@ -1038,10 +1043,12 @@ export async function POST(req: NextRequest) {
                     }
                     
                     // Зберігаємо клієнта без повторного логування (бо вже залоговано через logMultipleStates)
+                    // Для конверсії консультація→нарощування залишаємо touchUpdatedAt (це важлива подія)
                     await saveDirectClient(updated, 'altegio-webhook-record', metadata, true);
                   } else {
                     // Звичайне логування для одного стану
-                    await saveDirectClient(updated, 'altegio-webhook-record', metadata);
+                    // Якщо змінюються тільки стан або майстер - не переміщаємо на верх
+                    await saveDirectClient(updated, 'altegio-webhook-record', metadata, shouldTouchUpdatedAt ? undefined : { touchUpdatedAt: false });
                   }
                   
                   if (hasStateChange) {

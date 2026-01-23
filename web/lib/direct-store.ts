@@ -813,39 +813,8 @@ export async function saveDirectClient(
         if (!eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false)) push('consultationCancelled');
       }
 
-      // Майстер (UI: колонка "Майстер" + фільтр/сортування)
-      if ((client as any).masterId !== undefined) {
-        if (!eqScalar(prev?.masterId ?? null, (client as any).masterId ?? null)) push('masterId');
-      }
-
-      // Майстер з Altegio (UI: колонка "Майстер" для платних записів)
-      if ((client as any).serviceMasterName !== undefined) {
-        if (!eqScalar(prev?.serviceMasterName ?? null, (client as any).serviceMasterName ?? null)) push('serviceMasterName');
-      }
-      if ((client as any).serviceMasterAltegioStaffId !== undefined) {
-        if (!eqScalar(prev?.serviceMasterAltegioStaffId ?? null, (client as any).serviceMasterAltegioStaffId ?? null))
-          push('serviceMasterAltegioStaffId');
-      }
-      if ((client as any).serviceMasterHistory !== undefined) {
-        if (!eqScalar(prev?.serviceMasterHistory ?? null, (client as any).serviceMasterHistory ?? null)) push('serviceMasterHistory');
-      }
-      if ((client as any).serviceSecondaryMasterName !== undefined) {
-        if (!eqScalar((prev as any)?.serviceSecondaryMasterName ?? null, (client as any).serviceSecondaryMasterName ?? null))
-          push('serviceSecondaryMasterName');
-      }
-
-      // Майстер консультації (UI: в колонці "Запис на консультацію" в tooltip/історії)
-      if ((client as any).consultationMasterId !== undefined) {
-        if (!eqScalar(prev?.consultationMasterId ?? null, (client as any).consultationMasterId ?? null)) push('consultationMasterId');
-      }
-      if ((client as any).consultationMasterName !== undefined) {
-        if (!eqScalar(prev?.consultationMasterName ?? null, (client as any).consultationMasterName ?? null)) push('consultationMasterName');
-      }
-
-      // state: фіксуємо зміну навіть якщо finalState було скориговано правилами.
-      if (finalState !== undefined && finalState !== null) {
-        if (!eqScalar(prev?.state ?? null, finalState)) push('state');
-      }
+      // ВИМКНЕНО: Майстер та state не переміщають клієнта на верх таблиці
+      // Ключі майстрів та state прибрано з computeActivityKeys
 
       if (keys.length === 0) keys.push('other');
 

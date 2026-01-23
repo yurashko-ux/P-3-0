@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
         !!picked?.staffName && (client.serviceMasterName || '').trim() !== picked.staffName.trim();
 
       // Якщо знайшли новий стан і він відрізняється від поточного - оновлюємо
+      // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх (touchUpdatedAt: false)
       if ((newState && client.state !== newState) || needsMasterUpdate) {
         try {
           const updated: typeof client = {
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest) {
             groupType: chosen.groupType,
             visitDayKyiv: chosen.kyivDay,
             services: (chosen.services || []).map((s: any) => ({ id: s.id, title: s.title || s.name })) || [],
-          });
+          }, { touchUpdatedAt: false });
           updatedCount++;
           const changes = [];
           if (newState && client.state !== newState) changes.push(`state: '${client.state}' -> '${newState}'`);

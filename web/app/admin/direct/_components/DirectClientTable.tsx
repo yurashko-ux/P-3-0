@@ -381,6 +381,45 @@ export function DirectClientTable({
     return `${altegioClientsBaseUrl}${encodeURIComponent(q)}`;
   };
 
+  // Функція для перетворення ключів активності в читабельний текст
+  const getTriggerDescription = (activityKeys: string[]): string => {
+    if (!activityKeys || activityKeys.length === 0) return '';
+    
+    const triggerMap: Record<string, string> = {
+      message: 'Нове повідомлення',
+      paidServiceDate: 'Запис на платну послугу',
+      paidServiceAttended: 'Відвідування платної послуги',
+      paidServiceCancelled: 'Скасування платної послуги',
+      paidServiceTotalCost: 'Зміна вартості платної послуги',
+      consultationBookingDate: 'Запис на консультацію',
+      consultationAttended: 'Відвідування консультації',
+      consultationCancelled: 'Скасування консультації',
+      other: 'Інші зміни',
+    };
+    
+    const descriptions = activityKeys
+      .filter(key => triggerMap[key]) // Фільтруємо тільки відомі ключі (без майстрів та стану)
+      .map(key => triggerMap[key]);
+    
+    return descriptions.join(', ') || '';
+  };
+
+  // Форматування дати та часу для lastActivityAt
+  const formatActivityDate = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = String(date.getFullYear()).slice(-2);
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${day}.${month}.${year} ${hours}:${minutes}`;
+    } catch {
+      return '';
+    }
+  };
+
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     try {
@@ -1391,40 +1430,20 @@ export function DirectClientTable({
                                 ? (phoneQuery || fallbackNameQuery || fallbackIgQuery)
                                 : (fallbackNameQuery || fallbackIgQuery);
                               const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
-                              // Визначаємо причину, чому клієнт на верхі таблиці
-                              const getSortReason = () => {
-                                if (index === 0) {
-                                  // Клієнт на першому місці
-                                  const orderText = sortOrder === 'desc' ? 'найбільше' : 'найменше';
-                                  switch (sortBy) {
-                                    case 'updatedAt':
-                                      return `Останнє оновлення (${orderText} значення)`;
-                                    case 'createdAt':
-                                      return `Дата створення (${orderText} значення)`;
-                                    case 'visits':
-                                      return `Кількість відвідувань (${orderText} значення)`;
-                                    case 'spent':
-                                      return `Сума продажів (${orderText} значення)`;
-                                    case 'state':
-                                      return `Статус послуги (${orderText} значення)`;
-                                    case 'consultationBookingDate':
-                                      return `Дата запису на консультацію (${orderText} значення)`;
-                                    case 'paidServiceDate':
-                                      return `Дата запису на платну послугу (${orderText} значення)`;
-                                    case 'masterId':
-                                      return `Майстер (${orderText} значення)`;
-                                    case 'instagramUsername':
-                                      return `Instagram username (${orderText} значення)`;
-                                    default:
-                                      return `Сортування по ${sortBy} (${orderText} значення)`;
+                              // Активний режим: sortBy === 'updatedAt' && sortOrder === 'desc'
+                              const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+                              // Формуємо tooltip з інформацією про трігер (тільки для активного режиму)
+                              let tooltipText = `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`;
+                              if (isActiveMode && client.lastActivityKeys && client.lastActivityKeys.length > 0) {
+                                const triggerDesc = getTriggerDescription(client.lastActivityKeys);
+                                if (triggerDesc) {
+                                  const activityDate = formatActivityDate(client.lastActivityAt);
+                                  tooltipText += `\n\nТрігер: ${triggerDesc}`;
+                                  if (activityDate) {
+                                    tooltipText += `\nДата: ${activityDate}`;
                                   }
                                 }
-                                return null;
-                              };
-                              const sortReason = getSortReason();
-                              const tooltipText = sortReason 
-                                ? `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)\n\nТрігер: ${sortReason}`
-                                : `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`;
+                              }
                               const typeBadge = isClientType ? (
                                 <a
                                   href={altegioUrl}
@@ -1496,40 +1515,20 @@ export function DirectClientTable({
                               ? (phoneQuery || fallbackNameQuery || fallbackIgQuery)
                               : (fallbackNameQuery || fallbackIgQuery);
                             const altegioUrl = buildAltegioClientsSearchUrl(altegioSearchQuery);
-                            // Визначаємо причину, чому клієнт на верхі таблиці
-                            const getSortReason = () => {
-                              if (index === 0) {
-                                // Клієнт на першому місці
-                                const orderText = sortOrder === 'desc' ? 'найбільше' : 'найменше';
-                                switch (sortBy) {
-                                  case 'updatedAt':
-                                    return `Останнє оновлення (${orderText} значення)`;
-                                  case 'createdAt':
-                                    return `Дата створення (${orderText} значення)`;
-                                  case 'visits':
-                                    return `Кількість відвідувань (${orderText} значення)`;
-                                  case 'spent':
-                                    return `Сума продажів (${orderText} значення)`;
-                                  case 'state':
-                                    return `Статус послуги (${orderText} значення)`;
-                                  case 'consultationBookingDate':
-                                    return `Дата запису на консультацію (${orderText} значення)`;
-                                  case 'paidServiceDate':
-                                    return `Дата запису на платну послугу (${orderText} значення)`;
-                                  case 'masterId':
-                                    return `Майстер (${orderText} значення)`;
-                                  case 'instagramUsername':
-                                    return `Instagram username (${orderText} значення)`;
-                                  default:
-                                    return `Сортування по ${sortBy} (${orderText} значення)`;
+                            // Активний режим: sortBy === 'updatedAt' && sortOrder === 'desc'
+                            const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+                            // Формуємо tooltip з інформацією про трігер (тільки для активного режиму)
+                            let tooltipText = `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`;
+                            if (isActiveMode && client.lastActivityKeys && client.lastActivityKeys.length > 0) {
+                              const triggerDesc = getTriggerDescription(client.lastActivityKeys);
+                              if (triggerDesc) {
+                                const activityDate = formatActivityDate(client.lastActivityAt);
+                                tooltipText += `\n\nТрігер: ${triggerDesc}`;
+                                if (activityDate) {
+                                  tooltipText += `\nДата: ${activityDate}`;
                                 }
                               }
-                              return null;
-                            };
-                            const sortReason = getSortReason();
-                            const tooltipText = sortReason 
-                              ? `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)\n\nТрігер: ${sortReason}`
-                              : `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`;
+                            }
                             const typeBadge = isClientType ? (
                               <a
                                 href={altegioUrl}
