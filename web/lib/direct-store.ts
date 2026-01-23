@@ -452,82 +452,107 @@ export async function updateInstagramForAltegioClient(
     
     // ВАЖЛИВО: Спочатку перевіряємо, чи існує клієнт з таким Instagram username
     // Якщо так, об'єднуємо їх ПЕРЕД спробою оновлення
+    // ВАЖЛИВО: завжди залишаємо клієнта з Altegio (existingClient), а не з ManyChat (existingByInstagram)
+    // Це гарантує, що ім'я, прізвище та телефон будуть з Altegio
     if (existingByInstagram && existingByInstagram.id !== existingClient.id) {
-      // Якщо існує інший клієнт з таким Instagram, об'єднуємо їх:
-      // Оновлюємо Altegio ID в існуючому клієнті з правильним Instagram (якщо його немає)
-      // Видаляємо поточного клієнта з неправильним Instagram
       console.log(`[direct-store] ⚠️ Instagram ${normalized} already exists for client ${existingByInstagram.id}, merging clients...`);
+      console.log(`[direct-store] 🔄 MERGE STRATEGY: Keeping Altegio client ${existingClient.id}, deleting ManyChat client ${existingByInstagram.id}`);
       
-      // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
+      // Оновлюємо клієнта з Altegio: додаємо Instagram username з ManyChat клієнта
       const mergeUpdateData: any = {
-      // не рухаємо updatedAt (це адмін-дія)
-    };
-    
-      const wasAddingAltegioId = !existingByInstagram.altegioClientId && altegioClientId;
-      if (wasAddingAltegioId) {
-        mergeUpdateData.altegioClientId = altegioClientId;
-        console.log(`[direct-store] Adding Altegio ID ${altegioClientId} to existing client ${existingByInstagram.id}`);
-      }
+        instagramUsername: normalized, // Переносимо Instagram з ManyChat клієнта
+        // не рухаємо updatedAt (це адмін-дія)
+      };
       
-      // Переносимо firstName/lastName з клієнта з Altegio (existingClient) до клієнта з Manychat (existingByInstagram)
-      // Завжди віддаємо перевагу даним з Altegio - якщо в Altegio клієнта є ім'я, використовуємо його
-      if (existingClient.firstName && existingClient.firstName.trim() !== '') {
-        mergeUpdateData.firstName = existingClient.firstName;
-        if (existingClient.firstName !== existingByInstagram.firstName) {
-          console.log(`[direct-store] Merging: overriding firstName with Altegio value "${existingClient.firstName}" (was: "${existingByInstagram.firstName || 'empty'}")`);
-        }
-      }
-      if (existingClient.lastName && existingClient.lastName.trim() !== '') {
-        mergeUpdateData.lastName = existingClient.lastName;
-        if (existingClient.lastName !== existingByInstagram.lastName) {
-          console.log(`[direct-store] Merging: overriding lastName with Altegio value "${existingClient.lastName}" (was: "${existingByInstagram.lastName || 'empty'}")`);
-        }
-      }
+      // Ім'я та прізвище залишаємо з Altegio (existingClient) - вони вже правильні
+      // Телефон також залишаємо з Altegio (existingClient) - він вже правильний
       
-      // Оновлюємо стан:
-      // 1. Якщо клієнт мав missing_instagram_* username і ми додаємо реальний Instagram → 'client'
-      // 2. Якщо клієнт мав стан 'lead' і ми додаємо Altegio ID → 'client' (бо клієнт тепер в Altegio)
-      const hadMissingInstagram = existingByInstagram.instagramUsername?.startsWith('missing_instagram_');
+      // Оновлюємо стан на 'client', якщо клієнт мав missing_instagram_*
+      const hadMissingInstagram = existingClient.instagramUsername?.startsWith('missing_instagram_') || 
+                                  existingClient.instagramUsername?.startsWith('no_instagram_');
       if (hadMissingInstagram) {
         mergeUpdateData.state = 'client';
-        console.log(`[direct-store] Updating state to 'client' for merged client ${existingByInstagram.id} (had missing_instagram_*, now has real Instagram)`);
-      } else if (existingByInstagram.state === 'lead' && wasAddingAltegioId) {
-        mergeUpdateData.state = 'client';
-        console.log(`[direct-store] Updating state from 'lead' to 'client' for merged client ${existingByInstagram.id} (added Altegio ID)`);
+        console.log(`[direct-store] Updating state to 'client' for Altegio client ${existingClient.id} (had missing_instagram_*, now has real Instagram)`);
       }
       
-      // Оновлюємо існуючого клієнта з правильним Instagram
+      // Переносимо історію повідомлень та станів з ManyChat клієнта до Altegio клієнта (якщо потрібно)
+      // Але залишаємо основні дані (ім'я, телефон) з Altegio
+      try {
+        const moved = await moveClientHistory(existingByInstagram.id, existingClient.id);
+        if (moved.movedMessages > 0 || moved.movedStateLogs > 0) {
+          console.log(`[direct-store] ✅ Перенесено історію з ${existingByInstagram.id} → ${existingClient.id}: messages=${moved.movedMessages}, stateLogs=${moved.movedStateLogs}`);
+        }
+      } catch (historyErr) {
+        console.warn('[direct-store] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', historyErr);
+      }
+      
+      // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
+      try {
+        const { kv } = await import('@/lib/kv');
+        const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+        const oldUsername = existingByInstagram.instagramUsername;
+        const newUsername = normalized;
+        
+        if (oldUsername && oldUsername !== newUsername && 
+            !oldUsername.startsWith('missing_instagram_') && 
+            !oldUsername.startsWith('no_instagram_')) {
+          const oldKey = directAvatarKey(oldUsername);
+          const newKey = directAvatarKey(newUsername);
+          
+          try {
+            const oldAvatar = await kv.getRaw(oldKey);
+            if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
+              // Перевіряємо, чи вже є аватарка для нового username
+              const existingNewAvatar = await kv.getRaw(newKey);
+              if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
+                // Копіюємо аватарку на новий ключ
+                await kv.setRaw(newKey, oldAvatar);
+                console.log(`[direct-store] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}"`);
+              } else {
+                console.log(`[direct-store] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо`);
+              }
+            }
+          } catch (avatarErr) {
+            console.warn('[direct-store] ⚠️ Не вдалося перенести аватарку (не критично):', avatarErr);
+          }
+        }
+      } catch (avatarErr) {
+        console.warn('[direct-store] ⚠️ Помилка при спробі перенести аватарку (не критично):', avatarErr);
+      }
+      
+      // Оновлюємо клієнта з Altegio
       const updated = await prisma.directClient.update({
-        where: { id: existingByInstagram.id },
+        where: { id: existingClient.id },
         data: mergeUpdateData,
       });
       
-      // Видаляємо поточного клієнта з неправильним Instagram (той, що був створений з 'missing_instagram_*')
-      console.log(`[direct-store] Deleting duplicate client ${existingClient.id} (had missing_instagram_* username)`);
+      // Видаляємо клієнта з ManyChat (дублікат)
+      console.log(`[direct-store] Deleting duplicate ManyChat client ${existingByInstagram.id} (keeping Altegio client ${existingClient.id})`);
       await prisma.directClient.delete({
-        where: { id: existingClient.id },
+        where: { id: existingByInstagram.id },
       });
       
-      // Логуємо зміну стану, якщо вона відбулася (якщо клієнт мав missing_instagram_* і тепер має реальний Instagram)
+      // Логуємо зміну стану, якщо вона відбулася
       if (hadMissingInstagram && updated.state === 'client') {
         await logStateChange(
-          existingByInstagram.id,
+          existingClient.id,
           'client',
-          existingByInstagram.state || 'lead',
+          existingClient.state || 'lead',
           'instagram-update-merge',
           {
             altegioClientId,
             instagramUsername: normalized,
             source: 'telegram-reply',
-            mergedClientId: existingClient.id,
+            mergedClientId: existingByInstagram.id,
           }
         );
       }
       
       const result = prismaClientToDirectClient(updated);
-      console.log(`[direct-store] ✅ Merged clients: kept ${existingByInstagram.id}, deleted ${existingClient.id}`);
+      console.log(`[direct-store] ✅ Merged clients: kept Altegio client ${existingClient.id}, deleted ManyChat client ${existingByInstagram.id}`);
       console.log(`[direct-store] 📊 Final state: ${result.state}`);
-      await syncIdentityFromAltegio(existingByInstagram.id);
+      console.log(`[direct-store] 📊 Final client data: name="${result.firstName} ${result.lastName}", phone="${result.phone || 'not set'}", instagram="${result.instagramUsername}"`);
+      await syncIdentityFromAltegio(existingClient.id);
       return result;
     } else {
       // Просто оновлюємо Instagram username (немає конфлікту)
@@ -580,72 +605,102 @@ export async function updateInstagramForAltegioClient(
           });
           
           if (existingByInstagramRetry && existingByInstagramRetry.id !== existingClient.id) {
-            console.log(`[direct-store] ⚠️ Found existing client ${existingByInstagramRetry.id} with Instagram "${normalized}", merging...`);
+            console.log(`[direct-store] ⚠️ Found existing client ${existingByInstagramRetry.id} with Instagram "${normalized}", merging (unique constraint fallback)...`);
+            console.log(`[direct-store] 🔄 MERGE STRATEGY (fallback): Keeping Altegio client ${existingClient.id}, deleting ManyChat client ${existingByInstagramRetry.id}`);
             
-            // Об'єднуємо клієнтів
+            // Оновлюємо клієнта з Altegio: додаємо Instagram username з ManyChat клієнта
             const mergeUpdateData: any = {
+              instagramUsername: normalized, // Переносимо Instagram з ManyChat клієнта
               // не рухаємо updatedAt (це адмін-дія)
             };
             
-            const wasAddingAltegioId = !existingByInstagramRetry.altegioClientId && altegioClientId;
-            if (wasAddingAltegioId) {
-              mergeUpdateData.altegioClientId = altegioClientId;
-              console.log(`[direct-store] Adding Altegio ID ${altegioClientId} to existing client ${existingByInstagramRetry.id}`);
-            }
+            // Ім'я та прізвище залишаємо з Altegio (existingClient) - вони вже правильні
+            // Телефон також залишаємо з Altegio (existingClient) - він вже правильний
             
-            // Переносимо firstName/lastName з клієнта з Altegio (existingClient) до клієнта з Manychat (existingByInstagramRetry)
-            // Завжди віддаємо перевагу даним з Altegio
-            if (existingClient.firstName && existingClient.firstName.trim() !== '') {
-              mergeUpdateData.firstName = existingClient.firstName;
-              if (existingClient.firstName !== existingByInstagramRetry.firstName) {
-                console.log(`[direct-store] Merging (fallback): overriding firstName with Altegio value "${existingClient.firstName}" (was: "${existingByInstagramRetry.firstName || 'empty'}")`);
-              }
-            }
-            if (existingClient.lastName && existingClient.lastName.trim() !== '') {
-              mergeUpdateData.lastName = existingClient.lastName;
-              if (existingClient.lastName !== existingByInstagramRetry.lastName) {
-                console.log(`[direct-store] Merging (fallback): overriding lastName with Altegio value "${existingClient.lastName}" (was: "${existingByInstagramRetry.lastName || 'empty'}")`);
-              }
-            }
-            
-            const hadMissingInstagramRetry = existingByInstagramRetry.instagramUsername?.startsWith('missing_instagram_');
-            if (hadMissingInstagramRetry) {
+            // Оновлюємо стан на 'client', якщо клієнт мав missing_instagram_*
+            const hadMissingInstagram = existingClient.instagramUsername?.startsWith('missing_instagram_') || 
+                                        existingClient.instagramUsername?.startsWith('no_instagram_');
+            if (hadMissingInstagram) {
               mergeUpdateData.state = 'client';
-              console.log(`[direct-store] Updating state to 'client' for merged client ${existingByInstagramRetry.id} (had missing_instagram_*, now has real Instagram)`);
-            } else if (existingByInstagramRetry.state === 'lead' && wasAddingAltegioId) {
-              mergeUpdateData.state = 'client';
-              console.log(`[direct-store] Updating state from 'lead' to 'client' for merged client ${existingByInstagramRetry.id} (added Altegio ID)`);
+              console.log(`[direct-store] Updating state to 'client' for Altegio client ${existingClient.id} (had missing_instagram_*, now has real Instagram)`);
             }
             
+            // Переносимо історію повідомлень та станів з ManyChat клієнта до Altegio клієнта (якщо потрібно)
+            try {
+              const moved = await moveClientHistory(existingByInstagramRetry.id, existingClient.id);
+              if (moved.movedMessages > 0 || moved.movedStateLogs > 0) {
+                console.log(`[direct-store] ✅ Перенесено історію з ${existingByInstagramRetry.id} → ${existingClient.id}: messages=${moved.movedMessages}, stateLogs=${moved.movedStateLogs}`);
+              }
+            } catch (historyErr) {
+              console.warn('[direct-store] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', historyErr);
+            }
+            
+            // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
+            try {
+              const { kv } = await import('@/lib/kv');
+              const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+              const oldUsername = existingByInstagramRetry.instagramUsername;
+              const newUsername = normalized;
+              
+              if (oldUsername && oldUsername !== newUsername && 
+                  !oldUsername.startsWith('missing_instagram_') && 
+                  !oldUsername.startsWith('no_instagram_')) {
+                const oldKey = directAvatarKey(oldUsername);
+                const newKey = directAvatarKey(newUsername);
+                
+                try {
+                  const oldAvatar = await kv.getRaw(oldKey);
+                  if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
+                    // Перевіряємо, чи вже є аватарка для нового username
+                    const existingNewAvatar = await kv.getRaw(newKey);
+                    if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
+                      // Копіюємо аватарку на новий ключ
+                      await kv.setRaw(newKey, oldAvatar);
+                      console.log(`[direct-store] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}" (fallback)`);
+                    } else {
+                      console.log(`[direct-store] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо (fallback)`);
+                    }
+                  }
+                } catch (avatarErr) {
+                  console.warn('[direct-store] ⚠️ Не вдалося перенести аватарку (не критично, fallback):', avatarErr);
+                }
+              }
+            } catch (avatarErr) {
+              console.warn('[direct-store] ⚠️ Помилка при спробі перенести аватарку (не критично, fallback):', avatarErr);
+            }
+            
+            // Оновлюємо клієнта з Altegio
             const updated = await prisma.directClient.update({
-              where: { id: existingByInstagramRetry.id },
+              where: { id: existingClient.id },
               data: mergeUpdateData,
             });
             
-            console.log(`[direct-store] Deleting duplicate client ${existingClient.id} (had missing_instagram_* username)`);
+            // Видаляємо клієнта з ManyChat (дублікат)
+            console.log(`[direct-store] Deleting duplicate ManyChat client ${existingByInstagramRetry.id} (keeping Altegio client ${existingClient.id})`);
             await prisma.directClient.delete({
-              where: { id: existingClient.id },
+              where: { id: existingByInstagramRetry.id },
             });
             
-            if (hadMissingInstagramRetry && updated.state === 'client') {
+            if (hadMissingInstagram && updated.state === 'client') {
               await logStateChange(
-                existingByInstagramRetry.id,
+                existingClient.id,
                 'client',
-                existingByInstagramRetry.state || 'lead',
+                existingClient.state || 'lead',
                 'instagram-update-merge',
                 {
                   altegioClientId,
                   instagramUsername: normalized,
                   source: 'telegram-reply',
-                  mergedClientId: existingClient.id,
+                  mergedClientId: existingByInstagramRetry.id,
                 }
               );
             }
             
             const result = prismaClientToDirectClient(updated);
-            console.log(`[direct-store] ✅ Merged clients after unique constraint error: kept ${existingByInstagramRetry.id}, deleted ${existingClient.id}`);
+            console.log(`[direct-store] ✅ Merged clients after unique constraint error: kept Altegio client ${existingClient.id}, deleted ManyChat client ${existingByInstagramRetry.id}`);
             console.log(`[direct-store] 📊 Final state: ${result.state}`);
-            await syncIdentityFromAltegio(existingByInstagramRetry.id);
+            console.log(`[direct-store] 📊 Final client data: name="${result.firstName} ${result.lastName}", phone="${result.phone || 'not set'}", instagram="${result.instagramUsername}"`);
+            await syncIdentityFromAltegio(existingClient.id);
             return result;
           }
         }

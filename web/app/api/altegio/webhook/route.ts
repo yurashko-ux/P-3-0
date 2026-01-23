@@ -2158,6 +2158,9 @@ export async function POST(req: NextRequest) {
           const firstName = nameParts[0] || undefined;
           const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
 
+          // Витягуємо телефон з Altegio
+          const phoneFromAltegio = client.phone ? String(client.phone).trim() : undefined;
+
           // Шукаємо існуючого клієнта
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
           let existingClientIdByAltegio = clientId ? existingAltegioIdMap.get(parseInt(String(clientId), 10)) : null;
@@ -2180,11 +2183,15 @@ export async function POST(req: NextRequest) {
                 clientByAltegio.instagramUsername.startsWith('missing_instagram_') ||
                 clientByAltegio.instagramUsername.startsWith('no_instagram_');
               
+              // ВАЖЛИВО: завжди залишаємо клієнта з Altegio (той, що має altegioClientId)
+              // Це гарантує, що ім'я, прізвище та телефон будуть з Altegio
               if (hasRealInstagram && hasMissingInstagram) {
-                // Об'єднуємо: залишаємо клієнта з реальним Instagram, видаляємо з missing_instagram_*
-                console.log(`[altegio/webhook] 🔄 Found duplicate clients: ${existingClientId} (real Instagram) and ${existingClientIdByAltegio} (missing_instagram_*), merging...`);
-                duplicateClientId = existingClientIdByAltegio;
-                existingClientId = existingClientId; // Використовуємо клієнта з реальним Instagram
+                // Об'єднуємо: залишаємо клієнта з Altegio (missing_instagram_*), видаляємо з ManyChat (real Instagram)
+                // Instagram username буде оновлено на реальний з ManyChat клієнта
+                console.log(`[altegio/webhook] 🔄 Found duplicate clients: ${existingClientId} (real Instagram from ManyChat) and ${existingClientIdByAltegio} (Altegio client), merging...`);
+                console.log(`[altegio/webhook] 🔄 MERGE STRATEGY: Keeping Altegio client ${existingClientIdByAltegio}, deleting ManyChat client ${existingClientId}`);
+                duplicateClientId = existingClientId; // Видаляємо ManyChat клієнта
+                existingClientId = existingClientIdByAltegio; // Залишаємо Altegio клієнта
               } else if (!hasRealInstagram && hasMissingInstagram) {
                 // Об'єднуємо: залишаємо клієнта з altegioClientId, видаляємо інший
                 console.log(`[altegio/webhook] 🔄 Found duplicate clients: ${existingClientIdByAltegio} (has altegioClientId) and ${existingClientId} (no altegioClientId), merging...`);
@@ -2210,6 +2217,7 @@ export async function POST(req: NextRequest) {
                 state: clientState,
                 ...(firstName && { firstName }),
                 ...(lastName && { lastName }),
+                ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
                 updatedAt: new Date().toISOString(),
               };
               await saveDirectClient(updated);
@@ -2218,6 +2226,56 @@ export async function POST(req: NextRequest) {
               // Видаляємо дублікат, якщо він є
               if (duplicateClientId) {
                 try {
+                  // Переносимо історію повідомлень та станів з ManyChat клієнта до Altegio клієнта (якщо потрібно)
+                  try {
+                    const { moveClientHistory } = await import('@/lib/direct-store');
+                    const moved = await moveClientHistory(duplicateClientId, existingClientId);
+                    if (moved.movedMessages > 0 || moved.movedStateLogs > 0) {
+                      console.log(`[altegio/webhook] ✅ Перенесено історію з ${duplicateClientId} → ${existingClientId}: messages=${moved.movedMessages}, stateLogs=${moved.movedStateLogs}`);
+                    }
+                  } catch (historyErr) {
+                    console.warn('[altegio/webhook] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', historyErr);
+                  }
+                  
+                  // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
+                  try {
+                    const duplicateClient = existingDirectClients.find((c) => c.id === duplicateClientId);
+                    if (duplicateClient) {
+                      const { kv } = await import('@/lib/kv');
+                      const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+                      const oldUsername = duplicateClient.instagramUsername;
+                      const newUsername = normalizedInstagram;
+                      
+                      if (oldUsername && oldUsername !== newUsername && 
+                          !oldUsername.startsWith('missing_instagram_') && 
+                          !oldUsername.startsWith('no_instagram_') &&
+                          !newUsername.startsWith('missing_instagram_') &&
+                          !newUsername.startsWith('no_instagram_')) {
+                        const oldKey = directAvatarKey(oldUsername);
+                        const newKey = directAvatarKey(newUsername);
+                        
+                        try {
+                          const oldAvatar = await kv.getRaw(oldKey);
+                          if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
+                            // Перевіряємо, чи вже є аватарка для нового username
+                            const existingNewAvatar = await kv.getRaw(newKey);
+                            if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
+                              // Копіюємо аватарку на новий ключ
+                              await kv.setRaw(newKey, oldAvatar);
+                              console.log(`[altegio/webhook] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}"`);
+                            } else {
+                              console.log(`[altegio/webhook] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо`);
+                            }
+                          }
+                        } catch (avatarErr) {
+                          console.warn('[altegio/webhook] ⚠️ Не вдалося перенести аватарку (не критично):', avatarErr);
+                        }
+                      }
+                    }
+                  } catch (avatarErr) {
+                    console.warn('[altegio/webhook] ⚠️ Помилка при спробі перенести аватарку (не критично):', avatarErr);
+                  }
+                  
                   const { deleteDirectClient } = await import('@/lib/direct-store');
                   await deleteDirectClient(duplicateClientId);
                   console.log(`[altegio/webhook] ✅ Deleted duplicate client ${duplicateClientId} after merging`);
@@ -2237,6 +2295,7 @@ export async function POST(req: NextRequest) {
               instagramUsername: normalizedInstagram,
               firstName,
               lastName,
+              ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
               source: 'instagram' as const,
               state: clientState,
               firstContactDate: now,

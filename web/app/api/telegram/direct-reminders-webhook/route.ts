@@ -228,62 +228,97 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     } : 'NOT FOUND');
     
     // Якщо знайдено іншого клієнта з таким Instagram, об'єднуємо їх
+    // ВАЖЛИВО: завжди залишаємо клієнта з Altegio (existingClient), а не з ManyChat (clientByInstagram)
+    // Це гарантує, що ім'я, прізвище та телефон будуть з Altegio
     if (clientByInstagram && clientByInstagram.id !== existingClient.id) {
       console.log(`[direct-reminders-webhook] ⚠️ Found existing client ${clientByInstagram.id} with Instagram "${normalized}", merging BEFORE update...`);
+      console.log(`[direct-reminders-webhook] 🔄 MERGE STRATEGY: Keeping Altegio client ${existingClient.id}, deleting ManyChat client ${clientByInstagram.id}`);
       
       try {
+        // Оновлюємо клієнта з Altegio: додаємо Instagram username з ManyChat клієнта
         const mergeUpdateData: any = {
+          instagramUsername: normalized, // Переносимо Instagram з ManyChat клієнта
           updatedAt: new Date(),
         };
         
-        const wasAddingAltegioId = !clientByInstagram.altegioClientId && altegioClientId;
-        if (wasAddingAltegioId) {
-          mergeUpdateData.altegioClientId = altegioClientId;
-          console.log(`[direct-reminders-webhook] Adding Altegio ID ${altegioClientId} to existing client ${clientByInstagram.id}`);
-        }
+        // Ім'я та прізвище залишаємо з Altegio (existingClient) - вони вже правильні
+        // Телефон також залишаємо з Altegio (existingClient) - він вже правильний
         
-        // Переносимо firstName/lastName з клієнта з Altegio (existingClient) до клієнта з Manychat (clientByInstagram)
-        // Завжди віддаємо перевагу даним з Altegio
-        if (existingClient.firstName && existingClient.firstName.trim() !== '') {
-          mergeUpdateData.firstName = existingClient.firstName;
-          if (existingClient.firstName !== clientByInstagram.firstName) {
-            console.log(`[direct-reminders-webhook] Merging: overriding firstName with Altegio value "${existingClient.firstName}" (was: "${clientByInstagram.firstName || 'empty'}")`);
-          }
-        }
-        if (existingClient.lastName && existingClient.lastName.trim() !== '') {
-          mergeUpdateData.lastName = existingClient.lastName;
-          if (existingClient.lastName !== clientByInstagram.lastName) {
-            console.log(`[direct-reminders-webhook] Merging: overriding lastName with Altegio value "${existingClient.lastName}" (was: "${clientByInstagram.lastName || 'empty'}")`);
-          }
-        }
-        
-        const hadMissingInstagram = clientByInstagram.instagramUsername?.startsWith('missing_instagram_');
+        // Оновлюємо стан на 'client', якщо клієнт мав missing_instagram_*
+        const hadMissingInstagram = existingClient.instagramUsername?.startsWith('missing_instagram_') || 
+                                    existingClient.instagramUsername?.startsWith('no_instagram_');
         if (hadMissingInstagram) {
           mergeUpdateData.state = 'client';
-          console.log(`[direct-reminders-webhook] Updating state to 'client' for merged client ${clientByInstagram.id} (had missing_instagram_*, now has real Instagram)`);
-        } else if (clientByInstagram.state === 'lead' && wasAddingAltegioId) {
-          mergeUpdateData.state = 'client';
-          console.log(`[direct-reminders-webhook] Updating state from 'lead' to 'client' for merged client ${clientByInstagram.id} (added Altegio ID)`);
+          console.log(`[direct-reminders-webhook] Updating state to 'client' for Altegio client ${existingClient.id} (had missing_instagram_*, now has real Instagram)`);
         }
         
+        // Переносимо історію повідомлень та станів з ManyChat клієнта до Altegio клієнта (якщо потрібно)
+        // Але залишаємо основні дані (ім'я, телефон) з Altegio
+        try {
+          const { moveClientHistory } = await import('@/lib/direct-store');
+          const moved = await moveClientHistory(clientByInstagram.id, existingClient.id);
+          if (moved.movedMessages > 0 || moved.movedStateLogs > 0) {
+            console.log(`[direct-reminders-webhook] ✅ Перенесено історію з ${clientByInstagram.id} → ${existingClient.id}: messages=${moved.movedMessages}, stateLogs=${moved.movedStateLogs}`);
+          }
+        } catch (historyErr) {
+          console.warn('[direct-reminders-webhook] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', historyErr);
+        }
+        
+        // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
+        try {
+          const { kv } = await import('@/lib/kv');
+          const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+          const oldUsername = clientByInstagram.instagramUsername;
+          const newUsername = normalized;
+          
+          if (oldUsername && oldUsername !== newUsername && 
+              !oldUsername.startsWith('missing_instagram_') && 
+              !oldUsername.startsWith('no_instagram_')) {
+            const oldKey = directAvatarKey(oldUsername);
+            const newKey = directAvatarKey(newUsername);
+            
+            try {
+              const oldAvatar = await kv.getRaw(oldKey);
+              if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
+                // Перевіряємо, чи вже є аватарка для нового username
+                const existingNewAvatar = await kv.getRaw(newKey);
+                if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
+                  // Копіюємо аватарку на новий ключ
+                  await kv.setRaw(newKey, oldAvatar);
+                  console.log(`[direct-reminders-webhook] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}"`);
+                } else {
+                  console.log(`[direct-reminders-webhook] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо`);
+                }
+              }
+            } catch (avatarErr) {
+              console.warn('[direct-reminders-webhook] ⚠️ Не вдалося перенести аватарку (не критично):', avatarErr);
+            }
+          }
+        } catch (avatarErr) {
+          console.warn('[direct-reminders-webhook] ⚠️ Помилка при спробі перенести аватарку (не критично):', avatarErr);
+        }
+        
+        // Оновлюємо клієнта з Altegio
         const mergedClientDb = await prisma.directClient.update({
-          where: { id: clientByInstagram.id },
+          where: { id: existingClient.id },
           data: mergeUpdateData,
         });
         
-        console.log(`[direct-reminders-webhook] Deleting duplicate client ${existingClient.id} (had missing_instagram_* username)`);
+        // Видаляємо клієнта з ManyChat (дублікат)
+        console.log(`[direct-reminders-webhook] Deleting duplicate ManyChat client ${clientByInstagram.id} (keeping Altegio client ${existingClient.id})`);
         await prisma.directClient.delete({
-          where: { id: existingClient.id },
+          where: { id: clientByInstagram.id },
         });
         
         // Конвертуємо в DirectClient формат - використовуємо дані з mergedClientDb (вже оновлені в БД)
         const updatedClient: any = {
-          ...clientByInstagram,
+          ...existingClient,
           instagramUsername: mergedClientDb.instagramUsername,
-          firstName: mergedClientDb.firstName || clientByInstagram.firstName,
-          lastName: mergedClientDb.lastName || clientByInstagram.lastName,
+          firstName: mergedClientDb.firstName || existingClient.firstName,
+          lastName: mergedClientDb.lastName || existingClient.lastName,
+          phone: mergedClientDb.phone || existingClient.phone, // Телефон з Altegio
           state: mergedClientDb.state as any,
-          altegioClientId: mergedClientDb.altegioClientId || undefined,
+          altegioClientId: mergedClientDb.altegioClientId || existingClient.altegioClientId,
           firstContactDate: mergedClientDb.firstContactDate.toISOString(),
           createdAt: mergedClientDb.createdAt.toISOString(),
           updatedAt: mergedClientDb.updatedAt.toISOString(),
@@ -293,10 +328,11 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           lastMessageAt: mergedClientDb.lastMessageAt?.toISOString() || undefined,
         };
         
-        console.log(`[direct-reminders-webhook] ✅ Merged clients BEFORE update: kept ${clientByInstagram.id}, deleted ${existingClient.id}`);
+        console.log(`[direct-reminders-webhook] ✅ Merged clients BEFORE update: kept Altegio client ${existingClient.id}, deleted ManyChat client ${clientByInstagram.id}`);
+        console.log(`[direct-reminders-webhook] 📊 Final client data: name="${updatedClient.firstName} ${updatedClient.lastName}", phone="${updatedClient.phone || 'not set'}", instagram="${updatedClient.instagramUsername}"`);
         
         // Якщо імʼя плейсхолдерне ({{full_name}}) — підтягуємо з records:log
-        await tryFixClientNameFromRecordsLog(altegioClientId, clientByInstagram.id);
+        await tryFixClientNameFromRecordsLog(altegioClientId, existingClient.id);
 
         // Відправляємо успішне повідомлення
         await sendMessage(
@@ -336,63 +372,93 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
       const clientByInstagram = await getDirectClientByInstagram(normalized);
       
       if (clientByInstagram && clientByInstagram.id !== existingClient.id) {
-        console.log(`[direct-reminders-webhook] ⚠️ Found existing client ${clientByInstagram.id} with Instagram "${normalized}", merging...`);
+        console.log(`[direct-reminders-webhook] ⚠️ Found existing client ${clientByInstagram.id} with Instagram "${normalized}", merging (fallback)...`);
+        console.log(`[direct-reminders-webhook] 🔄 MERGE STRATEGY (fallback): Keeping Altegio client ${existingClient.id}, deleting ManyChat client ${clientByInstagram.id}`);
         
         try {
-          // Оновлюємо існуючого клієнта з правильним Instagram (додаємо Altegio ID, якщо його немає)
+          // Оновлюємо клієнта з Altegio: додаємо Instagram username з ManyChat клієнта
           const mergeUpdateData: any = {
+            instagramUsername: normalized, // Переносимо Instagram з ManyChat клієнта
             updatedAt: new Date(),
           };
           
-          const wasAddingAltegioId = !clientByInstagram.altegioClientId && altegioClientId;
-          if (wasAddingAltegioId) {
-            mergeUpdateData.altegioClientId = altegioClientId;
-            console.log(`[direct-reminders-webhook] Adding Altegio ID ${altegioClientId} to existing client ${clientByInstagram.id}`);
-          }
+          // Ім'я та прізвище залишаємо з Altegio (existingClient) - вони вже правильні
+          // Телефон також залишаємо з Altegio (existingClient) - він вже правильний
           
-          // Переносимо firstName/lastName з клієнта з Altegio (existingClient) до клієнта з Manychat (clientByInstagram)
-          // Завжди віддаємо перевагу даним з Altegio
-          if (existingClient.firstName && existingClient.firstName.trim() !== '') {
-            mergeUpdateData.firstName = existingClient.firstName;
-            if (existingClient.firstName !== clientByInstagram.firstName) {
-              console.log(`[direct-reminders-webhook] Merging (fallback): overriding firstName with Altegio value "${existingClient.firstName}" (was: "${clientByInstagram.firstName || 'empty'}")`);
-            }
-          }
-          if (existingClient.lastName && existingClient.lastName.trim() !== '') {
-            mergeUpdateData.lastName = existingClient.lastName;
-            if (existingClient.lastName !== clientByInstagram.lastName) {
-              console.log(`[direct-reminders-webhook] Merging (fallback): overriding lastName with Altegio value "${existingClient.lastName}" (was: "${clientByInstagram.lastName || 'empty'}")`);
-            }
-          }
-          
-          const hadMissingInstagram = clientByInstagram.instagramUsername?.startsWith('missing_instagram_');
+          // Оновлюємо стан на 'client', якщо клієнт мав missing_instagram_*
+          const hadMissingInstagram = existingClient.instagramUsername?.startsWith('missing_instagram_') || 
+                                      existingClient.instagramUsername?.startsWith('no_instagram_');
           if (hadMissingInstagram) {
             mergeUpdateData.state = 'client';
-            console.log(`[direct-reminders-webhook] Updating state to 'client' for merged client ${clientByInstagram.id} (had missing_instagram_*, now has real Instagram)`);
-          } else if (clientByInstagram.state === 'lead' && wasAddingAltegioId) {
-            mergeUpdateData.state = 'client';
-            console.log(`[direct-reminders-webhook] Updating state from 'lead' to 'client' for merged client ${clientByInstagram.id} (added Altegio ID)`);
+            console.log(`[direct-reminders-webhook] Updating state to 'client' for Altegio client ${existingClient.id} (had missing_instagram_*, now has real Instagram)`);
           }
           
+          // Переносимо історію повідомлень та станів з ManyChat клієнта до Altegio клієнта (якщо потрібно)
+          try {
+            const { moveClientHistory } = await import('@/lib/direct-store');
+            const moved = await moveClientHistory(clientByInstagram.id, existingClient.id);
+            if (moved.movedMessages > 0 || moved.movedStateLogs > 0) {
+              console.log(`[direct-reminders-webhook] ✅ Перенесено історію з ${clientByInstagram.id} → ${existingClient.id}: messages=${moved.movedMessages}, stateLogs=${moved.movedStateLogs}`);
+            }
+          } catch (historyErr) {
+            console.warn('[direct-reminders-webhook] ⚠️ Не вдалося перенести історію повідомлень/станів (не критично):', historyErr);
+          }
+          
+          // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
+          try {
+            const { kv } = await import('@/lib/kv');
+            const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+            const oldUsername = clientByInstagram.instagramUsername;
+            const newUsername = normalized;
+            
+            if (oldUsername && oldUsername !== newUsername && 
+                !oldUsername.startsWith('missing_instagram_') && 
+                !oldUsername.startsWith('no_instagram_')) {
+              const oldKey = directAvatarKey(oldUsername);
+              const newKey = directAvatarKey(newUsername);
+              
+              try {
+                const oldAvatar = await kv.getRaw(oldKey);
+                if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
+                  // Перевіряємо, чи вже є аватарка для нового username
+                  const existingNewAvatar = await kv.getRaw(newKey);
+                  if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
+                    // Копіюємо аватарку на новий ключ
+                    await kv.setRaw(newKey, oldAvatar);
+                    console.log(`[direct-reminders-webhook] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}" (fallback)`);
+                  } else {
+                    console.log(`[direct-reminders-webhook] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо (fallback)`);
+                  }
+                }
+              } catch (avatarErr) {
+                console.warn('[direct-reminders-webhook] ⚠️ Не вдалося перенести аватарку (не критично, fallback):', avatarErr);
+              }
+            }
+          } catch (avatarErr) {
+            console.warn('[direct-reminders-webhook] ⚠️ Помилка при спробі перенести аватарку (не критично, fallback):', avatarErr);
+          }
+          
+          // Оновлюємо клієнта з Altegio
           const mergedClientDb = await prisma.directClient.update({
-            where: { id: clientByInstagram.id },
+            where: { id: existingClient.id },
             data: mergeUpdateData,
           });
           
-          console.log(`[direct-reminders-webhook] Deleting duplicate client ${existingClient.id} (had missing_instagram_* username)`);
+          // Видаляємо клієнта з ManyChat (дублікат)
+          console.log(`[direct-reminders-webhook] Deleting duplicate ManyChat client ${clientByInstagram.id} (keeping Altegio client ${existingClient.id})`);
           await prisma.directClient.delete({
-            where: { id: existingClient.id },
+            where: { id: clientByInstagram.id },
           });
           
           // Конвертуємо в DirectClient формат - використовуємо дані з mergedClientDb (вже оновлені в БД)
           updatedClient = {
-            ...clientByInstagram,
-            ...mergedClientDb,
+            ...existingClient,
             instagramUsername: mergedClientDb.instagramUsername,
-            firstName: mergedClientDb.firstName || clientByInstagram.firstName,
-            lastName: mergedClientDb.lastName || clientByInstagram.lastName,
+            firstName: mergedClientDb.firstName || existingClient.firstName,
+            lastName: mergedClientDb.lastName || existingClient.lastName,
+            phone: mergedClientDb.phone || existingClient.phone, // Телефон з Altegio
             state: mergedClientDb.state as any,
-            altegioClientId: mergedClientDb.altegioClientId || undefined,
+            altegioClientId: mergedClientDb.altegioClientId || existingClient.altegioClientId,
             firstContactDate: mergedClientDb.firstContactDate.toISOString(),
             createdAt: mergedClientDb.createdAt.toISOString(),
             updatedAt: mergedClientDb.updatedAt.toISOString(),
@@ -402,7 +468,8 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
             lastMessageAt: mergedClientDb.lastMessageAt?.toISOString() || undefined,
           } as any;
           
-          console.log(`[direct-reminders-webhook] ✅ Merged clients: kept ${clientByInstagram.id}, deleted ${existingClient.id}`);
+          console.log(`[direct-reminders-webhook] ✅ Merged clients (fallback): kept Altegio client ${existingClient.id}, deleted ManyChat client ${clientByInstagram.id}`);
+          console.log(`[direct-reminders-webhook] 📊 Final client data: name="${updatedClient.firstName} ${updatedClient.lastName}", phone="${updatedClient.phone || 'not set'}", instagram="${updatedClient.instagramUsername}"`);
         } catch (mergeErr) {
           console.error(`[direct-reminders-webhook] ❌ Failed to merge clients:`, mergeErr);
         }
