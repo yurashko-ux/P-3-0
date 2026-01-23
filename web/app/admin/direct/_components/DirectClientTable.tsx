@@ -1885,7 +1885,11 @@ export function DirectClientTable({
                               return {
                                 key: 'paid-service-generic',
                                 node: (
-                                  <span title="Платна послуга (тип невідомий)" className="text-[24px] leading-none">
+                                  <span 
+                                    title="Платна послуга (тип невідомий)" 
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                    style={{ transform: 'rotate(180deg)' }}
+                                  >
                                     ✂️
                                   </span>
                                 ),
@@ -1912,7 +1916,19 @@ export function DirectClientTable({
                           };
 
                           const picked = pickServiceIcon();
-                          if (!picked) return '';
+                          if (!picked) {
+                            // Fallback: якщо немає активних записів, показуємо client.state
+                            if (!paidIsActive && !consultIsActive && client.state) {
+                              return (
+                                <div className="flex items-center justify-end">
+                                  <span className="inline-flex items-center justify-center">
+                                    <StateIcon state={client.state} size={28} />
+                                  </span>
+                                </div>
+                              );
+                            }
+                            return '';
+                          }
                           return (
                             <div className="flex items-center justify-end">
                               <span className="inline-flex items-center justify-center">{picked.node}</span>
