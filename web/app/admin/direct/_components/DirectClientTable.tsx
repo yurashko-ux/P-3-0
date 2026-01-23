@@ -1329,7 +1329,35 @@ export function DirectClientTable({
                     </td>
                   </tr>
                 ) : (
-                  uniqueClients.map((client, index) => {
+                  (() => {
+                    // Визначаємо індекс першого сьогоднішнього клієнта (по хронології - найстаріший сьогодні)
+                    const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
+                      timeZone: 'Europe/Kyiv',
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                    });
+                    const todayKyivDayRow = kyivDayFmtRow.format(new Date());
+                    const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
+                    let firstTodayIndex = -1;
+                    let oldestTodayTime = Infinity;
+                    
+                    // Знаходимо найстаріший сьогоднішній клієнт (найменший час)
+                    uniqueClients.forEach((client, idx) => {
+                      const clientDate = client[dateField];
+                      if (clientDate) {
+                        const clientKyivDay = kyivDayFmtRow.format(new Date(clientDate));
+                        if (clientKyivDay === todayKyivDayRow) {
+                          const clientTime = new Date(clientDate).getTime();
+                          if (clientTime < oldestTodayTime) {
+                            oldestTodayTime = clientTime;
+                            firstTodayIndex = idx;
+                          }
+                        }
+                      }
+                    });
+
+                    return uniqueClients.map((client, index) => {
                     const activityKeys = client.lastActivityKeys ?? [];
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
@@ -1361,7 +1389,8 @@ export function DirectClientTable({
                     const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(client.updatedAt)) : '';
 
                     return (
-                      <tr key={client.id}>
+                      <>
+                        <tr key={client.id}>
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
@@ -2503,8 +2532,15 @@ export function DirectClientTable({
                         </div>
                       </td>
                       </tr>
+                      {index === firstTodayIndex && (
+                        <tr key={`separator-${client.id}`}>
+                          <td colSpan={13} className="border-t-2 border-gray-300 h-0 p-0"></td>
+                        </tr>
+                      )}
+                      </>
                     );
-                  })
+                  });
+                  })()
                 )}
               </tbody>
             </table>
