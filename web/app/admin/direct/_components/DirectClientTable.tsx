@@ -1390,7 +1390,7 @@ export function DirectClientTable({
 
                     return (
                       <>
-                        <tr key={client.id}>
+                        <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
                       <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
@@ -2532,11 +2532,6 @@ export function DirectClientTable({
                         </div>
                       </td>
                       </tr>
-                      {index === firstTodayIndex && (
-                        <tr key={`separator-${client.id}`} className="-mt-px">
-                          <td colSpan={13} className="border-t-[3px] border-gray-300 h-0 p-0 border-b-0"></td>
-                        </tr>
-                      )}
                       </>
                     );
                   });
