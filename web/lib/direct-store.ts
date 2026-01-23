@@ -488,7 +488,7 @@ export async function updateInstagramForAltegioClient(
       
       // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
       try {
-        const { kv } = await import('@/lib/kv');
+        const { kvRead, kvWrite } = await import('@/lib/kv');
         const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
         const oldUsername = existingByInstagram.instagramUsername;
         const newUsername = normalized;
@@ -500,13 +500,13 @@ export async function updateInstagramForAltegioClient(
           const newKey = directAvatarKey(newUsername);
           
           try {
-            const oldAvatar = await kv.getRaw(oldKey);
+            const oldAvatar = await kvRead.getRaw(oldKey);
             if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
               // Перевіряємо, чи вже є аватарка для нового username
-              const existingNewAvatar = await kv.getRaw(newKey);
+              const existingNewAvatar = await kvRead.getRaw(newKey);
               if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
                 // Копіюємо аватарку на новий ключ
-                await kv.setRaw(newKey, oldAvatar);
+                await kvWrite.setRaw(newKey, oldAvatar);
                 console.log(`[direct-store] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}"`);
               } else {
                 console.log(`[direct-store] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо`);
@@ -637,7 +637,7 @@ export async function updateInstagramForAltegioClient(
             
             // Переносимо аватарку з ManyChat клієнта до Altegio клієнта (якщо вона є)
             try {
-              const { kv } = await import('@/lib/kv');
+              const { kvRead, kvWrite } = await import('@/lib/kv');
               const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
               const oldUsername = existingByInstagramRetry.instagramUsername;
               const newUsername = normalized;
@@ -649,13 +649,13 @@ export async function updateInstagramForAltegioClient(
                 const newKey = directAvatarKey(newUsername);
                 
                 try {
-                  const oldAvatar = await kv.getRaw(oldKey);
+                  const oldAvatar = await kvRead.getRaw(oldKey);
                   if (oldAvatar && typeof oldAvatar === 'string' && /^https?:\/\//i.test(oldAvatar.trim())) {
                     // Перевіряємо, чи вже є аватарка для нового username
-                    const existingNewAvatar = await kv.getRaw(newKey);
+                    const existingNewAvatar = await kvRead.getRaw(newKey);
                     if (!existingNewAvatar || typeof existingNewAvatar !== 'string' || !/^https?:\/\//i.test(existingNewAvatar.trim())) {
                       // Копіюємо аватарку на новий ключ
-                      await kv.setRaw(newKey, oldAvatar);
+                      await kvWrite.setRaw(newKey, oldAvatar);
                       console.log(`[direct-store] ✅ Перенесено аватарку з "${oldUsername}" → "${newUsername}" (fallback)`);
                     } else {
                       console.log(`[direct-store] ℹ️ Аватарка для "${newUsername}" вже існує, не перезаписуємо (fallback)`);
