@@ -1459,13 +1459,26 @@ export function DirectClientTable({
                               const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
                               // Формуємо tooltip з інформацією про трігер (тільки для активного режиму)
                               let tooltipText = `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`;
-                              if (isActiveMode && client.lastActivityKeys && client.lastActivityKeys.length > 0) {
-                                const triggerDesc = getTriggerDescription(client.lastActivityKeys);
-                                if (triggerDesc) {
-                                  const activityDate = formatActivityDate(client.lastActivityAt);
-                                  tooltipText += `\n\nТрігер: ${triggerDesc}`;
-                                  if (activityDate) {
-                                    tooltipText += `\nДата: ${activityDate}`;
+                              if (isActiveMode) {
+                                // Перевіряємо, чи є lastActivityKeys
+                                if (client.lastActivityKeys && Array.isArray(client.lastActivityKeys) && client.lastActivityKeys.length > 0) {
+                                  const triggerDesc = getTriggerDescription(client.lastActivityKeys);
+                                  if (triggerDesc) {
+                                    const activityDate = formatActivityDate(client.lastActivityAt);
+                                    tooltipText += `\n\nТрігер: ${triggerDesc}`;
+                                    if (activityDate) {
+                                      tooltipText += `\nДата: ${activityDate}`;
+                                    }
+                                  } else {
+                                    // Якщо getTriggerDescription повернув порожній рядок (всі ключі були майстрами/станом)
+                                    tooltipText += `\n\nТрігер: не визначено (ключі: ${client.lastActivityKeys.join(', ')})`;
+                                  }
+                                } else {
+                                  // Якщо lastActivityKeys відсутні або порожні - показуємо інформацію про оновлення
+                                  if (client.updatedAt) {
+                                    const updatedDate = formatActivityDate(client.updatedAt);
+                                    tooltipText += `\n\nОновлено: ${updatedDate}`;
+                                    tooltipText += `\n(Трігер не встановлено)`;
                                   }
                                 }
                               }
@@ -1544,13 +1557,26 @@ export function DirectClientTable({
                             const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
                             // Формуємо tooltip з інформацією про трігер (тільки для активного режиму)
                             let tooltipText = `${typeBadgeTitleWithId}\nВідкрити в Altegio (Клієнтська база)`;
-                            if (isActiveMode && client.lastActivityKeys && client.lastActivityKeys.length > 0) {
-                              const triggerDesc = getTriggerDescription(client.lastActivityKeys);
-                              if (triggerDesc) {
-                                const activityDate = formatActivityDate(client.lastActivityAt);
-                                tooltipText += `\n\nТрігер: ${triggerDesc}`;
-                                if (activityDate) {
-                                  tooltipText += `\nДата: ${activityDate}`;
+                            if (isActiveMode) {
+                              // Перевіряємо, чи є lastActivityKeys
+                              if (client.lastActivityKeys && Array.isArray(client.lastActivityKeys) && client.lastActivityKeys.length > 0) {
+                                const triggerDesc = getTriggerDescription(client.lastActivityKeys);
+                                if (triggerDesc) {
+                                  const activityDate = formatActivityDate(client.lastActivityAt);
+                                  tooltipText += `\n\nТрігер: ${triggerDesc}`;
+                                  if (activityDate) {
+                                    tooltipText += `\nДата: ${activityDate}`;
+                                  }
+                                } else {
+                                  // Якщо getTriggerDescription повернув порожній рядок (всі ключі були майстрами/станом)
+                                  tooltipText += `\n\nТрігер: не визначено (ключі: ${client.lastActivityKeys.join(', ')})`;
+                                }
+                              } else {
+                                // Якщо lastActivityKeys відсутні або порожні - показуємо інформацію про оновлення
+                                if (client.updatedAt) {
+                                  const updatedDate = formatActivityDate(client.updatedAt);
+                                  tooltipText += `\n\nОновлено: ${updatedDate}`;
+                                  tooltipText += `\n(Трігер не встановлено)`;
                                 }
                               }
                             }
