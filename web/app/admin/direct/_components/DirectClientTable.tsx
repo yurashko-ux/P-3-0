@@ -2533,8 +2533,8 @@ export function DirectClientTable({
                       </td>
                       </tr>
                       {index === firstTodayIndex && (
-                        <tr key={`separator-${client.id}`}>
-                          <td colSpan={13} className="border-t-2 border-gray-300 h-0 p-0"></td>
+                        <tr key={`separator-${client.id}`} className="-mt-px">
+                          <td colSpan={13} className="border-t-[3px] border-gray-300 h-0 p-0 border-b-0"></td>
                         </tr>
                       )}
                       </>
