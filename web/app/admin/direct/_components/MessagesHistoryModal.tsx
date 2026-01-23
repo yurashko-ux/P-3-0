@@ -786,7 +786,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
                         <div key={h.id} className="text-xs p-2 rounded border">
                           <div className="text-gray-600">{formatDate(h.changedAt)}</div>
                           <div className="mt-1">
-                            <span className="opacity-70">{fromName}</span> → <span className="font-semibold">{toName}</span>
+                            <span className="opacity-70">{toName}</span> → <span className="font-semibold">{fromName}</span>
                           </div>
                           {h.changedBy ? (
                             <div className="mt-1 text-gray-500">Хто: {h.changedBy}</div>
