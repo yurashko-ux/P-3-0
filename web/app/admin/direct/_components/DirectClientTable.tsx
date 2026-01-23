@@ -1684,6 +1684,7 @@ export function DirectClientTable({
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
                           const days = hasDays ? (raw as number) : null;
+                          const lastVisitAt = (client as any).lastVisitAt;
 
                           const cls = (() => {
                             if (!hasDays) return "bg-gray-200 text-gray-900";
@@ -1692,10 +1693,22 @@ export function DirectClientTable({
                             return "bg-red-200 text-red-900";
                           })();
 
+                          // Формуємо tooltip з датою останнього візиту
+                          let tooltipText = "";
+                          if (hasDays) {
+                            tooltipText = `Днів з останнього візиту: ${days}`;
+                            if (lastVisitAt) {
+                              const formattedDate = formatDate(lastVisitAt);
+                              tooltipText += `\nДата останнього візиту: ${formattedDate}`;
+                            }
+                          } else {
+                            tooltipText = "Днів з останнього візиту: -";
+                          }
+
                           return (
                             <span
                               className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
-                              title={hasDays ? `Днів з останнього візиту: ${days}` : "Днів з останнього візиту: -"}
+                              title={tooltipText}
                             >
                               {hasDays ? days : "-"}
                             </span>
