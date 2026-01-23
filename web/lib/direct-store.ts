@@ -816,8 +816,6 @@ export async function saveDirectClient(
       // ВИМКНЕНО: Майстер та state не переміщають клієнта на верх таблиці
       // Ключі майстрів та state прибрано з computeActivityKeys
 
-      if (keys.length === 0) keys.push('other');
-
       return keys;
     };
 

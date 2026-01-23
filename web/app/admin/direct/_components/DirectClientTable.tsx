@@ -394,7 +394,6 @@ export function DirectClientTable({
       consultationBookingDate: 'Запис на консультацію',
       consultationAttended: 'Відвідування консультації',
       consultationCancelled: 'Скасування консультації',
-      other: 'Інші зміни',
     };
     
     // Пріоритети трігерів (вищий номер = вищий пріоритет)
@@ -407,7 +406,6 @@ export function DirectClientTable({
       paidServiceCancelled: 5,
       consultationCancelled: 5,
       paidServiceTotalCost: 4,
-      other: 1,
     };
     
     // Фільтруємо тільки відомі ключі та знаходимо найважливіший
@@ -1378,7 +1376,6 @@ export function DirectClientTable({
                       hasActivity('consultationAttended') || hasActivity('consultationCancelled')
                     );
                     const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
-                    const activityIsOtherOnly = activityKeys.length === 1 && activityKeys[0] === 'other';
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
                       year: 'numeric',
@@ -1498,18 +1495,10 @@ export function DirectClientTable({
                                     if (activityDate) {
                                       tooltipText += `\nДата: ${activityDate}`;
                                     }
-                                  } else {
-                                    // Якщо getTriggerDescription повернув порожній рядок (всі ключі були майстрами/станом)
-                                    tooltipText += `\n\nТрігер: не визначено (ключі: ${client.lastActivityKeys.join(', ')})`;
                                   }
-                                } else {
-                                  // Якщо lastActivityKeys відсутні або порожні - показуємо інформацію про оновлення
-                                  if (client.updatedAt) {
-                                    const updatedDate = formatActivityDate(client.updatedAt);
-                                    tooltipText += `\n\nОновлено: ${updatedDate}`;
-                                    tooltipText += `\n(Трігер не встановлено)`;
-                                  }
+                                  // Якщо getTriggerDescription повернув порожній рядок - нічого не показуємо
                                 }
+                                // Якщо lastActivityKeys відсутні або порожні - нічого не показуємо
                               }
                               const typeBadge = isClientType ? (
                                 <a
@@ -1596,18 +1585,10 @@ export function DirectClientTable({
                                   if (activityDate) {
                                     tooltipText += `\nДата: ${activityDate}`;
                                   }
-                                } else {
-                                  // Якщо getTriggerDescription повернув порожній рядок (всі ключі були майстрами/станом)
-                                  tooltipText += `\n\nТрігер: не визначено (ключі: ${client.lastActivityKeys.join(', ')})`;
                                 }
-                              } else {
-                                // Якщо lastActivityKeys відсутні або порожні - показуємо інформацію про оновлення
-                                if (client.updatedAt) {
-                                  const updatedDate = formatActivityDate(client.updatedAt);
-                                  tooltipText += `\n\nОновлено: ${updatedDate}`;
-                                  tooltipText += `\n(Трігер не встановлено)`;
-                                }
+                                // Якщо getTriggerDescription повернув порожній рядок - нічого не показуємо
                               }
+                              // Якщо lastActivityKeys відсутні або порожні - нічого не показуємо
                             }
                             const typeBadge = isClientType ? (
                               <a
@@ -2082,10 +2063,9 @@ export function DirectClientTable({
                               client.consultationAttended === true ||
                               client.consultationAttended === false
                           );
-                          // Для ✅/❌/🚫: підсвічуємо тільки якщо змінилась присутність (або fallback "other"+today).
+                          // Для ✅/❌/🚫: підсвічуємо тільки якщо змінилась присутність.
                           const showConsultAttendanceDotEffective = Boolean(
-                            consultAttendanceChanged ||
-                              (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && consultHasAttendanceSignal)
+                            consultAttendanceChanged
                           );
                               // debug logs removed
 
@@ -2247,7 +2227,7 @@ export function DirectClientTable({
                             
                             const paidDotTitle = 'Тригер: змінився запис';
                             // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
-                            // Для attendance-іконки крапочку ставимо лише коли змінилась присутність/скасування (або fallback "other"+today для ❌).
+                            // Для attendance-іконки крапочку ставимо лише коли змінилась присутність/скасування.
                             const showDotOnPaidAttendance = Boolean(attendanceIcon && paidAttendanceChanged);
                             const showDotOnPaidPending = Boolean(!attendanceIcon && pendingIcon && paidAttendanceChanged);
                             const showDotOnPaidRebook = Boolean(
@@ -2262,8 +2242,7 @@ export function DirectClientTable({
                                 client.paidServiceAttended === false
                             );
                             const showPaidAttendanceDotEffective = Boolean(
-                              paidAttendanceChanged ||
-                                (activityIsOtherOnly && updatedKyivDayRow === todayKyivDayRow && paidHasAttendanceSignal)
+                              paidAttendanceChanged
                             );
                             const showPaidCostDot = Boolean(paidCostChanged);
 
