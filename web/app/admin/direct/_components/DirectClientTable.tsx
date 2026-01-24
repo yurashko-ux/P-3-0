@@ -257,7 +257,7 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function SpendCircleBadge({ size = 16, number }: { size?: number; number: number }) {
+function SpendCircleBadge({ size = 18, number }: { size?: number; number: number }) {
   return (
     <svg
       width={size}
