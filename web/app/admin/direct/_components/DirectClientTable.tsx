@@ -274,7 +274,7 @@ function SpendCircleBadge({ size = 18, number }: { size?: number; number: number
         y="12.5"
         textAnchor="middle"
         dominantBaseline="middle"
-        fontSize="8"
+        fontSize="12"
         fontWeight="700"
         fill="#111827"
       >
