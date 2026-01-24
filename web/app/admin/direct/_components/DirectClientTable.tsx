@@ -284,8 +284,15 @@ function SpendCircleBadge({ size = 20, number }: { size?: number; number: number
   );
 }
 
-function SpendStarBadge({ size = 18, number }: { size?: number; number?: number }) {
-  const fontSize = 12;
+function SpendStarBadge({
+  size = 18,
+  number,
+  fontSize = 12,
+}: {
+  size?: number;
+  number?: number;
+  fontSize?: number;
+}) {
   return (
     <svg
       width={size}
@@ -1576,6 +1583,7 @@ export function DirectClientTable({
                             const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
                             const spendStarRaw = Math.floor(spendValue / 100000);
                             const spendStarNumber = Math.min(9, Math.max(1, spendStarRaw));
+                            const spendShowStarNumber = spendValue > 200000;
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
@@ -1627,8 +1635,9 @@ export function DirectClientTable({
                                   <SpendMegaBadge />
                                 ) : spendShowStar ? (
                                   <SpendStarBadge
-                                    size={spendValue > 200000 ? 22 : 18}
-                                    number={spendStarNumber}
+                                    size={spendShowStarNumber ? 22 : 18}
+                                    number={spendShowStarNumber ? spendStarNumber : undefined}
+                                    fontSize={spendShowStarNumber ? 10 : 12}
                                   />
                                 ) : spendShowCircle ? (
                                   <SpendCircleBadge number={spendCircleNumber} />
@@ -1728,8 +1737,9 @@ export function DirectClientTable({
                                   <SpendMegaBadge />
                                 ) : spendShowStar ? (
                                   <SpendStarBadge
-                                    size={spendValue > 200000 ? 22 : 18}
-                                    number={spendStarNumber}
+                                    size={spendShowStarNumber ? 22 : 18}
+                                    number={spendShowStarNumber ? spendStarNumber : undefined}
+                                    fontSize={spendShowStarNumber ? 10 : 12}
                                   />
                                 ) : spendShowCircle ? (
                                   <SpendCircleBadge number={spendCircleNumber} />
