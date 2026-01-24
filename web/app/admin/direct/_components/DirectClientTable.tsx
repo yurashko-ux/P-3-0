@@ -257,7 +257,7 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function SpendStarBadge({ size = 18, number }: { size?: number; number?: number }) {
+function SpendStarBadge({ size = 22, number }: { size?: number; number?: number }) {
   const fontSize = Math.max(8, Math.round(size * 0.5));
   return (
     <svg
