@@ -257,6 +257,62 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+function SpendStarBadge({ size = 14, number }: { size?: number; number?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+      aria-label="Зірка за витрати"
+    >
+      <path
+        d="M10 1.5L12.7 7.2L18.8 7.6L14.1 11.5L15.6 17.8L10 14.5L4.4 17.8L5.9 11.5L1.2 7.6L7.3 7.2Z"
+        fill="#fbbf24"
+        stroke="#f59e0b"
+        strokeWidth="1.2"
+      />
+      {typeof number === 'number' ? (
+        <text
+          x="10"
+          y="11.5"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize="8"
+          fontWeight="700"
+          fill="#111827"
+        >
+          {number}
+        </text>
+      ) : null}
+    </svg>
+  );
+}
+
+function SpendMegaBadge({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+      aria-label="Бейдж за витрати понад 1 млн"
+    >
+      <polygon
+        points="12,2 22,9 19,22 5,22 2,9"
+        fill="#fbbf24"
+        stroke="#fbbf24"
+        strokeWidth="1.2"
+      />
+      <circle cx="12" cy="12.5" r="4.8" fill="#fbbf24" stroke="#fbbf24" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 function ClientBadgeIcon({ size = 14 }: { size?: number }) {
   return (
     <svg
@@ -1475,6 +1531,12 @@ export function DirectClientTable({
 
                             // Бейдж “Лід/Клієнт” має змінюватись автоматично, коли зʼявляється Altegio ID
                             const isClientType = Boolean(client.altegioClientId);
+                            const spendValue = typeof client.spent === "number" ? client.spent : 0;
+                            const spendShowStar = spendValue > 100000;
+                            const spendShowMega = spendValue > 1000000;
+                            const spendShowNumber = spendValue > 200000;
+                            const spendTierRaw = Math.floor(spendValue / 100000);
+                            const spendTierNumber = Math.min(9, Math.max(2, spendTierRaw));
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
@@ -1522,7 +1584,13 @@ export function DirectClientTable({
                                   title={tooltipText}
                                   aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
                                 >
+                                {spendShowMega ? (
+                                  <SpendMegaBadge />
+                                ) : spendShowStar ? (
+                                  <SpendStarBadge number={spendShowNumber ? spendTierNumber : undefined} />
+                                ) : (
                                   <ClientBadgeIcon />
+                                )}
                                 </a>
                               ) : (
                                 <a
@@ -1612,7 +1680,13 @@ export function DirectClientTable({
                                 title={tooltipText}
                                 aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
                               >
-                                <ClientBadgeIcon />
+                                {spendShowMega ? (
+                                  <SpendMegaBadge />
+                                ) : spendShowStar ? (
+                                  <SpendStarBadge number={spendShowNumber ? spendTierNumber : undefined} />
+                                ) : (
+                                  <ClientBadgeIcon />
+                                )}
                               </a>
                             ) : (
                               <a
