@@ -257,7 +257,7 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function SpendCircleBadge({ size = 20, number }: { size?: number; number: number }) {
+function SpendCircleBadge({ size = 16, number }: { size?: number; number: number }) {
   return (
     <svg
       width={size}
@@ -274,7 +274,7 @@ function SpendCircleBadge({ size = 20, number }: { size?: number; number: number
         y="12.5"
         textAnchor="middle"
         dominantBaseline="middle"
-        fontSize="12"
+        fontSize="8"
         fontWeight="700"
         fill="#111827"
       >
