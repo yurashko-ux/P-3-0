@@ -257,7 +257,8 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function SpendStarBadge({ size = 14, number }: { size?: number; number?: number }) {
+function SpendStarBadge({ size = 18, number }: { size?: number; number?: number }) {
+  const fontSize = Math.max(8, Math.round(size * 0.5));
   return (
     <svg
       width={size}
@@ -280,7 +281,7 @@ function SpendStarBadge({ size = 14, number }: { size?: number; number?: number 
           y="11.5"
           textAnchor="middle"
           dominantBaseline="middle"
-          fontSize="8"
+          fontSize={fontSize}
           fontWeight="700"
           fill="#111827"
         >
@@ -1531,7 +1532,16 @@ export function DirectClientTable({
 
                             // Бейдж “Лід/Клієнт” має змінюватись автоматично, коли зʼявляється Altegio ID
                             const isClientType = Boolean(client.altegioClientId);
-                            const spendValue = typeof client.spent === "number" ? client.spent : 0;
+                            const spendRaw = (client.spent ?? 0) as unknown;
+                            const spendValue = (() => {
+                              if (typeof spendRaw === "string") {
+                                const cleaned = spendRaw.replace(/\s+/g, "");
+                                const num = Number(cleaned);
+                                return Number.isFinite(num) ? num : 0;
+                              }
+                              const num = Number(spendRaw);
+                              return Number.isFinite(num) ? num : 0;
+                            })();
                             const spendShowStar = spendValue > 100000;
                             const spendShowMega = spendValue > 1000000;
                             const spendShowNumber = spendValue > 200000;
