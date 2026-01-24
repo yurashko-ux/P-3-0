@@ -894,6 +894,28 @@ export async function saveDirectClient(
           : new Date(data.firstContactDate),
         ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
       });
+      
+      // ВАЖЛИВО: гарантуємо збереження altegioClientId при об'єднанні
+      // Якщо новий клієнт має altegioClientId, а існуючий не має - встановлюємо його
+      // Якщо обидва мають різні - використовуємо той, що в новому клієнті (з Altegio)
+      if (data.altegioClientId && !existingByUsername.altegioClientId) {
+        updateData.altegioClientId = data.altegioClientId;
+        console.log(`[direct-store] ✅ Setting altegioClientId ${data.altegioClientId} for merged client ${existingByUsername.id}`);
+      } else if (data.altegioClientId && existingByUsername.altegioClientId && data.altegioClientId !== existingByUsername.altegioClientId) {
+        // Якщо обидва мають різні altegioClientId - використовуємо той, що в новому клієнті (з Altegio)
+        updateData.altegioClientId = data.altegioClientId;
+        console.log(`[direct-store] ⚠️ Replacing altegioClientId ${existingByUsername.altegioClientId} with ${data.altegioClientId} for merged client ${existingByUsername.id}`);
+      }
+      
+      // Детальне логування для діагностики
+      console.log(`[direct-store] 🔍 Merge details:`, {
+        existingId: existingByUsername.id,
+        existingAltegioId: existingByUsername.altegioClientId,
+        newAltegioId: data.altegioClientId,
+        willSetAltegioId: data.altegioClientId && !existingByUsername.altegioClientId,
+        finalAltegioId: updateData.altegioClientId,
+      });
+      
       if (touchUpdatedAt) {
         updateData.lastActivityAt = new Date();
         updateData.lastActivityKeys = activityKeys;
