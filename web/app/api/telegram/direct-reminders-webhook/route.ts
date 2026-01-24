@@ -130,22 +130,111 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     const { normalizeInstagram } = await import('@/lib/normalize');
     
     // Спочатку перевіряємо, чи існує клієнт з таким Altegio ID
-    const existingClient = await getDirectClientByAltegioId(altegioClientId);
+    let existingClient = await getDirectClientByAltegioId(altegioClientId);
     console.log(`[direct-reminders-webhook] 🔍 Client lookup by Altegio ID ${altegioClientId}:`, existingClient ? {
       id: existingClient.id,
       instagramUsername: existingClient.instagramUsername,
       state: existingClient.state,
     } : 'NOT FOUND');
     
+    // Якщо клієнт не знайдений, спробуємо створити його з Altegio
     if (!existingClient) {
+      console.log(`[direct-reminders-webhook] 🔄 Client not found, attempting to create from Altegio...`);
       const botToken = getDirectRemindersBotToken();
-      await sendMessage(
-        chatId,
-        `❌ Клієнт з Altegio ID ${altegioClientId} не знайдено в базі даних.\n\nМожливо, клієнт ще не був синхронізований з Altegio. Спробуйте пізніше або перевірте, чи правильно вказано Altegio ID.`,
-        {},
-        botToken
-      );
-      return;
+      
+      try {
+        const { getClient } = await import('@/lib/altegio/clients');
+        const { getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
+        const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+        const companyId = parseInt(companyIdStr, 10);
+        
+        if (!companyId || Number.isNaN(companyId)) {
+          await sendMessage(
+            chatId,
+            `❌ Клієнт з Altegio ID ${altegioClientId} не знайдено в базі даних.\n\nПомилка: ALTEGIO_COMPANY_ID не налаштовано.`,
+            {},
+            botToken
+          );
+          return;
+        }
+        
+        // Отримуємо дані клієнта з Altegio
+        const altegioClient = await getClient(companyId, altegioClientId);
+        if (!altegioClient) {
+          await sendMessage(
+            chatId,
+            `❌ Клієнт з Altegio ID ${altegioClientId} не знайдено в Altegio.\n\nПеревірте, чи правильно вказано Altegio ID.`,
+            {},
+            botToken
+          );
+          return;
+        }
+        
+        // Витягуємо дані з Altegio
+        const name = (altegioClient as any)?.name || '';
+        const phone = (altegioClient as any)?.phone || null;
+        const parts = name.split(/\s+/).filter(Boolean);
+        const firstName = parts[0] || '';
+        const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
+        
+        // Отримуємо статус за замовчуванням
+        const allStatuses = await getAllDirectStatuses();
+        const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
+        
+        if (!defaultStatus) {
+          await sendMessage(
+            chatId,
+            `❌ Помилка: не знайдено статус за замовчуванням. Зверніться до адміністратора.`,
+            {},
+            botToken
+          );
+          return;
+        }
+        
+        // Створюємо нового клієнта
+        const now = new Date().toISOString();
+        const newClient = {
+          id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          instagramUsername: `missing_instagram_${altegioClientId}`, // Тимчасовий, буде оновлено нижче
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
+          ...(phone && { phone }),
+          source: 'instagram' as const,
+          state: 'client' as const,
+          firstContactDate: now,
+          statusId: defaultStatus.id,
+          visitedSalon: false,
+          signedUpForPaidService: false,
+          altegioClientId: altegioClientId,
+          createdAt: now,
+          updatedAt: now,
+        };
+        
+        await saveDirectClient(newClient, 'telegram-instagram-update-auto-create', { altegioClientId });
+        console.log(`[direct-reminders-webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${altegioClientId}`);
+        
+        // Отримуємо створеного клієнта
+        existingClient = await getDirectClientByAltegioId(altegioClientId);
+        if (!existingClient) {
+          await sendMessage(
+            chatId,
+            `❌ Помилка: не вдалося створити клієнта. Спробуйте пізніше.`,
+            {},
+            botToken
+          );
+          return;
+        }
+      } catch (err) {
+        console.error(`[direct-reminders-webhook] ❌ Failed to create client from Altegio:`, err);
+        const botToken = getDirectRemindersBotToken();
+        await sendMessage(
+          chatId,
+          `❌ Клієнт з Altegio ID ${altegioClientId} не знайдено в базі даних.\n\nПомилка при створенні з Altegio: ${err instanceof Error ? err.message : String(err)}`,
+          {},
+          botToken
+        );
+        return;
+      }
     }
     
     // Перевіряємо, чи це відповідь "ні" (відсутній Instagram)
