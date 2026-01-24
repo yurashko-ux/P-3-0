@@ -1657,6 +1657,13 @@ export async function POST(req: NextRequest) {
                       await saveDirectClient(newClient);
                       console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event without Instagram (client ${client.id}, state: lead, masterId: ${masterId || 'none'})`);
                       
+                      // ВАЖЛИВО: після saveDirectClient клієнт може бути об'єднаний з іншим через instagramUsername
+                      // Перевіряємо, чи клієнт існує за altegioClientId перед відправкою повідомлення
+                      const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+                      const savedClient = await getDirectClientByAltegioId(altegioClientId);
+                      if (!savedClient) {
+                        console.warn(`[altegio/webhook] ⚠️ Client with Altegio ID ${altegioClientId} not found after saveDirectClient - may have been merged or deleted. Skipping notification.`);
+                      } else {
                   // Відправляємо повідомлення тільки якщо Instagram не був явно встановлений в "no/ні"
                   // і клієнт НЕ позначений як no_instagram_* (явно без Instagram).
                   const isSavedNoInstagram = normalizedInstagram?.startsWith('no_instagram_');
@@ -1773,14 +1780,22 @@ export async function POST(req: NextRequest) {
                             }
                             
                             // Оновлюємо клієнта, встановлюючи telegramNotificationSent = true
-                            if (notificationSent && newClient.id) {
+                            // ВАЖЛИВО: після saveDirectClient клієнт може бути об'єднаний з іншим через instagramUsername
+                            // Тому шукаємо клієнта за altegioClientId, а не використовуємо newClient.id
+                            if (notificationSent && altegioClientId) {
                               try {
                                 const { prisma } = await import('@/lib/prisma');
-                                await prisma.directClient.update({
-                                  where: { id: newClient.id },
-                                  data: { telegramNotificationSent: true },
-                                });
-                                console.log(`[altegio/webhook] ✅ Updated telegramNotificationSent for client ${newClient.id}`);
+                                const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+                                const directClient = await getDirectClientByAltegioId(altegioClientId);
+                                if (directClient) {
+                                  await prisma.directClient.update({
+                                    where: { id: directClient.id },
+                                    data: { telegramNotificationSent: true },
+                                  });
+                                  console.log(`[altegio/webhook] ✅ Updated telegramNotificationSent for client ${directClient.id} (Altegio ID: ${altegioClientId})`);
+                                } else {
+                                  console.warn(`[altegio/webhook] ⚠️ Client with Altegio ID ${altegioClientId} not found after saveDirectClient - may have been merged or deleted`);
+                                }
                               } catch (updateErr) {
                                 console.error(`[altegio/webhook] ❌ Failed to update telegramNotificationSent:`, updateErr);
                               }
@@ -1792,6 +1807,7 @@ export async function POST(req: NextRequest) {
                       } else if (['no', 'ні'].includes((originalInstagram || '').toLowerCase().trim())) {
                         console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${client.id} from record event - Instagram explicitly set to \"no/ні\" (клієнт не має Instagram акаунту)`);
                       }
+                      } // Закриваємо блок else для savedClient
                     }
                   }
                 }
@@ -2526,21 +2542,31 @@ export async function POST(req: NextRequest) {
             await saveDirectClient(newClient);
             console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState}, statusId: ${defaultStatus.id})`);
 
+            // ВАЖЛИВО: після saveDirectClient клієнт може бути об'єднаний з іншим через instagramUsername
+            // Перевіряємо, чи клієнт існує за altegioClientId перед подальшими операціями
+            const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
+            const savedClient = await getDirectClientByAltegioId(newClient.altegioClientId);
+            if (!savedClient) {
+              console.warn(`[altegio/webhook] ⚠️ Client with Altegio ID ${newClient.altegioClientId} not found after saveDirectClient - may have been merged or deleted. Skipping notification and further operations.`);
+              // Продовжуємо обробку вебхука, але не відправляємо повідомлення та не виконуємо подальші операції
+              // (клієнт може бути об'єднаний, але altegioClientId не встановлено в об'єднаному клієнті)
+            } else {
+
             // Якщо lastVisitAt відсутній, але є altegioClientId, спробуємо синхронізувати
-            if (!lastVisitAt && newClient.altegioClientId) {
+            if (!lastVisitAt && savedClient.altegioClientId) {
               try {
-                const syncedLastVisitAt = await syncLastVisitAtFromAltegio(newClient.altegioClientId);
+                const syncedLastVisitAt = await syncLastVisitAtFromAltegio(savedClient.altegioClientId);
                 if (syncedLastVisitAt) {
                   const clientWithLastVisit = {
-                    ...newClient,
+                    ...savedClient,
                     lastVisitAt: syncedLastVisitAt,
-                    updatedAt: newClient.updatedAt, // Не рухаємо updatedAt
+                    updatedAt: savedClient.updatedAt, // Не рухаємо updatedAt
                   };
-                  await saveDirectClient(clientWithLastVisit, 'altegio-webhook-sync-last-visit', { altegioClientId: newClient.altegioClientId }, { touchUpdatedAt: false, skipAltegioMetricsSync: true });
-                  console.log(`[altegio/webhook] ✅ Synced lastVisitAt for new client ${newClient.id}: ${syncedLastVisitAt}`);
+                  await saveDirectClient(clientWithLastVisit, 'altegio-webhook-sync-last-visit', { altegioClientId: savedClient.altegioClientId }, { touchUpdatedAt: false, skipAltegioMetricsSync: true });
+                  console.log(`[altegio/webhook] ✅ Synced lastVisitAt for client ${savedClient.id}: ${syncedLastVisitAt}`);
                 }
               } catch (err) {
-                console.warn(`[altegio/webhook] ⚠️ Не вдалося синхронізувати lastVisitAt для нового клієнта ${newClient.id} (не критично):`, err);
+                console.warn(`[altegio/webhook] ⚠️ Не вдалося синхронізувати lastVisitAt для клієнта ${savedClient.id} (не критично):`, err);
               }
             }
 
@@ -2697,6 +2723,7 @@ export async function POST(req: NextRequest) {
             } else if (isMissingInstagram && ['no', 'ні'].includes((instagram || '').toLowerCase().trim())) {
               console.log(`[altegio/webhook] ⏭️ Skipping notification for client ${clientId} - Instagram explicitly set to "no/ні" (клієнт не має Instagram акаунту)`);
             }
+            } // Закриваємо блок else для savedClient
           }
 
           return NextResponse.json({
