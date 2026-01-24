@@ -1637,7 +1637,7 @@ export function DirectClientTable({
                                   <SpendStarBadge
                                     size={spendShowStarNumber ? 22 : 18}
                                     number={spendShowStarNumber ? spendStarNumber : undefined}
-                                    fontSize={spendShowStarNumber ? 10 : 12}
+                                    fontSize={spendShowStarNumber ? 8 : 12}
                                   />
                                 ) : spendShowCircle ? (
                                   <SpendCircleBadge number={spendCircleNumber} />
@@ -1739,7 +1739,7 @@ export function DirectClientTable({
                                   <SpendStarBadge
                                     size={spendShowStarNumber ? 22 : 18}
                                     number={spendShowStarNumber ? spendStarNumber : undefined}
-                                    fontSize={spendShowStarNumber ? 10 : 12}
+                                    fontSize={spendShowStarNumber ? 8 : 12}
                                   />
                                 ) : spendShowCircle ? (
                                   <SpendCircleBadge number={spendCircleNumber} />
