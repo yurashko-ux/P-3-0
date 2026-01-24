@@ -1568,6 +1568,8 @@ export function DirectClientTable({
 
                             // Бейдж “Лід/Клієнт” має змінюватись автоматично, коли зʼявляється Altegio ID
                             const isClientType = Boolean(client.altegioClientId);
+                            // Динамічне обчислення spend з колонки "Продажі" (client.spent)
+                            // Цифри в бейджах оновлюються автоматично при зміні spend
                             const spendRaw = (client.spent ?? 0) as unknown;
                             const spendValue = (() => {
                               if (typeof spendRaw === "string") {
@@ -1578,13 +1580,16 @@ export function DirectClientTable({
                               const num = Number(spendRaw);
                               return Number.isFinite(num) ? num : 0;
                             })();
+                            // Умови відображення бейджів
                             const spendShowMega = spendValue > 1000000;
                             const spendShowStar = spendValue >= 100000;
                             const spendShowCircleTen = spendValue >= 20000 && spendValue < 100000;
                             const spendShowCircleOne = spendValue >= 10000 && spendValue < 20000;
                             const spendShowCircleEmpty = spendValue < 10000;
+                            // Динамічне обчислення цифр для кружечків (десятки тисяч: 20k-90k)
                             const spendCircleRaw = Math.floor(spendValue / 10000);
                             const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
+                            // Динамічне обчислення цифр для зірок (сотні тисяч: 100k-900k)
                             const spendStarRaw = Math.floor(spendValue / 100000);
                             const spendStarNumber = Math.min(9, Math.max(1, spendStarRaw));
                             const spendShowStarNumber = spendValue > 200000;
