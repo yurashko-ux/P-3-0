@@ -257,8 +257,35 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function SpendStarBadge({ size = 22, number }: { size?: number; number?: number }) {
-  const fontSize = Math.max(8, Math.round(size * 0.5));
+function SpendCircleBadge({ size = 20, number }: { size?: number; number: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+      aria-label="Кружок за витрати"
+    >
+      <circle cx="12" cy="12" r="9" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.2" />
+      <text
+        x="12"
+        y="12.5"
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize="12"
+        fontWeight="700"
+        fill="#111827"
+      >
+        {number}
+      </text>
+    </svg>
+  );
+}
+
+function SpendStarBadge({ size = 18, number }: { size?: number; number?: number }) {
+  const fontSize = 12;
   return (
     <svg
       width={size}
@@ -1542,11 +1569,13 @@ export function DirectClientTable({
                               const num = Number(spendRaw);
                               return Number.isFinite(num) ? num : 0;
                             })();
-                            const spendShowStar = spendValue > 100000;
                             const spendShowMega = spendValue > 1000000;
-                            const spendShowNumber = spendValue > 200000;
-                            const spendTierRaw = Math.floor(spendValue / 100000);
-                            const spendTierNumber = Math.min(9, Math.max(2, spendTierRaw));
+                            const spendShowStar = spendValue >= 100000;
+                            const spendShowCircle = spendValue >= 20000 && spendValue < 100000;
+                            const spendCircleRaw = Math.floor(spendValue / 10000);
+                            const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
+                            const spendStarRaw = Math.floor(spendValue / 100000);
+                            const spendStarNumber = Math.min(9, Math.max(1, spendStarRaw));
                             const typeBadgeTitle = isClientType
                               ? "Клієнт (є Altegio ID)"
                               : "Лід (ще без Altegio ID)";
@@ -1597,7 +1626,12 @@ export function DirectClientTable({
                                 {spendShowMega ? (
                                   <SpendMegaBadge />
                                 ) : spendShowStar ? (
-                                  <SpendStarBadge number={spendShowNumber ? spendTierNumber : undefined} />
+                                  <SpendStarBadge
+                                    size={spendValue > 200000 ? 22 : 18}
+                                    number={spendStarNumber}
+                                  />
+                                ) : spendShowCircle ? (
+                                  <SpendCircleBadge number={spendCircleNumber} />
                                 ) : (
                                   <ClientBadgeIcon />
                                 )}
@@ -1693,7 +1727,12 @@ export function DirectClientTable({
                                 {spendShowMega ? (
                                   <SpendMegaBadge />
                                 ) : spendShowStar ? (
-                                  <SpendStarBadge number={spendShowNumber ? spendTierNumber : undefined} />
+                                  <SpendStarBadge
+                                    size={spendValue > 200000 ? 22 : 18}
+                                    number={spendStarNumber}
+                                  />
+                                ) : spendShowCircle ? (
+                                  <SpendCircleBadge number={spendCircleNumber} />
                                 ) : (
                                   <ClientBadgeIcon />
                                 )}
