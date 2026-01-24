@@ -257,7 +257,7 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function SpendCircleBadge({ size = 18, number }: { size?: number; number: number }) {
+function SpendCircleBadge({ size = 18, number }: { size?: number; number?: number }) {
   return (
     <svg
       width={size}
@@ -269,17 +269,19 @@ function SpendCircleBadge({ size = 18, number }: { size?: number; number: number
       aria-label="Кружок за витрати"
     >
       <circle cx="12" cy="12" r="9" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.2" />
-      <text
-        x="12"
-        y="12.5"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fontSize="12"
-        fontWeight="700"
-        fill="#111827"
-      >
-        {number}
-      </text>
+      {typeof number === 'number' ? (
+        <text
+          x="12"
+          y="12.5"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize="12"
+          fontWeight="700"
+          fill="#111827"
+        >
+          {number}
+        </text>
+      ) : null}
     </svg>
   );
 }
@@ -1578,7 +1580,9 @@ export function DirectClientTable({
                             })();
                             const spendShowMega = spendValue > 1000000;
                             const spendShowStar = spendValue >= 100000;
-                            const spendShowCircle = spendValue >= 20000 && spendValue < 100000;
+                            const spendShowCircleTen = spendValue >= 20000 && spendValue < 100000;
+                            const spendShowCircleOne = spendValue >= 10000 && spendValue < 20000;
+                            const spendShowCircleEmpty = spendValue < 10000;
                             const spendCircleRaw = Math.floor(spendValue / 10000);
                             const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
                             const spendStarRaw = Math.floor(spendValue / 100000);
@@ -1639,8 +1643,12 @@ export function DirectClientTable({
                                     number={spendShowStarNumber ? spendStarNumber : undefined}
                                     fontSize={spendShowStarNumber ? 8 : 12}
                                   />
-                                ) : spendShowCircle ? (
+                                ) : spendShowCircleTen ? (
                                   <SpendCircleBadge number={spendCircleNumber} />
+                                ) : spendShowCircleOne ? (
+                                  <SpendCircleBadge number={1} />
+                                ) : spendShowCircleEmpty ? (
+                                  <SpendCircleBadge />
                                 ) : (
                                   <ClientBadgeIcon />
                                 )}
@@ -1741,8 +1749,12 @@ export function DirectClientTable({
                                     number={spendShowStarNumber ? spendStarNumber : undefined}
                                     fontSize={spendShowStarNumber ? 8 : 12}
                                   />
-                                ) : spendShowCircle ? (
+                                ) : spendShowCircleTen ? (
                                   <SpendCircleBadge number={spendCircleNumber} />
+                                ) : spendShowCircleOne ? (
+                                  <SpendCircleBadge number={1} />
+                                ) : spendShowCircleEmpty ? (
+                                  <SpendCircleBadge />
                                 ) : (
                                   <ClientBadgeIcon />
                                 )}
