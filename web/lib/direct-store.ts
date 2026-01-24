@@ -830,11 +830,11 @@ export async function saveDirectClient(
     // ПРАВИЛО: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
     type DirectClientState = 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
     
-    // Якщо клієнт намагається встановити 'lead' (старий стан), замінюємо на 'client'
+    // Якщо клієнт намагається встановити 'lead' (старий стан), замінюємо на 'message' (зелена хмарка)
     let finalState: DirectClientState | undefined = client.state;
     if ((client.state as any) === 'lead') {
-      finalState = 'client';
-      console.log(`[direct-store] ⚠️ Client ${client.id} attempted to set 'lead' state, changed to 'client'`);
+      finalState = 'message';
+      console.log(`[direct-store] ⚠️ Client ${client.id} attempted to set 'lead' state, changed to 'message'`);
     }
     
     // Перевіряємо, чи клієнт має altegioClientId (поточний або в базі)
