@@ -393,16 +393,17 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           console.warn('[direct-reminders-webhook] ⚠️ Помилка при спробі перенести аватарку (не критично):', avatarErr);
         }
         
-        // Оновлюємо клієнта з Altegio
-        const mergedClientDb = await prisma.directClient.update({
-          where: { id: existingClient.id },
-          data: mergeUpdateData,
-        });
-        
-        // Видаляємо клієнта з ManyChat (дублікат)
+        // ВАЖЛИВО: Спочатку видаляємо ManyChat клієнта, щоб уникнути конфлікту unique constraint
+        // Потім оновлюємо Altegio клієнта з новим Instagram username
         console.log(`[direct-reminders-webhook] Deleting duplicate ManyChat client ${clientByInstagram.id} (keeping Altegio client ${existingClient.id})`);
         await prisma.directClient.delete({
           where: { id: clientByInstagram.id },
+        });
+        
+        // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
+        const mergedClientDb = await prisma.directClient.update({
+          where: { id: existingClient.id },
+          data: mergeUpdateData,
         });
         
         // Конвертуємо в DirectClient формат - використовуємо дані з mergedClientDb (вже оновлені в БД)
@@ -539,16 +540,17 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
             console.warn('[direct-reminders-webhook] ⚠️ Помилка при спробі перенести аватарку (не критично, fallback):', avatarErr);
           }
           
-          // Оновлюємо клієнта з Altegio
-          const mergedClientDb = await prisma.directClient.update({
-            where: { id: existingClient.id },
-            data: mergeUpdateData,
-          });
-          
-          // Видаляємо клієнта з ManyChat (дублікат)
+          // ВАЖЛИВО: Спочатку видаляємо ManyChat клієнта, щоб уникнути конфлікту unique constraint
+          // Потім оновлюємо Altegio клієнта з новим Instagram username
           console.log(`[direct-reminders-webhook] Deleting duplicate ManyChat client ${clientByInstagram.id} (keeping Altegio client ${existingClient.id})`);
           await prisma.directClient.delete({
             where: { id: clientByInstagram.id },
+          });
+          
+          // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
+          const mergedClientDb = await prisma.directClient.update({
+            where: { id: existingClient.id },
+            data: mergeUpdateData,
           });
           
           // Конвертуємо в DirectClient формат - використовуємо дані з mergedClientDb (вже оновлені в БД)
