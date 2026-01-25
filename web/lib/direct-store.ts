@@ -1106,11 +1106,46 @@ export async function saveDirectClient(
       previousState = existingByAltegioId.state;
       clientIdForLog = existingByAltegioId.id;
       
+      // Якщо instagramUsername вже зайнятий іншим клієнтом (і це не той самий клієнт),
+      // не змінюємо instagramUsername, щоб уникнути unique constraint error
+      // Або об'єднуємо клієнтів, якщо це різні клієнти
+      let targetInstagramUsername = normalizedUsername;
+      let needMerge = false;
+      let duplicateClientId: string | null = null;
+      
+      if (existingByUsername && existingByUsername.id !== existingByAltegioId.id) {
+        // Знайдено два різні клієнти: один за altegioClientId, інший за instagramUsername
+        // Об'єднуємо їх: залишаємо клієнта з altegioClientId, видаляємо іншого
+        console.log(`[direct-store] 🔄 Found duplicate: client ${existingByAltegioId.id} (by altegioClientId) and ${existingByUsername.id} (by instagramUsername), merging...`);
+        needMerge = true;
+        duplicateClientId = existingByUsername.id;
+        // Залишаємо instagramUsername з клієнта, який має altegioClientId (або з нового, якщо він кращий)
+        // Пріоритет: реальний Instagram > missing_instagram_*
+        const existingUsername = existingByAltegioId.instagramUsername;
+        const newUsername = normalizedUsername;
+        const existingIsMissing = existingUsername?.startsWith('missing_instagram_') || existingUsername?.startsWith('no_instagram_');
+        const newIsMissing = newUsername?.startsWith('missing_instagram_') || newUsername?.startsWith('no_instagram_');
+        
+        if (!existingIsMissing && newIsMissing) {
+          // Існуючий має реальний Instagram, новий - missing, залишаємо існуючий
+          targetInstagramUsername = existingUsername;
+        } else if (existingIsMissing && !newIsMissing) {
+          // Існуючий має missing, новий - реальний, використовуємо новий
+          targetInstagramUsername = newUsername;
+        } else {
+          // Обидва однакові типи, використовуємо новий
+          targetInstagramUsername = newUsername;
+        }
+      } else if (existingByUsername && existingByUsername.id === existingByAltegioId.id) {
+        // Це той самий клієнт - просто оновлюємо
+        targetInstagramUsername = normalizedUsername;
+      }
+      
       const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByAltegioId, finalState) : null;
       const updateData: any = applyMetricsPatch({
         ...dataWithCorrectState,
         id: existingByAltegioId.id, // Зберігаємо існуючий ID
-        instagramUsername: normalizedUsername, // Оновлюємо Instagram username
+        instagramUsername: targetInstagramUsername, // Використовуємо визначений username
         createdAt: existingByAltegioId.createdAt < data.firstContactDate 
           ? existingByAltegioId.createdAt 
           : new Date(data.firstContactDate),
@@ -1125,12 +1160,55 @@ export async function saveDirectClient(
         updateData.lastActivityKeys = activityKeys;
       }
       
-      await prisma.directClient.update({
-        where: { id: existingByAltegioId.id },
-        data: updateData,
-      });
-      
-      console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (prevented duplicate, updated Instagram: ${normalizedUsername})`);
+      try {
+        await prisma.directClient.update({
+          where: { id: existingByAltegioId.id },
+          data: updateData,
+        });
+        
+        // Якщо потрібно об'єднати клієнтів, переносимо історію та видаляємо дубль
+        if (needMerge && duplicateClientId) {
+          try {
+            // Переносимо історію повідомлень та станів
+            const movedMessages = await prisma.directMessage.updateMany({
+              where: { clientId: duplicateClientId },
+              data: { clientId: existingByAltegioId.id },
+            });
+            const movedStateLogs = await prisma.directClientStateLog.updateMany({
+              where: { clientId: duplicateClientId },
+              data: { clientId: existingByAltegioId.id },
+            });
+            
+            // Видаляємо дубль
+            await prisma.directClient.delete({
+              where: { id: duplicateClientId },
+            });
+            
+            console.log(`[direct-store] ✅ Merged duplicate client ${duplicateClientId} into ${existingByAltegioId.id} (moved ${movedMessages.count} messages, ${movedStateLogs.count} state logs)`);
+          } catch (mergeErr) {
+            console.error(`[direct-store] ❌ Failed to merge duplicate client ${duplicateClientId}:`, mergeErr);
+            // Продовжуємо, навіть якщо об'єднання не вдалося
+          }
+        }
+        
+        console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (prevented duplicate, updated Instagram: ${targetInstagramUsername})`);
+      } catch (updateErr: any) {
+        // Якщо все ще виникла помилка unique constraint, спробуємо без зміни instagramUsername
+        if (updateErr?.code === 'P2002' && updateErr?.meta?.target?.includes('instagramUsername')) {
+          console.warn(`[direct-store] ⚠️ Unique constraint error for instagramUsername, keeping existing username: ${existingByAltegioId.instagramUsername}`);
+          const fallbackUpdateData: any = {
+            ...updateData,
+            instagramUsername: existingByAltegioId.instagramUsername, // Залишаємо існуючий username
+          };
+          await prisma.directClient.update({
+            where: { id: existingByAltegioId.id },
+            data: fallbackUpdateData,
+          });
+          console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (kept existing Instagram: ${existingByAltegioId.instagramUsername})`);
+        } else {
+          throw updateErr;
+        }
+      }
     } else if (existingByUsername) {
       previousState = existingByUsername.state;
       clientIdForLog = existingByUsername.id;
