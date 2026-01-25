@@ -975,6 +975,62 @@ export async function saveDirectClient(
       return next;
     };
 
+    // Перевіряємо, чи serviceMasterName не є адміністратором (автоматичне очищення)
+    if (client.serviceMasterName) {
+      try {
+        const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+        const { isAdminStaffName } = await import('@/lib/altegio/records-grouping');
+        const masters = await getAllDirectMasters();
+        const masterNameToRole = new Map(
+          masters.map((m) => [m.name?.toLowerCase().trim() || '', m.role || 'master'])
+        );
+        const adminMasters = masters.filter(m => m.role === 'admin' || m.role === 'direct-manager');
+        
+        const serviceMasterName = (client.serviceMasterName || '').toString().trim();
+        const n = serviceMasterName.toLowerCase().trim();
+        
+        // Перевіряємо, чи це адміністратор
+        let isAdmin = false;
+        if (isAdminStaffName(n)) {
+          isAdmin = true;
+        } else {
+          const role = masterNameToRole.get(n);
+          if (role === 'admin' || role === 'direct-manager') {
+            isAdmin = true;
+          } else {
+            // Часткове співпадіння
+            for (const master of adminMasters) {
+              const masterName = (master.name || '').toLowerCase().trim();
+              if (!masterName) continue;
+              const nameFirst = n.split(/\s+/)[0] || '';
+              const masterFirst = masterName.split(/\s+/)[0] || '';
+              if (nameFirst && masterFirst && nameFirst === masterFirst) {
+                isAdmin = true;
+                break;
+              }
+              if (n.includes(masterName) || masterName.includes(n)) {
+                isAdmin = true;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (isAdmin) {
+          console.log(`[direct-store] ⚠️ Blocked setting admin "${serviceMasterName}" as serviceMasterName for client ${client.id}`);
+          // Очищаємо serviceMasterName та serviceMasterAltegioStaffId
+          client = {
+            ...client,
+            serviceMasterName: undefined,
+            serviceMasterAltegioStaffId: undefined,
+          };
+        }
+      } catch (err) {
+        // Якщо не вдалося перевірити - продовжуємо (не блокуємо збереження)
+        console.warn(`[direct-store] Failed to check if serviceMasterName is admin:`, err);
+      }
+    }
+    
     const data = directClientToPrisma(client);
     const normalizedUsername = data.instagramUsername;
     
