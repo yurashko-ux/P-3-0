@@ -2377,10 +2377,6 @@ export async function POST(req: NextRequest) {
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
           let existingClientIdByAltegio = clientId ? existingAltegioIdMap.get(parseInt(String(clientId), 10)) : null;
           
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2377',message:'Webhook: checking for existing clients',data:{clientId,normalizedInstagram,existingClientIdByInstagram:existingClientId,existingClientIdByAltegio,existingClientByAltegioId:!!existingClientByAltegioId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-          // #endregion
-          
           // Перевіряємо, чи потрібно об'єднати два записи:
           // 1. Запис з real Instagram username (можливо без altegioClientId)
           // 2. Запис з missing_instagram_* та altegioClientId
@@ -2424,10 +2420,6 @@ export async function POST(req: NextRequest) {
             // Оновлюємо існуючого клієнта
             const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
             if (existingClient) {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2217',message:'Updating existing client from Altegio webhook',data:{clientId:existingClientId,existingAltegioClientId:existingClient.altegioClientId,newAltegioClientId:parseInt(String(clientId),10),existingFirstName:existingClient.firstName,existingLastName:existingClient.lastName,altegioFirstName:firstName,altegioLastName:lastName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
-              
               // Встановлюємо стан "client" (стан "lead" більше не використовується)
               const clientState = 'client' as const;
               
@@ -2435,10 +2427,6 @@ export async function POST(req: NextRequest) {
               // 1. Клієнт ще не має altegioClientId (перший раз отримуємо дані з Altegio)
               // 2. АБО ім'я відсутнє/порожнє (заповнюємо порожні поля)
               const shouldUpdateName = !existingClient.altegioClientId || !existingClient.firstName || !existingClient.lastName;
-              
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2228',message:'Name update decision from Altegio',data:{shouldUpdateName,hasExistingAltegioClientId:!!existingClient.altegioClientId,hasExistingFirstName:!!existingClient.firstName,hasExistingLastName:!!existingClient.lastName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
               
               const updated: typeof existingClient = {
                 ...existingClient,
@@ -2450,10 +2438,6 @@ export async function POST(req: NextRequest) {
                 ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
                 updatedAt: new Date().toISOString(),
               };
-              
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2240',message:'Client after Altegio update',data:{clientId:existingClientId,firstName:updated.firstName,lastName:updated.lastName,altegioClientId:updated.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
               
               await saveDirectClient(updated);
               console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientId} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState})`);
@@ -2521,10 +2505,6 @@ export async function POST(req: NextRequest) {
             }
           } else {
             // Створюємо нового клієнта
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2518',message:'Webhook: creating new client',data:{clientId,normalizedInstagram,existingClientByAltegioId:!!existingClientByAltegioId,hadExistingClientId:!!existingClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
-            
             const now = new Date().toISOString();
             // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
             // Бо Altegio - це клієнтська база, там лише клієнти, а не ліди
@@ -2547,14 +2527,8 @@ export async function POST(req: NextRequest) {
                   }
                 }
               }
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2320',message:'Fetched lastVisitAt for new client',data:{clientId,hasLastVisitAt:!!lastVisitAt,lastVisitAt},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-              // #endregion
             } catch (err) {
               console.warn('[altegio/webhook] ⚠️ Не вдалося витягнути lastVisitAt при створенні клієнта (не критично):', err);
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2333',message:'Failed to fetch lastVisitAt for new client',data:{clientId,error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-              // #endregion
             }
             
             const newClient = {
