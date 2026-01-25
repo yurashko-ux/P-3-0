@@ -349,15 +349,16 @@ export default function DirectPage() {
       console.warn("[DirectPage] Failed to load statuses:", err);
     }
 
-    // Завантажуємо відповідальних (майстрів)
-    // Використовуємо onlyMasters=true для фільтрації тільки майстрів (role='master')
+    // Завантажуємо відповідальних (майстрів, дірект-менеджерів, адміністраторів)
+    // ВАЖЛИВО: НЕ використовуємо onlyMasters=true тут, бо MasterManager має показувати ВСІХ відповідальних
+    // Фільтр onlyMasters=true використовується тільки для вибору майстра в колонку "Майстер" клієнта
     try {
-      const mastersRes = await fetch("/api/admin/direct/masters?onlyMasters=true");
+      const mastersRes = await fetch("/api/admin/direct/masters");
       if (mastersRes.ok) {
         const mastersData = await mastersRes.json();
         if (mastersData.ok && mastersData.masters) {
           setMasters(mastersData.masters);
-          console.log(`[DirectPage] Loaded ${mastersData.masters.length} masters (only role='master')`);
+          console.log(`[DirectPage] Loaded ${mastersData.masters.length} masters (all roles)`);
         }
       } else {
         console.warn(`[DirectPage] Failed to load masters: ${mastersRes.status} ${mastersRes.statusText}`);
