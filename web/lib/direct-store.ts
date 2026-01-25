@@ -430,7 +430,7 @@ export async function updateInstagramForAltegioClient(
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:420',message:'updateInstagramForAltegioClient: searching by altegioClientId',data:{altegioClientId,altegioClientIdType:typeof altegioClientId,instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
-    const existingClient = await prisma.directClient.findFirst({
+    let existingClient = await prisma.directClient.findFirst({
       where: { altegioClientId },
     });
     // #region agent log
