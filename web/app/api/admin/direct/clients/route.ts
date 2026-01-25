@@ -884,47 +884,19 @@ export async function GET(req: NextRequest) {
         // #endregion
 
         const result = clientsWithChatMeta.map((c, index) => {
-          // Спочатку пробуємо lastVisitAt (найточніша дата з Altegio)
-          let iso = ((c as any).lastVisitAt || '').toString().trim();
-          let dateSource = 'lastVisitAt';
-          
-          // Якщо lastVisitAt відсутній, використовуємо fallback: найновішу дату з інших полів
-          if (!iso) {
-            const dates: Array<{ date: string; source: string }> = [];
-            
-            // Перевіряємо paidServiceDate (якщо це платна послуга з attendance=1)
-            if (c.paidServiceDate && c.paidServiceAttended === true) {
-              dates.push({ date: c.paidServiceDate, source: 'paidServiceDate' });
-            }
-            
-            // Перевіряємо visitDate
-            if (c.visitDate) {
-              dates.push({ date: c.visitDate, source: 'visitDate' });
-            }
-            
-            // Перевіряємо consultationBookingDate (якщо консультація відвідана)
-            if (c.consultationBookingDate && c.consultationAttended === true) {
-              dates.push({ date: c.consultationBookingDate, source: 'consultationBookingDate' });
-            }
-            
-            // Знаходимо найновішу дату
-            if (dates.length > 0) {
-              dates.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-              iso = dates[0].date;
-              dateSource = dates[0].source;
-            }
-          }
+          // Використовуємо тільки lastVisitAt з Altegio API
+          const iso = ((c as any).lastVisitAt || '').toString().trim();
           
           // #region agent log
           if (index < 5) { // Логуємо перші 5 клієнтів для діагностики
-            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:828',message:'Processing client for daysSinceLastVisit',data:{clientId:c.id,hasLastVisitAt:!!(c as any).lastVisitAt,lastVisitAtRaw:(c as any).lastVisitAt,lastVisitAtIso:iso,dateSource,hasAltegioClientId:!!c.altegioClientId,altegioClientId:c.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:828',message:'Processing client for daysSinceLastVisit',data:{clientId:c.id,hasLastVisitAt:!!(c as any).lastVisitAt,lastVisitAtRaw:(c as any).lastVisitAt,lastVisitAtIso:iso,hasAltegioClientId:!!c.altegioClientId,altegioClientId:c.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
           }
           // #endregion
           
           if (!iso) {
             // #region agent log
             if (index < 5) {
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:833',message:'Client has no lastVisitAt ISO or fallback dates',data:{clientId:c.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:833',message:'Client has no lastVisitAt from Altegio API',data:{clientId:c.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
             }
             // #endregion
             return { ...c, daysSinceLastVisit: undefined };
@@ -934,14 +906,14 @@ export async function GET(req: NextRequest) {
           
           // #region agent log
           if (index < 5) {
-            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:840',message:'Calculated day and index',data:{clientId:c.id,iso,day,idx,isFinite:Number.isFinite(idx),dateSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:840',message:'Calculated day and index',data:{clientId:c.id,iso,day,idx,isFinite:Number.isFinite(idx)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
           }
           // #endregion
           
           if (!Number.isFinite(idx)) {
             // #region agent log
             if (index < 5) {
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:845',message:'Index is not finite',data:{clientId:c.id,iso,day,idx,dateSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:845',message:'Index is not finite',data:{clientId:c.id,iso,day,idx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
             }
             // #endregion
             return { ...c, daysSinceLastVisit: undefined };
@@ -951,19 +923,11 @@ export async function GET(req: NextRequest) {
           
           // #region agent log
           if (index < 5) {
-            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:852',message:'Calculated daysSinceLastVisit',data:{clientId:c.id,diff,daysSinceLastVisit,dateSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:852',message:'Calculated daysSinceLastVisit',data:{clientId:c.id,diff,daysSinceLastVisit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
           }
           // #endregion
           
-          // Зберігаємо джерело дати для tooltip (якщо використовували fallback)
-          const resultClient: any = { ...c, daysSinceLastVisit };
-          if (dateSource !== 'lastVisitAt' && iso) {
-            // Додаємо fallback дату для tooltip, але не перезаписуємо lastVisitAt
-            resultClient.lastVisitAtFallback = iso;
-            resultClient.lastVisitAtFallbackSource = dateSource;
-          }
-          
-          return resultClient;
+          return { ...c, daysSinceLastVisit };
         });
 
         // #region agent log
