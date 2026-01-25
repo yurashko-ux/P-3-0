@@ -105,6 +105,7 @@ async function runSync(req: NextRequest) {
 
   const samples: Array<{ directClientId: string; altegioClientId: number; action: string; changedKeys?: string[] }> = [];
   const errorDetails: Array<{ directClientId: string; altegioClientId: number; error: string }> = [];
+  const skippedDetails: Array<{ directClientId: string; altegioClientId: number; reason: string; currentSpent?: number | null; nextSpent?: number | null; currentVisits?: number | null; nextVisits?: number | null }> = [];
 
   for (let i = 0; i < targets.length; i++) {
     const client = targets[i];
@@ -223,6 +224,19 @@ async function runSync(req: NextRequest) {
           currentVisits: client.visits,
           nextVisits,
         });
+        
+        // Зберігаємо деталі про пропущених клієнтів для response (тільки перші 50)
+        if (skippedDetails.length < 50) {
+          skippedDetails.push({
+            directClientId: client.id,
+            altegioClientId: client.altegioClientId,
+            reason: 'no_changes',
+            currentSpent: client.spent,
+            nextSpent,
+            currentVisits: client.visits,
+            nextVisits,
+          });
+        }
         
         skippedNoChange++;
         continue;

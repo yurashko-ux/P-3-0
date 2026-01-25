@@ -180,6 +180,54 @@ export function AdminToolsModal({
           successMessage: (data: any) =>
             `✅ Синхронізація завершена!\n\nВсього клієнтів: ${data.stats.totalClients}\nОновлено: ${data.stats.updated}\nПропущено: ${data.stats.skipped}\nПомилок: ${data.stats.errors}\n\n${JSON.stringify(data, null, 2)}`,
         },
+        {
+          icon: "⏰",
+          label: "Перевірити статус cron job (sync-direct-altegio-metrics)",
+          endpoint: "/api/admin/direct/cron-sync-direct-altegio-metrics-status",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            const lastRun = data.lastRun;
+            if (!lastRun) {
+              return `❌ Cron job ніколи не запускався автоматично\n\nПеревірте налаштування в vercel.json\n\n${JSON.stringify(data, null, 2)}`;
+            }
+            const phase = lastRun.phase;
+            const via = lastRun.via || 'unknown';
+            const startedAt = lastRun.startedAt;
+            const finishedAt = lastRun.finishedAt;
+            const stats = lastRun.stats;
+            
+            let message = `📊 Статус cron job: sync-direct-altegio-metrics\n\n`;
+            message += `Фаза: ${phase === 'start' ? '🟡 Запущено (в процесі)' : phase === 'done' ? '✅ Завершено' : phase}\n`;
+            message += `Запущено через: ${via === 'vercel' ? '✅ Vercel Cron' : via === 'secret' ? '🔑 Secret (ручний)' : via}\n`;
+            message += `Початок: ${startedAt ? new Date(startedAt).toLocaleString('uk-UA') : 'немає'}\n`;
+            message += `Завершення: ${finishedAt ? new Date(finishedAt).toLocaleString('uk-UA') : phase === 'start' ? '⏳ В процесі...' : 'немає'}\n\n`;
+            
+            if (stats) {
+              message += `Статистика:\n`;
+              message += `  Всього клієнтів: ${stats.totalClients || 0}\n`;
+              message += `  З Altegio ID: ${stats.targets || 0}\n`;
+              message += `  Оброблено: ${stats.processed || 0}\n`;
+              message += `  Оновлено: ${stats.updated || 0}\n`;
+              message += `  Пропущено (немає змін): ${stats.skippedNoChange || 0}\n`;
+              message += `  Помилок: ${stats.errors || 0}\n`;
+              message += `  Час виконання: ${stats.ms ? Math.round(stats.ms / 1000) : 0} сек\n`;
+            }
+            
+            // Перевіряємо, чи cron job запускався сьогодні
+            if (finishedAt) {
+              const finishedDate = new Date(finishedAt);
+              const today = new Date();
+              const isToday = finishedDate.toDateString() === today.toDateString();
+              const hoursAgo = Math.round((today.getTime() - finishedDate.getTime()) / (1000 * 60 * 60));
+              
+              message += `\n⏰ Останній запуск: ${isToday ? '✅ Сьогодні' : '❌ Не сьогодні'} (${hoursAgo} годин тому)\n`;
+              message += `Розклад: щодня о 3:30 ранку (30 3 * * *)\n`;
+            }
+            
+            message += `\n${JSON.stringify(data, null, 2)}`;
+            return message;
+          },
+        },
       ],
     },
     {
