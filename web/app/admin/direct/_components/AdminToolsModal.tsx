@@ -571,16 +571,22 @@ export function AdminToolsModal({
             `🔍 Діагностика колонки "Майстер":\n\nВсього клієнтів: ${data.totalClients}\nАдміністраторів/дірект-менеджерів: ${data.adminMasters?.length || 0}\n${data.adminMasters?.map((m: any) => `  - ${m.name} (${m.role})`).join('\n') || ''}\n\nЗнайдено проблем: ${data.issuesFound}\n\n${data.issues?.slice(0, 30).map((i: any) => `  - ${i.instagramUsername || 'no instagram'} (Altegio ${i.altegioClientId || 'no id'}): ${i.issue}`).join('\n') || 'Проблем не знайдено'}${data.issues?.length > 30 ? `\n... і ще ${data.issues.length - 30}` : ''}\n\n${data.note || ''}`,
         },
         {
-          icon: "🧹",
-          label: "Очистити адміністраторів з колонки «Майстер»",
+          icon: "🔍",
+          label: "Знайти адміністраторів в колонці «Майстер» (dryRun)",
           endpoint: "/api/admin/direct/cleanup-admin-masters?dryRun=1",
           method: "GET" as const,
-          confirm:
-            "Очистити serviceMasterName для клієнтів, де встановлено адміністраторів або дірект-менеджерів?\n\nСпочатку буде показано список клієнтів (dryRun=1). Для застосування змін запустіть з dryRun=0.",
           successMessage: (data: any) =>
-            data.dryRun
-              ? `🔍 Знайдено ${data.found} клієнтів з адміністраторами в serviceMasterName:\n\n${data.clients?.slice(0, 20).map((c: any) => `  - ${c.instagramUsername || 'no instagram'} (Altegio ${c.altegioClientId || 'no id'}): "${c.serviceMasterName}"`).join('\n')}${data.clients?.length > 20 ? `\n... і ще ${data.clients.length - 20}` : ''}\n\n${data.note}\n\nДля застосування змін запустіть з dryRun=0.`
-              : `✅ Очищення завершено!\n\nЗнайдено: ${data.found}\nОчищено: ${data.cleaned}\nПомилок: ${data.errors}\n\n${data.note}`,
+            `🔍 Знайдено ${data.found} клієнтів з адміністраторами в serviceMasterName:\n\n${data.clients?.slice(0, 20).map((c: any) => `  - ${c.instagramUsername || 'no instagram'} (Altegio ${c.altegioClientId || 'no id'}): "${c.serviceMasterName}"`).join('\n')}${data.clients?.length > 20 ? `\n... і ще ${data.clients.length - 20}` : ''}\n\n${data.note}\n\nДля застосування змін використайте кнопку "Очистити адміністраторів з колонки «Майстер»".`,
+        },
+        {
+          icon: "🧹",
+          label: "Очистити адміністраторів з колонки «Майстер»",
+          endpoint: "/api/admin/direct/cleanup-admin-masters?dryRun=0",
+          method: "GET" as const,
+          confirm:
+            "Очистити serviceMasterName для клієнтів, де встановлено адміністраторів або дірект-менеджерів?\n\nВАЖЛИВО: Це очистить тільки serviceMasterName (колонка «Майстер»). consultationMasterName (колонка «Запис на консультацію») не зміниться, бо адміністратори можуть проводити консультації.\n\nПродовжити?",
+          successMessage: (data: any) =>
+            `✅ Очищення завершено!\n\nЗнайдено: ${data.found}\nОчищено: ${data.cleaned}\nПомилок: ${data.errors}\n\n${data.note}`,
         },
       ],
     },
