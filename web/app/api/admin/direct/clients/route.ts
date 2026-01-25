@@ -149,11 +149,15 @@ export async function GET(req: NextRequest) {
 
     // Завантажуємо відповідальних для сортування по імені (якщо потрібно)
     let masterMap = new Map<string, string>();
+    // Мапа для перевірки, чи майстер є адміністратором (за ім'ям)
+    let masterNameToRole = new Map<string, 'master' | 'direct-manager' | 'admin'>();
     if (sortBy === 'masterId') {
       try {
         const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
         const masters = await getAllDirectMasters();
         masterMap = new Map(masters.map((m: any) => [m.id, m.name || '']));
+        // Створюємо мапу ім'я -> роль для перевірки адміністраторів
+        masterNameToRole = new Map(masters.map((m: any) => [m.name?.toLowerCase().trim() || '', m.role || 'master']));
       } catch (err) {
         console.warn('[direct/clients] Failed to load masters for sorting:', err);
         // Fallback на старий метод
@@ -165,7 +169,27 @@ export async function GET(req: NextRequest) {
           console.warn('[direct/clients] Fallback to old masters also failed:', fallbackErr);
         }
       }
+    } else {
+      // Завантажуємо майстрів для перевірки ролей (навіть якщо не сортуємо)
+      try {
+        const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+        const masters = await getAllDirectMasters();
+        masterNameToRole = new Map(masters.map((m: any) => [m.name?.toLowerCase().trim() || '', m.role || 'master']));
+      } catch (err) {
+        console.warn('[direct/clients] Failed to load masters for role check:', err);
+      }
     }
+    
+    // Допоміжна функція для перевірки, чи майстер є адміністратором (перевіряє і роль в БД)
+    const isAdminByName = (name: string | null | undefined): boolean => {
+      if (!name) return false;
+      const n = name.toLowerCase().trim();
+      // Спочатку перевіряємо за ім'ям (якщо містить "адм")
+      if (isAdminStaffName(n)) return true;
+      // Потім перевіряємо роль в базі даних
+      const role = masterNameToRole.get(n);
+      return role === 'admin' || role === 'direct-manager';
+    };
 
     // Фільтрація
     if (statusId) {
@@ -374,13 +398,18 @@ export async function GET(req: NextRequest) {
               }
               if (chosen) {
                 const pair = pickNonAdminStaffPairFromGroup(chosen as any, 'first');
-                const primary = pair[0] || null;
-                const secondary = pair[1] || null;
+                // Додаткова перевірка: фільтруємо адміністраторів за роллю в БД
+                const filteredPair = pair.filter(p => {
+                  if (!p.staffName) return false;
+                  return !isAdminByName(p.staffName);
+                });
+                const primary = filteredPair[0] || null;
+                const secondary = filteredPair[1] || null;
                 if (primary?.staffName) {
                   // Якщо майстер уже заданий в БД (і це не адмін/пусто) — не перетираємо.
                   // Це дозволяє точково виправляти 1-2 кейси без “авто-переобчислення” з KV.
                   const currentName = (c.serviceMasterName || '').toString().trim();
-                  const shouldReplace = !currentName || isAdminStaffName(currentName);
+                  const shouldReplace = !currentName || isAdminByName(currentName);
                   if (!shouldReplace) {
                     // залишаємо як є, але вторинного майстра можемо дорахувати (не критично)
                     c = {
@@ -396,6 +425,8 @@ export async function GET(req: NextRequest) {
                   };
                   }
                 } else {
+                  // Якщо після фільтрації не залишилося майстрів - очищаємо serviceMasterName
+                  // (не встановлюємо адміністратора як fallback)
                   c = {
                     ...c,
                     serviceMasterName: undefined,
@@ -506,13 +537,14 @@ export async function GET(req: NextRequest) {
                 return true;
               };
 
-              const lastNonAdmin = sorted.find((ev: any) => isKnownName(ev) && !isAdminStaffName((ev.staffName || '').toString()));
-              const lastAdmin = sorted.find((ev: any) => isKnownName(ev) && isAdminStaffName((ev.staffName || '').toString()));
-              const chosen = lastNonAdmin || lastAdmin || null;
+              // ВАЖЛИВО: не використовуємо адміністраторів як fallback
+              // Якщо немає не-адміністраторів - не встановлюємо consultationMasterName
+              const lastNonAdmin = sorted.find((ev: any) => isKnownName(ev) && !isAdminByName((ev.staffName || '').toString()));
+              const chosen = lastNonAdmin || null;
 
               if (chosen?.staffName) {
                 const current = (c.consultationMasterName || '').toString().trim();
-                const shouldReplace = !current || isAdminStaffName(current);
+                const shouldReplace = !current || isAdminByName(current);
                 if (shouldReplace) {
                   c = { ...c, consultationMasterName: String(chosen.staffName) };
                 }
@@ -591,8 +623,11 @@ export async function GET(req: NextRequest) {
         if (!attendedGroup) return c;
 
         const picked = pickNonAdminStaffFromGroup(attendedGroup, 'first');
+        // Додаткова перевірка: якщо вибраний майстер є адміністратором за роллю - не використовуємо його
+        const isValidMaster = picked?.staffName && !isAdminByName(picked.staffName);
+        const finalPicked = isValidMaster ? picked : null;
         let pickedMasterId: string | undefined = undefined;
-        if (picked?.staffId != null) {
+        if (finalPicked?.staffId != null) {
           // Перевага: матч по altegioStaffId
           for (const [dmId, staffId] of directMasterIdToStaffId.entries()) {
             if (staffId === picked.staffId) {
@@ -601,8 +636,8 @@ export async function GET(req: NextRequest) {
             }
           }
         }
-        if (!pickedMasterId && picked?.staffName) {
-          const full = picked.staffName.trim().toLowerCase();
+        if (!pickedMasterId && finalPicked?.staffName) {
+          const full = finalPicked.staffName.trim().toLowerCase();
           pickedMasterId = directMasterNameToId.get(full);
           if (!pickedMasterId) {
             const first = full.split(/\s+/)[0] || '';
@@ -614,7 +649,7 @@ export async function GET(req: NextRequest) {
           ...c,
           paidServiceIsRebooking: true,
           paidServiceRebookFromKyivDay: createdKyivDay,
-          paidServiceRebookFromMasterName: picked?.staffName || undefined,
+          paidServiceRebookFromMasterName: finalPicked?.staffName || undefined,
           paidServiceRebookFromMasterId: pickedMasterId,
         };
       });
