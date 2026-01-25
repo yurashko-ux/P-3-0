@@ -223,6 +223,35 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Фільтрація за clientType (AND логіка: клієнт має відповідати ВСІМ вибраним типам)
+    const clientType = searchParams.get('clientType');
+    if (clientType) {
+      const types = clientType.split(',').filter(Boolean);
+      if (types.length > 0) {
+        clients = clients.filter((c) => {
+          const matches: boolean[] = [];
+          
+          // Перевіряємо кожен вибраний фільтр
+          for (const filterType of types) {
+            if (filterType === 'leads') {
+              matches.push(!c.altegioClientId);
+            } else if (filterType === 'clients') {
+              matches.push(!!c.altegioClientId);
+            } else if (filterType === 'good') {
+              const spent = c.spent ?? 0;
+              matches.push(spent < 100000 && spent > 0);
+            } else if (filterType === 'stars') {
+              matches.push((c.spent ?? 0) >= 100000);
+            }
+          }
+
+          // AND логіка: клієнт має відповідати ВСІМ вибраним типам
+          return matches.length === types.length && matches.every((m) => m === true);
+        });
+        console.log(`[direct/clients] Filtered by clientType: ${types.join(',')}, remaining: ${clients.length}`);
+      }
+    }
+
     // Діагностика для "Юлія Кобра" та "Топоріна Олена"
     const debugClients = clients.filter(c => 
       c.instagramUsername === 'kobra_best' || 

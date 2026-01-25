@@ -14,6 +14,7 @@ import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { useSearchParams } from "next/navigation";
+import { ColumnFilterDropdown, type ClientTypeFilter } from "./ColumnFilterDropdown";
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -441,6 +442,7 @@ type DirectClientTableProps = {
     source: string;
     search: string;
     hasAppointment: string;
+    clientType?: string[]; // ['leads', 'clients', 'good', 'stars']
   };
   onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
   onSearchClick?: () => void;
@@ -617,6 +619,9 @@ export function DirectClientTable({
         if (filters.source) params.set('source', filters.source);
         if (filters.search) params.set('search', filters.search);
         if (filters.hasAppointment) params.set('hasAppointment', filters.hasAppointment);
+        if (filters.clientType && filters.clientType.length > 0) {
+          params.set('clientType', filters.clientType.join(','));
+        }
 
         const res = await fetch(`/api/admin/direct/masters-stats?${params.toString()}`);
         const data = await res.json();
@@ -646,7 +651,7 @@ export function DirectClientTable({
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth, filters.statusId, filters.masterId, filters.source, filters.search, filters.hasAppointment]);
+  }, [selectedMonth, filters.statusId, filters.masterId, filters.source, filters.search, filters.hasAppointment, filters.clientType]);
 
   // Синхронізуємо searchInput з filters.search коли filters змінюється ззовні (наприклад, при скиданні)
   useEffect(() => {
@@ -768,6 +773,34 @@ export function DirectClientTable({
 
     return Array.from(map.values());
   }, [clientsWithChatOverrides]);
+
+  // Фільтрація за clientType (AND логіка: клієнт має відповідати ВСІМ вибраним фільтрам)
+  const filteredClients = useMemo(() => {
+    if (!filters.clientType || filters.clientType.length === 0) {
+      return uniqueClients;
+    }
+
+    return uniqueClients.filter((client) => {
+      const matches: boolean[] = [];
+      
+      // Перевіряємо кожен вибраний фільтр
+      for (const filterType of filters.clientType || []) {
+        if (filterType === "leads") {
+          matches.push(!client.altegioClientId);
+        } else if (filterType === "clients") {
+          matches.push(!!client.altegioClientId);
+        } else if (filterType === "good") {
+          const spent = client.spent ?? 0;
+          matches.push(spent > 0 && spent < 100000);
+        } else if (filterType === "stars") {
+          matches.push((client.spent ?? 0) >= 100000);
+        }
+      }
+
+      // AND логіка: клієнт має відповідати ВСІМ вибраним фільтрам
+      return matches.length === (filters.clientType?.length || 0) && matches.every((m) => m === true);
+    });
+  }, [uniqueClients, filters.clientType]);
 
   // KPI-таблиця: робимо максимально компактно — ховаємо рядки, де всі значення = 0
   const compactStatsRows = useMemo(() => {
@@ -1122,7 +1155,7 @@ export function DirectClientTable({
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
                   setSearchInput("");
-                  onFiltersChange({ statusId: "", masterId: "", source: "", search: "", hasAppointment: "" });
+                  onFiltersChange({ statusId: "", masterId: "", source: "", search: "", hasAppointment: "", clientType: [] });
                 }}
               >
                 Скинути
@@ -1319,18 +1352,28 @@ export function DirectClientTable({
                   <th className="px-0.5 py-2 bg-base-200 sticky top-0 z-20 w-[44px] min-w-[44px] max-w-[44px]" />
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
                     <div className="flex flex-col items-start leading-none">
-                      <button
-                        className="hover:underline cursor-pointer text-left"
-                        onClick={() =>
-                          onSortChange(
-                            "visits",
-                            sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                        title="Сортувати по кількості відвідувань"
-                      >
-                        Повне імʼя {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="hover:underline cursor-pointer text-left"
+                          onClick={() =>
+                            onSortChange(
+                              "visits",
+                              sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
+                            )
+                          }
+                          title="Сортувати по кількості відвідувань"
+                        >
+                          Повне імʼя {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
+                        </button>
+                        <ColumnFilterDropdown
+                          clients={clients}
+                          selectedFilters={(filters.clientType || []) as ClientTypeFilter[]}
+                          onFiltersChange={(newFilters) =>
+                            onFiltersChange({ ...filters, clientType: newFilters })
+                          }
+                          columnLabel="Повне ім'я"
+                        />
+                      </div>
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
                         onClick={() =>
@@ -1427,7 +1470,7 @@ export function DirectClientTable({
                 </tr>
               </thead>
               <tbody>
-                {uniqueClients.length === 0 ? (
+                {filteredClients.length === 0 ? (
                   <tr>
                     <td colSpan={13} className="text-center py-8 text-gray-500">
                       Немає клієнтів
@@ -1448,7 +1491,7 @@ export function DirectClientTable({
                     let oldestTodayTime = Infinity;
                     
                     // Знаходимо найстаріший сьогоднішній клієнт (найменший час)
-                    uniqueClients.forEach((client, idx) => {
+                    filteredClients.forEach((client, idx) => {
                       const clientDate = client[dateField];
                       if (clientDate) {
                         const clientKyivDay = kyivDayFmtRow.format(new Date(clientDate));
@@ -1462,7 +1505,7 @@ export function DirectClientTable({
                       }
                     });
 
-                    return uniqueClients.map((client, index) => {
+                    return filteredClients.map((client, index) => {
                     const activityKeys = client.lastActivityKeys ?? [];
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));

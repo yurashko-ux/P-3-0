@@ -165,6 +165,7 @@ export default function DirectPage() {
     source: "",
     search: "",
     hasAppointment: "",
+    clientType: [] as string[],
   });
   const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
@@ -440,6 +441,9 @@ export default function DirectPage() {
       if (filters.masterId) params.set("masterId", filters.masterId);
       if (filters.source) params.set("source", filters.source);
       if (filters.hasAppointment === "true") params.set("hasAppointment", "true");
+      if (filters.clientType && filters.clientType.length > 0) {
+        params.set("clientType", filters.clientType.join(","));
+      }
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
