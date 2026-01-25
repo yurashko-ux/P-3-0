@@ -1842,9 +1842,21 @@ export function DirectClientTable({
                           let tooltipText = "";
                           if (hasDays) {
                             tooltipText = `Днів з останнього візиту: ${days}`;
-                            if (lastVisitAt) {
-                              const formattedDate = formatDate(lastVisitAt);
+                            // Перевіряємо, чи є fallback дата (якщо lastVisitAt відсутній)
+                            const fallbackDate = (client as any).lastVisitAtFallback;
+                            const fallbackSource = (client as any).lastVisitAtFallbackSource;
+                            const dateToShow = lastVisitAt || fallbackDate;
+                            if (dateToShow) {
+                              const formattedDate = formatDate(dateToShow);
                               tooltipText += `\nДата останнього візиту: ${formattedDate}`;
+                              if (fallbackSource) {
+                                const sourceNames: Record<string, string> = {
+                                  'paidServiceDate': 'дата платної послуги',
+                                  'visitDate': 'дата візиту',
+                                  'consultationBookingDate': 'дата консультації',
+                                };
+                                tooltipText += `\n(джерело: ${sourceNames[fallbackSource] || fallbackSource})`;
+                              }
                             }
                           } else {
                             tooltipText = "Днів з останнього візиту: -";
