@@ -130,7 +130,13 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     const { normalizeInstagram } = await import('@/lib/normalize');
     
     // Спочатку перевіряємо, чи існує клієнт з таким Altegio ID
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:133',message:'processInstagramUpdate: starting lookup',data:{chatId,altegioClientId,altegioClientIdType:typeof altegioClientId,instagramText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     let existingClient = await getDirectClientByAltegioId(altegioClientId);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:135',message:'processInstagramUpdate: lookup result',data:{altegioClientId,found:!!existingClient,clientId:existingClient?.id,clientAltegioId:existingClient?.altegioClientId,clientInstagram:existingClient?.instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     console.log(`[direct-reminders-webhook] 🔍 Client lookup by Altegio ID ${altegioClientId}:`, existingClient ? {
       id: existingClient.id,
       instagramUsername: existingClient.instagramUsername,
@@ -442,7 +448,13 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     }
     
     console.log(`[direct-reminders-webhook] 📞 Calling updateInstagramForAltegioClient(${altegioClientId}, "${normalized}")`);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:450',message:'processInstagramUpdate: calling updateInstagramForAltegioClient',data:{altegioClientId,normalized},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     let updatedClient = await updateInstagramForAltegioClient(altegioClientId, normalized);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:452',message:'processInstagramUpdate: updateInstagramForAltegioClient result',data:{altegioClientId,updated:!!updatedClient,updatedClientId:updatedClient?.id,updatedClientAltegioId:updatedClient?.altegioClientId,updatedClientInstagram:updatedClient?.instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     console.log(`[direct-reminders-webhook] ✅ Update result:`, updatedClient ? {
       success: true,
       clientId: updatedClient.id,
@@ -1100,11 +1112,17 @@ async function handleMessage(message: TelegramUpdate["message"]) {
         if (altegioIdMatch) {
           const altegioClientId = parseInt(altegioIdMatch[1] || altegioIdMatch[2] || altegioIdMatch[3], 10);
           console.log(`[direct-reminders-webhook] Parsed Altegio ID: ${altegioClientId}`);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:1112',message:'handleMessage: Altegio ID matched',data:{altegioClientId,isNaN:isNaN(altegioClientId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           
           if (!isNaN(altegioClientId)) {
             // Витягуємо Instagram username з відповіді (може бути з @ або без)
               const instagramText = messageText.trim().replace(/^@/, '').split(/\s+/)[0];
             console.log(`[direct-reminders-webhook] Extracted Instagram text: "${instagramText}"`);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:1118',message:'handleMessage: calling processInstagramUpdate',data:{chatId,altegioClientId,instagramText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             
             if (instagramText && instagramText.length > 0) {
               await processInstagramUpdate(chatId, altegioClientId, instagramText);
@@ -1214,6 +1232,9 @@ export async function POST(req: NextRequest) {
 
     // Обробляємо текстові повідомлення (відповіді на повідомлення про відсутній Instagram)
     if (update.message) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:1228',message:'POST webhook: calling handleMessage',data:{chatId:update.message.chat.id,messageText:update.message.text?.substring(0,50),replyToText:update.message.reply_to_message?.text?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       console.log(`[direct-reminders-webhook] Processing message from chat ${update.message.chat.id}`);
       await handleMessage(update.message);
     }
