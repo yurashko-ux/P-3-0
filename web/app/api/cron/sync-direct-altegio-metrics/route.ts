@@ -140,6 +140,10 @@ async function runSync(req: NextRequest) {
       fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:117',message:'Comparing values',data:{directClientId:client.id,altegioClientId:client.altegioClientId,currentSpent:client.spent,nextSpent,spentEqual:client.spent===nextSpent,spentStrictEqual:client.spent!==nextSpent,currentVisits:client.visits,nextVisits,visitsEqual:client.visits===nextVisits,visitsStrictEqual:client.visits!==nextVisits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
       // #endregion
       
+      // Нормалізуємо значення для порівняння (undefined -> null)
+      const currentSpentNormalized = client.spent ?? null;
+      const currentVisitsNormalized = client.visits ?? null;
+      
       // Детальне логування для діагностики (видно в Vercel logs)
       console.log('[cron/sync-direct-altegio-metrics] Порівняння значень', {
         directClientId: client.id,
@@ -148,12 +152,16 @@ async function runSync(req: NextRequest) {
         lastName: client.lastName,
         instagramUsername: client.instagramUsername,
         currentSpent: client.spent,
+        currentSpentNormalized,
         nextSpent,
-        spentEqual: client.spent === nextSpent,
+        spentEqual: currentSpentNormalized === nextSpent,
+        spentWillUpdate: nextSpent !== null && currentSpentNormalized !== nextSpent,
         spentTypes: { current: typeof client.spent, next: typeof nextSpent },
         currentVisits: client.visits,
+        currentVisitsNormalized,
         nextVisits,
-        visitsEqual: client.visits === nextVisits,
+        visitsEqual: currentVisitsNormalized === nextVisits,
+        visitsWillUpdate: nextVisits !== null && currentVisitsNormalized !== nextVisits,
         visitsTypes: { current: typeof client.visits, next: typeof nextVisits },
       });
 
@@ -164,11 +172,15 @@ async function runSync(req: NextRequest) {
         updates.phone = nextPhone;
         changedKeys.push('phone');
       }
-      if (nextVisits !== null && client.visits !== nextVisits) {
+      // Використовуємо нормалізоване порівняння для visits (враховуємо null vs undefined)
+      const currentVisitsNormalized = client.visits ?? null;
+      if (nextVisits !== null && currentVisitsNormalized !== nextVisits) {
         updates.visits = nextVisits;
         changedKeys.push('visits');
       }
-      if (nextSpent !== null && client.spent !== nextSpent) {
+      // Використовуємо нормалізоване порівняння для spent (враховуємо null vs undefined)
+      const currentSpentNormalized = client.spent ?? null;
+      if (nextSpent !== null && currentSpentNormalized !== nextSpent) {
         updates.spent = nextSpent;
         changedKeys.push('spent');
       }
