@@ -727,6 +727,15 @@ async function handleSelectMasterCallback(
       }, botToken);
       return;
     }
+    
+    // Перевіряємо, чи майстер має role='master' (не адміністратор або дірект-менеджер)
+    if (master.role !== 'master') {
+      await answerCallbackQuery(callback.id, {
+        text: `Помилка: "${master.name}" не є майстром (роль: ${master.role}). В колонку "Майстер" можна вносити лише майстрів.`,
+        show_alert: true,
+      }, botToken);
+      return;
+    }
 
     // Оновлюємо майстра клієнта
     const directClients = await getAllDirectClients();

@@ -102,18 +102,29 @@ export async function GET(req: NextRequest) {
   }
 
   const masters = await getAllDirectMasters();
+  // Фільтруємо тільки майстрів (role='master') для встановлення в колонку "Майстер"
+  const mastersOnly = masters.filter(m => m.role === 'master');
   const picked = pickMasterByName(
-    masters.map((m) => ({ id: m.id, name: m.name })),
+    mastersOnly.map((m) => ({ id: m.id, name: m.name })),
     masterName
   );
   if (!picked) {
-    const suggestions = masters
+    const suggestions = mastersOnly
       .map((m) => m.name)
       .filter(Boolean)
       .slice(0, 20);
     return NextResponse.json(
-      { ok: false, error: 'Master not found by name', masterNameLen: masterName.length, suggestions },
+      { ok: false, error: 'Master not found by name (only masters with role="master" are allowed)', masterNameLen: masterName.length, suggestions },
       { status: 404 }
+    );
+  }
+  
+  // Додаткова перевірка: переконаємося, що вибраний майстер дійсно має role='master'
+  const pickedMaster = masters.find(m => m.id === picked.id);
+  if (!pickedMaster || pickedMaster.role !== 'master') {
+    return NextResponse.json(
+      { ok: false, error: `Selected master "${picked.name}" has role "${pickedMaster?.role || 'unknown'}", only role="master" is allowed` },
+      { status: 400 }
     );
   }
 

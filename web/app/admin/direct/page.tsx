@@ -350,13 +350,14 @@ export default function DirectPage() {
     }
 
     // Завантажуємо відповідальних (майстрів)
+    // Використовуємо onlyMasters=true для фільтрації тільки майстрів (role='master')
     try {
-      const mastersRes = await fetch("/api/admin/direct/masters");
+      const mastersRes = await fetch("/api/admin/direct/masters?onlyMasters=true");
       if (mastersRes.ok) {
         const mastersData = await mastersRes.json();
         if (mastersData.ok && mastersData.masters) {
           setMasters(mastersData.masters);
-          console.log(`[DirectPage] Loaded ${mastersData.masters.length} masters`);
+          console.log(`[DirectPage] Loaded ${mastersData.masters.length} masters (only role='master')`);
         }
       } else {
         console.warn(`[DirectPage] Failed to load masters: ${mastersRes.status} ${mastersRes.statusText}`);

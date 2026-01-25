@@ -103,7 +103,8 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
                 onChange={(e) => setFormData({ ...formData, masterId: e.target.value || undefined })}
               >
                 <option value="">-</option>
-                {masters.map((m) => (
+                {/* Фільтруємо тільки майстрів (role='master'), не адміністраторів та дірект-менеджерів */}
+                {masters.filter((m: any) => !m.role || m.role === 'master').map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>

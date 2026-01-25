@@ -21,11 +21,14 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
     const forSelection = searchParams.get('forSelection') === 'true';
+    const onlyMasters = searchParams.get('onlyMasters') === 'true'; // Фільтр: тільки майстри (role='master')
 
     if (forSelection) {
       try {
         const masters = await getDirectMastersForSelection();
-        return NextResponse.json({ ok: true, masters });
+        // Якщо onlyMasters=true, фільтруємо тільки майстрів
+        const filtered = onlyMasters ? masters.filter(m => m.role === 'master') : masters;
+        return NextResponse.json({ ok: true, masters: filtered });
       } catch (selectionErr) {
         console.error('[direct/masters] Error getting masters for selection:', selectionErr);
         // Повертаємо порожній масив замість помилки, щоб не ламати UI
@@ -34,7 +37,9 @@ export async function GET(req: NextRequest) {
     }
 
     const masters = await getAllDirectMasters();
-    return NextResponse.json({ ok: true, masters });
+    // Якщо onlyMasters=true, фільтруємо тільки майстрів
+    const filtered = onlyMasters ? masters.filter(m => m.role === 'master') : masters;
+    return NextResponse.json({ ok: true, masters: filtered });
   } catch (err) {
     console.error('[direct/masters] GET error:', err);
     // Повертаємо порожній масив замість помилки, щоб не ламати UI
