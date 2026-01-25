@@ -43,7 +43,8 @@ async function runSync(req: NextRequest) {
     hasAdminToken,
     hasSecret,
     userAgent: req.headers.get('user-agent'),
-    allHeaders: Object.fromEntries(req.headers.entries()),
+    xVercelCron: req.headers.get('x-vercel-cron'),
+    authorization: req.headers.get('authorization'),
   });
   
   if (!okCron(req)) {
