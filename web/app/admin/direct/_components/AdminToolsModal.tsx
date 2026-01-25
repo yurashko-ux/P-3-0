@@ -562,6 +562,18 @@ export function AdminToolsModal({
           successMessage: (data: any) =>
             `✅ Синхронізація майстрів завершена!\n\nВсього клієнтів: ${data.results.totalClients}\nПеревірено: ${data.results.checked}\nОновлено: ${data.results.updated}\nБез Altegio ID: ${data.results.skippedNoAltegioId}\nПропущено (вже заповнено): ${data.results.skippedOnlyMissing}\nНемає груп: ${data.results.skippedNoGroups}\nНемає майстра в групі: ${data.results.skippedNoStaff}\nБез змін: ${data.results.skippedNoChange}\nПомилок: ${data.results.errors}\n\n${JSON.stringify(data, null, 2)}`,
         },
+        {
+          icon: "🧹",
+          label: "Очистити адміністраторів з колонки «Майстер»",
+          endpoint: "/api/admin/direct/cleanup-admin-masters?dryRun=1",
+          method: "GET" as const,
+          confirm:
+            "Очистити serviceMasterName для клієнтів, де встановлено адміністраторів або дірект-менеджерів?\n\nСпочатку буде показано список клієнтів (dryRun=1). Для застосування змін запустіть з dryRun=0.",
+          successMessage: (data: any) =>
+            data.dryRun
+              ? `🔍 Знайдено ${data.found} клієнтів з адміністраторами в serviceMasterName:\n\n${data.clients?.slice(0, 20).map((c: any) => `  - ${c.instagramUsername || 'no instagram'} (Altegio ${c.altegioClientId || 'no id'}): "${c.serviceMasterName}"`).join('\n')}${data.clients?.length > 20 ? `\n... і ще ${data.clients.length - 20}` : ''}\n\n${data.note}\n\nДля застосування змін запустіть з dryRun=0.`
+              : `✅ Очищення завершено!\n\nЗнайдено: ${data.found}\nОчищено: ${data.cleaned}\nПомилок: ${data.errors}\n\n${data.note}`,
+        },
       ],
     },
     // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
