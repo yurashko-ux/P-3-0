@@ -613,11 +613,38 @@ export async function POST(req: NextRequest) {
       }
     }
     
+    // Додаткова діагностика: перевіряємо, чи залишилися дублікати за altegioClientId
+    const remainingClients = await getAllDirectClients();
+    const remainingByAltegioId = new Map<number, typeof remainingClients>();
+    for (const client of remainingClients) {
+      if (client.altegioClientId) {
+        if (!remainingByAltegioId.has(client.altegioClientId)) {
+          remainingByAltegioId.set(client.altegioClientId, []);
+        }
+        remainingByAltegioId.get(client.altegioClientId)!.push(client);
+      }
+    }
+    
+    const remainingDuplicatesByAltegioId = Array.from(remainingByAltegioId.entries())
+      .filter(([_, clients]) => clients.length > 1)
+      .map(([altegioId, clients]) => ({
+        altegioClientId: altegioId,
+        count: clients.length,
+        clientIds: clients.map(c => c.id),
+        usernames: clients.map(c => c.instagramUsername),
+      }));
+    
     return NextResponse.json({
       ok: true,
       totalMerged,
       totalGroups: results.length,
       results,
+      diagnostics: {
+        totalClientsBefore: allClients.length,
+        totalClientsAfter: remainingClients.length,
+        clientsWithAltegioId: remainingClients.filter(c => c.altegioClientId).length,
+        remainingDuplicatesByAltegioId: remainingDuplicatesByAltegioId.length > 0 ? remainingDuplicatesByAltegioId : undefined,
+      },
     });
   } catch (error) {
     console.error('[merge-duplicates-by-name] Error:', error);
