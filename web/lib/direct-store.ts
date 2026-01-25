@@ -1080,11 +1080,15 @@ export async function saveDirectClient(
     
     // ВАЖЛИВО: Спочатку перевіряємо, чи існує клієнт з таким altegioClientId
     // Це запобігає створенню дублікатів, коли клієнт має інший instagramUsername
+    // ПЕРЕВІРКА ЗА altegioClientId МАЄ ПРІОРИТЕТ над перевіркою за instagramUsername
     let existingByAltegioId: any = null;
     if (data.altegioClientId) {
       existingByAltegioId = await prisma.directClient.findFirst({
         where: { altegioClientId: data.altegioClientId },
       });
+      if (existingByAltegioId) {
+        console.log(`[direct-store] 🔍 Found existing client by altegioClientId ${data.altegioClientId}: ${existingByAltegioId.id} (username: ${existingByAltegioId.instagramUsername})`);
+      }
     }
     
     // Спочатку перевіряємо, чи існує клієнт з таким instagramUsername
@@ -1095,7 +1099,39 @@ export async function saveDirectClient(
     let previousState: string | null | undefined = null;
     let clientIdForLog = client.id;
     
-    if (existingByUsername) {
+    // ВАЖЛИВО: Перевірка за altegioClientId має пріоритет над перевіркою за instagramUsername
+    // Якщо знайдено клієнта за altegioClientId, але він має інший instagramUsername,
+    // оновлюємо існуючого клієнта (запобігаємо дублюванню)
+    if (existingByAltegioId) {
+      previousState = existingByAltegioId.state;
+      clientIdForLog = existingByAltegioId.id;
+      
+      const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByAltegioId, finalState) : null;
+      const updateData: any = applyMetricsPatch({
+        ...dataWithCorrectState,
+        id: existingByAltegioId.id, // Зберігаємо існуючий ID
+        instagramUsername: normalizedUsername, // Оновлюємо Instagram username
+        createdAt: existingByAltegioId.createdAt < data.firstContactDate 
+          ? existingByAltegioId.createdAt 
+          : new Date(data.firstContactDate),
+        ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+      });
+      
+      // Гарантуємо збереження altegioClientId
+      updateData.altegioClientId = data.altegioClientId || existingByAltegioId.altegioClientId;
+      
+      if (touchUpdatedAt) {
+        updateData.lastActivityAt = new Date();
+        updateData.lastActivityKeys = activityKeys;
+      }
+      
+      await prisma.directClient.update({
+        where: { id: existingByAltegioId.id },
+        data: updateData,
+      });
+      
+      console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (prevented duplicate, updated Instagram: ${normalizedUsername})`);
+    } else if (existingByUsername) {
       previousState = existingByUsername.state;
       clientIdForLog = existingByUsername.id;
       
@@ -1168,37 +1204,6 @@ export async function saveDirectClient(
         console.warn(`[direct-store] ⚠️ altegioClientId mismatch after merge: expected ${updateData.altegioClientId}, got ${afterUpdate?.altegioClientId}`);
       }
       console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
-    } else if (existingByAltegioId) {
-      // ВАЖЛИВО: Якщо знайдено клієнта за altegioClientId, але не за instagramUsername,
-      // оновлюємо існуючого клієнта (запобігаємо дублюванню)
-      previousState = existingByAltegioId.state;
-      clientIdForLog = existingByAltegioId.id;
-      
-      const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByAltegioId, finalState) : null;
-      const updateData: any = applyMetricsPatch({
-        ...dataWithCorrectState,
-        id: existingByAltegioId.id, // Зберігаємо існуючий ID
-        instagramUsername: normalizedUsername, // Оновлюємо Instagram username
-        createdAt: existingByAltegioId.createdAt < data.firstContactDate 
-          ? existingByAltegioId.createdAt 
-          : new Date(data.firstContactDate),
-        ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-      });
-      
-      // Гарантуємо збереження altegioClientId
-      updateData.altegioClientId = data.altegioClientId || existingByAltegioId.altegioClientId;
-      
-      if (touchUpdatedAt) {
-        updateData.lastActivityAt = new Date();
-        updateData.lastActivityKeys = activityKeys;
-      }
-      
-      await prisma.directClient.update({
-        where: { id: existingByAltegioId.id },
-        data: updateData,
-      });
-      
-      console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (prevented duplicate, updated Instagram: ${normalizedUsername})`);
     } else {
       // Перевіряємо, чи існує клієнт з таким ID
       const existingById = await prisma.directClient.findUnique({
@@ -1224,17 +1229,69 @@ export async function saveDirectClient(
         });
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
       } else {
-        // Створюємо новий запис (для нового клієнта previousState = null)
-        const activityKeys = touchUpdatedAt ? computeActivityKeys(null, finalState) : null;
-        const createData: any = applyMetricsPatch(dataWithCorrectState);
-        if (touchUpdatedAt) {
-          createData.lastActivityAt = new Date();
-          createData.lastActivityKeys = activityKeys;
+        // ПЕРЕД створенням нового клієнта - ФІНАЛЬНА ПЕРЕВІРКА за altegioClientId
+        // Це запобігає створенню дублікатів, якщо altegioClientId було додано після першої перевірки
+        if (data.altegioClientId) {
+          const finalCheckByAltegioId = await prisma.directClient.findFirst({
+            where: { altegioClientId: data.altegioClientId },
+          });
+          
+          if (finalCheckByAltegioId) {
+            console.log(`[direct-store] ⚠️ Found existing client by altegioClientId ${data.altegioClientId} during final check: ${finalCheckByAltegioId.id} (preventing duplicate creation)`);
+            // Оновлюємо існуючого клієнта замість створення нового
+            previousState = finalCheckByAltegioId.state;
+            clientIdForLog = finalCheckByAltegioId.id;
+            
+            const activityKeys = touchUpdatedAt ? computeActivityKeys(finalCheckByAltegioId, finalState) : null;
+            const updateData: any = applyMetricsPatch({
+              ...dataWithCorrectState,
+              id: finalCheckByAltegioId.id,
+              instagramUsername: normalizedUsername,
+              createdAt: finalCheckByAltegioId.createdAt < data.firstContactDate 
+                ? finalCheckByAltegioId.createdAt 
+                : new Date(data.firstContactDate),
+              ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+            });
+            
+            updateData.altegioClientId = data.altegioClientId || finalCheckByAltegioId.altegioClientId;
+            
+            if (touchUpdatedAt) {
+              updateData.lastActivityAt = new Date();
+              updateData.lastActivityKeys = activityKeys;
+            }
+            
+            await prisma.directClient.update({
+              where: { id: finalCheckByAltegioId.id },
+              data: updateData,
+            });
+            
+            console.log(`[direct-store] ✅ Updated existing client ${finalCheckByAltegioId.id} by altegioClientId (prevented duplicate creation)`);
+          } else {
+            // Створюємо новий запис (для нового клієнта previousState = null)
+            const activityKeys = touchUpdatedAt ? computeActivityKeys(null, finalState) : null;
+            const createData: any = applyMetricsPatch(dataWithCorrectState);
+            if (touchUpdatedAt) {
+              createData.lastActivityAt = new Date();
+              createData.lastActivityKeys = activityKeys;
+            }
+            await prisma.directClient.create({
+              data: createData,
+            });
+            console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
+          }
+        } else {
+          // Створюємо новий запис (для нового клієнта previousState = null)
+          const activityKeys = touchUpdatedAt ? computeActivityKeys(null, finalState) : null;
+          const createData: any = applyMetricsPatch(dataWithCorrectState);
+          if (touchUpdatedAt) {
+            createData.lastActivityAt = new Date();
+            createData.lastActivityKeys = activityKeys;
+          }
+          await prisma.directClient.create({
+            data: createData,
+          });
+          console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
         }
-        await prisma.directClient.create({
-          data: createData,
-        });
-        console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
       }
     }
 
