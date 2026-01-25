@@ -120,7 +120,7 @@ async function runSync(req: NextRequest) {
       const res = await fetchAltegioClientMetrics({ altegioClientId: client.altegioClientId });
       
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:106',message:'Altegio metrics response',data:{directClientId:client.id,altegioClientId:client.altegioClientId,ok:res.ok,error:res.ok?null:res.error,metrics:res.ok?res.metrics:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:106',message:'Altegio metrics response',data:{directClientId:client.id,altegioClientId:client.altegioClientId,ok:res.ok,error:res.ok?null:(res as {ok:false,error:string}).error,metrics:res.ok?res.metrics:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
       // #endregion
       
       if (res.ok === false) {
