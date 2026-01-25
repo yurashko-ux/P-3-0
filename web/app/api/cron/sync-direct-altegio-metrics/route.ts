@@ -30,7 +30,14 @@ function okCron(req: NextRequest) {
 }
 
 async function runSync(req: NextRequest) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:32',message:'Cron job started',data:{hasVercelCron:req.headers.get('x-vercel-cron')==='1',hasAdminToken:!!req.cookies.get('admin_token')?.value,hasSecret:!!req.nextUrl.searchParams.get('secret')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   if (!okCron(req)) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:34',message:'Cron job forbidden',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 });
   }
 
@@ -59,6 +66,10 @@ async function runSync(req: NextRequest) {
 
   const allClients = await getAllDirectClients();
   const targets = allClients.filter((c) => typeof c.altegioClientId === 'number' && (c.altegioClientId || 0) > 0);
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:61',message:'Clients loaded',data:{totalClients:allClients.length,targetsCount:targets.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
 
   // Підтягуємо дати останніх візитів з Altegio ОДНИМ проходом (clients/search) — щоб не робити 300+ запитів.
   // ВАЖЛИВО: беремо last_visit_date (має відповідати “успішному візиту” у Altegio).
@@ -102,7 +113,16 @@ async function runSync(req: NextRequest) {
     processed++;
 
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:104',message:'Fetching metrics from Altegio',data:{directClientId:client.id,altegioClientId:client.altegioClientId,currentSpent:client.spent,currentVisits:client.visits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
       const res = await fetchAltegioClientMetrics({ altegioClientId: client.altegioClientId });
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:106',message:'Altegio metrics response',data:{directClientId:client.id,altegioClientId:client.altegioClientId,ok:res.ok,error:res.ok?null:res.error,metrics:res.ok?res.metrics:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
       if (res.ok === false) {
         const errText = res.error || 'unknown_error';
         if (errText.toLowerCase().includes('not found')) {
@@ -115,6 +135,10 @@ async function runSync(req: NextRequest) {
       const nextPhone = res.metrics.phone ? res.metrics.phone : null;
       const nextVisits = res.metrics.visits ?? null;
       const nextSpent = res.metrics.spent ?? null;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:117',message:'Comparing values',data:{directClientId:client.id,altegioClientId:client.altegioClientId,currentSpent:client.spent,nextSpent,spentEqual:client.spent===nextSpent,spentStrictEqual:client.spent!==nextSpent,currentVisits:client.visits,nextVisits,visitsEqual:client.visits===nextVisits,visitsStrictEqual:client.visits!==nextVisits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
       const updates: any = {};
       const changedKeys: string[] = [];
@@ -131,6 +155,10 @@ async function runSync(req: NextRequest) {
         updates.spent = nextSpent;
         changedKeys.push('spent');
       }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:133',message:'Update decision',data:{directClientId:client.id,altegioClientId:client.altegioClientId,changedKeys,hasUpdates:changedKeys.length>0,updates},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
 
       // lastVisitAt: оновлюємо, якщо Altegio дав last_visit_date для цього altegioClientId.
       // Не “затираємо” на null, якщо ключ не знайдений (щоб не втрачати дані при часткових вибірках).
@@ -150,6 +178,9 @@ async function runSync(req: NextRequest) {
       } catch {}
 
       if (changedKeys.length === 0) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:152',message:'Skipping client - no changes',data:{directClientId:client.id,altegioClientId:client.altegioClientId,currentSpent:client.spent,nextSpent,currentVisits:client.visits,nextVisits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         skippedNoChange++;
         continue;
       }
@@ -161,12 +192,20 @@ async function runSync(req: NextRequest) {
         updatedAt: client.updatedAt,
       };
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:164',message:'Saving client updates',data:{directClientId:client.id,altegioClientId:client.altegioClientId,changedKeys,updatedClientSpent:updatedClient.spent,updatedClientVisits:updatedClient.visits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+
       await saveDirectClient(
         updatedClient,
         'cron-sync-direct-altegio-metrics',
         { altegioClientId: client.altegioClientId, changedKeys },
         { touchUpdatedAt: false, skipAltegioMetricsSync: true }
       );
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:169',message:'Client saved successfully',data:{directClientId:client.id,altegioClientId:client.altegioClientId,changedKeys},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
 
       updated++;
       if (changedKeys.includes('lastVisitAt')) lastVisitUpdated++;
