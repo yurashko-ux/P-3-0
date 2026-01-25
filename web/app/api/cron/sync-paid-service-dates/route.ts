@@ -223,14 +223,39 @@ export async function POST(req: NextRequest) {
 
           // "Майстер" (загальний): для консультації теж виставляємо поточного майстра
           const picked = pickNonAdminStaffFromGroup(consultationInfo, 'latest');
-          if (picked?.staffName) {
-            updates.serviceMasterName = picked.staffName;
-            updates.serviceMasterAltegioStaffId = picked.staffId ?? null;
-            updates.serviceMasterHistory = appendServiceMasterHistory(client.serviceMasterHistory, {
-              kyivDay: consultationInfo.kyivDay,
-              masterName: picked.staffName,
-              source: 'records-group',
-            });
+          // Додаткова перевірка: не встановлюємо адміністраторів
+          if (picked?.staffName && !isAdminStaffName(picked.staffName)) {
+            // Додаткова перевірка ролі в БД (якщо доступна)
+            try {
+              const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+              const masters = await getAllDirectMasters();
+              const masterNameToRole = new Map(masters.map((m: any) => [m.name?.toLowerCase().trim() || '', m.role || 'master']));
+              const staffNameLower = picked.staffName.toLowerCase().trim();
+              const role = masterNameToRole.get(staffNameLower);
+              const isAdminByRole = role === 'admin' || role === 'direct-manager';
+              if (isAdminByRole) {
+                console.log(`[cron/sync-paid-service-dates] ⚠️ Skipping admin ${picked.staffName} (role: ${role}) for consultation master`);
+              } else {
+                updates.serviceMasterName = picked.staffName;
+                updates.serviceMasterAltegioStaffId = picked.staffId ?? null;
+                updates.serviceMasterHistory = appendServiceMasterHistory(client.serviceMasterHistory, {
+                  kyivDay: consultationInfo.kyivDay,
+                  masterName: picked.staffName,
+                  source: 'records-group',
+                });
+              }
+            } catch (err) {
+              // Якщо не вдалося перевірити роль - використовуємо тільки isAdminStaffName
+              if (!isAdminStaffName(picked.staffName)) {
+                updates.serviceMasterName = picked.staffName;
+                updates.serviceMasterAltegioStaffId = picked.staffId ?? null;
+                updates.serviceMasterHistory = appendServiceMasterHistory(client.serviceMasterHistory, {
+                  kyivDay: consultationInfo.kyivDay,
+                  masterName: picked.staffName,
+                  source: 'records-group',
+                });
+              }
+            }
           }
         }
 
