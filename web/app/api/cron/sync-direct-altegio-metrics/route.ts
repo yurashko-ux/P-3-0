@@ -174,13 +174,11 @@ async function runSync(req: NextRequest) {
         changedKeys.push('phone');
       }
       // Використовуємо нормалізоване порівняння для visits (враховуємо null vs undefined)
-      const currentVisitsNormalized = client.visits ?? null;
       if (nextVisits !== null && currentVisitsNormalized !== nextVisits) {
         updates.visits = nextVisits;
         changedKeys.push('visits');
       }
       // Використовуємо нормалізоване порівняння для spent (враховуємо null vs undefined)
-      const currentSpentNormalized = client.spent ?? null;
       if (nextSpent !== null && currentSpentNormalized !== nextSpent) {
         updates.spent = nextSpent;
         changedKeys.push('spent');
