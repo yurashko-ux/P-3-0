@@ -442,7 +442,7 @@ type DirectClientTableProps = {
     source: string;
     search: string;
     hasAppointment: string;
-    clientType?: string[]; // ['leads', 'clients', 'good', 'stars']
+    clientType: string[]; // ['leads', 'clients', 'good', 'stars']
   };
   onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
   onSearchClick?: () => void;
@@ -784,7 +784,7 @@ export function DirectClientTable({
       const matches: boolean[] = [];
       
       // Перевіряємо кожен вибраний фільтр
-      for (const filterType of filters.clientType || []) {
+      for (const filterType of filters.clientType) {
         if (filterType === "leads") {
           matches.push(!client.altegioClientId);
         } else if (filterType === "clients") {
@@ -798,7 +798,7 @@ export function DirectClientTable({
       }
 
       // AND логіка: клієнт має відповідати ВСІМ вибраним фільтрам
-      return matches.length === (filters.clientType?.length || 0) && matches.every((m) => m === true);
+      return matches.length === filters.clientType.length && matches.every((m) => m === true);
     });
   }, [uniqueClients, filters.clientType]);
 

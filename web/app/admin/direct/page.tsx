@@ -2317,7 +2317,11 @@ export default function DirectPage() {
                newFilters.source !== filters.source)) {
             setIsSearchLocked(false);
           }
-          setFilters(newFilters);
+          // Забезпечуємо, що clientType завжди присутній
+          setFilters({
+            ...newFilters,
+            clientType: newFilters.clientType || [],
+          });
         }}
         onSearchClick={() => {
           // При натисканні "Знайти" блокуємо автоматичне оновлення пошуку
