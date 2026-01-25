@@ -322,12 +322,49 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
  */
 export async function getDirectClientByAltegioId(altegioClientId: number): Promise<DirectClient | null> {
   try {
+    console.log(`[direct-store] 🔍 getDirectClientByAltegioId: searching for altegioClientId=${altegioClientId} (type: ${typeof altegioClientId})`);
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:323',message:'getDirectClientByAltegioId called',data:{altegioClientId,altegioClientIdType:typeof altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
     const client = await prisma.directClient.findFirst({
       where: { altegioClientId },
     });
+    
+    if (!client) {
+      console.log(`[direct-store] ⚠️ Client not found with altegioClientId=${altegioClientId}, trying alternative search...`);
+      // Спробуємо знайти всіх клієнтів з таким altegioClientId (для діагностики)
+      const allClients = await prisma.directClient.findMany({
+        where: {
+          OR: [
+            { altegioClientId: altegioClientId },
+            { altegioClientId: BigInt(altegioClientId) as any },
+          ],
+        },
+        select: {
+          id: true,
+          instagramUsername: true,
+          altegioClientId: true,
+          firstName: true,
+          lastName: true,
+        },
+        take: 5,
+      });
+      console.log(`[direct-store] 🔍 Alternative search found ${allClients.length} clients:`, allClients.map(c => ({
+        id: c.id,
+        instagram: c.instagramUsername,
+        altegioId: c.altegioClientId,
+        altegioIdType: typeof c.altegioClientId,
+        name: `${c.firstName} ${c.lastName}`,
+      })));
+    } else {
+      console.log(`[direct-store] ✅ Found client:`, {
+        id: client.id,
+        instagram: client.instagramUsername,
+        altegioId: client.altegioClientId,
+        altegioIdType: typeof client.altegioClientId,
+      });
+    }
+    
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:331',message:'getDirectClientByAltegioId result',data:{altegioClientId,found:!!client,clientId:client?.id,clientAltegioId:client?.altegioClientId,clientAltegioIdType:client?.altegioClientId?(typeof client.altegioClientId):'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
@@ -427,12 +464,75 @@ export async function updateInstagramForAltegioClient(
     };
 
     // Знаходимо клієнта за altegioClientId
+    console.log(`[direct-store] 🔍 updateInstagramForAltegioClient: searching for client with altegioClientId=${altegioClientId} (type: ${typeof altegioClientId})`);
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:420',message:'updateInstagramForAltegioClient: searching by altegioClientId',data:{altegioClientId,altegioClientIdType:typeof altegioClientId,instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
+    
+    // Спробуємо різні варіанти пошуку для діагностики
     let existingClient = await prisma.directClient.findFirst({
       where: { altegioClientId },
     });
+    
+    // Якщо не знайдено, спробуємо пошук з явним приведенням типів
+    if (!existingClient) {
+      console.log(`[direct-store] ⚠️ Client not found with direct search, trying with explicit type conversion...`);
+      // Спробуємо знайти всіх клієнтів з таким altegioClientId (для діагностики)
+      const allClientsWithId = await prisma.directClient.findMany({
+        where: {
+          OR: [
+            { altegioClientId: altegioClientId },
+            { altegioClientId: BigInt(altegioClientId) as any },
+            { altegioClientId: String(altegioClientId) as any },
+          ],
+        },
+        select: {
+          id: true,
+          instagramUsername: true,
+          altegioClientId: true,
+          firstName: true,
+          lastName: true,
+        },
+        take: 5,
+      });
+      console.log(`[direct-store] 🔍 Found ${allClientsWithId.length} clients with alternative searches:`, allClientsWithId.map(c => ({
+        id: c.id,
+        instagram: c.instagramUsername,
+        altegioId: c.altegioClientId,
+        altegioIdType: typeof c.altegioClientId,
+        name: `${c.firstName} ${c.lastName}`,
+      })));
+      
+      // Спробуємо знайти клієнта "Роса Ганна" для діагностики
+      const rosaClient = await prisma.directClient.findFirst({
+        where: {
+          OR: [
+            { firstName: { contains: 'Роса', mode: 'insensitive' } },
+            { lastName: { contains: 'Ганна', mode: 'insensitive' } },
+            { firstName: { contains: 'Rosa', mode: 'insensitive' } },
+            { lastName: { contains: 'Hanna', mode: 'insensitive' } },
+          ],
+        },
+        select: {
+          id: true,
+          instagramUsername: true,
+          altegioClientId: true,
+          firstName: true,
+          lastName: true,
+        },
+      });
+      if (rosaClient) {
+        console.log(`[direct-store] 🔍 Found "Роса Ганна" client:`, {
+          id: rosaClient.id,
+          instagram: rosaClient.instagramUsername,
+          altegioId: rosaClient.altegioClientId,
+          altegioIdType: typeof rosaClient.altegioClientId,
+          expectedAltegioId: altegioClientId,
+          match: rosaClient.altegioClientId === altegioClientId,
+        });
+      }
+    }
+    
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:424',message:'updateInstagramForAltegioClient: search result',data:{altegioClientId,found:!!existingClient,clientId:existingClient?.id,clientAltegioId:existingClient?.altegioClientId,clientInstagram:existingClient?.instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
