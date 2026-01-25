@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/sync-direct-altegio-metrics",
-      "schedule": "30 3 * * *"
+      "schedule": "0 * * * *"
     }
   ],
   "rewrites": [

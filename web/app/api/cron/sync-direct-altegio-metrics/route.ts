@@ -34,10 +34,27 @@ async function runSync(req: NextRequest) {
   fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:32',message:'Cron job started',data:{hasVercelCron:req.headers.get('x-vercel-cron')==='1',hasAdminToken:!!req.cookies.get('admin_token')?.value,hasSecret:!!req.nextUrl.searchParams.get('secret')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   // #endregion
   
+  // Детальне логування для діагностики автоматичного запуску (видно в Vercel logs)
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  const hasAdminToken = !!req.cookies.get('admin_token')?.value;
+  const hasSecret = !!req.nextUrl.searchParams.get('secret');
+  console.log('[cron/sync-direct-altegio-metrics] 🔍 Перевірка авторизації', {
+    isVercelCron,
+    hasAdminToken,
+    hasSecret,
+    userAgent: req.headers.get('user-agent'),
+    allHeaders: Object.fromEntries(req.headers.entries()),
+  });
+  
   if (!okCron(req)) {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:34',message:'Cron job forbidden',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
+    console.error('[cron/sync-direct-altegio-metrics] ❌ Доступ заборонено', {
+      isVercelCron,
+      hasAdminToken,
+      hasSecret,
+    });
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 });
   }
 
