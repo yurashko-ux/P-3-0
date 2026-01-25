@@ -1078,10 +1078,30 @@ export async function saveDirectClient(
     const clientWithCorrectState = { ...client, state: finalState };
     const dataWithCorrectState = directClientToPrisma(clientWithCorrectState);
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1077',message:'saveDirectClient: checking for duplicates',data:{clientId:client.id,normalizedUsername,altegioClientId:data.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    // ВАЖЛИВО: Спочатку перевіряємо, чи існує клієнт з таким altegioClientId
+    // Це запобігає створенню дублікатів, коли клієнт має інший instagramUsername
+    let existingByAltegioId: any = null;
+    if (data.altegioClientId) {
+      existingByAltegioId = await prisma.directClient.findFirst({
+        where: { altegioClientId: data.altegioClientId },
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1088',message:'saveDirectClient: found client by altegioClientId',data:{altegioClientId:data.altegioClientId,found:!!existingByAltegioId,existingId:existingByAltegioId?.id,existingInstagram:existingByAltegioId?.instagramUsername,newInstagram:normalizedUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    }
+    
     // Спочатку перевіряємо, чи існує клієнт з таким instagramUsername
     const existingByUsername = await prisma.directClient.findUnique({
       where: { instagramUsername: normalizedUsername },
     });
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1095',message:'saveDirectClient: found client by instagramUsername',data:{normalizedUsername,found:!!existingByUsername,existingId:existingByUsername?.id,existingAltegioId:existingByUsername?.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     
     let previousState: string | null | undefined = null;
     let clientIdForLog = client.id;
@@ -1159,11 +1179,50 @@ export async function saveDirectClient(
         console.warn(`[direct-store] ⚠️ altegioClientId mismatch after merge: expected ${updateData.altegioClientId}, got ${afterUpdate?.altegioClientId}`);
       }
       console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
+    } else if (existingByAltegioId) {
+      // ВАЖЛИВО: Якщо знайдено клієнта за altegioClientId, але не за instagramUsername,
+      // оновлюємо існуючого клієнта (запобігаємо дублюванню)
+      previousState = existingByAltegioId.state;
+      clientIdForLog = existingByAltegioId.id;
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1183',message:'saveDirectClient: updating existing client by altegioClientId (preventing duplicate)',data:{existingId:existingByAltegioId.id,existingInstagram:existingByAltegioId.instagramUsername,newInstagram:normalizedUsername,altegioClientId:data.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByAltegioId, finalState) : null;
+      const updateData: any = applyMetricsPatch({
+        ...dataWithCorrectState,
+        id: existingByAltegioId.id, // Зберігаємо існуючий ID
+        instagramUsername: normalizedUsername, // Оновлюємо Instagram username
+        createdAt: existingByAltegioId.createdAt < data.firstContactDate 
+          ? existingByAltegioId.createdAt 
+          : new Date(data.firstContactDate),
+        ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+      });
+      
+      // Гарантуємо збереження altegioClientId
+      updateData.altegioClientId = data.altegioClientId || existingByAltegioId.altegioClientId;
+      
+      if (touchUpdatedAt) {
+        updateData.lastActivityAt = new Date();
+        updateData.lastActivityKeys = activityKeys;
+      }
+      
+      await prisma.directClient.update({
+        where: { id: existingByAltegioId.id },
+        data: updateData,
+      });
+      
+      console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (prevented duplicate, updated Instagram: ${normalizedUsername})`);
     } else {
       // Перевіряємо, чи існує клієнт з таким ID
       const existingById = await prisma.directClient.findUnique({
         where: { id: client.id },
       });
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1205',message:'saveDirectClient: checking by ID before create',data:{clientId:client.id,existingById:!!existingById,altegioClientId:data.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       
       if (existingById) {
         previousState = existingById.state;
@@ -1185,6 +1244,10 @@ export async function saveDirectClient(
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
       } else {
         // Створюємо новий запис (для нового клієнта previousState = null)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1218',message:'saveDirectClient: creating new client',data:{clientId:client.id,normalizedUsername,altegioClientId:data.altegioClientId,hadExistingByAltegioId:!!existingByAltegioId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
         const activityKeys = touchUpdatedAt ? computeActivityKeys(null, finalState) : null;
         const createData: any = applyMetricsPatch(dataWithCorrectState);
         if (touchUpdatedAt) {

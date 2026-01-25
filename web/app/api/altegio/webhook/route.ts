@@ -2377,6 +2377,10 @@ export async function POST(req: NextRequest) {
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
           let existingClientIdByAltegio = clientId ? existingAltegioIdMap.get(parseInt(String(clientId), 10)) : null;
           
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2377',message:'Webhook: checking for existing clients',data:{clientId,normalizedInstagram,existingClientIdByInstagram:existingClientId,existingClientIdByAltegio,existingClientByAltegioId:!!existingClientByAltegioId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+          
           // Перевіряємо, чи потрібно об'єднати два записи:
           // 1. Запис з real Instagram username (можливо без altegioClientId)
           // 2. Запис з missing_instagram_* та altegioClientId
@@ -2517,6 +2521,10 @@ export async function POST(req: NextRequest) {
             }
           } else {
             // Створюємо нового клієнта
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'altegio/webhook/route.ts:2518',message:'Webhook: creating new client',data:{clientId,normalizedInstagram,existingClientByAltegioId:!!existingClientByAltegioId,hadExistingClientId:!!existingClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            
             const now = new Date().toISOString();
             // Клієнти з Altegio завжди мають стан "client" (не можуть бути "lead")
             // Бо Altegio - це клієнтська база, там лише клієнти, а не ліди
