@@ -563,6 +563,14 @@ export function AdminToolsModal({
             `✅ Синхронізація майстрів завершена!\n\nВсього клієнтів: ${data.results.totalClients}\nПеревірено: ${data.results.checked}\nОновлено: ${data.results.updated}\nБез Altegio ID: ${data.results.skippedNoAltegioId}\nПропущено (вже заповнено): ${data.results.skippedOnlyMissing}\nНемає груп: ${data.results.skippedNoGroups}\nНемає майстра в групі: ${data.results.skippedNoStaff}\nБез змін: ${data.results.skippedNoChange}\nПомилок: ${data.results.errors}\n\n${JSON.stringify(data, null, 2)}`,
         },
         {
+          icon: "🔍",
+          label: "Діагностика: знайти адміністраторів в колонці «Майстер»",
+          endpoint: "/api/admin/direct/debug-master-column",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `🔍 Діагностика колонки "Майстер":\n\nВсього клієнтів: ${data.totalClients}\nАдміністраторів/дірект-менеджерів: ${data.adminMasters?.length || 0}\n${data.adminMasters?.map((m: any) => `  - ${m.name} (${m.role})`).join('\n') || ''}\n\nЗнайдено проблем: ${data.issuesFound}\n\n${data.issues?.slice(0, 30).map((i: any) => `  - ${i.instagramUsername || 'no instagram'} (Altegio ${i.altegioClientId || 'no id'}): ${i.issue}`).join('\n') || 'Проблем не знайдено'}${data.issues?.length > 30 ? `\n... і ще ${data.issues.length - 30}` : ''}\n\n${data.note || ''}`,
+        },
+        {
           icon: "🧹",
           label: "Очистити адміністраторів з колонки «Майстер»",
           endpoint: "/api/admin/direct/cleanup-admin-masters?dryRun=1",
