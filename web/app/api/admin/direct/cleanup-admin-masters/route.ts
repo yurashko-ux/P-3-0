@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { getAllDirectMasters } from '@/lib/direct-masters/store';
 import { isAdminStaffName } from '@/lib/altegio/records-grouping';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -87,34 +88,47 @@ export async function POST(req: NextRequest) {
       return false;
     };
 
-    // Завантажуємо всіх клієнтів
-    const allClients = await getAllDirectClients();
-    console.log(`[cleanup-admin-masters] Found ${allClients.length} clients to check`);
+    // Завантажуємо всіх клієнтів з БД напряму (для точності)
+    // Використовуємо прямий SQL запит для пошуку клієнтів з serviceMasterName
+    const clientsWithServiceMaster = await prisma.directClient.findMany({
+      where: {
+        serviceMasterName: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        instagramUsername: true,
+        altegioClientId: true,
+        serviceMasterName: true,
+      },
+    });
+    
+    console.log(`[cleanup-admin-masters] Found ${clientsWithServiceMaster.length} clients with serviceMasterName in DB`);
 
     const clientsToClean: Array<{ id: string; instagramUsername?: string; altegioClientId?: number; serviceMasterName: string }> = [];
 
     // Знаходимо клієнтів з адміністраторами в serviceMasterName
-    let checkedCount = 0;
-    let withServiceMasterName = 0;
-    for (const client of allClients) {
-      checkedCount++;
-      const serviceMasterName = (client.serviceMasterName || '').toString().trim();
+    for (const dbClient of clientsWithServiceMaster) {
+      const serviceMasterName = (dbClient.serviceMasterName || '').toString().trim();
       if (serviceMasterName) {
-        withServiceMasterName++;
         const isAdmin = isAdminByName(serviceMasterName);
         if (isAdmin) {
           clientsToClean.push({
-            id: client.id,
-            instagramUsername: client.instagramUsername,
-            altegioClientId: client.altegioClientId,
+            id: dbClient.id,
+            instagramUsername: dbClient.instagramUsername || undefined,
+            altegioClientId: dbClient.altegioClientId || undefined,
             serviceMasterName,
           });
-          console.log(`[cleanup-admin-masters] Found admin in serviceMasterName: client ${client.id} (@${client.instagramUsername || 'no instagram'}, Altegio ${client.altegioClientId || 'no id'}): "${serviceMasterName}"`);
+          console.log(`[cleanup-admin-masters] Found admin in serviceMasterName: client ${dbClient.id} (@${dbClient.instagramUsername || 'no instagram'}, Altegio ${dbClient.altegioClientId || 'no id'}): "${serviceMasterName}"`);
+        } else {
+          // Логуємо для діагностики, якщо не знайдено адміністратора
+          console.log(`[cleanup-admin-masters] Client ${dbClient.id} has serviceMasterName "${serviceMasterName}" but it's not an admin`);
         }
       }
     }
 
-    console.log(`[cleanup-admin-masters] Checked ${checkedCount} clients, ${withServiceMasterName} with serviceMasterName, found ${clientsToClean.length} with administrators`);
+    console.log(`[cleanup-admin-masters] Checked ${clientsWithServiceMaster.length} clients with serviceMasterName, found ${clientsToClean.length} with administrators`);
 
     if (dryRun) {
       return NextResponse.json({
@@ -135,30 +149,20 @@ export async function POST(req: NextRequest) {
     let cleaned = 0;
     let errors = 0;
 
+    // Очищаємо serviceMasterName напряму в БД для швидкості
     for (const clientInfo of clientsToClean) {
       try {
-        const client = allClients.find((c) => c.id === clientInfo.id);
-        if (!client) {
-          console.warn(`[cleanup-admin-masters] Client ${clientInfo.id} not found`);
-          errors++;
-          continue;
-        }
-
-        const updated = {
-          ...client,
-          serviceMasterName: undefined,
-          serviceMasterAltegioStaffId: null,
-          updatedAt: new Date().toISOString(),
-        };
-
-        await saveDirectClient(updated, 'cleanup-admin-masters', {
-          altegioClientId: client.altegioClientId,
-          removedServiceMasterName: clientInfo.serviceMasterName,
-        }, { touchUpdatedAt: false, skipLogging: true, skipAltegioMetricsSync: true });
+        await prisma.directClient.update({
+          where: { id: clientInfo.id },
+          data: {
+            serviceMasterName: null,
+            serviceMasterAltegioStaffId: null,
+          },
+        });
 
         cleaned++;
         console.log(
-          `[cleanup-admin-masters] ✅ Cleaned serviceMasterName for client ${client.id} (${client.instagramUsername || 'no instagram'}, Altegio ${client.altegioClientId || 'no id'}): removed "${clientInfo.serviceMasterName}"`
+          `[cleanup-admin-masters] ✅ Cleaned serviceMasterName for client ${clientInfo.id} (@${clientInfo.instagramUsername || 'no instagram'}, Altegio ${clientInfo.altegioClientId || 'no id'}): removed "${clientInfo.serviceMasterName}"`
         );
       } catch (err) {
         errors++;

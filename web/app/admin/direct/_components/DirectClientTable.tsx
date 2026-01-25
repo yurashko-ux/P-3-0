@@ -654,10 +654,6 @@ export function DirectClientTable({
   }, [filters.search]);
 
   // Завантажуємо відповідальних (майстрів)
-  // ВАЖЛИВО: завантажуємо ВСІХ майстрів (не тільки role='master') для перевірки ролей в UI
-  // Фільтр onlyMasters=true використовується тільки для вибору майстра в ClientForm
-  const [allMastersWithRoles, setAllMastersWithRoles] = useState<Array<{ id: string; name: string; role?: string }>>([]);
-  
   useEffect(() => {
     // Завантажуємо тільки майстрів (role='master') для вибору в колонці "Майстер"
     fetch("/api/admin/direct/masters?forSelection=true&onlyMasters=true")
@@ -684,21 +680,6 @@ export function DirectClientTable({
       .catch((err) => {
         console.warn("[DirectClientTable] Failed to load masters (non-critical):", err);
         setMasters([]);
-      });
-    
-    // Завантажуємо ВСІХ майстрів (з ролями) для перевірки адміністраторів в UI
-    fetch("/api/admin/direct/masters?forSelection=true")
-      .then((res) => {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.ok && data.masters) {
-          setAllMastersWithRoles(data.masters);
-        }
-      })
-      .catch((err) => {
-        console.warn("[DirectClientTable] Failed to load all masters with roles (non-critical):", err);
       });
   }, []);
 
@@ -2582,34 +2563,8 @@ export function DirectClientTable({
                             client.masterId ? (masters.find((m) => m.id === client.masterId)?.name || '') : '';
                           const responsibleName = shortPersonName(responsibleRaw);
 
-                          // Перевіряємо, чи майстер не є адміністратором
-                          const isAdminByName = (name: string | null | undefined): boolean => {
-                            if (!name) return false;
-                            const n = name.toLowerCase().trim();
-                            // Перевіряємо роль в списку всіх майстрів
-                            const master = allMastersWithRoles.find(m => {
-                              const masterName = (m.name || '').toLowerCase().trim();
-                              if (!masterName) return false;
-                              // Точне співпадіння
-                              if (masterName === n) return true;
-                              // Співпадіння по першому слову (наприклад, "Вікторія" vs "Вікторія Колачник")
-                              const nameFirst = n.split(/\s+/)[0] || '';
-                              const masterFirst = masterName.split(/\s+/)[0] || '';
-                              if (nameFirst && masterFirst && nameFirst === masterFirst) return true;
-                              // Часткове співпадіння
-                              if (masterName.includes(n) || n.includes(masterName)) return true;
-                              return false;
-                            });
-                            return master?.role === 'admin' || master?.role === 'direct-manager';
-                          };
-
-                          // Фільтруємо адміністраторів
-                          const paidMasterIsAdmin = paidMasterName && isAdminByName(paidMasterName);
-                          const responsibleIsAdmin = responsibleName && isAdminByName(responsibleName);
-                          
-                          // Якщо paidMaster - адміністратор, але є responsible (не адмін) - показуємо responsible
-                          const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName && !paidMasterIsAdmin);
-                          const showResponsibleMaster = Boolean(!showPaidMaster && responsibleName && !responsibleIsAdmin);
+                          const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
+                          const showResponsibleMaster = Boolean(!showPaidMaster && responsibleName);
 
                           if (!showPaidMaster && !showResponsibleMaster) return '';
 
