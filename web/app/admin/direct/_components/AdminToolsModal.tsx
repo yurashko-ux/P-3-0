@@ -221,7 +221,7 @@ export function AdminToolsModal({
               const hoursAgo = Math.round((today.getTime() - finishedDate.getTime()) / (1000 * 60 * 60));
               
               message += `\n⏰ Останній запуск: ${isToday ? '✅ Сьогодні' : '❌ Не сьогодні'} (${hoursAgo} годин тому)\n`;
-              message += `Розклад: щодня о 3:30 ранку (30 3 * * *)\n`;
+              message += `Розклад: щогодини (0 * * * *)\n`;
             }
             
             message += `\n${JSON.stringify(data, null, 2)}`;
