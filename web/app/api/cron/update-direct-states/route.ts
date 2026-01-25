@@ -101,8 +101,25 @@ export async function GET(req: NextRequest) {
           : (determineStateFromServices(chosen.services) || 'other-services');
 
       const picked = pickNonAdminStaffFromGroup(chosen, 'latest');
+      // Додаткова перевірка: не встановлюємо адміністраторів
+      const isValidMaster = picked?.staffName && !isAdminStaffName(picked.staffName);
+      // Додаткова перевірка ролі в БД (якщо доступна)
+      let isAdminByRole = false;
+      if (isValidMaster) {
+        try {
+          const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+          const masters = await getAllDirectMasters();
+          const masterNameToRole = new Map(masters.map((m: any) => [m.name?.toLowerCase().trim() || '', m.role || 'master']));
+          const staffNameLower = picked.staffName.toLowerCase().trim();
+          const role = masterNameToRole.get(staffNameLower);
+          isAdminByRole = role === 'admin' || role === 'direct-manager';
+        } catch (err) {
+          // Якщо не вдалося перевірити роль - використовуємо тільки isAdminStaffName
+        }
+      }
+      const finalPicked = (isValidMaster && !isAdminByRole) ? picked : null;
       const needsMasterUpdate =
-        !!picked?.staffName && (client.serviceMasterName || '').trim() !== picked.staffName.trim();
+        !!finalPicked?.staffName && (client.serviceMasterName || '').trim() !== finalPicked.staffName.trim();
 
       // Якщо знайшли новий стан і він відрізняється від поточного - оновлюємо
       // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх (touchUpdatedAt: false)
@@ -113,11 +130,11 @@ export async function GET(req: NextRequest) {
             ...(newState && client.state !== newState ? { state: newState } : {}),
             ...(needsMasterUpdate
               ? {
-                  serviceMasterName: picked!.staffName,
-                  serviceMasterAltegioStaffId: picked!.staffId ?? null,
+                  serviceMasterName: finalPicked!.staffName,
+                  serviceMasterAltegioStaffId: finalPicked!.staffId ?? null,
                   serviceMasterHistory: appendServiceMasterHistory(client.serviceMasterHistory, {
                     kyivDay: chosen.kyivDay,
-                    masterName: picked!.staffName,
+                    masterName: finalPicked!.staffName,
                     source: 'records-group',
                   }),
                 }
