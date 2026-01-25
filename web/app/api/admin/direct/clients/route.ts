@@ -436,6 +436,20 @@ export async function GET(req: NextRequest) {
                 }
               }
             }
+            
+            // ВАЖЛИВО: Фільтруємо адміністраторів з serviceMasterName, навіть якщо вони вже є в БД
+            // Це очищає існуючі дані, де адміністратори (наприклад, Вікторія) були встановлені раніше
+            if (c.serviceMasterName) {
+              const currentMasterName = (c.serviceMasterName || '').toString().trim();
+              if (currentMasterName && isAdminByName(currentMasterName)) {
+                // Очищаємо serviceMasterName, якщо це адміністратор
+                c = {
+                  ...c,
+                  serviceMasterName: undefined,
+                  serviceMasterAltegioStaffId: null,
+                };
+              }
+            }
           }
         } catch (err) {
           console.warn('[direct/clients] ⚠️ Не вдалося дорахувати serviceMasterName з KV (не критично):', err);
