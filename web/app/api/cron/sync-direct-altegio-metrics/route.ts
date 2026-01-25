@@ -376,34 +376,54 @@ async function runSync(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  // #region agent log
+  // Логуємо ВСІ запити (навіть неавторизовані) для діагностики
   const allHeaders: Record<string, string> = {};
   req.headers.forEach((value, key) => {
     allHeaders[key] = value;
   });
-  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:378',message:'GET request received',data:{method:'GET',url:req.url,hasVercelCron:req.headers.get('x-vercel-cron')==='1',allHeaders},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
-  console.log('[cron/sync-direct-altegio-metrics] 📥 GET request received', {
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  
+  console.log('[cron/sync-direct-altegio-metrics] 📥 GET request received (ALL REQUESTS)', {
     url: req.url,
     method: 'GET',
-    hasVercelCron: req.headers.get('x-vercel-cron') === '1',
+    isVercelCron,
     xVercelCron: req.headers.get('x-vercel-cron'),
     userAgent: req.headers.get('user-agent'),
+    authorization: req.headers.get('authorization'),
+    timestamp: new Date().toISOString(),
+    allHeaders,
   });
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:378',message:'GET request received',data:{method:'GET',url:req.url,hasVercelCron:isVercelCron,allHeaders},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  
   return runSync(req);
 }
 
 export async function POST(req: NextRequest) {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:375',message:'POST request received',data:{method:'POST',url:req.url,hasVercelCron:req.headers.get('x-vercel-cron')==='1'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
-  console.log('[cron/sync-direct-altegio-metrics] 📥 POST request received', {
+  // Логуємо ВСІ запити (навіть неавторизовані) для діагностики
+  const allHeaders: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    allHeaders[key] = value;
+  });
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  
+  console.log('[cron/sync-direct-altegio-metrics] 📥 POST request received (ALL REQUESTS)', {
     url: req.url,
     method: 'POST',
-    hasVercelCron: req.headers.get('x-vercel-cron') === '1',
+    isVercelCron,
     xVercelCron: req.headers.get('x-vercel-cron'),
     userAgent: req.headers.get('user-agent'),
+    authorization: req.headers.get('authorization'),
+    timestamp: new Date().toISOString(),
+    allHeaders,
   });
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:396',message:'POST request received',data:{method:'POST',url:req.url,hasVercelCron:isVercelCron,allHeaders},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  
   return runSync(req);
 }
 
