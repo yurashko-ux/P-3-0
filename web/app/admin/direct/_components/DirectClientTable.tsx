@@ -654,6 +654,10 @@ export function DirectClientTable({
   }, [filters.search]);
 
   // Завантажуємо відповідальних (майстрів)
+  // ВАЖЛИВО: завантажуємо ВСІХ майстрів (не тільки role='master') для перевірки ролей в UI
+  // Фільтр onlyMasters=true використовується тільки для вибору майстра в ClientForm
+  const [allMastersWithRoles, setAllMastersWithRoles] = useState<Array<{ id: string; name: string; role?: string }>>([]);
+  
   useEffect(() => {
     // Завантажуємо тільки майстрів (role='master') для вибору в колонці "Майстер"
     fetch("/api/admin/direct/masters?forSelection=true&onlyMasters=true")
@@ -680,6 +684,21 @@ export function DirectClientTable({
       .catch((err) => {
         console.warn("[DirectClientTable] Failed to load masters (non-critical):", err);
         setMasters([]);
+      });
+    
+    // Завантажуємо ВСІХ майстрів (з ролями) для перевірки адміністраторів в UI
+    fetch("/api/admin/direct/masters?forSelection=true")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data && data.ok && data.masters) {
+          setAllMastersWithRoles(data.masters);
+        }
+      })
+      .catch((err) => {
+        console.warn("[DirectClientTable] Failed to load all masters with roles (non-critical):", err);
       });
   }, []);
 
