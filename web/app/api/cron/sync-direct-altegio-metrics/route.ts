@@ -139,6 +139,23 @@ async function runSync(req: NextRequest) {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:117',message:'Comparing values',data:{directClientId:client.id,altegioClientId:client.altegioClientId,currentSpent:client.spent,nextSpent,spentEqual:client.spent===nextSpent,spentStrictEqual:client.spent!==nextSpent,currentVisits:client.visits,nextVisits,visitsEqual:client.visits===nextVisits,visitsStrictEqual:client.visits!==nextVisits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
       // #endregion
+      
+      // Детальне логування для діагностики (видно в Vercel logs)
+      console.log('[cron/sync-direct-altegio-metrics] Порівняння значень', {
+        directClientId: client.id,
+        altegioClientId: client.altegioClientId,
+        firstName: client.firstName,
+        lastName: client.lastName,
+        instagramUsername: client.instagramUsername,
+        currentSpent: client.spent,
+        nextSpent,
+        spentEqual: client.spent === nextSpent,
+        spentTypes: { current: typeof client.spent, next: typeof nextSpent },
+        currentVisits: client.visits,
+        nextVisits,
+        visitsEqual: client.visits === nextVisits,
+        visitsTypes: { current: typeof client.visits, next: typeof nextVisits },
+      });
 
       const updates: any = {};
       const changedKeys: string[] = [];
@@ -181,6 +198,20 @@ async function runSync(req: NextRequest) {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:152',message:'Skipping client - no changes',data:{directClientId:client.id,altegioClientId:client.altegioClientId,currentSpent:client.spent,nextSpent,currentVisits:client.visits,nextVisits},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
         // #endregion
+        
+        // Детальне логування для пропущених клієнтів (видно в Vercel logs)
+        console.log('[cron/sync-direct-altegio-metrics] ⏭️ Пропущено клієнта - немає змін', {
+          directClientId: client.id,
+          altegioClientId: client.altegioClientId,
+          firstName: client.firstName,
+          lastName: client.lastName,
+          instagramUsername: client.instagramUsername,
+          currentSpent: client.spent,
+          nextSpent,
+          currentVisits: client.visits,
+          nextVisits,
+        });
+        
         skippedNoChange++;
         continue;
       }
