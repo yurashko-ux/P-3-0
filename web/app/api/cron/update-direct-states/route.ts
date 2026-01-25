@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, pickNonAdminStaffFromGroup, appendServiceMasterHistory } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, pickNonAdminStaffFromGroup, appendServiceMasterHistory, isAdminStaffName } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
