@@ -9,7 +9,7 @@ import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 type ClientFormProps = {
   client: Partial<DirectClient>;
   statuses: DirectStatus[];
-  masters: Array<{ id: string; name: string }>;
+  masters: Array<{ id: string; name: string; role?: string }>;
   onSave: (clientData: Partial<DirectClient>) => Promise<void>;
   onCancel: () => void;
 };
