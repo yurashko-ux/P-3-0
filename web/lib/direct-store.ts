@@ -323,9 +323,6 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
 export async function getDirectClientByAltegioId(altegioClientId: number): Promise<DirectClient | null> {
   try {
     console.log(`[direct-store] 🔍 getDirectClientByAltegioId: searching for altegioClientId=${altegioClientId} (type: ${typeof altegioClientId})`);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:323',message:'getDirectClientByAltegioId called',data:{altegioClientId,altegioClientIdType:typeof altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     const client = await prisma.directClient.findFirst({
       where: { altegioClientId },
     });
@@ -365,14 +362,8 @@ export async function getDirectClientByAltegioId(altegioClientId: number): Promi
       });
     }
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:331',message:'getDirectClientByAltegioId result',data:{altegioClientId,found:!!client,clientId:client?.id,clientAltegioId:client?.altegioClientId,clientAltegioIdType:client?.altegioClientId?(typeof client.altegioClientId):'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     return client ? prismaClientToDirectClient(client) : null;
   } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:331',message:'getDirectClientByAltegioId error',data:{altegioClientId,error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     console.error(`[direct-store] Failed to get client by Altegio ID ${altegioClientId}:`, err);
     return null;
   }
@@ -465,9 +456,6 @@ export async function updateInstagramForAltegioClient(
 
     // Знаходимо клієнта за altegioClientId
     console.log(`[direct-store] 🔍 updateInstagramForAltegioClient: searching for client with altegioClientId=${altegioClientId} (type: ${typeof altegioClientId})`);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:420',message:'updateInstagramForAltegioClient: searching by altegioClientId',data:{altegioClientId,altegioClientIdType:typeof altegioClientId,instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     
     // Спробуємо різні варіанти пошуку для діагностики
     let existingClient = await prisma.directClient.findFirst({
@@ -532,10 +520,6 @@ export async function updateInstagramForAltegioClient(
         });
       }
     }
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:424',message:'updateInstagramForAltegioClient: search result',data:{altegioClientId,found:!!existingClient,clientId:existingClient?.id,clientAltegioId:existingClient?.altegioClientId,clientInstagram:existingClient?.instagramUsername},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     if (!existingClient) {
       console.log(`[direct-store] ⚠️ Client with Altegio ID ${altegioClientId} not found, trying alternative search...`);
@@ -1102,9 +1086,6 @@ export async function saveDirectClient(
         willSetAltegioId: data.altegioClientId && !existingByUsername.altegioClientId,
         finalAltegioId: updateData.altegioClientId,
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:916',message:'saveDirectClient: merge details',data:{existingId:existingByUsername.id,existingAltegioId:existingByUsername.altegioClientId,newAltegioId:data.altegioClientId,finalAltegioId:updateData.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       
       if (touchUpdatedAt) {
         updateData.lastActivityAt = new Date();
@@ -1114,16 +1095,13 @@ export async function saveDirectClient(
         where: { instagramUsername: normalizedUsername },
         data: updateData,
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:923',message:'saveDirectClient: after merge update',data:{existingId:existingByUsername.id,updateDataAltegioId:updateData.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       // Перевіряємо, чи правильно зберігся altegioClientId після оновлення
       const afterUpdate = await prisma.directClient.findUnique({
         where: { id: existingByUsername.id },
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:930',message:'saveDirectClient: verification after merge',data:{existingId:existingByUsername.id,afterUpdateAltegioId:afterUpdate?.altegioClientId,expectedAltegioId:updateData.altegioClientId,match:afterUpdate?.altegioClientId===updateData.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
+      if (afterUpdate?.altegioClientId !== updateData.altegioClientId) {
+        console.warn(`[direct-store] ⚠️ altegioClientId mismatch after merge: expected ${updateData.altegioClientId}, got ${afterUpdate?.altegioClientId}`);
+      }
       console.log(`[direct-store] ✅ Updated existing client ${existingByUsername.id} (username: ${normalizedUsername})`);
     } else {
       // Перевіряємо, чи існує клієнт з таким ID
@@ -1361,20 +1339,12 @@ export async function saveDirectClient(
 
     // Логуємо зміну стану, якщо вона відбулася (і finalState заданий).
     // Важливо: якщо finalState = undefined/null, не логуємо (інакше отримуємо спам "Не встановлено").
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1170',message:'Checking if state change should be logged',data:{skipLogging,hasFinalState:!!finalState,finalState,previousState,stateChanged:finalState !== previousState,clientId:clientIdForLog,reason:reason||'saveDirectClient'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    
     if (!skipLogging && finalState && finalState !== previousState) {
       // Додаємо masterId до метаданих для історії
       const logMetadata = {
         ...metadata,
         masterId: client.masterId,
       };
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1177',message:'Calling logStateChange',data:{clientId:clientIdForLog,finalState,previousState,reason:reason||'saveDirectClient',hasMetadata:!!metadata},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       
       await logStateChange(
         clientIdForLog,
@@ -1383,14 +1353,6 @@ export async function saveDirectClient(
         reason || 'saveDirectClient',
         logMetadata
       );
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1188',message:'logStateChange completed',data:{clientId:clientIdForLog},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-    } else {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-store.ts:1192',message:'Skipping state change log',data:{skipLogging,hasFinalState:!!finalState,finalState,previousState,stateChanged:finalState !== previousState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
     }
   } catch (err) {
     console.error(`[direct-store] Failed to save client ${client.id}:`, err);
