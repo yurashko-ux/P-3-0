@@ -46,16 +46,45 @@ export async function POST(req: NextRequest) {
     const masterNameToRole = new Map(
       masters.map((m) => [m.name?.toLowerCase().trim() || '', m.role || 'master'])
     );
+    
+    // Створюємо список адміністраторів та дірект-менеджерів для детального логування
+    const adminMasters = masters.filter(m => m.role === 'admin' || m.role === 'direct-manager');
+    console.log(`[cleanup-admin-masters] Found ${adminMasters.length} administrators/direct-managers:`, 
+      adminMasters.map(m => `${m.name} (${m.role})`).join(', '));
 
     // Допоміжна функція для перевірки, чи майстер є адміністратором
+    // Підтримує часткове співпадіння імен (наприклад, "Вікторія" vs "Вікторія Колачник")
     const isAdminByName = (name: string | null | undefined): boolean => {
       if (!name) return false;
       const n = name.toLowerCase().trim();
       // Спочатку перевіряємо за ім'ям (якщо містить "адм")
       if (isAdminStaffName(n)) return true;
-      // Потім перевіряємо роль в базі даних
+      
+      // Точне співпадіння
       const role = masterNameToRole.get(n);
-      return role === 'admin' || role === 'direct-manager';
+      if (role === 'admin' || role === 'direct-manager') return true;
+      
+      // Часткове співпадіння: перевіряємо, чи ім'я з serviceMasterName міститься в імені майстра або навпаки
+      for (const master of adminMasters) {
+        const masterName = (master.name || '').toLowerCase().trim();
+        if (!masterName) continue;
+        
+        // Перевіряємо, чи перше слово співпадає (наприклад, "Вікторія" vs "Вікторія Колачник")
+        const nameFirst = n.split(/\s+/)[0] || '';
+        const masterFirst = masterName.split(/\s+/)[0] || '';
+        if (nameFirst && masterFirst && nameFirst === masterFirst) {
+          console.log(`[cleanup-admin-masters] Found admin by first name match: "${n}" matches "${masterName}" (${master.role})`);
+          return true;
+        }
+        
+        // Перевіряємо, чи одне ім'я міститься в іншому
+        if (n.includes(masterName) || masterName.includes(n)) {
+          console.log(`[cleanup-admin-masters] Found admin by partial match: "${n}" matches "${masterName}" (${master.role})`);
+          return true;
+        }
+      }
+      
+      return false;
     };
 
     // Завантажуємо всіх клієнтів
@@ -65,19 +94,27 @@ export async function POST(req: NextRequest) {
     const clientsToClean: Array<{ id: string; instagramUsername?: string; altegioClientId?: number; serviceMasterName: string }> = [];
 
     // Знаходимо клієнтів з адміністраторами в serviceMasterName
+    let checkedCount = 0;
+    let withServiceMasterName = 0;
     for (const client of allClients) {
+      checkedCount++;
       const serviceMasterName = (client.serviceMasterName || '').toString().trim();
-      if (serviceMasterName && isAdminByName(serviceMasterName)) {
-        clientsToClean.push({
-          id: client.id,
-          instagramUsername: client.instagramUsername,
-          altegioClientId: client.altegioClientId,
-          serviceMasterName,
-        });
+      if (serviceMasterName) {
+        withServiceMasterName++;
+        const isAdmin = isAdminByName(serviceMasterName);
+        if (isAdmin) {
+          clientsToClean.push({
+            id: client.id,
+            instagramUsername: client.instagramUsername,
+            altegioClientId: client.altegioClientId,
+            serviceMasterName,
+          });
+          console.log(`[cleanup-admin-masters] Found admin in serviceMasterName: client ${client.id} (@${client.instagramUsername || 'no instagram'}, Altegio ${client.altegioClientId || 'no id'}): "${serviceMasterName}"`);
+        }
       }
     }
 
-    console.log(`[cleanup-admin-masters] Found ${clientsToClean.length} clients with administrators in serviceMasterName`);
+    console.log(`[cleanup-admin-masters] Checked ${checkedCount} clients, ${withServiceMasterName} with serviceMasterName, found ${clientsToClean.length} with administrators`);
 
     if (dryRun) {
       return NextResponse.json({
