@@ -655,7 +655,8 @@ export function DirectClientTable({
 
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
-    fetch("/api/admin/direct/masters?forSelection=true")
+    // Завантажуємо тільки майстрів (role='master') для вибору в колонці "Майстер"
+    fetch("/api/admin/direct/masters?forSelection=true&onlyMasters=true")
       .then((res) => {
         if (!res.ok) {
           console.warn(`[DirectClientTable] Failed to load masters: ${res.status} ${res.statusText}`);
