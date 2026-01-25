@@ -1154,6 +1154,33 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 
+                // Встановлюємо serviceMasterName безпосередньо з вебхука (якщо це не адміністратор)
+                // Це простіше і надійніше, ніж використовувати складне групування
+                if (staffName && !hasConsultation) {
+                  // Перевіряємо, чи це не адміністратор
+                  const isAdmin = await isAdminStaff(staffName);
+                  if (!isAdmin) {
+                    // Встановлюємо serviceMasterName для платних послуг
+                    if (data.datetime && (hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services')) {
+                      const { appendServiceMasterHistory } = await import('@/lib/altegio/records-grouping');
+                      const { kyivDayFromISO } = await import('@/lib/altegio/records-grouping');
+                      const kyivDay = data.datetime ? kyivDayFromISO(data.datetime) : '';
+                      updates.serviceMasterName = staffName;
+                      updates.serviceMasterAltegioStaffId = staffId || null;
+                      if (kyivDay) {
+                        updates.serviceMasterHistory = appendServiceMasterHistory(existingClient.serviceMasterHistory, {
+                          kyivDay,
+                          masterName: staffName,
+                          source: 'webhook-direct',
+                        });
+                      }
+                      console.log(`[altegio/webhook] Set serviceMasterName = "${staffName}" directly from webhook for client ${existingClient.id}`);
+                    }
+                  } else {
+                    console.log(`[altegio/webhook] Skipping admin "${staffName}" for serviceMasterName for client ${existingClient.id}`);
+                  }
+                }
+                
                 // Оновлюємо клієнта, якщо є зміни стану, відповідального або paidServiceDate
                 const hasStateChange = finalState && existingClient.state !== finalState;
                 const hasMasterChange = updates.masterId && updates.masterId !== existingClient.masterId;
