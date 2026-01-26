@@ -1321,7 +1321,7 @@ export function DirectClientTable({
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[36px] min-w-[36px] max-w-[36px]">№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[60px] min-w-[60px] max-w-[60px]">
-                    <div className="flex flex-col items-start leading-none" title="Оновлення / Створення">
+                    <div className="flex flex-col items-start leading-none" title="Оновлення">
                       <button
                         className="hover:underline cursor-pointer text-left"
                         onClick={() =>
@@ -1333,18 +1333,6 @@ export function DirectClientTable({
                         title="Оновлення"
                       >
                         Оновл. {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <button
-                        className="hover:underline cursor-pointer text-left mt-0.5"
-                        onClick={() =>
-                          onSortChange(
-                            "createdAt",
-                            sortBy === "createdAt" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                        title="Створення"
-                      >
-                        Створ. {sortBy === "createdAt" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
                     </div>
                   </th>
@@ -1383,7 +1371,7 @@ export function DirectClientTable({
                           )
                         }
                       >
-                        Instagram {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
+                        {sortBy === "instagramUsername" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
                     </div>
                   </th>
