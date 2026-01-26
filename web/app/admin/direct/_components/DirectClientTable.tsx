@@ -1008,7 +1008,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[108px] min-w-[108px] max-w-[108px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1021,7 +1021,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[108px] min-w-[108px] max-w-[108px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1034,7 +1034,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[108px] min-w-[108px] max-w-[108px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1050,7 +1050,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[64px] min-w-[64px] max-w-[64px]">Дії</th>
                 </tr>
               </thead>
               <tbody>
