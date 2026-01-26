@@ -717,7 +717,7 @@ export default function DirectPage() {
           {/* Кнопка "+" з випадаючим меню */}
           <div className="relative add-menu-container" ref={addMenuRef}>
             <button
-              className="btn btn-sm btn-primary"
+              className="btn btn-primary w-6 h-6 aspect-square rounded-lg p-0 flex items-center justify-center text-sm"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
               title="Додати"
             >
