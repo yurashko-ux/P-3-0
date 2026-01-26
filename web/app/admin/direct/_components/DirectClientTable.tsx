@@ -1153,7 +1153,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="px-0.5 py-1 w-[44px] min-w-[44px] max-w-[44px]">
+                      <td className="px-0 py-1 w-[44px] min-w-[44px] max-w-[44px]">
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
