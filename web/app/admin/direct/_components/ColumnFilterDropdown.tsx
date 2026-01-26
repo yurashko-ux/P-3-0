@@ -29,6 +29,8 @@ export function ColumnFilterDropdown({
 }: ColumnFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Локальний стан для тимчасового вибору фільтрів (до застосування)
+  const [pendingFilters, setPendingFilters] = useState<ClientTypeFilter[]>(selectedFilters);
 
   // Підрахунок кількості для кожного фільтра (оптимізовано через useMemo)
   const filterCounts = useMemo(() => {
@@ -62,10 +64,17 @@ export function ColumnFilterDropdown({
     { id: "stars", label: "Зірки $$$", count: filterCounts.stars },
   ], [filterCounts]);
 
+  // Синхронізуємо pendingFilters з selectedFilters при зміні selectedFilters
+  useEffect(() => {
+    setPendingFilters(selectedFilters);
+  }, [selectedFilters]);
+
   // Закриваємо меню при кліку поза ним
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        // При закритті без застосування - скидаємо pendingFilters до selectedFilters
+        setPendingFilters(selectedFilters);
         setIsOpen(false);
       }
     };
@@ -77,16 +86,32 @@ export function ColumnFilterDropdown({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isOpen, selectedFilters]);
 
   const toggleFilter = (filterId: ClientTypeFilter) => {
-    const newFilters = selectedFilters.includes(filterId)
-      ? selectedFilters.filter((f) => f !== filterId)
-      : [...selectedFilters, filterId];
-    onFiltersChange(newFilters);
+    // Оновлюємо тільки локальний стан, не застосовуємо фільтри
+    setPendingFilters((prev) =>
+      prev.includes(filterId)
+        ? prev.filter((f) => f !== filterId)
+        : [...prev, filterId]
+    );
+  };
+
+  const handleApply = () => {
+    // Застосовуємо pendingFilters до реальних фільтрів
+    onFiltersChange(pendingFilters);
+    setIsOpen(false);
+  };
+
+  const handleClear = () => {
+    // Очищаємо і локальний стан, і реальні фільтри
+    setPendingFilters([]);
+    onFiltersChange([]);
+    setIsOpen(false);
   };
 
   const hasActiveFilters = selectedFilters.length > 0;
+  const hasPendingChanges = JSON.stringify(pendingFilters.sort()) !== JSON.stringify(selectedFilters.sort());
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
@@ -122,7 +147,7 @@ export function ColumnFilterDropdown({
             </div>
             <div className="space-y-1">
               {filterOptions.map((option) => {
-                const isSelected = selectedFilters.includes(option.id);
+                const isSelected = pendingFilters.includes(option.id);
                 return (
                   <button
                     key={option.id}
@@ -160,18 +185,15 @@ export function ColumnFilterDropdown({
             <div className="flex gap-2 mt-2">
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
+                onClick={handleApply}
                 className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium"
               >
                 Застосувати
               </button>
-              {hasActiveFilters && (
+              {(hasActiveFilters || pendingFilters.length > 0) && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onFiltersChange([]);
-                    setIsOpen(false);
-                  }}
+                  onClick={handleClear}
                   className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium"
                 >
                   Очистити
