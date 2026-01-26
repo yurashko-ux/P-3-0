@@ -1418,7 +1418,7 @@ export function DirectClientTable({
                     Днів
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
-                    Переписка
+                    Inst
                   </th>
                   <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-right w-[96px] min-w-[96px]">
                     <button
@@ -1443,7 +1443,7 @@ export function DirectClientTable({
                         )
                       }
                     >
-                      Запис на консультацію {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
@@ -1864,10 +1864,47 @@ export function DirectClientTable({
                                 href={instagramUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="shrink-0 hover:opacity-80 transition-opacity"
-                                title="Відкрити Instagram"
-                                aria-label="Відкрити Instagram"
-                                onClick={(e) => e.stopPropagation()}
+                                className="shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
+                                title="Клік для копіювання Instagram username"
+                                aria-label="Копіювати Instagram username"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  const usernameToCopy = client.instagramUsername?.trim();
+                                  if (usernameToCopy && usernameToCopy !== "NO INSTAGRAM" && !usernameToCopy.startsWith("no_instagram_") && !usernameToCopy.startsWith("missing_instagram_")) {
+                                    try {
+                                      await navigator.clipboard.writeText(usernameToCopy);
+                                      // Тимчасово змінюємо title для візуального фідбеку
+                                      const target = e.currentTarget;
+                                      const originalTitle = target.title;
+                                      target.title = `Скопійовано: ${usernameToCopy}`;
+                                      setTimeout(() => {
+                                        target.title = originalTitle;
+                                      }, 2000);
+                                    } catch (err) {
+                                      console.error('Помилка копіювання:', err);
+                                      // Fallback для старих браузерів
+                                      const textArea = document.createElement('textarea');
+                                      textArea.value = usernameToCopy;
+                                      textArea.style.position = 'fixed';
+                                      textArea.style.left = '-999999px';
+                                      document.body.appendChild(textArea);
+                                      textArea.select();
+                                      try {
+                                        document.execCommand('copy');
+                                        const target = e.currentTarget;
+                                        const originalTitle = target.title;
+                                        target.title = `Скопійовано: ${usernameToCopy}`;
+                                        setTimeout(() => {
+                                          target.title = originalTitle;
+                                        }, 2000);
+                                      } catch (fallbackErr) {
+                                        console.error('Помилка fallback копіювання:', fallbackErr);
+                                      }
+                                      document.body.removeChild(textArea);
+                                    }
+                                  }
+                                }}
                               >
                                 <LeadBadgeIcon />
                               </a>
