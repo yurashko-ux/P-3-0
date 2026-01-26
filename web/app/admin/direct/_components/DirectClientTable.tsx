@@ -1342,20 +1342,18 @@ export function DirectClientTable({
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[36px] min-w-[36px] max-w-[36px]">№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[60px] min-w-[60px] max-w-[60px]">
-                    <div className="flex flex-col items-start leading-none" title="Оновлення">
-                      <button
-                        className="hover:underline cursor-pointer text-left"
-                        onClick={() =>
-                          onSortChange(
-                            "updatedAt",
-                            sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                        title="Оновлення"
-                      >
-                        Онов {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                    </div>
+                    <button
+                      className="hover:underline cursor-pointer text-left"
+                      onClick={() =>
+                        onSortChange(
+                          "updatedAt",
+                          sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                      title="Оновлення"
+                    >
+                      Онов {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
                   <th className="px-0.5 py-2 bg-base-200 sticky top-0 z-20 w-[44px] min-w-[44px] max-w-[44px]" />
