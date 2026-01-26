@@ -691,7 +691,7 @@ export default function DirectPage() {
   }
 
   return (
-    <div className="w-full px-4 py-6 space-y-6">
+    <div className="w-full px-4 py-3 space-y-3">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           {/* Кнопки навігації до інших розділів */}
