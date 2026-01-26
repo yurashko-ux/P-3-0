@@ -882,7 +882,7 @@ export function DirectClientTable({
 
       {/* Таблиця */}
       <div className="overflow-x-auto">
-        <div className="max-h-[calc(100vh-80px)] overflow-y-auto flex flex-col bg-gray-200">
+        <div className="max-h-[calc(100vh-100px)] overflow-y-auto flex flex-col bg-gray-200">
           <div className="bg-white">
             <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <colgroup>
@@ -2477,7 +2477,7 @@ export function DirectClientTable({
       </div>
       
       {/* Футер після таблиці */}
-      <div className="bg-gray-200 min-h-[250px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
+      <div className="bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
         {/* Тут можна додавати дані */}
       </div>
     </div>
