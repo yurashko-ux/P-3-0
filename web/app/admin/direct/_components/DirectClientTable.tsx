@@ -379,15 +379,20 @@ function AvatarSlot({
   avatarSrc,
   onError,
   onLoad,
+  onClick,
 }: {
   avatarSrc: string | null;
   onError: (e: SyntheticEvent<HTMLImageElement, Event>) => void;
   onLoad?: () => void;
+  onClick?: () => void;
 }) {
   // Завжди рендеримо однаковий слот, щоб рядки вирівнювались.
   // Якщо аватарки нема — лишається пустий кружок.
   return (
-    <div className="w-10 h-10 rounded-full shrink-0 border border-slate-200 bg-slate-50 overflow-hidden">
+    <div 
+      className={`w-10 h-10 rounded-full shrink-0 border border-slate-200 bg-slate-50 overflow-hidden ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+      onClick={onClick}
+    >
       {avatarSrc ? (
         <img
           src={avatarSrc}
@@ -480,6 +485,7 @@ export function DirectClientTable({
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
+  const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
 
   const altegioClientsBaseUrl =
     "https://app.alteg.io/clients/1169323/base/?fields%5B0%5D=name&fields%5B1%5D=phone&fields%5B2%5D=email&fields%5B3%5D=sold_amount&fields%5B4%5D=visits_count&fields%5B5%5D=discount&fields%5B6%5D=last_visit_date&fields%5B7%5D=first_visit_date&order_by=id&order_by_direction=desc&page=1&page_size=25&segment=&operation=AND&filters%5B0%5D%5Boperation%5D=OR&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B1%5D%5Btype%5D=quick_search&filters%5B1%5D%5Bstate%5D%5Bvalue%5D=";
@@ -1297,6 +1303,21 @@ export function DirectClientTable({
         />
       )}
 
+      {/* Модальне вікно повноекранного перегляду аватарки */}
+      {fullscreenAvatar && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75"
+          onClick={() => setFullscreenAvatar(null)}
+        >
+          <img
+            src={fullscreenAvatar.src}
+            alt={fullscreenAvatar.username}
+            className="max-w-[90vw] max-h-[90vh] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       {/* Таблиця */}
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-2 sm:p-4">
@@ -1351,7 +1372,7 @@ export function DirectClientTable({
                           }
                           title="Сортувати по кількості відвідувань"
                         >
-                          Повне імʼя {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
+                          Ім'я {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
                         </button>
                         <ColumnFilterDropdown
                           clients={clients}
@@ -1359,7 +1380,7 @@ export function DirectClientTable({
                           onFiltersChange={(newFilters) =>
                             onFiltersChange({ ...filters, clientType: newFilters })
                           }
-                          columnLabel="Повне ім'я"
+                          columnLabel="Ім'я"
                         />
                       </div>
                       <button
@@ -1574,6 +1595,7 @@ export function DirectClientTable({
                               onError={(e) => {
                                 (e.currentTarget as HTMLImageElement).style.display = "none";
                               }}
+                              onClick={avatarSrc ? () => setFullscreenAvatar({ src: avatarSrc, username }) : undefined}
                             />
                           );
                         })()}
@@ -1697,9 +1719,26 @@ export function DirectClientTable({
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="shrink-0 hover:opacity-80 transition-opacity"
-                                  title="Відкрити Instagram"
-                                  aria-label="Відкрити Instagram"
-                                  onClick={(e) => e.stopPropagation()}
+                                  title="Клік для копіювання Instagram username"
+                                  aria-label="Копіювати Instagram username"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (username) {
+                                      try {
+                                        await navigator.clipboard.writeText(username);
+                                        // Тимчасово змінюємо title для візуального фідбеку
+                                        const target = e.currentTarget;
+                                        const originalTitle = target.title;
+                                        target.title = "Скопійовано!";
+                                        setTimeout(() => {
+                                          target.title = originalTitle;
+                                        }, 2000);
+                                      } catch (err) {
+                                        console.error('Помилка копіювання:', err);
+                                      }
+                                    }
+                                  }}
                                 >
                                   <LeadBadgeIcon />
                                 </a>
@@ -1718,7 +1757,7 @@ export function DirectClientTable({
                                       title={`https://instagram.com/${username}`}
                                       onClick={(e) => e.stopPropagation()}
                                     >
-                                        <span className="truncate min-w-0">{username}</span>
+                                        <span className="min-w-0 overflow-hidden">{username}</span>
                                         {visitsSuffix ? (
                                           <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                         ) : null}
@@ -1827,14 +1866,14 @@ export function DirectClientTable({
                                     title={`https://instagram.com/${username}`}
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                      <span className="truncate min-w-0">{nameOneLine}</span>
+                                      <span className="min-w-0 overflow-hidden">{nameOneLine}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
                                   </a>
                                 ) : (
                                     <span className="flex items-center gap-1 min-w-0" title={nameOneLine}>
-                                      <span className="truncate min-w-0">{nameOneLine}</span>
+                                      <span className="min-w-0 overflow-hidden">{nameOneLine}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
