@@ -2473,8 +2473,12 @@ export function DirectClientTable({
               </tbody>
             </table>
           </div>
-          <div className="flex-1 min-h-[200px]"></div>
         </div>
+      </div>
+      
+      {/* Футер після таблиці */}
+      <div className="bg-gray-200 min-h-[200px] p-4">
+        {/* Тут можна додавати дані */}
       </div>
     </div>
   );
