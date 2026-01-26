@@ -881,8 +881,9 @@ export function DirectClientTable({
       )}
 
       {/* Таблиця */}
-      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-        <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
+      <div className="overflow-x-auto">
+        <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
+          <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <colgroup>
                 <col style={{ width: 36 }} />
                 <col style={{ width: 60 }} />
@@ -898,7 +899,7 @@ export function DirectClientTable({
                 {/* Стан */}
                 <col style={{ width: 96 }} />
               </colgroup>
-              <thead className="sticky top-[40px] z-20 bg-base-200">
+              <thead className="sticky top-[36px] z-20 bg-base-200">
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[36px] min-w-[36px] max-w-[36px]">№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
@@ -2470,6 +2471,7 @@ export function DirectClientTable({
                 )}
               </tbody>
             </table>
+        </div>
       </div>
     </div>
   );
