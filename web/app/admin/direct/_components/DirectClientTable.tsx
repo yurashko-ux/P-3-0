@@ -933,7 +933,7 @@ export function DirectClientTable({
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0.5 py-2 bg-base-200 w-[44px] min-w-[44px] max-w-[44px]" />
+                  <th className="px-0 py-2 bg-base-200 w-[44px] min-w-[44px] max-w-[44px]" />
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[100px] min-w-[100px] max-w-[100px]">
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
