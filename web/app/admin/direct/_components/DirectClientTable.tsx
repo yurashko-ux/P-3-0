@@ -2705,9 +2705,19 @@ export function DirectClientTable({
                             ? 'rounded-full px-2 py-0.5 bg-[#2AABEE] text-white'
                             : '';
 
-                          const secondary = shortPersonName((client as any).serviceSecondaryMasterName);
+                          const secondaryFull = ((client as any).serviceSecondaryMasterName || '').trim();
+                          const secondary = shortPersonName(secondaryFull);
 
                           const name = showPaidMaster ? paidMasterName : responsibleName;
+                          
+                          // Не показуємо додаткового майстра, якщо він співпадає з основним
+                          // Порівнюємо повні імена (до нормалізації через shortPersonName) для точного визначення
+                          const primaryFull = showPaidMaster ? full : responsibleRaw;
+                          const areSameFullName = primaryFull.toLowerCase().trim() === secondaryFull.toLowerCase().trim();
+                          // Також перевіряємо після нормалізації (якщо повні імена різні, але перше слово однакове)
+                          const areSameAfterNormalization = secondary && secondary.toLowerCase().trim() === name.toLowerCase().trim();
+                          const shouldShowSecondary = secondary && !areSameFullName && !areSameAfterNormalization;
+                          
                           let historyTitle = name;
                           try {
                             const raw = client.serviceMasterHistory ? JSON.parse(client.serviceMasterHistory) : null;
@@ -2757,7 +2767,7 @@ export function DirectClientTable({
                                   </span>
                                 </span>
                               )}
-                              {secondary ? (
+                              {shouldShowSecondary ? (
                                 <span className="text-[10px] leading-none opacity-70">
                                   ({secondary})
                                 </span>
