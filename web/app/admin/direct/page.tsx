@@ -376,8 +376,6 @@ export default function DirectPage() {
       // Завантажуємо клієнтів
       await loadClients();
 
-      // Завантажуємо статистику
-      await loadStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
