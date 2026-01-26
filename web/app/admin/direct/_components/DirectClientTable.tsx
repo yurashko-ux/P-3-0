@@ -899,7 +899,7 @@ export function DirectClientTable({
                 {/* Стан */}
                 <col style={{ width: 96 }} />
               </colgroup>
-              <thead className="sticky top-[20px] z-20 bg-base-200">
+              <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[36px] min-w-[36px] max-w-[36px]">№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
