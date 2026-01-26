@@ -26,14 +26,22 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
     comment: client.comment || "",
   });
 
-  return (
-    <div className="card bg-base-100 shadow-lg border-2 border-primary">
-      <div className="card-body p-4">
-        <h3 className="card-title text-lg mb-4">
-          {client.id ? "Редагувати клієнта" : "Додати нового клієнта"}
-        </h3>
+  useEffect(() => {
+    setFormData({
+      instagramUsername: client.instagramUsername || "",
+      firstName: client.firstName || "",
+      lastName: client.lastName || "",
+      source: client.source || "instagram",
+      statusId: client.statusId || statuses.find((s) => s.isDefault)?.id || statuses[0]?.id || "",
+      masterId: client.masterId || "",
+      consultationDate: client.consultationDate ? client.consultationDate.split("T")[0] : "",
+      comment: client.comment || "",
+    });
+  }, [client, statuses]);
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  return (
+    <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label label-text text-xs">Instagram username *</label>
             <input
@@ -140,14 +148,13 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
           </div>
         </div>
 
-        <div className="flex gap-2 mt-4">
-          <button className="btn btn-sm btn-primary" onClick={() => onSave(formData)}>
-            Зберегти
-          </button>
-          <button className="btn btn-sm btn-ghost" onClick={onCancel}>
-            Скасувати
-          </button>
-        </div>
+      <div className="flex gap-2 mt-4">
+        <button className="btn btn-sm btn-primary" onClick={() => onSave(formData)}>
+          Зберегти
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={onCancel}>
+          Скасувати
+        </button>
       </div>
     </div>
   );

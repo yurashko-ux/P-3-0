@@ -717,38 +717,64 @@ export function DirectClientTable({
   return (
     <div className="space-y-2">
 
-      {/* Форма редагування */}
+      {/* Модальне вікно форми редагування */}
       {editingClient && (
-        <ClientForm
-          client={editingClient}
-          statuses={statuses}
-          masters={masters}
-          onSave={async (clientData) => {
-            if (editingClient.id) {
-              await onClientUpdate(editingClient.id, clientData);
-            } else {
-              // Створення нового клієнта
-              try {
-                const res = await fetch(`/api/admin/direct/clients`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(clientData),
-                });
-                const data = await res.json();
-                if (data.ok) {
-                  await onRefresh();
-                  setEditingClient(null);
-                } else {
-                  alert(data.error || "Failed to create client");
-                }
-              } catch (err) {
-                alert(err instanceof Error ? err.message : String(err));
-              }
-            }
-            setEditingClient(null);
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
           }}
-          onCancel={() => setEditingClient(null)}
-        />
+          onClick={() => setEditingClient(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg">
+                  {editingClient.id ? "Редагувати клієнта" : "Додати нового клієнта"}
+                </h3>
+                <button
+                  className="btn btn-sm btn-circle btn-ghost"
+                  onClick={() => setEditingClient(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <ClientForm
+                client={editingClient}
+                statuses={statuses}
+                masters={masters}
+                onSave={async (clientData) => {
+                  if (editingClient.id) {
+                    await onClientUpdate(editingClient.id, clientData);
+                  } else {
+                    // Створення нового клієнта
+                    try {
+                      const res = await fetch(`/api/admin/direct/clients`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(clientData),
+                      });
+                      const data = await res.json();
+                      if (data.ok) {
+                        await onRefresh();
+                        setEditingClient(null);
+                      } else {
+                        alert(data.error || "Failed to create client");
+                      }
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : String(err));
+                    }
+                  }
+                  setEditingClient(null);
+                }}
+                onCancel={() => setEditingClient(null)}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Модальне вікно історії станів */}
