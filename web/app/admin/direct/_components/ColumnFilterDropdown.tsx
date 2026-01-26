@@ -56,10 +56,10 @@ export function ColumnFilterDropdown({
   }, [clients]);
 
   const filterOptions: FilterOption[] = useMemo(() => [
-    { id: "leads", label: "Ліди (Кл. інстаграм)", count: filterCounts.leads },
-    { id: "clients", label: "Клієнти (Кл. Альтеджіо)", count: filterCounts.clients },
-    { id: "good", label: "Хороші Кл. (До 100тис.)", count: filterCounts.good },
-    { id: "stars", label: "Зірочки (клієнти >100тис.)", count: filterCounts.stars },
+    { id: "leads", label: "Ліди", count: filterCounts.leads },
+    { id: "clients", label: "Клієнти", count: filterCounts.clients },
+    { id: "good", label: "Клієнти $", count: filterCounts.good },
+    { id: "stars", label: "Зірки $$$", count: filterCounts.stars },
   ], [filterCounts]);
 
   // Закриваємо меню при кліку поза ним
@@ -93,8 +93,8 @@ export function ColumnFilterDropdown({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`inline-flex items-center justify-center w-5 h-5 rounded hover:bg-base-300 transition-colors ${
-          hasActiveFilters ? "bg-blue-100 text-blue-600" : "text-gray-500"
+        className={`inline-flex items-center justify-center w-6 h-6 rounded border hover:bg-base-300 transition-colors ${
+          hasActiveFilters ? "bg-blue-100 text-blue-600 border-blue-100" : "text-gray-500 border-gray-500"
         }`}
         title={`Фільтри для ${columnLabel}`}
       >
