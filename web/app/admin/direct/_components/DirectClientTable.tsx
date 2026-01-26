@@ -795,6 +795,8 @@ export function DirectClientTable({
           matches.push(!client.altegioClientId);
         } else if (filterType === "clients") {
           matches.push(!!client.altegioClientId);
+        } else if (filterType === "consulted") {
+          matches.push(!!client.altegioClientId && (client.spent ?? 0) === 0);
         } else if (filterType === "good") {
           const spent = client.spent ?? 0;
           matches.push(spent > 0 && spent < 100000);

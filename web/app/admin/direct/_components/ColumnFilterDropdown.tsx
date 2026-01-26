@@ -6,12 +6,13 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { DirectClient } from "@/lib/direct-types";
 
-export type ClientTypeFilter = "leads" | "clients" | "good" | "stars";
+export type ClientTypeFilter = "leads" | "clients" | "consulted" | "good" | "stars";
 
 interface FilterOption {
   id: ClientTypeFilter;
   label: string;
   count: number;
+  tooltip: string;
 }
 
 interface ColumnFilterDropdownProps {
@@ -36,6 +37,7 @@ export function ColumnFilterDropdown({
   const filterCounts = useMemo(() => {
     let leads = 0;
     let clientsCount = 0;
+    let consulted = 0;
     let good = 0;
     let stars = 0;
 
@@ -44,6 +46,10 @@ export function ColumnFilterDropdown({
         leads++;
       } else {
         clientsCount++;
+        // Консультовані: клієнти Altegio з spent = 0
+        if ((client.spent ?? 0) === 0) {
+          consulted++;
+        }
       }
       
       const spent = client.spent ?? 0;
@@ -54,14 +60,15 @@ export function ColumnFilterDropdown({
       }
     }
 
-    return { leads, clients: clientsCount, good, stars };
+    return { leads, clients: clientsCount, consulted, good, stars };
   }, [clients]);
 
   const filterOptions: FilterOption[] = useMemo(() => [
-    { id: "leads", label: "Ліди", count: filterCounts.leads },
-    { id: "clients", label: "Клієнти", count: filterCounts.clients },
-    { id: "good", label: "Клієнти $", count: filterCounts.good },
-    { id: "stars", label: "Зірки $$$", count: filterCounts.stars },
+    { id: "leads", label: "Ліди", count: filterCounts.leads, tooltip: "Клієнти без Altegio ID" },
+    { id: "clients", label: "Клієнти", count: filterCounts.clients, tooltip: "Клієнти з Altegio ID" },
+    { id: "consulted", label: "Консультовані", count: filterCounts.consulted, tooltip: "Клієнти Altegio з витратами = 0" },
+    { id: "good", label: "Клієнти $", count: filterCounts.good, tooltip: "Клієнти з витратами від 1 до 99,999 грн" },
+    { id: "stars", label: "Зірки $$$", count: filterCounts.stars, tooltip: "Клієнти з витратами від 100,000 грн" },
   ], [filterCounts]);
 
   // Синхронізуємо pendingFilters з selectedFilters при зміні selectedFilters
@@ -153,6 +160,7 @@ export function ColumnFilterDropdown({
                     key={option.id}
                     type="button"
                     onClick={() => toggleFilter(option.id)}
+                    title={option.tooltip}
                     className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
                       isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
                     }`}

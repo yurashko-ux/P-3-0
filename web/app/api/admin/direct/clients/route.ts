@@ -237,6 +237,8 @@ export async function GET(req: NextRequest) {
               matches.push(!c.altegioClientId);
             } else if (filterType === 'clients') {
               matches.push(!!c.altegioClientId);
+            } else if (filterType === 'consulted') {
+              matches.push(!!c.altegioClientId && (c.spent ?? 0) === 0);
             } else if (filterType === 'good') {
               const spent = c.spent ?? 0;
               matches.push(spent < 100000 && spent > 0);
