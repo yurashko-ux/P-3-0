@@ -694,10 +694,6 @@ export default function DirectPage() {
     <div className="w-full px-4 py-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Direct Manager</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Робота з клієнтами Instagram Direct
-          </p>
           {/* Кнопки навігації до інших розділів */}
           <div className="flex gap-1 flex-wrap mt-3">
             <Link href="/admin/campaigns" className="btn btn-xs btn-ghost">
