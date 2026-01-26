@@ -210,73 +210,73 @@ export default function DirectStatsPage() {
                 >
                   <thead>
                     <tr>
-                      <th className="text-[8px] py-0.5 px-1 whitespace-nowrap w-[120px] max-w-[120px] text-base-content">
+                      <th className="text-[10px] py-0.5 px-1 whitespace-nowrap w-[120px] max-w-[120px] text-base-content">
                         Майстер
                       </th>
-                      <th className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.clients}`}>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.clients}`}>
                         <div className="flex flex-col items-end leading-none">
                           <span>Кл</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.clients}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.clients}</span>
                         </div>
                       </th>
-                      <th className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[58px] text-base-content" title={`${statsTotals.consultBooked}`}>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[58px] text-base-content" title={`${statsTotals.consultBooked}`}>
                         <div className="flex flex-col items-end leading-none">
                           <span>Конс</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.consultBooked}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.consultBooked}</span>
                         </div>
                       </th>
-                      <th className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.consultAttended}`}>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.consultAttended}`}>
                         <div className="flex flex-col items-end leading-none">
                           <span>✅К</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.consultAttended}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.consultAttended}</span>
                         </div>
                       </th>
-                      <th className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.paidAttended}`}>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[52px] text-base-content" title={`${statsTotals.paidAttended}`}>
                         <div className="flex flex-col items-end leading-none">
                           <span>✅З</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.paidAttended}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.paidAttended}</span>
                         </div>
                       </th>
-                      <th className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[66px] text-base-content" title={`${statsTotals.rebooksCreated}`}>
+                      <th className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px] text-base-content" title={`${statsTotals.rebooksCreated}`}>
                         <div className="flex flex-col items-end leading-none">
                           <span>🔁</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.rebooksCreated}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.rebooksCreated}</span>
                         </div>
                       </th>
                       <th
-                        className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
                         title={formatUAHExact(statsTotals.futureSum)}
                       >
                         <div className="flex flex-col items-end leading-none">
                           <span>Майб</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.futureSum > 0 ? formatUAHThousands(statsTotals.futureSum) : '0 тис.'}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.futureSum > 0 ? formatUAHThousands(statsTotals.futureSum) : '0 тис.'}</span>
                         </div>
                       </th>
                       <th
-                        className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
                         title={formatUAHExact(statsTotals.monthToEndSum)}
                       >
                         <div className="flex flex-col items-end leading-none">
                           <span>До кін</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.monthToEndSum > 0 ? formatUAHThousands(statsTotals.monthToEndSum) : '0 тис.'}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.monthToEndSum > 0 ? formatUAHThousands(statsTotals.monthToEndSum) : '0 тис.'}</span>
                         </div>
                       </th>
                       <th
-                        className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
                         title={formatUAHExact(statsTotals.nextMonthSum)}
                       >
                         <div className="flex flex-col items-end leading-none">
                           <span>Наст</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.nextMonthSum > 0 ? formatUAHThousands(statsTotals.nextMonthSum) : '0 тис.'}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.nextMonthSum > 0 ? formatUAHThousands(statsTotals.nextMonthSum) : '0 тис.'}</span>
                         </div>
                       </th>
                       <th
-                        className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
                         title={formatUAHExact(statsTotals.plus2MonthSum)}
                       >
                         <div className="flex flex-col items-end leading-none">
                           <span>+2</span>
-                          <span className="text-[7px] opacity-60">{statsTotals.plus2MonthSum > 0 ? formatUAHThousands(statsTotals.plus2MonthSum) : '0 тис.'}</span>
+                          <span className="text-[9px] opacity-60">{statsTotals.plus2MonthSum > 0 ? formatUAHThousands(statsTotals.plus2MonthSum) : '0 тис.'}</span>
                         </div>
                       </th>
                     </tr>
@@ -284,17 +284,17 @@ export default function DirectStatsPage() {
                   <tbody>
                     {compactStatsRows.map((r) => (
                       <tr key={r.masterId}>
-                        <td className="text-[8px] whitespace-nowrap py-0.5 px-1 w-[120px] max-w-[120px] text-base-content">
+                        <td className="text-[10px] whitespace-nowrap py-0.5 px-1 w-[120px] max-w-[120px] text-base-content">
                           <span className="font-medium block truncate" title={r.masterName}>
                             {r.masterName}
                           </span>
                         </td>
-                        <td className="text-[8px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.clients}</td>
-                        <td className="text-[8px] text-right py-0.5 px-1 w-[58px] text-base-content tabular-nums">{r.consultBooked}</td>
-                        <td className="text-[8px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.consultAttended}</td>
-                        <td className="text-[8px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.paidAttended}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.clients}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[58px] text-base-content tabular-nums">{r.consultBooked}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.consultAttended}</td>
+                        <td className="text-[10px] text-right py-0.5 px-1 w-[52px] text-base-content tabular-nums">{r.paidAttended}</td>
                         <td
-                          className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[66px] text-base-content tabular-nums"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[66px] text-base-content tabular-nums"
                           title={
                             r.paidAttended > 0
                               ? `${r.rebooksCreated} / ${r.paidAttended} = ${Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%`
@@ -303,29 +303,29 @@ export default function DirectStatsPage() {
                         >
                           {r.rebooksCreated}
                           {r.paidAttended > 0 ? (
-                            <span className="ml-1 text-[8px] opacity-60">({Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%)</span>
+                            <span className="ml-1 text-[10px] opacity-60">({Math.round((r.rebooksCreated / r.paidAttended) * 1000) / 10}%)</span>
                           ) : null}
                         </td>
                         <td
-                          className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
                           title={typeof r.futureSum === 'number' ? formatUAHExact(r.futureSum) : ''}
                         >
                           {typeof r.futureSum === 'number' && r.futureSum > 0 ? formatUAHThousands(r.futureSum) : '-'}
                         </td>
                         <td
-                          className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
                           title={typeof r.monthToEndSum === 'number' ? formatUAHExact(r.monthToEndSum) : ''}
                         >
                           {typeof r.monthToEndSum === 'number' && r.monthToEndSum > 0 ? formatUAHThousands(r.monthToEndSum) : '-'}
                         </td>
                         <td
-                          className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
                           title={typeof r.nextMonthSum === 'number' ? formatUAHExact(r.nextMonthSum) : ''}
                         >
                           {typeof r.nextMonthSum === 'number' && r.nextMonthSum > 0 ? formatUAHThousands(r.nextMonthSum) : '-'}
                         </td>
                         <td
-                          className="text-[8px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          className="text-[10px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
                           title={typeof r.plus2MonthSum === 'number' ? formatUAHExact(r.plus2MonthSum) : ''}
                         >
                           {typeof r.plus2MonthSum === 'number' && r.plus2MonthSum > 0 ? formatUAHThousands(r.plus2MonthSum) : '-'}
