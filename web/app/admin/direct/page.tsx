@@ -724,23 +724,6 @@ export default function DirectPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={() => {
-              setIsLoading(true);
-              loadData();
-            }}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <span className="loading loading-spinner loading-xs"></span>
-                Оновлення...
-              </>
-            ) : (
-              "🔄 Оновити"
-            )}
-          </button>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
           <button
             className="btn btn-sm btn-ghost px-2"
@@ -770,7 +753,7 @@ export default function DirectPage() {
                       setIsAddMenuOpen(false);
                     }}
                   >
-                    Додати клієнта
+                    + Додати клієнта
                   </button>
                   <button
                     type="button"

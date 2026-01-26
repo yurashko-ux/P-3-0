@@ -717,16 +717,6 @@ export function DirectClientTable({
   return (
     <div className="space-y-4">
 
-      {/* Кнопка додати клієнта */}
-      <div className="flex justify-end">
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => setEditingClient({} as DirectClient)}
-        >
-          + Додати клієнта
-        </button>
-      </div>
-
       {/* Форма редагування */}
       {editingClient && (
         <ClientForm

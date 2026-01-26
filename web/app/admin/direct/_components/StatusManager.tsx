@@ -96,16 +96,6 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
 
   return (
     <>
-      {/* Кнопка для відкриття модального вікна */}
-      <div className="flex justify-end">
-        <button
-          className="btn btn-sm btn-primary"
-          onClick={() => setIsModalOpen(true)}
-        >
-          + Створити статус
-        </button>
-      </div>
-
       {/* Модальне вікно */}
       {isModalOpen && (
         <div

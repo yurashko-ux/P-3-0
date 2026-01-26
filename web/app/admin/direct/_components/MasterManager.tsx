@@ -176,27 +176,6 @@ export function MasterManager({ masters, onMasterUpdated, shouldOpenCreate, onOp
 
   return (
     <>
-      {/* Кнопка для відкриття модального вікна */}
-      <div className="flex justify-end">
-        <button
-          className="btn btn-sm btn-primary"
-          onClick={() => {
-            setIsModalOpen(true);
-            setEditingMaster(null);
-            setFormData({
-              name: "",
-              telegramUsername: "",
-              telegramChatId: "",
-              role: "master",
-              altegioStaffId: "",
-              order: masters.length + 1,
-            });
-          }}
-        >
-          + Відповідальний
-        </button>
-      </div>
-
       {/* Модальне вікно */}
       {isModalOpen && (
         <div
