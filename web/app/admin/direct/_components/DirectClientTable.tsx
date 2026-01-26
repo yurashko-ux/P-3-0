@@ -455,6 +455,8 @@ type DirectClientTableProps = {
   onSortChange: (by: string, order: "asc" | "desc") => void;
   onClientUpdate: (clientId: string, updates: Partial<DirectClient>) => Promise<void>;
   onRefresh: () => Promise<void>;
+  shouldOpenAddClient?: boolean;
+  onOpenAddClientChange?: (open: boolean) => void;
 };
 
 export function DirectClientTable({
@@ -467,11 +469,21 @@ export function DirectClientTable({
   onSortChange,
   onClientUpdate,
   onRefresh,
+  shouldOpenAddClient,
+  onOpenAddClientChange,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
   const debugActivity = (searchParams?.get("debugActivity") || "").toString().trim() === "1";
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
+  
+  // Відкриваємо форму додавання клієнта, якщо shouldOpenAddClient змінився на true
+  useEffect(() => {
+    if (shouldOpenAddClient) {
+      setEditingClient({} as DirectClient);
+      onOpenAddClientChange?.(false);
+    }
+  }, [shouldOpenAddClient, onOpenAddClientChange]);
   const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);

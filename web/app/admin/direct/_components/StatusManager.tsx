@@ -3,17 +3,28 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { DirectStatus } from "@/lib/direct-types";
 
 type StatusManagerProps = {
   statuses: DirectStatus[];
   onStatusCreated: () => Promise<void>;
+  shouldOpenCreate?: boolean;
+  onOpenCreateChange?: (open: boolean) => void;
 };
 
-export function StatusManager({ statuses, onStatusCreated }: StatusManagerProps) {
+export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onOpenCreateChange }: StatusManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  
+  // Відкриваємо модальне вікно, якщо shouldOpenCreate змінився на true
+  useEffect(() => {
+    if (shouldOpenCreate) {
+      setIsModalOpen(true);
+      setIsCreating(true);
+      onOpenCreateChange?.(false);
+    }
+  }, [shouldOpenCreate, onOpenCreateChange]);
   const [newStatus, setNewStatus] = useState({
     name: "",
     color: "#6b7280",

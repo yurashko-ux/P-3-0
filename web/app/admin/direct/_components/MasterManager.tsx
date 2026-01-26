@@ -21,12 +21,32 @@ type DirectMaster = {
 type MasterManagerProps = {
   masters: DirectMaster[];
   onMasterUpdated: () => Promise<void>;
+  shouldOpenCreate?: boolean;
+  onOpenCreateChange?: (open: boolean) => void;
 };
 
-export function MasterManager({ masters, onMasterUpdated }: MasterManagerProps) {
+export function MasterManager({ masters, onMasterUpdated, shouldOpenCreate, onOpenCreateChange }: MasterManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingMaster, setEditingMaster] = useState<DirectMaster | null>(null);
+  
+  // Відкриваємо модальне вікно, якщо shouldOpenCreate змінився на true
+  useEffect(() => {
+    if (shouldOpenCreate) {
+      setIsModalOpen(true);
+      setIsCreating(true);
+      setEditingMaster(null);
+      setFormData({
+        name: "",
+        telegramUsername: "",
+        telegramChatId: "",
+        role: "master",
+        altegioStaffId: "",
+        order: masters.length + 1,
+      });
+      onOpenCreateChange?.(false);
+    }
+  }, [shouldOpenCreate, onOpenCreateChange, masters.length]);
   const [formData, setFormData] = useState({
     name: "",
     telegramUsername: "",

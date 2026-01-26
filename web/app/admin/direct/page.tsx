@@ -158,6 +158,10 @@ export default function DirectPage() {
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
   const [isTelegramMessagesModalOpen, setIsTelegramMessagesModalOpen] = useState(false);
   const [isAdminToolsModalOpen, setIsAdminToolsModalOpen] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [shouldOpenAddClient, setShouldOpenAddClient] = useState(false);
+  const [shouldOpenAddMaster, setShouldOpenAddMaster] = useState(false);
+  const [shouldOpenAddStatus, setShouldOpenAddStatus] = useState(false);
   const [filters, setFilters] = useState({
     statusId: "",
     masterId: "",
@@ -721,12 +725,59 @@ export default function DirectPage() {
           </button>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
           <button
-            className="btn btn-sm btn-primary"
+            className="btn btn-sm btn-ghost px-2"
             onClick={() => setIsAdminToolsModalOpen(true)}
-            title="Відкрити інструменти адміністратора"
+            title="Відкрити тести"
           >
-            🔧 Інструменти адміністратора
+            тести
           </button>
+          
+          {/* Кнопка "+" з випадаючим меню */}
+          <div className="relative add-menu-container">
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+              title="Додати"
+            >
+              +
+            </button>
+            {isAddMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[180px]">
+                <div className="p-1">
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 rounded text-sm hover:bg-base-200 transition-colors"
+                    onClick={() => {
+                      setShouldOpenAddClient(true);
+                      setIsAddMenuOpen(false);
+                    }}
+                  >
+                    Додати клієнта
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 rounded text-sm hover:bg-base-200 transition-colors"
+                    onClick={() => {
+                      setShouldOpenAddMaster(true);
+                      setIsAddMenuOpen(false);
+                    }}
+                  >
+                    + відповідальний
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 rounded text-sm hover:bg-base-200 transition-colors"
+                    onClick={() => {
+                      setShouldOpenAddStatus(true);
+                      setIsAddMenuOpen(false);
+                    }}
+                  >
+                    + Створити статус
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
@@ -2240,12 +2291,16 @@ export default function DirectPage() {
           <StatusManager
             statuses={statuses}
             onStatusCreated={handleStatusCreated}
+            shouldOpenCreate={shouldOpenAddStatus}
+            onOpenCreateChange={(open) => setShouldOpenAddStatus(open)}
           />
         </div>
         <div className="flex-1">
           <MasterManager
             masters={masters}
             onMasterUpdated={handleStatusCreated}
+            shouldOpenCreate={shouldOpenAddMaster}
+            onOpenCreateChange={(open) => setShouldOpenAddMaster(open)}
           />
         </div>
       </div>
@@ -2288,6 +2343,8 @@ export default function DirectPage() {
         }}
         onClientUpdate={handleClientUpdate}
         onRefresh={loadData}
+        shouldOpenAddClient={shouldOpenAddClient}
+        onOpenAddClientChange={(open) => setShouldOpenAddClient(open)}
       />
     </div>
   );
