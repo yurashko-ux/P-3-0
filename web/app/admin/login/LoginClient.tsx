@@ -10,7 +10,7 @@ export default function LoginClient() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const sp = useSearchParams();
-  const next = sp.get("next") || "/admin";
+  const next = sp.get("next") || "/admin/direct";
 
   useEffect(() => {
     // допоміжно: автопідстановка якщо вже логінилися

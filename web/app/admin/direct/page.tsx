@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
+import Link from "next/link";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
@@ -675,6 +676,30 @@ export default function DirectPage() {
           <p className="text-sm text-gray-600 mt-1">
             Робота з клієнтами Instagram Direct
           </p>
+          {/* Кнопки навігації до інших розділів */}
+          <div className="flex gap-1 flex-wrap mt-3">
+            <Link href="/admin/campaigns" className="btn btn-xs btn-ghost">
+              📋 Кампанії
+            </Link>
+            <Link href="/admin/campaigns/new" className="btn btn-xs btn-ghost">
+              ✨ Нова кампанія
+            </Link>
+            <Link href="/admin/debug" className="btn btn-xs btn-ghost">
+              🧪 Тестова сторінка
+            </Link>
+            <Link href="/admin/altegio" className="btn btn-xs btn-ghost">
+              📊 Альтеджіо
+            </Link>
+            <Link href="/admin/photo-reports" className="btn btn-xs btn-ghost">
+              📸 Фото-звіти
+            </Link>
+            <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
+              💰 Фінансовий звіт
+            </Link>
+            <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost">
+              📈 Статистика
+            </Link>
+          </div>
         </div>
         <div className="flex gap-2">
           <button

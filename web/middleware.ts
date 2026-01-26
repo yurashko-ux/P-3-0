@@ -169,7 +169,7 @@ export default function middleware(req: NextRequest) {
 
       // звичайний точний збіг
       const cleanDest = new URL(url);
-      cleanDest.pathname = '/admin';          // після логіну одразу на домашню сторінку адмінки
+      cleanDest.pathname = '/admin/direct';          // після логіну одразу на розділ Дірект
       cleanDest.search = '';
 
       if (token === ADMIN_PASS) {

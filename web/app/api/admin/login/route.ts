@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   const input = String(form?.get('password') || '').trim();
 
   if (input && input === adminPass) {
-    const res = seeOther(new URL('/admin', req.url));
+    const res = seeOther(new URL('/admin/direct', req.url));
     res.cookies.set('admin_ok', '1', {
       httpOnly: true,
       sameSite: 'lax',

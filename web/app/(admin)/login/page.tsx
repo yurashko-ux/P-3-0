@@ -10,7 +10,7 @@ export default function AdminLoginPage() {
 
   // IMPORTANT:
   // ця форма НЕ робить fetch на бекенд.
-  // Вона просто переспрямовує на /admin?token=...,
+  // Вона просто переспрямовує на /admin/direct?token=...,
   // а middleware вже поставить кукі 'admin_token' і впустить.
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +26,7 @@ export default function AdminLoginPage() {
     try {
       setBusy(true);
       // Редірект на захищений роут з токеном у query
-      window.location.href = `/admin?token=${encodeURIComponent(token)}`;
+      window.location.href = `/admin/direct?token=${encodeURIComponent(token)}`;
     } finally {
       // нічого — редірект забере сторінку
     }
@@ -64,7 +64,7 @@ export default function AdminLoginPage() {
         </form>
 
         <p className="text-xs text-gray-500 mt-4 text-center">
-          Після успішного логіну буде редірект на <code>/admin</code> і кукі <code>admin_token</code> встановить middleware.
+          Після успішного логіну буде редірект на <code>/admin/direct</code> і кукі <code>admin_token</code> встановить middleware.
         </p>
       </div>
     </main>
