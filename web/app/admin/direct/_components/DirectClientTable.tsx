@@ -882,7 +882,7 @@ export function DirectClientTable({
 
       {/* Таблиця */}
       <div className="overflow-x-auto">
-        <div className="max-h-[calc(100vh-100px)] overflow-y-auto">
+        <div className="max-h-[calc(100vh-60px)] overflow-y-auto">
           <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <colgroup>
                 <col style={{ width: 36 }} />
