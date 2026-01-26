@@ -694,17 +694,16 @@ export default function DirectPage() {
     <div className="w-full px-4 py-3 space-y-3">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          {/* Кнопки навігації до інших розділів */}
-          <div className="flex gap-1 flex-wrap mt-3">
-            <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
-              💰 Фінансовий звіт
-            </Link>
-            <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost">
-              📈 Статистика
-            </Link>
-          </div>
+          {/* Лівий блок залишається порожнім */}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Кнопки навігації до інших розділів */}
+          <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
+            💰 Фінансовий звіт
+          </Link>
+          <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost">
+            📈 Статистика
+          </Link>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
           <button
             className="btn btn-sm btn-ghost px-2"
