@@ -64,7 +64,7 @@ export function ColumnFilterDropdown({
   }, [clients]);
 
   const filterOptions: FilterOption[] = useMemo(() => [
-    { id: "leads", label: "Ліди", count: filterCounts.leads, tooltip: "Клієнти без Altegio ID" },
+    { id: "leads", label: "Ліди", count: filterCounts.leads, tooltip: "Інстаграм ліди" },
     { id: "clients", label: "Клієнти", count: filterCounts.clients, tooltip: "Клієнти з Altegio ID" },
     { id: "consulted", label: "Консультовані", count: filterCounts.consulted, tooltip: "Клієнти Altegio з витратами = 0" },
     { id: "good", label: "Клієнти $", count: filterCounts.good, tooltip: "Клієнти з витратами від 1 до 99,999 грн" },
