@@ -855,10 +855,8 @@ export function DirectClientTable({
       )}
 
       {/* Таблиця */}
-      <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-2 sm:p-4">
-          <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 60px)', overflowY: 'auto' }}>
-            <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
+      <div className="overflow-x-auto">
+        <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <colgroup>
                 <col style={{ width: 36 }} />
                 <col style={{ width: 60 }} />
@@ -876,8 +874,8 @@ export function DirectClientTable({
               </colgroup>
               <thead>
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[36px] min-w-[36px] max-w-[36px]">№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[60px] min-w-[60px] max-w-[60px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[36px] min-w-[36px] max-w-[36px]">№</th>
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() => {
@@ -897,8 +895,8 @@ export function DirectClientTable({
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0.5 py-2 bg-base-200 sticky top-0 z-20 w-[44px] min-w-[44px] max-w-[44px]" />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-0.5 py-2 bg-base-200 w-[44px] min-w-[44px] max-w-[44px]" />
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -935,7 +933,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -951,15 +949,15 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[56px] min-w-[56px] max-w-[56px] text-center"
+                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[56px] min-w-[56px] max-w-[56px] text-center"
                     title="Днів з останнього візиту (Altegio)"
                   >
                     Днів
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[120px] min-w-[120px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[120px] min-w-[120px]">
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 text-right w-[96px] min-w-[96px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 text-right w-[96px] min-w-[96px]">
                     <button
                       className="hover:underline cursor-pointer w-full text-center"
                       onClick={() =>
@@ -972,7 +970,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -985,7 +983,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -998,7 +996,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1011,10 +1009,10 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20">Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">Дії</th>
                 </tr>
               </thead>
               <tbody>
@@ -2446,8 +2444,6 @@ export function DirectClientTable({
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
       </div>
     </div>
   );
