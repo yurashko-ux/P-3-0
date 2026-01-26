@@ -192,7 +192,7 @@ function CardHeader({
   emoji?: string;
 }) {
   return (
-    <div style={{ padding: '22px 24px 10px 24px' }}>
+    <div style={{ padding: '10px 24px 10px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {emoji && <span style={{ fontSize: 28 }}>{emoji}</span>}
         <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>{title}</h2>
