@@ -715,7 +715,7 @@ export function DirectClientTable({
 
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 relative">
 
       {/* Модальне вікно форми редагування */}
       {editingClient && (
@@ -2477,7 +2477,7 @@ export function DirectClientTable({
       </div>
       
       {/* Футер після таблиці */}
-      <div className="bg-gray-200 min-h-[250px] p-4 -mx-4 w-[calc(100%+2rem)] -mt-4">
+      <div className="absolute bottom-0 left-0 right-0 bg-gray-200 min-h-[250px] p-4 -mx-4 w-[calc(100%+2rem)]">
         {/* Тут можна додавати дані */}
       </div>
     </div>
