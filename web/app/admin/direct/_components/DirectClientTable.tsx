@@ -987,7 +987,7 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[56px] min-w-[56px] max-w-[56px] text-center"
+                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[56px] min-w-[56px] max-w-[56px]"
                     title="Днів з останнього візиту (Altegio)"
                   >
                     Днів
@@ -995,9 +995,9 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 text-right w-[80px] min-w-[80px] max-w-[80px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
                     <button
-                      className="hover:underline cursor-pointer w-full text-center"
+                      className="hover:underline cursor-pointer w-full text-left"
                       onClick={() =>
                         onSortChange(
                           "state",
@@ -1122,7 +1122,7 @@ export function DirectClientTable({
                     return (
                       <>
                         <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
-                      <td className="px-1 sm:px-2 py-1 text-xs text-right">{index + 1}</td>
+                      <td className="px-1 sm:px-2 py-1 text-xs">{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap">
                         <span className="flex flex-col leading-none">
                           <span
@@ -1523,8 +1523,8 @@ export function DirectClientTable({
                         </span>
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
-                        <span className="flex flex-col items-center leading-none">
-                          <span className="text-center">
+                        <span className="flex flex-col items-start leading-none">
+                          <span className="text-left">
                             {client.spent !== null && client.spent !== undefined
                               ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
                               : '-'}
@@ -1532,7 +1532,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[56px] min-w-[56px] max-w-[56px] text-center tabular-nums">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[56px] min-w-[56px] max-w-[56px] tabular-nums">
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -1654,7 +1654,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-right w-[80px] min-w-[80px] max-w-[80px]">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -2005,7 +2005,7 @@ export function DirectClientTable({
                               // debug logs removed
 
                               return (
-                                <span className="flex flex-col items-center">
+                                <span className="flex flex-col items-start">
                                   <span className="flex items-center gap-1">
                                     <button
                                       className={
@@ -2055,13 +2055,13 @@ export function DirectClientTable({
                                     const consultantFull = (client.consultationMasterName || '').toString().trim();
                                     const consultant = shortPersonName(consultantFull);
                                     if (!consultant) return (
-                                      <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-center">
+                                      <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
                                         невідомо
                                       </span>
                                     );
                                     return (
                                       <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
+                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
                                         title={`Консультував: ${consultantFull}`}
                                       >
                                         <span className="inline-flex items-center">
@@ -2182,7 +2182,7 @@ export function DirectClientTable({
                             const showPaidCostDot = Boolean(paidCostChanged);
 
                             return (
-                              <span className="flex flex-col items-center">
+                              <span className="flex flex-col items-start">
                                 <span className="flex items-center gap-1">
                                 <button
                                   className={
@@ -2234,7 +2234,7 @@ export function DirectClientTable({
 
                                 {typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? (
                                   <span
-                                    className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-center"
+                                    className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
                                     title={`Сума запису: ${formatUAHExact(client.paidServiceTotalCost)}`}
                                   >
                                     <span className="inline-flex items-center">
@@ -2248,7 +2248,7 @@ export function DirectClientTable({
                                     </span>
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-center">
+                                  <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
                                     невідомо
                                   </span>
                                 )}
