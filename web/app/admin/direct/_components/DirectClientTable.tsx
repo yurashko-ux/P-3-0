@@ -1366,13 +1366,13 @@ export function DirectClientTable({
                           className="hover:underline cursor-pointer text-left"
                           onClick={() =>
                             onSortChange(
-                              "visits",
-                              sortBy === "visits" && sortOrder === "desc" ? "asc" : "desc"
+                              "spent",
+                              sortBy === "spent" && sortOrder === "desc" ? "asc" : "desc"
                             )
                           }
-                          title="Сортувати по кількості відвідувань"
+                          title="Сортувати по продажам"
                         >
-                          Ім'я {sortBy === "visits" && (sortOrder === "asc" ? "↑" : "↓")}
+                          Ім'я {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
                         </button>
                         <ColumnFilterDropdown
                           clients={clients}
