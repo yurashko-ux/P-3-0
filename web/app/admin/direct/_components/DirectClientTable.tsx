@@ -886,34 +886,34 @@ export function DirectClientTable({
           <div className="bg-white">
             <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <colgroup>
-                <col style={{ width: 36 }} />
-                <col style={{ width: 60 }} />
+                <col style={{ width: 16 }} />
+                <col style={{ width: 40 }} />
                 <col style={{ width: 44 }} />
                 {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
-                <col style={{ width: 90 }} />
-                {/* Продажі */}
-                <col style={{ width: 80 }} />
-                {/* Днів з останнього візиту */}
-                <col style={{ width: 56 }} />
-                {/* Переписка */}
-                <col style={{ width: 60 }} />
-                {/* Стан */}
-                <col style={{ width: 80 }} />
-                {/* Консультація */}
-                <col style={{ width: 90 }} />
-                {/* Запис */}
-                <col style={{ width: 90 }} />
-                {/* Майстер */}
-                <col style={{ width: 90 }} />
-                {/* Телефон */}
                 <col style={{ width: 100 }} />
+                {/* Продажі */}
+                <col style={{ width: 50 }} />
+                {/* Днів з останнього візиту */}
+                <col style={{ width: 40 }} />
+                {/* Переписка */}
+                <col style={{ width: 40 }} />
+                {/* Стан */}
+                <col style={{ width: 30 }} />
+                {/* Консультація */}
+                <col style={{ width: 80 }} />
+                {/* Запис */}
+                <col style={{ width: 80 }} />
+                {/* Майстер */}
+                <col style={{ width: 60 }} />
+                {/* Телефон */}
+                <col style={{ width: 80 }} />
                 {/* Дії */}
-                <col style={{ width: 64 }} />
+                <col style={{ width: 44 }} />
               </colgroup>
               <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[36px] min-w-[36px] max-w-[36px]">№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[16px] min-w-[16px] max-w-[16px]">№</th>
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 w-[40px] min-w-[40px] max-w-[40px]">
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() => {
@@ -934,7 +934,7 @@ export function DirectClientTable({
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
                   <th className="px-0.5 py-2 bg-base-200 w-[44px] min-w-[44px] max-w-[44px]" />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[100px] min-w-[100px] max-w-[100px]">
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -971,7 +971,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[50px] min-w-[50px] max-w-[50px]">
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -987,15 +987,15 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[56px] min-w-[56px] max-w-[56px]"
+                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[40px] min-w-[40px] max-w-[40px]"
                     title="Днів з останнього візиту (Altegio)"
                   >
                     Днів
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[40px] min-w-[40px] max-w-[40px]">
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[30px] min-w-[30px] max-w-[30px]">
                     <button
                       className="hover:underline cursor-pointer w-full text-left"
                       onClick={() =>
@@ -1008,7 +1008,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1021,7 +1021,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1034,7 +1034,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1047,10 +1047,10 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[100px] min-w-[100px] max-w-[100px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[64px] min-w-[64px] max-w-[64px]">Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[44px] min-w-[44px] max-w-[44px]">Дії</th>
                 </tr>
               </thead>
               <tbody>
@@ -1122,8 +1122,8 @@ export function DirectClientTable({
                     return (
                       <>
                         <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
-                      <td className="px-1 sm:px-2 py-1 text-xs">{index + 1}</td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs w-[16px] min-w-[16px] max-w-[16px]">{index + 1}</td>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[40px] min-w-[40px] max-w-[40px]">
                         <span className="flex flex-col leading-none">
                           <span
                             title={
@@ -1175,7 +1175,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[100px] min-w-[100px] max-w-[100px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1572,8 +1572,8 @@ export function DirectClientTable({
                       <td
                         className={
                           chatStatusUiVariant === 'v2'
-                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal w-[60px] min-w-[60px] max-w-[60px]"
-                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[60px] min-w-[60px] max-w-[60px] overflow-hidden"
+                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal w-[40px] min-w-[40px] max-w-[40px]"
+                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[40px] min-w-[40px] max-w-[40px] overflow-hidden"
                         }
                       >
                           {(() => {
@@ -1654,7 +1654,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[30px] min-w-[30px] max-w-[30px]">
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -1855,7 +1855,7 @@ export function DirectClientTable({
                           return '';
                           })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2087,7 +2087,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
                         {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
                             const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -2259,7 +2259,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[60px] min-w-[60px] max-w-[60px]">
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -2353,14 +2353,14 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[100px] min-w-[100px] max-w-[100px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs">
+                      <td className="px-1 sm:px-2 py-1 text-xs w-[44px] min-w-[44px] max-w-[44px]">
                         <div className="flex gap-1">
                           <button
                             className="btn btn-xs btn-ghost"
