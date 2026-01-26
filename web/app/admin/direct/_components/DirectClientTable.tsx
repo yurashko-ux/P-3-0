@@ -1532,7 +1532,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[56px] min-w-[56px] max-w-[56px] tabular-nums">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[40px] min-w-[40px] max-w-[40px] tabular-nums">
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
