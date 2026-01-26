@@ -2326,7 +2326,7 @@ export function DirectClientTable({
                               const isPast = consultKyivDay < todayKyivDay;
                               const isToday = consultKyivDay === todayKyivDay;
                               const isPastOrToday = consultKyivDay <= todayKyivDay;
-                              const formattedDateStr = formatDate(dateStr);
+                              const formattedDateStr = formatDateShortYear(dateStr);
                               const isOnline = client.isOnlineConsultation || false;
                               
                               // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
@@ -2524,7 +2524,7 @@ export function DirectClientTable({
                             const isPast = paidKyivDay < todayKyivDay;
                             const isToday = paidKyivDay === todayKyivDay;
                             const isPastOrToday = paidKyivDay <= todayKyivDay;
-                            const dateStr = formatDate(client.paidServiceDate);
+                            const dateStr = formatDateShortYear(client.paidServiceDate);
                             
                             // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
                             const createdAtDate = client.paidServiceRecordCreatedAt
