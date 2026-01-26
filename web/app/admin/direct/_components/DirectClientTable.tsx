@@ -1353,7 +1353,7 @@ export function DirectClientTable({
                         }
                         title="Оновлення"
                       >
-                        Оновл. {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                        Онов. {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
                     </div>
                   </th>
