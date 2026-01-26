@@ -691,7 +691,7 @@ export default function DirectPage() {
   }
 
   return (
-    <div className="w-full px-4 py-3 space-y-[0.5px]">
+    <div className="w-full px-4 pt-[0.5px] pb-3 space-y-[0.5px]">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           {/* Лівий блок залишається порожнім */}
