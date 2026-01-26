@@ -1683,6 +1683,7 @@ export function DirectClientTable({
                                   className="shrink-0 hover:opacity-80 transition-opacity"
                                   title={tooltipText}
                                   aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                 {spendShowMega ? (
                                   <SpendMegaBadge />
@@ -1710,6 +1711,7 @@ export function DirectClientTable({
                                   className="shrink-0 hover:opacity-80 transition-opacity"
                                   title="Відкрити Instagram"
                                   aria-label="Відкрити Instagram"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   <LeadBadgeIcon />
                                 </a>
@@ -1726,6 +1728,7 @@ export function DirectClientTable({
                                       rel="noopener noreferrer"
                                         className="link link-primary flex items-center gap-1 min-w-0"
                                       title={`https://instagram.com/${username}`}
+                                      onClick={(e) => e.stopPropagation()}
                                     >
                                         <span className="truncate min-w-0">{username}</span>
                                         {visitsSuffix ? (
@@ -1789,6 +1792,7 @@ export function DirectClientTable({
                                 className="shrink-0 hover:opacity-80 transition-opacity"
                                 title={tooltipText}
                                 aria-label={`${typeBadgeTitleWithId}. Відкрити в Altegio`}
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 {spendShowMega ? (
                                   <SpendMegaBadge />
@@ -1816,6 +1820,7 @@ export function DirectClientTable({
                                 className="shrink-0 hover:opacity-80 transition-opacity"
                                 title="Відкрити Instagram"
                                 aria-label="Відкрити Instagram"
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 <LeadBadgeIcon />
                               </a>
@@ -1832,6 +1837,7 @@ export function DirectClientTable({
                                     rel="noopener noreferrer"
                                       className="link link-primary flex items-center gap-1 min-w-0"
                                     title={`https://instagram.com/${username}`}
+                                    onClick={(e) => e.stopPropagation()}
                                   >
                                       <span className="truncate min-w-0">{nameOneLine}</span>
                                       {visitsSuffix ? (
