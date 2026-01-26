@@ -899,6 +899,16 @@ export function DirectClientTable({
                 <col style={{ width: 120 }} />
                 {/* Стан */}
                 <col style={{ width: 96 }} />
+                {/* Консультація */}
+                <col style={{ width: 108 }} />
+                {/* Запис */}
+                <col style={{ width: 108 }} />
+                {/* Майстер */}
+                <col style={{ width: 108 }} />
+                {/* Телефон */}
+                <col style={{ width: 120 }} />
+                {/* Дії */}
+                <col style={{ width: 64 }} />
               </colgroup>
               <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
