@@ -890,23 +890,23 @@ export function DirectClientTable({
                 <col style={{ width: 60 }} />
                 <col style={{ width: 44 }} />
                 {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
-                <col style={{ width: 100 }} />
+                <col style={{ width: 90 }} />
                 {/* Продажі */}
-                <col style={{ width: 92 }} />
+                <col style={{ width: 80 }} />
                 {/* Днів з останнього візиту */}
                 <col style={{ width: 56 }} />
                 {/* Переписка */}
                 <col style={{ width: 60 }} />
                 {/* Стан */}
-                <col style={{ width: 96 }} />
+                <col style={{ width: 80 }} />
                 {/* Консультація */}
-                <col style={{ width: 108 }} />
+                <col style={{ width: 90 }} />
                 {/* Запис */}
-                <col style={{ width: 108 }} />
+                <col style={{ width: 90 }} />
                 {/* Майстер */}
-                <col style={{ width: 108 }} />
+                <col style={{ width: 90 }} />
                 {/* Телефон */}
-                <col style={{ width: 120 }} />
+                <col style={{ width: 100 }} />
                 {/* Дії */}
                 <col style={{ width: 64 }} />
               </colgroup>
@@ -934,7 +934,7 @@ export function DirectClientTable({
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
                   <th className="px-0.5 py-2 bg-base-200 w-[44px] min-w-[44px] max-w-[44px]" />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[100px] min-w-[100px] max-w-[100px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -971,7 +971,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -995,7 +995,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 text-right w-[96px] min-w-[96px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 text-right w-[80px] min-w-[80px] max-w-[80px]">
                     <button
                       className="hover:underline cursor-pointer w-full text-center"
                       onClick={() =>
@@ -1008,7 +1008,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[108px] min-w-[108px] max-w-[108px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1021,7 +1021,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[108px] min-w-[108px] max-w-[108px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1034,7 +1034,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[108px] min-w-[108px] max-w-[108px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[90px] min-w-[90px] max-w-[90px]">
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1047,7 +1047,7 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[100px] min-w-[100px] max-w-[100px]">
                     Телефон
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[64px] min-w-[64px] max-w-[64px]">Дії</th>
@@ -1175,7 +1175,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[100px] min-w-[100px] max-w-[100px]">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1522,7 +1522,7 @@ export function DirectClientTable({
                           })()}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
                         <span className="flex flex-col items-center leading-none">
                           <span className="text-center">
                             {client.spent !== null && client.spent !== undefined
@@ -1623,8 +1623,8 @@ export function DirectClientTable({
                                 <span
                                   className={
                                     chatStatusUiVariant === 'v2'
-                                      ? 'inline-flex min-w-0 max-w-[92px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
-                                      : 'inline-flex min-w-0 max-w-[78px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
+                                      ? 'inline-flex min-w-0 max-w-[50px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
+                                      : 'inline-flex min-w-0 max-w-[50px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
                                   }
                                   title={statusNameRaw}
                                   style={{
@@ -1654,7 +1654,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-right w-[96px] min-w-[96px]">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-right w-[80px] min-w-[80px] max-w-[80px]">
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -1855,7 +1855,7 @@ export function DirectClientTable({
                           return '';
                           })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2087,7 +2087,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
                         {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
                             const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -2259,7 +2259,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[90px] min-w-[90px] max-w-[90px]">
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -2353,7 +2353,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[100px] min-w-[100px] max-w-[100px]">
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
