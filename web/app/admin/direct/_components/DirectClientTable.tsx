@@ -2473,7 +2473,7 @@ export function DirectClientTable({
               </tbody>
             </table>
           </div>
-          <div className="flex-1"></div>
+          <div className="flex-1 min-h-[200px]"></div>
         </div>
       </div>
     </div>
