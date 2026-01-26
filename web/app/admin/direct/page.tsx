@@ -696,21 +696,6 @@ export default function DirectPage() {
         <div>
           {/* Кнопки навігації до інших розділів */}
           <div className="flex gap-1 flex-wrap mt-3">
-            <Link href="/admin/campaigns" className="btn btn-xs btn-ghost">
-              📋 Кампанії
-            </Link>
-            <Link href="/admin/campaigns/new" className="btn btn-xs btn-ghost">
-              ✨ Нова кампанія
-            </Link>
-            <Link href="/admin/debug" className="btn btn-xs btn-ghost">
-              🧪 Тестова сторінка
-            </Link>
-            <Link href="/admin/altegio" className="btn btn-xs btn-ghost">
-              📊 Альтеджіо
-            </Link>
-            <Link href="/admin/photo-reports" className="btn btn-xs btn-ghost">
-              📸 Фото-звіти
-            </Link>
             <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
               💰 Фінансовий звіт
             </Link>

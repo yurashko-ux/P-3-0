@@ -4,6 +4,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 interface AdminToolsModalProps {
   isOpen: boolean;
@@ -772,13 +773,32 @@ export function AdminToolsModal({
       <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto m-4">
         <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold">🔧 Інструменти адміністратора</h2>
-          <button
-            onClick={onClose}
-            className="btn btn-sm btn-circle btn-ghost"
-            disabled={isLoading}
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Кнопки навігації */}
+            <Link href="/admin/campaigns" className="btn btn-xs btn-ghost" onClick={onClose}>
+              📋 Кампанії
+            </Link>
+            <Link href="/admin/campaigns/new" className="btn btn-xs btn-ghost" onClick={onClose}>
+              ✨ Нова кампанія
+            </Link>
+            <Link href="/admin/debug" className="btn btn-xs btn-ghost" onClick={onClose}>
+              🧪 Тестова сторінка
+            </Link>
+            <Link href="/admin/altegio" className="btn btn-xs btn-ghost" onClick={onClose}>
+              📊 Альтеджіо
+            </Link>
+            <Link href="/admin/photo-reports" className="btn btn-xs btn-ghost" onClick={onClose}>
+              📸 Фото-звіти
+            </Link>
+            {/* Кнопка закриття */}
+            <button
+              onClick={onClose}
+              className="btn btn-sm btn-circle btn-ghost"
+              disabled={isLoading}
+            >
+              ✕
+            </button>
+          </div>
         </div>
         
         <div className="p-6">
