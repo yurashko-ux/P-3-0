@@ -171,6 +171,24 @@ export default function DirectPage() {
     clientType: [] as string[],
   });
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Закриваємо випадаюче меню кнопки "+" при кліку поза ним
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+        setIsAddMenuOpen(false);
+      }
+    };
+
+    if (isAddMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isAddMenuOpen]);
   
   // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
   const sortByInitializer = useRef<(() => string) | null>(null);
@@ -733,7 +751,7 @@ export default function DirectPage() {
           </button>
           
           {/* Кнопка "+" з випадаючим меню */}
-          <div className="relative add-menu-container">
+          <div className="relative add-menu-container" ref={addMenuRef}>
             <button
               className="btn btn-sm btn-primary"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
