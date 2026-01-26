@@ -210,7 +210,7 @@ function CardBody({ children }: { children: React.ReactNode }) {
 
 function CardFooter({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ padding: '16px 24px 22px 24px', display: 'flex', gap: 12 }}>
+    <div style={{ padding: '3px 5px 4px 5px', display: 'flex', gap: 12 }}>
       {children}
     </div>
   );
