@@ -9,12 +9,11 @@ import React from "react";
 import { DirectClientTable } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
-import { DirectStats } from "./_components/DirectStats";
 import { WebhooksTableModal } from "./_components/WebhooksTableModal";
 import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableModal";
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import { AdminToolsModal } from "./_components/AdminToolsModal";
-import type { DirectClient, DirectStatus, DirectStats as DirectStatsType } from "@/lib/direct-types";
+import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
@@ -152,7 +151,6 @@ export default function DirectPage() {
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
-  const [stats, setStats] = useState<DirectStatsType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
@@ -167,7 +165,6 @@ export default function DirectPage() {
     hasAppointment: "",
     clientType: [] as string[],
   });
-  const [isSearchLocked, setIsSearchLocked] = useState(false); // Флаг для блокування автоматичного оновлення пошуку
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   
   // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
@@ -547,17 +544,6 @@ export default function DirectPage() {
     }
   };
 
-  const loadStats = async () => {
-    try {
-      const res = await fetch("/api/admin/direct/stats");
-      const data = await res.json();
-      if (data.ok) {
-        setStats(data.stats);
-      }
-    } catch (err) {
-      console.error("Failed to load stats:", err);
-    }
-  };
 
   // Завантажуємо клієнтів при зміні фільтрів/сортування
   // Використовуємо useRef, щоб уникнути зайвих викликів під час ініціалізації
@@ -624,15 +610,6 @@ export default function DirectPage() {
       prevSortOrderRef.current = sortOrder;
       return;
     }
-    // Якщо пошук заблокований і змінився тільки search фільтр, не оновлюємо
-    const searchChanged = prevFiltersRef.current.search !== filters.search;
-    if (isSearchLocked && searchChanged) {
-      console.log('[DirectPage] ⏭️ Skipping due to locked search');
-      prevFiltersRef.current = filters;
-      prevSortByRef.current = sortBy;
-      prevSortOrderRef.current = sortOrder;
-      return;
-    }
     
     prevFiltersRef.current = filters;
     prevSortByRef.current = sortBy;
@@ -646,24 +623,18 @@ export default function DirectPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       // Оновлюємо статистику та статуси/майстрів
-      loadStats().catch(err => {
-        console.warn('[DirectPage] Auto-refresh stats error (non-critical):', err);
-      });
       // Оновлюємо статуси та майстрів, якщо вони не завантажилися
       if (statuses.length === 0 || masters.length === 0) {
         loadStatusesAndMasters();
       }
-      // Оновлюємо клієнтів тільки якщо пошук не заблокований
-      // Якщо пошук заблокований, не оновлюємо клієнтів, щоб зберегти результати пошуку
-      if (!isSearchLocked) {
-        loadClients().catch(err => {
-          console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
-        });
-      }
+      // Оновлюємо клієнтів
+      loadClients().catch(err => {
+        console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
+      });
     }, 30000); // 30 секунд
 
     return () => clearInterval(interval);
-  }, [statuses.length, masters.length, isSearchLocked]);
+  }, [statuses.length, masters.length]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
     try {
@@ -675,7 +646,6 @@ export default function DirectPage() {
       const data = await res.json();
       if (data.ok) {
         await loadClients();
-        await loadStats();
       } else {
         alert(data.error || "Failed to update client");
       }
@@ -2204,9 +2174,6 @@ export default function DirectPage() {
         </div>
       )}
 
-      {/* Статистика */}
-      {stats && <DirectStats stats={stats} />}
-
       {/* Модальне вікно webhook-ів Altegio */}
       <WebhooksTableModal
         isOpen={isWebhooksModalOpen}
@@ -2260,72 +2227,17 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Перемикач режимів відображення */}
-      <div className="card bg-base-100 shadow-sm mb-4">
-        <div className="card-body p-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className="label-text font-semibold">Режим відображення:</span>
-            <div className="tabs tabs-boxed">
-              <button
-                className={`tab ${viewMode === 'passive' ? 'tab-active' : ''}`}
-                onClick={() => {
-                  // Не викликаємо setViewMode, якщо режим вже пасивний
-                  if (viewMode !== 'passive') {
-                    setViewMode('passive');
-                  }
-                }}
-                disabled={viewMode === 'passive'}
-              >
-                Пасивний
-              </button>
-              <button
-                className={`tab ${viewMode === 'active' ? 'tab-active' : ''}`}
-                onClick={() => {
-                  // Не викликаємо setViewMode, якщо режим вже активний
-                  if (viewMode !== 'active') {
-                    setViewMode('active');
-                  }
-                }}
-                disabled={viewMode === 'active'}
-              >
-                Активний
-              </button>
-            </div>
-            {viewMode === 'active' && (
-              <span className="text-xs text-gray-500">
-                Клієнти з останніми оновленнями зверху
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* Таблиця клієнтів */}
       <DirectClientTable
         clients={clients}
         statuses={statuses}
         filters={filters}
-        onFiltersChange={(newFilters) => {
-          // Якщо очищено search (стало порожнім), розблоковуємо пошук
-          if (newFilters.search === "" && filters.search !== "") {
-            setIsSearchLocked(false);
-          }
-          // Якщо змінився інший фільтр (не search), розблоковуємо пошук
-          if (newFilters.search === filters.search && 
-              (newFilters.statusId !== filters.statusId || 
-               newFilters.masterId !== filters.masterId || 
-               newFilters.source !== filters.source)) {
-            setIsSearchLocked(false);
-          }
+          onFiltersChange={(newFilters) => {
           // Забезпечуємо, що clientType завжди присутній
           setFilters({
             ...newFilters,
             clientType: newFilters.clientType || [],
           });
-        }}
-        onSearchClick={() => {
-          // При натисканні "Знайти" блокуємо автоматичне оновлення пошуку
-          setIsSearchLocked(true);
         }}
         sortBy={sortBy}
         sortOrder={sortOrder}

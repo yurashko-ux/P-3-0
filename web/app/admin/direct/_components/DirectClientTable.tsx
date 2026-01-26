@@ -450,7 +450,6 @@ type DirectClientTableProps = {
     clientType: string[]; // ['leads', 'clients', 'good', 'stars']
   };
   onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
-  onSearchClick?: () => void;
   sortBy: string;
   sortOrder: "asc" | "desc";
   onSortChange: (by: string, order: "asc" | "desc") => void;
@@ -463,7 +462,6 @@ export function DirectClientTable({
   statuses,
   filters,
   onFiltersChange,
-  onSearchClick,
   sortBy,
   sortOrder,
   onSortChange,
@@ -483,7 +481,6 @@ export function DirectClientTable({
   const [masterHistoryClient, setMasterHistoryClient] = useState<DirectClient | null>(null);
   // Локальні оверрайди для UI переписки, щоб не перезавантажувати всю таблицю після зміни статусу
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
-  const [searchInput, setSearchInput] = useState<string>(filters.search);
   const [isStatsExpanded, setIsStatsExpanded] = useState<boolean>(false);
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
 
@@ -659,10 +656,6 @@ export function DirectClientTable({
     };
   }, [selectedMonth, filters.statusId, filters.masterId, filters.source, filters.search, filters.hasAppointment, filters.clientType]);
 
-  // Синхронізуємо searchInput з filters.search коли filters змінюється ззовні (наприклад, при скиданні)
-  useEffect(() => {
-    setSearchInput(filters.search);
-  }, [filters.search]);
 
   // Завантажуємо відповідальних (майстрів)
   useEffect(() => {
@@ -1043,62 +1036,10 @@ export function DirectClientTable({
         </div>
       </div>
 
-      {/* Фільтри та пошук */}
+      {/* Фільтри */}
       <div className="card bg-base-100 shadow-sm">
         <div className="card-body p-4">
           <div className="flex flex-wrap gap-4 items-end">
-            <div className="min-w-[500px]">
-              <label className="label label-text text-xs">Пошук</label>
-              <div className="flex gap-1 items-center">
-                <div className="relative flex-1">
-              <input
-                type="text"
-                    placeholder="Instagram або ім'я..."
-                    className="input input-bordered input-sm w-full pr-8"
-                    value={searchInput}
-                    onChange={(e) => {
-                      const newValue = e.target.value;
-                      setSearchInput(newValue);
-                      // Автоматично оновлюємо фільтр при введенні
-                      onFiltersChange({ ...filters, search: newValue });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        // При натисканні Enter також оновлюємо фільтр
-                        onFiltersChange({ ...filters, search: searchInput });
-                        onSearchClick?.();
-                      }
-                    }}
-                  />
-                  {searchInput && (
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
-                      onClick={() => {
-                        setSearchInput("");
-                        onFiltersChange({ ...filters, search: "" });
-                        // При очищенні розблоковуємо пошук, щоб показати всіх клієнтів
-                        // onSearchClick?.() тут не потрібен, бо onFiltersChange вже розблоковує при зміні search
-                      }}
-                      title="Очистити"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                <button
-                  className="btn btn-sm btn-primary"
-                  onClick={() => {
-                    // При натисканні кнопки "Знайти" явно зафіксовуємо пошук
-                    onFiltersChange({ ...filters, search: searchInput });
-                    // Викликаємо callback для блокування автоматичного оновлення
-                    onSearchClick?.();
-                  }}
-                >
-                  Знайти
-                </button>
-              </div>
-            </div>
             <div className="min-w-[150px]">
               <label className="label label-text text-xs">Статус</label>
               <select
@@ -1162,7 +1103,6 @@ export function DirectClientTable({
               <button
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
-                  setSearchInput("");
                   onFiltersChange({ statusId: "", masterId: "", source: "", search: "", hasAppointment: "", clientType: [] });
                 }}
               >
@@ -1346,13 +1286,18 @@ export function DirectClientTable({
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[60px] min-w-[60px] max-w-[60px]">
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
-                      onClick={() =>
-                        onSortChange(
-                          "updatedAt",
-                          sortBy === "updatedAt" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                      title="Оновлення"
+                      onClick={() => {
+                        // Перемикання між активним та пасивним режимом
+                        const isActiveMode = sortBy === "updatedAt" && sortOrder === "desc";
+                        if (isActiveMode) {
+                          // Переключаємо на пасивний режим
+                          onSortChange("firstContactDate", "desc");
+                        } else {
+                          // Переключаємо на активний режим
+                          onSortChange("updatedAt", "desc");
+                        }
+                      }}
+                      title="Перемкнути режим відображення"
                     >
                       Act {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
