@@ -1343,7 +1343,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[36px] min-w-[36px] max-w-[36px]">№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200 sticky top-0 z-20 w-[60px] min-w-[60px] max-w-[60px]">
                     <button
-                      className="hover:underline cursor-pointer text-left"
+                      className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() =>
                         onSortChange(
                           "updatedAt",
@@ -1352,7 +1352,7 @@ export function DirectClientTable({
                       }
                       title="Оновлення"
                     >
-                      Онов {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Act {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
