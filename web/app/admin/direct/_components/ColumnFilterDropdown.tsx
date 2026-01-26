@@ -94,7 +94,7 @@ export function ColumnFilterDropdown({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`inline-flex items-center justify-center w-6 h-6 rounded border-2 hover:bg-base-300 transition-colors ${
-          hasActiveFilters ? "bg-blue-100 text-blue-600 border-blue-200" : "text-gray-500 border-gray-500"
+          hasActiveFilters ? "bg-blue-100 text-blue-600 border-blue-500" : "text-gray-500 border-gray-500"
         }`}
         title={`Фільтри для ${columnLabel}`}
       >

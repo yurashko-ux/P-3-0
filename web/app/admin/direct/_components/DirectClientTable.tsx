@@ -1718,24 +1718,44 @@ export function DirectClientTable({
                                   href={instagramUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="shrink-0 hover:opacity-80 transition-opacity"
+                                  className="shrink-0 hover:opacity-80 transition-opacity cursor-pointer"
                                   title="Клік для копіювання Instagram username"
                                   aria-label="Копіювати Instagram username"
                                   onClick={async (e) => {
                                     e.stopPropagation();
                                     e.preventDefault();
-                                    if (username) {
+                                    const usernameToCopy = client.instagramUsername?.trim();
+                                    if (usernameToCopy && usernameToCopy !== "NO INSTAGRAM" && !usernameToCopy.startsWith("no_instagram_") && !usernameToCopy.startsWith("missing_instagram_")) {
                                       try {
-                                        await navigator.clipboard.writeText(username);
+                                        await navigator.clipboard.writeText(usernameToCopy);
                                         // Тимчасово змінюємо title для візуального фідбеку
                                         const target = e.currentTarget;
                                         const originalTitle = target.title;
-                                        target.title = "Скопійовано!";
+                                        target.title = `Скопійовано: ${usernameToCopy}`;
                                         setTimeout(() => {
                                           target.title = originalTitle;
                                         }, 2000);
                                       } catch (err) {
                                         console.error('Помилка копіювання:', err);
+                                        // Fallback для старих браузерів
+                                        const textArea = document.createElement('textarea');
+                                        textArea.value = usernameToCopy;
+                                        textArea.style.position = 'fixed';
+                                        textArea.style.left = '-999999px';
+                                        document.body.appendChild(textArea);
+                                        textArea.select();
+                                        try {
+                                          document.execCommand('copy');
+                                          const target = e.currentTarget;
+                                          const originalTitle = target.title;
+                                          target.title = `Скопійовано: ${usernameToCopy}`;
+                                          setTimeout(() => {
+                                            target.title = originalTitle;
+                                          }, 2000);
+                                        } catch (fallbackErr) {
+                                          console.error('Помилка fallback копіювання:', fallbackErr);
+                                        }
+                                        document.body.removeChild(textArea);
                                       }
                                     }
                                   }}
