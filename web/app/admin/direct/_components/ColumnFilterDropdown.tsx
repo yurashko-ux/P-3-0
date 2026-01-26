@@ -157,15 +157,27 @@ export function ColumnFilterDropdown({
                 );
               })}
             </div>
-            {hasActiveFilters && (
+            <div className="flex gap-2 mt-2">
               <button
                 type="button"
-                onClick={() => onFiltersChange([])}
-                className="w-full mt-2 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded transition-colors"
+                onClick={() => setIsOpen(false)}
+                className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium"
               >
-                Очистити фільтри
+                Застосувати
               </button>
-            )}
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onFiltersChange([]);
+                    setIsOpen(false);
+                  }}
+                  className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium"
+                >
+                  Очистити
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
