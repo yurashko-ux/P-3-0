@@ -666,6 +666,31 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
+  const [todayRecordsTotal, setTodayRecordsTotal] = useState<number | null>(null);
+  
+  // Завантажуємо суму послуг за сьогодні
+  useEffect(() => {
+    const fetchTodayRecordsTotal = async () => {
+      try {
+        const response = await fetch('/api/admin/direct/today-records-total');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.ok && typeof data.total === 'number') {
+            setTodayRecordsTotal(data.total);
+          } else {
+            setTodayRecordsTotal(null);
+          }
+        } else {
+          setTodayRecordsTotal(null);
+        }
+      } catch (err) {
+        console.error('[DirectClientTable] Failed to fetch today records total:', err);
+        setTodayRecordsTotal(null);
+      }
+    };
+
+    fetchTodayRecordsTotal();
+  }, []);
   
   // Обчислюємо left значення для sticky колонок (перші 4: №, Act, Avatar, Name)
   const getStickyLeft = (columnIndex: number): number => {
@@ -3026,7 +3051,9 @@ export function DirectClientTable({
       
       {/* Футер після таблиці */}
       <div className="bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
-        {/* Тут можна додавати дані */}
+        <div style={{ fontSize: '8px' }}>
+          Зроблено записів сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal} грн` : '—'}
+        </div>
       </div>
     </div>
   );
