@@ -997,7 +997,7 @@ export function DirectClientTable({
       <div className="overflow-x-auto">
         <div className="max-h-[calc(100vh-100px)] overflow-y-auto flex flex-col bg-gray-200">
           <div className="bg-white">
-            <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
+            <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               <colgroup>
                 <col style={{ width: columnWidths.number }} />
                 <col style={{ width: columnWidths.act }} />
