@@ -70,19 +70,54 @@ export async function GET(req: NextRequest) {
         return receivedDay === todayKyiv; // Порівнюємо дні в Europe/Kyiv
       });
 
-    // Рахуємо суму послуг
+    // Рахуємо суму послуг та збираємо детальну інформацію
     let total = 0;
+    const recordsDetails: Array<{
+      receivedAt: string;
+      visitId: number | null;
+      recordId: number | null;
+      clientId: number | null;
+      services: any[];
+      cost: number;
+      serviceNames: string[];
+    }> = [];
+
     for (const record of recordsCreatedToday) {
       try {
+        // Витягуємо services з правильного місця
         const services = record.data?.services || record.services || [];
-        const cost = computeServicesTotalCostUAH(Array.isArray(services) ? services : []);
+        const servicesArray = Array.isArray(services) ? services : [];
+        
+        const cost = computeServicesTotalCostUAH(servicesArray);
         total += cost;
+
+        // Формуємо назви послуг для відображення
+        const serviceNames = servicesArray.map((s: any) => 
+          s?.title || s?.name || 'Невідома послуга'
+        );
+
+        recordsDetails.push({
+          receivedAt: record.receivedAt || '',
+          visitId: record.visitId || null,
+          recordId: record.recordId || null,
+          clientId: record.clientId || record.data?.client?.id || null,
+          services: servicesArray,
+          cost,
+          serviceNames,
+        });
       } catch (err) {
-        console.warn('[today-records-total] Failed to compute cost:', err);
+        console.warn('[today-records-total] Failed to compute cost:', err, record);
       }
     }
 
-    return NextResponse.json({ ok: true, total });
+    // Сортуємо записи за датою створення (найновіші першими)
+    recordsDetails.sort((a, b) => {
+      const dateA = new Date(a.receivedAt).getTime();
+      const dateB = new Date(b.receivedAt).getTime();
+      return dateB - dateA;
+    });
+
+    return NextResponse.json({ ok: true, total, records: recordsDetails });
   } catch (error) {
     console.error('[direct/today-records-total] GET error:', error);
     return NextResponse.json(
