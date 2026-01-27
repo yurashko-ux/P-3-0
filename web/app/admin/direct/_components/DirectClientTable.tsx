@@ -3066,7 +3066,7 @@ export function DirectClientTable({
       <div className="bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
         <div style={{ fontSize: '12px' }}>
           <div style={{ marginBottom: '8px', fontWeight: 600 }}>
-            Зроблено записів сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal} грн` : '—'}
+            Зроблено записів сьогодні: {todayRecordsDetails.length > 0 ? `${todayRecordsDetails.length} записів, ` : ''}{todayRecordsTotal !== null ? `${todayRecordsTotal} грн` : '—'}
           </div>
           
           {todayRecordsDetails.length > 0 && (
