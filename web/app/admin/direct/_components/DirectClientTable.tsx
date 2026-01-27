@@ -1757,7 +1757,7 @@ export function DirectClientTable({
                           })()}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.sales}px`, minWidth: `${columnWidths.sales}px`, maxWidth: `${columnWidths.sales}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.sales}px` }}>
                         <span className="flex flex-col items-start leading-none">
                           <span className="text-left">
                             {client.spent !== null && client.spent !== undefined
