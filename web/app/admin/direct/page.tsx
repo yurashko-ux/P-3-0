@@ -158,6 +158,7 @@ export default function DirectPage() {
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
   const [isTelegramMessagesModalOpen, setIsTelegramMessagesModalOpen] = useState(false);
   const [isAdminToolsModalOpen, setIsAdminToolsModalOpen] = useState(false);
+  const [isEditingColumnWidths, setIsEditingColumnWidths] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [shouldOpenAddClient, setShouldOpenAddClient] = useState(false);
   const [shouldOpenAddMaster, setShouldOpenAddMaster] = useState(false);
@@ -2260,6 +2261,7 @@ export default function DirectPage() {
         isLoading={isLoading}
         setIsLoading={setIsLoading}
         showCopyableAlert={showCopyableAlert}
+        onActivateColumnWidthEdit={() => setIsEditingColumnWidths(true)}
         loadData={loadData}
         setIsWebhooksModalOpen={setIsWebhooksModalOpen}
         setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
@@ -2326,6 +2328,8 @@ export default function DirectPage() {
         onRefresh={loadData}
         shouldOpenAddClient={shouldOpenAddClient}
         onOpenAddClientChange={(open) => setShouldOpenAddClient(open)}
+        isEditingColumnWidths={isEditingColumnWidths}
+        setIsEditingColumnWidths={setIsEditingColumnWidths}
       />
     </div>
   );

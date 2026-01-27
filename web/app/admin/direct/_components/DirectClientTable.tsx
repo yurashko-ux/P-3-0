@@ -18,6 +18,85 @@ import { ColumnFilterDropdown, type ClientTypeFilter } from "./ColumnFilterDropd
 
 type ChatStatusUiVariant = "v1" | "v2";
 
+type ColumnWidths = {
+  number: number;      // №
+  act: number;        // Act
+  avatar: number;     // Аватар
+  name: number;       // Ім'я
+  sales: number;      // Продажі
+  days: number;       // Днів
+  inst: number;       // Inst
+  state: number;      // Стан
+  consultation: number; // Консультація
+  record: number;     // Запис
+  master: number;     // Майстер
+  phone: number;      // Телефон
+  actions: number;    // Дії
+};
+
+const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  number: 16,
+  act: 40,
+  avatar: 44,
+  name: 100,
+  sales: 50,
+  days: 40,
+  inst: 40,
+  state: 30,
+  consultation: 80,
+  record: 80,
+  master: 60,
+  phone: 80,
+  actions: 44,
+};
+
+function useColumnWidths(): [ColumnWidths, (widths: ColumnWidths) => void] {
+  const [widths, setWidths] = useState<ColumnWidths>(DEFAULT_COLUMN_WIDTHS);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = "direct:tableColumnWidths";
+    try {
+      const saved = window.localStorage.getItem(key);
+      if (saved) {
+        const parsed = JSON.parse(saved) as ColumnWidths;
+        // Валідація: перевіряємо, що всі значення є числами та в допустимому діапазоні
+        const validated: ColumnWidths = {
+          number: Math.max(10, Math.min(500, parsed.number || DEFAULT_COLUMN_WIDTHS.number)),
+          act: Math.max(10, Math.min(500, parsed.act || DEFAULT_COLUMN_WIDTHS.act)),
+          avatar: Math.max(10, Math.min(500, parsed.avatar || DEFAULT_COLUMN_WIDTHS.avatar)),
+          name: Math.max(10, Math.min(500, parsed.name || DEFAULT_COLUMN_WIDTHS.name)),
+          sales: Math.max(10, Math.min(500, parsed.sales || DEFAULT_COLUMN_WIDTHS.sales)),
+          days: Math.max(10, Math.min(500, parsed.days || DEFAULT_COLUMN_WIDTHS.days)),
+          inst: Math.max(10, Math.min(500, parsed.inst || DEFAULT_COLUMN_WIDTHS.inst)),
+          state: Math.max(10, Math.min(500, parsed.state || DEFAULT_COLUMN_WIDTHS.state)),
+          consultation: Math.max(10, Math.min(500, parsed.consultation || DEFAULT_COLUMN_WIDTHS.consultation)),
+          record: Math.max(10, Math.min(500, parsed.record || DEFAULT_COLUMN_WIDTHS.record)),
+          master: Math.max(10, Math.min(500, parsed.master || DEFAULT_COLUMN_WIDTHS.master)),
+          phone: Math.max(10, Math.min(500, parsed.phone || DEFAULT_COLUMN_WIDTHS.phone)),
+          actions: Math.max(10, Math.min(500, parsed.actions || DEFAULT_COLUMN_WIDTHS.actions)),
+        };
+        setWidths(validated);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const saveWidths = (newWidths: ColumnWidths) => {
+    setWidths(newWidths);
+    if (typeof window === "undefined") return;
+    const key = "direct:tableColumnWidths";
+    try {
+      window.localStorage.setItem(key, JSON.stringify(newWidths));
+    } catch {
+      // ignore
+    }
+  };
+
+  return [widths, saveWidths];
+}
+
 function normalizeChatStatusUiVariant(raw: string | null | undefined): ChatStatusUiVariant | null {
   const v = (raw || "").toString().trim().toLowerCase();
   if (v === "v2") return "v2";
@@ -457,6 +536,8 @@ type DirectClientTableProps = {
   onRefresh: () => Promise<void>;
   shouldOpenAddClient?: boolean;
   onOpenAddClientChange?: (open: boolean) => void;
+  isEditingColumnWidths?: boolean;
+  setIsEditingColumnWidths?: (value: boolean) => void;
 };
 
 export function DirectClientTable({
@@ -471,11 +552,43 @@ export function DirectClientTable({
   onRefresh,
   shouldOpenAddClient,
   onOpenAddClientChange,
+  isEditingColumnWidths = false,
+  setIsEditingColumnWidths,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
   const debugActivity = (searchParams?.get("debugActivity") || "").toString().trim() === "1";
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
+  const [columnWidths, setColumnWidths] = useColumnWidths();
+  const [editingWidths, setEditingWidths] = useState<ColumnWidths>(columnWidths);
+  
+  // Синхронізуємо editingWidths з columnWidths коли відкривається режим редагування
+  useEffect(() => {
+    if (isEditingColumnWidths) {
+      setEditingWidths(columnWidths);
+    }
+  }, [isEditingColumnWidths, columnWidths]);
+
+  const handleSaveColumnWidths = () => {
+    // Валідація значень
+    const validated: ColumnWidths = {
+      number: Math.max(10, Math.min(500, editingWidths.number)),
+      act: Math.max(10, Math.min(500, editingWidths.act)),
+      avatar: Math.max(10, Math.min(500, editingWidths.avatar)),
+      name: Math.max(10, Math.min(500, editingWidths.name)),
+      sales: Math.max(10, Math.min(500, editingWidths.sales)),
+      days: Math.max(10, Math.min(500, editingWidths.days)),
+      inst: Math.max(10, Math.min(500, editingWidths.inst)),
+      state: Math.max(10, Math.min(500, editingWidths.state)),
+      consultation: Math.max(10, Math.min(500, editingWidths.consultation)),
+      record: Math.max(10, Math.min(500, editingWidths.record)),
+      master: Math.max(10, Math.min(500, editingWidths.master)),
+      phone: Math.max(10, Math.min(500, editingWidths.phone)),
+      actions: Math.max(10, Math.min(500, editingWidths.actions)),
+    };
+    setColumnWidths(validated);
+    setIsEditingColumnWidths?.(false);
+  };
   
   // Відкриваємо форму додавання клієнта, якщо shouldOpenAddClient змінився на true
   useEffect(() => {
@@ -886,34 +999,34 @@ export function DirectClientTable({
           <div className="bg-white">
             <table className="table table-xs sm:table-sm w-full border-collapse table-fixed">
               <colgroup>
-                <col style={{ width: 16 }} />
-                <col style={{ width: 40 }} />
-                <col style={{ width: 44 }} />
+                <col style={{ width: columnWidths.number }} />
+                <col style={{ width: columnWidths.act }} />
+                <col style={{ width: columnWidths.avatar }} />
                 {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
-                <col style={{ width: 100 }} />
+                <col style={{ width: columnWidths.name }} />
                 {/* Продажі */}
-                <col style={{ width: 50 }} />
+                <col style={{ width: columnWidths.sales }} />
                 {/* Днів з останнього візиту */}
-                <col style={{ width: 40 }} />
+                <col style={{ width: columnWidths.days }} />
                 {/* Переписка */}
-                <col style={{ width: 40 }} />
+                <col style={{ width: columnWidths.inst }} />
                 {/* Стан */}
-                <col style={{ width: 30 }} />
+                <col style={{ width: columnWidths.state }} />
                 {/* Консультація */}
-                <col style={{ width: 80 }} />
+                <col style={{ width: columnWidths.consultation }} />
                 {/* Запис */}
-                <col style={{ width: 80 }} />
+                <col style={{ width: columnWidths.record }} />
                 {/* Майстер */}
-                <col style={{ width: 60 }} />
+                <col style={{ width: columnWidths.master }} />
                 {/* Телефон */}
-                <col style={{ width: 80 }} />
+                <col style={{ width: columnWidths.phone }} />
                 {/* Дії */}
-                <col style={{ width: 44 }} />
+                <col style={{ width: columnWidths.actions }} />
               </colgroup>
               <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[16px] min-w-[16px] max-w-[16px]">№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200 w-[40px] min-w-[40px] max-w-[40px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.number}px`, minWidth: `${columnWidths.number}px`, maxWidth: `${columnWidths.number}px` }}>№</th>
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.act}px`, minWidth: `${columnWidths.act}px`, maxWidth: `${columnWidths.act}px` }}>
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() => {
@@ -933,8 +1046,8 @@ export function DirectClientTable({
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0 py-2 bg-base-200 w-[44px] min-w-[44px] max-w-[44px]" />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[100px] min-w-[100px] max-w-[100px]">
+                  <th className="px-0 py-2 bg-base-200" style={{ width: `${columnWidths.avatar}px`, minWidth: `${columnWidths.avatar}px`, maxWidth: `${columnWidths.avatar}px` }} />
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.name}px`, minWidth: `${columnWidths.name}px`, maxWidth: `${columnWidths.name}px` }}>
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -971,7 +1084,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[50px] min-w-[50px] max-w-[50px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.sales}px`, minWidth: `${columnWidths.sales}px`, maxWidth: `${columnWidths.sales}px` }}>
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -987,15 +1100,16 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[40px] min-w-[40px] max-w-[40px]"
+                    className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200"
+                    style={{ width: `${columnWidths.days}px`, minWidth: `${columnWidths.days}px`, maxWidth: `${columnWidths.days}px` }}
                     title="Днів з останнього візиту (Altegio)"
                   >
                     Днів
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[40px] min-w-[40px] max-w-[40px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.inst}px`, minWidth: `${columnWidths.inst}px`, maxWidth: `${columnWidths.inst}px` }}>
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 w-[30px] min-w-[30px] max-w-[30px]">
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.state}px`, minWidth: `${columnWidths.state}px`, maxWidth: `${columnWidths.state}px` }}>
                     <button
                       className="hover:underline cursor-pointer w-full text-left"
                       onClick={() =>
@@ -1008,7 +1122,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.consultation}px`, minWidth: `${columnWidths.consultation}px`, maxWidth: `${columnWidths.consultation}px` }}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1021,7 +1135,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.record}px`, minWidth: `${columnWidths.record}px`, maxWidth: `${columnWidths.record}px` }}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1034,7 +1148,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[60px] min-w-[60px] max-w-[60px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.master}px`, minWidth: `${columnWidths.master}px`, maxWidth: `${columnWidths.master}px` }}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1047,11 +1161,156 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[80px] min-w-[80px] max-w-[80px]">
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.phone}px`, minWidth: `${columnWidths.phone}px`, maxWidth: `${columnWidths.phone}px` }}>
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 w-[44px] min-w-[44px] max-w-[44px]">Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.actions}px`, minWidth: `${columnWidths.actions}px`, maxWidth: `${columnWidths.actions}px` }}>Дії</th>
                 </tr>
+                {/* Рядок редагування розмірів */}
+                {isEditingColumnWidths && (
+                  <tr className="bg-yellow-50">
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.number}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, number: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.number}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.act}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, act: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.act}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.avatar}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, avatar: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.avatar}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.name}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, name: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.name}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.sales}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, sales: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.sales}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.days}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, days: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.days}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.inst}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, inst: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.inst}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.state}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, state: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.state}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.consultation}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, consultation: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.consultation}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.record}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, record: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.record}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.master}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, master: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.master}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <input
+                        type="number"
+                        min="10"
+                        max="500"
+                        value={editingWidths.phone}
+                        onChange={(e) => setEditingWidths({ ...editingWidths, phone: parseInt(e.target.value) || 10 })}
+                        className="input input-xs w-full"
+                        placeholder={`${columnWidths.phone}px`}
+                      />
+                    </td>
+                    <td className="px-1 py-1">
+                      <button
+                        onClick={handleSaveColumnWidths}
+                        className="btn btn-primary btn-xs w-full"
+                      >
+                        Зберегти
+                      </button>
+                    </td>
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {filteredClients.length === 0 ? (
@@ -1122,8 +1381,8 @@ export function DirectClientTable({
                     return (
                       <>
                         <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
-                      <td className="px-1 sm:px-2 py-1 text-xs w-[16px] min-w-[16px] max-w-[16px]">{index + 1}</td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[40px] min-w-[40px] max-w-[40px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ width: `${columnWidths.number}px`, minWidth: `${columnWidths.number}px`, maxWidth: `${columnWidths.number}px` }}>{index + 1}</td>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.act}px`, minWidth: `${columnWidths.act}px`, maxWidth: `${columnWidths.act}px` }}>
                         <span className="flex flex-col leading-none">
                           <span
                             title={
@@ -1153,7 +1412,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="px-0 py-1 w-[44px] min-w-[44px] max-w-[44px]">
+                      <td className="px-0 py-1" style={{ width: `${columnWidths.avatar}px`, minWidth: `${columnWidths.avatar}px`, maxWidth: `${columnWidths.avatar}px` }}>
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
@@ -1175,7 +1434,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap w-[100px] min-w-[100px] max-w-[100px]">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.name}px`, minWidth: `${columnWidths.name}px`, maxWidth: `${columnWidths.name}px` }}>
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1522,7 +1781,7 @@ export function DirectClientTable({
                           })()}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.sales}px`, minWidth: `${columnWidths.sales}px`, maxWidth: `${columnWidths.sales}px` }}>
                         <span className="flex flex-col items-start leading-none">
                           <span className="text-left">
                             {client.spent !== null && client.spent !== undefined
@@ -1532,7 +1791,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[40px] min-w-[40px] max-w-[40px] tabular-nums">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={{ width: `${columnWidths.days}px`, minWidth: `${columnWidths.days}px`, maxWidth: `${columnWidths.days}px` }}>
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -1572,9 +1831,10 @@ export function DirectClientTable({
                       <td
                         className={
                           chatStatusUiVariant === 'v2'
-                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal w-[40px] min-w-[40px] max-w-[40px]"
-                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[40px] min-w-[40px] max-w-[40px] overflow-hidden"
+                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal"
+                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden"
                         }
+                        style={{ width: `${columnWidths.inst}px`, minWidth: `${columnWidths.inst}px`, maxWidth: `${columnWidths.inst}px` }}
                       >
                           {(() => {
                           const total =
@@ -1654,7 +1914,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap w-[30px] min-w-[30px] max-w-[30px]">
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.state}px`, minWidth: `${columnWidths.state}px`, maxWidth: `${columnWidths.state}px` }}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -1855,7 +2115,7 @@ export function DirectClientTable({
                           return '';
                           })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.consultation}px`, minWidth: `${columnWidths.consultation}px`, maxWidth: `${columnWidths.consultation}px` }}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2087,7 +2347,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.record}px`, minWidth: `${columnWidths.record}px`, maxWidth: `${columnWidths.record}px` }}>
                         {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
                             const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -2259,7 +2519,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[60px] min-w-[60px] max-w-[60px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.master}px`, minWidth: `${columnWidths.master}px`, maxWidth: `${columnWidths.master}px` }}>
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -2353,14 +2613,14 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap w-[80px] min-w-[80px] max-w-[80px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.phone}px`, minWidth: `${columnWidths.phone}px`, maxWidth: `${columnWidths.phone}px` }}>
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs w-[44px] min-w-[44px] max-w-[44px]">
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ width: `${columnWidths.actions}px`, minWidth: `${columnWidths.actions}px`, maxWidth: `${columnWidths.actions}px` }}>
                         <div className="flex gap-1">
                           <button
                             className="btn btn-xs btn-ghost"

@@ -16,6 +16,7 @@ interface AdminToolsModalProps {
   setIsWebhooksModalOpen?: (open: boolean) => void;
   setIsManyChatWebhooksModalOpen?: (open: boolean) => void;
   setIsTelegramMessagesModalOpen?: (open: boolean) => void;
+  onActivateColumnWidthEdit?: () => void;
 }
 
 export function AdminToolsModal({
@@ -28,6 +29,7 @@ export function AdminToolsModal({
   setIsWebhooksModalOpen,
   setIsManyChatWebhooksModalOpen,
   setIsTelegramMessagesModalOpen,
+  onActivateColumnWidthEdit,
 }: AdminToolsModalProps) {
   if (!isOpen) return null;
 
@@ -778,6 +780,15 @@ export function AdminToolsModal({
             <Link href="/admin/campaigns" className="btn btn-xs btn-ghost" onClick={onClose}>
               📋 Кампанії
             </Link>
+            <button
+              className="btn btn-xs btn-ghost"
+              onClick={() => {
+                onActivateColumnWidthEdit?.();
+                onClose();
+              }}
+            >
+              📏 Редагувати розміри таблиці
+            </button>
             <Link href="/admin/campaigns/new" className="btn btn-xs btn-ghost" onClick={onClose}>
               ✨ Нова кампанія
             </Link>
