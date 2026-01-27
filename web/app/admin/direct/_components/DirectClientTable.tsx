@@ -625,7 +625,7 @@ type DirectClientTableProps = {
 // Допоміжна функція для отримання стилів колонки
 const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }): React.CSSProperties => {
   return config.mode === 'fixed'
-    ? { width: `${config.width}px` }
+    ? { width: `${config.width}px`, minWidth: `${config.width}px`, maxWidth: `${config.width}px` }
     : { minWidth: `${config.width}px` };
 };
 
