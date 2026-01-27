@@ -2506,7 +2506,7 @@ export function DirectClientTable({
 
                               return (
                                 <span className="flex flex-col items-start">
-                                  <span className={`flex items-center gap-1 ${consultCreatedToday ? 'bg-gray-200 px-1 py-0.5 rounded' : ''}`}>
+                                  <span className="flex items-center gap-1">
                                     <button
                                       className={
                                         isToday
@@ -2586,34 +2586,39 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
-                      </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.record)}>
-                        {client.signedUpForPaidService && client.paidServiceDate ? (
-                          (() => {
-                            const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
-                              timeZone: 'Europe/Kyiv',
-                              year: 'numeric',
-                              month: '2-digit',
-                              day: '2-digit',
-                            });
-                            const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
-                            const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
-                            const isPast = paidKyivDay < todayKyivDay;
-                            const isToday = paidKyivDay === todayKyivDay;
-                            const isPastOrToday = paidKyivDay <= todayKyivDay;
-                            const dateStr = formatDateShortYear(client.paidServiceDate);
-                            
-                            // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
-                            const createdAtDate = client.paidServiceRecordCreatedAt
-                              ? new Date(client.paidServiceRecordCreatedAt)
-                              : null;
-                            const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
-                              ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
-                              : null;
-                            // Перевіряємо, чи запис створено сьогодні
-                            const paidCreatedToday = createdAtDate && !isNaN(createdAtDate.getTime())
-                              ? kyivDayFmt.format(createdAtDate) === todayKyivDay
-                              : false;
+                          </td>
+                        );
+                      })()}
+                      {(() => {
+                        // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
+                        const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
+                          timeZone: 'Europe/Kyiv',
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                        });
+                        const todayKyivDay = kyivDayFmt.format(new Date());
+                        const paidCreatedAtDate = client.paidServiceRecordCreatedAt
+                          ? new Date(client.paidServiceRecordCreatedAt)
+                          : null;
+                        const paidCreatedToday = paidCreatedAtDate && !isNaN(paidCreatedAtDate.getTime())
+                          ? kyivDayFmt.format(paidCreatedAtDate) === todayKyivDay
+                          : false;
+                        
+                        return (
+                          <td className={`px-1 sm:px-2 py-1 text-xs whitespace-nowrap ${paidCreatedToday ? 'bg-gray-200' : ''}`} style={getColumnStyle(columnWidths.record)}>
+                            {client.signedUpForPaidService && client.paidServiceDate ? (
+                              (() => {
+                                const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
+                                const isPast = paidKyivDay < todayKyivDay;
+                                const isToday = paidKyivDay === todayKyivDay;
+                                const isPastOrToday = paidKyivDay <= todayKyivDay;
+                                const dateStr = formatDateShortYear(client.paidServiceDate);
+                                
+                                // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
+                                const createdAtStr = paidCreatedAtDate && !isNaN(paidCreatedAtDate.getTime())
+                                  ? paidCreatedAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                                  : null;
                             
                             // Визначаємо значок attendance
                             // Правило:
@@ -2687,7 +2692,7 @@ export function DirectClientTable({
 
                             return (
                               <span className="flex flex-col items-start">
-                                <span className={`flex items-center gap-1 ${paidCreatedToday ? 'bg-gray-200 px-1 py-0.5 rounded' : ''}`}>
+                                <span className="flex items-center gap-1">
                                 <button
                                   className={
                                     isToday
@@ -2762,7 +2767,9 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
-                      </td>
+                          </td>
+                        );
+                      })()}
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.master)}>
                         {(() => {
                           // Колонка "Майстер":
