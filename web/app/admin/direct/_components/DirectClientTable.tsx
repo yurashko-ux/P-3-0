@@ -998,35 +998,11 @@ export function DirectClientTable({
         <div className="max-h-[calc(100vh-100px)] overflow-y-auto flex flex-col bg-gray-200">
           <div className="bg-white">
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
-              <colgroup>
-                <col style={{ width: columnWidths.number }} />
-                <col style={{ width: columnWidths.act }} />
-                <col style={{ width: columnWidths.avatar }} />
-                {/* Повне імʼя (суттєво ширше, щоб менше обрізалось) */}
-                <col style={{ width: columnWidths.name }} />
-                {/* Продажі */}
-                <col style={{ width: columnWidths.sales }} />
-                {/* Днів з останнього візиту */}
-                <col style={{ width: columnWidths.days }} />
-                {/* Переписка */}
-                <col style={{ width: columnWidths.inst }} />
-                {/* Стан */}
-                <col style={{ width: columnWidths.state }} />
-                {/* Консультація */}
-                <col style={{ width: columnWidths.consultation }} />
-                {/* Запис */}
-                <col style={{ width: columnWidths.record }} />
-                {/* Майстер */}
-                <col style={{ width: columnWidths.master }} />
-                {/* Телефон */}
-                <col style={{ width: columnWidths.phone }} />
-                {/* Дії */}
-                <col style={{ width: columnWidths.actions }} />
-              </colgroup>
+              {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
               <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.number}px`, minWidth: `${columnWidths.number}px`, maxWidth: `${columnWidths.number}px` }}>№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.act}px`, minWidth: `${columnWidths.act}px`, maxWidth: `${columnWidths.act}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.number}px` }}>№</th>
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.act}px` }}>
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() => {
@@ -1046,8 +1022,8 @@ export function DirectClientTable({
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0 py-2 bg-base-200" style={{ width: `${columnWidths.avatar}px`, minWidth: `${columnWidths.avatar}px`, maxWidth: `${columnWidths.avatar}px` }} />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.name}px`, minWidth: `${columnWidths.name}px`, maxWidth: `${columnWidths.name}px` }}>
+                  <th className="px-0 py-2 bg-base-200" style={{ minWidth: `${columnWidths.avatar}px` }} />
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.name}px` }}>
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -1084,7 +1060,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.sales}px`, minWidth: `${columnWidths.sales}px`, maxWidth: `${columnWidths.sales}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.sales}px` }}>
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -1101,15 +1077,15 @@ export function DirectClientTable({
                   </th>
                   <th
                     className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200"
-                    style={{ width: `${columnWidths.days}px`, minWidth: `${columnWidths.days}px`, maxWidth: `${columnWidths.days}px` }}
+                    style={{ minWidth: `${columnWidths.days}px` }}
                     title="Днів з останнього візиту (Altegio)"
                   >
                     Днів
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.inst}px`, minWidth: `${columnWidths.inst}px`, maxWidth: `${columnWidths.inst}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.inst}px` }}>
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.state}px`, minWidth: `${columnWidths.state}px`, maxWidth: `${columnWidths.state}px` }}>
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.state}px` }}>
                     <button
                       className="hover:underline cursor-pointer w-full text-left"
                       onClick={() =>
@@ -1122,7 +1098,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.consultation}px`, minWidth: `${columnWidths.consultation}px`, maxWidth: `${columnWidths.consultation}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.consultation}px` }}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1135,7 +1111,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.record}px`, minWidth: `${columnWidths.record}px`, maxWidth: `${columnWidths.record}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.record}px` }}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1148,7 +1124,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.master}px`, minWidth: `${columnWidths.master}px`, maxWidth: `${columnWidths.master}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.master}px` }}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1161,10 +1137,10 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.phone}px`, minWidth: `${columnWidths.phone}px`, maxWidth: `${columnWidths.phone}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.phone}px` }}>
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ width: `${columnWidths.actions}px`, minWidth: `${columnWidths.actions}px`, maxWidth: `${columnWidths.actions}px` }}>Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.actions}px` }}>Дії</th>
                 </tr>
                 {/* Рядок редагування розмірів */}
                 {isEditingColumnWidths && (
@@ -1381,8 +1357,8 @@ export function DirectClientTable({
                     return (
                       <>
                         <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ width: `${columnWidths.number}px`, minWidth: `${columnWidths.number}px`, maxWidth: `${columnWidths.number}px` }}>{index + 1}</td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.act}px`, minWidth: `${columnWidths.act}px`, maxWidth: `${columnWidths.act}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ minWidth: `${columnWidths.number}px` }}>{index + 1}</td>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.act}px` }}>
                         <span className="flex flex-col leading-none">
                           <span
                             title={
@@ -1412,7 +1388,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="px-0 py-1" style={{ width: `${columnWidths.avatar}px`, minWidth: `${columnWidths.avatar}px`, maxWidth: `${columnWidths.avatar}px` }}>
+                      <td className="px-0 py-1" style={{ minWidth: `${columnWidths.avatar}px` }}>
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
@@ -1434,7 +1410,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.name}px`, minWidth: `${columnWidths.name}px`, maxWidth: `${columnWidths.name}px` }}>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.name}px` }}>
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1791,7 +1767,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={{ width: `${columnWidths.days}px`, minWidth: `${columnWidths.days}px`, maxWidth: `${columnWidths.days}px` }}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={{ minWidth: `${columnWidths.days}px` }}>
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -1834,7 +1810,7 @@ export function DirectClientTable({
                             ? "px-1 sm:px-2 py-1 text-xs whitespace-normal"
                             : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden"
                         }
-                        style={{ width: `${columnWidths.inst}px`, minWidth: `${columnWidths.inst}px`, maxWidth: `${columnWidths.inst}px` }}
+                        style={{ minWidth: `${columnWidths.inst}px` }}
                       >
                           {(() => {
                           const total =
@@ -1914,7 +1890,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.state}px`, minWidth: `${columnWidths.state}px`, maxWidth: `${columnWidths.state}px` }}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.state}px` }}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -2115,7 +2091,7 @@ export function DirectClientTable({
                           return '';
                           })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.consultation}px`, minWidth: `${columnWidths.consultation}px`, maxWidth: `${columnWidths.consultation}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.consultation}px` }}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2347,7 +2323,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.record}px`, minWidth: `${columnWidths.record}px`, maxWidth: `${columnWidths.record}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.record}px` }}>
                         {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
                             const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -2519,7 +2495,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.master}px`, minWidth: `${columnWidths.master}px`, maxWidth: `${columnWidths.master}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.master}px` }}>
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -2613,14 +2589,14 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ width: `${columnWidths.phone}px`, minWidth: `${columnWidths.phone}px`, maxWidth: `${columnWidths.phone}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.phone}px` }}>
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ width: `${columnWidths.actions}px`, minWidth: `${columnWidths.actions}px`, maxWidth: `${columnWidths.actions}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ minWidth: `${columnWidths.actions}px` }}>
                         <div className="flex gap-1">
                           <button
                             className="btn btn-xs btn-ghost"
