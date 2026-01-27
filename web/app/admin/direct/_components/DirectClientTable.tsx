@@ -3064,47 +3064,10 @@ export function DirectClientTable({
       
       {/* Футер після таблиці */}
       <div className="bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
-        <div style={{ fontSize: '12px' }}>
-          <div style={{ marginBottom: '8px', fontWeight: 600 }}>
-            Зроблено записів сьогодні: {todayRecordsDetails.length > 0 ? `${todayRecordsDetails.length} записів, ` : ''}{todayRecordsTotal !== null ? `${todayRecordsTotal} грн` : '—'}
+        <div style={{ fontSize: '10px' }}>
+          <div style={{ fontWeight: 600 }}>
+            Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal} грн` : '—'}
           </div>
-          
-          {todayRecordsDetails.length > 0 && (
-            <div style={{ marginTop: '12px' }}>
-              <div style={{ marginBottom: '6px', fontWeight: 500, fontSize: '11px' }}>
-                Деталізація ({todayRecordsDetails.length} записів):
-              </div>
-              <div style={{ fontFamily: 'monospace', fontSize: '10px', lineHeight: '1.5' }}>
-                {todayRecordsDetails.map((record, index) => {
-                  const date = new Date(record.receivedAt);
-                  const formattedDate = date.toLocaleString('uk-UA', {
-                    timeZone: 'Europe/Kyiv',
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
-                  
-                  return (
-                    <div key={index} style={{ marginBottom: '4px', padding: '2px 0' }}>
-                      <span style={{ color: '#6b7280' }}>{formattedDate}</span>
-                      {' | '}
-                      <span style={{ fontWeight: 600, color: '#166534' }}>{record.cost} грн</span>
-                      {' | '}
-                      <span>{record.serviceNames.join(', ') || 'Немає послуг'}</span>
-                      {record.visitId && (
-                        <>
-                          {' | '}
-                          <span style={{ color: '#6b7280' }}>VisitID: {record.visitId}</span>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

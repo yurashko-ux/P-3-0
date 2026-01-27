@@ -1,9 +1,15 @@
 // web/app/api/admin/direct/today-records-total/route.ts
-// API endpoint для підрахунку суми послуг за сьогодні (записи, створені сьогодні)
+// API endpoint для підрахунку суми послуг за сьогодні (записи з paidServiceRecordCreatedAt за сьогодні)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
-import { computeServicesTotalCostUAH, kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { getAllDirectClients } from '@/lib/direct-store';
+import {
+  groupRecordsByClientDay,
+  normalizeRecordsLogItems,
+  kyivDayFromISO,
+  computeServicesTotalCostUAH,
+} from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,7 +31,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
- * GET - отримати суму послуг за сьогодні (записи, створені сьогодні)
+ * GET - отримати суму послуг за сьогодні (записи з paidServiceRecordCreatedAt за сьогодні)
  */
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -33,80 +39,110 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Отримуємо всі записи з records:log
-    const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
+    // Отримуємо всіх клієнтів
+    const clients = await getAllDirectClients();
+    
+    // Отримуємо всі записи з records:log та webhook:log
+    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
     // Визначаємо сьогоднішній день в Europe/Kyiv
     const todayKyiv = kyivDayFromISO(new Date().toISOString()); // YYYY-MM-DD
 
-    // Парсимо та фільтруємо записи, створені сьогодні
-    const recordsCreatedToday = rawItems
-      .map((raw) => {
-        try {
-          const parsed = JSON.parse(raw);
-          // Upstash може повертати елементи як { value: "..." }
-          if (
-            parsed &&
-            typeof parsed === 'object' &&
-            'value' in parsed &&
-            typeof parsed.value === 'string'
-          ) {
-            try {
-              return JSON.parse(parsed.value);
-            } catch {
-              return parsed;
-            }
-          }
-          return parsed;
-        } catch {
-          return null;
-        }
-      })
-      .filter((r) => {
-        if (!r || r.status !== 'create') return false; // Тільки записи зі статусом 'create'
-        const receivedAt = r.receivedAt;
-        if (!receivedAt) return false;
-        const receivedDay = kyivDayFromISO(receivedAt); // День отримання вебхука про створення
-        return receivedDay === todayKyiv; // Порівнюємо дні в Europe/Kyiv
-      });
+    // Функція для отримання paidServiceRecordCreatedAt з групи
+    const pickRecordCreatedAtISOFromGroup = (group: any): string | null => {
+      try {
+        const events = Array.isArray(group?.events) ? group.events : [];
+        const toTs = (e: any) => new Date(e?.receivedAt || e?.datetime || 0).getTime();
 
-    // Рахуємо суму послуг та збираємо детальну інформацію
+        // 1) Найперша подія зі статусом create
+        let bestCreate = Infinity;
+        for (const e of events) {
+          const status = (e?.status || '').toString();
+          if (status !== 'create') continue;
+          const ts = toTs(e);
+          if (isFinite(ts) && ts < bestCreate) bestCreate = ts;
+        }
+        if (bestCreate !== Infinity) return new Date(bestCreate).toISOString();
+
+        // 2) Фолбек: найперша подія будь-якого статусу
+        let bestAny = Infinity;
+        for (const e of events) {
+          const ts = toTs(e);
+          if (isFinite(ts) && ts < bestAny) bestAny = ts;
+        }
+        if (bestAny !== Infinity) return new Date(bestAny).toISOString();
+
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Функція для пошуку найближчої групи
+    const pickClosestGroup = (groups: any[], groupType: 'paid' | 'consultation', targetISO: string) => {
+      const targetTs = new Date(targetISO).getTime();
+      if (!isFinite(targetTs)) return null;
+      const targetDay = kyivDayFromISO(targetISO);
+      const sameDay = targetDay
+        ? (groups.find((g: any) => (g?.groupType === groupType) && (g?.kyivDay || '') === targetDay) || null)
+        : null;
+      if (sameDay) return sameDay;
+
+      let best: any = null;
+      let bestDiff = Infinity;
+      for (const g of groups) {
+        if ((g as any)?.groupType !== groupType) continue;
+        const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+        if (!dt) continue;
+        const ts = new Date(dt).getTime();
+        if (!isFinite(ts)) continue;
+        const diff = Math.abs(ts - targetTs);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = g;
+        }
+      }
+      // Фолбек тільки якщо це справді той самий запис (до 24 год різниці)
+      if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
+      return null;
+    };
+
+    // Рахуємо суму для клієнтів з paidServiceRecordCreatedAt за сьогодні
     let total = 0;
     const recordsDetails: Array<{
       receivedAt: string;
-      visitId: number | null;
-      recordId: number | null;
       clientId: number | null;
-      services: any[];
       cost: number;
-      serviceNames: string[];
     }> = [];
 
-    for (const record of recordsCreatedToday) {
-      try {
-        // Витягуємо services з правильного місця
-        const services = record.data?.services || record.services || [];
-        const servicesArray = Array.isArray(services) ? services : [];
-        
-        const cost = computeServicesTotalCostUAH(servicesArray);
+    for (const client of clients) {
+      if (!client.paidServiceDate || !client.altegioClientId) continue;
+
+      const groups = groupsByClient.get(client.altegioClientId) || [];
+      const paidGroup = pickClosestGroup(groups, 'paid', client.paidServiceDate);
+      if (!paidGroup) continue;
+
+      const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
+      if (!paidRecordCreatedAt) continue;
+
+      // Перевіряємо, чи paidServiceRecordCreatedAt за сьогодні
+      const createdDay = kyivDayFromISO(paidRecordCreatedAt);
+      if (createdDay !== todayKyiv) continue;
+
+      // Рахуємо суму послуг
+      const services = Array.isArray(paidGroup.services) ? paidGroup.services : [];
+      const cost = computeServicesTotalCostUAH(services);
+      
+      if (cost > 0) {
         total += cost;
-
-        // Формуємо назви послуг для відображення
-        const serviceNames = servicesArray.map((s: any) => 
-          s?.title || s?.name || 'Невідома послуга'
-        );
-
         recordsDetails.push({
-          receivedAt: record.receivedAt || '',
-          visitId: record.visitId || null,
-          recordId: record.recordId || null,
-          clientId: record.clientId || record.data?.client?.id || null,
-          services: servicesArray,
+          receivedAt: paidRecordCreatedAt,
+          clientId: client.altegioClientId,
           cost,
-          serviceNames,
         });
-      } catch (err) {
-        console.warn('[today-records-total] Failed to compute cost:', err, record);
       }
     }
 
