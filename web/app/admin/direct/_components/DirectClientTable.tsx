@@ -69,100 +69,124 @@ type OldColumnWidths = {
   actions: number;
 };
 
-function useColumnWidthConfig(): [ColumnWidthConfig, (config: ColumnWidthConfig) => void] {
-  const [config, setConfig] = useState<ColumnWidthConfig>(DEFAULT_COLUMN_CONFIG);
+// Функція для синхронного завантаження конфігурації з localStorage (використовується в useState ініціалізації)
+function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
+  if (typeof window === "undefined") return null;
+  const key = "direct:tableColumnWidths";
+  try {
+    const saved = window.localStorage.getItem(key);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    
+    // Міграція: якщо старий формат (просто числа), конвертуємо в новий
+    if (parsed && typeof parsed.number === 'number') {
+      const oldWidths = parsed as OldColumnWidths;
+      const migrated: ColumnWidthConfig = {
+        number: { width: Math.max(10, Math.min(500, oldWidths.number || DEFAULT_COLUMN_CONFIG.number.width)), mode: 'min' },
+        act: { width: Math.max(10, Math.min(500, oldWidths.act || DEFAULT_COLUMN_CONFIG.act.width)), mode: 'min' },
+        avatar: { width: Math.max(10, Math.min(500, oldWidths.avatar || DEFAULT_COLUMN_CONFIG.avatar.width)), mode: 'min' },
+        name: { width: Math.max(10, Math.min(500, oldWidths.name || DEFAULT_COLUMN_CONFIG.name.width)), mode: 'min' },
+        sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
+        days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
+        inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
+        state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
+        consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
+        record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
+        master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
+        phone: { width: Math.max(10, Math.min(500, oldWidths.phone || DEFAULT_COLUMN_CONFIG.phone.width)), mode: 'min' },
+        actions: { width: Math.max(10, Math.min(500, oldWidths.actions || DEFAULT_COLUMN_CONFIG.actions.width)), mode: 'min' },
+      };
+      // Зберігаємо мігровані дані
+      window.localStorage.setItem(key, JSON.stringify(migrated));
+      return migrated;
+    } else if (parsed && parsed.number && typeof parsed.number === 'object') {
+      // Новий формат
+      const validated: ColumnWidthConfig = {
+        number: {
+          width: Math.max(10, Math.min(500, parsed.number?.width || DEFAULT_COLUMN_CONFIG.number.width)),
+          mode: parsed.number?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        act: {
+          width: Math.max(10, Math.min(500, parsed.act?.width || DEFAULT_COLUMN_CONFIG.act.width)),
+          mode: parsed.act?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        avatar: {
+          width: Math.max(10, Math.min(500, parsed.avatar?.width || DEFAULT_COLUMN_CONFIG.avatar.width)),
+          mode: parsed.avatar?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        name: {
+          width: Math.max(10, Math.min(500, parsed.name?.width || DEFAULT_COLUMN_CONFIG.name.width)),
+          mode: parsed.name?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        sales: {
+          width: Math.max(10, Math.min(500, parsed.sales?.width || DEFAULT_COLUMN_CONFIG.sales.width)),
+          mode: parsed.sales?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        days: {
+          width: Math.max(10, Math.min(500, parsed.days?.width || DEFAULT_COLUMN_CONFIG.days.width)),
+          mode: parsed.days?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        inst: {
+          width: Math.max(10, Math.min(500, parsed.inst?.width || DEFAULT_COLUMN_CONFIG.inst.width)),
+          mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        state: {
+          width: Math.max(10, Math.min(500, parsed.state?.width || DEFAULT_COLUMN_CONFIG.state.width)),
+          mode: parsed.state?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        consultation: {
+          width: Math.max(10, Math.min(500, parsed.consultation?.width || DEFAULT_COLUMN_CONFIG.consultation.width)),
+          mode: parsed.consultation?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        record: {
+          width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
+          mode: parsed.record?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        master: {
+          width: Math.max(10, Math.min(500, parsed.master?.width || DEFAULT_COLUMN_CONFIG.master.width)),
+          mode: parsed.master?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        phone: {
+          width: Math.max(10, Math.min(500, parsed.phone?.width || DEFAULT_COLUMN_CONFIG.phone.width)),
+          mode: parsed.phone?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        actions: {
+          width: Math.max(10, Math.min(500, parsed.actions?.width || DEFAULT_COLUMN_CONFIG.actions.width)),
+          mode: parsed.actions?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+      };
+      return validated;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
+function useColumnWidthConfig(): [ColumnWidthConfig, (config: ColumnWidthConfig) => void] {
+  // Використовуємо функцію ініціалізації для синхронного завантаження з localStorage
+  // Це вирішує проблему hydration mismatch - конфігурація завантажується одразу на клієнті
+  const [config, setConfig] = useState<ColumnWidthConfig>(() => {
+    const loaded = loadColumnWidthConfigFromStorage();
+    return loaded || DEFAULT_COLUMN_CONFIG;
+  });
+
+  // useEffect тепер використовується тільки для синхронізації при зміні localStorage з іншого табу/вікна
   useEffect(() => {
     if (typeof window === "undefined") return;
     const key = "direct:tableColumnWidths";
-    try {
-      const saved = window.localStorage.getItem(key);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        
-        // Міграція: якщо старий формат (просто числа), конвертуємо в новий
-        if (parsed && typeof parsed.number === 'number') {
-          const oldWidths = parsed as OldColumnWidths;
-          const migrated: ColumnWidthConfig = {
-            number: { width: Math.max(10, Math.min(500, oldWidths.number || DEFAULT_COLUMN_CONFIG.number.width)), mode: 'min' },
-            act: { width: Math.max(10, Math.min(500, oldWidths.act || DEFAULT_COLUMN_CONFIG.act.width)), mode: 'min' },
-            avatar: { width: Math.max(10, Math.min(500, oldWidths.avatar || DEFAULT_COLUMN_CONFIG.avatar.width)), mode: 'min' },
-            name: { width: Math.max(10, Math.min(500, oldWidths.name || DEFAULT_COLUMN_CONFIG.name.width)), mode: 'min' },
-            sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
-            days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
-            inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
-            state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
-            consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
-            record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
-            master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
-            phone: { width: Math.max(10, Math.min(500, oldWidths.phone || DEFAULT_COLUMN_CONFIG.phone.width)), mode: 'min' },
-            actions: { width: Math.max(10, Math.min(500, oldWidths.actions || DEFAULT_COLUMN_CONFIG.actions.width)), mode: 'min' },
-          };
-          setConfig(migrated);
-          // Зберігаємо мігровані дані
-          window.localStorage.setItem(key, JSON.stringify(migrated));
-        } else if (parsed && parsed.number && typeof parsed.number === 'object') {
-          // Новий формат
-          const validated: ColumnWidthConfig = {
-            number: {
-              width: Math.max(10, Math.min(500, parsed.number?.width || DEFAULT_COLUMN_CONFIG.number.width)),
-              mode: parsed.number?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            act: {
-              width: Math.max(10, Math.min(500, parsed.act?.width || DEFAULT_COLUMN_CONFIG.act.width)),
-              mode: parsed.act?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            avatar: {
-              width: Math.max(10, Math.min(500, parsed.avatar?.width || DEFAULT_COLUMN_CONFIG.avatar.width)),
-              mode: parsed.avatar?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            name: {
-              width: Math.max(10, Math.min(500, parsed.name?.width || DEFAULT_COLUMN_CONFIG.name.width)),
-              mode: parsed.name?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            sales: {
-              width: Math.max(10, Math.min(500, parsed.sales?.width || DEFAULT_COLUMN_CONFIG.sales.width)),
-              mode: parsed.sales?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            days: {
-              width: Math.max(10, Math.min(500, parsed.days?.width || DEFAULT_COLUMN_CONFIG.days.width)),
-              mode: parsed.days?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            inst: {
-              width: Math.max(10, Math.min(500, parsed.inst?.width || DEFAULT_COLUMN_CONFIG.inst.width)),
-              mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            state: {
-              width: Math.max(10, Math.min(500, parsed.state?.width || DEFAULT_COLUMN_CONFIG.state.width)),
-              mode: parsed.state?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            consultation: {
-              width: Math.max(10, Math.min(500, parsed.consultation?.width || DEFAULT_COLUMN_CONFIG.consultation.width)),
-              mode: parsed.consultation?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            record: {
-              width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
-              mode: parsed.record?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            master: {
-              width: Math.max(10, Math.min(500, parsed.master?.width || DEFAULT_COLUMN_CONFIG.master.width)),
-              mode: parsed.master?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            phone: {
-              width: Math.max(10, Math.min(500, parsed.phone?.width || DEFAULT_COLUMN_CONFIG.phone.width)),
-              mode: parsed.phone?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-            actions: {
-              width: Math.max(10, Math.min(500, parsed.actions?.width || DEFAULT_COLUMN_CONFIG.actions.width)),
-              mode: parsed.actions?.mode === 'fixed' ? 'fixed' : 'min'
-            },
-          };
-          setConfig(validated);
+    
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === key && e.newValue) {
+        const loaded = loadColumnWidthConfigFromStorage();
+        if (loaded) {
+          setConfig(loaded);
         }
       }
-    } catch {
-      // ignore
-    }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const saveConfig = (newConfig: ColumnWidthConfig) => {
