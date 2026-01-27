@@ -2615,9 +2615,7 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
-                          </td>
-                        );
-                      })()}
+                      </td>
                       {(() => {
                         // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
                         const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
