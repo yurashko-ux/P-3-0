@@ -3065,8 +3065,8 @@ export function DirectClientTable({
       {/* Футер після таблиці */}
       <div className="bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
         <div style={{ fontSize: '10px' }}>
-          <div style={{ fontWeight: 600 }}>
-            Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal} грн` : '—'}
+          <div>
+            Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal.toLocaleString('uk-UA')} грн.` : '—'}
           </div>
         </div>
       </div>
