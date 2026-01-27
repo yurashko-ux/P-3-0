@@ -665,7 +665,9 @@ const getStickyColumnStyle = (
     position: 'sticky' as const,
     left: `${left}px`,
     zIndex: isHeader ? 21 : 10, // Header має вищий z-index
-    backgroundColor: isHeader ? '#e5e7eb' : '#ffffff', // bg-base-200 для header (сірий), white для body
+    // Для header не встановлюємо backgroundColor, щоб використовувався клас bg-base-200
+    // Для body встановлюємо білий фон
+    ...(isHeader ? {} : { backgroundColor: '#ffffff' }),
   };
 };
 
