@@ -1284,14 +1284,14 @@ export function DirectClientTable({
                           className="input input-xs w-full"
                           placeholder={`${columnWidths.number.width}px`}
                         />
-                        <label className="flex items-center gap-1 text-xs">
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded">
                           <input
                             type="checkbox"
                             checked={editingConfig.number.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, number: { ...editingConfig.number, mode: e.target.checked ? 'fixed' : 'min' } })}
-                            className="checkbox checkbox-xs"
+                            className="checkbox checkbox-sm"
                           />
-                          <span>Фіксована</span>
+                          <span className="whitespace-nowrap">Фіксована</span>
                         </label>
                       </div>
                     </td>
