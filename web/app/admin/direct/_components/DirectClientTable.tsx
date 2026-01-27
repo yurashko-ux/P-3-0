@@ -18,40 +18,59 @@ import { ColumnFilterDropdown, type ClientTypeFilter } from "./ColumnFilterDropd
 
 type ChatStatusUiVariant = "v1" | "v2";
 
-type ColumnWidths = {
-  number: number;      // №
-  act: number;        // Act
-  avatar: number;     // Аватар
-  name: number;       // Ім'я
-  sales: number;      // Продажі
-  days: number;       // Днів
-  inst: number;       // Inst
-  state: number;      // Стан
-  consultation: number; // Консультація
-  record: number;     // Запис
-  master: number;     // Майстер
-  phone: number;      // Телефон
-  actions: number;    // Дії
+type ColumnWidthMode = 'fixed' | 'min';
+
+type ColumnWidthConfig = {
+  number: { width: number; mode: ColumnWidthMode };
+  act: { width: number; mode: ColumnWidthMode };
+  avatar: { width: number; mode: ColumnWidthMode };
+  name: { width: number; mode: ColumnWidthMode };
+  sales: { width: number; mode: ColumnWidthMode };
+  days: { width: number; mode: ColumnWidthMode };
+  inst: { width: number; mode: ColumnWidthMode };
+  state: { width: number; mode: ColumnWidthMode };
+  consultation: { width: number; mode: ColumnWidthMode };
+  record: { width: number; mode: ColumnWidthMode };
+  master: { width: number; mode: ColumnWidthMode };
+  phone: { width: number; mode: ColumnWidthMode };
+  actions: { width: number; mode: ColumnWidthMode };
 };
 
-const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
-  number: 16,
-  act: 40,
-  avatar: 44,
-  name: 100,
-  sales: 50,
-  days: 40,
-  inst: 40,
-  state: 30,
-  consultation: 80,
-  record: 80,
-  master: 60,
-  phone: 80,
-  actions: 44,
+const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
+  number: { width: 16, mode: 'min' },
+  act: { width: 40, mode: 'min' },
+  avatar: { width: 44, mode: 'min' },
+  name: { width: 100, mode: 'min' },
+  sales: { width: 50, mode: 'min' },
+  days: { width: 40, mode: 'min' },
+  inst: { width: 40, mode: 'min' },
+  state: { width: 30, mode: 'min' },
+  consultation: { width: 80, mode: 'min' },
+  record: { width: 80, mode: 'min' },
+  master: { width: 60, mode: 'min' },
+  phone: { width: 80, mode: 'min' },
+  actions: { width: 44, mode: 'min' },
 };
 
-function useColumnWidths(): [ColumnWidths, (widths: ColumnWidths) => void] {
-  const [widths, setWidths] = useState<ColumnWidths>(DEFAULT_COLUMN_WIDTHS);
+// Старий тип для міграції
+type OldColumnWidths = {
+  number: number;
+  act: number;
+  avatar: number;
+  name: number;
+  sales: number;
+  days: number;
+  inst: number;
+  state: number;
+  consultation: number;
+  record: number;
+  master: number;
+  phone: number;
+  actions: number;
+};
+
+function useColumnWidthConfig(): [ColumnWidthConfig, (config: ColumnWidthConfig) => void] {
+  const [config, setConfig] = useState<ColumnWidthConfig>(DEFAULT_COLUMN_CONFIG);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -59,42 +78,105 @@ function useColumnWidths(): [ColumnWidths, (widths: ColumnWidths) => void] {
     try {
       const saved = window.localStorage.getItem(key);
       if (saved) {
-        const parsed = JSON.parse(saved) as ColumnWidths;
-        // Валідація: перевіряємо, що всі значення є числами та в допустимому діапазоні
-        const validated: ColumnWidths = {
-          number: Math.max(10, Math.min(500, parsed.number || DEFAULT_COLUMN_WIDTHS.number)),
-          act: Math.max(10, Math.min(500, parsed.act || DEFAULT_COLUMN_WIDTHS.act)),
-          avatar: Math.max(10, Math.min(500, parsed.avatar || DEFAULT_COLUMN_WIDTHS.avatar)),
-          name: Math.max(10, Math.min(500, parsed.name || DEFAULT_COLUMN_WIDTHS.name)),
-          sales: Math.max(10, Math.min(500, parsed.sales || DEFAULT_COLUMN_WIDTHS.sales)),
-          days: Math.max(10, Math.min(500, parsed.days || DEFAULT_COLUMN_WIDTHS.days)),
-          inst: Math.max(10, Math.min(500, parsed.inst || DEFAULT_COLUMN_WIDTHS.inst)),
-          state: Math.max(10, Math.min(500, parsed.state || DEFAULT_COLUMN_WIDTHS.state)),
-          consultation: Math.max(10, Math.min(500, parsed.consultation || DEFAULT_COLUMN_WIDTHS.consultation)),
-          record: Math.max(10, Math.min(500, parsed.record || DEFAULT_COLUMN_WIDTHS.record)),
-          master: Math.max(10, Math.min(500, parsed.master || DEFAULT_COLUMN_WIDTHS.master)),
-          phone: Math.max(10, Math.min(500, parsed.phone || DEFAULT_COLUMN_WIDTHS.phone)),
-          actions: Math.max(10, Math.min(500, parsed.actions || DEFAULT_COLUMN_WIDTHS.actions)),
-        };
-        setWidths(validated);
+        const parsed = JSON.parse(saved);
+        
+        // Міграція: якщо старий формат (просто числа), конвертуємо в новий
+        if (parsed && typeof parsed.number === 'number') {
+          const oldWidths = parsed as OldColumnWidths;
+          const migrated: ColumnWidthConfig = {
+            number: { width: Math.max(10, Math.min(500, oldWidths.number || DEFAULT_COLUMN_CONFIG.number.width)), mode: 'min' },
+            act: { width: Math.max(10, Math.min(500, oldWidths.act || DEFAULT_COLUMN_CONFIG.act.width)), mode: 'min' },
+            avatar: { width: Math.max(10, Math.min(500, oldWidths.avatar || DEFAULT_COLUMN_CONFIG.avatar.width)), mode: 'min' },
+            name: { width: Math.max(10, Math.min(500, oldWidths.name || DEFAULT_COLUMN_CONFIG.name.width)), mode: 'min' },
+            sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
+            days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
+            inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
+            state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
+            consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
+            record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
+            master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
+            phone: { width: Math.max(10, Math.min(500, oldWidths.phone || DEFAULT_COLUMN_CONFIG.phone.width)), mode: 'min' },
+            actions: { width: Math.max(10, Math.min(500, oldWidths.actions || DEFAULT_COLUMN_CONFIG.actions.width)), mode: 'min' },
+          };
+          setConfig(migrated);
+          // Зберігаємо мігровані дані
+          window.localStorage.setItem(key, JSON.stringify(migrated));
+        } else if (parsed && parsed.number && typeof parsed.number === 'object') {
+          // Новий формат
+          const validated: ColumnWidthConfig = {
+            number: {
+              width: Math.max(10, Math.min(500, parsed.number?.width || DEFAULT_COLUMN_CONFIG.number.width)),
+              mode: parsed.number?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            act: {
+              width: Math.max(10, Math.min(500, parsed.act?.width || DEFAULT_COLUMN_CONFIG.act.width)),
+              mode: parsed.act?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            avatar: {
+              width: Math.max(10, Math.min(500, parsed.avatar?.width || DEFAULT_COLUMN_CONFIG.avatar.width)),
+              mode: parsed.avatar?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            name: {
+              width: Math.max(10, Math.min(500, parsed.name?.width || DEFAULT_COLUMN_CONFIG.name.width)),
+              mode: parsed.name?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            sales: {
+              width: Math.max(10, Math.min(500, parsed.sales?.width || DEFAULT_COLUMN_CONFIG.sales.width)),
+              mode: parsed.sales?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            days: {
+              width: Math.max(10, Math.min(500, parsed.days?.width || DEFAULT_COLUMN_CONFIG.days.width)),
+              mode: parsed.days?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            inst: {
+              width: Math.max(10, Math.min(500, parsed.inst?.width || DEFAULT_COLUMN_CONFIG.inst.width)),
+              mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            state: {
+              width: Math.max(10, Math.min(500, parsed.state?.width || DEFAULT_COLUMN_CONFIG.state.width)),
+              mode: parsed.state?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            consultation: {
+              width: Math.max(10, Math.min(500, parsed.consultation?.width || DEFAULT_COLUMN_CONFIG.consultation.width)),
+              mode: parsed.consultation?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            record: {
+              width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
+              mode: parsed.record?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            master: {
+              width: Math.max(10, Math.min(500, parsed.master?.width || DEFAULT_COLUMN_CONFIG.master.width)),
+              mode: parsed.master?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            phone: {
+              width: Math.max(10, Math.min(500, parsed.phone?.width || DEFAULT_COLUMN_CONFIG.phone.width)),
+              mode: parsed.phone?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+            actions: {
+              width: Math.max(10, Math.min(500, parsed.actions?.width || DEFAULT_COLUMN_CONFIG.actions.width)),
+              mode: parsed.actions?.mode === 'fixed' ? 'fixed' : 'min'
+            },
+          };
+          setConfig(validated);
+        }
       }
     } catch {
       // ignore
     }
   }, []);
 
-  const saveWidths = (newWidths: ColumnWidths) => {
-    setWidths(newWidths);
+  const saveConfig = (newConfig: ColumnWidthConfig) => {
+    setConfig(newConfig);
     if (typeof window === "undefined") return;
     const key = "direct:tableColumnWidths";
     try {
-      window.localStorage.setItem(key, JSON.stringify(newWidths));
+      window.localStorage.setItem(key, JSON.stringify(newConfig));
     } catch {
       // ignore
     }
   };
 
-  return [widths, saveWidths];
+  return [config, saveConfig];
 }
 
 function normalizeChatStatusUiVariant(raw: string | null | undefined): ChatStatusUiVariant | null {
@@ -540,6 +622,13 @@ type DirectClientTableProps = {
   setIsEditingColumnWidths?: (value: boolean) => void;
 };
 
+// Допоміжна функція для отримання стилів колонки
+const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }): React.CSSProperties => {
+  return config.mode === 'fixed'
+    ? { width: `${config.width}px` }
+    : { minWidth: `${config.width}px` };
+};
+
 export function DirectClientTable({
   clients,
   statuses,
@@ -559,32 +648,71 @@ export function DirectClientTable({
   const searchParams = useSearchParams();
   const debugActivity = (searchParams?.get("debugActivity") || "").toString().trim() === "1";
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
-  const [columnWidths, setColumnWidths] = useColumnWidths();
-  const [editingWidths, setEditingWidths] = useState<ColumnWidths>(columnWidths);
+  const [columnWidths, setColumnWidths] = useColumnWidthConfig();
+  const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   
-  // Синхронізуємо editingWidths з columnWidths коли відкривається режим редагування
+  // Синхронізуємо editingConfig з columnWidths коли відкривається режим редагування
   useEffect(() => {
     if (isEditingColumnWidths) {
-      setEditingWidths(columnWidths);
+      setEditingConfig(columnWidths);
     }
   }, [isEditingColumnWidths, columnWidths]);
 
   const handleSaveColumnWidths = () => {
     // Валідація значень
-    const validated: ColumnWidths = {
-      number: Math.max(10, Math.min(500, editingWidths.number)),
-      act: Math.max(10, Math.min(500, editingWidths.act)),
-      avatar: Math.max(10, Math.min(500, editingWidths.avatar)),
-      name: Math.max(10, Math.min(500, editingWidths.name)),
-      sales: Math.max(10, Math.min(500, editingWidths.sales)),
-      days: Math.max(10, Math.min(500, editingWidths.days)),
-      inst: Math.max(10, Math.min(500, editingWidths.inst)),
-      state: Math.max(10, Math.min(500, editingWidths.state)),
-      consultation: Math.max(10, Math.min(500, editingWidths.consultation)),
-      record: Math.max(10, Math.min(500, editingWidths.record)),
-      master: Math.max(10, Math.min(500, editingWidths.master)),
-      phone: Math.max(10, Math.min(500, editingWidths.phone)),
-      actions: Math.max(10, Math.min(500, editingWidths.actions)),
+    const validated: ColumnWidthConfig = {
+      number: {
+        width: Math.max(10, Math.min(500, editingConfig.number.width)),
+        mode: editingConfig.number.mode
+      },
+      act: {
+        width: Math.max(10, Math.min(500, editingConfig.act.width)),
+        mode: editingConfig.act.mode
+      },
+      avatar: {
+        width: Math.max(10, Math.min(500, editingConfig.avatar.width)),
+        mode: editingConfig.avatar.mode
+      },
+      name: {
+        width: Math.max(10, Math.min(500, editingConfig.name.width)),
+        mode: editingConfig.name.mode
+      },
+      sales: {
+        width: Math.max(10, Math.min(500, editingConfig.sales.width)),
+        mode: editingConfig.sales.mode
+      },
+      days: {
+        width: Math.max(10, Math.min(500, editingConfig.days.width)),
+        mode: editingConfig.days.mode
+      },
+      inst: {
+        width: Math.max(10, Math.min(500, editingConfig.inst.width)),
+        mode: editingConfig.inst.mode
+      },
+      state: {
+        width: Math.max(10, Math.min(500, editingConfig.state.width)),
+        mode: editingConfig.state.mode
+      },
+      consultation: {
+        width: Math.max(10, Math.min(500, editingConfig.consultation.width)),
+        mode: editingConfig.consultation.mode
+      },
+      record: {
+        width: Math.max(10, Math.min(500, editingConfig.record.width)),
+        mode: editingConfig.record.mode
+      },
+      master: {
+        width: Math.max(10, Math.min(500, editingConfig.master.width)),
+        mode: editingConfig.master.mode
+      },
+      phone: {
+        width: Math.max(10, Math.min(500, editingConfig.phone.width)),
+        mode: editingConfig.phone.mode
+      },
+      actions: {
+        width: Math.max(10, Math.min(500, editingConfig.actions.width)),
+        mode: editingConfig.actions.mode
+      },
     };
     setColumnWidths(validated);
     setIsEditingColumnWidths?.(false);
@@ -1001,8 +1129,8 @@ export function DirectClientTable({
               {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
               <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.number}px` }}>№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.act}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.number)}>№</th>
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.act)}>
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() => {
@@ -1022,8 +1150,8 @@ export function DirectClientTable({
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0 py-2 bg-base-200" style={{ minWidth: `${columnWidths.avatar}px` }} />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.name}px` }}>
+                  <th className="px-0 py-2 bg-base-200" style={getColumnStyle(columnWidths.avatar)} />
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.name)}>
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -1060,7 +1188,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.sales}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.sales)}>
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className="hover:underline cursor-pointer text-left mt-0.5"
@@ -1077,15 +1205,15 @@ export function DirectClientTable({
                   </th>
                   <th
                     className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200"
-                    style={{ minWidth: `${columnWidths.days}px` }}
+                    style={getColumnStyle(columnWidths.days)}
                     title="Днів з останнього візиту (Altegio)"
                   >
                     Днів
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.inst}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.inst)}>
                     Inst
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.state}px` }}>
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.state)}>
                     <button
                       className="hover:underline cursor-pointer w-full text-left"
                       onClick={() =>
@@ -1098,7 +1226,7 @@ export function DirectClientTable({
                       Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.consultation}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.consultation)}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1111,7 +1239,7 @@ export function DirectClientTable({
                       Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.record}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.record)}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1124,7 +1252,7 @@ export function DirectClientTable({
                       Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.master}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.master)}>
                     <button
                       className="hover:underline cursor-pointer"
                       onClick={() =>
@@ -1137,145 +1265,277 @@ export function DirectClientTable({
                       Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
                     </button>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.phone}px` }}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.phone)}>
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={{ minWidth: `${columnWidths.actions}px` }}>Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.actions)}>Дії</th>
                 </tr>
                 {/* Рядок редагування розмірів */}
                 {isEditingColumnWidths && (
                   <tr className="bg-yellow-50">
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.number}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, number: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.number}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.number.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, number: { ...editingConfig.number, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.number.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.number.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, number: { ...editingConfig.number, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.act}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, act: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.act}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.act.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, act: { ...editingConfig.act, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.act.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.act.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, act: { ...editingConfig.act, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.avatar}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, avatar: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.avatar}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.avatar.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, avatar: { ...editingConfig.avatar, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.avatar.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.avatar.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, avatar: { ...editingConfig.avatar, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.name}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, name: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.name}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.name.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, name: { ...editingConfig.name, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.name.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.name.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, name: { ...editingConfig.name, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.sales}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, sales: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.sales}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.sales.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, sales: { ...editingConfig.sales, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.sales.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.sales.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, sales: { ...editingConfig.sales, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.days}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, days: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.days}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.days.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, days: { ...editingConfig.days, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.days.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.days.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, days: { ...editingConfig.days, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.inst}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, inst: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.inst}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.inst.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, inst: { ...editingConfig.inst, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.inst.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.inst.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, inst: { ...editingConfig.inst, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.state}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, state: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.state}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.state.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, state: { ...editingConfig.state, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.state.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.state.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, state: { ...editingConfig.state, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.consultation}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, consultation: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.consultation}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.consultation.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.consultation.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.consultation.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.record}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, record: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.record}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.record.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.record.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.record.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.master}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, master: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.master}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.master.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, master: { ...editingConfig.master, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.master.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.master.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, master: { ...editingConfig.master, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min="10"
-                        max="500"
-                        value={editingWidths.phone}
-                        onChange={(e) => setEditingWidths({ ...editingWidths, phone: parseInt(e.target.value) || 10 })}
-                        className="input input-xs w-full"
-                        placeholder={`${columnWidths.phone}px`}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.phone.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, phone: { ...editingConfig.phone, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.phone.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.phone.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, phone: { ...editingConfig.phone, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
                     </td>
                     <td className="px-1 py-1">
                       <button
@@ -1357,8 +1617,8 @@ export function DirectClientTable({
                     return (
                       <>
                         <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ minWidth: `${columnWidths.number}px` }}>{index + 1}</td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.act}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={getColumnStyle(columnWidths.number)}>{index + 1}</td>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.act)}>
                         <span className="flex flex-col leading-none">
                           <span
                             title={
@@ -1388,7 +1648,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="px-0 py-1" style={{ minWidth: `${columnWidths.avatar}px` }}>
+                      <td className="px-0 py-1" style={getColumnStyle(columnWidths.avatar)}>
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
@@ -1410,7 +1670,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.name}px` }}>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.name)}>
                         <span className="flex flex-col leading-none">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
@@ -1757,7 +2017,7 @@ export function DirectClientTable({
                           })()}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.sales}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales)}>
                         <span className="flex flex-col items-start leading-none">
                           <span className="text-left">
                             {client.spent !== null && client.spent !== undefined
@@ -1767,7 +2027,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={{ minWidth: `${columnWidths.days}px` }}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={getColumnStyle(columnWidths.days)}>
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -1810,7 +2070,7 @@ export function DirectClientTable({
                             ? "px-1 sm:px-2 py-1 text-xs whitespace-normal"
                             : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden"
                         }
-                        style={{ minWidth: `${columnWidths.inst}px` }}
+                        style={getColumnStyle(columnWidths.inst)}
                       >
                           {(() => {
                           const total =
@@ -1890,7 +2150,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.state}px` }}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.state)}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -2091,7 +2351,7 @@ export function DirectClientTable({
                           return '';
                           })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.consultation}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.consultation)}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2323,7 +2583,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.record}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.record)}>
                         {client.signedUpForPaidService && client.paidServiceDate ? (
                           (() => {
                             const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -2495,7 +2755,7 @@ export function DirectClientTable({
                           ""
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.master}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.master)}>
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -2589,14 +2849,14 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={{ minWidth: `${columnWidths.phone}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.phone)}>
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={{ minWidth: `${columnWidths.actions}px` }}>
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={getColumnStyle(columnWidths.actions)}>
                         <div className="flex gap-1">
                           <button
                             className="btn btn-xs btn-ghost"
