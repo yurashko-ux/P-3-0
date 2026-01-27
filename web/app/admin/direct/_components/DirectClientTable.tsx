@@ -2409,6 +2409,10 @@ export function DirectClientTable({
                               const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
                                 ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
                                 : null;
+                              // Перевіряємо, чи запис створено сьогодні
+                              const consultCreatedToday = createdAtDate && !isNaN(createdAtDate.getTime())
+                                ? kyivDayFmt.format(createdAtDate) === todayKyivDay
+                                : false;
                               
                               // Діагностика для "Юлія Кобра" та "Топоріна Олена"
                               const isDebugClient = client.instagramUsername === 'kobra_best' || 
@@ -2502,7 +2506,7 @@ export function DirectClientTable({
 
                               return (
                                 <span className="flex flex-col items-start">
-                                  <span className="flex items-center gap-1">
+                                  <span className={`flex items-center gap-1 ${consultCreatedToday ? 'bg-gray-200 px-1 py-0.5 rounded' : ''}`}>
                                     <button
                                       className={
                                         isToday
@@ -2606,6 +2610,10 @@ export function DirectClientTable({
                             const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
                               ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
                               : null;
+                            // Перевіряємо, чи запис створено сьогодні
+                            const paidCreatedToday = createdAtDate && !isNaN(createdAtDate.getTime())
+                              ? kyivDayFmt.format(createdAtDate) === todayKyivDay
+                              : false;
                             
                             // Визначаємо значок attendance
                             // Правило:
@@ -2679,7 +2687,7 @@ export function DirectClientTable({
 
                             return (
                               <span className="flex flex-col items-start">
-                                <span className="flex items-center gap-1">
+                                <span className={`flex items-center gap-1 ${paidCreatedToday ? 'bg-gray-200 px-1 py-0.5 rounded' : ''}`}>
                                 <button
                                   className={
                                     isToday
