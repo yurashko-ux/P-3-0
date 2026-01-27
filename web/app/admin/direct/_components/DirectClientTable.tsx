@@ -1670,8 +1670,8 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.name)}>
-                        <span className="flex flex-col leading-none">
+                      <td className="px-0 py-1 text-xs whitespace-nowrap overflow-hidden" style={getColumnStyle(columnWidths.name)}>
+                        <span className="flex flex-col leading-none min-w-0">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
                             const last = (client.lastName || "").toString().trim();
@@ -1982,25 +1982,25 @@ export function DirectClientTable({
 
                             return (
                               <>
-                                <div className="flex items-center gap-1 min-w-0">
+                                <div className="flex items-center gap-1 min-w-0 max-w-full">
                                   {typeBadge}
                                 {isNormalInstagram ? (
                                   <a
                                     href={`https://instagram.com/${username}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                      className="link link-primary flex items-center gap-1 min-w-0"
-                                    title={`https://instagram.com/${username}`}
+                                      className="link link-primary flex items-center gap-1 min-w-0 max-w-full"
+                                    title={`${nameOneLine} - https://instagram.com/${username}`}
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                      <span className="min-w-0 overflow-hidden">{nameOneLine}</span>
+                                      <span className="min-w-0 truncate" title={nameOneLine}>{nameOneLine}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
                                   </a>
                                 ) : (
-                                    <span className="flex items-center gap-1 min-w-0" title={nameOneLine}>
-                                      <span className="min-w-0 overflow-hidden">{nameOneLine}</span>
+                                    <span className="flex items-center gap-1 min-w-0 max-w-full" title={nameOneLine}>
+                                      <span className="min-w-0 truncate">{nameOneLine}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
