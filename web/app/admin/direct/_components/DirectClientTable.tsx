@@ -629,6 +629,22 @@ const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }): React
     : { minWidth: `${config.width}px` };
 };
 
+// Допоміжна функція для отримання sticky стилів для перших колонок
+const getStickyColumnStyle = (
+  config: { width: number; mode: ColumnWidthMode },
+  left: number,
+  isHeader: boolean = false
+): React.CSSProperties => {
+  const baseStyle = getColumnStyle(config);
+  return {
+    ...baseStyle,
+    position: 'sticky' as const,
+    left: `${left}px`,
+    zIndex: isHeader ? 21 : 10, // Header має вищий z-index
+    backgroundColor: isHeader ? '#e5e7eb' : '#ffffff', // bg-base-200 для header (сірий), white для body
+  };
+};
+
 export function DirectClientTable({
   clients,
   statuses,
@@ -650,6 +666,19 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
+  
+  // Обчислюємо left значення для sticky колонок (перші 4: №, Act, Avatar, Name)
+  const getStickyLeft = (columnIndex: number): number => {
+    let left = 0;
+    const columns = [columnWidths.number, columnWidths.act, columnWidths.avatar, columnWidths.name];
+    for (let i = 0; i < columnIndex && i < columns.length; i++) {
+      const col = columns[i];
+      // Використовуємо width як наближення фактичної ширини колонки
+      // (для mode 'fixed' це точна ширина, для mode 'min' - мінімальна ширина)
+      left += col.width;
+    }
+    return left;
+  };
   
   // Синхронізуємо editingConfig з columnWidths коли відкривається режим редагування
   useEffect(() => {
@@ -1129,8 +1158,8 @@ export function DirectClientTable({
               {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
               <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.number)}>№</th>
-                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.act)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
+                  <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
                     <button
                       className="hover:underline cursor-pointer text-left whitespace-nowrap"
                       onClick={() => {
@@ -1150,8 +1179,8 @@ export function DirectClientTable({
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0 py-2 bg-base-200" style={getColumnStyle(columnWidths.avatar)} />
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.name)}>
+                  <th className="px-0 py-2 bg-base-200" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), true)} />
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), true)}>
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
@@ -1617,8 +1646,8 @@ export function DirectClientTable({
                     return (
                       <>
                         <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={getColumnStyle(columnWidths.number)}>{index + 1}</td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.act)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
                         <span className="flex flex-col leading-none">
                           <span
                             title={
@@ -1648,7 +1677,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-                      <td className="px-0 py-1" style={getColumnStyle(columnWidths.avatar)}>
+                      <td className="px-0 py-1" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), false)}>
                         {(() => {
                           const username = (client.instagramUsername || "").toString();
                           const isNoInstagram =
@@ -1670,7 +1699,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap overflow-hidden" style={getColumnStyle(columnWidths.name)}>
+                      <td className="px-0 py-1 text-xs whitespace-nowrap overflow-hidden" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false)}>
                         <span className="flex flex-col leading-none min-w-0">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();
