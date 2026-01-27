@@ -171,7 +171,19 @@ function useColumnWidthConfig(): [ColumnWidthConfig, (config: ColumnWidthConfig)
     return loaded || DEFAULT_COLUMN_CONFIG;
   });
 
-  // useEffect тепер використовується тільки для синхронізації при зміні localStorage з іншого табу/вікна
+  // useEffect для завантаження конфігурації після монтування (на випадок, якщо під час SSR вона не завантажилася)
+  // Використовуємо useLayoutEffect для синхронного завантаження перед рендерингом
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const loaded = loadColumnWidthConfigFromStorage();
+    if (loaded) {
+      // Завжди завантажуємо конфігурацію з localStorage після монтування
+      // Це гарантує, що після hydration конфігурація буде правильною
+      setConfig(loaded);
+    }
+  }, []); // Виконується тільки один раз після монтування
+
+  // useEffect для синхронізації при зміні localStorage з іншого табу/вікна
   useEffect(() => {
     if (typeof window === "undefined") return;
     const key = "direct:tableColumnWidths";
