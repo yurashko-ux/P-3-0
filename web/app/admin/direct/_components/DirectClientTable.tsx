@@ -1270,7 +1270,7 @@ export function DirectClientTable({
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-1">
                         <button
-                          className="hover:underline cursor-pointer text-left"
+                          className={`hover:underline cursor-pointer text-left ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                           onClick={() =>
                             onSortChange(
                               "spent",
@@ -1292,7 +1292,7 @@ export function DirectClientTable({
                         />
                       </div>
                       <button
-                        className="hover:underline cursor-pointer text-left mt-0.5"
+                        className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "instagramUsername" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                         onClick={() =>
                           onSortChange(
                             "instagramUsername",
@@ -1307,7 +1307,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.sales)}>
                     <div className="flex flex-col items-start leading-none">
                       <button
-                        className="hover:underline cursor-pointer text-left mt-0.5"
+                        className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                         onClick={() =>
                           onSortChange(
                             "spent",
@@ -1325,7 +1325,7 @@ export function DirectClientTable({
                     title="Днів з останнього візиту (Altegio). Сортувати."
                   >
                     <button
-                      className="hover:underline cursor-pointer w-full text-left"
+                      className={`hover:underline cursor-pointer w-full text-left ${sortBy === "daysSinceLastVisit" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                       onClick={() =>
                         onSortChange(
                           "daysSinceLastVisit",
@@ -1338,7 +1338,7 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.inst)}>
                     <button
-                      className="hover:underline cursor-pointer w-full text-left"
+                      className={`hover:underline cursor-pointer w-full text-left ${sortBy === "messagesTotal" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                       onClick={() =>
                         onSortChange(
                           "messagesTotal",
@@ -1351,7 +1351,7 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.state)}>
                     <button
-                      className="hover:underline cursor-pointer w-full text-left"
+                      className={`hover:underline cursor-pointer w-full text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                       onClick={() =>
                         onSortChange(
                           "state",
@@ -1364,7 +1364,7 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.consultation)}>
                     <button
-                      className="hover:underline cursor-pointer"
+                      className={`hover:underline cursor-pointer ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                       onClick={() =>
                         onSortChange(
                           "consultationBookingDate",
@@ -1377,7 +1377,7 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.record)}>
                     <button
-                      className="hover:underline cursor-pointer"
+                      className={`hover:underline cursor-pointer ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                       onClick={() =>
                         onSortChange(
                           "paidServiceDate",
@@ -1390,7 +1390,7 @@ export function DirectClientTable({
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.master)}>
                     <button
-                      className="hover:underline cursor-pointer"
+                      className={`hover:underline cursor-pointer ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                       onClick={() =>
                         onSortChange(
                           "masterId",
