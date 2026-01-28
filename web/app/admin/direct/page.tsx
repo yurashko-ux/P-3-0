@@ -282,72 +282,39 @@ export default function DirectPage() {
   // Зберігаємо sortBy і sortOrder в localStorage при зміні
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const stack = new Error().stack;
-      const prevSaved = localStorage.getItem('direct-sort-by');
       console.log('[DirectPage] 🔄 sortBy/sortOrder changed:', { 
         sortBy, 
         sortOrder, 
         viewMode,
-        prevSaved,
         timestamp: new Date().toISOString(),
-        stack: stack?.split('\n').slice(1, 8).join('\n') // Більше рядків для кращого трейсу
       });
-      
-      // Якщо sortBy змінюється на firstContactDate, але в localStorage збережено updatedAt - не зберігаємо
-      if (sortBy === 'firstContactDate' && prevSaved === 'updatedAt') {
-        console.error('[DirectPage] 🚨 BLOCKED: Attempt to change sortBy from updatedAt to firstContactDate!', {
-          sortBy,
-          prevSaved,
-          stack: stack?.split('\n').slice(1, 10).join('\n')
-        });
-        // Відновлюємо активний режим
-        setSortBy('updatedAt');
-        setSortOrder('desc');
-        return; // Не зберігаємо зміну
-      }
-      
       localStorage.setItem('direct-sort-by', sortBy);
       localStorage.setItem('direct-sort-order', sortOrder);
     }
   }, [sortBy, sortOrder, viewMode]);
   
-  // Захист активного режиму: перевіряємо localStorage кожні 500мс і відновлюємо sortBy якщо потрібно
+  // Захист активного режиму: перевіряємо localStorage кожні 500мс і відновлюємо sortBy якщо потрібно.
+  // Виняток: пасивний режим (firstContactDate desc) — не відновлюємо, це перемикання через кнопку Act.
   useEffect(() => {
-    console.log('[DirectPage] 🛡️ Setting up active mode protection interval');
     const interval = setInterval(() => {
       if (typeof window !== 'undefined') {
         const savedSortBy = localStorage.getItem('direct-sort-by');
         const savedSortOrder = localStorage.getItem('direct-sort-order');
-        
-        // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
+        const isPassiveByChoice = sortBy === 'firstContactDate' && sortOrder === 'desc';
+        if (isPassiveByChoice) return;
+
         if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
           if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-            console.warn('[DirectPage] 🛡️ Active mode protection: restoring sortBy to updatedAt', {
-              was: { sortBy, sortOrder },
-              saved: { savedSortBy, savedSortOrder },
-              restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
-              timestamp: new Date().toISOString()
-            });
             setSortBy('updatedAt');
             setSortOrder('desc');
           }
         } else if (savedSortBy === 'updatedAt' && savedSortOrder !== 'desc') {
-          // Якщо sortBy правильний, але sortOrder неправильний - виправляємо
-          console.warn('[DirectPage] 🛡️ Active mode protection: fixing sortOrder', {
-            was: { sortBy, sortOrder },
-            saved: { savedSortBy, savedSortOrder },
-            fixing: { sortOrder: 'desc' },
-            timestamp: new Date().toISOString()
-          });
           setSortOrder('desc');
         }
       }
-    }, 500); // Перевіряємо кожні 500мс (частіше для кращого захисту)
-    
-    return () => {
-      console.log('[DirectPage] 🛡️ Clearing active mode protection interval');
-      clearInterval(interval);
-    };
+    }, 500);
+
+    return () => clearInterval(interval);
   }, [sortBy, sortOrder]);
 
   useEffect(() => {
@@ -2309,7 +2276,6 @@ export default function DirectPage() {
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {
-          const stack = new Error().stack;
           console.log('[DirectPage] 🎯 onSortChange called:', { 
             by, 
             order, 
@@ -2317,15 +2283,13 @@ export default function DirectPage() {
             currentSortOrder: sortOrder, 
             viewMode,
             timestamp: new Date().toISOString(),
-            stack: stack?.split('\n').slice(1, 4).join('\n')
           });
-          
-          // В активному режимі не дозволяємо змінювати сортування (тільки через кнопку режиму)
-          if (viewMode === 'active' && (by !== 'updatedAt' || order !== 'desc')) {
-            console.warn('[DirectPage] ⛔ Sort change blocked in active mode');
+          // В активному режимі дозволяємо тільки перемикання act: updatedAt desc ↔ firstContactDate desc
+          const actToggle = (by === 'updatedAt' && order === 'desc') || (by === 'firstContactDate' && order === 'desc');
+          if (viewMode === 'active' && !actToggle) {
+            console.warn('[DirectPage] ⛔ Sort change blocked in active mode (only Act toggle allowed)');
             return;
           }
-          
           console.log('[DirectPage] ✅ Setting sortBy:', by, order);
           setSortBy(by);
           setSortOrder(order);

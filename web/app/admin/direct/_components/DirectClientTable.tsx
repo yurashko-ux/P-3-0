@@ -1239,7 +1239,11 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
                     <button
-                      className="hover:underline cursor-pointer text-left whitespace-nowrap"
+                      className={`hover:underline cursor-pointer text-left whitespace-nowrap ${
+                        sortBy === "updatedAt" && sortOrder === "desc" 
+                          ? "text-blue-600 font-bold" 
+                          : "text-gray-600"
+                      }`}
                       onClick={() => {
                         // Перемикання між активним та пасивним режимом
                         const isActiveMode = sortBy === "updatedAt" && sortOrder === "desc";
@@ -1251,9 +1255,13 @@ export function DirectClientTable({
                           onSortChange("updatedAt", "desc");
                         }
                       }}
-                      title="Перемкнути режим відображення"
+                      title={
+                        sortBy === "updatedAt" && sortOrder === "desc"
+                          ? "Активний режим: сортування по активних оновленнях. Натисніть для пасивного режиму"
+                          : "Пасивний режим. Натисніть для активного режиму (сортування по активних оновленнях)"
+                      }
                     >
-                      Act {sortBy === "updatedAt" && (sortOrder === "asc" ? "↑" : "↓")}
+                      Act {sortBy === "updatedAt" && sortOrder === "desc" ? "↓" : ""}
                     </button>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
