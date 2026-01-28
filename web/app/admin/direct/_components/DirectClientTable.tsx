@@ -2658,9 +2658,7 @@ export function DirectClientTable({
                               // debug logs removed
 
                               return (
-                                <span className={`flex flex-col items-start ${
-                                  consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
-                                }`}>
+                                <span className="flex flex-col items-start">
                                   <span className="flex items-center gap-1">
                                     <button
                                       className={
@@ -2679,7 +2677,9 @@ export function DirectClientTable({
                                       disabled={!client.altegioClientId}
                                     >
                                       <span className="inline-flex items-center">
-                                        <span>
+                                        <span className={`rounded-full px-2 py-0.5 ${
+                                          consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
+                                        }`}>
                                           {formattedDateStr} {isOnline ? "💻" : "📅"}
                                         </span>
                                         {showDotOnConsultDate ? (
@@ -2851,9 +2851,7 @@ export function DirectClientTable({
                             const showPaidCostDot = Boolean(paidCostChanged);
 
                             return (
-                              <span className={`flex flex-col items-start ${
-                                paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
-                              }`}>
+                              <span className="flex flex-col items-start">
                                 <span className="flex items-center gap-1">
                                 <button
                                   className={
@@ -2872,7 +2870,9 @@ export function DirectClientTable({
                                   disabled={!client.altegioClientId}
                                 >
                                   <span className="inline-flex items-center">
-                                    <span>{dateStr}</span>
+                                    <span className={`rounded-full px-2 py-0.5 ${
+                                      paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
+                                    }`}>{dateStr}</span>
                                     {showDotOnPaidDate ? (
                                       <span
                                         className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
