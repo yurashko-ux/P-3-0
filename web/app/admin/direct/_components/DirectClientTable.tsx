@@ -2693,7 +2693,7 @@ export function DirectClientTable({
 
                               return (
                                 <span className="flex flex-col items-start">
-                                  <span className="flex items-center gap-1">
+                                  <span className="flex items-center gap-0">
                                     <button
                                       className={
                                         isToday
@@ -2714,7 +2714,7 @@ export function DirectClientTable({
                                         <span className={`rounded-full px-2 py-0.5 ${
                                           consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
                                         }`}>
-                                          {formattedDateStr} {isOnline ? "💻" : "📅"}
+                                          {formattedDateStr}{isOnline ? "💻" : "📅"}
                                         </span>
                                         {showDotOnConsultDate ? (
                                           <span
@@ -2886,7 +2886,7 @@ export function DirectClientTable({
 
                             return (
                               <span className="flex flex-col items-start">
-                                <span className="flex items-center gap-1">
+                                <span className="flex items-center gap-0">
                                 <button
                                   className={
                                     isToday
