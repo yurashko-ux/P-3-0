@@ -2696,11 +2696,12 @@ export function DirectClientTable({
                                   <span className="flex items-center gap-0">
                                     <button
                                       className={
-                                        isToday
+                                        "p-0 " +
+                                        (isToday
                                           ? "text-green-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
                                           : isPast
                                           ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                          : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                          : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50")
                                       }
                                       title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
                                       onClick={() => {
@@ -2723,8 +2724,7 @@ export function DirectClientTable({
                                           />
                                         ) : null}
                                       </span>
-                                    </button>
-                                    {typeof client.consultationAttemptNumber === 'number' &&
+                                    </button>{typeof client.consultationAttemptNumber === 'number' &&
                                     client.consultationAttemptNumber >= 2 ? (
                                       <span
                                         className="inline-flex items-center justify-center rounded-full bg-white border border-blue-300 text-blue-600 font-bold text-[12px] w-[20px] h-[20px]"
@@ -2732,8 +2732,7 @@ export function DirectClientTable({
                                       >
                                         {client.consultationAttemptNumber}
                                       </span>
-                                    ) : null}
-                                    {attendanceIcon ? (
+                                    ) : null}{attendanceIcon ? (
                                       <WithCornerRedDot show={showConsultAttendanceDotEffective} title={consultAttendanceDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                         {attendanceIcon}
                                       </WithCornerRedDot>
@@ -2889,11 +2888,12 @@ export function DirectClientTable({
                                 <span className="flex items-center gap-0">
                                 <button
                                   className={
-                                    isToday
+                                    "p-0 " +
+                                    (isToday
                                       ? "text-green-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
                                       : isPast
                                       ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                                      : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
+                                      : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50")
                                   }
                                   title={`${tooltipTitle}\nНатисніть, щоб переглянути історію записів`}
                                   onClick={() => {
@@ -2913,14 +2913,12 @@ export function DirectClientTable({
                                         title={paidDotTitle}
                                       />
                                     ) : null}
-                                  </span>
-                                </button>
-                                {pendingIcon ? (
+                                      </span>
+                                    </button>{pendingIcon ? (
                                   <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {pendingIcon}
                                   </WithCornerRedDot>
-                                ) : null}
-                                {client.paidServiceIsRebooking ? (
+                                ) : null}{client.paidServiceIsRebooking ? (
                                   <WithCornerRedDot show={showDotOnPaidRebook} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     <span
                                       className="text-purple-700 text-[14px] leading-none"
@@ -2929,8 +2927,7 @@ export function DirectClientTable({
                                       🔁
                                     </span>
                                   </WithCornerRedDot>
-                                ) : null}
-                                {attendanceIcon ? (
+                                ) : null}{attendanceIcon ? (
                                   <WithCornerRedDot show={showPaidAttendanceDotEffective} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {attendanceIcon}
                                   </WithCornerRedDot>
