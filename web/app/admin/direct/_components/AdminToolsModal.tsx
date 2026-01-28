@@ -175,6 +175,22 @@ export function AdminToolsModal({
             `✅ Оновлення станів завершено!\n\nВсього клієнтів: ${data.stats.totalClients}\nОновлено: ${data.stats.updated}\nПропущено: ${data.stats.skipped}\nПомилок: ${data.stats.errors}\n\n${JSON.stringify(data, null, 2)}`,
         },
         {
+          icon: "📅",
+          label: "Синхронізувати дати консультацій",
+          endpoint: "/api/admin/direct/sync-consultation-booking-dates",
+          method: "POST" as const,
+          confirm: "Синхронізувати consultationBookingDate з вебхуків для всіх клієнтів?",
+          successMessage: (data: any) =>
+            `✅ Синхронізація дат консультацій завершена!\n\nВсього клієнтів: ${data.results.total}\nОновлено: ${data.results.updated}\nПропущено: ${data.results.skipped}\nПомилок: ${data.results.errors}\n\n${
+              data.results.details && data.results.details.length > 0
+                ? `Деталі (перші 20):\n${data.results.details
+                    .slice(0, 20)
+                    .map((d: any) => `  - ${d.instagramUsername || d.clientId}: ${d.oldConsultationBookingDate || 'null'} -> ${d.newConsultationBookingDate}`)
+                    .join("\n")}${data.results.details.length > 20 ? `\n... і ще ${data.results.details.length - 20} клієнтів` : ""}\n\n`
+                : ""
+            }${JSON.stringify(data, null, 2)}`,
+        },
+        {
           icon: "💰",
           label: "Синхронізувати витрати та візити",
           endpoint: "/api/admin/direct/sync-spent-visits",
