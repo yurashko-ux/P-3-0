@@ -713,58 +713,6 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/clients] ⚠️ Не вдалося обчислити "Перезапис" (не критично):', err);
     }
 
-    // Сортування
-    clients.sort((a, b) => {
-      let aVal: any = a[sortBy as keyof DirectClient];
-      let bVal: any = b[sortBy as keyof DirectClient];
-
-      // Спеціальна обробка для статусів - сортуємо по назві
-      if (sortBy === 'statusId') {
-        aVal = statusMap.get(a.statusId) || '';
-        bVal = statusMap.get(b.statusId) || '';
-        aVal = aVal.toLowerCase();
-        bVal = bVal.toLowerCase();
-      }
-      // Спеціальна обробка для майстрів - сортуємо по імені
-      else if (sortBy === 'masterId') {
-        aVal = a.serviceMasterName || '';
-        bVal = b.serviceMasterName || '';
-        aVal = String(aVal).toLowerCase();
-        bVal = String(bVal).toLowerCase();
-      }
-      // Обробка дат
-      else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate' || sortBy === 'consultationBookingDate' || sortBy === 'updatedAt' || sortBy === 'createdAt') {
-        aVal = aVal ? new Date(aVal).getTime() : 0;
-        bVal = bVal ? new Date(bVal).getTime() : 0;
-      }
-      // Обробка boolean
-      else if (sortBy === 'visitedSalon' || sortBy === 'signedUpForPaidService' || sortBy === 'consultationAttended' || sortBy === 'signedUpForPaidServiceAfterConsultation') {
-        aVal = aVal ? 1 : 0;
-        bVal = bVal ? 1 : 0;
-      }
-      // Обробка рядків (для порожніх значень)
-      else if (typeof aVal === 'string' || typeof bVal === 'string') {
-        aVal = aVal || '';
-        bVal = bVal || '';
-        // Сортування без урахування регістру
-        aVal = aVal.toLowerCase();
-        bVal = bVal.toLowerCase();
-      }
-      // Обробка порожніх значень
-      else {
-        aVal = aVal ?? '';
-        bVal = bVal ?? '';
-      }
-
-      if (sortOrder === 'asc') {
-        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-      } else {
-        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-      }
-    });
-
-    console.log(`[direct/clients] GET: Returning ${clients.length} clients after filtering and sorting`);
-    
     // Отримуємо останні 5 станів для всіх клієнтів одним оптимізованим запитом
     const clientIds = clients.map(c => c.id);
     let statesMap = new Map<string, any[]>();
@@ -987,6 +935,49 @@ export async function GET(req: NextRequest) {
         return clientsWithChatMeta;
       }
     })();
+
+    // Сортування після обчислення daysSinceLastVisit і messagesTotal
+    clientsWithDaysSinceLastVisit.sort((a, b) => {
+      let aVal: any = (a as any)[sortBy];
+      let bVal: any = (b as any)[sortBy];
+
+      if (sortBy === 'statusId') {
+        aVal = statusMap.get(a.statusId) || '';
+        bVal = statusMap.get(b.statusId) || '';
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
+      } else if (sortBy === 'masterId') {
+        aVal = a.serviceMasterName || '';
+        bVal = b.serviceMasterName || '';
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
+      } else if (sortBy === 'daysSinceLastVisit') {
+        aVal = typeof (a as any).daysSinceLastVisit === 'number' && Number.isFinite((a as any).daysSinceLastVisit) ? (a as any).daysSinceLastVisit : Infinity;
+        bVal = typeof (b as any).daysSinceLastVisit === 'number' && Number.isFinite((b as any).daysSinceLastVisit) ? (b as any).daysSinceLastVisit : Infinity;
+      } else if (sortBy === 'messagesTotal') {
+        aVal = typeof (a as any).messagesTotal === 'number' && Number.isFinite((a as any).messagesTotal) ? (a as any).messagesTotal : 0;
+        bVal = typeof (b as any).messagesTotal === 'number' && Number.isFinite((b as any).messagesTotal) ? (b as any).messagesTotal : 0;
+      } else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate' || sortBy === 'consultationBookingDate' || sortBy === 'updatedAt' || sortBy === 'createdAt') {
+        aVal = aVal ? new Date(aVal).getTime() : 0;
+        bVal = bVal ? new Date(bVal).getTime() : 0;
+      } else if (sortBy === 'visitedSalon' || sortBy === 'signedUpForPaidService' || sortBy === 'consultationAttended' || sortBy === 'signedUpForPaidServiceAfterConsultation') {
+        aVal = aVal ? 1 : 0;
+        bVal = bVal ? 1 : 0;
+      } else if (typeof aVal === 'string' || typeof bVal === 'string') {
+        aVal = (aVal ?? '').toString().toLowerCase();
+        bVal = (bVal ?? '').toString().toLowerCase();
+      } else {
+        aVal = aVal ?? '';
+        bVal = bVal ?? '';
+      }
+
+      if (sortOrder === 'asc') {
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      }
+      return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+    });
+
+    console.log(`[direct/clients] GET: Returning ${clientsWithDaysSinceLastVisit.length} clients after filtering and sorting`);
     
     const response = { 
       ok: true, 

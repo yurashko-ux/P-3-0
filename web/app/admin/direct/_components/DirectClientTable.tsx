@@ -1322,12 +1322,32 @@ export function DirectClientTable({
                   <th
                     className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200"
                     style={getColumnStyle(columnWidths.days)}
-                    title="Днів з останнього візиту (Altegio)"
+                    title="Днів з останнього візиту (Altegio). Сортувати."
                   >
-                    Днів
+                    <button
+                      className="hover:underline cursor-pointer w-full text-left"
+                      onClick={() =>
+                        onSortChange(
+                          "daysSinceLastVisit",
+                          sortBy === "daysSinceLastVisit" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Днів {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.inst)}>
-                    Inst
+                    <button
+                      className="hover:underline cursor-pointer w-full text-left"
+                      onClick={() =>
+                        onSortChange(
+                          "messagesTotal",
+                          sortBy === "messagesTotal" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Inst {sortBy === "messagesTotal" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
                   </th>
                   <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.state)}>
                     <button

@@ -192,26 +192,20 @@ export default function DirectPage() {
     };
   }, [isAddMenuOpen]);
   
+  const ALLOWED_SORT_BY = new Set([
+    'updatedAt', 'createdAt', 'firstContactDate', 'spent', 'instagramUsername',
+    'daysSinceLastVisit', 'messagesTotal', 'consultationBookingDate', 'paidServiceDate',
+    'state', 'masterId', 'statusId',
+  ]);
+
   // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
   const sortByInitializer = useRef<(() => string) | null>(null);
   if (!sortByInitializer.current) {
     sortByInitializer.current = () => {
       if (typeof window !== 'undefined') {
         const saved = localStorage.getItem('direct-sort-by');
-        const stack = new Error().stack;
-        console.log('[DirectPage] 🔍 Initializing sortBy from localStorage:', { 
-          saved, 
-          allKeys: Object.keys(localStorage).filter(k => k.includes('direct')),
-          stack: stack?.split('\n').slice(1, 6).join('\n')
-        });
-        if (saved === 'updatedAt' || saved === 'createdAt' || saved === 'firstContactDate') {
-          console.log('[DirectPage] ✅ Using saved sortBy:', saved);
-          return saved;
-        } else {
-          console.log('[DirectPage] ⚠️ Invalid or missing sortBy in localStorage, using default: updatedAt');
-        }
+        if (saved && ALLOWED_SORT_BY.has(saved)) return saved;
       }
-      console.log('[DirectPage] ⚠️ Window undefined, using default: updatedAt');
       return 'updatedAt';
     };
   }
@@ -293,24 +287,25 @@ export default function DirectPage() {
     }
   }, [sortBy, sortOrder, viewMode]);
   
-  // Захист активного режиму: перевіряємо localStorage кожні 500мс і відновлюємо sortBy якщо потрібно.
-  // Виняток: пасивний режим (firstContactDate desc) — не відновлюємо, це перемикання через кнопку Act.
+  // Захист активного режиму: відновлюємо updatedAt desc лише якщо в localStorage збережено active.
+  // Якщо користувач обрав сортування по колонці (не active) — не перезаписуємо.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (typeof window !== 'undefined') {
-        const savedSortBy = localStorage.getItem('direct-sort-by');
-        const savedSortOrder = localStorage.getItem('direct-sort-order');
-        const isPassiveByChoice = sortBy === 'firstContactDate' && sortOrder === 'desc';
-        if (isPassiveByChoice) return;
+      if (typeof window === 'undefined') return;
+      const isPassiveByChoice = sortBy !== 'updatedAt' || sortOrder !== 'desc';
+      if (isPassiveByChoice) return;
 
-        if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
-          if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-            setSortBy('updatedAt');
-            setSortOrder('desc');
-          }
-        } else if (savedSortBy === 'updatedAt' && savedSortOrder !== 'desc') {
+      const savedSortBy = localStorage.getItem('direct-sort-by');
+      const savedSortOrder = localStorage.getItem('direct-sort-order');
+      if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
+        if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
+          setSortBy('updatedAt');
           setSortOrder('desc');
         }
+        return;
+      }
+      if (savedSortBy === 'updatedAt' && savedSortOrder !== 'desc') {
+        setSortOrder('desc');
       }
     }, 500);
 
@@ -384,12 +379,8 @@ export default function DirectPage() {
       const savedSortBy = localStorage.getItem('direct-sort-by');
       const savedSortOrder = localStorage.getItem('direct-sort-order');
       
-      // Якщо в localStorage збережено інше значення, використовуємо його
-      if (savedSortBy === 'updatedAt' || savedSortBy === 'firstContactDate') {
-        if (savedSortBy !== currentSortBy) {
-          console.warn('[DirectPage] ⚠️ loadClients: sortBy mismatch! State:', currentSortBy, 'localStorage:', savedSortBy, '- using localStorage');
-          currentSortBy = savedSortBy;
-        }
+      if (savedSortBy && ALLOWED_SORT_BY.has(savedSortBy) && savedSortBy !== currentSortBy) {
+        currentSortBy = savedSortBy;
       }
       if (savedSortOrder === 'asc' || savedSortOrder === 'desc') {
         if (savedSortOrder !== currentSortOrder) {
@@ -2276,21 +2267,6 @@ export default function DirectPage() {
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {
-          console.log('[DirectPage] 🎯 onSortChange called:', { 
-            by, 
-            order, 
-            currentSortBy: sortBy, 
-            currentSortOrder: sortOrder, 
-            viewMode,
-            timestamp: new Date().toISOString(),
-          });
-          // В активному режимі дозволяємо тільки перемикання act: updatedAt desc ↔ firstContactDate desc
-          const actToggle = (by === 'updatedAt' && order === 'desc') || (by === 'firstContactDate' && order === 'desc');
-          if (viewMode === 'active' && !actToggle) {
-            console.warn('[DirectPage] ⛔ Sort change blocked in active mode (only Act toggle allowed)');
-            return;
-          }
-          console.log('[DirectPage] ✅ Setting sortBy:', by, order);
           setSortBy(by);
           setSortOrder(order);
         }}
