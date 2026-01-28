@@ -2743,16 +2743,16 @@ export function DirectClientTable({
                                     const consultantFull = (client.consultationMasterName || '').toString().trim();
                                     const consultant = shortPersonName(consultantFull);
                                     if (!consultant) return (
-                                      <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate self-stretch text-center">
+                                      <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
                                         невідомо
                                       </span>
                                     );
                                     return (
                                       <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate self-stretch text-center"
+                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
                                         title={`Консультував: ${consultantFull}`}
                                       >
-                                        <span className="inline-flex items-center justify-center">
+                                        <span className="inline-flex items-center">
                                           <span>{consultant}</span>
                                           {consultMasterChanged ? (
                                             <span
@@ -2936,10 +2936,10 @@ export function DirectClientTable({
 
                                 {typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? (
                                   <span
-                                    className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate self-stretch text-center"
+                                    className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
                                     title={`Сума запису: ${formatUAHExact(client.paidServiceTotalCost)}`}
                                   >
-                                    <span className="inline-flex items-center justify-center">
+                                    <span className="inline-flex items-center">
                                       <span>{formatUAHThousands(client.paidServiceTotalCost)}</span>
                                       {showPaidCostDot ? (
                                         <span
@@ -2950,7 +2950,7 @@ export function DirectClientTable({
                                     </span>
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate self-stretch text-center">
+                                  <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
                                     невідомо
                                   </span>
                                 )}
