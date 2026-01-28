@@ -637,6 +637,7 @@ function WithCornerRedDot({
 
 type DirectClientTableProps = {
   clients: DirectClient[];
+  totalClientsCount?: number;
   statuses: DirectStatus[];
   filters: {
     statusId: string;
@@ -685,6 +686,7 @@ const getStickyColumnStyle = (
 
 export function DirectClientTable({
   clients,
+  totalClientsCount,
   statuses,
   filters,
   onFiltersChange,
@@ -1273,6 +1275,7 @@ export function DirectClientTable({
                         </button>
                         <ColumnFilterDropdown
                           clients={clients}
+                          totalClientsCount={totalClientsCount}
                           selectedFilters={(filters.clientType || []) as ClientTypeFilter[]}
                           onFiltersChange={(newFilters) =>
                             onFiltersChange({ ...filters, clientType: newFilters })

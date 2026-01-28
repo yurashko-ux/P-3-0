@@ -75,9 +75,20 @@ export async function GET(req: NextRequest) {
 
     console.log('[direct/clients] GET: Fetching all clients...');
     let clients: DirectClient[] = [];
+    let totalCount = 0;
     try {
       clients = await getAllDirectClients();
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
+      
+      // Отримуємо загальну кількість всіх клієнтів в базі (незалежно від фільтрів)
+      try {
+        const countResult = await prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*) as count FROM "direct_clients"
+        `;
+        totalCount = Number(countResult[0]?.count || 0);
+      } catch (countErr) {
+        console.warn('[direct/clients] Failed to get total count:', countErr);
+      }
       
       // #region agent log
       const withLastVisitAt = clients.filter(c => !!(c as any).lastVisitAt);
@@ -979,7 +990,8 @@ export async function GET(req: NextRequest) {
     
     const response = { 
       ok: true, 
-      clients: clientsWithDaysSinceLastVisit, 
+      clients: clientsWithDaysSinceLastVisit,
+      totalCount, // Загальна кількість всіх клієнтів в базі
       debug: { 
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

@@ -17,6 +17,7 @@ interface FilterOption {
 
 interface ColumnFilterDropdownProps {
   clients: DirectClient[];
+  totalClientsCount?: number;
   selectedFilters: ClientTypeFilter[];
   onFiltersChange: (filters: ClientTypeFilter[]) => void;
   columnLabel: string;
@@ -24,6 +25,7 @@ interface ColumnFilterDropdownProps {
 
 export function ColumnFilterDropdown({
   clients,
+  totalClientsCount,
   selectedFilters,
   onFiltersChange,
   columnLabel,
@@ -149,8 +151,11 @@ export function ColumnFilterDropdown({
       {isOpen && (
         <div className="absolute left-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[220px]">
           <div className="p-2">
-            <div className="text-xs font-semibold text-gray-700 mb-2 px-2">
-              Фільтри: {columnLabel}
+            <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
+              <span>Фільтри: {columnLabel}</span>
+              {totalClientsCount !== undefined && totalClientsCount > 0 && (
+                <span className="text-gray-500 font-normal">({totalClientsCount})</span>
+              )}
             </div>
             <div className="space-y-1">
               {filterOptions.map((option) => {

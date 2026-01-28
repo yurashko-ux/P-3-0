@@ -150,6 +150,7 @@ export default function DirectPage() {
   });
   
   const [clients, setClients] = useState<DirectClient[]>([]);
+  const [totalClientsCount, setTotalClientsCount] = useState<number>(0);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -499,6 +500,10 @@ export default function DirectPage() {
         warning: data.warning,
         debug: data.debug,
       });
+      
+      if (data.totalCount !== undefined) {
+        setTotalClientsCount(data.totalCount);
+      }
       
       if (data.ok && Array.isArray(data.clients)) {
         let filteredClients = data.clients;
@@ -2291,6 +2296,7 @@ export default function DirectPage() {
       {/* Таблиця клієнтів */}
       <DirectClientTable
         clients={clients}
+        totalClientsCount={totalClientsCount}
         statuses={statuses}
         filters={filters}
           onFiltersChange={(newFilters) => {
