@@ -2693,7 +2693,7 @@ export function DirectClientTable({
 
                               return (
                                 <span className="flex flex-col items-start">
-                                  <span className="flex items-center gap-0">
+                                  <span className="flex items-center gap-[1ch]">
                                     <button
                                       className={
                                         "p-0 " +
@@ -2885,7 +2885,7 @@ export function DirectClientTable({
 
                             return (
                               <span className="flex flex-col items-start">
-                                <span className="flex items-center gap-0">
+                                <span className="flex items-center gap-[1ch]">
                                 <button
                                   className={
                                     "p-0 " +
