@@ -1976,6 +1976,9 @@ export function DirectClientTable({
                             }
 
                             const nameOneLine = [first, last].filter(Boolean).join(" ").trim() || fullName;
+                            const nameOneLineTruncated = nameOneLine.length > 20 
+                              ? nameOneLine.substring(0, 20) + "..." 
+                              : nameOneLine;
                             const visitsValue =
                               client.visits !== null && client.visits !== undefined ? client.visits : null;
                             const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
@@ -2098,14 +2101,14 @@ export function DirectClientTable({
                                     title={`${nameOneLine} - https://instagram.com/${username}`}
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                      <span className="min-w-0 truncate" title={nameOneLine}>{nameOneLine}</span>
+                                      <span className="min-w-0 truncate" title={nameOneLine}>{nameOneLineTruncated}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
                                   </a>
                                 ) : (
                                     <span className="flex items-center gap-1 min-w-0 max-w-full" title={nameOneLine}>
-                                      <span className="min-w-0 truncate">{nameOneLine}</span>
+                                      <span className="min-w-0 truncate">{nameOneLineTruncated}</span>
                                       {visitsSuffix ? (
                                         <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                                       ) : null}
