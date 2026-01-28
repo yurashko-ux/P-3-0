@@ -2712,7 +2712,7 @@ export function DirectClientTable({
                                       disabled={!client.altegioClientId}
                                     >
                                       <span className="inline-flex items-center">
-                                        <span className={`rounded-full pl-2 pr-[1ch] py-0.5 ${
+                                        <span className={`rounded-full px-0 py-0.5 ${
                                           consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
                                         }`}>
                                           {formattedDateStr}{isOnline ? "💻" : "📅"}
@@ -2904,7 +2904,7 @@ export function DirectClientTable({
                                   disabled={!client.altegioClientId}
                                 >
                                   <span className="inline-flex items-center">
-                                    <span className={`rounded-full pl-2 pr-[1ch] py-0.5 ${
+                                    <span className={`rounded-full px-0 py-0.5 ${
                                       paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
                                     }`}>{dateStr}</span>
                                     {showDotOnPaidDate ? (
