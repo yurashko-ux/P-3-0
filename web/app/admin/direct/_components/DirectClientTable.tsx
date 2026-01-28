@@ -2504,9 +2504,7 @@ export function DirectClientTable({
                           : false;
                         
                         return (
-                          <td className={`px-1 sm:px-2 py-1 text-xs whitespace-nowrap ${
-                            consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
-                          }`} style={getColumnStyle(columnWidths.consultation)}>
+                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.consultation)}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2660,7 +2658,9 @@ export function DirectClientTable({
                               // debug logs removed
 
                               return (
-                                <span className="flex flex-col items-start">
+                                <span className={`flex flex-col items-start ${
+                                  consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
+                                }`}>
                                   <span className="flex items-center gap-1">
                                     <button
                                       className={
@@ -2766,9 +2766,7 @@ export function DirectClientTable({
                           : false;
                         
                         return (
-                          <td className={`px-1 sm:px-2 py-1 text-xs whitespace-nowrap ${
-                            paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
-                          }`} style={getColumnStyle(columnWidths.record)}>
+                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.record)}>
                             {client.signedUpForPaidService && client.paidServiceDate ? (
                               (() => {
                                 const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
@@ -2853,7 +2851,9 @@ export function DirectClientTable({
                             const showPaidCostDot = Boolean(paidCostChanged);
 
                             return (
-                              <span className="flex flex-col items-start">
+                              <span className={`flex flex-col items-start ${
+                                paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
+                              }`}>
                                 <span className="flex items-center gap-1">
                                 <button
                                   className={
