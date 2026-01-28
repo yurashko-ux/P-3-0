@@ -2456,7 +2456,57 @@ export function DirectClientTable({
                           return '';
                           })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.consultation)}>
+                      {(() => {
+                        // Перевіряємо, чи консультація створена сьогодні та чи має сьогоднішню дату (для фону колонки)
+                        const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
+                          timeZone: 'Europe/Kyiv',
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                        });
+                        const todayKyivDay = kyivDayFmt.format(new Date());
+                        
+                        const consultCreatedAtDate = client.consultationRecordCreatedAt
+                          ? new Date(client.consultationRecordCreatedAt)
+                          : null;
+                        const consultCreatedToday = consultCreatedAtDate && !isNaN(consultCreatedAtDate.getTime())
+                          ? kyivDayFmt.format(consultCreatedAtDate) === todayKyivDay
+                          : false;
+                        
+                        // Перевіряємо, чи дата консультації = сьогодні (для зеленого фону)
+                        const consultIsToday = client.consultationBookingDate
+                          ? (() => {
+                              try {
+                                const dateValue = typeof client.consultationBookingDate === 'string' 
+                                  ? client.consultationBookingDate.trim() 
+                                  : client.consultationBookingDate;
+                                const dateStr = typeof dateValue === 'string' ? dateValue : String(dateValue);
+                                const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
+                                if (!isoDateMatch) {
+                                  const parts = dateStr.split(/\s+/);
+                                  for (const part of parts) {
+                                    const testDate = new Date(part);
+                                    if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
+                                      return kyivDayFmt.format(testDate) === todayKyivDay;
+                                    }
+                                  }
+                                  return false;
+                                }
+                                const appointmentDate = new Date(isoDateMatch[0]);
+                                if (isNaN(appointmentDate.getTime())) {
+                                  return false;
+                                }
+                                return kyivDayFmt.format(appointmentDate) === todayKyivDay;
+                              } catch {
+                                return false;
+                              }
+                            })()
+                          : false;
+                        
+                        return (
+                          <td className={`px-1 sm:px-2 py-1 text-xs whitespace-nowrap ${
+                            consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
+                          }`} style={getColumnStyle(columnWidths.consultation)}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2691,7 +2741,9 @@ export function DirectClientTable({
                         ) : (
                           ""
                         )}
-                      </td>
+                          </td>
+                        );
+                      })()}
                       {(() => {
                         // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
                         const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -2708,8 +2760,15 @@ export function DirectClientTable({
                           ? kyivDayFmt.format(paidCreatedAtDate) === todayKyivDay
                           : false;
                         
+                        // Перевіряємо, чи дата запису = сьогодні (для зеленого фону)
+                        const paidIsToday = client.paidServiceDate
+                          ? kyivDayFmt.format(new Date(client.paidServiceDate)) === todayKyivDay
+                          : false;
+                        
                         return (
-                          <td className={`px-1 sm:px-2 py-1 text-xs whitespace-nowrap ${paidCreatedToday ? 'bg-gray-200' : ''}`} style={getColumnStyle(columnWidths.record)}>
+                          <td className={`px-1 sm:px-2 py-1 text-xs whitespace-nowrap ${
+                            paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
+                          }`} style={getColumnStyle(columnWidths.record)}>
                             {client.signedUpForPaidService && client.paidServiceDate ? (
                               (() => {
                                 const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
