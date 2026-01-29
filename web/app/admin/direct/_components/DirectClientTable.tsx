@@ -788,6 +788,25 @@ export function DirectClientTable({
     fetchTodayRecordsTotal();
   }, []);
   
+  // Спільний colgroup для header- та body-таблиць — однакові ширини колонок
+  const tableColgroup = (
+    <colgroup>
+      <col style={{ width: `${columnWidths.number.width}px` }} />
+      <col style={{ width: `${columnWidths.act.width}px` }} />
+      <col style={{ width: `${columnWidths.avatar.width}px` }} />
+      <col style={{ width: `${columnWidths.name.width}px` }} />
+      <col style={{ width: `${columnWidths.sales.width}px` }} />
+      <col style={{ width: `${columnWidths.days.width}px` }} />
+      <col style={{ width: `${columnWidths.inst.width}px` }} />
+      <col style={{ width: `${columnWidths.state.width}px` }} />
+      <col style={{ width: `${columnWidths.consultation.width}px` }} />
+      <col style={{ width: `${columnWidths.record.width}px` }} />
+      <col style={{ width: `${columnWidths.master.width}px` }} />
+      <col style={{ width: `${columnWidths.phone.width}px` }} />
+      <col style={{ width: `${columnWidths.actions.width}px` }} />
+    </colgroup>
+  );
+
   // Обчислюємо left значення для sticky колонок (перші 4: №, Act, Avatar, Name)
   const getStickyLeft = (columnIndex: number): number => {
     let left = 0;
@@ -1245,7 +1264,8 @@ export function DirectClientTable({
           <div className="bg-white">
             {(() => {
               const headerTable = (
-                <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
+                <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'fixed', width: 'max-content' }}>
+                  {tableColgroup}
                   <thead className="bg-base-200">
                     <tr className="bg-base-200">
                       <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
@@ -1776,7 +1796,8 @@ export function DirectClientTable({
                 </>
               );
             })()}
-            <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
+            <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'fixed', width: 'max-content' }}>
+              {tableColgroup}
               <tbody>
                 {filteredClients.length === 0 ? (
                   <tr>
