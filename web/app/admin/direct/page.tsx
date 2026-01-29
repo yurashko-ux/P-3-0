@@ -792,21 +792,21 @@ export default function DirectPage() {
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0">
-        <div className="w-full px-4 py-1.5 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="w-full px-4 py-1 flex flex-col md:flex-row md:items-center md:justify-between gap-1">
         <div>
           {/* Лівий блок залишається порожнім */}
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-1 items-center">
           {/* Кнопки навігації до інших розділів */}
-          <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
+          <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 h-6 px-1.5 py-0.5 text-[11px] leading-tight">
             💰 Фінансовий звіт
           </Link>
-          <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost">
+          <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 h-6 px-1.5 py-0.5 text-[11px] leading-tight">
             📈 Статистика
           </Link>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
           <button
-            className="btn btn-sm btn-ghost px-2"
+            className="btn btn-ghost min-h-0 h-6 px-1.5 py-0.5 text-[11px] leading-tight"
             onClick={() => setIsAdminToolsModalOpen(true)}
             title="Відкрити тести"
           >
@@ -816,7 +816,7 @@ export default function DirectPage() {
           {/* Кнопка "+" з випадаючим меню */}
           <div className="relative add-menu-container" ref={addMenuRef}>
             <button
-              className="btn btn-primary w-5 h-5 aspect-square rounded-lg p-0 flex items-center justify-center text-sm"
+              className="btn btn-primary w-4 h-4 min-h-0 aspect-square rounded-md p-0 flex items-center justify-center text-xs"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
               title="Додати"
             >
@@ -863,18 +863,18 @@ export default function DirectPage() {
       </div>
         {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
         <div
-          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[22px] px-4 box-border"
+          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[16px] px-4 box-border"
           style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
         >
           <div
             ref={setHeaderRef}
-            className="overflow-x-auto overflow-y-hidden w-full min-h-[22px]"
+            className="overflow-x-auto overflow-y-hidden w-full min-h-[16px]"
             onScroll={onHeaderScroll}
           />
         </div>
     </header>
       {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[72px] pb-24 px-4">
+      <div className="flex-1 min-h-0 flex flex-col pt-[52px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
