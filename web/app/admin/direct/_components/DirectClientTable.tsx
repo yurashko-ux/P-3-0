@@ -793,9 +793,12 @@ export function DirectClientTable({
   }, []);
   
   // Ширини для header: з body (виміряні) або fallback з columnWidths
-  const effectiveWidths = COLUMN_KEYS.map((k, i) =>
-    measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width
-  );
+  // Мінімум для "Стан": щоб "Стан" + фільтр + відступи не залазили на "Консультація"
+  const STATE_MIN_WIDTH = 96;
+  const effectiveWidths = COLUMN_KEYS.map((k, i) => {
+    const w = measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
+    return k === 'state' ? Math.max(w, STATE_MIN_WIDTH) : w;
+  });
 
   const totalTableWidth = effectiveWidths.reduce((a, b) => a + (b ?? 0), 0);
 
