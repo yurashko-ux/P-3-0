@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
@@ -23,7 +24,9 @@ export function MasterFilterDropdown({
   columnLabel,
 }: MasterFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const m = filters.master;
 
   const [hands, setHands] = useState<2 | 4 | 6 | null>(m.hands);
@@ -69,9 +72,20 @@ export function MasterFilterDropdown({
     setSecondaryIds(m.secondaryMasterIds);
   }, [m.hands, m.primaryMasterIds, m.secondaryMasterIds]);
 
+  useLayoutEffect(() => {
+    if (isOpen && dropdownRef.current && typeof document !== "undefined") {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      setPanelPosition({ top: rect.bottom + 4, left: rect.left });
+    } else {
+      setPanelPosition(null);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setIsOpen(false);
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -129,33 +143,45 @@ export function MasterFilterDropdown({
     </div>
   );
 
+  const portalTarget =
+    typeof document !== "undefined" ? document.getElementById("direct-filter-dropdown-root") ?? document.body : null;
+
+  const panelContent = (
+    <div className="p-2">
+      <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
+        <span>Фільтри: {columnLabel}</span>
+        {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
+      </div>
+      {section("Руки", (
+        <>
+          {opt("hands-2", "2 руки", hands === 2, () => setHands(hands === 2 ? null : 2), handsCounts["2"])}
+          {opt("hands-4", "4 руки", hands === 4, () => setHands(hands === 4 ? null : 4), handsCounts["4"])}
+          {opt("hands-6", "6 рук", hands === 6, () => setHands(hands === 6 ? null : 6), handsCounts["6"])}
+        </>
+      ))}
+      {primaryNames.length > 0 && section("Головний майстер", primaryNames.map(({ name, count }) => opt(`primary-${name}`, name, primaryIds.includes(name), () => togglePrimary(name), count)))}
+      {secondaryNames.length > 0 && section("Додатковий майстер", secondaryNames.map(({ name, count }) => opt(`secondary-${name}`, name, secondaryIds.includes(name), () => toggleSecondary(name), count)))}
+      <div className="flex gap-2 mt-2">
+        <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
+        {hasActive && (
+          <button type="button" onClick={handleClear} className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium">Очистити</button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="relative inline-block" ref={dropdownRef}>
       <FilterIconButton active={hasActive} onClick={() => setIsOpen(!isOpen)} title={`Фільтри для ${columnLabel}`} />
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[240px] max-h-[420px] overflow-y-auto">
-          <div className="p-2">
-            <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
-              <span>Фільтри: {columnLabel}</span>
-              {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
-            </div>
-            {section("Руки", (
-              <>
-                {opt("hands-2", "2 руки", hands === 2, () => setHands(hands === 2 ? null : 2), handsCounts["2"])}
-                {opt("hands-4", "4 руки", hands === 4, () => setHands(hands === 4 ? null : 4), handsCounts["4"])}
-                {opt("hands-6", "6 рук", hands === 6, () => setHands(hands === 6 ? null : 6), handsCounts["6"])}
-              </>
-            ))}
-            {primaryNames.length > 0 && section("Головний майстер", primaryNames.map(({ name, count }) => opt(`primary-${name}`, name, primaryIds.includes(name), () => togglePrimary(name), count)))}
-            {secondaryNames.length > 0 && section("Додатковий майстер", secondaryNames.map(({ name, count }) => opt(`secondary-${name}`, name, secondaryIds.includes(name), () => toggleSecondary(name), count)))}
-            <div className="flex gap-2 mt-2">
-              <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
-              {hasActive && (
-                <button type="button" onClick={handleClear} className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium">Очистити</button>
-              )}
-            </div>
-          </div>
-        </div>
+      {isOpen && panelPosition && portalTarget && createPortal(
+        <div
+          ref={panelRef}
+          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[420px] overflow-y-auto pointer-events-auto"
+          style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
+        >
+          {panelContent}
+        </div>,
+        portalTarget
       )}
     </div>
   );

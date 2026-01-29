@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
@@ -57,7 +58,9 @@ export function ActFilterDropdown({
   columnLabel,
 }: ActFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const cur = currentKyivYearMonth();
   const currentMonthCount = clients.filter((c) => toKyivYearMonth(c.updatedAt) === cur).length;
 
@@ -71,14 +74,23 @@ export function ActFilterDropdown({
     setMonth(filters.act.month || "");
   }, [filters.act.mode, filters.act.year, filters.act.month]);
 
+  useLayoutEffect(() => {
+    if (isOpen && dropdownRef.current && typeof document !== "undefined") {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      setPanelPosition({ top: rect.bottom + 4, left: rect.left });
+    } else {
+      setPanelPosition(null);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setMode(filters.act.mode);
-        setYear(filters.act.year || "");
-        setMonth(filters.act.month || "");
-        setIsOpen(false);
-      }
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setMode(filters.act.mode);
+      setYear(filters.act.year || "");
+      setMonth(filters.act.month || "");
+      setIsOpen(false);
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -111,16 +123,11 @@ export function ActFilterDropdown({
     setIsOpen(false);
   };
 
-  return (
-    <div className="relative inline-block" ref={dropdownRef}>
-      <FilterIconButton
-        active={hasActive}
-        onClick={() => setIsOpen(!isOpen)}
-        title={`Фільтри для ${columnLabel}`}
-      />
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[220px]">
-          <div className="p-2">
+  const portalTarget =
+    typeof document !== "undefined" ? document.getElementById("direct-filter-dropdown-root") ?? document.body : null;
+
+  const panelContent = (
+    <div className="p-2">
             <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && (
@@ -188,7 +195,24 @@ export function ActFilterDropdown({
               )}
             </div>
           </div>
-        </div>
+  );
+
+  return (
+    <div className="relative inline-block" ref={dropdownRef}>
+      <FilterIconButton
+        active={hasActive}
+        onClick={() => setIsOpen(!isOpen)}
+        title={`Фільтри для ${columnLabel}`}
+      />
+      {isOpen && panelPosition && portalTarget && createPortal(
+        <div
+          ref={panelRef}
+          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] pointer-events-auto"
+          style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
+        >
+          {panelContent}
+        </div>,
+        portalTarget
       )}
     </div>
   );
