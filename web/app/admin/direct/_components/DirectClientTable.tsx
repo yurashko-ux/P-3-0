@@ -697,30 +697,25 @@ type DirectClientTableProps = {
   bodyScrollLeft?: number;
 };
 
-// Допоміжна функція для отримання стилів колонки
-const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }): React.CSSProperties => {
+// Допоміжна функція для отримання стилів колонки (width/minWidth — тільки якщо немає colgroup)
+const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }, useColgroup: boolean): React.CSSProperties => {
+  if (useColgroup) return {};
   return config.mode === 'fixed'
     ? { width: `${config.width}px`, minWidth: `${config.width}px`, maxWidth: `${config.width}px` }
     : { minWidth: `${config.width}px` };
 };
 
-// Допоміжна функція для отримання sticky стилів для перших колонок
+// Sticky стилі для перших колонок; ширини лишає colgroup, щоб header/body збігались
 const getStickyColumnStyle = (
-  config: { width: number; mode: ColumnWidthMode },
+  _config: { width: number; mode: ColumnWidthMode },
   left: number,
   isHeader: boolean = false
-): React.CSSProperties => {
-  const baseStyle = getColumnStyle(config);
-  return {
-    ...baseStyle,
-    position: 'sticky' as const,
-    left: `${left}px`,
-    zIndex: isHeader ? 21 : 10, // Header має вищий z-index
-    // Для header не встановлюємо backgroundColor, щоб використовувався клас bg-base-200
-    // Для body встановлюємо білий фон
-    ...(isHeader ? {} : { backgroundColor: '#ffffff' }),
-  };
-};
+): React.CSSProperties => ({
+  position: 'sticky' as const,
+  left: `${left}px`,
+  zIndex: isHeader ? 21 : 10,
+  ...(isHeader ? {} : { backgroundColor: '#ffffff' }),
+});
 
 export function DirectClientTable({
   clients,
@@ -1342,7 +1337,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.sales)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.sales, true)}>
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1359,7 +1354,7 @@ export function DirectClientTable({
                   </th>
                   <th
                     className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200"
-                    style={getColumnStyle(columnWidths.days)}
+                    style={getColumnStyle(columnWidths.days, true)}
                     title="Днів з останнього візиту (Altegio). Сортувати."
                   >
                     <div className="flex items-center gap-1">
@@ -1383,7 +1378,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.inst)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.inst, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "messagesTotal" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1406,7 +1401,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.state)}>
+                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1428,7 +1423,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.consultation)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.consultation, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1450,7 +1445,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.record)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1472,7 +1467,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.master)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.master, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1495,10 +1490,10 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.phone)}>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.phone, true)}>
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.actions)}>Дії</th>
+                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
                 </tr>
                 {/* Рядок редагування розмірів */}
                 {isEditingColumnWidths && (
@@ -2270,7 +2265,7 @@ export function DirectClientTable({
                           })()}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales, true)}>
                         <span className="flex flex-col items-start leading-none">
                           <span className="text-left">
                             {client.spent !== null && client.spent !== undefined
@@ -2280,7 +2275,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={getColumnStyle(columnWidths.days)}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={getColumnStyle(columnWidths.days, true)}>
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -2323,7 +2318,7 @@ export function DirectClientTable({
                             ? "px-1 sm:px-2 py-1 text-xs whitespace-normal"
                             : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden"
                         }
-                        style={getColumnStyle(columnWidths.inst)}
+                        style={getColumnStyle(columnWidths.inst, true)}
                       >
                           {(() => {
                           const total =
@@ -2403,7 +2398,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.state)}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.state, true)}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -2652,7 +2647,7 @@ export function DirectClientTable({
                           : false;
                         
                         return (
-                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.consultation)}>
+                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.consultation, true)}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2913,7 +2908,7 @@ export function DirectClientTable({
                           : false;
                         
                         return (
-                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.record)}>
+                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.record, true)}>
                             {client.signedUpForPaidService && client.paidServiceDate ? (
                               (() => {
                                 const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
@@ -3077,7 +3072,7 @@ export function DirectClientTable({
                           </td>
                         );
                       })()}
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.master)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.master, true)}>
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -3171,14 +3166,14 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.phone)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.phone, true)}>
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={getColumnStyle(columnWidths.actions)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs" style={getColumnStyle(columnWidths.actions, true)}>
                         <div className="flex gap-1">
                           <button
                             className="btn btn-xs btn-ghost"
