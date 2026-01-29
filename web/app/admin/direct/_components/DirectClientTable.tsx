@@ -1065,7 +1065,7 @@ export function DirectClientTable({
 
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col min-h-[calc(100vh-180px)]">
 
       {/* Модальне вікно форми редагування */}
       {editingClient && (
@@ -1231,8 +1231,8 @@ export function DirectClientTable({
       )}
 
       {/* Таблиця */}
-      <div className="overflow-x-auto">
-        <div className="max-h-[calc(100vh-100px)] overflow-y-auto flex flex-col bg-gray-200">
+      <div className="flex-1 min-h-0 overflow-x-auto">
+        <div className="h-full min-h-0 overflow-y-auto flex flex-col bg-gray-200">
           <div className="bg-white">
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
@@ -3254,8 +3254,8 @@ export function DirectClientTable({
         </div>
       </div>
       
-      {/* Футер після таблиці */}
-      <div className="bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
+      {/* Футер після таблиці — закріплений внизу екрана */}
+      <div className="flex-shrink-0 bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
         <div style={{ fontSize: '10px' }}>
           <div>
             Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal.toLocaleString('uk-UA')} грн.` : '—'}
