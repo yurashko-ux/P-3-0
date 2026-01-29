@@ -736,8 +736,9 @@ export default function DirectPage() {
   }
 
   return (
-    <div className="w-full px-4 pt-[0.5px] pb-1.5">
-      <div className="sticky top-0 z-10 bg-white flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="min-h-screen flex flex-col w-full px-4 pt-[0.5px] pb-1.5">
+      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="sticky top-0 z-10 bg-white flex flex-col md:flex-row md:items-center md:justify-between gap-4 shrink-0">
         <div>
           {/* Лівий блок залишається порожнім */}
         </div>
@@ -2332,7 +2333,8 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця клієнтів */}
+      {/* Таблиця клієнтів — flex-1 щоб футер був внизу екрана */}
+      <div className="flex-1 min-h-0 flex flex-col">
       <DirectClientTable
         clients={clients}
         totalClientsCount={totalClientsCount}
@@ -2360,6 +2362,8 @@ export default function DirectPage() {
         isEditingColumnWidths={isEditingColumnWidths}
         setIsEditingColumnWidths={setIsEditingColumnWidths}
       />
+      </div>
+      </div>
     </div>
   );
 }

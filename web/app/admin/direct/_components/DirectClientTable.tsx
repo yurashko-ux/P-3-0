@@ -1065,7 +1065,7 @@ export function DirectClientTable({
 
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-180px)]">
+    <div className="flex flex-col flex-1 min-h-0">
 
       {/* Модальне вікно форми редагування */}
       {editingClient && (
@@ -1232,7 +1232,7 @@ export function DirectClientTable({
 
       {/* Таблиця */}
       <div className="flex-1 min-h-0 overflow-x-auto">
-        <div className="h-full min-h-0 overflow-y-auto flex flex-col bg-gray-200">
+        <div className="h-full min-h-0 overflow-y-auto flex flex-col bg-white">
           <div className="bg-white">
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}

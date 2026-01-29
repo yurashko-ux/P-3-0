@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
@@ -39,7 +40,9 @@ export function ConsultationFilterDropdown({
   columnLabel,
 }: ConsultationFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const c = filters.consultation;
 
   const [createdMode, setCreatedMode] = useState<"current_month" | "year_month" | null>(c.created.mode);
@@ -79,9 +82,23 @@ export function ConsultationFilterDropdown({
   const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).consultationRecordCreatedAt) === curMonth).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
 
+  useLayoutEffect(() => {
+    if (isOpen && dropdownRef.current && typeof document !== "undefined") {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      setPanelPosition({ top: rect.bottom + 4, left: rect.left });
+    } else {
+      setPanelPosition(null);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setIsOpen(false);
+      const target = e.target as Node;
+      if (
+        dropdownRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) return;
+      setIsOpen(false);
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -160,12 +177,8 @@ export function ConsultationFilterDropdown({
     </div>
   );
 
-  return (
-    <div className="relative inline-block" ref={dropdownRef}>
-      <FilterIconButton active={hasActive} onClick={() => setIsOpen(!isOpen)} title={`Фільтри для ${columnLabel}`} />
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[240px] max-h-[420px] overflow-y-auto">
-          <div className="p-2">
+  const panelContent = (
+    <div className="p-2">
             <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
@@ -223,9 +236,25 @@ export function ConsultationFilterDropdown({
                 <button type="button" onClick={handleClear} className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium">Очистити</button>
               )}
             </div>
-          </div>
-        </div>
-      )}
+    </div>
+  );
+
+  return (
+    <div className="relative inline-block" ref={dropdownRef}>
+      <FilterIconButton active={hasActive} onClick={() => setIsOpen(!isOpen)} title={`Фільтри для ${columnLabel}`} />
+      {isOpen &&
+        panelPosition &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="bg-white border border-gray-300 rounded-lg shadow-lg z-[9999] min-w-[240px] max-h-[420px] overflow-y-auto"
+            style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left }}
+          >
+            {panelContent}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
