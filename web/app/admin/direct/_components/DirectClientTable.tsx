@@ -1232,7 +1232,7 @@ export function DirectClientTable({
 
       {/* Таблиця */}
       <div className="flex-1 min-h-0 overflow-x-auto">
-        <div className="h-full min-h-0 overflow-y-auto flex flex-col bg-white">
+        <div className="h-full min-h-0 overflow-y-auto flex flex-col bg-white pb-20">
           <div className="bg-white">
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
@@ -3254,12 +3254,10 @@ export function DirectClientTable({
         </div>
       </div>
       
-      {/* Футер після таблиці — закріплений внизу екрана */}
-      <div className="flex-shrink-0 bg-gray-200 min-h-[100px] p-4 -mx-4 w-[calc(100%+2rem)] -mb-1.5">
+      {/* Футер — fixed внизу екрана, щоб завжди був видимий */}
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[60px] py-3 px-4 border-t border-gray-300">
         <div style={{ fontSize: '10px' }}>
-          <div>
-            Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal.toLocaleString('uk-UA')} грн.` : '—'}
-          </div>
+          Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal.toLocaleString('uk-UA')} грн.` : '—'}
         </div>
       </div>
     </div>

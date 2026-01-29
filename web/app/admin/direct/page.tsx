@@ -737,7 +737,7 @@ export default function DirectPage() {
 
   return (
     <div className="min-h-screen flex flex-col w-full px-4 pt-[0.5px] pb-1.5">
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <div className="sticky top-0 z-10 bg-white flex flex-col md:flex-row md:items-center md:justify-between gap-4 shrink-0">
         <div>
           {/* Лівий блок залишається порожнім */}
@@ -2333,8 +2333,8 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця клієнтів — flex-1 щоб футер був внизу екрана */}
-      <div className="flex-1 min-h-0 flex flex-col">
+      {/* Таблиця клієнтів — flex-1 + overflow-hidden щоб футер завжди був видимий внизу */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <DirectClientTable
         clients={clients}
         totalClientsCount={totalClientsCount}
