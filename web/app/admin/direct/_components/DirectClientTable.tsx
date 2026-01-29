@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import type { SyntheticEvent, ReactNode } from "react";
 import type { DirectClient, DirectStatus, DirectChatStatus } from "@/lib/direct-types";
@@ -59,6 +59,13 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   phone: { width: 80, mode: 'min' },
   actions: { width: 44, mode: 'min' },
 };
+
+/** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
+const COLUMN_KEYS = [
+  'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'state',
+  'consultation', 'record', 'master', 'phone', 'actions',
+] as const;
+type ColumnKey = typeof COLUMN_KEYS[number];
 
 // Старий тип для міграції
 type OldColumnWidths = {
@@ -754,6 +761,8 @@ export function DirectClientTable({
     cost: number;
     serviceNames: string[];
   }>>([]);
+  const bodyTableRef = useRef<HTMLTableElement | null>(null);
+  const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
   
   // Завантажуємо суму послуг за сьогодні
   useEffect(() => {
@@ -783,35 +792,24 @@ export function DirectClientTable({
     fetchTodayRecordsTotal();
   }, []);
   
-  // Спільний colgroup для header- та body-таблиць — однакові ширини колонок
-  const tableColgroup = (
+  // Ширини для header: з body (виміряні) або fallback з columnWidths
+  const effectiveWidths = COLUMN_KEYS.map((k, i) =>
+    measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width
+  );
+
+  // Colgroup тільки для header — динамічні ширини з body
+  const headerColgroup = (
     <colgroup>
-      <col style={{ width: `${columnWidths.number.width}px` }} />
-      <col style={{ width: `${columnWidths.act.width}px` }} />
-      <col style={{ width: `${columnWidths.avatar.width}px` }} />
-      <col style={{ width: `${columnWidths.name.width}px` }} />
-      <col style={{ width: `${columnWidths.sales.width}px` }} />
-      <col style={{ width: `${columnWidths.days.width}px` }} />
-      <col style={{ width: `${columnWidths.inst.width}px` }} />
-      <col style={{ width: `${columnWidths.state.width}px` }} />
-      <col style={{ width: `${columnWidths.consultation.width}px` }} />
-      <col style={{ width: `${columnWidths.record.width}px` }} />
-      <col style={{ width: `${columnWidths.master.width}px` }} />
-      <col style={{ width: `${columnWidths.phone.width}px` }} />
-      <col style={{ width: `${columnWidths.actions.width}px` }} />
+      {COLUMN_KEYS.map((_, i) => (
+        <col key={i} style={{ width: `${effectiveWidths[i]}px` }} />
+      ))}
     </colgroup>
   );
 
-  // Обчислюємо left значення для sticky колонок (перші 4: №, Act, Avatar, Name)
+  // Обчислюємо left для sticky (перші 4: №, Act, Avatar, Name)
   const getStickyLeft = (columnIndex: number): number => {
     let left = 0;
-    const columns = [columnWidths.number, columnWidths.act, columnWidths.avatar, columnWidths.name];
-    for (let i = 0; i < columnIndex && i < columns.length; i++) {
-      const col = columns[i];
-      // Використовуємо width як наближення фактичної ширини колонки
-      // (для mode 'fixed' це точна ширина, для mode 'min' - мінімальна ширина)
-      left += col.width;
-    }
+    for (let i = 0; i < columnIndex && i < 4; i++) left += effectiveWidths[i] ?? 0;
     return left;
   };
   
@@ -1087,6 +1085,27 @@ export function DirectClientTable({
     });
   }, [uniqueClients, filters.clientType]);
 
+  // Вимірюємо фактичні ширини колонок з body-таблиці; header colgroup використовує їх
+  useLayoutEffect(() => {
+    const table = bodyTableRef.current;
+    if (!table) return;
+
+    const measure = () => {
+      const tbody = table.querySelector('tbody');
+      const firstRow = tbody?.querySelector('tr');
+      if (!firstRow || firstRow.cells.length !== COLUMN_KEYS.length) {
+        setMeasuredWidths((prev) => (prev.length ? [] : prev));
+        return;
+      }
+      const widths = Array.from(firstRow.cells).map((c) => c.getBoundingClientRect().width);
+      setMeasuredWidths(widths);
+    };
+
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(table);
+    return () => ro.disconnect();
+  }, [filteredClients.length, filteredClients]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -1260,7 +1279,7 @@ export function DirectClientTable({
             {(() => {
               const headerTable = (
                 <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'fixed', width: 'max-content' }}>
-                  {tableColgroup}
+                  {headerColgroup}
                   <thead className="bg-base-200">
                     <tr className="bg-base-200">
                       <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
@@ -1791,12 +1810,15 @@ export function DirectClientTable({
                 </>
               );
             })()}
-            <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'fixed', width: 'max-content' }}>
-              {tableColgroup}
+            <table
+              ref={bodyTableRef}
+              className="table table-xs sm:table-sm border-collapse"
+              style={{ tableLayout: 'auto', width: 'max-content' }}
+            >
               <tbody>
                 {filteredClients.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-8 text-gray-500">
+                    <td colSpan={COLUMN_KEYS.length} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
