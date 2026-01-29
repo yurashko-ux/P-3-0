@@ -863,7 +863,7 @@ export default function DirectPage() {
       </div>
         {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
         <div
-          className="overflow-x-hidden border-t border-gray-200 bg-gray-100 min-h-[16px] px-4 box-border"
+          className="overflow-x-hidden border-t border-gray-200 min-h-[16px] px-4 box-border"
           style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
         >
           <div
