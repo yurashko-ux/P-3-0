@@ -791,7 +791,7 @@ export default function DirectPage() {
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
-      <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0">
+      <header className="fixed top-0 left-0 right-0 z-20 bg-base-200 border-b border-gray-200 shrink-0">
         <div className="w-full px-4 py-1 flex flex-col md:flex-row md:items-center md:justify-between gap-1">
         <div>
           {/* Лівий блок залишається порожнім */}
@@ -873,8 +873,8 @@ export default function DirectPage() {
           />
         </div>
     </header>
-      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[74px] pb-24 px-4">
+      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків; relative z-10 щоб хедер був над таблицею */}
+      <div className="flex-1 min-h-0 flex flex-col pt-[74px] pb-24 px-4 relative z-10">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
