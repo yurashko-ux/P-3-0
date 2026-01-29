@@ -736,9 +736,10 @@ export default function DirectPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col w-full px-4 pt-[0.5px] pb-1.5">
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <div className="sticky top-0 z-10 bg-white flex flex-col md:flex-row md:items-center md:justify-between gap-4 shrink-0">
+    <div className="min-h-screen flex flex-col w-full pb-1.5">
+      {/* Хедер (навбар) — fixed вгорі екрана, як футер внизу */}
+      <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0">
+        <div className="w-full px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           {/* Лівий блок залишається порожнім */}
         </div>
@@ -805,6 +806,11 @@ export default function DirectPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+    </header>
+      {/* Контент під фіксованим хедером — один скрол, thead липне під хедером */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pt-14 pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
@@ -2257,8 +2263,6 @@ export default function DirectPage() {
             👥 Мігрувати майстрів
           </button>
           */}
-        </div>
-      </div>
 
       {error && (
         <div className="alert alert-error">
