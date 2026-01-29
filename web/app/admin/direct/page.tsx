@@ -724,6 +724,15 @@ export default function DirectPage() {
     await loadData();
   };
 
+  const tableHeaderRef = useRef<HTMLDivElement | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
+  const [headerSlotReady, setHeaderSlotReady] = useState(false);
+  const setHeaderRef = useCallback((el: HTMLDivElement | null) => {
+    (tableHeaderRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    setHeaderSlotReady(!!el);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -734,15 +743,6 @@ export default function DirectPage() {
       </div>
     );
   }
-
-  const tableHeaderRef = useRef<HTMLDivElement | null>(null);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
-  const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
-  const [headerSlotReady, setHeaderSlotReady] = useState(false);
-  const setHeaderRef = useCallback((el: HTMLDivElement | null) => {
-    (tableHeaderRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    setHeaderSlotReady(!!el);
-  }, []);
 
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
