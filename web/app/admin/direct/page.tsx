@@ -735,9 +735,13 @@ export default function DirectPage() {
     );
   }
 
+  const tableHeaderRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
+
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
-      {/* Хедер (навбар) — fixed вгорі екрана, як футер внизу */}
+      {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0">
         <div className="w-full px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -808,9 +812,11 @@ export default function DirectPage() {
           </div>
         </div>
       </div>
+        {/* Слот для рядка заголовків таблиці (portal з DirectClientTable); px-4 як у контенті */}
+        <div ref={tableHeaderRef} className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[44px] px-4" />
     </header>
-      {/* Контент під фіксованим хедером — без overflow тут; скрол тільки в блоці таблиці нижче */}
-      <div className="flex-1 min-h-0 flex flex-col pt-14 pb-24 px-4">
+      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
+      <div className="flex-1 min-h-0 flex flex-col pt-[100px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
@@ -2337,9 +2343,15 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця — єдиний overflow-auto; thead sticky липне до верху цього блоку */}
-      <div className="flex-1 min-h-0 min-w-0 overflow-auto">
+      {/* Таблиця — overflow-auto; ref + onScroll для синхрону горизонтального скролу з хедером */}
+      <div
+        ref={tableScrollRef}
+        className="flex-1 min-h-0 min-w-0 overflow-auto"
+        onScroll={(e) => setBodyScrollLeft(e.currentTarget.scrollLeft)}
+      >
       <DirectClientTable
+        headerPortalRef={tableHeaderRef}
+        bodyScrollLeft={bodyScrollLeft}
         clients={clients}
         totalClientsCount={totalClientsCount}
         statuses={statuses}

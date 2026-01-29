@@ -4,6 +4,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { SyntheticEvent, ReactNode } from "react";
 import type { DirectClient, DirectStatus, DirectChatStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
@@ -688,6 +689,10 @@ type DirectClientTableProps = {
   onOpenAddClientChange?: (open: boolean) => void;
   isEditingColumnWidths?: boolean;
   setIsEditingColumnWidths?: (value: boolean) => void;
+  /** Ref слоту в fixed-хедері — якщо задано, thead рендериться туди через portal */
+  headerPortalRef?: React.RefObject<HTMLDivElement | null>;
+  /** scrollLeft body-таблиці для синхрону горизонтального скролу заголовків */
+  bodyScrollLeft?: number;
 };
 
 // Допоміжна функція для отримання стилів колонки
@@ -732,6 +737,8 @@ export function DirectClientTable({
   onOpenAddClientChange,
   isEditingColumnWidths = false,
   setIsEditingColumnWidths,
+  headerPortalRef,
+  bodyScrollLeft = 0,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -1230,15 +1237,15 @@ export function DirectClientTable({
         </div>
       )}
 
-      {/* Рядок назв і фільтрів у sticky-обгортці — липне до верху скрол-області; окрема body-таблиця */}
       <div className="flex-1 min-h-0 min-w-0">
         <div className="min-h-0 flex flex-col bg-white">
           <div className="bg-white">
-            <div className="sticky top-0 z-20 bg-base-200">
-              <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
-                <thead className="bg-base-200">
-                <tr className="bg-base-200">
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
+            {(() => {
+              const headerTable = (
+                <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
+                  <thead className="bg-base-200">
+                    <tr className="bg-base-200">
+                      <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1747,9 +1754,23 @@ export function DirectClientTable({
                     </td>
                   </tr>
                 )}
-              </thead>
-              </table>
-            </div>
+                  </thead>
+                </table>
+              );
+              return (
+                <>
+                  {headerPortalRef?.current && typeof document !== "undefined" && createPortal(
+                    <div style={{ transform: `translateX(-${bodyScrollLeft}px)` }} className="min-w-fit">
+                      {headerTable}
+                    </div>,
+                    headerPortalRef.current
+                  )}
+                  {!headerPortalRef && (
+                    <div className="sticky top-0 z-20 bg-base-200">{headerTable}</div>
+                  )}
+                </>
+              );
+            })()}
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               <tbody>
                 {filteredClients.length === 0 ? (
