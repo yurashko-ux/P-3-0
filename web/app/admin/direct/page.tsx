@@ -2337,8 +2337,8 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця клієнтів — flex-1 + overflow-hidden щоб футер завжди був видимий внизу */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* Таблиця клієнтів — без overflow, футер fixed; overflow тільки на scroll-контейнері вище */}
+      <div className="flex-1 min-h-0 flex flex-col">
       <DirectClientTable
         clients={clients}
         totalClientsCount={totalClientsCount}

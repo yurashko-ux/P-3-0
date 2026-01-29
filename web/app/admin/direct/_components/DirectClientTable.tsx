@@ -1236,7 +1236,7 @@ export function DirectClientTable({
           <div className="bg-white">
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
-              <thead className="sticky top-14 z-20 bg-base-200">
+              <thead className="sticky top-0 z-20 bg-base-200">
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
