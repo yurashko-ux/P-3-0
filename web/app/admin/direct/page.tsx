@@ -874,7 +874,7 @@ export default function DirectPage() {
         </div>
     </header>
       {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[64px] pb-24 px-4">
+      <div className="flex-1 min-h-0 flex flex-col pt-[70px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
