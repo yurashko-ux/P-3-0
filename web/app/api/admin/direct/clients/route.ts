@@ -16,6 +16,7 @@ import {
   computeServicesTotalCostUAH,
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
+  countNonAdminStaffInGroup,
 } from '@/lib/altegio/records-grouping';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -54,6 +55,34 @@ export async function GET(req: NextRequest) {
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
     const hasAppointment = searchParams.get('hasAppointment');
+    const actMode = searchParams.get('actMode');
+    const actYear = searchParams.get('actYear');
+    const actMonth = searchParams.get('actMonth');
+    const daysFilter = searchParams.get('days');
+    const instFilter = searchParams.get('inst');
+    const stateFilter = searchParams.get('state');
+    const consultCreatedMode = searchParams.get('consultCreatedMode');
+    const consultCreatedYear = searchParams.get('consultCreatedYear');
+    const consultCreatedMonth = searchParams.get('consultCreatedMonth');
+    const consultAppointedMode = searchParams.get('consultAppointedMode');
+    const consultAppointedYear = searchParams.get('consultAppointedYear');
+    const consultAppointedMonth = searchParams.get('consultAppointedMonth');
+    const consultAppointedPreset = searchParams.get('consultAppointedPreset');
+    const consultAttendance = searchParams.get('consultAttendance');
+    const consultType = searchParams.get('consultType');
+    const consultMasters = searchParams.get('consultMasters');
+    const recordCreatedMode = searchParams.get('recordCreatedMode');
+    const recordCreatedYear = searchParams.get('recordCreatedYear');
+    const recordCreatedMonth = searchParams.get('recordCreatedMonth');
+    const recordAppointedMode = searchParams.get('recordAppointedMode');
+    const recordAppointedYear = searchParams.get('recordAppointedYear');
+    const recordAppointedMonth = searchParams.get('recordAppointedMonth');
+    const recordAppointedPreset = searchParams.get('recordAppointedPreset');
+    const recordClient = searchParams.get('recordClient');
+    const recordSum = searchParams.get('recordSum');
+    const masterHands = searchParams.get('masterHands');
+    const masterPrimary = searchParams.get('masterPrimary');
+    const masterSecondary = searchParams.get('masterSecondary');
     let sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
@@ -477,6 +506,9 @@ export async function GET(req: NextRequest) {
                   };
                 }
               }
+              const handsCnt = chosen ? countNonAdminStaffInGroup(chosen as any) : 0;
+              const hands = chosen ? (handsCnt <= 1 ? 2 : handsCnt === 2 ? 4 : 6) as 2 | 4 | 6 : undefined;
+              c = { ...c, paidServiceHands: hands };
             }
             
             // ВАЖЛИВО: Фільтруємо адміністраторів з serviceMasterName, навіть якщо вони вже є в БД
@@ -936,8 +968,228 @@ export async function GET(req: NextRequest) {
       }
     })();
 
+    // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер) — Europe/Kyiv для дат
+    const todayKyiv = kyivDayFromISO(new Date().toISOString());
+    const currentMonthKyiv = todayKyiv.slice(0, 7);
+    const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
+    const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
+    const parseActYear = (y: string | null): string => {
+      if (!y) return '';
+      const n = parseInt(y, 10);
+      if (n >= 26 && n <= 28) return `20${String(n).padStart(2, '0')}`;
+      return '';
+    };
+    const parseMonth = (m: string | null): string => {
+      if (!m) return '';
+      const n = parseInt(m, 10);
+      if (n >= 1 && n <= 12) return String(n).padStart(2, '0');
+      return '';
+    };
+    const splitPipe = (s: string | null): string[] =>
+      (s || '').split('|').map((x) => x.trim()).filter(Boolean);
+    const splitComma = (s: string | null): string[] =>
+      (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+    let filtered = [...clientsWithDaysSinceLastVisit];
+
+    if (actMode === 'current_month') {
+      filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === currentMonthKyiv);
+    } else if (actMode === 'year_month' && actYear && actMonth) {
+      const y = parseActYear(actYear);
+      const m = parseMonth(actMonth);
+      if (y && m) {
+        const target = `${y}-${m}`;
+        filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === target);
+      }
+    }
+
+    if (daysFilter === 'none') {
+      filtered = filtered.filter((c) => typeof (c as any).daysSinceLastVisit !== 'number' || !Number.isFinite((c as any).daysSinceLastVisit));
+    } else if (daysFilter === 'growing') {
+      filtered = filtered.filter((c) => {
+        const d = (c as any).daysSinceLastVisit;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 0 && d < 60;
+      });
+    } else if (daysFilter === 'grown') {
+      filtered = filtered.filter((c) => {
+        const d = (c as any).daysSinceLastVisit;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 60 && d < 90;
+      });
+    } else if (daysFilter === 'overgrown') {
+      filtered = filtered.filter((c) => {
+        const d = (c as any).daysSinceLastVisit;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 90;
+      });
+    }
+
+    const instIds = splitComma(instFilter);
+    if (instIds.length > 0) {
+      const set = new Set(instIds);
+      filtered = filtered.filter((c) => {
+        const id = (c as any).chatStatusId as string | undefined;
+        return id && set.has(id);
+      });
+    }
+
+    const stateIds = splitComma(stateFilter);
+    if (stateIds.length > 0) {
+      const set = new Set(stateIds);
+      filtered = filtered.filter((c) => c.state && set.has(c.state));
+    }
+
+    if (consultCreatedMode === 'current_month') {
+      filtered = filtered.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === currentMonthKyiv);
+    } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
+      const y = parseActYear(consultCreatedYear);
+      const m = parseMonth(consultCreatedMonth);
+      if (y && m) {
+        const target = `${y}-${m}`;
+        filtered = filtered.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === target);
+      }
+    }
+
+    if (consultAppointedMode === 'current_month') {
+      filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
+    } else if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
+      const y = parseActYear(consultAppointedYear);
+      const m = parseMonth(consultAppointedMonth);
+      if (y && m) {
+        const target = `${y}-${m}`;
+        filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === target);
+      }
+    }
+
+    if (consultAppointedPreset === 'past') {
+      filtered = filtered.filter((c) => {
+        const d = toKyivDay(c.consultationBookingDate);
+        return !!d && d < todayKyiv;
+      });
+    } else if (consultAppointedPreset === 'today') {
+      filtered = filtered.filter((c) => toKyivDay(c.consultationBookingDate) === todayKyiv);
+    } else if (consultAppointedPreset === 'future') {
+      filtered = filtered.filter((c) => {
+        const d = toKyivDay(c.consultationBookingDate);
+        return !!d && d > todayKyiv;
+      });
+    }
+
+    if (consultAttendance === 'attended') {
+      filtered = filtered.filter((c) => c.consultationAttended === true);
+    } else if (consultAttendance === 'no_show') {
+      filtered = filtered.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
+    } else if (consultAttendance === 'cancelled') {
+      filtered = filtered.filter((c) => !!c.consultationCancelled);
+    }
+
+    if (consultType === 'consultation') {
+      filtered = filtered.filter((c) => !(c as any).isOnlineConsultation);
+    } else if (consultType === 'online') {
+      filtered = filtered.filter((c) => !!(c as any).isOnlineConsultation);
+    }
+
+    const consultMasterList = splitPipe(consultMasters);
+    if (consultMasterList.length > 0) {
+      const norms = new Set(consultMasterList.map((x) => x.toLowerCase().trim()));
+      filtered = filtered.filter((c) => {
+        const n = (c.consultationMasterName || '').toString().trim().toLowerCase();
+        return n && norms.has(n);
+      });
+    }
+
+    if (recordCreatedMode === 'current_month') {
+      filtered = filtered.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === currentMonthKyiv);
+    } else if (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) {
+      const y = parseActYear(recordCreatedYear);
+      const m = parseMonth(recordCreatedMonth);
+      if (y && m) {
+        const target = `${y}-${m}`;
+        filtered = filtered.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === target);
+      }
+    }
+
+    if (recordAppointedMode === 'current_month') {
+      filtered = filtered.filter((c) => toYyyyMm(c.paidServiceDate) === currentMonthKyiv);
+    } else if (recordAppointedMode === 'year_month' && recordAppointedYear && recordAppointedMonth) {
+      const y = parseActYear(recordAppointedYear);
+      const m = parseMonth(recordAppointedMonth);
+      if (y && m) {
+        const target = `${y}-${m}`;
+        filtered = filtered.filter((c) => toYyyyMm(c.paidServiceDate) === target);
+      }
+    }
+
+    if (recordAppointedPreset === 'past') {
+      filtered = filtered.filter((c) => {
+        const d = toKyivDay(c.paidServiceDate);
+        return !!d && d < todayKyiv;
+      });
+    } else if (recordAppointedPreset === 'today') {
+      filtered = filtered.filter((c) => toKyivDay(c.paidServiceDate) === todayKyiv);
+    } else if (recordAppointedPreset === 'future') {
+      filtered = filtered.filter((c) => {
+        const d = toKyivDay(c.paidServiceDate);
+        return !!d && d > todayKyiv;
+      });
+    }
+
+    if (recordClient === 'attended') {
+      filtered = filtered.filter((c) => c.paidServiceAttended === true);
+    } else if (recordClient === 'no_show') {
+      filtered = filtered.filter((c) => c.paidServiceAttended === false && !c.paidServiceCancelled);
+    } else if (recordClient === 'cancelled') {
+      filtered = filtered.filter((c) => !!c.paidServiceCancelled);
+    } else if (recordClient === 'pending') {
+      filtered = filtered.filter((c) => {
+        if (!c.paidServiceDate) return false;
+        const d = toKyivDay(c.paidServiceDate);
+        if (!d || d < todayKyiv) return false;
+        return c.paidServiceAttended !== true && c.paidServiceAttended !== false && !c.paidServiceCancelled;
+      });
+    } else if (recordClient === 'rebook') {
+      filtered = filtered.filter((c) => !!(c as any).paidServiceIsRebooking);
+    } else if (recordClient === 'unknown') {
+      filtered = filtered.filter((c) => {
+        if (!c.paidServiceDate) return false;
+        const d = toKyivDay(c.paidServiceDate);
+        if (!d || d >= todayKyiv) return false;
+        return c.paidServiceAttended !== true && c.paidServiceAttended !== false && !c.paidServiceCancelled;
+      });
+    }
+
+    if (recordSum === 'lt_10k') {
+      filtered = filtered.filter((c) => typeof c.paidServiceTotalCost === 'number' && c.paidServiceTotalCost < 10000);
+    } else if (recordSum === 'gt_10k') {
+      filtered = filtered.filter((c) => typeof c.paidServiceTotalCost === 'number' && c.paidServiceTotalCost >= 10000);
+    }
+
+    const handsNum = masterHands ? parseInt(masterHands, 10) : NaN;
+    if (Number.isFinite(handsNum) && (handsNum === 2 || handsNum === 4 || handsNum === 6)) {
+      filtered = filtered.filter((c) => (c as any).paidServiceHands === handsNum);
+    }
+
+    const primaryList = splitPipe(masterPrimary);
+    if (primaryList.length > 0) {
+      const norms = new Set(primaryList.map((x) => x.toLowerCase().trim()));
+      filtered = filtered.filter((c) => {
+        const name = (c.serviceMasterName || '').toString().trim().toLowerCase();
+        if (name && norms.has(name)) return true;
+        const mid = c.masterId ? directMasterIdToName.get(c.masterId) : null;
+        const resp = (mid || '').toString().trim().toLowerCase();
+        return !!resp && norms.has(resp);
+      });
+    }
+
+    const secondaryList = splitPipe(masterSecondary);
+    if (secondaryList.length > 0) {
+      const norms = new Set(secondaryList.map((x) => x.toLowerCase().trim()));
+      filtered = filtered.filter((c) => {
+        const n = ((c as any).serviceSecondaryMasterName || '').toString().trim().toLowerCase();
+        return n && norms.has(n);
+      });
+    }
+
     // Сортування після обчислення daysSinceLastVisit і messagesTotal
-    clientsWithDaysSinceLastVisit.sort((a, b) => {
+    filtered.sort((a, b) => {
       let aVal: any = (a as any)[sortBy];
       let bVal: any = (b as any)[sortBy];
 
@@ -977,11 +1229,11 @@ export async function GET(req: NextRequest) {
       return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
     });
 
-    console.log(`[direct/clients] GET: Returning ${clientsWithDaysSinceLastVisit.length} clients after filtering and sorting`);
+    console.log(`[direct/clients] GET: Returning ${filtered.length} clients after filtering and sorting`);
     
     const response = { 
       ok: true, 
-      clients: clientsWithDaysSinceLastVisit,
+      clients: filtered,
       totalCount, // Загальна кількість всіх клієнтів в базі
       debug: { 
         totalBeforeFilter: clients.length,

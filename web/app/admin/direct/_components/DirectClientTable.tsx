@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import type { SyntheticEvent, ReactNode } from "react";
-import type { DirectClient, DirectStatus } from "@/lib/direct-types";
+import type { DirectClient, DirectStatus, DirectChatStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
@@ -15,6 +15,13 @@ import { MasterHistoryModal } from "./MasterHistoryModal";
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { useSearchParams } from "next/navigation";
 import { ColumnFilterDropdown, type ClientTypeFilter } from "./ColumnFilterDropdown";
+import { ActFilterDropdown } from "./ActFilterDropdown";
+import { DaysFilterDropdown } from "./DaysFilterDropdown";
+import { InstFilterDropdown } from "./InstFilterDropdown";
+import { StateFilterDropdown } from "./StateFilterDropdown";
+import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
+import { RecordFilterDropdown } from "./RecordFilterDropdown";
+import { MasterFilterDropdown } from "./MasterFilterDropdown";
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -635,19 +642,43 @@ function WithCornerRedDot({
   );
 }
 
+export type DirectFilters = {
+  statusId: string;
+  masterId: string;
+  source: string;
+  search: string;
+  hasAppointment: string;
+  clientType: string[];
+  act: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+  days: 'none' | 'growing' | 'grown' | 'overgrown' | null;
+  inst: string[];
+  state: string[];
+  consultation: {
+    created: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+    appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+    appointedPreset: 'past' | 'today' | 'future' | null;
+    attendance: 'attended' | 'no_show' | 'cancelled' | null;
+    type: 'consultation' | 'online' | null;
+    masterIds: string[];
+  };
+  record: {
+    created: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+    appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+    appointedPreset: 'past' | 'today' | 'future' | null;
+    client: 'attended' | 'no_show' | 'cancelled' | 'pending' | 'rebook' | 'unknown' | null;
+    sum: 'lt_10k' | 'gt_10k' | null;
+  };
+  master: { hands: 2 | 4 | 6 | null; primaryMasterIds: string[]; secondaryMasterIds: string[] };
+};
+
 type DirectClientTableProps = {
   clients: DirectClient[];
   totalClientsCount?: number;
   statuses: DirectStatus[];
-  filters: {
-    statusId: string;
-    masterId: string;
-    source: string;
-    search: string;
-    hasAppointment: string;
-    clientType: string[]; // ['leads', 'clients', 'good', 'stars']
-  };
-  onFiltersChange: (filters: DirectClientTableProps["filters"]) => void;
+  chatStatuses?: DirectChatStatus[];
+  masters?: { id: string; name: string }[];
+  filters: DirectFilters;
+  onFiltersChange: (filters: DirectFilters) => void;
   sortBy: string;
   sortOrder: "asc" | "desc";
   onSortChange: (by: string, order: "asc" | "desc") => void;
@@ -688,6 +719,8 @@ export function DirectClientTable({
   clients,
   totalClientsCount,
   statuses,
+  chatStatuses = [],
+  masters = [],
   filters,
   onFiltersChange,
   sortBy,
@@ -832,7 +865,6 @@ export function DirectClientTable({
       onOpenAddClientChange?.(false);
     }
   }, [shouldOpenAddClient, onOpenAddClientChange]);
-  const [masters, setMasters] = useState<Array<{ id: string; name: string }>>([]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
@@ -915,37 +947,7 @@ export function DirectClientTable({
 
 
 
-  // Завантажуємо відповідальних (майстрів)
-  useEffect(() => {
-    // Завантажуємо тільки майстрів (role='master') для вибору в колонці "Майстер"
-    fetch("/api/admin/direct/masters?forSelection=true&onlyMasters=true")
-      .then((res) => {
-        if (!res.ok) {
-          console.warn(`[DirectClientTable] Failed to load masters: ${res.status} ${res.statusText}`);
-          // Fallback на старий endpoint
-          return fetch("/api/photo-reports/masters");
-        }
-        return res;
-      })
-      .then((res) => {
-        if (!res) return null;
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.ok && data.masters) {
-          setMasters(data.masters);
-        } else {
-          // Якщо endpoint не існує, використовуємо порожній масив
-          setMasters([]);
-        }
-      })
-      .catch((err) => {
-        console.warn("[DirectClientTable] Failed to load masters (non-critical):", err);
-        setMasters([]);
-      });
-  }, []);
-
-  // НЕ завантажуємо історію станів для всіх клієнтів одразу - це створює зайве навантаження
+  // Майстрів передаємо з page (masters prop). НЕ завантажуємо історію станів для всіх клієнтів одразу - це створює зайве навантаження
   // Історія завантажується тільки при відкритті модального вікна (StateHistoryModal)
   // В таблиці показуємо тільки поточний стан клієнта
 
@@ -1238,31 +1240,37 @@ export function DirectClientTable({
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
-                    <button
-                      className={`hover:underline cursor-pointer text-left whitespace-nowrap ${
-                        sortBy === "updatedAt" && sortOrder === "desc" 
-                          ? "text-blue-600 font-bold" 
-                          : "text-gray-600"
-                      }`}
-                      onClick={() => {
-                        // Перемикання між активним та пасивним режимом
-                        const isActiveMode = sortBy === "updatedAt" && sortOrder === "desc";
-                        if (isActiveMode) {
-                          // Переключаємо на пасивний режим
-                          onSortChange("firstContactDate", "desc");
-                        } else {
-                          // Переключаємо на активний режим
-                          onSortChange("updatedAt", "desc");
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left whitespace-nowrap ${
+                          sortBy === "updatedAt" && sortOrder === "desc" 
+                            ? "text-blue-600 font-bold" 
+                            : "text-gray-600"
+                        }`}
+                        onClick={() => {
+                          const isActiveMode = sortBy === "updatedAt" && sortOrder === "desc";
+                          if (isActiveMode) {
+                            onSortChange("firstContactDate", "desc");
+                          } else {
+                            onSortChange("updatedAt", "desc");
+                          }
+                        }}
+                        title={
+                          sortBy === "updatedAt" && sortOrder === "desc"
+                            ? "Активний режим: сортування по активних оновленнях. Натисніть для пасивного режиму"
+                            : "Пасивний режим. Натисніть для активного режиму (сортування по активних оновленнях)"
                         }
-                      }}
-                      title={
-                        sortBy === "updatedAt" && sortOrder === "desc"
-                          ? "Активний режим: сортування по активних оновленнях. Натисніть для пасивного режиму"
-                          : "Пасивний режим. Натисніть для активного режиму (сортування по активних оновленнях)"
-                      }
-                    >
-                      Act {sortBy === "updatedAt" && sortOrder === "desc" ? "↓" : ""}
-                    </button>
+                      >
+                        Act {sortBy === "updatedAt" && sortOrder === "desc" ? "↓" : ""}
+                      </button>
+                      <ActFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Act"
+                      />
+                    </div>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
                   <th className="px-0 py-2 bg-base-200" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), true)} />
@@ -1324,82 +1332,138 @@ export function DirectClientTable({
                     style={getColumnStyle(columnWidths.days)}
                     title="Днів з останнього візиту (Altegio). Сортувати."
                   >
-                    <button
-                      className={`hover:underline cursor-pointer w-full text-left ${sortBy === "daysSinceLastVisit" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "daysSinceLastVisit",
-                          sortBy === "daysSinceLastVisit" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Днів {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "daysSinceLastVisit" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "daysSinceLastVisit",
+                            sortBy === "daysSinceLastVisit" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Днів {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <DaysFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Днів"
+                      />
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.inst)}>
-                    <button
-                      className={`hover:underline cursor-pointer w-full text-left ${sortBy === "messagesTotal" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "messagesTotal",
-                          sortBy === "messagesTotal" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Inst {sortBy === "messagesTotal" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "messagesTotal" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "messagesTotal",
+                            sortBy === "messagesTotal" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Inst {sortBy === "messagesTotal" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <InstFilterDropdown
+                        clients={clients}
+                        chatStatuses={chatStatuses}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Inst"
+                      />
+                    </div>
                   </th>
                   <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.state)}>
-                    <button
-                      className={`hover:underline cursor-pointer w-full text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "state",
-                          sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "state",
+                            sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <StateFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Стан"
+                      />
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.consultation)}>
-                    <button
-                      className={`hover:underline cursor-pointer ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "consultationBookingDate",
-                          sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "consultationBookingDate",
+                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <ConsultationFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Консультація"
+                      />
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.record)}>
-                    <button
-                      className={`hover:underline cursor-pointer ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "paidServiceDate",
-                          sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "paidServiceDate",
+                            sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <RecordFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Запис"
+                      />
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.master)}>
-                    <button
-                      className={`hover:underline cursor-pointer ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "masterId",
-                          sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "masterId",
+                            sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <MasterFilterDropdown
+                        clients={clients}
+                        masters={masters}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Майстер"
+                      />
+                    </div>
                   </th>
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getColumnStyle(columnWidths.phone)}>
                     Телефон

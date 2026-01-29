@@ -7,14 +7,14 @@ import { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
-import { DirectClientTable } from "./_components/DirectClientTable";
+import { DirectClientTable, type DirectFilters } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 import { WebhooksTableModal } from "./_components/WebhooksTableModal";
 import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableModal";
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import { AdminToolsModal } from "./_components/AdminToolsModal";
-import type { DirectClient, DirectStatus } from "@/lib/direct-types";
+import type { DirectClient, DirectStatus, DirectChatStatus } from "@/lib/direct-types";
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
@@ -153,6 +153,7 @@ export default function DirectPage() {
   const [totalClientsCount, setTotalClientsCount] = useState<number>(0);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
+  const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
@@ -164,13 +165,33 @@ export default function DirectPage() {
   const [shouldOpenAddClient, setShouldOpenAddClient] = useState(false);
   const [shouldOpenAddMaster, setShouldOpenAddMaster] = useState(false);
   const [shouldOpenAddStatus, setShouldOpenAddStatus] = useState(false);
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<DirectFilters>({
     statusId: "",
     masterId: "",
     source: "",
     search: "",
     hasAppointment: "",
-    clientType: [] as string[],
+    clientType: [],
+    act: { mode: null },
+    days: null,
+    inst: [],
+    state: [],
+    consultation: {
+      created: { mode: null },
+      appointed: { mode: null },
+      appointedPreset: null,
+      attendance: null,
+      type: null,
+      masterIds: [],
+    },
+    record: {
+      created: { mode: null },
+      appointed: { mode: null },
+      appointedPreset: null,
+      client: null,
+      sum: null,
+    },
+    master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
   });
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -351,6 +372,19 @@ export default function DirectPage() {
     } catch (mastersErr) {
       console.warn("[DirectPage] Failed to load masters:", mastersErr);
     }
+
+    try {
+      const chatRes = await fetch("/api/admin/direct/chat-statuses");
+      if (chatRes.ok) {
+        const chatData = await chatRes.json();
+        if (chatData.ok && Array.isArray(chatData.statuses)) {
+          setChatStatuses(chatData.statuses);
+          console.log(`[DirectPage] Loaded ${chatData.statuses.length} chat statuses`);
+        }
+      }
+    } catch (chatErr) {
+      console.warn("[DirectPage] Failed to load chat statuses:", chatErr);
+    }
   };
 
   const loadData = async () => {
@@ -422,6 +456,51 @@ export default function DirectPage() {
       if (filters.clientType && filters.clientType.length > 0) {
         params.set("clientType", filters.clientType.join(","));
       }
+      if (filters.act.mode === "current_month") params.set("actMode", "current_month");
+      else if (filters.act.mode === "year_month" && filters.act.year && filters.act.month) {
+        params.set("actMode", "year_month");
+        params.set("actYear", filters.act.year);
+        params.set("actMonth", filters.act.month);
+      }
+      if (filters.days) params.set("days", filters.days);
+      if (filters.inst.length > 0) params.set("inst", filters.inst.join(","));
+      if (filters.state.length > 0) params.set("state", filters.state.join(","));
+      const c = filters.consultation;
+      if (c.created.mode === "current_month") params.set("consultCreatedMode", "current_month");
+      else if (c.created.mode === "year_month" && c.created.year && c.created.month) {
+        params.set("consultCreatedMode", "year_month");
+        params.set("consultCreatedYear", c.created.year);
+        params.set("consultCreatedMonth", c.created.month);
+      }
+      if (c.appointed.mode === "current_month") params.set("consultAppointedMode", "current_month");
+      else if (c.appointed.mode === "year_month" && c.appointed.year && c.appointed.month) {
+        params.set("consultAppointedMode", "year_month");
+        params.set("consultAppointedYear", c.appointed.year);
+        params.set("consultAppointedMonth", c.appointed.month);
+      }
+      if (c.appointedPreset) params.set("consultAppointedPreset", c.appointedPreset);
+      if (c.attendance) params.set("consultAttendance", c.attendance);
+      if (c.type) params.set("consultType", c.type);
+      if (c.masterIds.length > 0) params.set("consultMasters", c.masterIds.join("|"));
+      const r = filters.record;
+      if (r.created.mode === "current_month") params.set("recordCreatedMode", "current_month");
+      else if (r.created.mode === "year_month" && r.created.year && r.created.month) {
+        params.set("recordCreatedMode", "year_month");
+        params.set("recordCreatedYear", r.created.year);
+        params.set("recordCreatedMonth", r.created.month);
+      }
+      if (r.appointed.mode === "current_month") params.set("recordAppointedMode", "current_month");
+      else if (r.appointed.mode === "year_month" && r.appointed.year && r.appointed.month) {
+        params.set("recordAppointedMode", "year_month");
+        params.set("recordAppointedYear", r.appointed.year);
+        params.set("recordAppointedMonth", r.appointed.month);
+      }
+      if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
+      if (r.client) params.set("recordClient", r.client);
+      if (r.sum) params.set("recordSum", r.sum);
+      if (filters.master.hands) params.set("masterHands", String(filters.master.hands));
+      if (filters.master.primaryMasterIds.length > 0) params.set("masterPrimary", filters.master.primaryMasterIds.join("|"));
+      if (filters.master.secondaryMasterIds.length > 0) params.set("masterSecondary", filters.master.secondaryMasterIds.join("|"));
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
@@ -2256,6 +2335,8 @@ export default function DirectPage() {
         clients={clients}
         totalClientsCount={totalClientsCount}
         statuses={statuses}
+        chatStatuses={chatStatuses}
+        masters={masters}
         filters={filters}
           onFiltersChange={(newFilters) => {
           // Забезпечуємо, що clientType завжди присутній

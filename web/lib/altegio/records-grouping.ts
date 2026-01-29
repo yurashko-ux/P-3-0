@@ -164,6 +164,32 @@ export function pickNonAdminStaffPairFromGroup(
   return out;
 }
 
+/** Кількість унікальних non-admin staff у групі (для "рук": 1→2, 2→4, 3+→6). */
+export function countNonAdminStaffInGroup(group: RecordGroup): number {
+  const kyivDay = group.kyivDay;
+  const events = Array.isArray(group.events) ? group.events : [];
+  const relevant = events
+    .filter((e) => {
+      const name = (e.staffName || '').toString().trim();
+      if (!name) return false;
+      if (isUnknownStaffName(name)) return false;
+      if (isAdminStaffName(name)) return false;
+      const dayByDatetime = e.datetime ? kyivDayFromISO(e.datetime) : '';
+      const dayByReceivedAt = e.receivedAt ? kyivDayFromISO(e.receivedAt) : '';
+      if (!dayByDatetime && !dayByReceivedAt) return false;
+      return dayByDatetime === kyivDay || dayByReceivedAt === kyivDay;
+    });
+  const seen = new Set<string>();
+  for (const e of relevant) {
+    const staffName = (e.staffName || '').toString().trim();
+    if (!staffName) continue;
+    const staffId = e.staffId ?? null;
+    const key = staffId != null ? `id:${staffId}` : `name:${staffName.toLowerCase()}`;
+    seen.add(key);
+  }
+  return seen.size;
+}
+
 export function pickStaffFromGroup(
   group: RecordGroup,
   opts?: { mode?: 'latest' | 'first'; allowAdmin?: boolean }
