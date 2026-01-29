@@ -195,7 +195,7 @@ export default function DirectPage() {
   });
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
-  
+
   // Закриваємо випадаюче меню кнопки "+" при кліку поза ним
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -253,6 +253,13 @@ export default function DirectPage() {
 
   // Визначаємо режим на основі сортування
   const viewMode: 'passive' | 'active' = sortBy === 'updatedAt' && sortOrder === 'desc' ? 'active' : 'passive';
+
+  const filtersRef = useRef(filters);
+  const sortByRef = useRef(sortBy);
+  const sortOrderRef = useRef(sortOrder);
+  filtersRef.current = filters;
+  sortByRef.current = sortBy;
+  sortOrderRef.current = sortOrder;
   
   // Функція для встановлення режиму через сортування
   const setViewMode = (mode: 'passive' | 'active') => {
@@ -405,9 +412,12 @@ export default function DirectPage() {
   };
 
   const loadClients = async (skipMergeDuplicates = false) => {
+    const f = filtersRef.current;
+    const sBy = sortByRef.current;
+    const sOrder = sortOrderRef.current;
     // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
-    let currentSortBy = sortBy;
-    let currentSortOrder = sortOrder;
+    let currentSortBy = sBy;
+    let currentSortOrder = sOrder;
     
     if (typeof window !== 'undefined') {
       const savedSortBy = localStorage.getItem('direct-sort-by');
@@ -449,23 +459,23 @@ export default function DirectPage() {
     
     try {
       const params = new URLSearchParams();
-      if (filters.statusId) params.set("statusId", filters.statusId);
-      if (filters.masterId) params.set("masterId", filters.masterId);
-      if (filters.source) params.set("source", filters.source);
-      if (filters.hasAppointment === "true") params.set("hasAppointment", "true");
-      if (filters.clientType && filters.clientType.length > 0) {
-        params.set("clientType", filters.clientType.join(","));
+      if (f.statusId) params.set("statusId", f.statusId);
+      if (f.masterId) params.set("masterId", f.masterId);
+      if (f.source) params.set("source", f.source);
+      if (f.hasAppointment === "true") params.set("hasAppointment", "true");
+      if (f.clientType && f.clientType.length > 0) {
+        params.set("clientType", f.clientType.join(","));
       }
-      if (filters.act.mode === "current_month") params.set("actMode", "current_month");
-      else if (filters.act.mode === "year_month" && filters.act.year && filters.act.month) {
+      if (f.act.mode === "current_month") params.set("actMode", "current_month");
+      else if (f.act.mode === "year_month" && f.act.year && f.act.month) {
         params.set("actMode", "year_month");
-        params.set("actYear", filters.act.year);
-        params.set("actMonth", filters.act.month);
+        params.set("actYear", f.act.year);
+        params.set("actMonth", f.act.month);
       }
-      if (filters.days) params.set("days", filters.days);
-      if (filters.inst.length > 0) params.set("inst", filters.inst.join(","));
-      if (filters.state.length > 0) params.set("state", filters.state.join(","));
-      const c = filters.consultation;
+      if (f.days) params.set("days", f.days);
+      if (f.inst.length > 0) params.set("inst", f.inst.join(","));
+      if (f.state.length > 0) params.set("state", f.state.join(","));
+      const c = f.consultation;
       if (c.created.mode === "current_month") params.set("consultCreatedMode", "current_month");
       else if (c.created.mode === "year_month" && c.created.year && c.created.month) {
         params.set("consultCreatedMode", "year_month");
@@ -482,7 +492,7 @@ export default function DirectPage() {
       if (c.attendance) params.set("consultAttendance", c.attendance);
       if (c.type) params.set("consultType", c.type);
       if (c.masterIds.length > 0) params.set("consultMasters", c.masterIds.join("|"));
-      const r = filters.record;
+      const r = f.record;
       if (r.created.mode === "current_month") params.set("recordCreatedMode", "current_month");
       else if (r.created.mode === "year_month" && r.created.year && r.created.month) {
         params.set("recordCreatedMode", "year_month");
@@ -498,20 +508,20 @@ export default function DirectPage() {
       if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
       if (r.client) params.set("recordClient", r.client);
       if (r.sum) params.set("recordSum", r.sum);
-      if (filters.master.hands) params.set("masterHands", String(filters.master.hands));
-      if (filters.master.primaryMasterIds.length > 0) params.set("masterPrimary", filters.master.primaryMasterIds.join("|"));
-      if (filters.master.secondaryMasterIds.length > 0) params.set("masterSecondary", filters.master.secondaryMasterIds.join("|"));
+      if (f.master.hands) params.set("masterHands", String(f.master.hands));
+      if (f.master.primaryMasterIds.length > 0) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
+      if (f.master.secondaryMasterIds.length > 0) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
       const currentViewMode = currentSortBy === 'updatedAt' && currentSortOrder === 'desc' ? 'active' : 'passive';
-      console.log('[DirectPage] Loading clients...', { 
-        filters, 
-        sortBy: currentSortBy, 
-        sortOrder: currentSortOrder, 
+      console.log('[DirectPage] Loading clients...', {
+        filters: f,
+        sortBy: currentSortBy,
+        sortOrder: currentSortOrder,
         viewMode: currentViewMode,
-        stateSortBy: sortBy,
-        stateSortOrder: sortOrder
+        stateSortBy: sBy,
+        stateSortOrder: sOrder
       });
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
         cache: 'no-store',
@@ -546,8 +556,8 @@ export default function DirectPage() {
         let filteredClients = data.clients;
 
         // Пошук по Instagram username та Повне ім'я
-        if (filters.search) {
-          const searchLower = filters.search.toLowerCase();
+        if (f.search) {
+          const searchLower = f.search.toLowerCase();
           filteredClients = filteredClients.filter((c: DirectClient) => {
             // Пошук по Instagram username
             const matchesInstagram = c.instagramUsername?.toLowerCase().includes(searchLower) || false;
@@ -565,15 +575,11 @@ export default function DirectPage() {
         }
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length);
-        
-        // Захист: не очищаємо клієнтів, якщо новий запит повертає 0, але у нас вже є клієнти
-        // (це може бути помилка API або тимчасовий збій)
         if (filteredClients.length === 0 && clients.length > 0) {
           console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
           setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
-          return; // Не оновлюємо клієнтів
+          return;
         }
-        
         console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode });
         setClients(filteredClients);
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
@@ -657,7 +663,6 @@ export default function DirectPage() {
           });
           setSortBy('updatedAt');
           setSortOrder('desc');
-          // Не продовжуємо оновлення, щоб не викликати конфлікт стану
           prevSortByRef.current = 'updatedAt';
           prevSortOrderRef.current = 'desc';
           return;
@@ -686,12 +691,9 @@ export default function DirectPage() {
   // Автоматичне оновлення даних кожні 30 секунд
   useEffect(() => {
     const interval = setInterval(() => {
-      // Оновлюємо статистику та статуси/майстрів
-      // Оновлюємо статуси та майстрів, якщо вони не завантажилися
       if (statuses.length === 0 || masters.length === 0) {
         loadStatusesAndMasters();
       }
-      // Оновлюємо клієнтів
       loadClients().catch(err => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });

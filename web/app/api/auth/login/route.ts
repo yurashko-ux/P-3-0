@@ -48,6 +48,7 @@ export async function POST(req: Request) {
 
   const incoming =
     (body as any)?.password ??
+    (body as any)?.pass ??
     (body as any)?.admin ??
     (body as any)?.token ??
     '';
