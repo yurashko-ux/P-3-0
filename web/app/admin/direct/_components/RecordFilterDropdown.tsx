@@ -245,21 +245,24 @@ export function RecordFilterDropdown({
     </div>
   );
 
+  const portalTarget =
+    typeof document !== "undefined" ? document.getElementById("direct-filter-dropdown-root") ?? document.body : null;
+
   return (
     <div className="relative inline-block" ref={dropdownRef}>
       <FilterIconButton active={hasActive} onClick={() => setIsOpen(!isOpen)} title={`Фільтри для ${columnLabel}`} />
       {isOpen &&
         panelPosition &&
-        typeof document !== "undefined" &&
+        portalTarget &&
         createPortal(
           <div
             ref={panelRef}
-            className="bg-white border border-gray-300 rounded-lg shadow-lg z-[9999] min-w-[240px] max-h-[420px] overflow-y-auto"
-            style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left }}
+            className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[420px] overflow-y-auto pointer-events-auto"
+            style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
             {panelContent}
           </div>,
-          document.body
+          portalTarget
         )}
     </div>
   );

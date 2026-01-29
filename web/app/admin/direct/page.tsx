@@ -2439,6 +2439,14 @@ export default function DirectPage() {
       />
       </div>
       </div>
+
+      {/* Шар для порталу фільтрів — над таблицею, щоб dropdown не ховався */}
+      <div
+        id="direct-filter-dropdown-root"
+        className="fixed inset-0 pointer-events-none"
+        style={{ zIndex: 999999 }}
+        aria-hidden="true"
+      />
     </div>
   );
 }
