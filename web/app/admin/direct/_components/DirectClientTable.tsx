@@ -1230,13 +1230,13 @@ export function DirectClientTable({
         </div>
       )}
 
-      {/* Таблиця — без overflow тут, скрол на сторінці; thead sticky top-14 липне під хедером */}
+      {/* Рядок назв і фільтрів у sticky-обгортці — липне до верху скрол-області; окрема body-таблиця */}
       <div className="flex-1 min-h-0 min-w-0">
         <div className="min-h-0 flex flex-col bg-white">
           <div className="bg-white">
-            <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
-              {/* colgroup видалено - колонки автоматично підлаштовуються під вміст */}
-              <thead className="sticky top-0 z-20 bg-base-200">
+            <div className="sticky top-0 z-20 bg-base-200">
+              <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
+                <thead className="bg-base-200">
                 <tr className="bg-base-200">
                   <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-2 text-xs font-semibold bg-base-200" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
@@ -1748,6 +1748,9 @@ export function DirectClientTable({
                   </tr>
                 )}
               </thead>
+              </table>
+            </div>
+            <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
               <tbody>
                 {filteredClients.length === 0 ? (
                   <tr>
