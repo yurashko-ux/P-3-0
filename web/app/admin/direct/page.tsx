@@ -791,7 +791,7 @@ export default function DirectPage() {
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-base-200 border-b border-gray-200 shrink-0">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-gray-100 border-b border-gray-200 shrink-0 shadow-sm">
         <div className="w-full px-4 py-1 flex flex-col md:flex-row md:items-center md:justify-between gap-1">
         <div>
           {/* Лівий блок залишається порожнім */}
@@ -863,7 +863,7 @@ export default function DirectPage() {
       </div>
         {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
         <div
-          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[16px] px-4 box-border"
+          className="overflow-x-hidden border-t border-gray-200 bg-gray-100 min-h-[16px] px-4 box-border"
           style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
         >
           <div
