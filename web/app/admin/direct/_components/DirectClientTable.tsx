@@ -2309,7 +2309,7 @@ export function DirectClientTable({
                         </span>
                       </td>
                       {/* Днів з останнього візиту (після “Продажі”) */}
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums" style={getColumnStyle(columnWidths.days, true)}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={getColumnStyle(columnWidths.days, true)}>
                         {(() => {
                           const raw = (client as any).daysSinceLastVisit;
                           const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -2337,7 +2337,7 @@ export function DirectClientTable({
 
                           return (
                             <span
-                              className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
+                              className={`inline-flex items-center justify-start rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
                               title={tooltipText}
                             >
                               {hasDays ? days : "-"}
@@ -2349,8 +2349,8 @@ export function DirectClientTable({
                       <td
                         className={
                           chatStatusUiVariant === 'v2'
-                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal"
-                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden"
+                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal text-left"
+                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-left"
                         }
                         style={getColumnStyle(columnWidths.inst, true)}
                       >
@@ -2384,7 +2384,7 @@ export function DirectClientTable({
                               : 'bg-gray-200 text-gray-900';
 
                               return (
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center justify-start gap-2 min-w-0">
                                 <button
                                 className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
@@ -2432,7 +2432,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.state, true)}>
+                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.state, true)}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
@@ -2490,7 +2490,7 @@ export function DirectClientTable({
                           if (client.paidServiceDate && isPaidPast) {
                             if ((client as any).paidServiceIsRebooking) {
                               return (
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-start">
                                   <span className="inline-flex items-center justify-center">
                                     <span 
                                       title="Є перезапис" 
@@ -2503,7 +2503,7 @@ export function DirectClientTable({
                               );
                             } else {
                               return (
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-start">
                                   <span className="inline-flex items-center justify-center">
                                     <span 
                                       title="Немає перезапису" 
@@ -2520,7 +2520,7 @@ export function DirectClientTable({
                           // 2. Успішна консультація без запису (Не продали)
                           if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
                             return (
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <span 
                                     title="Не продали" 
@@ -2536,7 +2536,7 @@ export function DirectClientTable({
                           // 3. Attendance = -1 для минулої дати (no-show)
                           if (client.paidServiceDate && isPaidPast && client.paidServiceAttended === false) {
                             return (
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <span 
                                     title="Клієнтка не з'явилася на платну послугу" 
@@ -2552,7 +2552,7 @@ export function DirectClientTable({
                           // 4. Attendance = -1 для майбутньої дати або скасовано
                           if (client.paidServiceDate && !isPaidPast && (client.paidServiceAttended === false || client.paidServiceCancelled)) {
                             return (
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <span 
                                     title="Скасовано" 
@@ -2571,7 +2571,7 @@ export function DirectClientTable({
                               client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
                             if (serviceState) {
                               return (
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-start">
                                   <span className="inline-flex items-center justify-center">
                                     <button
                                       type="button"
@@ -2587,7 +2587,7 @@ export function DirectClientTable({
                             }
                             // Платна послуга (тип невідомий)
                             return (
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <span 
                                     title="Платна послуга (тип невідомий)" 
@@ -2604,7 +2604,7 @@ export function DirectClientTable({
                           // Якщо немає платної послуги, але є консультація - показуємо стан консультації
                           if (client.consultationBookingDate) {
                             return (
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <button
                                     type="button"
@@ -2622,7 +2622,7 @@ export function DirectClientTable({
                           // Якщо немає ні платної послуги, ні консультації - показуємо client.state
                           if (client.state) {
                             return (
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <StateIcon state={client.state} size={28} />
                                 </span>
@@ -2681,7 +2681,7 @@ export function DirectClientTable({
                           : false;
                         
                         return (
-                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.consultation, true)}>
+                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultation, true)}>
                         {client.consultationBookingDate ? (
                           (() => {
                             try {
@@ -2942,7 +2942,7 @@ export function DirectClientTable({
                           : false;
                         
                         return (
-                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.record, true)}>
+                          <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.record, true)}>
                             {client.signedUpForPaidService && client.paidServiceDate ? (
                               (() => {
                                 const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
@@ -3106,7 +3106,7 @@ export function DirectClientTable({
                           </td>
                         );
                       })()}
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.master, true)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.master, true)}>
                         {(() => {
                           // Колонка "Майстер":
                           // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -3200,15 +3200,15 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.phone, true)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.phone, true)}>
                         {client.phone ? (
                           <span className="font-mono">{client.phone}</span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs" style={getColumnStyle(columnWidths.actions, true)}>
-                        <div className="flex gap-1">
+                      <td className="px-1 sm:px-2 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
+                        <div className="flex justify-start gap-1">
                           <button
                             className="btn btn-xs btn-ghost"
                             onClick={() => setEditingClient(client)}
