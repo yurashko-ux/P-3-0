@@ -3,7 +3,8 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 
 export type ClientTypeFilter = "leads" | "clients" | "consulted" | "good" | "stars";
@@ -31,8 +32,9 @@ export function ColumnFilterDropdown({
   columnLabel,
 }: ColumnFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  // Локальний стан для тимчасового вибору фільтрів (до застосування)
+  const panelRef = useRef<HTMLDivElement>(null);
   const [pendingFilters, setPendingFilters] = useState<ClientTypeFilter[]>(selectedFilters);
 
   // Підрахунок кількості для кожного фільтра (оптимізовано через useMemo)
@@ -78,23 +80,24 @@ export function ColumnFilterDropdown({
     setPendingFilters(selectedFilters);
   }, [selectedFilters]);
 
-  // Закриваємо меню при кліку поза ним
+  useLayoutEffect(() => {
+    if (isOpen && dropdownRef.current && typeof document !== "undefined") {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      setPanelPosition({ top: rect.bottom + 4, left: rect.left });
+    } else {
+      setPanelPosition(null);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        // При закритті без застосування - скидаємо pendingFilters до selectedFilters
-        setPendingFilters(selectedFilters);
-        setIsOpen(false);
-      }
+      const target = event.target as Node;
+      if (dropdownRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setPendingFilters(selectedFilters);
+      setIsOpen(false);
     };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen, selectedFilters]);
 
   const toggleFilter = (filterId: ClientTypeFilter) => {
@@ -120,7 +123,70 @@ export function ColumnFilterDropdown({
   };
 
   const hasActiveFilters = selectedFilters.length > 0;
-  const hasPendingChanges = JSON.stringify(pendingFilters.sort()) !== JSON.stringify(selectedFilters.sort());
+
+  const portalTarget =
+    typeof document !== "undefined" ? document.getElementById("direct-filter-dropdown-root") ?? document.body : null;
+
+  const panelContent = (
+    <div className="p-2">
+      <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
+        <span>Фільтри: {columnLabel}</span>
+        {totalClientsCount !== undefined && totalClientsCount > 0 && (
+          <span className="text-gray-500 font-normal">({totalClientsCount})</span>
+        )}
+      </div>
+      <div className="space-y-1">
+        {filterOptions.map((option) => {
+          const isSelected = pendingFilters.includes(option.id);
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => toggleFilter(option.id)}
+              title={option.tooltip}
+              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
+                isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  className={`inline-block w-3 h-3 rounded border ${
+                    isSelected ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"
+                  }`}
+                >
+                  {isSelected && (
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12">
+                      <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <span>{option.label}</span>
+              </span>
+              <span className="text-gray-500 font-medium">({option.count})</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-2 mt-2">
+        <button
+          type="button"
+          onClick={handleApply}
+          className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium"
+        >
+          Застосувати
+        </button>
+        {(hasActiveFilters || pendingFilters.length > 0) && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium"
+          >
+            Очистити
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
@@ -132,89 +198,19 @@ export function ColumnFilterDropdown({
         }`}
         title={`Фільтри для ${columnLabel}`}
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M2 3h8M3 6h6M4.5 9h3"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 3h8M3 6h6M4.5 9h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       </button>
-
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[220px]">
-          <div className="p-2">
-            <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
-              <span>Фільтри: {columnLabel}</span>
-              {totalClientsCount !== undefined && totalClientsCount > 0 && (
-                <span className="text-gray-500 font-normal">({totalClientsCount})</span>
-              )}
-            </div>
-            <div className="space-y-1">
-              {filterOptions.map((option) => {
-                const isSelected = pendingFilters.includes(option.id);
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => toggleFilter(option.id)}
-                    title={option.tooltip}
-                    className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
-                      isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`inline-block w-3 h-3 rounded border ${
-                          isSelected
-                            ? "bg-blue-600 border-blue-600"
-                            : "border-gray-400 bg-white"
-                        }`}
-                      >
-                        {isSelected && (
-                          <svg
-                            className="w-3 h-3 text-white"
-                            fill="currentColor"
-                            viewBox="0 0 12 12"
-                          >
-                            <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </span>
-                      <span>{option.label}</span>
-                    </span>
-                    <span className="text-gray-500 font-medium">({option.count})</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex gap-2 mt-2">
-              <button
-                type="button"
-                onClick={handleApply}
-                className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium"
-              >
-                Застосувати
-              </button>
-              {(hasActiveFilters || pendingFilters.length > 0) && (
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium"
-                >
-                  Очистити
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+      {isOpen && panelPosition && portalTarget && createPortal(
+        <div
+          ref={panelRef}
+          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] pointer-events-auto"
+          style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
+        >
+          {panelContent}
+        </div>,
+        portalTarget
       )}
     </div>
   );
