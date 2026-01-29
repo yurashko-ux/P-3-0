@@ -797,7 +797,7 @@ export function DirectClientTable({
     measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width
   );
 
-  // Colgroup тільки для header — динамічні ширини з body
+  // Colgroup для header і body — однакові ширини, щоб верхні/нижні колонки збігались
   const headerColgroup = (
     <colgroup>
       {COLUMN_KEYS.map((_, i) => (
@@ -1085,6 +1085,8 @@ export function DirectClientTable({
     });
   }, [uniqueClients, filters.clientType]);
 
+  const useColgroupOnBody = filteredClients.length > 0 && measuredWidths.length === COLUMN_KEYS.length;
+
   // Вимірюємо фактичні ширини колонок з body-таблиці; header colgroup використовує їх
   useLayoutEffect(() => {
     const table = bodyTableRef.current;
@@ -1092,13 +1094,22 @@ export function DirectClientTable({
 
     const measure = () => {
       const tbody = table.querySelector('tbody');
-      const firstRow = tbody?.querySelector('tr');
-      if (!firstRow || firstRow.cells.length !== COLUMN_KEYS.length) {
+      const rows = Array.from(tbody?.querySelectorAll('tr') ?? []);
+      const dataRows = rows.filter((r) => r.cells.length === COLUMN_KEYS.length);
+      if (dataRows.length === 0) {
         setMeasuredWidths((prev) => (prev.length ? [] : prev));
         return;
       }
-      const widths = Array.from(firstRow.cells).map((c) => c.getBoundingClientRect().width);
-      setMeasuredWidths(widths);
+      const nc = COLUMN_KEYS.length;
+      const maxWidths = new Array<number>(nc).fill(0);
+      for (const row of dataRows) {
+        const cells = Array.from(row.cells);
+        for (let i = 0; i < nc && i < cells.length; i++) {
+          const w = cells[i].getBoundingClientRect().width;
+          if (w > maxWidths[i]) maxWidths[i] = w;
+        }
+      }
+      setMeasuredWidths(maxWidths);
     };
 
     measure();
@@ -1813,8 +1824,9 @@ export function DirectClientTable({
             <table
               ref={bodyTableRef}
               className="table table-xs sm:table-sm border-collapse"
-              style={{ tableLayout: 'auto', width: 'max-content' }}
+              style={{ tableLayout: useColgroupOnBody ? 'fixed' : 'auto', width: 'max-content' }}
             >
+              {useColgroupOnBody && headerColgroup}
               <tbody>
                 {filteredClients.length === 0 ? (
                   <tr>
