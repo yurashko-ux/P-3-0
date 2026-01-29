@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
@@ -735,9 +735,14 @@ export default function DirectPage() {
     );
   }
 
-  const tableHeaderRef = useRef<HTMLDivElement>(null);
+  const tableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
+  const [headerSlotReady, setHeaderSlotReady] = useState(false);
+  const setHeaderRef = useCallback((el: HTMLDivElement | null) => {
+    (tableHeaderRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    setHeaderSlotReady(!!el);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
@@ -813,7 +818,7 @@ export default function DirectPage() {
         </div>
       </div>
         {/* Слот для рядка заголовків таблиці (portal з DirectClientTable); px-4 як у контенті */}
-        <div ref={tableHeaderRef} className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[44px] px-4" />
+        <div ref={setHeaderRef} className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[44px] px-4" />
     </header>
       {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
       <div className="flex-1 min-h-0 flex flex-col pt-[100px] pb-24 px-4">
@@ -2351,6 +2356,7 @@ export default function DirectPage() {
       >
       <DirectClientTable
         headerPortalRef={tableHeaderRef}
+        headerSlotReady={headerSlotReady}
         bodyScrollLeft={bodyScrollLeft}
         clients={clients}
         totalClientsCount={totalClientsCount}

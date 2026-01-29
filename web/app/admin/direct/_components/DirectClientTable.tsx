@@ -691,6 +691,8 @@ type DirectClientTableProps = {
   setIsEditingColumnWidths?: (value: boolean) => void;
   /** Ref слоту в fixed-хедері — якщо задано, thead рендериться туди через portal */
   headerPortalRef?: React.RefObject<HTMLDivElement | null>;
+  /** Слот змонтовано — portal тільки тоді, щоб уникнути помилки "Target container is not a DOM element" */
+  headerSlotReady?: boolean;
   /** scrollLeft body-таблиці для синхрону горизонтального скролу заголовків */
   bodyScrollLeft?: number;
 };
@@ -738,6 +740,7 @@ export function DirectClientTable({
   isEditingColumnWidths = false,
   setIsEditingColumnWidths,
   headerPortalRef,
+  headerSlotReady = false,
   bodyScrollLeft = 0,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
@@ -1757,13 +1760,15 @@ export function DirectClientTable({
                   </thead>
                 </table>
               );
+              const target = headerPortalRef?.current;
+              const canPortal = headerSlotReady && typeof document !== "undefined" && target instanceof HTMLElement;
               return (
                 <>
-                  {headerPortalRef?.current && typeof document !== "undefined" && createPortal(
+                  {canPortal && createPortal(
                     <div style={{ transform: `translateX(-${bodyScrollLeft}px)` }} className="min-w-fit">
                       {headerTable}
                     </div>,
-                    headerPortalRef.current
+                    target
                   )}
                   {!headerPortalRef && (
                     <div className="sticky top-0 z-20 bg-base-200">{headerTable}</div>
