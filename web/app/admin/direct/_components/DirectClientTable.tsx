@@ -1292,8 +1292,8 @@ export function DirectClientTable({
       )}
 
       <div className="flex-1 min-h-0 min-w-0">
-        <div className="min-h-0 flex flex-col bg-white">
-          <div className="bg-white">
+        <div className="min-h-0 flex flex-col bg-gray-100">
+          <div className="bg-gray-100">
             {(() => {
               const headerTable = (
                 <table className="table table-xs sm:table-sm border-collapse" style={tableWidthStyle}>
