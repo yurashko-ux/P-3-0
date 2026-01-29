@@ -797,6 +797,8 @@ export function DirectClientTable({
     measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width
   );
 
+  const totalTableWidth = effectiveWidths.reduce((a, b) => a + (b ?? 0), 0);
+
   // Colgroup для header і body — однакові ширини, щоб верхні/нижні колонки збігались
   const headerColgroup = (
     <colgroup>
@@ -805,6 +807,8 @@ export function DirectClientTable({
       ))}
     </colgroup>
   );
+
+  const tableWidthStyle = { tableLayout: 'fixed' as const, width: `${totalTableWidth}px`, margin: 0 };
 
   // Обчислюємо left для sticky (перші 4: №, Act, Avatar, Name)
   const getStickyLeft = (columnIndex: number): number => {
@@ -1105,7 +1109,7 @@ export function DirectClientTable({
       for (const row of dataRows) {
         const cells = Array.from(row.cells);
         for (let i = 0; i < nc && i < cells.length; i++) {
-          const w = cells[i].getBoundingClientRect().width;
+          const w = Math.round(cells[i].getBoundingClientRect().width);
           if (w > maxWidths[i]) maxWidths[i] = w;
         }
       }
@@ -1289,7 +1293,7 @@ export function DirectClientTable({
           <div className="bg-white">
             {(() => {
               const headerTable = (
-                <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'fixed', width: 'max-content' }}>
+                <table className="table table-xs sm:table-sm border-collapse" style={tableWidthStyle}>
                   {headerColgroup}
                   <thead className="bg-base-200">
                     <tr className="bg-base-200">
@@ -1809,12 +1813,7 @@ export function DirectClientTable({
               const canPortal = headerSlotReady && typeof document !== "undefined" && target instanceof HTMLElement;
               return (
                 <>
-                  {canPortal && createPortal(
-                    <div style={{ transform: `translateX(-${bodyScrollLeft}px)` }} className="min-w-fit">
-                      {headerTable}
-                    </div>,
-                    target
-                  )}
+                  {canPortal && createPortal(headerTable, target)}
                   {!headerPortalRef && (
                     <div className="sticky top-0 z-20 bg-base-200">{headerTable}</div>
                   )}
@@ -1824,7 +1823,7 @@ export function DirectClientTable({
             <table
               ref={bodyTableRef}
               className="table table-xs sm:table-sm border-collapse"
-              style={{ tableLayout: useColgroupOnBody ? 'fixed' : 'auto', width: 'max-content' }}
+              style={useColgroupOnBody ? tableWidthStyle : { tableLayout: 'auto', width: 'max-content', margin: 0 }}
             >
               {useColgroupOnBody && headerColgroup}
               <tbody>
@@ -1949,7 +1948,7 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 text-xs whitespace-nowrap overflow-hidden" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false)}>
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false)}>
                         <span className="flex flex-col leading-none min-w-0">
                           {(() => {
                             const first = (client.firstName || "").toString().trim();

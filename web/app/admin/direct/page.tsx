@@ -728,10 +728,54 @@ export default function DirectPage() {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
   const [headerSlotReady, setHeaderSlotReady] = useState(false);
+  const [scrollContentWidth, setScrollContentWidth] = useState<number | null>(null);
+  const ignoreHeaderScroll = useRef(false);
+  const ignoreBodyScroll = useRef(false);
   const setHeaderRef = useCallback((el: HTMLDivElement | null) => {
     (tableHeaderRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     setHeaderSlotReady(!!el);
   }, []);
+
+  const onBodyScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (ignoreBodyScroll.current) {
+      ignoreBodyScroll.current = false;
+      return;
+    }
+    const sl = el.scrollLeft;
+    setBodyScrollLeft(sl);
+    const header = tableHeaderRef.current;
+    if (header && header.scrollLeft !== sl) {
+      ignoreHeaderScroll.current = true;
+      header.scrollLeft = sl;
+    }
+  }, []);
+
+  const onHeaderScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (ignoreHeaderScroll.current) {
+      ignoreHeaderScroll.current = false;
+      return;
+    }
+    const sl = el.scrollLeft;
+    setBodyScrollLeft(sl);
+    const body = tableScrollRef.current;
+    if (body && body.scrollLeft !== sl) {
+      ignoreBodyScroll.current = true;
+      body.scrollLeft = sl;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const update = () => setScrollContentWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isLoading]);
 
   if (isLoading) {
     return (
@@ -817,8 +861,17 @@ export default function DirectPage() {
           </div>
         </div>
       </div>
-        {/* Слот для рядка заголовків таблиці (portal з DirectClientTable); px-4 як у контенті */}
-        <div ref={setHeaderRef} className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[44px] px-4" />
+        {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
+        <div
+          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[44px] px-4 box-border"
+          style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
+        >
+          <div
+            ref={setHeaderRef}
+            className="overflow-x-auto overflow-y-hidden w-full min-h-[44px]"
+            onScroll={onHeaderScroll}
+          />
+        </div>
     </header>
       {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
       <div className="flex-1 min-h-0 flex flex-col pt-[100px] pb-24 px-4">
@@ -2352,7 +2405,7 @@ export default function DirectPage() {
       <div
         ref={tableScrollRef}
         className="flex-1 min-h-0 min-w-0 overflow-auto"
-        onScroll={(e) => setBodyScrollLeft(e.currentTarget.scrollLeft)}
+        onScroll={onBodyScroll}
       >
       <DirectClientTable
         headerPortalRef={tableHeaderRef}
