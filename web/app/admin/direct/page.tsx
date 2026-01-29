@@ -809,8 +809,8 @@ export default function DirectPage() {
         </div>
       </div>
     </header>
-      {/* Контент під фіксованим хедером — один скрол, thead липне під хедером */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pt-14 pb-24 px-4">
+      {/* Контент під фіксованим хедером — один скрол (x+y), без overflow у предків thead щоб sticky працював */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-auto pt-14 pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button

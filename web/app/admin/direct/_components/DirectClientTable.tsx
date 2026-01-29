@@ -1230,8 +1230,8 @@ export function DirectClientTable({
         </div>
       )}
 
-      {/* Таблиця — один скрол на сторінці, thead липне під фіксованим хедером (pt-14 = 56px) */}
-      <div className="flex-1 min-h-0 overflow-x-auto">
+      {/* Таблиця — без overflow тут, скрол на сторінці; thead sticky top-14 липне під хедером */}
+      <div className="flex-1 min-h-0 min-w-0">
         <div className="min-h-0 flex flex-col bg-white">
           <div className="bg-white">
             <table className="table table-xs sm:table-sm border-collapse" style={{ tableLayout: 'auto', width: 'auto' }}>
