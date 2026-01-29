@@ -791,7 +791,7 @@ export default function DirectPage() {
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
-      <header className="fixed top-0 left-0 right-0 z-20 bg-base-200 border-b border-gray-200 shrink-0">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-base-200 border-b border-gray-200 shrink-0">
         <div className="w-full px-4 py-1 flex flex-col md:flex-row md:items-center md:justify-between gap-1">
         <div>
           {/* Лівий блок залишається порожнім */}
@@ -2401,10 +2401,10 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця — overflow-auto; ref + onScroll для синхрону горизонтального скролу з хедером */}
+      {/* Таблиця — overflow-auto; ref + onScroll для синхрону горизонтального скролу з хедером; relative z-0 щоб лишатись під хедером */}
       <div
         ref={tableScrollRef}
-        className="flex-1 min-h-0 min-w-0 overflow-auto"
+        className="flex-1 min-h-0 min-w-0 overflow-auto relative z-0"
         onScroll={onBodyScroll}
       >
       <DirectClientTable
