@@ -809,8 +809,8 @@ export default function DirectPage() {
         </div>
       </div>
     </header>
-      {/* Контент під фіксованим хедером — один скрол (x+y), без overflow у предків thead щоб sticky працював */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-auto pt-14 pb-24 px-4">
+      {/* Контент під фіксованим хедером — без overflow тут; скрол тільки в блоці таблиці нижче */}
+      <div className="flex-1 min-h-0 flex flex-col pt-14 pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
@@ -2337,8 +2337,8 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця клієнтів — без overflow, футер fixed; overflow тільки на scroll-контейнері вище */}
-      <div className="flex-1 min-h-0 flex flex-col">
+      {/* Таблиця — єдиний overflow-auto; thead sticky липне до верху цього блоку */}
+      <div className="flex-1 min-h-0 min-w-0 overflow-auto">
       <DirectClientTable
         clients={clients}
         totalClientsCount={totalClientsCount}
