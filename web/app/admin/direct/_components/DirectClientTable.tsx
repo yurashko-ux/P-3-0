@@ -1435,8 +1435,8 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-1 py-2 text-xs font-semibold bg-base-200 text-left" style={getColumnStyle(columnWidths.state, true)}>
-                    <div className="flex items-center gap-1">
+                  <th className="pl-1 pr-2 sm:pl-1 sm:pr-2 py-2 text-xs font-semibold bg-base-200 text-left" style={getColumnStyle(columnWidths.state, true)}>
+                    <div className="flex items-center justify-start gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                         onClick={() =>
@@ -1457,7 +1457,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-2 text-xs font-semibold bg-base-200 text-left" style={getColumnStyle(columnWidths.consultation, true)}>
+                  <th className="pl-2 sm:pl-2 pr-1 sm:pr-2 py-2 text-xs font-semibold bg-base-200 text-left" style={getColumnStyle(columnWidths.consultation, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
