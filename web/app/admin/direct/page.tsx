@@ -792,7 +792,7 @@ export default function DirectPage() {
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0">
-        <div className="w-full px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="w-full px-4 py-1.5 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div>
           {/* Лівий блок залишається порожнім */}
         </div>
@@ -816,7 +816,7 @@ export default function DirectPage() {
           {/* Кнопка "+" з випадаючим меню */}
           <div className="relative add-menu-container" ref={addMenuRef}>
             <button
-              className="btn btn-primary w-6 h-6 aspect-square rounded-lg p-0 flex items-center justify-center text-sm"
+              className="btn btn-primary w-5 h-5 aspect-square rounded-lg p-0 flex items-center justify-center text-sm"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
               title="Додати"
             >
@@ -863,18 +863,18 @@ export default function DirectPage() {
       </div>
         {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
         <div
-          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[44px] px-4 box-border"
+          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[22px] px-4 box-border"
           style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
         >
           <div
             ref={setHeaderRef}
-            className="overflow-x-auto overflow-y-hidden w-full min-h-[44px]"
+            className="overflow-x-auto overflow-y-hidden w-full min-h-[22px]"
             onScroll={onHeaderScroll}
           />
         </div>
     </header>
       {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[100px] pb-24 px-4">
+      <div className="flex-1 min-h-0 flex flex-col pt-[50px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
