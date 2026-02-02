@@ -44,6 +44,62 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
 }
 
 /**
+ * Форматує рядок майстрів: головний та інші в дужках (лише імена, без ролей).
+ * Головний = staff_id з запису (webhook data.staff); інші = з API visit details items.
+ */
+function formatMastersDisplay(
+  mainStaffName: string | null,
+  otherNames: string[]
+): string {
+  const main = (mainStaffName || '').toString().trim();
+  const others = otherNames
+    .map((n) => (n || '').toString().trim())
+    .filter((n) => n && n !== main);
+  const uniq = Array.from(new Set(others));
+  if (!main) return uniq.join(', ') || '';
+  if (uniq.length === 0) return main;
+  return `${main} (${uniq.join(', ')})`;
+}
+
+/**
+ * Викликає GET /visit/details та повертає рядок "Головний (Інший1, Інший2)" або null при помилці.
+ */
+async function getMastersDisplayFromVisitDetails(
+  companyId: number,
+  recordId: number,
+  visitId: number,
+  mainStaffName: string | null
+): Promise<string | null> {
+  try {
+    const { getVisitDetails } = await import('@/lib/altegio/visits');
+    const data = await getVisitDetails(companyId, recordId, visitId);
+    if (!data || typeof data !== 'object') return null;
+    const items = Array.isArray(data.items) ? data.items : [];
+    const otherNames: string[] = [];
+    for (const item of items) {
+      const name =
+        (item as any).master?.title ??
+        (item as any).master?.name ??
+        (item as any).staff?.name ??
+        (item as any).staff?.display_name ??
+        (item as any).staff_title ??
+        null;
+      if (name && typeof name === 'string') {
+        const t = name.trim();
+        if (t && t !== (mainStaffName || '').trim()) otherNames.push(t);
+      }
+    }
+    return formatMastersDisplay(mainStaffName, otherNames);
+  } catch (err) {
+    console.warn(
+      '[altegio/webhook] getVisitDetails failed (using webhook staff only):',
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
  * Перевіряє, чи staffName є адміністратором (role = 'admin' або 'direct-manager')
  */
 async function isAdminStaff(staffName: string | null | undefined): Promise<boolean> {
@@ -346,6 +402,22 @@ export async function POST(req: NextRequest) {
             const clientId = parseInt(String(data.client.id), 10);
             const services = data.services;
             const staffName = data.staff?.name || data.staff?.display_name || null;
+
+            // Виклик API Visit Details для отримання майстрів по кожній послузі (головний + інші в дужках)
+            let mastersDisplayString: string | null = null;
+            const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+            const companyId = parseInt(companyIdStr, 10);
+            if (companyId && !Number.isNaN(companyId) && recordId != null && visitId != null) {
+              mastersDisplayString = await getMastersDisplayFromVisitDetails(
+                companyId,
+                Number(recordId),
+                Number(visitId),
+                staffName
+              );
+              if (mastersDisplayString) {
+                console.log('[altegio/webhook] Visit details masters display:', mastersDisplayString);
+              }
+            }
             // attendance / visit_attendance:
             //  0   – подія ще не настала (запис існує, але не відбулася)
             //  1   – клієнт прийшов (фактична консультація)
@@ -789,7 +861,7 @@ export async function POST(req: NextRequest) {
                           state: normalizedState,
                           consultationAttended: true,
                           consultationMasterId: master.id,
-                          consultationMasterName: master.name,
+                          consultationMasterName: mastersDisplayString ?? master.name,
                           consultationDate: datetime, // Дата фактичної консультації
                           // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
@@ -1165,16 +1237,17 @@ export async function POST(req: NextRequest) {
                       const { appendServiceMasterHistory } = await import('@/lib/altegio/records-grouping');
                       const { kyivDayFromISO } = await import('@/lib/altegio/records-grouping');
                       const kyivDay = data.datetime ? kyivDayFromISO(data.datetime) : '';
-                      updates.serviceMasterName = staffName;
+                      const paidMasterDisplay = mastersDisplayString ?? staffName;
+                      updates.serviceMasterName = paidMasterDisplay;
                       updates.serviceMasterAltegioStaffId = staffId || null;
                       if (kyivDay) {
                         updates.serviceMasterHistory = appendServiceMasterHistory(existingClient.serviceMasterHistory, {
                           kyivDay,
-                          masterName: staffName,
+                          masterName: paidMasterDisplay,
                           source: 'webhook-direct',
                         });
                       }
-                      console.log(`[altegio/webhook] Set serviceMasterName = "${staffName}" directly from webhook for client ${existingClient.id}`);
+                      console.log(`[altegio/webhook] Set serviceMasterName = "${paidMasterDisplay}" directly from webhook for client ${existingClient.id}`);
                     }
                   } else {
                     console.log(`[altegio/webhook] Skipping admin "${staffName}" for serviceMasterName for client ${existingClient.id}`);
