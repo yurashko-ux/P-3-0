@@ -863,10 +863,10 @@ export default function DirectPage() {
           </div>
         </div>
       </div>
-        {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
+        {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body (ширина = ширина body, без зайвого розширення) */}
         <div
           className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[22px] px-4 box-border"
-          style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
+          style={scrollContentWidth != null ? { width: scrollContentWidth } : undefined}
         >
           <div
             ref={setHeaderRef}
@@ -875,8 +875,8 @@ export default function DirectPage() {
           />
         </div>
     </header>
-      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків (68px ≈ висота хедера) */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[68px] pb-24 px-4">
+      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків (88px, щоб перший рядок не ховався під хедером) */}
+      <div className="flex-1 min-h-0 flex flex-col pt-[88px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button

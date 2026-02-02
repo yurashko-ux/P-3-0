@@ -363,8 +363,8 @@ export type VisitBreakdownItem = { masterName: string; sumUAH: number };
 
 /**
  * Отримуємо вебхук з visit_id → викликаємо API: GET /visits/{visit_id}, потім для кожного record_id
- * GET /visit/details/{location_id}/{record_id}/{visit_id}, агрегуємо items (cost) та payment_transactions (amount) по master_id.
- * Повертає масив { masterName, sumUAH } для колонки «Майстер».
+ * GET /visit/details/{location_id}/{record_id}/{visit_id}. Агрегуємо тільки data.items (cost×amount) по master_id,
+ * без payment_transactions, щоб суми відповідали позиціям послуг/товарів (як у деталях візиту в Altegio).
  */
 export async function fetchVisitBreakdownFromAPI(
   visitId: number,
@@ -393,9 +393,6 @@ export async function fetchVisitBreakdownFromAPI(
       if (!data || typeof data !== 'object') continue;
 
       const items = Array.isArray(data.items) ? data.items : [];
-      const paymentTransactions = Array.isArray(data.payment_transactions)
-        ? data.payment_transactions
-        : [];
 
       for (const item of items) {
         const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
@@ -418,25 +415,6 @@ export async function fetchVisitBreakdownFromAPI(
           if (name && name !== 'Майстер') existing.masterName = name;
         } else {
           byMasterId.set(key, { masterName: name || 'Майстер', sumUAH: sum });
-        }
-      }
-
-      for (const tx of paymentTransactions) {
-        const masterId = (tx as any).master_id ?? (tx as any).master?.id;
-        const masterName =
-          (tx as any).master?.name ??
-          (tx as any).master?.title ??
-          'Майстер';
-        const amount = Math.round(Number((tx as any).amount) || 0);
-        if (amount <= 0) continue;
-        const key = masterId != null ? Number(masterId) : 0;
-        const existing = byMasterId.get(key);
-        const name = String(masterName || 'Майстер').trim();
-        if (existing) {
-          existing.sumUAH += amount;
-          if (name && name !== 'Майстер') existing.masterName = name;
-        } else {
-          byMasterId.set(key, { masterName: name || 'Майстер', sumUAH: amount });
         }
       }
     }
