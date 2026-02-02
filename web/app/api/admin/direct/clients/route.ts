@@ -1042,6 +1042,157 @@ export async function GET(req: NextRequest) {
       filtered = filtered.filter((c) => c.state && set.has(c.state));
     }
 
+    // Фільтри по колонках (Консультація, Запис, Майстер) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них
+    const hasConsultationFilters =
+      consultCreatedMode === 'current_month' ||
+      (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) ||
+      consultAppointedMode === 'current_month' ||
+      (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) ||
+      consultAppointedPreset != null ||
+      consultAttendance != null ||
+      consultType != null ||
+      (splitPipe(consultMasters).length > 0);
+    const hasRecordFilters =
+      recordCreatedMode === 'current_month' ||
+      (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) ||
+      recordAppointedMode === 'current_month' ||
+      (recordAppointedMode === 'year_month' && recordAppointedYear && recordAppointedMonth) ||
+      recordAppointedPreset != null ||
+      recordClient != null ||
+      recordSum != null ||
+      (masterHands && [2, 4, 6].includes(parseInt(masterHands, 10)));
+    const hasMasterFilters = splitPipe(masterPrimary).length > 0 || splitPipe(masterSecondary).length > 0;
+    const hasColumnFilters = hasConsultationFilters || hasRecordFilters || hasMasterFilters;
+
+    if (hasColumnFilters) {
+      const base = [...filtered];
+
+      const applyConsultation = (arr: typeof base) => {
+        let out = arr;
+        if (consultCreatedMode === 'current_month') {
+          out = out.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === currentMonthKyiv);
+        } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
+          const y = parseActYear(consultCreatedYear);
+          const m = parseMonth(consultCreatedMonth);
+          if (y && m) out = out.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === `${y}-${m}`);
+        }
+        if (consultAppointedMode === 'current_month') {
+          out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
+        } else if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
+          const y = parseActYear(consultAppointedYear);
+          const m = parseMonth(consultAppointedMonth);
+          if (y && m) out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === `${y}-${m}`);
+        }
+        if (consultAppointedPreset === 'past') {
+          out = out.filter((c) => toKyivDay(c.consultationBookingDate) && toKyivDay(c.consultationBookingDate) < todayKyiv);
+        } else if (consultAppointedPreset === 'today') {
+          out = out.filter((c) => toKyivDay(c.consultationBookingDate) === todayKyiv);
+        } else if (consultAppointedPreset === 'future') {
+          out = out.filter((c) => toKyivDay(c.consultationBookingDate) && toKyivDay(c.consultationBookingDate) > todayKyiv);
+        }
+        if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
+        else if (consultAttendance === 'no_show') out = out.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
+        else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
+        if (consultType === 'consultation') out = out.filter((c) => !(c as any).isOnlineConsultation);
+        else if (consultType === 'online') out = out.filter((c) => !!(c as any).isOnlineConsultation);
+        const consultMasterListLocal = splitPipe(consultMasters);
+        if (consultMasterListLocal.length > 0) {
+          const norms = new Set(consultMasterListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
+          out = out.filter((c) => {
+            const first = firstToken(c.consultationMasterName).toLowerCase().trim();
+            return first && norms.has(first);
+          });
+        }
+        return out;
+      };
+
+      const applyRecord = (arr: typeof base) => {
+        let out = arr;
+        if (recordCreatedMode === 'current_month') {
+          out = out.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === currentMonthKyiv);
+        } else if (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) {
+          const y = parseActYear(recordCreatedYear);
+          const m = parseMonth(recordCreatedMonth);
+          if (y && m) out = out.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === `${y}-${m}`);
+        }
+        if (recordAppointedMode === 'current_month') {
+          out = out.filter((c) => toYyyyMm(c.paidServiceDate) === currentMonthKyiv);
+        } else if (recordAppointedMode === 'year_month' && recordAppointedYear && recordAppointedMonth) {
+          const y = parseActYear(recordAppointedYear);
+          const m = parseMonth(recordAppointedMonth);
+          if (y && m) out = out.filter((c) => toYyyyMm(c.paidServiceDate) === `${y}-${m}`);
+        }
+        if (recordAppointedPreset === 'past') {
+          out = out.filter((c) => toKyivDay(c.paidServiceDate) && toKyivDay(c.paidServiceDate) < todayKyiv);
+        } else if (recordAppointedPreset === 'today') {
+          out = out.filter((c) => toKyivDay(c.paidServiceDate) === todayKyiv);
+        } else if (recordAppointedPreset === 'future') {
+          out = out.filter((c) => toKyivDay(c.paidServiceDate) && toKyivDay(c.paidServiceDate) > todayKyiv);
+        }
+        if (recordClient === 'attended') out = out.filter((c) => c.paidServiceAttended === true);
+        else if (recordClient === 'no_show') out = out.filter((c) => c.paidServiceAttended === false && !c.paidServiceCancelled);
+        else if (recordClient === 'cancelled') out = out.filter((c) => !!c.paidServiceCancelled);
+        else if (recordClient === 'pending') {
+          out = out.filter((c) => {
+            if (!c.paidServiceDate) return false;
+            const d = toKyivDay(c.paidServiceDate);
+            if (!d || d < todayKyiv) return false;
+            return c.paidServiceAttended !== true && c.paidServiceAttended !== false && !c.paidServiceCancelled;
+          });
+        } else if (recordClient === 'rebook') out = out.filter((c) => !!(c as any).paidServiceIsRebooking);
+        else if (recordClient === 'unknown') {
+          out = out.filter((c) => {
+            if (!c.paidServiceDate) return false;
+            const d = toKyivDay(c.paidServiceDate);
+            if (!d || d >= todayKyiv) return false;
+            return c.paidServiceAttended !== true && c.paidServiceAttended !== false && !c.paidServiceCancelled;
+          });
+        }
+        if (recordSum === 'lt_10k') out = out.filter((c) => typeof c.paidServiceTotalCost === 'number' && c.paidServiceTotalCost < 10000);
+        else if (recordSum === 'gt_10k') out = out.filter((c) => typeof c.paidServiceTotalCost === 'number' && c.paidServiceTotalCost >= 10000);
+        const handsNum = masterHands ? parseInt(masterHands, 10) : NaN;
+        if (Number.isFinite(handsNum) && (handsNum === 2 || handsNum === 4 || handsNum === 6)) {
+          out = out.filter((c) => (c as any).paidServiceHands === handsNum);
+        }
+        return out;
+      };
+
+      const applyMaster = (arr: typeof base) => {
+        let out = arr;
+        const primaryListLocal = splitPipe(masterPrimary);
+        if (primaryListLocal.length > 0) {
+          const norms = new Set(primaryListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
+          out = out.filter((c) => {
+            const firstService = firstToken(c.serviceMasterName).toLowerCase().trim();
+            if (firstService && norms.has(firstService)) return true;
+            const mid = c.masterId ? directMasterIdToName.get(c.masterId) : null;
+            return !!firstToken(mid || '').toLowerCase().trim() && norms.has(firstToken(mid || '').toLowerCase().trim());
+          });
+        }
+        const secondaryListLocal = splitPipe(masterSecondary);
+        if (secondaryListLocal.length > 0) {
+          const norms = new Set(secondaryListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
+          out = out.filter((c) => {
+            const first = firstToken((c as any).serviceSecondaryMasterName).toLowerCase().trim();
+            return first && norms.has(first);
+          });
+        }
+        return out;
+      };
+
+      const consultationPart = hasConsultationFilters ? applyConsultation(base) : [];
+      const recordPart = hasRecordFilters ? applyRecord(base) : [];
+      const masterPart = hasMasterFilters ? applyMaster(base) : [];
+      const resultIds = new Set<string>();
+      for (const c of consultationPart) resultIds.add(c.id);
+      for (const c of recordPart) resultIds.add(c.id);
+      for (const c of masterPart) resultIds.add(c.id);
+      filtered = base.filter((c) => resultIds.has(c.id));
+    } else {
+      // Жодного фільтра по колонках — застосовуємо AND-логіку нижче
+    }
+
+    if (!hasColumnFilters) {
     if (consultCreatedMode === 'current_month') {
       filtered = filtered.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === currentMonthKyiv);
     } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
@@ -1191,6 +1342,7 @@ export async function GET(req: NextRequest) {
         const first = firstToken((c as any).serviceSecondaryMasterName).toLowerCase().trim();
         return first && norms.has(first);
       });
+    }
     }
 
     // Сортування після обчислення daysSinceLastVisit і messagesTotal
