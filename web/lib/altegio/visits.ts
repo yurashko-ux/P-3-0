@@ -373,10 +373,11 @@ export async function fetchVisitBreakdownFromAPI(
   try {
     const visitData = await getVisitWithRecords(visitId);
     if (!visitData || !visitData.records?.length) {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId);
+      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId, 'visitData:', JSON.stringify(visitData));
       return null;
     }
     const locationId = visitData.locationId ?? companyIdFallback;
+    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'records count:', visitData.records.length);
     const byMasterId = new Map<
       number,
       { masterName: string; sumUAH: number }
@@ -390,9 +391,13 @@ export async function fetchVisitBreakdownFromAPI(
         Number(recordId),
         visitId
       );
-      if (!data || typeof data !== 'object') continue;
+      if (!data || typeof data !== 'object') {
+        console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no data for recordId', recordId, 'visitId', visitId);
+        continue;
+      }
 
       const items = Array.isArray(data.items) ? data.items : [];
+      console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
 
       for (const item of items) {
         const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
@@ -422,6 +427,7 @@ export async function fetchVisitBreakdownFromAPI(
     const result = Array.from(byMasterId.values()).filter(
       (x) => x.sumUAH > 0
     );
+    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'final result:', JSON.stringify(result));
     return result.length > 0 ? result : null;
   } catch (err) {
     console.error('[altegio/visits] fetchVisitBreakdownFromAPI failed:', err);
