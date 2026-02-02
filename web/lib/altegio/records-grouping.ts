@@ -190,6 +190,108 @@ export function countNonAdminStaffInGroup(group: RecordGroup): number {
   return seen.size;
 }
 
+/**
+ * Розбиття сум по майстрах у групі (для колонки «Майстер» з сумами в дужках).
+ * Для кожного non-admin майстра в групі повертає суму його послуг (cost*amount) з events.
+ */
+export function getPerMasterSumsFromGroup(group: RecordGroup): { masterName: string; sumUAH: number }[] {
+  const kyivDay = group.kyivDay;
+  const events = Array.isArray(group.events) ? group.events : [];
+  const relevant = events.filter((e) => {
+    const name = (e.staffName || '').toString().trim();
+    if (!name) return false;
+    if (isUnknownStaffName(name)) return false;
+    if (isAdminStaffName(name)) return false;
+    const dayByDatetime = e.datetime ? kyivDayFromISO(e.datetime) : '';
+    const dayByReceivedAt = e.receivedAt ? kyivDayFromISO(e.receivedAt) : '';
+    if (!dayByDatetime && !dayByReceivedAt) return false;
+    return dayByDatetime === kyivDay || dayByReceivedAt === kyivDay;
+  });
+  const byKey = new Map<string, { masterName: string; sumUAH: number }>();
+  for (const e of relevant) {
+    const staffName = (e.staffName || '').toString().trim();
+    if (!staffName) continue;
+    const staffId = e.staffId ?? null;
+    const key = staffId != null ? `id:${staffId}` : `name:${staffName.toLowerCase()}`;
+    const sumUAH = computeServicesTotalCostUAH(e.services || []);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.sumUAH += sumUAH;
+    } else {
+      byKey.set(key, { masterName: staffName, sumUAH });
+    }
+  }
+  return Array.from(byKey.values()).filter((x) => x.sumUAH > 0);
+}
+
+/** Категорії для "Волосся" (ключові слова в назві/категорії з Altegio). */
+const HAIR_CATEGORY_KEYWORDS = ['накладки', 'накладні хвости', 'треси', 'хвости'];
+
+/**
+ * Класифікує один сервіс/товар: послуга, волосся (Накладки, Накладні хвости, треси) або товар.
+ * Використовує category з Altegio API або ключові слова в назві.
+ */
+export function classifyService(service: any): 'services' | 'hair' | 'goods' {
+  if (!service || typeof service !== 'object') return 'services';
+  const title = ((service.title ?? service.name ?? '').toString() || '').toLowerCase().trim();
+  const categoryTitle = ((service.category?.title ?? service.category?.name ?? '').toString() || '').toLowerCase().trim();
+  const combined = `${title} ${categoryTitle}`;
+  for (const kw of HAIR_CATEGORY_KEYWORDS) {
+    if (combined.includes(kw.toLowerCase())) return 'hair';
+  }
+  // Якщо в API є тип "товар" / "product" — можна перевірити service.type або category
+  const type = (service.type ?? service.category?.type ?? '').toString().toLowerCase();
+  if (type === 'product' || type === 'товар' || type === 'goods') return 'goods';
+  return 'services';
+}
+
+/**
+ * Розбиття сум по майстрах і категоріях (Послуги, Волосся, Товар) для групи.
+ * Для статистики по майстрах.
+ */
+export function getPerMasterCategorySumsFromGroup(
+  group: RecordGroup
+): { masterName: string; servicesSum: number; hairSum: number; goodsSum: number }[] {
+  const kyivDay = group.kyivDay;
+  const events = Array.isArray(group.events) ? group.events : [];
+  const relevant = events.filter((e) => {
+    const name = (e.staffName || '').toString().trim();
+    if (!name) return false;
+    if (isUnknownStaffName(name)) return false;
+    if (isAdminStaffName(name)) return false;
+    const dayByDatetime = e.datetime ? kyivDayFromISO(e.datetime) : '';
+    const dayByReceivedAt = e.receivedAt ? kyivDayFromISO(e.receivedAt) : '';
+    if (!dayByDatetime && !dayByReceivedAt) return false;
+    return dayByDatetime === kyivDay || dayByReceivedAt === kyivDay;
+  });
+  const byKey = new Map<string, { masterName: string; servicesSum: number; hairSum: number; goodsSum: number }>();
+  for (const e of relevant) {
+    const staffName = (e.staffName || '').toString().trim();
+    if (!staffName) continue;
+    const staffId = e.staffId ?? null;
+    const key = staffId != null ? `id:${staffId}` : `name:${staffName.toLowerCase()}`;
+    let row = byKey.get(key);
+    if (!row) {
+      row = { masterName: staffName, servicesSum: 0, hairSum: 0, goodsSum: 0 };
+      byKey.set(key, row);
+    }
+    const services = Array.isArray(e.services) ? e.services : [];
+    for (const s of services) {
+      const costRaw = (s as any)?.cost;
+      const amountRaw = (s as any)?.amount;
+      const cost = typeof costRaw === 'number' ? costRaw : Number(costRaw);
+      const amount = typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);
+      if (!isFinite(cost) || !isFinite(amount)) continue;
+      const sum = Math.round(cost * amount);
+      const kind = classifyService(s);
+      if (kind === 'hair') row.hairSum += sum;
+      else if (kind === 'goods') row.goodsSum += sum;
+      else row.servicesSum += sum;
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 export function pickStaffFromGroup(
   group: RecordGroup,
   opts?: { mode?: 'latest' | 'first'; allowAdmin?: boolean }

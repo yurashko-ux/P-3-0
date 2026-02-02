@@ -17,6 +17,7 @@ import {
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
+  getPerMasterSumsFromGroup,
 } from '@/lib/altegio/records-grouping';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -511,6 +512,13 @@ export async function GET(req: NextRequest) {
               const handsCnt = chosen ? countNonAdminStaffInGroup(chosen as any) : 0;
               const hands = chosen ? (handsCnt <= 1 ? 2 : handsCnt === 2 ? 4 : 6) as 2 | 4 | 6 : undefined;
               c = { ...c, paidServiceHands: hands };
+              // Розбиття сум по майстрах для колонки «Майстер» (у дужках)
+              if (chosen) {
+                const breakdown = getPerMasterSumsFromGroup(chosen as any);
+                if (breakdown.length > 0) {
+                  c = { ...c, paidServiceMastersBreakdown: breakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
+                }
+              }
             }
             
             // ВАЖЛИВО: Фільтруємо адміністраторів з serviceMasterName, навіть якщо вони вже є в БД

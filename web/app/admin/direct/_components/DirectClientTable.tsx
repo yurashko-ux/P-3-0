@@ -23,6 +23,7 @@ import { StateFilterDropdown } from "./StateFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
+import { firstToken } from "./masterFilterUtils";
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -3118,6 +3119,15 @@ export function DirectClientTable({
                           // - Якщо serviceMasterName відсутній — показуємо відповідального (masterId) як fallback,
                           //   щоб тригер masterId мав “місце в UI” для крапочки.
                           const full = (client.serviceMasterName || '').trim();
+                          const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+                          const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate && full;
+                          let masterNamesOrder: string[] = [];
+                          if (full) {
+                            const match = full.match(/^([^(]+)(?:\s*\(([^)]*)\))?$/);
+                            const primary = match ? match[1].trim() : full;
+                            const inParens = match && match[2] ? match[2].split(',').map((s) => s.trim()).filter(Boolean) : [];
+                            masterNamesOrder = [primary, ...inParens];
+                          }
                           const paidMasterName = shortPersonName(full);
                           const responsibleRaw =
                             client.masterId ? (masters.find((m) => m.id === client.masterId)?.name || '') : '';
@@ -3138,15 +3148,25 @@ export function DirectClientTable({
                           const secondary = shortPersonName(secondaryFull);
 
                           const name = showPaidMaster ? paidMasterName : responsibleName;
-                          
-                          // Не показуємо додаткового майстра, якщо він співпадає з основним
-                          // Порівнюємо повні імена (до нормалізації через shortPersonName) для точного визначення
-                          const primaryFull = showPaidMaster ? full : responsibleRaw;
-                          const areSameFullName = primaryFull.toLowerCase().trim() === secondaryFull.toLowerCase().trim();
-                          // Також перевіряємо після нормалізації (якщо повні імена різні, але перше слово однакове)
-                          const areSameAfterNormalization = secondary && secondary.toLowerCase().trim() === name.toLowerCase().trim();
-                          const shouldShowSecondary = secondary && !areSameFullName && !areSameAfterNormalization;
-                          
+                          let displayText: React.ReactNode = name;
+                          if (hasBreakdown && masterNamesOrder.length > 0) {
+                            const parts: string[] = [];
+                            for (const masterFull of masterNamesOrder) {
+                              const first = firstToken(masterFull).toLowerCase();
+                              const entry = breakdown!.find((b) => firstToken(b.masterName).toLowerCase() === first);
+                              const sumStr = entry ? formatUAHThousands(entry.sumUAH) : '';
+                              const short = shortPersonName(masterFull);
+                              parts.push(sumStr ? `${short} (${sumStr})` : short);
+                            }
+                            displayText = parts.join(', ');
+                          } else if (showPaidMaster && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
+                            displayText = (
+                              <>
+                                <span>{name}</span>
+                                <span className="text-[10px] leading-none opacity-70 ml-0.5">({secondary})</span>
+                              </>
+                            );
+                          }
                           let historyTitle = name;
                           try {
                             const raw = client.serviceMasterHistory ? JSON.parse(client.serviceMasterHistory) : null;
@@ -3162,8 +3182,6 @@ export function DirectClientTable({
                             // ignore
                           }
 
-                          // debug logs removed
-
                           return (
                             <span className="flex flex-col items-start leading-none">
                               {showPaidMaster ? (
@@ -3173,8 +3191,8 @@ export function DirectClientTable({
                                   title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
                                   onClick={() => setMasterHistoryClient(client)}
                                 >
-                                  <span className={`inline-flex items-center ${highlightClass}`}>
-                                    <span>{name}</span>
+                                  <span className={`inline-flex items-center flex-wrap gap-x-1 ${highlightClass}`}>
+                                    <span>{displayText}</span>
                                     {showMasterDot ? (
                                       <span
                                         className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
@@ -3196,11 +3214,6 @@ export function DirectClientTable({
                                   </span>
                                 </span>
                               )}
-                              {shouldShowSecondary ? (
-                                <span className="text-[10px] leading-none opacity-70">
-                                  ({secondary})
-                                </span>
-                              ) : null}
                             </span>
                           );
                         })()}

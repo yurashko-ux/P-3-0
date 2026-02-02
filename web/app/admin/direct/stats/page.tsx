@@ -18,6 +18,9 @@ type MastersStatsRow = {
   monthToEndSum?: number;
   nextMonthSum?: number;
   plus2MonthSum?: number;
+  servicesSum?: number;
+  hairSum?: number;
+  goodsSum?: number;
 };
 
 export default function DirectStatsPage() {
@@ -128,7 +131,10 @@ export default function DirectStatsPage() {
       (r.futureSum || 0) > 0 ||
       (r.monthToEndSum || 0) > 0 ||
       (r.nextMonthSum || 0) > 0 ||
-      (r.plus2MonthSum || 0) > 0;
+      (r.plus2MonthSum || 0) > 0 ||
+      (r.servicesSum || 0) > 0 ||
+      (r.hairSum || 0) > 0 ||
+      (r.goodsSum || 0) > 0;
     const filtered = rows.filter((r) => nonZero(r) || r.masterId === 'unassigned');
     // Якщо все нуль — показуємо як є (щоб не було порожньо)
     return filtered.length ? filtered : rows;
@@ -148,6 +154,9 @@ export default function DirectStatsPage() {
         acc.monthToEndSum += r.monthToEndSum || 0;
         acc.nextMonthSum += r.nextMonthSum || 0;
         acc.plus2MonthSum += r.plus2MonthSum || 0;
+        acc.servicesSum += r.servicesSum || 0;
+        acc.hairSum += r.hairSum || 0;
+        acc.goodsSum += r.goodsSum || 0;
         return acc;
       },
       {
@@ -160,6 +169,9 @@ export default function DirectStatsPage() {
         monthToEndSum: 0,
         nextMonthSum: 0,
         plus2MonthSum: 0,
+        servicesSum: 0,
+        hairSum: 0,
+        goodsSum: 0,
       }
     );
   }, [mastersStats.rows]);
@@ -279,6 +291,33 @@ export default function DirectStatsPage() {
                           <span className="text-[11px] opacity-60">{statsTotals.plus2MonthSum > 0 ? formatUAHThousands(statsTotals.plus2MonthSum) : '0 тис.'}</span>
                         </div>
                       </th>
+                      <th
+                        className="text-[12px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.servicesSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Послуги</span>
+                          <span className="text-[11px] opacity-60">{statsTotals.servicesSum > 0 ? formatUAHThousands(statsTotals.servicesSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
+                      <th
+                        className="text-[12px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.hairSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Волосся</span>
+                          <span className="text-[11px] opacity-60">{statsTotals.hairSum > 0 ? formatUAHThousands(statsTotals.hairSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
+                      <th
+                        className="text-[12px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content"
+                        title={formatUAHExact(statsTotals.goodsSum)}
+                      >
+                        <div className="flex flex-col items-end leading-none">
+                          <span>Товар</span>
+                          <span className="text-[11px] opacity-60">{statsTotals.goodsSum > 0 ? formatUAHThousands(statsTotals.goodsSum) : '0 тис.'}</span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -329,6 +368,24 @@ export default function DirectStatsPage() {
                           title={typeof r.plus2MonthSum === 'number' ? formatUAHExact(r.plus2MonthSum) : ''}
                         >
                           {typeof r.plus2MonthSum === 'number' && r.plus2MonthSum > 0 ? formatUAHThousands(r.plus2MonthSum) : '-'}
+                        </td>
+                        <td
+                          className="text-[12px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.servicesSum === 'number' ? formatUAHExact(r.servicesSum) : ''}
+                        >
+                          {typeof r.servicesSum === 'number' && r.servicesSum > 0 ? formatUAHThousands(r.servicesSum) : '-'}
+                        </td>
+                        <td
+                          className="text-[12px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.hairSum === 'number' ? formatUAHExact(r.hairSum) : ''}
+                        >
+                          {typeof r.hairSum === 'number' && r.hairSum > 0 ? formatUAHThousands(r.hairSum) : '-'}
+                        </td>
+                        <td
+                          className="text-[12px] text-right py-0.5 px-1 whitespace-nowrap w-[78px] text-base-content tabular-nums"
+                          title={typeof r.goodsSum === 'number' ? formatUAHExact(r.goodsSum) : ''}
+                        >
+                          {typeof r.goodsSum === 'number' && r.goodsSum > 0 ? formatUAHThousands(r.goodsSum) : '-'}
                         </td>
                       </tr>
                     ))}

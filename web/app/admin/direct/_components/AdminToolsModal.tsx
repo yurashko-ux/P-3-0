@@ -110,7 +110,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 56. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 57. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -256,6 +256,15 @@ export function AdminToolsModal({
           confirm: "Оновити consultationMasterName та serviceMasterName через Visit Details API для існуючих записів?",
           successMessage: (data: any) =>
             `✅ Backfill майстрів завершено!\n\nВсього клієнтів: ${data.results?.totalClients ?? 0}\nЗаписів у логу: ${data.results?.recordsInLog ?? 0}\nКонсультації оновлено: ${data.results?.consultationUpdated ?? 0}\nМайстер послуг оновлено: ${data.results?.serviceUpdated ?? 0}\nПропущено: ${data.results?.consultationSkipped ?? 0} / ${data.results?.serviceSkipped ?? 0}\nПомилок: ${data.results?.errors ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📥",
+          label: "Завантажити нові дані по існуючих майстрах",
+          endpoint: "/api/admin/direct/backfill-masters-display",
+          method: "POST" as const,
+          confirm: "Оновити дані майстрів (Visit Details) для всіх клієнтів з записами?",
+          successMessage: (data: any) =>
+            `✅ Дані майстрів оновлено!\n\nВсього клієнтів: ${data.results?.totalClients ?? 0}\nЗаписів у логу: ${data.results?.recordsInLog ?? 0}\nКонсультації оновлено: ${data.results?.consultationUpdated ?? 0}\nМайстер послуг оновлено: ${data.results?.serviceUpdated ?? 0}\nПропущено: ${data.results?.consultationSkipped ?? 0} / ${data.results?.serviceSkipped ?? 0}\nПомилок: ${data.results?.errors ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },
       ],
     },

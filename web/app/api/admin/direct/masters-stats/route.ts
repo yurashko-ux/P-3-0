@@ -15,6 +15,7 @@ import {
   isAdminStaffName,
   pickNonAdminStaffFromGroup,
   pickStaffFromGroup,
+  getPerMasterCategorySumsFromGroup,
 } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
@@ -278,6 +279,9 @@ export async function GET(req: NextRequest) {
       monthToEndSum: number; // сума майбутніх записів до кінця поточного місяця, грн
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
+      servicesSum: number; // Послуги - сума, грн
+      hairSum: number; // Волосся (Накладки, хвости, треси), грн
+      goodsSum: number; // Товар - сума, грн
     };
 
     const rowsByMasterId = new Map<string, Row>();
@@ -297,6 +301,9 @@ export async function GET(req: NextRequest) {
         monthToEndSum: 0,
         nextMonthSum: 0,
         plus2MonthSum: 0,
+        servicesSum: 0,
+        hairSum: 0,
+        goodsSum: 0,
       };
       rowsByMasterId.set(id, row);
       return row;
@@ -435,6 +442,21 @@ export async function GET(req: NextRequest) {
           }
           if (gMonth === nextMonthKey) row.nextMonthSum += totalCost;
           if (gMonth === plus2MonthKey) row.plus2MonthSum += totalCost;
+        }
+      }
+
+      // Послуги / Волосся / Товар — по майстрах з paid-груп у вибраному місяці (attended)
+      const paidGroupsInMonth = groups.filter(
+        (g: any) => g?.groupType === 'paid' && (g?.kyivDay || '').slice(0, 7) === month && (g?.attendanceStatus === 'arrived' || g?.attendance === 1)
+      );
+      for (const g of paidGroupsInMonth) {
+        const perMaster = getPerMasterCategorySumsFromGroup(g);
+        for (const entry of perMaster) {
+          const mid = mapStaffToMasterId({ staffId: null, staffName: entry.masterName });
+          const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+          row.servicesSum += entry.servicesSum;
+          row.hairSum += entry.hairSum;
+          row.goodsSum += entry.goodsSum;
         }
       }
 
