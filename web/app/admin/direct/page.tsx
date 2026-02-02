@@ -178,6 +178,7 @@ export default function DirectPage() {
     state: [],
     consultation: {
       created: { mode: null },
+      createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
       attendance: null,
@@ -186,6 +187,7 @@ export default function DirectPage() {
     },
     record: {
       created: { mode: null },
+      createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
       client: null,
@@ -483,6 +485,7 @@ export default function DirectPage() {
         params.set("consultCreatedYear", c.created.year);
         params.set("consultCreatedMonth", c.created.month);
       }
+      if (c.createdPreset) params.set("consultCreatedPreset", c.createdPreset);
       if (c.appointed.mode === "current_month") params.set("consultAppointedMode", "current_month");
       else if (c.appointed.mode === "year_month" && c.appointed.year && c.appointed.month) {
         params.set("consultAppointedMode", "year_month");
@@ -500,6 +503,7 @@ export default function DirectPage() {
         params.set("recordCreatedYear", r.created.year);
         params.set("recordCreatedMonth", r.created.month);
       }
+      if (r.createdPreset) params.set("recordCreatedPreset", r.createdPreset);
       if (r.appointed.mode === "current_month") params.set("recordAppointedMode", "current_month");
       else if (r.appointed.mode === "year_month" && r.appointed.year && r.appointed.month) {
         params.set("recordAppointedMode", "year_month");

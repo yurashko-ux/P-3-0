@@ -16,7 +16,15 @@ function toKyivYearMonth(iso: string): string {
     return "";
   }
 }
+function toKyivDay(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-CA", { timeZone: KYIV, year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\//g, "-");
+  } catch {
+    return "";
+  }
+}
 const curMonth = toKyivYearMonth(new Date().toISOString());
+const todayKyiv = toKyivDay(new Date().toISOString());
 
 const YEARS = ["26", "27", "28"];
 const MONTHS = [
@@ -51,6 +59,7 @@ export function ConsultationFilterDropdown({
   const [createdMode, setCreatedMode] = useState<"current_month" | "year_month" | null>(c.created.mode);
   const [createdYear, setCreatedYear] = useState(c.created.year || "");
   const [createdMonth, setCreatedMonth] = useState(c.created.month || "");
+  const [createdPreset, setCreatedPreset] = useState<"past" | "today" | "future" | null>(c.createdPreset);
   const [appointedMode, setAppointedMode] = useState<"current_month" | "year_month" | null>(c.appointed.mode);
   const [appointedYear, setAppointedYear] = useState(c.appointed.year || "");
   const [appointedMonth, setAppointedMonth] = useState(c.appointed.month || "");
@@ -63,6 +72,7 @@ export function ConsultationFilterDropdown({
     setCreatedMode(c.created.mode);
     setCreatedYear(c.created.year || "");
     setCreatedMonth(c.created.month || "");
+    setCreatedPreset(c.createdPreset);
     setAppointedMode(c.appointed.mode);
     setAppointedYear(c.appointed.year || "");
     setAppointedMonth(c.appointed.month || "");
@@ -70,7 +80,7 @@ export function ConsultationFilterDropdown({
     setAttendance(c.attendance);
     setType(c.type);
     setMasterIds(c.masterIds);
-  }, [c.created.mode, c.created.year, c.created.month, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type, c.masterIds]);
+  }, [c.created.mode, c.created.year, c.created.month, c.createdPreset, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type, c.masterIds]);
 
   const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
   const masterOptions = useMemo(
@@ -83,7 +93,11 @@ export function ConsultationFilterDropdown({
   );
 
   const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).consultationRecordCreatedAt) === curMonth).length, [clients]);
+  const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay((x as any).consultationRecordCreatedAt) === todayKyiv).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
+  const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d < todayKyiv; }).length, [clients]);
+  const appointedTodayCount = useMemo(() => clients.filter((x) => toKyivDay(x.consultationBookingDate) === todayKyiv).length, [clients]);
+  const appointedFutureCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d > todayKyiv; }).length, [clients]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -108,7 +122,7 @@ export function ConsultationFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    c.created.mode !== null || c.appointed.mode !== null || c.appointedPreset !== null || c.attendance !== null || c.type !== null || c.masterIds.length > 0;
+    c.created.mode !== null || c.createdPreset !== null || c.appointed.mode !== null || c.appointedPreset !== null || c.attendance !== null || c.type !== null || c.masterIds.length > 0;
 
   const handleApply = () => {
     onFiltersChange({
@@ -116,6 +130,7 @@ export function ConsultationFilterDropdown({
       consultation: {
         created: createdMode === "current_month" ? { mode: "current_month" } : createdMode === "year_month" && createdYear && createdMonth
           ? { mode: "year_month", year: createdYear, month: createdMonth } : { mode: null },
+        createdPreset: createdPreset ?? null,
         appointed: appointedMode === "current_month" ? { mode: "current_month" } : appointedMode === "year_month" && appointedYear && appointedMonth
           ? { mode: "year_month", year: appointedYear, month: appointedMonth } : { mode: null },
         appointedPreset: appointedPreset ?? null,
@@ -131,6 +146,7 @@ export function ConsultationFilterDropdown({
     setCreatedMode(null);
     setCreatedYear("");
     setCreatedMonth("");
+    setCreatedPreset(null);
     setAppointedMode(null);
     setAppointedYear("");
     setAppointedMonth("");
@@ -142,6 +158,7 @@ export function ConsultationFilterDropdown({
       ...filters,
       consultation: {
         created: { mode: null },
+        createdPreset: null,
         appointed: { mode: null },
         appointedPreset: null,
         attendance: null,
@@ -199,6 +216,7 @@ export function ConsultationFilterDropdown({
                     {MONTHS.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select>
                 </div>
+                {opt("created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
               </>
             ))}
             {section("Консультації призначені", (
@@ -214,9 +232,9 @@ export function ConsultationFilterDropdown({
                     {MONTHS.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select>
                 </div>
-                {opt("preset-past", "Минулі", appointedPreset === "past", () => setAppointedPreset(appointedPreset === "past" ? null : "past"))}
-                {opt("preset-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"))}
-                {opt("preset-future", "Майбутні", appointedPreset === "future", () => setAppointedPreset(appointedPreset === "future" ? null : "future"))}
+                {opt("preset-past", "Минулі", appointedPreset === "past", () => setAppointedPreset(appointedPreset === "past" ? null : "past"), appointedPastCount)}
+                {opt("preset-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
+                {opt("preset-future", "Майбутні", appointedPreset === "future", () => setAppointedPreset(appointedPreset === "future" ? null : "future"), appointedFutureCount)}
               </>
             ))}
             {section("Відвідування", (

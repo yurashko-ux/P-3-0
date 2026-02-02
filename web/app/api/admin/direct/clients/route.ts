@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
     const consultAppointedMode = searchParams.get('consultAppointedMode');
     const consultAppointedYear = searchParams.get('consultAppointedYear');
     const consultAppointedMonth = searchParams.get('consultAppointedMonth');
+    const consultCreatedPreset = searchParams.get('consultCreatedPreset');
     const consultAppointedPreset = searchParams.get('consultAppointedPreset');
     const consultAttendance = searchParams.get('consultAttendance');
     const consultType = searchParams.get('consultType');
@@ -74,6 +75,7 @@ export async function GET(req: NextRequest) {
     const recordCreatedMode = searchParams.get('recordCreatedMode');
     const recordCreatedYear = searchParams.get('recordCreatedYear');
     const recordCreatedMonth = searchParams.get('recordCreatedMonth');
+    const recordCreatedPreset = searchParams.get('recordCreatedPreset');
     const recordAppointedMode = searchParams.get('recordAppointedMode');
     const recordAppointedYear = searchParams.get('recordAppointedYear');
     const recordAppointedMonth = searchParams.get('recordAppointedMonth');
@@ -1046,6 +1048,7 @@ export async function GET(req: NextRequest) {
     const hasConsultationFilters =
       consultCreatedMode === 'current_month' ||
       (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) ||
+      consultCreatedPreset != null ||
       consultAppointedMode === 'current_month' ||
       (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) ||
       consultAppointedPreset != null ||
@@ -1055,6 +1058,7 @@ export async function GET(req: NextRequest) {
     const hasRecordFilters =
       recordCreatedMode === 'current_month' ||
       (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) ||
+      recordCreatedPreset != null ||
       recordAppointedMode === 'current_month' ||
       (recordAppointedMode === 'year_month' && recordAppointedYear && recordAppointedMonth) ||
       recordAppointedPreset != null ||
@@ -1075,6 +1079,13 @@ export async function GET(req: NextRequest) {
           const y = parseActYear(consultCreatedYear);
           const m = parseMonth(consultCreatedMonth);
           if (y && m) out = out.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === `${y}-${m}`);
+        }
+        if (consultCreatedPreset === 'past') {
+          out = out.filter((c) => toKyivDay((c as any).consultationRecordCreatedAt) && toKyivDay((c as any).consultationRecordCreatedAt) < todayKyiv);
+        } else if (consultCreatedPreset === 'today') {
+          out = out.filter((c) => toKyivDay((c as any).consultationRecordCreatedAt) === todayKyiv);
+        } else if (consultCreatedPreset === 'future') {
+          out = out.filter((c) => toKyivDay((c as any).consultationRecordCreatedAt) && toKyivDay((c as any).consultationRecordCreatedAt) > todayKyiv);
         }
         if (consultAppointedMode === 'current_month') {
           out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
@@ -1114,6 +1125,13 @@ export async function GET(req: NextRequest) {
           const y = parseActYear(recordCreatedYear);
           const m = parseMonth(recordCreatedMonth);
           if (y && m) out = out.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === `${y}-${m}`);
+        }
+        if (recordCreatedPreset === 'past') {
+          out = out.filter((c) => toKyivDay((c as any).paidServiceRecordCreatedAt) && toKyivDay((c as any).paidServiceRecordCreatedAt) < todayKyiv);
+        } else if (recordCreatedPreset === 'today') {
+          out = out.filter((c) => toKyivDay((c as any).paidServiceRecordCreatedAt) === todayKyiv);
+        } else if (recordCreatedPreset === 'future') {
+          out = out.filter((c) => toKyivDay((c as any).paidServiceRecordCreatedAt) && toKyivDay((c as any).paidServiceRecordCreatedAt) > todayKyiv);
         }
         if (recordAppointedMode === 'current_month') {
           out = out.filter((c) => toYyyyMm(c.paidServiceDate) === currentMonthKyiv);

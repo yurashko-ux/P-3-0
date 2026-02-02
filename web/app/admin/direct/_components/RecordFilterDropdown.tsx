@@ -59,6 +59,7 @@ export function RecordFilterDropdown({
   const [createdMode, setCreatedMode] = useState<"current_month" | "year_month" | null>(r.created.mode);
   const [createdYear, setCreatedYear] = useState(r.created.year || "");
   const [createdMonth, setCreatedMonth] = useState(r.created.month || "");
+  const [createdPreset, setCreatedPreset] = useState<"past" | "today" | "future" | null>(r.createdPreset);
   const [appointedMode, setAppointedMode] = useState<"current_month" | "year_month" | null>(r.appointed.mode);
   const [appointedYear, setAppointedYear] = useState(r.appointed.year || "");
   const [appointedMonth, setAppointedMonth] = useState(r.appointed.month || "");
@@ -70,16 +71,21 @@ export function RecordFilterDropdown({
     setCreatedMode(r.created.mode);
     setCreatedYear(r.created.year || "");
     setCreatedMonth(r.created.month || "");
+    setCreatedPreset(r.createdPreset);
     setAppointedMode(r.appointed.mode);
     setAppointedYear(r.appointed.year || "");
     setAppointedMonth(r.appointed.month || "");
     setAppointedPreset(r.appointedPreset);
     setClientOpt(r.client);
     setSumOpt(r.sum);
-  }, [r.created.mode, r.created.year, r.created.month, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
+  }, [r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
 
   const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).paidServiceRecordCreatedAt) === curMonth).length, [clients]);
+  const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay((x as any).paidServiceRecordCreatedAt) === todayKyiv).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.paidServiceDate) === curMonth).length, [clients]);
+  const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d < todayKyiv; }).length, [clients]);
+  const appointedTodayCount = useMemo(() => clients.filter((x) => toKyivDay(x.paidServiceDate) === todayKyiv).length, [clients]);
+  const appointedFutureCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d > todayKyiv; }).length, [clients]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -104,7 +110,7 @@ export function RecordFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    r.created.mode !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
+    r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
 
   const handleApply = () => {
     onFiltersChange({
@@ -112,6 +118,7 @@ export function RecordFilterDropdown({
       record: {
         created: createdMode === "current_month" ? { mode: "current_month" } : createdMode === "year_month" && createdYear && createdMonth
           ? { mode: "year_month", year: createdYear, month: createdMonth } : { mode: null },
+        createdPreset: createdPreset ?? null,
         appointed: appointedMode === "current_month" ? { mode: "current_month" } : appointedMode === "year_month" && appointedYear && appointedMonth
           ? { mode: "year_month", year: appointedYear, month: appointedMonth } : { mode: null },
         appointedPreset: appointedPreset ?? null,
@@ -126,6 +133,7 @@ export function RecordFilterDropdown({
     setCreatedMode(null);
     setCreatedYear("");
     setCreatedMonth("");
+    setCreatedPreset(null);
     setAppointedMode(null);
     setAppointedYear("");
     setAppointedMonth("");
@@ -136,6 +144,7 @@ export function RecordFilterDropdown({
       ...filters,
       record: {
         created: { mode: null },
+        createdPreset: null,
         appointed: { mode: null },
         appointedPreset: null,
         client: null,
@@ -200,6 +209,7 @@ export function RecordFilterDropdown({
                     {MONTHS.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select>
                 </div>
+                {opt("rec-created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
               </>
             ))}
             {section("Візити призначені", (
@@ -215,9 +225,9 @@ export function RecordFilterDropdown({
                     {MONTHS.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select>
                 </div>
-                {opt("rec-past", "Минулі", appointedPreset === "past", () => setAppointedPreset(appointedPreset === "past" ? null : "past"))}
-                {opt("rec-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"))}
-                {opt("rec-future", "Майбутні", appointedPreset === "future", () => setAppointedPreset(appointedPreset === "future" ? null : "future"))}
+                {opt("rec-past", "Минулі", appointedPreset === "past", () => setAppointedPreset(appointedPreset === "past" ? null : "past"), appointedPastCount)}
+                {opt("rec-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
+                {opt("rec-future", "Майбутні", appointedPreset === "future", () => setAppointedPreset(appointedPreset === "future" ? null : "future"), appointedFutureCount)}
               </>
             ))}
             {section("Клієнт", (

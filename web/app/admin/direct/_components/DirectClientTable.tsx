@@ -663,6 +663,7 @@ export type DirectFilters = {
   state: string[];
   consultation: {
     created: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+    createdPreset: 'past' | 'today' | 'future' | null;
     appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
     appointedPreset: 'past' | 'today' | 'future' | null;
     attendance: 'attended' | 'no_show' | 'cancelled' | null;
@@ -671,6 +672,7 @@ export type DirectFilters = {
   };
   record: {
     created: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
+    createdPreset: 'past' | 'today' | 'future' | null;
     appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
     appointedPreset: 'past' | 'today' | 'future' | null;
     client: 'attended' | 'no_show' | 'cancelled' | 'pending' | 'rebook' | 'unknown' | null;
