@@ -9,6 +9,7 @@ import {
   calculateDueAt,
   type ReminderJob,
 } from '@/lib/altegio/reminders';
+import { getMastersDisplayFromVisitDetails } from '@/lib/altegio/visits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -41,62 +42,6 @@ function isConsultationService(services: any[]): { isConsultation: boolean; isOn
   });
   
   return { isConsultation, isOnline };
-}
-
-/**
- * Форматує рядок майстрів: головний та інші в дужках (лише імена, без ролей).
- * Головний = staff_id з запису (webhook data.staff); інші = з API visit details items.
- */
-function formatMastersDisplay(
-  mainStaffName: string | null,
-  otherNames: string[]
-): string {
-  const main = (mainStaffName || '').toString().trim();
-  const others = otherNames
-    .map((n) => (n || '').toString().trim())
-    .filter((n) => n && n !== main);
-  const uniq = Array.from(new Set(others));
-  if (!main) return uniq.join(', ') || '';
-  if (uniq.length === 0) return main;
-  return `${main} (${uniq.join(', ')})`;
-}
-
-/**
- * Викликає GET /visit/details та повертає рядок "Головний (Інший1, Інший2)" або null при помилці.
- */
-async function getMastersDisplayFromVisitDetails(
-  companyId: number,
-  recordId: number,
-  visitId: number,
-  mainStaffName: string | null
-): Promise<string | null> {
-  try {
-    const { getVisitDetails } = await import('@/lib/altegio/visits');
-    const data = await getVisitDetails(companyId, recordId, visitId);
-    if (!data || typeof data !== 'object') return null;
-    const items = Array.isArray(data.items) ? data.items : [];
-    const otherNames: string[] = [];
-    for (const item of items) {
-      const name =
-        (item as any).master?.title ??
-        (item as any).master?.name ??
-        (item as any).staff?.name ??
-        (item as any).staff?.display_name ??
-        (item as any).staff_title ??
-        null;
-      if (name && typeof name === 'string') {
-        const t = name.trim();
-        if (t && t !== (mainStaffName || '').trim()) otherNames.push(t);
-      }
-    }
-    return formatMastersDisplay(mainStaffName, otherNames);
-  } catch (err) {
-    console.warn(
-      '[altegio/webhook] getVisitDetails failed (using webhook staff only):',
-      err instanceof Error ? err.message : err
-    );
-    return null;
-  }
 }
 
 /**
