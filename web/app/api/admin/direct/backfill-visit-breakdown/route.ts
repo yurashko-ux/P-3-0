@@ -11,7 +11,7 @@ import {
   getMainVisitIdFromGroup,
   kyivDayFromISO,
 } from '@/lib/altegio/records-grouping';
-import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
+import { fetchVisitBreakdownFromAPI, getVisitWithRecords, getVisitDetails } from '@/lib/altegio/visits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -72,6 +72,9 @@ export async function POST(req: NextRequest) {
     let noVisitId = 0;
     let noBreakdown = 0;
     const details: Array<{ instagram: string; reason: string; visitId?: number }> = [];
+    
+    // Детальна діагностика для першого клієнта
+    let debugInfo: any = null;
 
     for (const client of clients) {
       const altegioClientId = client.altegioClientId!;
@@ -101,6 +104,28 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        // Для першого клієнта — детальна діагностика
+        if (!debugInfo) {
+          try {
+            const visitData = await getVisitWithRecords(visitId);
+            let detailsData: any = null;
+            if (visitData && visitData.records?.length > 0) {
+              const firstRecordId = visitData.records[0]?.id;
+              if (firstRecordId) {
+                detailsData = await getVisitDetails(visitData.locationId, firstRecordId, visitId);
+              }
+            }
+            debugInfo = {
+              visitId,
+              companyId,
+              visitData: visitData ? { locationId: visitData.locationId, recordsCount: visitData.records?.length, records: visitData.records?.slice(0, 2) } : null,
+              detailsData: detailsData ? { hasItems: Array.isArray(detailsData.items), itemsCount: detailsData.items?.length, firstItem: detailsData.items?.[0] } : null,
+            };
+          } catch (e) {
+            debugInfo = { error: e instanceof Error ? e.message : String(e), visitId };
+          }
+        }
+
         const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
         if (!breakdown || breakdown.length === 0) {
           noBreakdown++;
@@ -133,6 +158,7 @@ export async function POST(req: NextRequest) {
       noVisitId,
       noBreakdown,
       details,
+      debugInfo,
     });
   } catch (err) {
     console.error('[backfill-visit-breakdown]', err);
