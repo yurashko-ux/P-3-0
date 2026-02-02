@@ -104,22 +104,41 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        // Для першого клієнта — детальна діагностика
+        // Для першого клієнта — детальна діагностика структури API
         if (!debugInfo) {
           try {
-            const visitData = await getVisitWithRecords(visitId);
+            const visitData = await getVisitWithRecords(visitId, companyId);
             let detailsData: any = null;
+            let allItems: any[] = [];
             if (visitData && visitData.records?.length > 0) {
               const firstRecordId = visitData.records[0]?.id;
               if (firstRecordId) {
-                detailsData = await getVisitDetails(visitData.locationId, firstRecordId, visitId);
+                detailsData = await getVisitDetails(visitData.locationId ?? companyId, firstRecordId, visitId);
+                allItems = Array.isArray(detailsData?.items) ? detailsData.items : [];
               }
             }
+            // Показуємо всі items з їх ключами та значеннями для master/staff
+            const itemsDebug = allItems.slice(0, 5).map((item: any, i: number) => ({
+              index: i,
+              keys: Object.keys(item),
+              master_id: item.master_id,
+              staff_id: item.staff_id,
+              specialist_id: item.specialist_id,
+              master: item.master,
+              staff: item.staff,
+              specialist: item.specialist,
+              title: item.title,
+              cost: item.cost,
+              amount: item.amount,
+            }));
             debugInfo = {
               visitId,
               companyId,
-              visitData: visitData ? { locationId: visitData.locationId, recordsCount: visitData.records?.length, records: visitData.records?.slice(0, 2) } : null,
-              detailsData: detailsData ? { hasItems: Array.isArray(detailsData.items), itemsCount: detailsData.items?.length, firstItem: detailsData.items?.[0] } : null,
+              locationId: visitData?.locationId,
+              recordsCount: visitData?.records?.length,
+              itemsCount: allItems.length,
+              itemsDebug,
+              firstRecordStaff: visitData?.records?.[0]?.staff,
             };
           } catch (e) {
             debugInfo = { error: e instanceof Error ? e.message : String(e), visitId };
