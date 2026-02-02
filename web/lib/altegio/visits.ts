@@ -412,32 +412,33 @@ export async function fetchVisitBreakdownFromAPI(
 
     const items = Array.isArray(data.items) ? data.items : [];
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
-    // Логуємо перший item для діагностики структури
-    if (items.length > 0) {
-      console.log('[altegio/visits] fetchVisitBreakdownFromAPI: first item keys:', Object.keys(items[0]));
-      console.log('[altegio/visits] fetchVisitBreakdownFromAPI: first item sample:', JSON.stringify(items[0]).slice(0, 500));
+
+    // Будуємо мапу master_id → name з усіх records візиту
+    // Бо items мають тільки master_id (число), а ім'я майстра є в records[].staff
+    const masterIdToName = new Map<number, string>();
+    for (const rec of visitData.records) {
+      const staffId = rec.staff_id ?? rec.staff?.id;
+      const staffName = rec.staff?.name ?? rec.staff?.display_name;
+      if (staffId != null && staffName) {
+        masterIdToName.set(Number(staffId), String(staffName).trim());
+      }
     }
+    console.log('[altegio/visits] masterIdToName map:', Array.from(masterIdToName.entries()));
 
     for (const item of items) {
-      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id ?? (item as any).specialist_id;
+      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
+      // Спочатку шукаємо ім'я в мапі по master_id, потім fallback на інші поля
       const masterName =
+        (masterId != null ? masterIdToName.get(Number(masterId)) : null) ??
         (item as any).master?.name ??
         (item as any).master?.title ??
         (item as any).staff?.name ??
         (item as any).staff?.display_name ??
-        (item as any).specialist?.name ??
-        (item as any).specialist?.title ??
-        (item as any).title ??
-        firstRecord.staff?.name ??
-        firstRecord.staff?.display_name ??
+        (item as any).item_title ??
         'Майстер';
       
-      // Діагностика: логуємо звідки взялося ім'я
       console.log('[altegio/visits] item masterId:', masterId, 'masterName:', masterName, 
-        'from:', (item as any).master?.name ? 'master.name' : 
-                (item as any).staff?.name ? 'staff.name' : 
-                (item as any).specialist?.name ? 'specialist.name' :
-                (item as any).title ? 'title' : 'fallback');
+        'fromMap:', masterIdToName.has(Number(masterId)));
       const cost = Number((item as any).cost) || 0;
       const amount = Number((item as any).amount) ?? 1;
       const sum = Math.round(cost * amount);
