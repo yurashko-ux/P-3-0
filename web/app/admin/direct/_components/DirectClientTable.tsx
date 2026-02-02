@@ -3153,9 +3153,16 @@ export function DirectClientTable({
                               if (orderPrimary && bFirst === orderPrimary) return 1;
                               return aFirst.localeCompare(bFirst);
                             });
-                            displayText = sorted
-                              .map((b) => `${shortPersonName(b.masterName)} (${formatUAHThousands(b.sumUAH)})`)
-                              .join(', ');
+                            // Майстрів у стовпчик (кожен з нового рядка)
+                            displayText = (
+                              <>
+                                {sorted.map((b) => (
+                                  <span key={`${b.masterName}-${b.sumUAH}`} className="block text-left">
+                                    {shortPersonName(b.masterName)} ({formatUAHThousands(b.sumUAH)})
+                                  </span>
+                                ))}
+                              </>
+                            );
                           } else if (showPaidMaster && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
                             displayText = (
                               <>
@@ -3188,8 +3195,8 @@ export function DirectClientTable({
                                   title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
                                   onClick={() => setMasterHistoryClient(client)}
                                 >
-                                  <span className={`inline-flex items-center flex-wrap gap-x-1 ${highlightClass}`}>
-                                    <span>{displayText}</span>
+                                  <span className={`flex ${hasBreakdown ? 'flex-col items-start gap-0.5' : 'inline-flex items-center flex-wrap gap-x-1'} ${highlightClass}`}>
+                                    {hasBreakdown ? displayText : <span>{displayText}</span>}
                                     {showMasterDot ? (
                                       <span
                                         className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
