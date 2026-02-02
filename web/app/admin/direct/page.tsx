@@ -411,8 +411,9 @@ export default function DirectPage() {
     }
   };
 
-  const loadClients = async (skipMergeDuplicates = false) => {
-    const f = filtersRef.current;
+  /** Завантажує клієнтів. Якщо передано filtersOverride — використовує його (для комбінованих фільтрів одразу після Apply). */
+  const loadClients = async (skipMergeDuplicates = false, filtersOverride?: DirectFilters) => {
+    const f = filtersOverride ?? filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
     // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
@@ -575,10 +576,10 @@ export default function DirectPage() {
         }
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length);
-        if (filteredClients.length === 0 && clients.length > 0) {
-          console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
-          setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
-          return;
+        if (filteredClients.length === 0) {
+          setError('За обраними фільтрами нічого не знайдено.');
+        } else {
+          setError(null);
         }
         console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode });
         setClients(filteredClients);
@@ -2418,11 +2419,10 @@ export default function DirectPage() {
         masters={masters}
         filters={filters}
           onFiltersChange={(newFilters) => {
-          // Забезпечуємо, що clientType завжди присутній
-          setFilters({
-            ...newFilters,
-            clientType: newFilters.clientType || [],
-          });
+          const merged = { ...newFilters, clientType: newFilters.clientType || [] };
+          setFilters(merged);
+          // Одразу завантажуємо з новими фільтрами, щоб комбіновані фільтри (Консультація + Запис тощо) працювали
+          loadClients(true, merged);
         }}
         sortBy={sortBy}
         sortOrder={sortOrder}
