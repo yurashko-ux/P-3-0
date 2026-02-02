@@ -9,7 +9,7 @@ import {
   calculateDueAt,
   type ReminderJob,
 } from '@/lib/altegio/reminders';
-import { getMastersDisplayFromVisitDetails } from '@/lib/altegio/visits';
+import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -1287,6 +1287,39 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error(`[altegio/webhook] ⚠️ Failed to update client state from record event:`, err);
             // Не зупиняємо обробку record події через помилку оновлення стану
+          }
+
+          // Отримуємо breakdown по майстрах з API (GET /visits/{visit_id} + GET /visit/details для кожного record) і зберігаємо в БД
+          try {
+            const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+            const companyId = parseInt(companyIdStr, 10);
+            const altegioClientId = data.client?.id ?? data.client_id;
+            if (
+              visitId != null &&
+              companyId && !Number.isNaN(companyId) &&
+              altegioClientId != null
+            ) {
+              const { getDirectClientByAltegioId, saveDirectClient } = await import('@/lib/direct-store');
+              const directClient = await getDirectClientByAltegioId(Number(altegioClientId));
+              if (directClient) {
+                const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId);
+                if (breakdown && breakdown.length > 0) {
+                  const updated = {
+                    ...directClient,
+                    paidServiceVisitId: Number(visitId),
+                    paidServiceVisitBreakdown: breakdown,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  await saveDirectClient(updated, 'altegio-webhook-visit-breakdown-from-api', {
+                    visitId: Number(visitId),
+                    breakdownLength: breakdown.length,
+                  });
+                  console.log(`[altegio/webhook] ✅ Saved visit breakdown from API for client ${directClient.id} (visit ${visitId}, ${breakdown.length} masters)`);
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('[altegio/webhook] Failed to fetch/save visit breakdown from API:', err);
           }
         }
 

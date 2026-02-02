@@ -34,6 +34,19 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     paidServiceAttended: dbClient.paidServiceAttended ?? null,
     paidServiceCancelled: dbClient.paidServiceCancelled ?? false,
     paidServiceTotalCost: dbClient.paidServiceTotalCost ?? undefined,
+    paidServiceVisitId: dbClient.paidServiceVisitId ?? undefined,
+    paidServiceVisitBreakdown: Array.isArray(dbClient.paidServiceVisitBreakdown)
+      ? (dbClient.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[])
+      : typeof dbClient.paidServiceVisitBreakdown === 'string'
+        ? (() => {
+            try {
+              const parsed = JSON.parse(dbClient.paidServiceVisitBreakdown);
+              return Array.isArray(parsed) ? parsed : undefined;
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined,
     signupAdmin: dbClient.signupAdmin || undefined,
     comment: dbClient.comment || undefined,
     altegioClientId: dbClient.altegioClientId || undefined,
@@ -87,6 +100,10 @@ function directClientToPrisma(client: DirectClient) {
     paidServiceAttended: client.paidServiceAttended ?? null,
     paidServiceCancelled: client.paidServiceCancelled ?? false,
     paidServiceTotalCost: client.paidServiceTotalCost ?? null,
+    paidServiceVisitId: client.paidServiceVisitId ?? null,
+    paidServiceVisitBreakdown: Array.isArray(client.paidServiceVisitBreakdown)
+      ? (client.paidServiceVisitBreakdown as any)
+      : null,
     signupAdmin: client.signupAdmin || null,
     comment: client.comment || null,
     altegioClientId: client.altegioClientId || null,

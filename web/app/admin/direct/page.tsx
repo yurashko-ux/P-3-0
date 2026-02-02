@@ -178,7 +178,6 @@ export default function DirectPage() {
     state: [],
     consultation: {
       created: { mode: null },
-      createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
       attendance: null,
@@ -187,7 +186,6 @@ export default function DirectPage() {
     },
     record: {
       created: { mode: null },
-      createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
       client: null,
@@ -413,9 +411,8 @@ export default function DirectPage() {
     }
   };
 
-  /** Завантажує клієнтів. Якщо передано filtersOverride — використовує його (для комбінованих фільтрів одразу після Apply). */
-  const loadClients = async (skipMergeDuplicates = false, filtersOverride?: DirectFilters) => {
-    const f = filtersOverride ?? filtersRef.current;
+  const loadClients = async (skipMergeDuplicates = false) => {
+    const f = filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
     // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
@@ -485,7 +482,6 @@ export default function DirectPage() {
         params.set("consultCreatedYear", c.created.year);
         params.set("consultCreatedMonth", c.created.month);
       }
-      if (c.createdPreset) params.set("consultCreatedPreset", c.createdPreset);
       if (c.appointed.mode === "current_month") params.set("consultAppointedMode", "current_month");
       else if (c.appointed.mode === "year_month" && c.appointed.year && c.appointed.month) {
         params.set("consultAppointedMode", "year_month");
@@ -503,7 +499,6 @@ export default function DirectPage() {
         params.set("recordCreatedYear", r.created.year);
         params.set("recordCreatedMonth", r.created.month);
       }
-      if (r.createdPreset) params.set("recordCreatedPreset", r.createdPreset);
       if (r.appointed.mode === "current_month") params.set("recordAppointedMode", "current_month");
       else if (r.appointed.mode === "year_month" && r.appointed.year && r.appointed.month) {
         params.set("recordAppointedMode", "year_month");
@@ -580,10 +575,10 @@ export default function DirectPage() {
         }
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length);
-        if (filteredClients.length === 0) {
-          setError('За обраними фільтрами нічого не знайдено.');
-        } else {
-          setError(null);
+        if (filteredClients.length === 0 && clients.length > 0) {
+          console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
+          setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
+          return;
         }
         console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode });
         setClients(filteredClients);
@@ -796,22 +791,22 @@ export default function DirectPage() {
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-gray-100 border-b border-gray-200 shrink-0 shadow-sm">
-        <div className="w-full px-4 py-1 flex flex-col md:flex-row md:items-center md:justify-between gap-1">
+      <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0">
+        <div className="w-full px-4 py-1.5 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div>
           {/* Лівий блок залишається порожнім */}
         </div>
-        <div className="flex gap-1 items-center">
+        <div className="flex gap-2 items-center">
           {/* Кнопки навігації до інших розділів */}
-          <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 h-6 px-1.5 py-0.5 text-[11px] leading-tight">
+          <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
             💰 Фінансовий звіт
           </Link>
-          <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 h-6 px-1.5 py-0.5 text-[11px] leading-tight">
+          <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost">
             📈 Статистика
           </Link>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
           <button
-            className="btn btn-ghost min-h-0 h-6 px-1.5 py-0.5 text-[11px] leading-tight"
+            className="btn btn-sm btn-ghost px-2"
             onClick={() => setIsAdminToolsModalOpen(true)}
             title="Відкрити тести"
           >
@@ -821,7 +816,7 @@ export default function DirectPage() {
           {/* Кнопка "+" з випадаючим меню */}
           <div className="relative add-menu-container" ref={addMenuRef}>
             <button
-              className="btn btn-primary w-4 h-4 min-h-0 aspect-square rounded-md p-0 flex items-center justify-center text-xs"
+              className="btn btn-primary w-5 h-5 aspect-square rounded-lg p-0 flex items-center justify-center text-sm"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
               title="Додати"
             >
@@ -868,18 +863,18 @@ export default function DirectPage() {
       </div>
         {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body */}
         <div
-          className="overflow-x-hidden border-t border-gray-200 min-h-[16px] px-4 box-border"
+          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-[22px] px-4 box-border"
           style={scrollContentWidth != null ? { width: scrollContentWidth + 32 } : undefined}
         >
           <div
             ref={setHeaderRef}
-            className="overflow-x-auto overflow-y-hidden w-full min-h-[16px]"
+            className="overflow-x-auto overflow-y-hidden w-full min-h-[22px]"
             onScroll={onHeaderScroll}
           />
         </div>
     </header>
-      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків; relative z-10 щоб хедер був над таблицею */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[74px] pb-24 px-4 relative z-10">
+      {/* Контент під фіксованим хедером — pt під навбар+рядок заголовків (68px ≈ висота хедера) */}
+      <div className="flex-1 min-h-0 flex flex-col pt-[68px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
@@ -2406,10 +2401,10 @@ export default function DirectPage() {
         </div>
       </div>
 
-      {/* Таблиця — overflow-auto; ref + onScroll для синхрону горизонтального скролу з хедером; relative z-0 щоб лишатись під хедером */}
+      {/* Таблиця — overflow-auto; ref + onScroll для синхрону горизонтального скролу з хедером */}
       <div
         ref={tableScrollRef}
-        className="flex-1 min-h-0 min-w-0 overflow-auto relative z-0"
+        className="flex-1 min-h-0 min-w-0 overflow-auto"
         onScroll={onBodyScroll}
       >
       <DirectClientTable
@@ -2423,10 +2418,11 @@ export default function DirectPage() {
         masters={masters}
         filters={filters}
           onFiltersChange={(newFilters) => {
-          const merged = { ...newFilters, clientType: newFilters.clientType || [] };
-          setFilters(merged);
-          // Одразу завантажуємо з новими фільтрами, щоб комбіновані фільтри (Консультація + Запис тощо) працювали
-          loadClients(true, merged);
+          // Забезпечуємо, що clientType завжди присутній
+          setFilters({
+            ...newFilters,
+            clientType: newFilters.clientType || [],
+          });
         }}
         sortBy={sortBy}
         sortOrder={sortOrder}
