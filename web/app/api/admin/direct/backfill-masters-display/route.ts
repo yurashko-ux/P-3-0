@@ -99,8 +99,8 @@ export async function POST(req: NextRequest) {
       return clientId != null && datetime != null && recordId != null && visitId != null;
     }) as Array<{
       clientId?: number;
-      data?: { clientId?: number; client?: { id: number }; datetime?: string; services?: any[]; staff?: { name?: string; display_name?: string }; company_id?: number };
-      body?: { resource_id?: number; data?: { visit_id?: number; datetime?: string; services?: any[]; staff?: { name?: string; display_name?: string }; company_id?: number } };
+      data?: { clientId?: number; client?: { id?: number }; datetime?: string; services?: any[]; staff?: { name?: string; display_name?: string }; company_id?: number };
+      body?: { resource_id?: number; data?: { visit_id?: number; datetime?: string; services?: any[]; staff?: { name?: string; display_name?: string }; company_id?: number; client?: { id?: number } } };
       recordId?: number;
       visitId?: number;
       datetime?: string;
