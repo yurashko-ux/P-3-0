@@ -199,6 +199,7 @@ export function RecordFilterDropdown({
             {section("Візити створені", (
               <>
                 {opt("rec-created-cur", "Поточний місяць", createdMode === "current_month", () => setCreatedMode(createdMode === "current_month" ? null : "current_month"), createdCurCount)}
+                {opt("rec-created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
                 <div className="flex gap-1 px-2 py-1">
                   <select value={createdYear} onChange={(e) => { setCreatedYear(e.target.value); setCreatedMode("year_month"); }} className="flex-1 px-1.5 py-1 rounded border border-gray-300 text-xs">
                     <option value="">Рік</option>
@@ -209,12 +210,12 @@ export function RecordFilterDropdown({
                     {MONTHS.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select>
                 </div>
-                {opt("rec-created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
               </>
             ))}
             {section("Візити призначені", (
               <>
                 {opt("rec-appointed-cur", "Поточний місяць", appointedMode === "current_month", () => setAppointedMode(appointedMode === "current_month" ? null : "current_month"), appointedCurCount)}
+                {opt("rec-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
                 <div className="flex gap-1 px-2 py-1">
                   <select value={appointedYear} onChange={(e) => { setAppointedYear(e.target.value); setAppointedMode("year_month"); }} className="flex-1 px-1.5 py-1 rounded border border-gray-300 text-xs">
                     <option value="">Рік</option>
@@ -226,7 +227,6 @@ export function RecordFilterDropdown({
                   </select>
                 </div>
                 {opt("rec-past", "Минулі", appointedPreset === "past", () => setAppointedPreset(appointedPreset === "past" ? null : "past"), appointedPastCount)}
-                {opt("rec-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
                 {opt("rec-future", "Майбутні", appointedPreset === "future", () => setAppointedPreset(appointedPreset === "future" ? null : "future"), appointedFutureCount)}
               </>
             ))}

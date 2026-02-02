@@ -206,6 +206,7 @@ export function ConsultationFilterDropdown({
             {section("Консультації створені", (
               <>
                 {opt("created-cur", "Поточний місяць", createdMode === "current_month", () => setCreatedMode(createdMode === "current_month" ? null : "current_month"), createdCurCount)}
+                {opt("created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
                 <div className="flex gap-1 px-2 py-1" key="created-ym">
                   <select value={createdYear} onChange={(e) => { setCreatedYear(e.target.value); setCreatedMode("year_month"); }} className="flex-1 px-1.5 py-1 rounded border border-gray-300 text-xs">
                     <option value="">Рік</option>
@@ -216,12 +217,12 @@ export function ConsultationFilterDropdown({
                     {MONTHS.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                   </select>
                 </div>
-                {opt("created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
               </>
             ))}
             {section("Консультації призначені", (
               <>
                 {opt("appointed-cur", "Поточний місяць", appointedMode === "current_month", () => setAppointedMode(appointedMode === "current_month" ? null : "current_month"), appointedCurCount)}
+                {opt("preset-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
                 <div className="flex gap-1 px-2 py-1" key="appointed-ym">
                   <select value={appointedYear} onChange={(e) => { setAppointedYear(e.target.value); setAppointedMode("year_month"); }} className="flex-1 px-1.5 py-1 rounded border border-gray-300 text-xs">
                     <option value="">Рік</option>
@@ -233,7 +234,6 @@ export function ConsultationFilterDropdown({
                   </select>
                 </div>
                 {opt("preset-past", "Минулі", appointedPreset === "past", () => setAppointedPreset(appointedPreset === "past" ? null : "past"), appointedPastCount)}
-                {opt("preset-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
                 {opt("preset-future", "Майбутні", appointedPreset === "future", () => setAppointedPreset(appointedPreset === "future" ? null : "future"), appointedFutureCount)}
               </>
             ))}
