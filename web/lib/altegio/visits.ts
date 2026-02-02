@@ -333,8 +333,8 @@ export function formatMastersDisplay(
  * Крок 1: GET /visits/{visit_id} — отримуємо location_id та список record_id (записів) у візиті.
  * В одному візиті може бути кілька записів (різні майстри).
  */
-export async function getVisitWithRecords(visitId: number): Promise<{
-  locationId: number;
+export async function getVisitWithRecords(visitId: number, companyIdFallback?: number): Promise<{
+  locationId: number | null;
   records: Array<{ id: number; staff_id?: number; staff?: { name?: string; display_name?: string }; services?: any[]; goods_transactions?: any[] }>;
   [key: string]: any;
 } | null> {
@@ -342,17 +342,24 @@ export async function getVisitWithRecords(visitId: number): Promise<{
     const url = `/visits/${visitId}`;
     const response = await altegioFetch<any>(url);
     const data = response?.data ?? response;
-    if (!data || typeof data !== 'object') return null;
-    const records = Array.isArray(data.records) ? data.records : [];
-    const locationId =
-      data.location_id ?? data.company_id ?? data.locationId ?? null;
-    const numLocationId =
-      typeof locationId === 'number' ? locationId : Number(locationId);
-    if (!numLocationId || Number.isNaN(numLocationId)) {
-      console.warn('[altegio/visits] getVisitWithRecords: no location_id in response');
+    if (!data || typeof data !== 'object') {
+      console.warn('[altegio/visits] getVisitWithRecords: no data in response for visit', visitId);
       return null;
     }
-    return { locationId: numLocationId, records, ...data };
+    const records = Array.isArray(data.records) ? data.records : [];
+    const locationId =
+      data.location_id ?? data.company_id ?? data.locationId ?? companyIdFallback ?? null;
+    const numLocationId =
+      typeof locationId === 'number' ? locationId : Number(locationId);
+    
+    // Дозволяємо продовжити навіть без locationId, якщо є records
+    if ((!numLocationId || Number.isNaN(numLocationId)) && records.length === 0) {
+      console.warn('[altegio/visits] getVisitWithRecords: no location_id and no records for visit', visitId);
+      return null;
+    }
+    
+    console.log('[altegio/visits] getVisitWithRecords: visitId', visitId, 'locationId', numLocationId || 'fallback', 'records', records.length);
+    return { locationId: numLocationId || null, records, ...data };
   } catch (err) {
     console.error('[altegio/visits] getVisitWithRecords failed:', err);
     return null;
@@ -371,13 +378,13 @@ export async function fetchVisitBreakdownFromAPI(
   companyIdFallback: number
 ): Promise<VisitBreakdownItem[] | null> {
   try {
-    const visitData = await getVisitWithRecords(visitId);
+    const visitData = await getVisitWithRecords(visitId, companyIdFallback);
     if (!visitData || !visitData.records?.length) {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId, 'visitData:', JSON.stringify(visitData));
+      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId, 'visitData:', visitData ? { locationId: visitData.locationId, recordsCount: visitData.records?.length } : null);
       return null;
     }
     const locationId = visitData.locationId ?? companyIdFallback;
-    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'records count:', visitData.records.length);
+    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'locationId', locationId, 'records count:', visitData.records.length);
     const byMasterId = new Map<
       number,
       { masterName: string; sumUAH: number }
