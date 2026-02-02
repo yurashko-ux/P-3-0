@@ -390,44 +390,49 @@ export async function fetchVisitBreakdownFromAPI(
       { masterName: string; sumUAH: number }
     >();
 
-    for (const record of visitData.records) {
-      const recordId = record.id ?? (record as any).record_id;
-      if (recordId == null) continue;
-      const data = await getVisitDetails(
-        locationId,
-        Number(recordId),
-        visitId
-      );
-      if (!data || typeof data !== 'object') {
-        console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no data for recordId', recordId, 'visitId', visitId);
-        continue;
-      }
+    // ВАЖЛИВО: API /visit/details повертає ВСІ items для візиту, незалежно від recordId
+    // Тому викликаємо тільки один раз для першого record, щоб уникнути дублікатів
+    const firstRecord = visitData.records[0];
+    const recordId = firstRecord?.id ?? (firstRecord as any)?.record_id;
+    if (recordId == null) {
+      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no recordId in first record for visit', visitId);
+      return null;
+    }
 
-      const items = Array.isArray(data.items) ? data.items : [];
-      console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
+    const data = await getVisitDetails(
+      locationId,
+      Number(recordId),
+      visitId
+    );
+    if (!data || typeof data !== 'object') {
+      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no data for recordId', recordId, 'visitId', visitId);
+      return null;
+    }
 
-      for (const item of items) {
-        const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
-        const masterName =
-          (item as any).master?.name ??
-          (item as any).master?.title ??
-          (item as any).staff?.name ??
-          (item as any).staff?.display_name ??
-          record.staff?.name ??
-          record.staff?.display_name ??
-          'Майстер';
-        const cost = Number((item as any).cost) || 0;
-        const amount = Number((item as any).amount) ?? 1;
-        const sum = Math.round(cost * amount);
-        const key = masterId != null ? Number(masterId) : 0;
-        const existing = byMasterId.get(key);
-        const name = String(masterName || 'Майстер').trim();
-        if (existing) {
-          existing.sumUAH += sum;
-          if (name && name !== 'Майстер') existing.masterName = name;
-        } else {
-          byMasterId.set(key, { masterName: name || 'Майстер', sumUAH: sum });
-        }
+    const items = Array.isArray(data.items) ? data.items : [];
+    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
+
+    for (const item of items) {
+      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
+      const masterName =
+        (item as any).master?.name ??
+        (item as any).master?.title ??
+        (item as any).staff?.name ??
+        (item as any).staff?.display_name ??
+        firstRecord.staff?.name ??
+        firstRecord.staff?.display_name ??
+        'Майстер';
+      const cost = Number((item as any).cost) || 0;
+      const amount = Number((item as any).amount) ?? 1;
+      const sum = Math.round(cost * amount);
+      const key = masterId != null ? Number(masterId) : 0;
+      const existing = byMasterId.get(key);
+      const name = String(masterName || 'Майстер').trim();
+      if (existing) {
+        existing.sumUAH += sum;
+        if (name && name !== 'Майстер') existing.masterName = name;
+      } else {
+        byMasterId.set(key, { masterName: name || 'Майстер', sumUAH: sum });
       }
     }
 
