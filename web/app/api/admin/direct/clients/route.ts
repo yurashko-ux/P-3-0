@@ -989,6 +989,11 @@ export async function GET(req: NextRequest) {
       (s || '').split('|').map((x) => x.trim()).filter(Boolean);
     const splitComma = (s: string | null): string[] =>
       (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+    /** Перший токен (ім'я) для фільтра майстрів — об'єднання "Ім'я" та "Ім'я Прізвище". */
+    const firstToken = (name: string | null | undefined): string => {
+      const t = (name || '').toString().trim();
+      return (t.split(/\s+/)[0] || '').trim();
+    };
 
     let filtered = [...clientsWithDaysSinceLastVisit];
 
@@ -1089,10 +1094,10 @@ export async function GET(req: NextRequest) {
 
     const consultMasterList = splitPipe(consultMasters);
     if (consultMasterList.length > 0) {
-      const norms = new Set(consultMasterList.map((x) => x.toLowerCase().trim()));
+      const norms = new Set(consultMasterList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
       filtered = filtered.filter((c) => {
-        const n = (c.consultationMasterName || '').toString().trim().toLowerCase();
-        return n && norms.has(n);
+        const first = firstToken(c.consultationMasterName).toLowerCase().trim();
+        return first && norms.has(first);
       });
     }
 
@@ -1169,22 +1174,22 @@ export async function GET(req: NextRequest) {
 
     const primaryList = splitPipe(masterPrimary);
     if (primaryList.length > 0) {
-      const norms = new Set(primaryList.map((x) => x.toLowerCase().trim()));
+      const norms = new Set(primaryList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
       filtered = filtered.filter((c) => {
-        const name = (c.serviceMasterName || '').toString().trim().toLowerCase();
-        if (name && norms.has(name)) return true;
+        const firstService = firstToken(c.serviceMasterName).toLowerCase().trim();
+        if (firstService && norms.has(firstService)) return true;
         const mid = c.masterId ? directMasterIdToName.get(c.masterId) : null;
-        const resp = (mid || '').toString().trim().toLowerCase();
-        return !!resp && norms.has(resp);
+        const firstResp = firstToken(mid || '').toLowerCase().trim();
+        return !!firstResp && norms.has(firstResp);
       });
     }
 
     const secondaryList = splitPipe(masterSecondary);
     if (secondaryList.length > 0) {
-      const norms = new Set(secondaryList.map((x) => x.toLowerCase().trim()));
+      const norms = new Set(secondaryList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
       filtered = filtered.filter((c) => {
-        const n = ((c as any).serviceSecondaryMasterName || '').toString().trim().toLowerCase();
-        return n && norms.has(n);
+        const first = firstToken((c as any).serviceSecondaryMasterName).toLowerCase().trim();
+        return first && norms.has(first);
       });
     }
 

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
+import { getAllowedFirstNames, groupByFirstTokenAndFilter } from "./masterFilterUtils";
 
 const KYIV = "Europe/Kyiv";
 function toKyivYearMonth(iso: string): string {
@@ -26,6 +27,7 @@ const MONTHS = [
 
 interface ConsultationFilterDropdownProps {
   clients: DirectClient[];
+  masters?: { id: string; name: string }[];
   totalClientsCount?: number;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
@@ -34,6 +36,7 @@ interface ConsultationFilterDropdownProps {
 
 export function ConsultationFilterDropdown({
   clients,
+  masters = [],
   totalClientsCount,
   filters,
   onFiltersChange,
@@ -69,15 +72,15 @@ export function ConsultationFilterDropdown({
     setMasterIds(c.masterIds);
   }, [c.created.mode, c.created.year, c.created.month, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type, c.masterIds]);
 
-  const masters = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const x of clients) {
-      const n = (x.consultationMasterName || "").toString().trim();
-      if (!n) continue;
-      m.set(n, (m.get(n) ?? 0) + 1);
-    }
-    return Array.from(m.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [clients]);
+  const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
+  const masterOptions = useMemo(
+    () =>
+      groupByFirstTokenAndFilter(
+        clients.map((x) => (x.consultationMasterName || "").toString().trim()),
+        allowedFirstNames
+      ),
+    [clients, allowedFirstNames]
+  );
 
   const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).consultationRecordCreatedAt) === curMonth).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
@@ -229,7 +232,7 @@ export function ConsultationFilterDropdown({
                 {opt("type-online", "Он-лайн консультація", type === "online", () => setType(type === "online" ? null : "online"))}
               </>
             ))}
-            {masters.length > 0 && section("Майстри", masters.map(({ name, count }) => opt(`master-${name}`, name, masterIds.includes(name), () => toggleMaster(name), count)))}
+            {masterOptions.length > 0 && section("Майстри", masterOptions.map(({ name, count }) => opt(`master-${name}`, name, masterIds.includes(name), () => toggleMaster(name), count)))}
             <div className="flex gap-2 mt-2">
               <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
               {hasActive && (

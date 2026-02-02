@@ -1475,6 +1475,7 @@ export function DirectClientTable({
                       </button>
                       <ConsultationFilterDropdown
                         clients={clients}
+                        masters={masters}
                         totalClientsCount={totalClientsCount}
                         filters={filters}
                         onFiltersChange={onFiltersChange}

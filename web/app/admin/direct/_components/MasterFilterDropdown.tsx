@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
+import { getAllowedFirstNames, groupByFirstTokenAndFilter } from "./masterFilterUtils";
 
 interface MasterFilterDropdownProps {
   clients: DirectClient[];
@@ -33,29 +34,33 @@ export function MasterFilterDropdown({
   const [primaryIds, setPrimaryIds] = useState<string[]>(m.primaryMasterIds);
   const [secondaryIds, setSecondaryIds] = useState<string[]>(m.secondaryMasterIds);
 
-  const primaryNames = useMemo(() => {
-    const map = new Map<string, number>();
+  const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
+  const primaryRawNames = useMemo(() => {
+    const out: string[] = [];
     for (const c of clients) {
       const n = (c.serviceMasterName || "").toString().trim();
-      if (n) map.set(n, (map.get(n) ?? 0) + 1);
+      if (n) out.push(n);
       const mid = c.masterId;
       if (mid) {
         const mn = masters.find((x) => x.id === mid)?.name?.trim();
-        if (mn) map.set(mn, (map.get(mn) ?? 0) + 1);
+        if (mn) out.push(mn);
       }
     }
-    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
+    return out;
   }, [clients, masters]);
+  const primaryNames = useMemo(
+    () => groupByFirstTokenAndFilter(primaryRawNames, allowedFirstNames),
+    [primaryRawNames, allowedFirstNames]
+  );
 
-  const secondaryNames = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of clients) {
-      const n = ((c as any).serviceSecondaryMasterName || "").toString().trim();
-      if (!n) continue;
-      map.set(n, (map.get(n) ?? 0) + 1);
-    }
-    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [clients]);
+  const secondaryRawNames = useMemo(
+    () => clients.map((c) => ((c as any).serviceSecondaryMasterName || "").toString().trim()),
+    [clients]
+  );
+  const secondaryNames = useMemo(
+    () => groupByFirstTokenAndFilter(secondaryRawNames, allowedFirstNames),
+    [secondaryRawNames, allowedFirstNames]
+  );
 
   const handsCounts = useMemo(() => {
     const h: Record<"2" | "4" | "6", number> = { "2": 0, "4": 0, "6": 0 };
