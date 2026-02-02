@@ -386,9 +386,10 @@ export async function fetchVisitBreakdownFromAPI(
     const locationId = visitData.locationId ?? companyIdFallback;
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'locationId', locationId, 'records count:', visitData.records.length);
     
-    // Агрегація по нормалізованому імені майстра (не по masterId),
-    // бо API може повертати різні masterId для того самого майстра
-    const byMasterName = new Map<string, { masterName: string; sumUAH: number }>();
+    // Агрегація по master_id (якщо є) або по імені (якщо master_id відсутній)
+    // Це дозволяє розрізняти різних людей з однаковим іменем, але об'єднувати
+    // записи одного майстра з різними послугами
+    const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
 
     // ВАЖЛИВО: API /visit/details повертає ВСІ items для візиту, незалежно від recordId
     // Тому викликаємо тільки один раз для першого record, щоб уникнути дублікатів
@@ -413,6 +414,7 @@ export async function fetchVisitBreakdownFromAPI(
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
 
     for (const item of items) {
+      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
       const masterName =
         (item as any).master?.name ??
         (item as any).master?.title ??
@@ -425,21 +427,25 @@ export async function fetchVisitBreakdownFromAPI(
       const amount = Number((item as any).amount) ?? 1;
       const sum = Math.round(cost * amount);
       const name = String(masterName || 'Майстер').trim();
-      // Ключ — нормалізоване ім'я (lowercase, trim) для коректної агрегації
-      const key = name.toLowerCase();
-      const existing = byMasterName.get(key);
+      
+      // Ключ: якщо є master_id — використовуємо його (різні люди з однаковим іменем = різні записи)
+      // Якщо master_id = null/0 — fallback на ім'я (щоб не втрачати дані)
+      const key = masterId != null && masterId !== 0
+        ? `id:${masterId}`
+        : `name:${name.toLowerCase()}`;
+      
+      const existing = byMasterKey.get(key);
       if (existing) {
         existing.sumUAH += sum;
-        // Зберігаємо оригінальне ім'я (з великої літери), якщо поточне краще
         if (name && name !== 'Майстер' && existing.masterName === 'Майстер') {
           existing.masterName = name;
         }
       } else {
-        byMasterName.set(key, { masterName: name || 'Майстер', sumUAH: sum });
+        byMasterKey.set(key, { masterName: name || 'Майстер', sumUAH: sum });
       }
     }
 
-    const result = Array.from(byMasterName.values()).filter(
+    const result = Array.from(byMasterKey.values()).filter(
       (x) => x.sumUAH > 0
     );
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'final result:', JSON.stringify(result));
