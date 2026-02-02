@@ -266,6 +266,15 @@ export function AdminToolsModal({
           successMessage: (data: any) =>
             `✅ Дані майстрів оновлено!\n\nВсього клієнтів: ${data.results?.totalClients ?? 0}\nЗаписів у логу: ${data.results?.recordsInLog ?? 0}\nКонсультації оновлено: ${data.results?.consultationUpdated ?? 0}\nМайстер послуг оновлено: ${data.results?.serviceUpdated ?? 0}\nПропущено: ${data.results?.consultationSkipped ?? 0} / ${data.results?.serviceSkipped ?? 0}\nПомилок: ${data.results?.errors ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },
+        {
+          icon: "💰",
+          label: "Оновити суми по майстрах з API (breakdown візиту)",
+          endpoint: "/api/admin/direct/backfill-visit-breakdown",
+          method: "POST" as const,
+          confirm: "Отримати breakdown по майстрах (суми з API GET /visits + visit/details) для клієнтів з paidServiceDate і зберегти в БД? Після цього колонка «Майстер» покаже правильні суми.",
+          successMessage: (data: any) =>
+            `✅ Backfill breakdown завершено!\n\nВсього клієнтів з paidServiceDate: ${data.total ?? 0}\nОновлено: ${data.updated ?? 0}\nПомилок: ${data.errors ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
+        },
       ],
     },
     {
