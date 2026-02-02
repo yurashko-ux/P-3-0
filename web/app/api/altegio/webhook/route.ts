@@ -1022,6 +1022,19 @@ export async function POST(req: NextRequest) {
             const services = data.services;
             const staffId = data.staff?.id || data.staff_id;
             const staffName = data.staff?.name || data.staff?.display_name || null;
+
+            // Виклик API Visit Details для рядка майстрів (головний + інші в дужках) у цьому блоці
+            let mastersDisplayString: string | null = null;
+            const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+            const companyId = parseInt(companyIdStr, 10);
+            if (companyId && !Number.isNaN(companyId) && recordId != null && visitId != null) {
+              mastersDisplayString = await getMastersDisplayFromVisitDetails(
+                companyId,
+                Number(recordId),
+                Number(visitId),
+                staffName
+              );
+            }
             // attendance / visit_attendance:
             //  0   – подія ще не настала (запис існує, але не відбулася)
             //  1   – клієнт прийшов (фактична послуга)
