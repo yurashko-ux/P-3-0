@@ -385,10 +385,10 @@ export async function fetchVisitBreakdownFromAPI(
     }
     const locationId = visitData.locationId ?? companyIdFallback;
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'locationId', locationId, 'records count:', visitData.records.length);
-    const byMasterId = new Map<
-      number,
-      { masterName: string; sumUAH: number }
-    >();
+    
+    // Агрегація по нормалізованому імені майстра (не по masterId),
+    // бо API може повертати різні masterId для того самого майстра
+    const byMasterName = new Map<string, { masterName: string; sumUAH: number }>();
 
     // ВАЖЛИВО: API /visit/details повертає ВСІ items для візиту, незалежно від recordId
     // Тому викликаємо тільки один раз для першого record, щоб уникнути дублікатів
@@ -413,7 +413,6 @@ export async function fetchVisitBreakdownFromAPI(
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
 
     for (const item of items) {
-      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
       const masterName =
         (item as any).master?.name ??
         (item as any).master?.title ??
@@ -425,18 +424,22 @@ export async function fetchVisitBreakdownFromAPI(
       const cost = Number((item as any).cost) || 0;
       const amount = Number((item as any).amount) ?? 1;
       const sum = Math.round(cost * amount);
-      const key = masterId != null ? Number(masterId) : 0;
-      const existing = byMasterId.get(key);
       const name = String(masterName || 'Майстер').trim();
+      // Ключ — нормалізоване ім'я (lowercase, trim) для коректної агрегації
+      const key = name.toLowerCase();
+      const existing = byMasterName.get(key);
       if (existing) {
         existing.sumUAH += sum;
-        if (name && name !== 'Майстер') existing.masterName = name;
+        // Зберігаємо оригінальне ім'я (з великої літери), якщо поточне краще
+        if (name && name !== 'Майстер' && existing.masterName === 'Майстер') {
+          existing.masterName = name;
+        }
       } else {
-        byMasterId.set(key, { masterName: name || 'Майстер', sumUAH: sum });
+        byMasterName.set(key, { masterName: name || 'Майстер', sumUAH: sum });
       }
     }
 
-    const result = Array.from(byMasterId.values()).filter(
+    const result = Array.from(byMasterName.values()).filter(
       (x) => x.sumUAH > 0
     );
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'final result:', JSON.stringify(result));
