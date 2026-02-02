@@ -68,26 +68,45 @@ export async function POST(req: NextRequest) {
 
     let updated = 0;
     let errors = 0;
+    let noGroup = 0;
+    let noVisitId = 0;
+    let noBreakdown = 0;
+    const details: Array<{ instagram: string; reason: string; visitId?: number }> = [];
 
     for (const client of clients) {
       const altegioClientId = client.altegioClientId!;
       const paidServiceDate = client.paidServiceDate!;
       const paidKyivDay = kyivDayFromISO(paidServiceDate.toISOString?.() ?? String(paidServiceDate));
-      if (!paidKyivDay) continue;
+      if (!paidKyivDay) {
+        details.push({ instagram: client.instagramUsername, reason: 'no kyivDay from paidServiceDate' });
+        continue;
+      }
 
       const groups = groupsByClient.get(altegioClientId) || [];
       const paidGroup = groups.find(
         (g: { groupType?: string; kyivDay?: string }) =>
           g?.groupType === 'paid' && (g?.kyivDay || '') === paidKyivDay
       );
-      if (!paidGroup) continue;
+      if (!paidGroup) {
+        noGroup++;
+        if (details.length < 10) details.push({ instagram: client.instagramUsername, reason: 'no paid group for kyivDay', visitId: undefined });
+        continue;
+      }
 
       const visitId = getMainVisitIdFromGroup(paidGroup as any);
-      if (visitId == null) continue;
+      if (visitId == null) {
+        noVisitId++;
+        if (details.length < 10) details.push({ instagram: client.instagramUsername, reason: 'no visitId in group', visitId: undefined });
+        continue;
+      }
 
       try {
         const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
-        if (!breakdown || breakdown.length === 0) continue;
+        if (!breakdown || breakdown.length === 0) {
+          noBreakdown++;
+          if (details.length < 10) details.push({ instagram: client.instagramUsername, reason: 'API returned empty breakdown', visitId });
+          continue;
+        }
 
         await prisma.directClient.update({
           where: { id: client.id },
@@ -97,8 +116,10 @@ export async function POST(req: NextRequest) {
           },
         });
         updated++;
+        if (details.length < 10) details.push({ instagram: client.instagramUsername, reason: 'updated', visitId });
       } catch (err) {
         errors++;
+        if (details.length < 10) details.push({ instagram: client.instagramUsername, reason: `error: ${err instanceof Error ? err.message : String(err)}`, visitId });
         console.warn('[backfill-visit-breakdown] client', client.id, client.instagramUsername, err);
       }
     }
@@ -108,6 +129,10 @@ export async function POST(req: NextRequest) {
       total: clients.length,
       updated,
       errors,
+      noGroup,
+      noVisitId,
+      noBreakdown,
+      details,
     });
   } catch (err) {
     console.error('[backfill-visit-breakdown]', err);
