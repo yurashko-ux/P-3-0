@@ -3120,15 +3120,10 @@ export function DirectClientTable({
                           //   щоб тригер masterId мав “місце в UI” для крапочки.
                           const full = (client.serviceMasterName || '').trim();
                           const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-                          const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate && full;
-                          let masterNamesOrder: string[] = [];
-                          if (full) {
-                            const match = full.match(/^([^(]+)(?:\s*\(([^)]*)\))?$/);
-                            const primary = match ? match[1].trim() : full;
-                            const inParens = match && match[2] ? match[2].split(',').map((s) => s.trim()).filter(Boolean) : [];
-                            masterNamesOrder = [primary, ...inParens];
-                          }
-                          const paidMasterName = shortPersonName(full);
+                          // Показуємо всіх майстрів з breakdown (з KV), а не лише тих із serviceMasterName — щоб були видно ті, що «в дужках»
+                          const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate;
+                          const orderPrimary = full ? firstToken(full).toLowerCase() : '';
+                          const paidMasterName = shortPersonName(full) || (hasBreakdown ? shortPersonName(breakdown![0].masterName) : '');
                           const responsibleRaw =
                             client.masterId ? (masters.find((m) => m.id === client.masterId)?.name || '') : '';
                           const responsibleName = shortPersonName(responsibleRaw);
@@ -3149,16 +3144,18 @@ export function DirectClientTable({
 
                           const name = showPaidMaster ? paidMasterName : responsibleName;
                           let displayText: React.ReactNode = name;
-                          if (hasBreakdown && masterNamesOrder.length > 0) {
-                            const parts: string[] = [];
-                            for (const masterFull of masterNamesOrder) {
-                              const first = firstToken(masterFull).toLowerCase();
-                              const entry = breakdown!.find((b) => firstToken(b.masterName).toLowerCase() === first);
-                              const sumStr = entry ? formatUAHThousands(entry.sumUAH) : '';
-                              const short = shortPersonName(masterFull);
-                              parts.push(sumStr ? `${short} (${sumStr})` : short);
-                            }
-                            displayText = parts.join(', ');
+                          if (hasBreakdown) {
+                            // Упорядковуємо: спочатку майстер з serviceMasterName (якщо є), решта — за іменем
+                            const sorted = [...breakdown!].sort((a, b) => {
+                              const aFirst = firstToken(a.masterName).toLowerCase();
+                              const bFirst = firstToken(b.masterName).toLowerCase();
+                              if (orderPrimary && aFirst === orderPrimary) return -1;
+                              if (orderPrimary && bFirst === orderPrimary) return 1;
+                              return aFirst.localeCompare(bFirst);
+                            });
+                            displayText = sorted
+                              .map((b) => `${shortPersonName(b.masterName)} (${formatUAHThousands(b.sumUAH)})`)
+                              .join(', ');
                           } else if (showPaidMaster && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
                             displayText = (
                               <>

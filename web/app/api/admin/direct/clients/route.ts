@@ -18,6 +18,7 @@ import {
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
   getPerMasterSumsFromGroup,
+  getVisitIdAndRecordIdForBreakdown,
 } from '@/lib/altegio/records-grouping';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -512,9 +513,11 @@ export async function GET(req: NextRequest) {
               const handsCnt = chosen ? countNonAdminStaffInGroup(chosen as any) : 0;
               const hands = chosen ? (handsCnt <= 1 ? 2 : handsCnt === 2 ? 4 : 6) as 2 | 4 | 6 : undefined;
               c = { ...c, paidServiceHands: hands };
-              // Розбиття сум по майстрах для колонки «Майстер» (у дужках)
+              // Розбиття сум по майстрах для колонки «Майстер» — саме цього візиту; якщо є paidServiceTotalCost — підбираємо візит за сумою
               if (chosen) {
-                const breakdown = getPerMasterSumsFromGroup(chosen as any);
+                const targetSum = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
+                const { visitId: mainVisitId, recordId: mainRecordId } = getVisitIdAndRecordIdForBreakdown(chosen as any, targetSum ?? undefined);
+                const breakdown = getPerMasterSumsFromGroup(chosen as any, mainVisitId ?? undefined, mainRecordId ?? undefined);
                 if (breakdown.length > 0) {
                   c = { ...c, paidServiceMastersBreakdown: breakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
                 }

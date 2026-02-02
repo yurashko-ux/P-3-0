@@ -191,12 +191,135 @@ export function countNonAdminStaffInGroup(group: RecordGroup): number {
 }
 
 /**
- * Розбиття сум по майстрах у групі (для колонки «Майстер» з сумами в дужках).
- * Для кожного non-admin майстра в групі повертає суму його послуг (cost*amount) з events.
+ * Визначає «головний» visitId для групи: один візит на день, щоб суми в колонці «Майстер»
+ * відповідали саме цьому візиту, а не сумі всіх візитів за день.
+ * Пріоритет: visitId з arrived-подій; інакше найчастіший visitId у групі.
  */
-export function getPerMasterSumsFromGroup(group: RecordGroup): { masterName: string; sumUAH: number }[] {
-  const kyivDay = group.kyivDay;
+export function getMainVisitIdFromGroup(group: RecordGroup): number | null {
   const events = Array.isArray(group.events) ? group.events : [];
+  const withVisitId = events.filter((e): e is NormalizedRecordEvent & { visitId: number } =>
+    typeof e.visitId === 'number'
+  );
+  if (withVisitId.length === 0) return null;
+  const arrived = withVisitId.filter((e) => e.attendance === 1);
+  const source = arrived.length > 0 ? arrived : withVisitId;
+  const countByVisitId = new Map<number, number>();
+  for (const e of source) {
+    countByVisitId.set(e.visitId, (countByVisitId.get(e.visitId) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [vid, count] of countByVisitId) {
+    if (count > bestCount) {
+      bestCount = count;
+      best = vid;
+    }
+  }
+  return best;
+}
+
+/**
+ * Визначає visitId/recordId для breakdown так, щоб сума відповідала paidServiceTotalCost з БД.
+ * Якщо targetSum задано — вибираємо візит/запис, сума подій якого найближча до targetSum (допуск ~10%).
+ * Інакше — getMainVisitId / getMainRecordId.
+ */
+export function getVisitIdAndRecordIdForBreakdown(
+  group: RecordGroup,
+  targetSum?: number | null
+): { visitId: number | null; recordId: number | null } {
+  const events = Array.isArray(group.events) ? group.events : [];
+  const tolerance = targetSum != null && targetSum > 0 ? Math.max(500, Math.round(targetSum * 0.1)) : 0;
+
+  if (targetSum != null && targetSum > 0 && tolerance > 0) {
+    const withVisitId = events.filter((e): e is NormalizedRecordEvent & { visitId: number } => typeof e.visitId === 'number');
+    if (withVisitId.length > 0) {
+      const sumByVisitId = new Map<number, number>();
+      for (const e of withVisitId) {
+        const v = e.visitId;
+        const s = computeServicesTotalCostUAH(e.services || []);
+        sumByVisitId.set(v, (sumByVisitId.get(v) ?? 0) + s);
+      }
+      let bestVisitId: number | null = null;
+      let bestDiff = Infinity;
+      for (const [vid, sum] of sumByVisitId) {
+        const diff = Math.abs(sum - targetSum);
+        if (diff <= tolerance && diff < bestDiff) {
+          bestDiff = diff;
+          bestVisitId = vid;
+        }
+      }
+      if (bestVisitId != null) return { visitId: bestVisitId, recordId: null };
+    }
+    const withRecordId = events.filter((e): e is NormalizedRecordEvent & { recordId: number } => typeof e.recordId === 'number');
+    if (withRecordId.length > 0) {
+      const sumByRecordId = new Map<number, number>();
+      for (const e of withRecordId) {
+        const r = e.recordId;
+        const s = computeServicesTotalCostUAH(e.services || []);
+        sumByRecordId.set(r, (sumByRecordId.get(r) ?? 0) + s);
+      }
+      let bestRecordId: number | null = null;
+      let bestDiff = Infinity;
+      for (const [rid, sum] of sumByRecordId) {
+        const diff = Math.abs(sum - targetSum);
+        if (diff <= tolerance && diff < bestDiff) {
+          bestDiff = diff;
+          bestRecordId = rid;
+        }
+      }
+      if (bestRecordId != null) return { visitId: null, recordId: bestRecordId };
+    }
+  }
+
+  const mainVisitId = getMainVisitIdFromGroup(group);
+  const mainRecordId = mainVisitId == null ? getMainRecordIdFromGroup(group) : null;
+  return { visitId: mainVisitId, recordId: mainRecordId };
+}
+
+/**
+ * Визначає «головний» recordId для групи, коли visitId відсутній (напр. старі записи з webhook log).
+ * Один запис = один візит. Пріоритет: recordId з arrived; інакше найчастіший recordId.
+ */
+export function getMainRecordIdFromGroup(group: RecordGroup): number | null {
+  const events = Array.isArray(group.events) ? group.events : [];
+  const withRecordId = events.filter((e): e is NormalizedRecordEvent & { recordId: number } =>
+    typeof e.recordId === 'number'
+  );
+  if (withRecordId.length === 0) return null;
+  const arrived = withRecordId.filter((e) => e.attendance === 1);
+  const source = arrived.length > 0 ? arrived : withRecordId;
+  const countByRecordId = new Map<number, number>();
+  for (const e of source) {
+    countByRecordId.set(e.recordId, (countByRecordId.get(e.recordId) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [rid, count] of countByRecordId) {
+    if (count > bestCount) {
+      bestCount = count;
+      best = rid;
+    }
+  }
+  return best;
+}
+
+/**
+ * Розбиття сум по майстрах у групі (для колонки «Майстер» з сумами в дужках).
+ * Для кожного non-admin майстра повертає суму його послуг (cost*amount).
+ * Якщо передано visitId — рахуємо тільки події цього візиту; інакше якщо recordId — тільки події цього запису.
+ */
+export function getPerMasterSumsFromGroup(
+  group: RecordGroup,
+  visitId?: number | null,
+  recordId?: number | null
+): { masterName: string; sumUAH: number }[] {
+  const kyivDay = group.kyivDay;
+  let events = Array.isArray(group.events) ? group.events : [];
+  if (visitId != null) {
+    events = events.filter((e) => e.visitId === visitId);
+  } else if (recordId != null) {
+    events = events.filter((e) => e.recordId === recordId);
+  }
   const relevant = events.filter((e) => {
     const name = (e.staffName || '').toString().trim();
     if (!name) return false;
@@ -562,8 +685,9 @@ export function normalizeRecordsLogItems(rawItems: any[]): NormalizedRecordEvent
       staffName,
       attendance,
       status: e?.status ?? e?.body?.status ?? null,
-      visitId: e?.visitId ?? e?.body?.resource_id ?? null,
-      recordId: e?.recordId ?? null,
+      // visit_id з body.data (webhook log); record_id не підставляти як visitId
+      visitId: e?.visitId ?? e?.body?.data?.visit_id ?? e?.body?.resource_id ?? null,
+      recordId: e?.recordId ?? e?.body?.resource_id ?? null,
       raw: e,
     };
 
