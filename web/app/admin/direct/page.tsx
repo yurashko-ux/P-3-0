@@ -178,6 +178,7 @@ export default function DirectPage() {
     state: [],
     consultation: {
       created: { mode: null },
+      createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
       attendance: null,
@@ -186,6 +187,7 @@ export default function DirectPage() {
     },
     record: {
       created: { mode: null },
+      createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
       client: null,
