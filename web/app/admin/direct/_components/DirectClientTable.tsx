@@ -707,6 +707,17 @@ type DirectClientTableProps = {
   bodyScrollLeft?: number;
 };
 
+type FooterStatsBlock = {
+  createdConsultations: number;
+  successfulConsultations: number;
+  cancelledOrNoShow: number;
+  sales: number;
+  conversion1Rate?: number;
+  conversion2Rate?: number;
+  createdPaidSum: number;
+  plannedPaidSum: number;
+};
+
 // Допоміжна функція для отримання стилів колонки (width/minWidth — тільки якщо немає colgroup)
 const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }, useColgroup: boolean): React.CSSProperties => {
   if (useColgroup) return {};
@@ -754,45 +765,42 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
-  const [todayRecordsTotal, setTodayRecordsTotal] = useState<number | null>(null);
-  const [todayRecordsDetails, setTodayRecordsDetails] = useState<Array<{
-    receivedAt: string;
-    visitId: number | null;
-    recordId: number | null;
-    clientId: number | null;
-    services: any[];
-    cost: number;
-    serviceNames: string[];
-  }>>([]);
+  const [footerStats, setFooterStats] = useState<{
+    past: FooterStatsBlock;
+    today: FooterStatsBlock;
+    future: FooterStatsBlock;
+  } | null>(null);
+  const [footerStatsError, setFooterStatsError] = useState<string | null>(null);
   const bodyTableRef = useRef<HTMLTableElement | null>(null);
   const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
   
-  // Завантажуємо суму послуг за сьогодні
+  // Завантажуємо статистику футера (поточний місяць)
   useEffect(() => {
-    const fetchTodayRecordsTotal = async () => {
+    const fetchFooterStats = async () => {
       try {
-        const response = await fetch('/api/admin/direct/today-records-total');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.ok && typeof data.total === 'number') {
-            setTodayRecordsTotal(data.total);
-            setTodayRecordsDetails(Array.isArray(data.records) ? data.records : []);
-          } else {
-            setTodayRecordsTotal(null);
-            setTodayRecordsDetails([]);
-          }
+        setFooterStatsError(null);
+        const response = await fetch('/api/admin/direct/footer-stats');
+        if (!response.ok) {
+          setFooterStats(null);
+          setFooterStatsError('Не вдалося завантажити статистику футера');
+          return;
+        }
+        const data = await response.json();
+        if (data?.ok && data?.stats) {
+          setFooterStats(data.stats);
+          setFooterStatsError(null);
         } else {
-          setTodayRecordsTotal(null);
-          setTodayRecordsDetails([]);
+          setFooterStats(null);
+          setFooterStatsError('Не вдалося завантажити статистику футера');
         }
       } catch (err) {
-        console.error('[DirectClientTable] Failed to fetch today records total:', err);
-        setTodayRecordsTotal(null);
-        setTodayRecordsDetails([]);
+        console.error('[DirectClientTable] Failed to fetch footer stats:', err);
+        setFooterStats(null);
+        setFooterStatsError('Не вдалося завантажити статистику футера');
       }
     };
 
-    fetchTodayRecordsTotal();
+    fetchFooterStats();
   }, []);
   
   // Ширини для header: з body (виміряні) або fallback з columnWidths
@@ -3373,10 +3381,44 @@ export function DirectClientTable({
       </div>
       
       {/* Футер — fixed внизу екрана, щоб завжди був видимий */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[60px] py-3 px-4 border-t border-gray-300">
-        <div style={{ fontSize: '10px' }}>
-          Сума записів за сьогодні: {todayRecordsTotal !== null ? `${todayRecordsTotal.toLocaleString('uk-UA')} грн.` : '—'}
-        </div>
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[80px] py-3 px-4 border-t border-gray-300">
+        {footerStats ? (
+          <div className="grid grid-cols-3 divide-x divide-gray-300 text-[10px]">
+            {(() => {
+              const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
+              const renderBlock = (title: string, data: FooterStatsBlock, showConversions: boolean) => (
+                <div className="px-3">
+                  <div className="text-[11px] font-medium text-gray-700">{title}</div>
+                  <div className="mt-1 space-y-0.5">
+                    <div>Створено консультацій: {data.createdConsultations}</div>
+                    <div>Успішні консультації: {data.successfulConsultations}</div>
+                    <div>Скасовані та не відбулися: {data.cancelledOrNoShow}</div>
+                    <div>Продажі: {data.sales}</div>
+                    <div>
+                      Запис → прийшов: {showConversions ? `${(data.conversion1Rate ?? 0).toFixed(1)}%` : '—'}
+                    </div>
+                    <div>
+                      Консультація → продаж: {showConversions ? `${(data.conversion2Rate ?? 0).toFixed(1)}%` : '—'}
+                    </div>
+                    <div>Сума створених записів: {formatMoney(data.createdPaidSum)}</div>
+                    <div>Сума запланованих записів: {formatMoney(data.plannedPaidSum)}</div>
+                  </div>
+                </div>
+              );
+              return (
+                <>
+                  {renderBlock('Минуле', footerStats.past, true)}
+                  {renderBlock('Сьогодні', footerStats.today, false)}
+                  {renderBlock('Майбутнє', footerStats.future, false)}
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="text-[10px] text-gray-600">
+            {footerStatsError || 'Статистика футера недоступна'}
+          </div>
+        )}
       </div>
     </div>
   );
