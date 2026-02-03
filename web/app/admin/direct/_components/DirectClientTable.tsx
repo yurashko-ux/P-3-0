@@ -3389,19 +3389,19 @@ export function DirectClientTable({
               const renderBlock = (title: string, data: FooterStatsBlock, showConversions: boolean) => (
                 <div className="px-3">
                   <div className="text-[11px] font-medium text-gray-700">{title}</div>
-                  <div className="mt-1 space-y-0.5">
-                    <div>Створено консультацій: {data.createdConsultations}</div>
-                    <div>Успішні консультації: {data.successfulConsultations}</div>
-                    <div>Скасовані та не відбулися: {data.cancelledOrNoShow}</div>
+                  <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
+                    <div>Створено: {data.createdConsultations}</div>
+                    <div>Успішні: {data.successfulConsultations}</div>
+                    <div>Скасовані/не були: {data.cancelledOrNoShow}</div>
                     <div>Продажі: {data.sales}</div>
                     <div>
-                      Запис → прийшов: {showConversions ? `${(data.conversion1Rate ?? 0).toFixed(1)}%` : '—'}
+                      Запис→прийшов: {showConversions ? `${(data.conversion1Rate ?? 0).toFixed(1)}%` : '—'}
                     </div>
                     <div>
-                      Консультація → продаж: {showConversions ? `${(data.conversion2Rate ?? 0).toFixed(1)}%` : '—'}
+                      Консуль→продаж: {showConversions ? `${(data.conversion2Rate ?? 0).toFixed(1)}%` : '—'}
                     </div>
-                    <div>Сума створених записів: {formatMoney(data.createdPaidSum)}</div>
-                    <div>Сума запланованих записів: {formatMoney(data.plannedPaidSum)}</div>
+                    <div>Створено ₴: {formatMoney(data.createdPaidSum)}</div>
+                    <div>Заплановано ₴: {formatMoney(data.plannedPaidSum)}</div>
                   </div>
                 </div>
               );
