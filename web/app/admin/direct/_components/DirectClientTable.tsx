@@ -3132,6 +3132,8 @@ export function DirectClientTable({
                           const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
                           // Показуємо всіх майстрів з breakdown (з KV), а не лише тих із serviceMasterName — щоб були видно ті, що «в дужках»
                           const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate;
+                          // Першим ставимо майстра з breakdown, чиє ім'я збігається з майстром консультації (хто продав)
+                          const consultationPrimary = (client.consultationMasterName || '').trim() ? firstToken((client.consultationMasterName || '').toString().trim()).toLowerCase() : '';
                           const orderPrimary = full ? firstToken(full).toLowerCase() : '';
                           const paidMasterName = shortPersonName(full) || (hasBreakdown ? shortPersonName(breakdown![0].masterName) : '');
                           const responsibleRaw =
@@ -3155,22 +3157,27 @@ export function DirectClientTable({
                           const name = showPaidMaster ? paidMasterName : responsibleName;
                           let displayText: React.ReactNode = name;
                           if (hasBreakdown) {
-                            // Упорядковуємо: спочатку майстер з serviceMasterName (якщо є), решта — за іменем
+                            // Упорядковуємо: першим — майстер з breakdown, чиє ім'я збігається з consultationMasterName; решта — за іменем
                             const sorted = [...breakdown!].sort((a, b) => {
                               const aFirst = firstToken(a.masterName).toLowerCase();
                               const bFirst = firstToken(b.masterName).toLowerCase();
-                              if (orderPrimary && aFirst === orderPrimary) return -1;
-                              if (orderPrimary && bFirst === orderPrimary) return 1;
+                              if (consultationPrimary && aFirst === consultationPrimary) return -1;
+                              if (consultationPrimary && bFirst === consultationPrimary) return 1;
                               return aFirst.localeCompare(bFirst);
                             });
-                            // Майстрів у стовпчик (кожен з нового рядка)
+                            // Майстрів у стовпчик; сума в дужках — тільки число (тис.), голубий фон лише для першого
                             displayText = (
                               <>
-                                {sorted.map((b) => (
-                                  <span key={`${b.masterName}-${b.sumUAH}`} className="block text-left">
-                                    {shortPersonName(b.masterName)} ({formatUAHThousands(b.sumUAH)})
-                                  </span>
-                                ))}
+                                {sorted.map((b, index) => {
+                                  const thousands = Math.round(b.sumUAH / 1000);
+                                  const isFirst = index === 0;
+                                  const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#2AABEE] text-white' : '';
+                                  return (
+                                    <span key={`${b.masterName}-${b.sumUAH}`} className={rowClass ? `block text-left ${rowClass}` : 'block text-left'}>
+                                      {shortPersonName(b.masterName)} ({thousands})
+                                    </span>
+                                  );
+                                })}
                               </>
                             );
                           } else if (showPaidMaster && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
@@ -3201,11 +3208,11 @@ export function DirectClientTable({
                               {showPaidMaster ? (
                                 <button
                                   type="button"
-                                  className="font-medium hover:underline text-left"
+                                  className="hover:underline text-left"
                                   title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
                                   onClick={() => setMasterHistoryClient(client)}
                                 >
-                                  <span className={`flex ${hasBreakdown ? 'flex-col items-start gap-0.5' : 'inline-flex items-center flex-wrap gap-x-1'} ${highlightClass}`}>
+                                  <span className={`flex ${hasBreakdown ? 'flex-col items-start gap-0.5' : 'inline-flex items-center flex-wrap gap-x-1'} ${!hasBreakdown ? highlightClass : ''}`}>
                                     {hasBreakdown ? displayText : <span>{displayText}</span>}
                                     {showMasterDot ? (
                                       <span
@@ -3216,7 +3223,7 @@ export function DirectClientTable({
                                   </span>
                                 </button>
                               ) : (
-                                <span className="font-medium text-left" title={`Відповідальний: ${name}`}>
+                                <span className="text-left" title={`Відповідальний: ${name}`}>
                                   <span className={`inline-flex items-center ${highlightClass}`}>
                                     <span>{name}</span>
                                     {showMasterDot ? (
