@@ -417,7 +417,7 @@ export async function fetchVisitBreakdownFromAPI(
     // Бо items мають тільки master_id (число), а ім'я майстра є в records[].staff
     const masterIdToName = new Map<number, string>();
     for (const rec of visitData.records) {
-      const staffId = rec.staff_id ?? rec.staff?.id;
+      const staffId = (rec as any).staff_id ?? (rec.staff as any)?.id;
       const staffName = rec.staff?.name ?? rec.staff?.display_name;
       if (staffId != null && staffName) {
         masterIdToName.set(Number(staffId), String(staffName).trim());
