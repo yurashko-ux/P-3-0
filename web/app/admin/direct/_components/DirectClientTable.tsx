@@ -3083,26 +3083,36 @@ export function DirectClientTable({
                                 ) : null}
                                 </span>
 
-                                {typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? (
-                                  <span
-                                    className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                    title={`Сума запису: ${formatUAHExact(client.paidServiceTotalCost)}`}
-                                  >
-                                    <span className="inline-flex items-center">
-                                      <span>{formatUAHThousands(client.paidServiceTotalCost)}</span>
-                                      {showPaidCostDot ? (
-                                        <span
-                                          className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                                          title={'Тригер: змінилась сума запису'}
-                                        />
-                                      ) : null}
+                                {(() => {
+                                  const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+                                  const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
+                                  const totalFromBreakdown = hasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
+                                  const displaySum = hasBreakdown && totalFromBreakdown > 0 ? totalFromBreakdown : (typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? client.paidServiceTotalCost : null);
+                                  const displayLabel = hasBreakdown && totalFromBreakdown > 0 ? 'Сума по майстрах' : 'Сума запису';
+                                  if (displaySum != null && displaySum > 0) {
+                                    return (
+                                      <span
+                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                        title={`${displayLabel}: ${formatUAHExact(displaySum)}`}
+                                      >
+                                        <span className="inline-flex items-center">
+                                          <span>{formatUAHThousands(displaySum)}</span>
+                                          {!hasBreakdown && showPaidCostDot ? (
+                                            <span
+                                              className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                                              title={'Тригер: змінилась сума запису'}
+                                            />
+                                          ) : null}
+                                        </span>
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
+                                      невідомо
                                     </span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
-                                    невідомо
-                                  </span>
-                                )}
+                                  );
+                                })()}
                               </span>
                             );
                           })()
