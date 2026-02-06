@@ -5,6 +5,30 @@
 
 import { useState, useEffect, useMemo } from "react";
 
+type FooterBlock = {
+  createdConsultations: number;
+  successfulConsultations: number;
+  cancelledOrNoShow: number;
+  sales: number;
+  createdPaidSum: number;
+  plannedPaidSum: number;
+  consultationCreated?: number;
+  consultationOnlineCount?: number;
+  consultationPlanned?: number;
+  consultationRealized?: number;
+  consultationNoShow?: number;
+  consultationCancelled?: number;
+  noSaleCount?: number;
+  newPaidClients?: number;
+  newClientsCount?: number;
+  recordsCreatedSum?: number;
+  recordsRealizedSum?: number;
+  rebookingsCount?: number;
+  upsalesGoodsSum?: number;
+  noRebookCount?: number;
+  turnoverToday?: number;
+};
+
 type MastersStatsRow = {
   masterId: string;
   masterName: string;
@@ -48,6 +72,53 @@ export default function DirectStatsPage() {
     rows: MastersStatsRow[];
     totalClients: number;
   }>({ loading: false, error: null, rows: [], totalClients: 0 });
+
+  const [footerStats, setFooterStats] = useState<{
+    past: FooterBlock;
+    today: FooterBlock;
+    future: FooterBlock;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/admin/direct/footer-stats", { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled || !data?.ok) return;
+        setFooterStats(data.stats);
+      } catch {
+        if (!cancelled) setFooterStats(null);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  function getFooterVal(block: FooterBlock, key: string): number {
+    const v = (block as Record<string, number | undefined>)[key];
+    if (typeof v === "number") return v;
+    // Маппінг для past/future (лише базові поля)
+    switch (key) {
+      case "consultationCreated": return block.createdConsultations ?? 0;
+      case "consultationRealized": return block.successfulConsultations ?? 0;
+      case "consultationCancelled": return block.consultationCancelled ?? block.cancelledOrNoShow ?? 0;
+      case "newPaidClients": return block.newPaidClients ?? block.sales ?? 0;
+      case "recordsCreatedSum": return block.recordsCreatedSum ?? block.createdPaidSum ?? 0;
+      case "recordsRealizedSum": return block.recordsRealizedSum ?? 0;
+      default: return 0;
+    }
+  }
+
+  function formatFooterCell(block: FooterBlock, key: string, unit: string): string {
+    const val = getFooterVal(block, key);
+    if (unit === "тис. грн") {
+      const thousands = val / 1000;
+      const str = thousands % 1 === 0 ? String(Math.round(thousands)) : thousands.toFixed(1);
+      return `${str} ${unit}`;
+    }
+    return `${val} ${unit}`;
+  }
 
   const monthOptions = useMemo(() => {
     // Доступні місяці: від 2026-01 і далі (без 2024/2025).
@@ -200,6 +271,91 @@ export default function DirectStatsPage() {
               ))}
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* Таблиця KPI: З початку місяця / Сьогодні / До кінця місяця */}
+      <div className="card bg-base-100 shadow-sm mb-6">
+        <div className="card-body p-4">
+          <h2 className="text-lg font-semibold mb-3">KPI по періодах</h2>
+          {footerStats ? (
+            <div className="overflow-x-auto">
+              <table className="table table-pin-rows table-xs">
+                <thead>
+                  <tr>
+                    <th className="w-48">Показник</th>
+                    <th className="text-center">З початку місяця</th>
+                    <th className="text-center">Сьогодні</th>
+                    <th className="text-center">До кінця місяця</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="bg-base-200/60">
+                    <td colSpan={4} className="font-medium">Консультації</td>
+                  </tr>
+                  {[
+                    { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт" },
+                    { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
+                    { label: "Заплановано", icon: "📅", key: "consultationPlanned", unit: "шт" },
+                    { label: "В очікуванні", icon: "⏳", key: "consultationPlanned", unit: "шт", sub: true },
+                    { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
+                    { label: "No-show", icon: "❌", key: "consultationNoShow", unit: "шт" },
+                    { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
+                    { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
+                  ].map((row, i) => (
+                    <tr key={i}>
+                      <td className="whitespace-nowrap">
+                        {row.icon} {row.label}
+                      </td>
+                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-base-200/60">
+                    <td colSpan={4} className="font-medium">Записи</td>
+                  </tr>
+                  {[
+                    { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
+                    { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
+                    { label: "Заплановано", icon: "⏳", key: "plannedPaidSum", unit: "тис. грн" },
+                    { label: "Реалізовано", icon: "✅", key: "recordsRealizedSum", unit: "тис. грн" },
+                    { label: "Перезаписи", icon: "🔁", key: "rebookingsCount", unit: "шт" },
+                    { label: "Допродажі", icon: "💅", key: "upsalesGoodsSum", unit: "тис. грн" },
+                    { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
+                  ].map((row, i) => (
+                    <tr key={i}>
+                      <td className="whitespace-nowrap">
+                        {row.blueDot ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" /> {row.label}
+                          </span>
+                        ) : (
+                          <>{row.icon} {row.label}</>
+                        )}
+                      </td>
+                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-base-200/60">
+                    <td colSpan={4} className="font-medium">Фін. Рез.</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">💰 Оборот</td>
+                    <td className="text-center">{formatFooterCell(footerStats.past, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8 text-gray-500">
+              Завантаження KPI…
+            </div>
+          )}
         </div>
       </div>
 
