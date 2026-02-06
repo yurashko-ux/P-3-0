@@ -294,7 +294,7 @@ export default function DirectStatsPage() {
                     <td colSpan={4} className="font-medium">Консультації</td>
                   </tr>
                   {[
-                    { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт" },
+                    { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
                     { label: "Заплановано", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "В очікуванні", icon: "⏳", key: "consultationPlanned", unit: "шт", sub: true },
@@ -305,7 +305,14 @@ export default function DirectStatsPage() {
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
-                        {row.icon} {row.label}
+                        {"iconImage" in row && row.iconImage ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <img src={row.iconImage} alt="" className="w-5 h-5 object-contain" />
+                            {row.label}
+                          </span>
+                        ) : (
+                          <>{row.icon} {row.label}</>
+                        )}
                       </td>
                       <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit)}</td>
                       <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit)}</td>
