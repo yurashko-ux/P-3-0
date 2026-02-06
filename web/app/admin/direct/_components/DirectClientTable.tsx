@@ -719,6 +719,7 @@ type FooterStatsBlock = {
   conversion2Rate?: number;
   createdPaidSum: number;
   plannedPaidSum: number;
+  consultationRescheduledCount?: number;
 };
 
 /** Розширення для блоку «Сьогодні» (KPI з піктограмами) */
@@ -729,6 +730,7 @@ type FooterTodayStats = FooterStatsBlock & {
   consultationRealized?: number;
   consultationNoShow?: number;
   consultationCancelled?: number;
+  consultationRescheduledCount?: number;
   noSaleCount?: number;
   newPaidClients?: number;
   recordsCreatedSum?: number;
@@ -3436,6 +3438,10 @@ export function DirectClientTable({
                         <span className="text-red-600" title="Не прийшли: ❌ — {todayData.consultationNoShow ?? 0} шт.">❌ {todayData.consultationNoShow ?? 0}</span>
                         <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0} шт.">🚫 {todayData.consultationCancelled ?? 0}</span>
                         <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0} шт.">💔 {todayData.noSaleCount ?? 0}</span>
+                        <span title="Відновлена консультація (перенос дати): — {todayData.consultationRescheduledCount ?? 0} шт." className="inline-flex items-center gap-1">
+                          <StateIcon state="consultation-rescheduled" size={12} />
+                          <span>{todayData.consultationRescheduledCount ?? 0}</span>
+                        </span>
                       </div>
                       {/* 2-й рядок: Записи: зліва, далі піктограми; голуба крапка у 2 рази більша */}
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">

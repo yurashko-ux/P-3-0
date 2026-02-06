@@ -33,6 +33,8 @@ type FooterStatsBlock = {
   conversion2Rate?: number;
   createdPaidSum: number;
   plannedPaidSum: number;
+  /** Відновлена консультація (перенос дати), state === 'consultation-rescheduled' */
+  consultationRescheduledCount: number;
 };
 
 /** Додаткові KPI лише для блоку «Сьогодні» (піктограми в футері) */
@@ -65,6 +67,8 @@ export type FooterTodayStats = FooterStatsBlock & {
   newClientsCount: number;
   /** Немає перезапису (⚠️), дані з колонки стан — state === 'consultation-no-show' */
   noRebookCount: number;
+  /** Відновлена консультація (перенос дати), state === 'consultation-rescheduled' */
+  consultationRescheduledCount: number;
   /** Оборот за сьогодні: сума записів з датою сьогодні мінус скасовані/відмінені (attendance -1), грн */
   turnoverToday: number;
 };
@@ -76,6 +80,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   sales: 0,
   createdPaidSum: 0,
   plannedPaidSum: 0,
+  consultationRescheduledCount: 0,
 });
 
 function emptyTodayBlock(): FooterTodayStats {
@@ -95,6 +100,7 @@ function emptyTodayBlock(): FooterTodayStats {
     upsalesGoodsSum: 0,
     newClientsCount: 0,
     noRebookCount: 0,
+    consultationRescheduledCount: 0,
     turnoverToday: 0,
   };
 }
@@ -185,6 +191,14 @@ export async function GET(req: NextRequest) {
           else if (client.consultationAttended === true) t.consultationRealized += 1;
           else if (client.consultationAttended === false) t.consultationNoShow += 1;
           else t.consultationPlanned += 1;
+        }
+
+        // Відновлена консультація (перенос дати) — по даті консультації
+        if (client.state === 'consultation-rescheduled' && consultDay) {
+          addByDay(consultDay, (b) => {
+            b.consultationRescheduledCount += 1;
+          });
+          if (consultDay === todayKyiv) t.consultationRescheduledCount += 1;
         }
 
         if (consultDay >= start && consultDay <= todayKyiv) {
