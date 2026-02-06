@@ -1150,37 +1150,8 @@ export function DirectClientTable({
     });
   }, [uniqueClients, filters.clientType]);
 
-  // У активному режимі: піднімаємо клієнтів з consult/paid на сьогодні (зелені) вгору
-  const clientsForTable = useMemo(() => {
-    if (sortBy !== 'updatedAt' || sortOrder !== 'desc') return filteredClients;
-    const todayKyiv = kyivDayFromISO(new Date().toISOString());
-    const kyivFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' });
-    const isGreen = (c: DirectClient) => {
-      const check = (v: string | null | undefined) => {
-        if (!v) return false;
-        try {
-          const s = String(v).trim();
-          const m = s.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-          if (m) return kyivFmt.format(new Date(m[0])) === todayKyiv;
-          for (const p of s.split(/\s+/)) {
-            const d = new Date(p);
-            if (!isNaN(d.getTime()) && /^\d/.test(p)) return kyivFmt.format(d) === todayKyiv;
-          }
-        } catch {}
-        const k = kyivDayFromISO(String(v));
-        return !!k && k === todayKyiv;
-      };
-      return check(c.consultationBookingDate) || check(c.paidServiceDate);
-    };
-    return [...filteredClients].sort((a, b) => {
-      const aGreen = isGreen(a) ? 1 : 0;
-      const bGreen = isGreen(b) ? 1 : 0;
-      if (bGreen !== aGreen) return bGreen - aGreen;
-      const aT = new Date(a.updatedAt || 0).getTime();
-      const bT = new Date(b.updatedAt || 0).getTime();
-      return sortOrder === 'desc' ? bT - aT : aT - bT;
-    });
-  }, [filteredClients, sortBy, sortOrder]);
+  // У активному режимі: сортування лише за updatedAt (найновіші зверху). Зелені прилипають до сірої лінії знизу.
+  const clientsForTable = filteredClients;
 
   const useColgroupOnBody = filteredClients.length > 0 && measuredWidths.length === COLUMN_KEYS.length;
 
