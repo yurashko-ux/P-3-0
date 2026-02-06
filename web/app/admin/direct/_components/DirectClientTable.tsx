@@ -725,6 +725,22 @@ type FooterStatsBlock = {
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
+  // Деталізовані поля для past (та сама структура що й today)
+  consultationCreated?: number;
+  consultationOnlineCount?: number;
+  consultationPlanned?: number;
+  consultationRealized?: number;
+  consultationNoShow?: number;
+  consultationCancelled?: number;
+  noSaleCount?: number;
+  newPaidClients?: number;
+  recordsCreatedSum?: number;
+  recordsRealizedSum?: number;
+  rebookingsCount?: number;
+  upsalesGoodsSum?: number;
+  newClientsCount?: number;
+  noRebookCount?: number;
+  turnoverToday?: number;
 };
 
 /** Розширення для блоку «Сьогодні» (KPI з піктограмами) */
