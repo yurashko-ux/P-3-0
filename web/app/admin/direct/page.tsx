@@ -501,6 +501,7 @@ export default function DirectPage() {
         params.set("recordCreatedYear", r.created.year);
         params.set("recordCreatedMonth", r.created.month);
       }
+      if (r.createdPreset) params.set("recordCreatedPreset", r.createdPreset);
       if (r.appointed.mode === "current_month") params.set("recordAppointedMode", "current_month");
       else if (r.appointed.mode === "year_month" && r.appointed.year && r.appointed.month) {
         params.set("recordAppointedMode", "year_month");
