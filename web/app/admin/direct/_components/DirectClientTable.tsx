@@ -3410,8 +3410,8 @@ export function DirectClientTable({
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
               const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
               const renderBlock = (title: string, data: FooterStatsBlock, showConversions: boolean) => (
-                <div className="px-3">
-                  <div className="text-[11px] font-bold text-gray-700">{title}.</div>
+                <div className="px-3 relative">
+                  <div className="text-[11px] font-bold text-gray-700 text-right">{title}.</div>
                   <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
                     <div>Створено: {data.createdConsultations}</div>
                     <div>Успішні: {data.successfulConsultations}</div>
@@ -3430,51 +3430,54 @@ export function DirectClientTable({
               );
               const todayData = footerStats.today as FooterTodayStats;
               const hasTodayKpi = typeof todayData.consultationCreated === 'number';
-              const formatThousandVal = (v: number) => `${(v / 1000).toFixed(1)} тис. грн`;
+              const formatThousandVal = (v: number) => `${(v / 1000).toFixed(1)}`;
               const renderTodayBlock = () => (
-                <div className="px-3">
+                <div className="px-3 relative">
                   {hasTodayKpi ? (
                     <>
-                      {/* 1-й рядок: Сьогодні + Консультації: синій календар (як у колонці Стан), 💻 онлайн, 📅 консультації, ⏳✅❌🚫💔 */}
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span className="text-[11px] font-bold text-gray-700">Сьогодні.</span>
-                        <span className="text-[11px] font-medium text-gray-600">Консультації:</span>
-                        <span title="Консультацій створено (сума кількості)" className="inline-flex items-center">
-                          <StateIcon state="consultation-booked" size={16} />
-                          <span className="ml-0.5">{todayData.consultationCreated ?? 0}</span>
-                        </span>
-                        <span title="Онлайн консультації: 💻 — {todayData.consultationOnlineCount ?? 0}">💻 {todayData.consultationOnlineCount ?? 0}</span>
-                        <span title="Консультації (офлайн): 📅 — {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}">📅 {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}</span>
-                        <span title="Заплановані (очікується): ⏳ — {todayData.consultationPlanned ?? 0}">⏳ {todayData.consultationPlanned ?? 0}</span>
-                        <span className="text-green-600" title="Реалізовані (прийшли): ✅ — {todayData.consultationRealized ?? 0}">✅ {todayData.consultationRealized ?? 0}</span>
-                        <span className="text-red-600" title="Не прийшли: ❌ — {todayData.consultationNoShow ?? 0}">❌ {todayData.consultationNoShow ?? 0}</span>
-                        <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0}">🚫 {todayData.consultationCancelled ?? 0}</span>
-                        <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0}">💔 {todayData.noSaleCount ?? 0}</span>
+                      {/* 1-й рядок: контент зліва, назва "Консультації:" справа вгорі */}
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="text-[11px] font-bold text-gray-700">Сьогодні.</span>
+                          <span title="Консультацій створено (сума кількості)" className="inline-flex items-center">
+                            <StateIcon state="consultation-booked" size={16} />
+                            <span className="ml-0.5">{todayData.consultationCreated ?? 0}</span>
+                          </span>
+                          <span title="Онлайн консультації: 💻 — {todayData.consultationOnlineCount ?? 0} шт.">💻 {todayData.consultationOnlineCount ?? 0}</span>
+                          <span title="Консультації (офлайн): 📅 — {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))} шт.">📅 {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}</span>
+                          <span title="Заплановані (очікується): ⏳ — {todayData.consultationPlanned ?? 0} шт.">⏳ {todayData.consultationPlanned ?? 0}</span>
+                          <span className="text-green-600" title="Реалізовані (прийшли): ✅ — {todayData.consultationRealized ?? 0} шт.">✅ {todayData.consultationRealized ?? 0}</span>
+                          <span className="text-red-600" title="Не прийшли: ❌ — {todayData.consultationNoShow ?? 0} шт.">❌ {todayData.consultationNoShow ?? 0}</span>
+                          <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0} шт.">🚫 {todayData.consultationCancelled ?? 0}</span>
+                          <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0} шт.">💔 {todayData.noSaleCount ?? 0}</span>
+                        </div>
+                        <span className="text-[11px] font-medium text-gray-600 shrink-0">Консультації:</span>
                       </div>
-                      {/* 2-й рядок: Записи: Нові клієнти (голубий кружечок) шт., Створено (сірий) тис. грн, Реалізовано ✅, Перезаписів 🔁, Допродажі (лак), Немає перезапису ⚠️ */}
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span className="text-[11px] font-medium text-gray-600">Записи:</span>
-                        <span title="Нові клієнти (голубий фон у колонці Майстер): шт.">
-                          <span className="inline-flex items-center justify-center rounded-full w-5 h-5 bg-[#2AABEE] text-white text-[10px] font-medium">{(todayData.newClientsCount ?? 0)}</span>
-                          <span className="ml-0.5 text-[10px]">шт.</span>
-                        </span>
-                        <span title="Створено (записи, що створені сьогодні): тис. грн">
-                          <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
-                        </span>
-                        <span className="text-green-600" title="Реалізовано: ✅ тис. грн">✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
-                        <span title="Перезаписів: 🔁 шт. — {todayData.rebookingsCount ?? 0}">🔁 {todayData.rebookingsCount ?? 0} шт.</span>
-                        <span title="Допродажі (продукція без груп волосся): тис. грн" className="inline-flex items-center">
-                          <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-4 h-4 align-middle [mix-blend-mode:multiply]" />
-                          <span className="ml-0.5 align-middle">{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
-                        </span>
-                        <span title="Немає перезапису (дані з колонки Стан): ⚠️ шт. — {todayData.noRebookCount ?? 0}">⚠️ {todayData.noRebookCount ?? 0} шт.</span>
+                      {/* 2-й рядок: контент зліва, назва "Записи:" справа; одиниці в тултіпі */}
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span title="Нові клієнти (голубий фон у колонці Майстер): {(todayData.newClientsCount ?? 0)} шт." className="inline-flex items-center">
+                            <span className="inline-flex items-center justify-center rounded-full px-2 py-0.5 bg-[#2AABEE] text-white text-[11px] font-normal leading-none">{(todayData.newClientsCount ?? 0)}</span>
+                          </span>
+                          <span title={`Створено (записи, що створені сьогодні): ${((todayData.recordsCreatedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>
+                            <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
+                          </span>
+                          <span className="text-green-600" title={`Реалізовано: ✅ ${((todayData.recordsRealizedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
+                          <span title="Перезаписів: 🔁 {(todayData.rebookingsCount ?? 0)} шт.">🔁 {todayData.rebookingsCount ?? 0}</span>
+                          <span title={`Допродажі (продукція без груп волосся): ${((todayData.upsalesGoodsSum ?? 0) / 1000).toFixed(1)} тис. грн`} className="inline-flex items-center gap-0.5">
+                            <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3 h-3 object-contain align-middle [mix-blend-mode:multiply]" />
+                            <span>{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
+                          </span>
+                          <span title="Немає перезапису (дані з колонки Стан): ⚠️ {(todayData.noRebookCount ?? 0)} шт.">⚠️ {todayData.noRebookCount ?? 0}</span>
+                        </div>
+                        <span className="text-[11px] font-medium text-gray-600 shrink-0">Записи:</span>
                       </div>
-                      {/* 3-й рядок: Фін. Рез. — значення обороту тільки в тултіпі */}
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span className="text-[11px] font-bold text-gray-700">Фін. Рез.</span>
-                        <span title="Оборот за сьогодні (сума всіх записів з датою сьогодні мінус скасовані/відмінені, attendance -1): {formatMoney(todayData.turnoverToday ?? 0)}">
-                          <span className="opacity-90">💰</span> {formatMoney(todayData.turnoverToday ?? 0)}
+                      {/* 3-й рядок: оборот у тис. грн, одиниці в тултіпі; назва "Фін. Рез." справа */}
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                        <span title={`Оборот за сьогодні (сума всіх записів з датою сьогодні мінус скасовані/відмінені, attendance -1): ${formatThousandVal(todayData.turnoverToday ?? 0)} тис. грн`}>
+                          <span className="opacity-90">💰</span> {formatThousandVal(todayData.turnoverToday ?? 0)}
                         </span>
+                        <span className="text-[11px] font-bold text-gray-700 shrink-0">Фін. Рез.</span>
                       </div>
                     </>
                   ) : (
