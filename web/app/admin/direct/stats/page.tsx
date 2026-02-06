@@ -27,6 +27,7 @@ type FooterBlock = {
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   noRebookCount?: number;
+  returnedClientsCount?: number;
   turnoverToday?: number;
 };
 
@@ -303,7 +304,7 @@ export default function DirectStatsPage() {
                     { label: "No-show", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
                     { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
-                    { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconRescheduled: true },
+                    { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
@@ -312,13 +313,11 @@ export default function DirectStatsPage() {
                             <img src={row.iconImage} alt="" className="w-5 h-5 object-contain" />
                             {row.label}
                           </span>
-                        ) : "iconRescheduled" in row && row.iconRescheduled ? (
+                        ) : "iconBlueCircle2" in row && row.iconBlueCircle2 ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <svg className="w-5 h-5 shrink-0" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                              <rect x="5" y="6" width="18" height="18" rx="2" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5"/>
-                              <path d="M8 4 L8 10 M20 4 L20 10" stroke="#d97706" strokeWidth="2" strokeLinecap="round"/>
-                              <path d="M5 12 L23 12" stroke="#d97706" strokeWidth="1.5"/>
-                              <path d="M11 17 L14 14 L17 17 M17 17 L14 20 L11 17" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                              <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                              <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
                             </svg>
                             {row.label}
                           </span>
@@ -342,12 +341,21 @@ export default function DirectStatsPage() {
                     { label: "Перезаписи", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                     { label: "Допродажі", icon: "💅", key: "upsalesGoodsSum", unit: "тис. грн" },
                     { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
+                    { label: "Повернутий клієнт", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
                         {row.blueDot ? (
                           <span className="inline-flex items-center gap-1.5">
                             <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" /> {row.label}
+                          </span>
+                        ) : "iconBlueCircle2" in row && row.iconBlueCircle2 ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                              <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                              <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+                            </svg>
+                            {row.label}
                           </span>
                         ) : (
                           <>{row.icon} {row.label}</>

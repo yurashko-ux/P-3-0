@@ -720,6 +720,7 @@ type FooterStatsBlock = {
   createdPaidSum: number;
   plannedPaidSum: number;
   consultationRescheduledCount?: number;
+  returnedClientsCount?: number;
 };
 
 /** Розширення для блоку «Сьогодні» (KPI з піктограмами) */
@@ -731,6 +732,7 @@ type FooterTodayStats = FooterStatsBlock & {
   consultationNoShow?: number;
   consultationCancelled?: number;
   consultationRescheduledCount?: number;
+  returnedClientsCount?: number;
   noSaleCount?: number;
   newPaidClients?: number;
   recordsCreatedSum?: number;
@@ -3439,7 +3441,10 @@ export function DirectClientTable({
                         <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0} шт.">🚫 {todayData.consultationCancelled ?? 0}</span>
                         <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0} шт.">💔 {todayData.noSaleCount ?? 0}</span>
                         <span title="Відновлена консультація (перенос дати): — {todayData.consultationRescheduledCount ?? 0} шт." className="inline-flex items-center gap-1">
-                          <StateIcon state="consultation-rescheduled" size={12} />
+                          <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                            <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                            <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+                          </svg>
                           <span>{todayData.consultationRescheduledCount ?? 0}</span>
                         </span>
                       </div>
@@ -3465,6 +3470,13 @@ export function DirectClientTable({
                           <span>{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
                         </span>
                         <span title="Немає перезапису (дані з колонки Стан): ⚠️ {(todayData.noRebookCount ?? 0)} шт.">⚠️ {todayData.noRebookCount ?? 0}</span>
+                        <span title="Повернуті клієнти (visits ≥ 2): — {(todayData.returnedClientsCount ?? 0)} шт." className="inline-flex items-center gap-1">
+                          <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                            <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                            <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+                          </svg>
+                          <span>{todayData.returnedClientsCount ?? 0}</span>
+                        </span>
                       </div>
                       {/* 3-й рядок: Фін. Рез. зліва, далі оборот */}
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">

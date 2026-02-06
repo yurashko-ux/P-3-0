@@ -35,6 +35,8 @@ type FooterStatsBlock = {
   plannedPaidSum: number;
   /** Відновлена консультація (перенос дати), state === 'consultation-rescheduled' */
   consultationRescheduledCount: number;
+  /** Повернуті клієнти (visits >= 2), активність у періоді */
+  returnedClientsCount: number;
 };
 
 /** Додаткові KPI лише для блоку «Сьогодні» (піктограми в футері) */
@@ -69,6 +71,8 @@ export type FooterTodayStats = FooterStatsBlock & {
   noRebookCount: number;
   /** Відновлена консультація (перенос дати), state === 'consultation-rescheduled' */
   consultationRescheduledCount: number;
+  /** Повернуті клієнти (visits >= 2), активність сьогодні */
+  returnedClientsCount: number;
   /** Оборот за сьогодні: сума записів з датою сьогодні мінус скасовані/відмінені (attendance -1), грн */
   turnoverToday: number;
 };
@@ -81,6 +85,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   createdPaidSum: 0,
   plannedPaidSum: 0,
   consultationRescheduledCount: 0,
+  returnedClientsCount: 0,
 });
 
 function emptyTodayBlock(): FooterTodayStats {
@@ -101,6 +106,7 @@ function emptyTodayBlock(): FooterTodayStats {
     newClientsCount: 0,
     noRebookCount: 0,
     consultationRescheduledCount: 0,
+    returnedClientsCount: 0,
     turnoverToday: 0,
   };
 }
@@ -150,6 +156,9 @@ export async function GET(req: NextRequest) {
     let consultAttendedPast = 0;
     let salesFromConsultPast = 0;
     const newClientsIdsToday = new Set<string>();
+    const returnedClientIdsPast = new Set<string>();
+    const returnedClientIdsToday = new Set<string>();
+    const returnedClientIdsFuture = new Set<string>();
 
     const addByDay = (day: string, apply: (block: FooterStatsBlock) => void) => {
       if (!day || day < start || day > end) return;
@@ -255,9 +264,21 @@ export async function GET(req: NextRequest) {
           newClientsIdsToday.add(client.id);
         }
       }
+
+      // Повернуті клієнти (visits >= 2) — унікальні за періодом
+      if (visitsCount >= 2) {
+        if (consultDay && consultDay >= start && consultDay <= todayKyiv) returnedClientIdsPast.add(client.id);
+        if (paidDay && paidDay >= start && paidDay <= todayKyiv) returnedClientIdsPast.add(client.id);
+        if ((consultDay === todayKyiv || paidDay === todayKyiv)) returnedClientIdsToday.add(client.id);
+        if (consultDay && consultDay > todayKyiv && consultDay <= end) returnedClientIdsFuture.add(client.id);
+        if (paidDay && paidDay > todayKyiv && paidDay <= end) returnedClientIdsFuture.add(client.id);
+      }
     }
 
     (stats.today as FooterTodayStats).newClientsCount = newClientsIdsToday.size;
+    stats.past.returnedClientsCount = returnedClientIdsPast.size;
+    (stats.today as FooterTodayStats).returnedClientsCount = returnedClientIdsToday.size;
+    stats.future.returnedClientsCount = returnedClientIdsFuture.size;
     (stats.today as FooterTodayStats).newPaidClients = stats.today.sales;
 
     stats.past.conversion1Rate = consultBookedPast > 0 ? (consultAttendedPast / consultBookedPast) * 100 : 0;
