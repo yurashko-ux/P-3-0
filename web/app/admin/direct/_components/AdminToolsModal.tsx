@@ -239,6 +239,8 @@ export function AdminToolsModal({
               message += `  Оновлено: ${stats.updated || 0}\n`;
               message += `  lastVisitAt оновлено: ${stats.lastVisitUpdated ?? '—'}\n`;
               message += `  lastVisitMap (Altegio): ${stats.lastVisitMapSize ?? '—'} клієнтів\n`;
+              message += `  Знайдено в map (з ${stats.targets ?? 0}): ${stats.lastVisitFoundInMap ?? '—'}\n`;
+              message += `  Вже однакове (пропущено): ${stats.lastVisitSkippedAlreadySame ?? '—'}\n`;
               message += `  Пропущено (немає змін): ${stats.skippedNoChange || 0}\n`;
               message += `  Помилок: ${stats.errors || 0}\n`;
               message += `  Час виконання: ${stats.ms ? Math.round(stats.ms / 1000) : 0} сек\n`;

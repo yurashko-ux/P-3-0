@@ -90,7 +90,11 @@ async function runSync(req: NextRequest) {
   console.log('[cron/sync-direct-altegio-metrics] Старт', { delayMs, limit });
 
   const allClients = await getAllDirectClients();
-  const targets = allClients.filter((c) => typeof c.altegioClientId === 'number' && (c.altegioClientId || 0) > 0);
+  const targets = allClients.filter((c) => {
+    const id = c.altegioClientId;
+    const n = typeof id === 'number' ? id : typeof id === 'string' ? parseInt(id, 10) : NaN;
+    return !Number.isNaN(n) && n > 0;
+  });
   
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-direct-altegio-metrics/route.ts:61',message:'Clients loaded',data:{totalClients:allClients.length,targetsCount:targets.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
@@ -127,6 +131,8 @@ async function runSync(req: NextRequest) {
   let fetchedNotFound = 0;
   let errors = 0;
   let lastVisitUpdated = 0;
+  let lastVisitFoundInMap = 0;
+  let lastVisitSkippedAlreadySame = 0;
 
   const samples: Array<{ directClientId: string; altegioClientId: number; action: string; changedKeys?: string[] }> = [];
   const errorDetails: Array<{ directClientId: string; altegioClientId: number; error: string }> = [];
@@ -217,14 +223,20 @@ async function runSync(req: NextRequest) {
       // Не “затираємо” на null, якщо ключ не знайдений (щоб не втрачати дані при часткових вибірках).
       try {
         if (lastVisitMap && lastVisitMap.size > 0) {
-          const lv = lastVisitMap.get(client.altegioClientId);
-          if (lv) {
-            const current = (client as any).lastVisitAt ? String((client as any).lastVisitAt) : '';
-            const currentTs = current ? new Date(current).getTime() : NaN;
-            const nextTs = new Date(lv).getTime();
-            if (Number.isFinite(nextTs) && (!Number.isFinite(currentTs) || currentTs !== nextTs)) {
-              updates.lastVisitAt = new Date(nextTs).toISOString();
-              changedKeys.push('lastVisitAt');
+          const aid = Number(client.altegioClientId);
+          if (aid && !Number.isNaN(aid)) {
+            const lv = lastVisitMap.get(aid);
+            if (lv) {
+              lastVisitFoundInMap++;
+              const current = (client as any).lastVisitAt ? String((client as any).lastVisitAt) : '';
+              const currentTs = current ? new Date(current).getTime() : NaN;
+              const nextTs = new Date(lv).getTime();
+              if (Number.isFinite(nextTs) && (!Number.isFinite(currentTs) || currentTs !== nextTs)) {
+                updates.lastVisitAt = new Date(nextTs).toISOString();
+                changedKeys.push('lastVisitAt');
+              } else if (Number.isFinite(currentTs) && currentTs === nextTs) {
+                lastVisitSkippedAlreadySame++;
+              }
             }
           }
         }
@@ -325,6 +337,8 @@ async function runSync(req: NextRequest) {
     errors,
     lastVisitMapSize: lastVisitMap?.size || 0,
     lastVisitUpdated,
+    lastVisitFoundInMap,
+    lastVisitSkippedAlreadySame,
     ms,
   });
 
@@ -348,6 +362,8 @@ async function runSync(req: NextRequest) {
           errors,
           lastVisitMapSize: lastVisitMap?.size || 0,
           lastVisitUpdated,
+          lastVisitFoundInMap,
+          lastVisitSkippedAlreadySame,
           ms,
         },
       })
@@ -367,6 +383,8 @@ async function runSync(req: NextRequest) {
       errors,
       lastVisitMapSize: lastVisitMap?.size || 0,
       lastVisitUpdated,
+      lastVisitFoundInMap,
+      lastVisitSkippedAlreadySame,
       ms,
     },
     samples,
