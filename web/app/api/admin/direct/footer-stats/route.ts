@@ -37,8 +37,10 @@ type FooterStatsBlock = {
 
 /** Додаткові KPI лише для блоку «Сьогодні» (піктограми в футері) */
 export type FooterTodayStats = FooterStatsBlock & {
-  /** Консультації: створені (дата запису = сьогодні) */
+  /** Консультації: створені (дата запису = сьогодні), сума кількості */
   consultationCreated: number;
+  /** Онлайн консультації за сьогодні (💻) */
+  consultationOnlineCount: number;
   /** Консультації: заплановані (сьогодні, без результату) */
   consultationPlanned: number;
   /** Консультації: реалізовані (сьогодні, прийшов) */
@@ -47,18 +49,24 @@ export type FooterTodayStats = FooterStatsBlock & {
   consultationNoShow: number;
   /** Консультації: скасовані (сьогодні) */
   consultationCancelled: number;
-  /** Нові платні клієнти (продаж після консультації) за сьогодні */
+  /** Немає продажі (💔), дані з колонки стан — state === 'too-expensive' */
+  noSaleCount: number;
+  /** Нові платні клієнти за сьогодні */
   newPaidClients: number;
-  /** Сума створених записів за сьогодні (тис. грн) */
+  /** Сума створених записів за сьогодні (грн) */
   recordsCreatedSum: number;
-  /** Сума реалізованих записів за сьогодні (тис. грн) */
+  /** Сума реалізованих записів за сьогодні (грн) */
   recordsRealizedSum: number;
   /** Кількість перезаписів (🔁) за сьогодні */
   rebookingsCount: number;
-  /** Доп продажі (продукція без груп волосся) за сьогодні */
+  /** Допродажі (продукція без груп волосся) за сьогодні (грн) */
   upsalesGoodsSum: number;
   /** Нові клієнти (голубий фон у колонці Майстер) за сьогодні */
   newClientsCount: number;
+  /** Немає перезапису (⚠️), дані з колонки стан — state === 'consultation-no-show' */
+  noRebookCount: number;
+  /** Оборот за сьогодні: сума записів з датою сьогодні мінус скасовані/відмінені (attendance -1), грн */
+  turnoverToday: number;
 };
 
 const emptyBlock = (): FooterStatsBlock => ({
@@ -74,16 +82,20 @@ function emptyTodayBlock(): FooterTodayStats {
   return {
     ...emptyBlock(),
     consultationCreated: 0,
+    consultationOnlineCount: 0,
     consultationPlanned: 0,
     consultationRealized: 0,
     consultationNoShow: 0,
     consultationCancelled: 0,
+    noSaleCount: 0,
     newPaidClients: 0,
     recordsCreatedSum: 0,
     recordsRealizedSum: 0,
     rebookingsCount: 0,
     upsalesGoodsSum: 0,
     newClientsCount: 0,
+    noRebookCount: 0,
+    turnoverToday: 0,
   };
 }
 
@@ -155,7 +167,10 @@ export async function GET(req: NextRequest) {
         addByDay(consultCreatedDay, (b) => {
           b.createdConsultations += 1;
         });
-        if (consultCreatedDay === todayKyiv) t.consultationCreated += 1;
+        if (consultCreatedDay === todayKyiv) {
+          t.consultationCreated += 1;
+          if ((client as any).isOnlineConsultation === true) t.consultationOnlineCount += 1;
+        }
       }
 
       // 2) Успішні / 3) Скасовані та не відбулися (по даті консультації) + 5 станів для сьогодні
@@ -204,8 +219,20 @@ export async function GET(req: NextRequest) {
         if (paidDay === todayKyiv && client.paidServiceAttended === true) t.recordsRealizedSum += paidSum;
       }
 
-      // Перезаписи (🔁) — поки 0, потрібне поле paidServiceIsRebooking з KV/енричменту
+      // Перезаписи (🔁)
       if (paidDay === todayKyiv && (client as any).paidServiceIsRebooking === true) t.rebookingsCount += 1;
+
+      // Немає продажі (💔) — з колонки стан (state === 'too-expensive')
+      const isRelevantToday = consultDay === todayKyiv || paidDay === todayKyiv;
+      if (isRelevantToday && client.state === 'too-expensive') t.noSaleCount += 1;
+
+      // Немає перезапису (⚠️) — з колонки стан (state === 'consultation-no-show')
+      if (isRelevantToday && client.state === 'consultation-no-show') t.noRebookCount += 1;
+
+      // Оборот за сьогодні: сума записів з датою сьогодні, без скасованих/відміних (attendance -1)
+      if (paidDay === todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
+        t.turnoverToday += paidSum;
+      }
 
       // Нові клієнти за сьогодні (голубий фон у колонці Майстер)
       if (visitsCount < 2) {

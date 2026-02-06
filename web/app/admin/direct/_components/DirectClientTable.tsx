@@ -724,16 +724,20 @@ type FooterStatsBlock = {
 /** Розширення для блоку «Сьогодні» (KPI з піктограмами) */
 type FooterTodayStats = FooterStatsBlock & {
   consultationCreated?: number;
+  consultationOnlineCount?: number;
   consultationPlanned?: number;
   consultationRealized?: number;
   consultationNoShow?: number;
   consultationCancelled?: number;
+  noSaleCount?: number;
   newPaidClients?: number;
   recordsCreatedSum?: number;
   recordsRealizedSum?: number;
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   newClientsCount?: number;
+  noRebookCount?: number;
+  turnoverToday?: number;
 };
 
 // Допоміжна функція для отримання стилів колонки (width/minWidth — тільки якщо немає colgroup)
@@ -3426,46 +3430,65 @@ export function DirectClientTable({
               );
               const todayData = footerStats.today as FooterTodayStats;
               const hasTodayKpi = typeof todayData.consultationCreated === 'number';
+              const formatThousandVal = (v: number) => `${(v / 1000).toFixed(1)} тис. грн`;
               const renderTodayBlock = () => (
                 <div className="px-3">
-                  <div className="text-[11px] font-medium text-gray-700">Сьогодні</div>
                   {hasTodayKpi ? (
-                    <div className="mt-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                        <span className="rounded bg-blue-100 px-1 text-blue-700" title="Консультацій створено (запис на сьогодні)">
-                          📅 {todayData.consultationCreated ?? 0}
+                    <>
+                      {/* 1-й рядок: Сьогодні + Консультації: синій календар (сума кількості), 💻 онлайн, 📅 консультації, ⏳✅❌🚫💔 */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-[11px] font-medium text-gray-700">Сьогодні</span>
+                        <span className="text-[11px] font-medium text-gray-600">Консультації:</span>
+                        <span title="Консультацій створено (сума кількості)">
+                          <img src="/assets/footer-calendar.png" alt="" className="inline-block w-4 h-4 align-middle" />
+                          <span className="ml-0.5 align-middle">{todayData.consultationCreated ?? 0}</span>
                         </span>
-                        <span title="Заплановані (очікується)">
-                          ⏳ {todayData.consultationPlanned ?? 0}
+                        <span title="Онлайн консультації: 💻 — {todayData.consultationOnlineCount ?? 0}">💻 {todayData.consultationOnlineCount ?? 0}</span>
+                        <span title="Консультації (офлайн): 📅 — {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}">📅 {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}</span>
+                        <span title="Заплановані (очікується): ⏳ — {todayData.consultationPlanned ?? 0}">⏳ {todayData.consultationPlanned ?? 0}</span>
+                        <span className="text-green-600" title="Реалізовані (прийшли): ✅ — {todayData.consultationRealized ?? 0}">✅ {todayData.consultationRealized ?? 0}</span>
+                        <span className="text-red-600" title="Не прийшли: ❌ — {todayData.consultationNoShow ?? 0}">❌ {todayData.consultationNoShow ?? 0}</span>
+                        <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0}">🚫 {todayData.consultationCancelled ?? 0}</span>
+                        <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0}">💔 {todayData.noSaleCount ?? 0}</span>
+                      </div>
+                      {/* 2-й рядок: Записи: Нові клієнти (голубий кружечок) шт., Створено (сірий) тис. грн, Реалізовано ✅, Перезаписів 🔁, Допродажі (лак), Немає перезапису ⚠️ */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-[11px] font-medium text-gray-600">Записи:</span>
+                        <span title="Нові клієнти (голубий фон у колонці Майстер): шт.">
+                          <span className="inline-flex items-center justify-center rounded-full w-5 h-5 bg-[#2AABEE] text-white text-[10px] font-medium">{(todayData.newClientsCount ?? 0)}</span>
+                          <span className="ml-0.5 text-[10px]">шт.</span>
                         </span>
-                        <span className="text-green-600" title="Реалізовані (прийшли)">
-                          ✅ {todayData.consultationRealized ?? 0}
+                        <span title="Створено (записи, що створені сьогодні): тис. грн">
+                          <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
                         </span>
-                        <span className="text-red-600" title="Не прийшли">
-                          ❌ {todayData.consultationNoShow ?? 0}
+                        <span className="text-green-600" title="Реалізовано: ✅ тис. грн">✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
+                        <span title="Перезаписів: 🔁 шт. — {todayData.rebookingsCount ?? 0}">🔁 {todayData.rebookingsCount ?? 0} шт.</span>
+                        <span title="Допродажі (продукція без груп волосся): тис. грн">
+                          <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-4 h-4 align-middle" />
+                          <span className="ml-0.5 align-middle">{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
                         </span>
-                        <span className="text-orange-600" title="Скасовані">
-                          🚫 {todayData.consultationCancelled ?? 0}
+                        <span title="Немає перезапису (дані з колонки Стан): ⚠️ шт. — {todayData.noRebookCount ?? 0}">⚠️ {todayData.noRebookCount ?? 0} шт.</span>
+                      </div>
+                      {/* 3-й рядок: Фін.: Оборот (значок) — значення */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-[11px] font-medium text-gray-600">Фін.:</span>
+                        <span title="Оборот за сьогодні (сума всіх записів з датою сьогодні мінус скасовані/відмінені, attendance -1)">
+                          <span className="opacity-90">💰</span> Оборот: {formatMoney(todayData.turnoverToday ?? 0)}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                        <span>Нові платні: {(todayData.newPaidClients ?? todayData.sales) ?? 0}</span>
-                        <span title="Записи створені (тис. грн)">Створено: {formatThousand(todayData.recordsCreatedSum ?? 0)}</span>
-                        <span title="Записи реалізовані (тис. грн)">Реалізовано: {formatThousand(todayData.recordsRealizedSum ?? 0)}</span>
-                        <span title="Кількість перезаписів">🔁 {(todayData.rebookingsCount ?? 0)}</span>
-                        <span title="Доп продажі (продукція без груп волосся)">Доп: {formatThousand(todayData.upsalesGoodsSum ?? 0)}</span>
-                        <span className="text-blue-700" title="Нові клієнти (голубий фон у колонці Майстер)">Нові: {todayData.newClientsCount ?? 0}</span>
-                      </div>
-                    </div>
+                    </>
                   ) : (
-                    <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
-                      <div>Створено: {todayData.createdConsultations}</div>
-                      <div>Успішні: {todayData.successfulConsultations}</div>
-                      <div>Скасовані/не були: {todayData.cancelledOrNoShow}</div>
-                      <div>Продажі: {todayData.sales}</div>
-                      <div>Створено ₴: {formatMoney(todayData.createdPaidSum)}</div>
-                      <div>Заплановано ₴: {formatMoney(todayData.plannedPaidSum)}</div>
-                    </div>
+                    <>
+                      <div className="text-[11px] font-medium text-gray-700">Сьогодні</div>
+                      <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
+                        <div>Створено: {todayData.createdConsultations}</div>
+                        <div>Успішні: {todayData.successfulConsultations}</div>
+                        <div>Скасовані/не були: {todayData.cancelledOrNoShow}</div>
+                        <div>Продажі: {todayData.sales}</div>
+                        <div>Створено ₴: {formatMoney(todayData.createdPaidSum)}</div>
+                        <div>Заплановано ₴: {formatMoney(todayData.plannedPaidSum)}</div>
+                      </div>
+                    </>
                   )}
                 </div>
               );
