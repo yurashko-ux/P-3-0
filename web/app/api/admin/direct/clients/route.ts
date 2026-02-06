@@ -925,21 +925,25 @@ export async function GET(req: NextRequest) {
         // #endregion
 
         const result = clientsWithChatMeta.map((c, index) => {
-          // Використовуємо тільки lastVisitAt з Altegio API
-          const iso = ((c as any).lastVisitAt || '').toString().trim();
-          
-          // #region agent log
-          if (index < 5) { // Логуємо перші 5 клієнтів для діагностики
-            fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:828',message:'Processing client for daysSinceLastVisit',data:{clientId:c.id,hasLastVisitAt:!!(c as any).lastVisitAt,lastVisitAtRaw:(c as any).lastVisitAt,lastVisitAtIso:iso,hasAltegioClientId:!!c.altegioClientId,altegioClientId:c.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // Джерело 1: lastVisitAt з Altegio API (пріоритет)
+          let iso = ((c as any).lastVisitAt || '').toString().trim();
+
+          // Fallback: якщо lastVisitAt відсутній — використовуємо дати візитів, які точно відбулись
+          if (!iso) {
+            const candidates: string[] = [];
+            if (c.paidServiceAttended === true && c.paidServiceDate) {
+              candidates.push((typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '');
+            }
+            if (c.consultationAttended === true && c.consultationBookingDate) {
+              candidates.push((typeof c.consultationBookingDate === 'string' ? c.consultationBookingDate : (c.consultationBookingDate as Date)?.toISOString?.()) || '');
+            }
+            if (candidates.length > 0) {
+              const sorted = candidates.filter(Boolean).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+              iso = sorted[0] || '';
+            }
           }
-          // #endregion
           
           if (!iso) {
-            // #region agent log
-            if (index < 5) {
-              fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:833',message:'Client has no lastVisitAt from Altegio API',data:{clientId:c.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            }
-            // #endregion
             return { ...c, daysSinceLastVisit: undefined };
           }
           const day = kyivDayFromISO(iso);

@@ -31,7 +31,15 @@ export async function GET(req: NextRequest) {
   try {
     const raw = await kvRead.getRaw('direct:cron:sync-direct-altegio-metrics:lastRun');
     const parsed = raw ? JSON.parse(raw) : null;
-    return NextResponse.json({ ok: true, lastRun: parsed });
+    const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+    const hasAltegioCompanyId = !!companyIdStr.trim() && !Number.isNaN(parseInt(companyIdStr, 10));
+    return NextResponse.json({
+      ok: true,
+      lastRun: parsed,
+      env: {
+        ALTEGIO_COMPANY_ID: hasAltegioCompanyId ? '✅ налаштовано' : '❌ не налаштовано (lastVisitAt не синхронізується!)',
+      },
+    });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
