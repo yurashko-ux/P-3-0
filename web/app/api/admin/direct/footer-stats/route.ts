@@ -37,6 +37,33 @@ type FooterStatsBlock = {
   consultationRescheduledCount: number;
   /** Повернуті клієнти (visits >= 2), активність у періоді */
   returnedClientsCount: number;
+  // Деталізовані поля для past (як у today)
+  consultationCreated?: number;
+  consultationOnlineCount?: number;
+  consultationPlanned?: number;
+  consultationRealized?: number;
+  consultationNoShow?: number;
+  consultationCancelled?: number;
+  noSaleCount?: number;
+  newPaidClients?: number;
+  recordsCreatedSum?: number;
+  recordsRealizedSum?: number;
+  rebookingsCount?: number;
+  upsalesGoodsSum?: number;
+  newClientsCount?: number;
+  noRebookCount?: number;
+  turnoverToday?: number;
+  // Поля для future
+  /** Консультації: заплановані (майбутні) */
+  consultationPlannedFuture?: number;
+  /** Записи: майбутніх (до кінця місяця включно) */
+  plannedPaidSumFuture?: number;
+  /** Записи: до кінця місяця */
+  plannedPaidSumToMonthEnd?: number;
+  /** Записи: наступного місяця */
+  plannedPaidSumNextMonth?: number;
+  /** Записи: +2 місяці */
+  plannedPaidSumPlus2Months?: number;
 };
 
 /** Додаткові KPI лише для блоку «Сьогодні» (піктограми в футері) */
@@ -86,6 +113,26 @@ const emptyBlock = (): FooterStatsBlock => ({
   plannedPaidSum: 0,
   consultationRescheduledCount: 0,
   returnedClientsCount: 0,
+  consultationCreated: 0,
+  consultationOnlineCount: 0,
+  consultationPlanned: 0,
+  consultationRealized: 0,
+  consultationNoShow: 0,
+  consultationCancelled: 0,
+  noSaleCount: 0,
+  newPaidClients: 0,
+  recordsCreatedSum: 0,
+  recordsRealizedSum: 0,
+  rebookingsCount: 0,
+  upsalesGoodsSum: 0,
+  newClientsCount: 0,
+  noRebookCount: 0,
+  turnoverToday: 0,
+  consultationPlannedFuture: 0,
+  plannedPaidSumFuture: 0,
+  plannedPaidSumToMonthEnd: 0,
+  plannedPaidSumNextMonth: 0,
+  plannedPaidSumPlus2Months: 0,
 });
 
 function emptyTodayBlock(): FooterTodayStats {
@@ -126,6 +173,39 @@ const getMonthBounds = (todayKyiv: string): { start: string; end: string } => {
   return { start: `${y}-${m}-01`, end: `${y}-${m}-${pad(lastDay)}` };
 };
 
+const addMonths = (monthKey: string, deltaMonths: number): string => {
+  // monthKey: YYYY-MM
+  const [yStr, mStr] = monthKey.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!y || !m) return monthKey;
+  const d = new Date(y, m - 1 + deltaMonths, 1);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}`;
+};
+
+const getNextMonthBounds = (todayKyiv: string): { start: string; end: string } => {
+  const [y, m] = todayKyiv.split('-');
+  const year = Number(y);
+  const month = Number(m);
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const lastDay = new Date(nextYear, nextMonth, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return { start: `${nextYear}-${pad(nextMonth)}-01`, end: `${nextYear}-${pad(nextMonth)}-${pad(lastDay)}` };
+};
+
+const getPlus2MonthsBounds = (todayKyiv: string): { start: string; end: string } => {
+  const monthKey = todayKyiv.slice(0, 7); // YYYY-MM
+  const plus2Month = addMonths(monthKey, 2);
+  const [y, m] = plus2Month.split('-');
+  const year = Number(y);
+  const month = Number(m);
+  const lastDay = new Date(year, month, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return { start: `${y}-${m}-01`, end: `${y}-${m}-${pad(lastDay)}` };
+};
+
 const getPaidSum = (client: any): number => {
   const breakdown = Array.isArray(client?.paidServiceVisitBreakdown) ? client.paidServiceVisitBreakdown : null;
   if (breakdown && breakdown.length > 0) {
@@ -145,6 +225,8 @@ export async function GET(req: NextRequest) {
 
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
     const { start, end } = getMonthBounds(todayKyiv);
+    const nextMonthBounds = getNextMonthBounds(todayKyiv);
+    const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);
 
     const stats = {
       past: emptyBlock(),
@@ -156,6 +238,7 @@ export async function GET(req: NextRequest) {
     let consultAttendedPast = 0;
     let salesFromConsultPast = 0;
     const newClientsIdsToday = new Set<string>();
+    const newClientsIdsPast = new Set<string>();
     const returnedClientIdsPast = new Set<string>();
     const returnedClientIdsToday = new Set<string>();
     const returnedClientIdsFuture = new Set<string>();
@@ -182,6 +265,14 @@ export async function GET(req: NextRequest) {
         addByDay(consultCreatedDay, (b) => {
           b.createdConsultations += 1;
         });
+        // Деталі для past
+        if (consultCreatedDay >= start && consultCreatedDay <= todayKyiv) {
+          stats.past.consultationCreated = (stats.past.consultationCreated || 0) + 1;
+          if ((client as any).isOnlineConsultation === true) {
+            stats.past.consultationOnlineCount = (stats.past.consultationOnlineCount || 0) + 1;
+          }
+        }
+        // Деталі для today
         if (consultCreatedDay === todayKyiv) {
           t.consultationCreated += 1;
           if ((client as any).isOnlineConsultation === true) t.consultationOnlineCount += 1;
@@ -195,11 +286,23 @@ export async function GET(req: NextRequest) {
           if (client.consultationAttended === true) b.successfulConsultations += 1;
           else if (client.consultationCancelled || client.consultationAttended === false) b.cancelledOrNoShow += 1;
         });
+        // Деталі для past
+        if (consultDay >= start && consultDay <= todayKyiv) {
+          if (client.consultationCancelled) stats.past.consultationCancelled = (stats.past.consultationCancelled || 0) + 1;
+          else if (client.consultationAttended === true) stats.past.consultationRealized = (stats.past.consultationRealized || 0) + 1;
+          else if (client.consultationAttended === false) stats.past.consultationNoShow = (stats.past.consultationNoShow || 0) + 1;
+          else stats.past.consultationPlanned = (stats.past.consultationPlanned || 0) + 1;
+        }
+        // Деталі для today
         if (consultDay === todayKyiv) {
           if (client.consultationCancelled) t.consultationCancelled += 1;
           else if (client.consultationAttended === true) t.consultationRealized += 1;
           else if (client.consultationAttended === false) t.consultationNoShow += 1;
           else t.consultationPlanned += 1;
+        }
+        // Future: заплановані консультації
+        if (consultDay > todayKyiv && consultDay <= end) {
+          stats.future.consultationPlannedFuture = (stats.future.consultationPlannedFuture || 0) + 1;
         }
 
         // Відновлена консультація (перенос дати) — по даті консультації
@@ -231,37 +334,87 @@ export async function GET(req: NextRequest) {
         addByDay(paidCreatedDay, (b) => {
           b.createdPaidSum += paidSum;
         });
+        // Past: сума створених записів
+        if (paidCreatedDay >= start && paidCreatedDay <= todayKyiv) {
+          stats.past.recordsCreatedSum = (stats.past.recordsCreatedSum || 0) + paidSum;
+        }
+        // Today
         if (paidCreatedDay === todayKyiv) t.recordsCreatedSum += paidSum;
       }
 
-      // 8) Сума запланованих та реалізованих записів за сьогодні
+      // 8) Сума запланованих та реалізованих записів
       if (paidSum > 0 && paidDay) {
         addByDay(paidDay, (b) => {
           b.plannedPaidSum += paidSum;
         });
+        // Past: реалізовані записи
+        if (paidDay >= start && paidDay <= todayKyiv && client.paidServiceAttended === true) {
+          stats.past.recordsRealizedSum = (stats.past.recordsRealizedSum || 0) + paidSum;
+        }
+        // Today: реалізовані записи
         if (paidDay === todayKyiv && client.paidServiceAttended === true) t.recordsRealizedSum += paidSum;
+        // Future: записи по періодах
+        if (paidDay > todayKyiv && paidDay <= end) {
+          stats.future.plannedPaidSumFuture = (stats.future.plannedPaidSumFuture || 0) + paidSum;
+          stats.future.plannedPaidSumToMonthEnd = (stats.future.plannedPaidSumToMonthEnd || 0) + paidSum;
+        } else if (paidDay > end && paidDay >= nextMonthBounds.start && paidDay <= nextMonthBounds.end) {
+          stats.future.plannedPaidSumNextMonth = (stats.future.plannedPaidSumNextMonth || 0) + paidSum;
+        } else if (paidDay > nextMonthBounds.end && paidDay >= plus2MonthsBounds.start && paidDay <= plus2MonthsBounds.end) {
+          stats.future.plannedPaidSumPlus2Months = (stats.future.plannedPaidSumPlus2Months || 0) + paidSum;
+        }
       }
 
       // Перезаписи (🔁)
       if (paidDay === todayKyiv && (client as any).paidServiceIsRebooking === true) t.rebookingsCount += 1;
+      // Past: перезаписи
+      if (paidDay && paidDay >= start && paidDay <= todayKyiv && (client as any).paidServiceIsRebooking === true) {
+        stats.past.rebookingsCount = (stats.past.rebookingsCount || 0) + 1;
+      }
 
       // Немає продажі (💔) — з колонки стан (state === 'too-expensive')
       const isRelevantToday = consultDay === todayKyiv || paidDay === todayKyiv;
+      const isRelevantPast = (consultDay && consultDay >= start && consultDay <= todayKyiv) || (paidDay && paidDay >= start && paidDay <= todayKyiv);
       if (isRelevantToday && client.state === 'too-expensive') t.noSaleCount += 1;
+      if (isRelevantPast && client.state === 'too-expensive') {
+        stats.past.noSaleCount = (stats.past.noSaleCount || 0) + 1;
+      }
 
       // Немає перезапису (⚠️) — з колонки стан (state === 'consultation-no-show')
       if (isRelevantToday && client.state === 'consultation-no-show') t.noRebookCount += 1;
+      if (isRelevantPast && client.state === 'consultation-no-show') {
+        stats.past.noRebookCount = (stats.past.noRebookCount || 0) + 1;
+      }
 
-      // Оборот за сьогодні: сума записів з датою сьогодні, без скасованих/відміних (attendance -1)
+      // Оборот: сума записів без скасованих/відміних (attendance -1)
       if (paidDay === todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
         t.turnoverToday += paidSum;
       }
+      // Past: оборот
+      if (paidDay && paidDay >= start && paidDay <= todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
+        stats.past.turnoverToday = (stats.past.turnoverToday || 0) + paidSum;
+      }
 
-      // Нові клієнти за сьогодні (голубий фон у колонці Майстер)
+      // Допродажі (продукція без груп волосся)
+      const isHairCategory = (client as any).paidServiceCategory === 'hair-extension' || 
+        (typeof (client as any).paidServiceVisitBreakdown === 'object' && 
+         Array.isArray((client as any).paidServiceVisitBreakdown) &&
+         (client as any).paidServiceVisitBreakdown.some((b: any) => b?.category === 'hair-extension'));
+      const goodsSum = !isHairCategory && paidSum > 0 ? paidSum : 0;
+      if (paidDay === todayKyiv && goodsSum > 0) t.upsalesGoodsSum += goodsSum;
+      if (paidDay && paidDay >= start && paidDay <= todayKyiv && goodsSum > 0) {
+        stats.past.upsalesGoodsSum = (stats.past.upsalesGoodsSum || 0) + goodsSum;
+      }
+
+      // Нові клієнти (голубий фон у колонці Майстер)
       if (visitsCount < 2) {
         if ((consultDay === todayKyiv && client.consultationAttended === true) ||
             (paidDay === todayKyiv && client.paidServiceAttended === true)) {
           newClientsIdsToday.add(client.id);
+        }
+        // Past: нові клієнти
+        if ((consultDay && consultDay >= start && consultDay <= todayKyiv && client.consultationAttended === true) ||
+            (paidDay && paidDay >= start && paidDay <= todayKyiv && client.paidServiceAttended === true)) {
+          newClientsIdsPast.add(client.id);
         }
       }
 
@@ -276,10 +429,12 @@ export async function GET(req: NextRequest) {
     }
 
     (stats.today as FooterTodayStats).newClientsCount = newClientsIdsToday.size;
+    stats.past.newClientsCount = newClientsIdsPast.size;
     stats.past.returnedClientsCount = returnedClientIdsPast.size;
     (stats.today as FooterTodayStats).returnedClientsCount = returnedClientIdsToday.size;
     stats.future.returnedClientsCount = returnedClientIdsFuture.size;
     (stats.today as FooterTodayStats).newPaidClients = stats.today.sales;
+    stats.past.newPaidClients = stats.past.sales;
 
     stats.past.conversion1Rate = consultBookedPast > 0 ? (consultAttendedPast / consultBookedPast) * 100 : 0;
     stats.past.conversion2Rate = consultAttendedPast > 0 ? (salesFromConsultPast / consultAttendedPast) * 100 : 0;

@@ -29,6 +29,10 @@ type FooterBlock = {
   noRebookCount?: number;
   returnedClientsCount?: number;
   turnoverToday?: number;
+  consultationPlannedFuture?: number;
+  plannedPaidSumToMonthEnd?: number;
+  plannedPaidSumNextMonth?: number;
+  plannedPaidSumPlus2Months?: number;
 };
 
 type MastersStatsRow = {
@@ -374,6 +378,60 @@ export default function DirectStatsPage() {
                     <td className="text-center">{formatFooterCell(footerStats.past, "turnoverToday", "тис. грн")}</td>
                     <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
                     <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">
+                      <span className="font-medium text-gray-600">Клієнти:</span>
+                      <span className="ml-1.5 inline-flex items-center gap-1" title="Нові">
+                        <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" />
+                      </span>
+                      <span className="ml-1 inline-flex items-center gap-1" title="Повернуті">
+                        <svg className="w-4 h-4 shrink-0 inline" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                          <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                          <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+                        </svg>
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      {(footerStats.past.newClientsCount ?? 0)} / {(footerStats.past.returnedClientsCount ?? 0)} шт
+                    </td>
+                    <td className="text-center">
+                      {(footerStats.today.newClientsCount ?? 0)} / {(footerStats.today.returnedClientsCount ?? 0)} шт
+                    </td>
+                    <td className="text-center">—</td>
+                  </tr>
+                  <tr className="bg-base-200/60">
+                    <td colSpan={4} className="font-medium">До кінця місяця (майбутнє)</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">⏳ Консультацій: Призначено</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">{(footerStats.future as any).consultationPlannedFuture ?? 0} шт</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">📆 Записів: Майбутніх</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">📅 До кінця місяця</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">➡️ Наступного місяця</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumNextMonth", "тис. грн")}</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">⏭️ +2 міс.</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumPlus2Months", "тис. грн")}</td>
                   </tr>
                 </tbody>
               </table>
