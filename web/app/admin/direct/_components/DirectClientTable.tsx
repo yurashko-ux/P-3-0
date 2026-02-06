@@ -3410,7 +3410,7 @@ export function DirectClientTable({
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
               const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
               const renderBlock = (title: string) => (
-                <div className="px-2 relative min-h-[2rem]">
+                <div className="px-3 relative min-h-[2rem]">
                   <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700">{title}.</span>
                 </div>
               );
@@ -3418,16 +3418,16 @@ export function DirectClientTable({
               const hasTodayKpi = typeof todayData.consultationCreated === 'number';
               const formatThousandVal = (v: number) => String(Math.round((v ?? 0) / 1000));
               const renderTodayBlock = () => (
-                <div className="px-2 relative">
+                <div className="px-3 relative">
                   {hasTodayKpi ? (
                     <>
                       <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700">Сьогодні.</span>
                       {/* 1-й рядок: Консультації: зліва, далі піктограми */}
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0">
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                         <span className="text-[10px] font-medium text-gray-600">Консультації:</span>
-                        <span title="Консультацій створено (сума кількості)" className="inline-flex items-center">
+                        <span title="Консультацій створено (сума кількості)" className="inline-flex items-center gap-1">
                           <StateIcon state="consultation-booked" size={12} />
-                          <span className="ml-0.5">{todayData.consultationCreated ?? 0}</span>
+                          <span>{todayData.consultationCreated ?? 0}</span>
                         </span>
                         <span title="Онлайн консультації: 💻 — {todayData.consultationOnlineCount ?? 0} шт.">💻 {todayData.consultationOnlineCount ?? 0}</span>
                         <span title="Консультації (офлайн): 📅 — {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))} шт.">📅 {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}</span>
@@ -3438,32 +3438,32 @@ export function DirectClientTable({
                         <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0} шт.">💔 {todayData.noSaleCount ?? 0}</span>
                       </div>
                       {/* 2-й рядок: Записи: зліва, далі піктограми; голуба крапка у 2 рази більша */}
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0 text-[10px]">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
                         <span className="font-medium text-gray-600">Записи:</span>
-                        <span title="Нові клієнти (голубий фон у колонці Майстер): {(todayData.newClientsCount ?? 0)} шт." className="inline-flex items-center gap-0.5">
+                        <span title="Нові клієнти (голубий фон у колонці Майстер): {(todayData.newClientsCount ?? 0)} шт." className="inline-flex items-center gap-1">
                           <span className="inline-block w-3 h-3 rounded-full bg-[#2AABEE] shrink-0" />
                           <span>{todayData.newClientsCount ?? 0}</span>
                         </span>
-                        <span title={`Записів створено (записи, що створені сьогодні): ${Math.round((todayData.recordsCreatedSum ?? 0) / 1000)} тис. грн`} className="inline-flex items-center gap-0.5">
+                        <span title={`Записів створено (записи, що створені сьогодні): ${Math.round((todayData.recordsCreatedSum ?? 0) / 1000)} тис. грн`} className="inline-flex items-center gap-1">
                           <span className="leading-none" title="Записів створено">📋</span>
                           <span>{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
                         </span>
-                        <span title={`Записів заплановано: ${Math.round((todayData.plannedPaidSum ?? 0) / 1000)} тис. грн`} className="inline-flex items-center gap-0.5">
+                        <span title={`Записів заплановано: ${Math.round((todayData.plannedPaidSum ?? 0) / 1000)} тис. грн`} className="inline-flex items-center gap-1">
                           <span className="opacity-90">⏳</span>
                           <span>{formatThousandVal(todayData.plannedPaidSum ?? 0)}</span>
                         </span>
                         <span className="text-green-600" title={`Реалізовано: ✅ ${Math.round((todayData.recordsRealizedSum ?? 0) / 1000)} тис. грн`}>✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
                         <span title="Перезаписів: 🔁 {(todayData.rebookingsCount ?? 0)} шт.">🔁 {todayData.rebookingsCount ?? 0}</span>
-                        <span title={`Допродажі (продукція без груп волосся): ${Math.round((todayData.upsalesGoodsSum ?? 0) / 1000)} тис. грн`} className="inline-flex items-center gap-0.5">
+                        <span title={`Допродажі (продукція без груп волосся): ${Math.round((todayData.upsalesGoodsSum ?? 0) / 1000)} тис. грн`} className="inline-flex items-center gap-1">
                           <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-2.5 h-2.5 object-contain align-middle [mix-blend-mode:multiply]" />
                           <span>{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
                         </span>
                         <span title="Немає перезапису (дані з колонки Стан): ⚠️ {(todayData.noRebookCount ?? 0)} шт.">⚠️ {todayData.noRebookCount ?? 0}</span>
                       </div>
                       {/* 3-й рядок: Фін. Рез. зліва, далі оборот */}
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0 text-[10px]">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
                         <span className="font-bold text-gray-700">Фін. Рез.</span>
-                        <span title={`Оборот за сьогодні (сума всіх записів з датою сьогодні мінус скасовані/відмінені, attendance -1): ${formatThousandVal(todayData.turnoverToday ?? 0)} тис. грн`}>
+                        <span className="inline-flex items-center gap-1" title={`Оборот за сьогодні (сума всіх записів з датою сьогодні мінус скасовані/відмінені, attendance -1): ${formatThousandVal(todayData.turnoverToday ?? 0)} тис. грн`}>
                           <span className="opacity-90">💰</span> <span>{formatThousandVal(todayData.turnoverToday ?? 0)}</span>
                         </span>
                       </div>
