@@ -1896,7 +1896,7 @@ export function DirectClientTable({
                   </tr>
                 ) : (
                   (() => {
-                    // Визначаємо індекс першого сьогоднішнього клієнта (по хронології - найстаріший сьогодні)
+                    // Визначаємо індекс останнього рядка блоку «сьогодні» (під ним — товста сіра лінія)
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
                       year: 'numeric',
@@ -1906,20 +1906,31 @@ export function DirectClientTable({
                     const todayKyivDayRow = kyivDayFmtRow.format(new Date());
                     const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
                     let firstTodayIndex = -1;
-                    let oldestTodayTime = Infinity;
-                    
-                    // Знаходимо найстаріший сьогоднішній клієнт (найменший час)
+
                     filteredClients.forEach((client, idx) => {
-                      const clientDate = client[dateField];
-                      if (clientDate) {
-                        const clientKyivDay = kyivDayFmtRow.format(new Date(clientDate));
-                        if (clientKyivDay === todayKyivDayRow) {
-                          const clientTime = new Date(clientDate).getTime();
-                          if (clientTime < oldestTodayTime) {
-                            oldestTodayTime = clientTime;
-                            firstTodayIndex = idx;
-                          }
+                      const belongsToToday = (() => {
+                        // 1. updatedAt/createdAt сьогодні
+                        const mainDate = client[dateField];
+                        if (mainDate) {
+                          const mainKyivDay = kyivDayFmtRow.format(new Date(mainDate));
+                          if (mainKyivDay === todayKyivDayRow) return true;
                         }
+                        // 2. Консультація призначена на сьогодні
+                        const consultDate = client.consultationBookingDate;
+                        if (consultDate) {
+                          const consultKyivDay = kyivDayFmtRow.format(new Date(consultDate));
+                          if (consultKyivDay === todayKyivDayRow) return true;
+                        }
+                        // 3. Запис призначений на сьогодні
+                        const paidDate = client.paidServiceDate;
+                        if (paidDate) {
+                          const paidKyivDay = kyivDayFmtRow.format(new Date(paidDate));
+                          if (paidKyivDay === todayKyivDayRow) return true;
+                        }
+                        return false;
+                      })();
+                      if (belongsToToday && idx > firstTodayIndex) {
+                        firstTodayIndex = idx;
                       }
                     });
 
