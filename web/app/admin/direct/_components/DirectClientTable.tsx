@@ -3435,10 +3435,10 @@ export function DirectClientTable({
                 <div className="px-3 relative">
                   {hasTodayKpi ? (
                     <>
-                      {/* 1-й рядок: контент зліва, назва "Консультації:" справа вгорі */}
+                      {/* 1-й рядок: Консультації: зліва, назва розділу "Сьогодні." справа */}
                       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="text-[11px] font-bold text-gray-700">Сьогодні.</span>
+                          <span className="text-[11px] font-medium text-gray-600">Консультації:</span>
                           <span title="Консультацій створено (сума кількості)" className="inline-flex items-center">
                             <StateIcon state="consultation-booked" size={16} />
                             <span className="ml-0.5">{todayData.consultationCreated ?? 0}</span>
@@ -3451,38 +3451,36 @@ export function DirectClientTable({
                           <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0} шт.">🚫 {todayData.consultationCancelled ?? 0}</span>
                           <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0} шт.">💔 {todayData.noSaleCount ?? 0}</span>
                         </div>
-                        <span className="text-[11px] font-medium text-gray-600 shrink-0">Консультації:</span>
+                        <span className="text-[11px] font-bold text-gray-700 shrink-0">Сьогодні.</span>
                       </div>
-                      {/* 2-й рядок: контент зліва, назва "Записи:" справа; одиниці в тултіпі */}
-                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span title="Нові клієнти (голубий фон у колонці Майстер): {(todayData.newClientsCount ?? 0)} шт." className="inline-flex items-center">
-                            <span className="inline-flex items-center justify-center rounded-full px-2 py-0.5 bg-[#2AABEE] text-white text-[11px] font-normal leading-none">{(todayData.newClientsCount ?? 0)}</span>
-                          </span>
-                          <span title={`Створено (записи, що створені сьогодні): ${((todayData.recordsCreatedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>
-                            <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
-                          </span>
-                          <span className="text-green-600" title={`Реалізовано: ✅ ${((todayData.recordsRealizedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
-                          <span title="Перезаписів: 🔁 {(todayData.rebookingsCount ?? 0)} шт.">🔁 {todayData.rebookingsCount ?? 0}</span>
-                          <span title={`Допродажі (продукція без груп волосся): ${((todayData.upsalesGoodsSum ?? 0) / 1000).toFixed(1)} тис. грн`} className="inline-flex items-center gap-0.5">
-                            <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3 h-3 object-contain align-middle [mix-blend-mode:multiply]" />
-                            <span>{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
-                          </span>
-                          <span title="Немає перезапису (дані з колонки Стан): ⚠️ {(todayData.noRebookCount ?? 0)} шт.">⚠️ {todayData.noRebookCount ?? 0}</span>
-                        </div>
-                        <span className="text-[11px] font-medium text-gray-600 shrink-0">Записи:</span>
+                      {/* 2-й рядок: Записи: зліва, контент */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-[11px] font-medium text-gray-600">Записи:</span>
+                        <span title="Нові клієнти (голубий фон у колонці Майстер): {(todayData.newClientsCount ?? 0)} шт." className="inline-flex items-center">
+                          <span className="inline-flex items-center justify-center rounded-full px-2 py-0.5 bg-[#2AABEE] text-white text-[11px] font-normal leading-none">{(todayData.newClientsCount ?? 0)}</span>
+                        </span>
+                        <span title={`Створено (записи, що створені сьогодні): ${((todayData.recordsCreatedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>
+                          <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
+                        </span>
+                        <span className="text-green-600" title={`Реалізовано: ✅ ${((todayData.recordsRealizedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
+                        <span title="Перезаписів: 🔁 {(todayData.rebookingsCount ?? 0)} шт.">🔁 {todayData.rebookingsCount ?? 0}</span>
+                        <span title={`Допродажі (продукція без груп волосся): ${((todayData.upsalesGoodsSum ?? 0) / 1000).toFixed(1)} тис. грн`} className="inline-flex items-center gap-0.5">
+                          <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3 h-3 object-contain align-middle [mix-blend-mode:multiply]" />
+                          <span>{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
+                        </span>
+                        <span title="Немає перезапису (дані з колонки Стан): ⚠️ {(todayData.noRebookCount ?? 0)} шт.">⚠️ {todayData.noRebookCount ?? 0}</span>
                       </div>
-                      {/* 3-й рядок: оборот у тис. грн, одиниці в тултіпі; назва "Фін. Рез." справа */}
-                      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                      {/* 3-й рядок: Фін. Рез. зліва, оборот у тис. грн */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-[11px] font-bold text-gray-700">Фін. Рез.</span>
                         <span title={`Оборот за сьогодні (сума всіх записів з датою сьогодні мінус скасовані/відмінені, attendance -1): ${formatThousandVal(todayData.turnoverToday ?? 0)} тис. грн`}>
                           <span className="opacity-90">💰</span> {formatThousandVal(todayData.turnoverToday ?? 0)}
                         </span>
-                        <span className="text-[11px] font-bold text-gray-700 shrink-0">Фін. Рез.</span>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="text-[11px] font-bold text-gray-700">Сьогодні.</div>
+                      <div className="text-[11px] font-bold text-gray-700 text-right">Сьогодні.</div>
                       <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
                         <div>Створено: {todayData.createdConsultations}</div>
                         <div>Успішні: {todayData.successfulConsultations}</div>
