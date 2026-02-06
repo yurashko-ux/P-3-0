@@ -721,6 +721,21 @@ type FooterStatsBlock = {
   plannedPaidSum: number;
 };
 
+/** Розширення для блоку «Сьогодні» (KPI з піктограмами) */
+type FooterTodayStats = FooterStatsBlock & {
+  consultationCreated?: number;
+  consultationPlanned?: number;
+  consultationRealized?: number;
+  consultationNoShow?: number;
+  consultationCancelled?: number;
+  newPaidClients?: number;
+  recordsCreatedSum?: number;
+  recordsRealizedSum?: number;
+  rebookingsCount?: number;
+  upsalesGoodsSum?: number;
+  newClientsCount?: number;
+};
+
 // Допоміжна функція для отримання стилів колонки (width/minWidth — тільки якщо немає colgroup)
 const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }, useColgroup: boolean): React.CSSProperties => {
   if (useColgroup) return {};
@@ -770,7 +785,7 @@ export function DirectClientTable({
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   const [footerStats, setFooterStats] = useState<{
     past: FooterStatsBlock;
-    today: FooterStatsBlock;
+    today: FooterTodayStats;
     future: FooterStatsBlock;
   } | null>(null);
   const [footerStatsError, setFooterStatsError] = useState<string | null>(null);
@@ -3389,6 +3404,7 @@ export function DirectClientTable({
           <div className="grid grid-cols-3 divide-x divide-gray-300 text-[10px]">
             {(() => {
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
+              const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
               const renderBlock = (title: string, data: FooterStatsBlock, showConversions: boolean) => (
                 <div className="px-3">
                   <div className="text-[11px] font-medium text-gray-700">{title}</div>
@@ -3408,11 +3424,56 @@ export function DirectClientTable({
                   </div>
                 </div>
               );
+              const todayData = footerStats.today as FooterTodayStats;
+              const hasTodayKpi = typeof todayData.consultationCreated === 'number';
+              const renderTodayBlock = () => (
+                <div className="px-3">
+                  <div className="text-[11px] font-medium text-gray-700">Сьогодні</div>
+                  {hasTodayKpi ? (
+                    <div className="mt-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                        <span className="rounded bg-blue-100 px-1 text-blue-700" title="Консультацій створено (запис на сьогодні)">
+                          📅 {todayData.consultationCreated ?? 0}
+                        </span>
+                        <span title="Заплановані (очікується)">
+                          ⏳ {todayData.consultationPlanned ?? 0}
+                        </span>
+                        <span className="text-green-600" title="Реалізовані (прийшли)">
+                          ✅ {todayData.consultationRealized ?? 0}
+                        </span>
+                        <span className="text-red-600" title="Не прийшли">
+                          ❌ {todayData.consultationNoShow ?? 0}
+                        </span>
+                        <span className="text-orange-600" title="Скасовані">
+                          🚫 {todayData.consultationCancelled ?? 0}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                        <span>Нові платні: {(todayData.newPaidClients ?? todayData.sales) ?? 0}</span>
+                        <span title="Записи створені (тис. грн)">Створено: {formatThousand(todayData.recordsCreatedSum ?? 0)}</span>
+                        <span title="Записи реалізовані (тис. грн)">Реалізовано: {formatThousand(todayData.recordsRealizedSum ?? 0)}</span>
+                        <span title="Кількість перезаписів">🔁 {(todayData.rebookingsCount ?? 0)}</span>
+                        <span title="Доп продажі (продукція без груп волосся)">Доп: {formatThousand(todayData.upsalesGoodsSum ?? 0)}</span>
+                        <span className="text-blue-700" title="Нові клієнти (голубий фон у колонці Майстер)">Нові: {todayData.newClientsCount ?? 0}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
+                      <div>Створено: {todayData.createdConsultations}</div>
+                      <div>Успішні: {todayData.successfulConsultations}</div>
+                      <div>Скасовані/не були: {todayData.cancelledOrNoShow}</div>
+                      <div>Продажі: {todayData.sales}</div>
+                      <div>Створено ₴: {formatMoney(todayData.createdPaidSum)}</div>
+                      <div>Заплановано ₴: {formatMoney(todayData.plannedPaidSum)}</div>
+                    </div>
+                  )}
+                </div>
+              );
               return (
                 <>
-                  {renderBlock('Минуле', footerStats.past, true)}
-                  {renderBlock('Сьогодні', footerStats.today, false)}
-                  {renderBlock('Майбутнє', footerStats.future, false)}
+                  {renderBlock('З початку місяця', footerStats.past, true)}
+                  {renderTodayBlock()}
+                  {renderBlock('До кінця місяця', footerStats.future, false)}
                 </>
               );
             })()}

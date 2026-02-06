@@ -290,7 +290,7 @@ export function ConsultationFilterDropdown({
         createPortal(
           <div
             ref={panelRef}
-            className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[420px] overflow-y-auto pointer-events-auto"
+            className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] max-h-[420px] overflow-y-auto pointer-events-auto"
             style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
             {panelContent}
