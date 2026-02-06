@@ -56,6 +56,8 @@ export function RecordFilterDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
   const r = filters.record;
 
+  const [hasRecord, setHasRecord] = useState<boolean | null>(r.hasRecord ?? null);
+  const [newClient, setNewClient] = useState<boolean | null>(r.newClient ?? null);
   const [createdMode, setCreatedMode] = useState<"current_month" | "year_month" | null>(r.created.mode);
   const [createdYear, setCreatedYear] = useState(r.created.year || "");
   const [createdMonth, setCreatedMonth] = useState(r.created.month || "");
@@ -68,6 +70,8 @@ export function RecordFilterDropdown({
   const [sumOpt, setSumOpt] = useState<RecordSumOpt | null>(r.sum);
 
   useEffect(() => {
+    setHasRecord(r.hasRecord ?? null);
+    setNewClient(r.newClient ?? null);
     setCreatedMode(r.created.mode);
     setCreatedYear(r.created.year || "");
     setCreatedMonth(r.created.month || "");
@@ -78,7 +82,7 @@ export function RecordFilterDropdown({
     setAppointedPreset(r.appointedPreset);
     setClientOpt(r.client);
     setSumOpt(r.sum);
-  }, [r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
+  }, [r.hasRecord, r.newClient, r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
 
   const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).paidServiceRecordCreatedAt) === curMonth).length, [clients]);
   const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay((x as any).paidServiceRecordCreatedAt) === todayKyiv).length, [clients]);
@@ -86,6 +90,8 @@ export function RecordFilterDropdown({
   const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d < todayKyiv; }).length, [clients]);
   const appointedTodayCount = useMemo(() => clients.filter((x) => toKyivDay(x.paidServiceDate) === todayKyiv).length, [clients]);
   const appointedFutureCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d > todayKyiv; }).length, [clients]);
+  const hasRecordCount = useMemo(() => clients.filter((x) => x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length, [clients]);
+  const newClientCount = useMemo(() => clients.filter((x) => x.consultationAttended === true && x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length, [clients]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -110,12 +116,14 @@ export function RecordFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
+    r.hasRecord === true || r.newClient === true || r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
 
   const handleApply = () => {
     onFiltersChange({
       ...filters,
       record: {
+        hasRecord: hasRecord ?? null,
+        newClient: newClient ?? null,
         created: createdMode === "current_month" ? { mode: "current_month" } : createdMode === "year_month" && createdYear && createdMonth
           ? { mode: "year_month", year: createdYear, month: createdMonth } : { mode: null },
         createdPreset: createdPreset ?? null,
@@ -130,6 +138,8 @@ export function RecordFilterDropdown({
   };
 
   const handleClear = () => {
+    setHasRecord(null);
+    setNewClient(null);
     setCreatedMode(null);
     setCreatedYear("");
     setCreatedMonth("");
@@ -143,6 +153,8 @@ export function RecordFilterDropdown({
     onFiltersChange({
       ...filters,
       record: {
+        hasRecord: null,
+        newClient: null,
         created: { mode: null },
         createdPreset: null,
         appointed: { mode: null },
@@ -196,6 +208,25 @@ export function RecordFilterDropdown({
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
             </div>
+            {section("Запис", (
+              <>
+                {opt("has-record", "Є запис", hasRecord === true, () => setHasRecord(hasRecord === true ? null : true), hasRecordCount)}
+                <button
+                  type="button"
+                  onClick={() => setNewClient(newClient === true ? null : true)}
+                  title="Прийшли на консультацію і мають запис на платну послугу (голубий фон у колонці Майстер)"
+                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${newClient === true ? "bg-blue-50 text-blue-700" : "text-gray-700"}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className={`inline-block w-3 h-3 rounded border ${newClient === true ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"}`}>
+                      {newClient === true && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12"><path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                    </span>
+                    <span>Новий клієнт</span>
+                  </span>
+                  {newClientCount != null && <span className="text-gray-500 font-medium">({newClientCount})</span>}
+                </button>
+              </>
+            ))}
             {section("Візити створені", (
               <>
                 {opt("rec-created-cur", "Поточний місяць", createdMode === "current_month", () => setCreatedMode(createdMode === "current_month" ? null : "current_month"), createdCurCount)}

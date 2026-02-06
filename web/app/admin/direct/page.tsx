@@ -177,6 +177,7 @@ export default function DirectPage() {
     inst: [],
     state: [],
     consultation: {
+      hasConsultation: null,
       created: { mode: null },
       createdPreset: null,
       appointed: { mode: null },
@@ -186,6 +187,8 @@ export default function DirectPage() {
       masterIds: [],
     },
     record: {
+      hasRecord: null,
+      newClient: null,
       created: { mode: null },
       createdPreset: null,
       appointed: { mode: null },
@@ -478,12 +481,14 @@ export default function DirectPage() {
       if (f.inst.length > 0) params.set("inst", f.inst.join(","));
       if (f.state.length > 0) params.set("state", f.state.join(","));
       const c = f.consultation;
+      if (c.hasConsultation === true) params.set("consultHasConsultation", "true");
       if (c.created.mode === "current_month") params.set("consultCreatedMode", "current_month");
       else if (c.created.mode === "year_month" && c.created.year && c.created.month) {
         params.set("consultCreatedMode", "year_month");
         params.set("consultCreatedYear", c.created.year);
         params.set("consultCreatedMonth", c.created.month);
       }
+      if (c.createdPreset) params.set("consultCreatedPreset", c.createdPreset);
       if (c.appointed.mode === "current_month") params.set("consultAppointedMode", "current_month");
       else if (c.appointed.mode === "year_month" && c.appointed.year && c.appointed.month) {
         params.set("consultAppointedMode", "year_month");
@@ -495,6 +500,8 @@ export default function DirectPage() {
       if (c.type) params.set("consultType", c.type);
       if (c.masterIds.length > 0) params.set("consultMasters", c.masterIds.join("|"));
       const r = f.record;
+      if (r.hasRecord === true) params.set("recordHasRecord", "true");
+      if (r.newClient === true) params.set("recordNewClient", "true");
       if (r.created.mode === "current_month") params.set("recordCreatedMode", "current_month");
       else if (r.created.mode === "year_month" && r.created.year && r.created.month) {
         params.set("recordCreatedMode", "year_month");

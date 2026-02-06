@@ -26,6 +26,13 @@ function toKyivDay(iso: string): string {
 const curMonth = toKyivYearMonth(new Date().toISOString());
 const todayKyiv = toKyivDay(new Date().toISOString());
 
+/** Дата створення запису на консультацію (як в API: fallback на consultationBookingDate) */
+function getConsultCreatedAt(c: DirectClient): string | undefined {
+  const created = (c as any).consultationRecordCreatedAt as string | undefined;
+  if (created) return created;
+  return c.consultationBookingDate;
+}
+
 const YEARS = ["26", "27", "28"];
 const MONTHS = [
   { v: "1", l: "Січень" }, { v: "2", l: "Лютий" }, { v: "3", l: "Березень" }, { v: "4", l: "Квітень" },
@@ -64,11 +71,13 @@ export function ConsultationFilterDropdown({
   const [appointedYear, setAppointedYear] = useState(c.appointed.year || "");
   const [appointedMonth, setAppointedMonth] = useState(c.appointed.month || "");
   const [appointedPreset, setAppointedPreset] = useState<"past" | "today" | "future" | null>(c.appointedPreset);
+  const [hasConsultation, setHasConsultation] = useState<boolean | null>(c.hasConsultation ?? null);
   const [attendance, setAttendance] = useState<"attended" | "no_show" | "cancelled" | null>(c.attendance);
   const [type, setType] = useState<"consultation" | "online" | null>(c.type);
   const [masterIds, setMasterIds] = useState<string[]>(c.masterIds);
 
   useEffect(() => {
+    setHasConsultation(c.hasConsultation ?? null);
     setCreatedMode(c.created.mode);
     setCreatedYear(c.created.year || "");
     setCreatedMonth(c.created.month || "");
@@ -80,7 +89,7 @@ export function ConsultationFilterDropdown({
     setAttendance(c.attendance);
     setType(c.type);
     setMasterIds(c.masterIds);
-  }, [c.created.mode, c.created.year, c.created.month, c.createdPreset, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type, c.masterIds]);
+  }, [c.hasConsultation, c.created.mode, c.created.year, c.created.month, c.createdPreset, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type, c.masterIds]);
 
   const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
   const masterOptions = useMemo(
@@ -92,12 +101,13 @@ export function ConsultationFilterDropdown({
     [clients, allowedFirstNames]
   );
 
-  const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).consultationRecordCreatedAt) === curMonth).length, [clients]);
-  const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay((x as any).consultationRecordCreatedAt) === todayKyiv).length, [clients]);
+  const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(getConsultCreatedAt(x)) === curMonth).length, [clients]);
+  const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay(getConsultCreatedAt(x)) === todayKyiv).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
   const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d < todayKyiv; }).length, [clients]);
   const appointedTodayCount = useMemo(() => clients.filter((x) => toKyivDay(x.consultationBookingDate) === todayKyiv).length, [clients]);
   const appointedFutureCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d > todayKyiv; }).length, [clients]);
+  const hasConsultationCount = useMemo(() => clients.filter((x) => x.consultationBookingDate != null && String(x.consultationBookingDate).trim() !== "").length, [clients]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -122,12 +132,13 @@ export function ConsultationFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    c.created.mode !== null || c.createdPreset !== null || c.appointed.mode !== null || c.appointedPreset !== null || c.attendance !== null || c.type !== null || c.masterIds.length > 0;
+    c.hasConsultation === true || c.created.mode !== null || c.createdPreset !== null || c.appointed.mode !== null || c.appointedPreset !== null || c.attendance !== null || c.type !== null || c.masterIds.length > 0;
 
   const handleApply = () => {
     onFiltersChange({
       ...filters,
       consultation: {
+        hasConsultation: hasConsultation ?? null,
         created: createdMode === "current_month" ? { mode: "current_month" } : createdMode === "year_month" && createdYear && createdMonth
           ? { mode: "year_month", year: createdYear, month: createdMonth } : { mode: null },
         createdPreset: createdPreset ?? null,
@@ -143,6 +154,7 @@ export function ConsultationFilterDropdown({
   };
 
   const handleClear = () => {
+    setHasConsultation(null);
     setCreatedMode(null);
     setCreatedYear("");
     setCreatedMonth("");
@@ -157,6 +169,7 @@ export function ConsultationFilterDropdown({
     onFiltersChange({
       ...filters,
       consultation: {
+        hasConsultation: null,
         created: { mode: null },
         createdPreset: null,
         appointed: { mode: null },
@@ -203,6 +216,11 @@ export function ConsultationFilterDropdown({
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
             </div>
+            {section("Консультації", (
+              <>
+                {opt("has-consultation", "Є консультація", hasConsultation === true, () => setHasConsultation(hasConsultation === true ? null : true), hasConsultationCount)}
+              </>
+            ))}
             {section("Консультації створені", (
               <>
                 {opt("created-cur", "Поточний місяць", createdMode === "current_month", () => setCreatedMode(createdMode === "current_month" ? null : "current_month"), createdCurCount)}

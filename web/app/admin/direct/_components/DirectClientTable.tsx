@@ -663,6 +663,7 @@ export type DirectFilters = {
   inst: string[];
   state: string[];
   consultation: {
+    hasConsultation: boolean | null;
     created: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
     createdPreset: 'past' | 'today' | 'future' | null;
     appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
@@ -672,6 +673,8 @@ export type DirectFilters = {
     masterIds: string[];
   };
   record: {
+    hasRecord: boolean | null;
+    newClient: boolean | null;
     created: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
     createdPreset: 'past' | 'today' | 'future' | null;
     appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };

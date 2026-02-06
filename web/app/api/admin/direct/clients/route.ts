@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
     const consultAttendance = searchParams.get('consultAttendance');
     const consultType = searchParams.get('consultType');
     const consultMasters = searchParams.get('consultMasters');
+    const consultHasConsultation = searchParams.get('consultHasConsultation');
     const recordCreatedMode = searchParams.get('recordCreatedMode');
     const recordCreatedYear = searchParams.get('recordCreatedYear');
     const recordCreatedMonth = searchParams.get('recordCreatedMonth');
@@ -84,6 +85,8 @@ export async function GET(req: NextRequest) {
     const recordAppointedPreset = searchParams.get('recordAppointedPreset');
     const recordClient = searchParams.get('recordClient');
     const recordSum = searchParams.get('recordSum');
+    const recordHasRecord = searchParams.get('recordHasRecord');
+    const recordNewClient = searchParams.get('recordNewClient');
     const masterHands = searchParams.get('masterHands');
     const masterPrimary = searchParams.get('masterPrimary');
     const masterSecondary = searchParams.get('masterSecondary');
@@ -989,6 +992,9 @@ export async function GET(req: NextRequest) {
     const currentMonthKyiv = todayKyiv.slice(0, 7);
     const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
     const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
+    /** Дата створення запису на консультацію (fallback на consultationBookingDate для узгодженості з UI) */
+    const getConsultCreatedAt = (c: DirectClient): string | null | undefined =>
+      (c as any).consultationRecordCreatedAt ?? c.consultationBookingDate;
     const parseActYear = (y: string | null): string => {
       if (!y) return '';
       const n = parseInt(y, 10);
@@ -1060,6 +1066,7 @@ export async function GET(req: NextRequest) {
 
     // Фільтри по колонках (Консультація, Запис, Майстер) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них
     const hasConsultationFilters =
+      consultHasConsultation === 'true' ||
       consultCreatedMode === 'current_month' ||
       (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) ||
       consultCreatedPreset != null ||
@@ -1070,6 +1077,8 @@ export async function GET(req: NextRequest) {
       consultType != null ||
       (splitPipe(consultMasters).length > 0);
     const hasRecordFilters =
+      recordHasRecord === 'true' ||
+      recordNewClient === 'true' ||
       recordCreatedMode === 'current_month' ||
       (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) ||
       recordCreatedPreset != null ||
@@ -1088,18 +1097,18 @@ export async function GET(req: NextRequest) {
       const applyConsultation = (arr: typeof base) => {
         let out = arr;
         if (consultCreatedMode === 'current_month') {
-          out = out.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === currentMonthKyiv);
+          out = out.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === currentMonthKyiv);
         } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
           const y = parseActYear(consultCreatedYear);
           const m = parseMonth(consultCreatedMonth);
-          if (y && m) out = out.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === `${y}-${m}`);
+          if (y && m) out = out.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === `${y}-${m}`);
         }
         if (consultCreatedPreset === 'past') {
-          out = out.filter((c) => toKyivDay((c as any).consultationRecordCreatedAt) && toKyivDay((c as any).consultationRecordCreatedAt) < todayKyiv);
+          out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! < todayKyiv);
         } else if (consultCreatedPreset === 'today') {
-          out = out.filter((c) => toKyivDay((c as any).consultationRecordCreatedAt) === todayKyiv);
+          out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) === todayKyiv);
         } else if (consultCreatedPreset === 'future') {
-          out = out.filter((c) => toKyivDay((c as any).consultationRecordCreatedAt) && toKyivDay((c as any).consultationRecordCreatedAt) > todayKyiv);
+          out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! > todayKyiv);
         }
         if (consultAppointedMode === 'current_month') {
           out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
@@ -1133,6 +1142,12 @@ export async function GET(req: NextRequest) {
 
       const applyRecord = (arr: typeof base) => {
         let out = arr;
+        if (recordHasRecord === 'true') {
+          out = out.filter((c) => c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '');
+        }
+        if (recordNewClient === 'true') {
+          out = out.filter((c) => c.consultationAttended === true && c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '');
+        }
         if (recordCreatedMode === 'current_month') {
           out = out.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === currentMonthKyiv);
         } else if (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) {
@@ -1225,14 +1240,17 @@ export async function GET(req: NextRequest) {
     }
 
     if (!hasColumnFilters) {
+    if (consultHasConsultation === 'true') {
+      filtered = filtered.filter((c) => c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '');
+    }
     if (consultCreatedMode === 'current_month') {
-      filtered = filtered.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === currentMonthKyiv);
+      filtered = filtered.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === currentMonthKyiv);
     } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
       const y = parseActYear(consultCreatedYear);
       const m = parseMonth(consultCreatedMonth);
       if (y && m) {
         const target = `${y}-${m}`;
-        filtered = filtered.filter((c) => toYyyyMm((c as any).consultationRecordCreatedAt) === target);
+        filtered = filtered.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === target);
       }
     }
 
@@ -1284,6 +1302,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    if (recordHasRecord === 'true') {
+      filtered = filtered.filter((c) => c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '');
+    }
+    if (recordNewClient === 'true') {
+      filtered = filtered.filter((c) => c.consultationAttended === true && c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '');
+    }
     if (recordCreatedMode === 'current_month') {
       filtered = filtered.filter((c) => toYyyyMm((c as any).paidServiceRecordCreatedAt) === currentMonthKyiv);
     } else if (recordCreatedMode === 'year_month' && recordCreatedYear && recordCreatedMonth) {
