@@ -3457,10 +3457,15 @@ export function DirectClientTable({
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="text-[11px] font-medium text-gray-600">Записи:</span>
                         <span title="Нові клієнти (голубий фон у колонці Майстер): {(todayData.newClientsCount ?? 0)} шт." className="inline-flex items-center">
-                          <span className="inline-flex items-center justify-center rounded-full px-2 py-0.5 bg-[#2AABEE] text-white text-[11px] font-normal leading-none">{(todayData.newClientsCount ?? 0)}</span>
+                          <span className="inline-flex min-w-0 items-center justify-center rounded-full px-2 py-0.5 bg-[#2AABEE] text-white text-[10px] font-normal leading-none">{todayData.newClientsCount ?? 0}</span>
                         </span>
-                        <span title={`Створено (записи, що створені сьогодні): ${((todayData.recordsCreatedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>
+                        <span title={`Записів створено (записи, що створені сьогодні): ${((todayData.recordsCreatedSum ?? 0) / 1000).toFixed(1)} тис. грн`} className="inline-flex items-center gap-0.5">
+                          <img src="/assets/image-client.png" alt="" className="inline-block w-3 h-3 object-contain align-middle" title="Записів створено" />
                           <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
+                        </span>
+                        <span title={`Записів заплановано: ${((todayData.plannedPaidSum ?? 0) / 1000).toFixed(1)} тис. грн`} className="inline-flex items-center gap-0.5">
+                          <span className="opacity-90">⏳</span>
+                          <span className="inline-flex items-center rounded-full px-1.5 py-0.5 bg-gray-200 text-gray-800 text-[10px] font-medium">{formatThousandVal(todayData.plannedPaidSum ?? 0)}</span>
                         </span>
                         <span className="text-green-600" title={`Реалізовано: ✅ ${((todayData.recordsRealizedSum ?? 0) / 1000).toFixed(1)} тис. грн`}>✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
                         <span title="Перезаписів: 🔁 {(todayData.rebookingsCount ?? 0)} шт.">🔁 {todayData.rebookingsCount ?? 0}</span>
