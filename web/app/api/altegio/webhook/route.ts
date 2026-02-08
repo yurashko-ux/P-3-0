@@ -10,6 +10,7 @@ import {
   type ReminderJob,
 } from '@/lib/altegio/reminders';
 import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
+import { pushLastVisitAtUpdate } from '@/lib/direct-last-visit-updates';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -641,7 +642,8 @@ export async function POST(req: NextRequest) {
                     hadConsultationBefore,
                     attendance,
                   });
-                  
+                  if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
+
                   console.log(`[altegio/webhook] ✅ Set consultationBookingDate (fallback) for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
                 } else if ((status === 'create' || status === 'update') && datetime && attendance !== 1 && !existingClient.consultationBookingDate) {
                   // ДОДАТКОВА ПЕРЕВІРКА: Якщо consultationBookingDate все ще відсутній після всіх блоків
@@ -699,7 +701,8 @@ export async function POST(req: NextRequest) {
                     attendance,
                     reason: 'consultationBookingDate was missing after all blocks',
                   });
-                  
+                  if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
+
                   console.log(`[altegio/webhook] ✅ Set missing consultationBookingDate for client ${existingClient.id} (${datetime})`);
                 }
                 // 2.4 Обробка неявки клієнта
@@ -849,6 +852,7 @@ export async function POST(req: NextRequest) {
                           staffName: staffName || 'unknown',
                           datetime,
                         });
+                        if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
                         console.log(`[altegio/webhook] ✅ Marked consultationAttended = true (no master found) for client ${existingClient.id}`);
                       }
                     } else {
@@ -875,6 +879,7 @@ export async function POST(req: NextRequest) {
                           staffName: staffName || 'unknown',
                           datetime,
                         });
+                        if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
                         console.log(`[altegio/webhook] ✅ Updated consultationAttended = true for existing consultation client ${existingClient.id}`);
                       } else {
                         console.log(`[altegio/webhook] ⏭️ Client ${existingClient.id} already has consultation state and consultationAttended = true, skipping`);
@@ -915,6 +920,7 @@ export async function POST(req: NextRequest) {
                       datetime,
                       isPastOrToday,
                     });
+                    if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
                     console.log(`[altegio/webhook] ✅ Set consultationAttended = true (fallback) for client ${existingClient.id}, isPastOrToday: ${isPastOrToday}`);
                   }
                 }
@@ -1233,7 +1239,8 @@ export async function POST(req: NextRequest) {
                     // Якщо змінюються тільки стан або майстер - не переміщаємо на верх
                     await saveDirectClient(updated, 'altegio-webhook-record', metadata, shouldTouchUpdatedAt ? undefined : { touchUpdatedAt: false });
                   }
-                  
+                  if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
+
                   if (hasStateChange) {
                     console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} state to '${finalState}' based on services (Altegio client ${clientId})`);
                   }
@@ -2576,6 +2583,7 @@ export async function POST(req: NextRequest) {
               updatedAt: now,
             };
             await saveDirectClient(newClient);
+            if ((newClient as any).lastVisitAt) pushLastVisitAtUpdate(newClient.id, (newClient as any).lastVisitAt).catch(() => {});
             console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState}, statusId: ${defaultStatus.id})`);
 
             // ВАЖЛИВО: після saveDirectClient клієнт може бути об'єднаний з іншим через instagramUsername
@@ -2599,6 +2607,7 @@ export async function POST(req: NextRequest) {
                     updatedAt: savedClient.updatedAt, // Не рухаємо updatedAt
                   };
                   await saveDirectClient(clientWithLastVisit, 'altegio-webhook-sync-last-visit', { altegioClientId: savedClient.altegioClientId }, { touchUpdatedAt: false, skipAltegioMetricsSync: true });
+                  if (clientWithLastVisit.lastVisitAt) pushLastVisitAtUpdate(clientWithLastVisit.id, clientWithLastVisit.lastVisitAt).catch(() => {});
                   console.log(`[altegio/webhook] ✅ Synced lastVisitAt for client ${savedClient.id}: ${syncedLastVisitAt}`);
                 }
               } catch (err) {
