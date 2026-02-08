@@ -296,7 +296,7 @@ export default function DirectStatsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="bg-base-200/60">
+                  <tr className="bg-base-200">
                     <td colSpan={4} className="font-medium">Консультації</td>
                   </tr>
                   {[
@@ -334,7 +334,7 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
-                  <tr className="bg-base-200/60">
+                  <tr className="bg-base-200">
                     <td colSpan={4} className="font-medium">Записи</td>
                   </tr>
                   {[
@@ -370,7 +370,7 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
-                  <tr className="bg-base-200/60">
+                  <tr className="bg-base-200">
                     <td colSpan={4} className="font-medium">Фін. Рез.</td>
                   </tr>
                   <tr>
@@ -379,7 +379,7 @@ export default function DirectStatsPage() {
                     <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
                     <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
                   </tr>
-                  <tr>
+                  <tr className="bg-base-200">
                     <td className="whitespace-nowrap">
                       <span className="font-medium text-gray-600">Клієнти:</span>
                       <span className="ml-1.5 inline-flex items-center gap-1" title="Нові">
@@ -400,7 +400,7 @@ export default function DirectStatsPage() {
                     </td>
                     <td className="text-center">—</td>
                   </tr>
-                  <tr className="bg-base-200/60">
+                  <tr className="bg-base-200">
                     <td colSpan={4} className="font-medium">До кінця місяця (майбутнє)</td>
                   </tr>
                   <tr>
