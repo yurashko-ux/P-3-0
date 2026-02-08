@@ -427,7 +427,7 @@ export default function DirectStatsPage() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <YellowDotIcon size={20} />
+                        <YellowDotIcon size={16} />
                         Записів: Майбутніх
                       </span>
                     </td>
