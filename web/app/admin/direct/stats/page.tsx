@@ -343,6 +343,12 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
+                  <tr>
+                    <td className="whitespace-nowrap"><span className="mx-1" aria-hidden> </span>💰 Фін. Рез. (Оборот)</td>
+                    <td className="text-center">{formatFooterCell(footerStats.past, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
+                  </tr>
                   <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">Записи</td>
                   </tr>
@@ -386,17 +392,9 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
-                  <tr className="bg-gray-100">
-                    <td colSpan={4} className="font-medium">Фін. Рез.</td>
-                  </tr>
                   <tr>
-                    <td className="whitespace-nowrap">💰 Оборот</td>
-                    <td className="text-center">{formatFooterCell(footerStats.past, "turnoverToday", "тис. грн")}</td>
-                    <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
-                    <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
-                  </tr>
-                  <tr className="bg-gray-100">
                     <td className="whitespace-nowrap">
+                      <span className="mx-1" aria-hidden> </span>
                       <span className="font-medium text-gray-600">Клієнти:</span>
                       <span className="ml-1.5 inline-flex items-center gap-1" title="Нові">
                         <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" />
