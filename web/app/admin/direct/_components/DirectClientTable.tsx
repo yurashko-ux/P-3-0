@@ -26,7 +26,7 @@ import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
-import { YellowCrescentIcon } from "./YellowCrescentIcon";
+import { YellowDotHalfRightIcon } from "./YellowDotHalfRightIcon";
 import { YellowDotIcon } from "./YellowDotIcon";
 
 type ChatStatusUiVariant = "v1" | "v2";
@@ -3628,7 +3628,7 @@ export function DirectClientTable({
                 return (
                   <div className="px-3 relative">
                     <span className="absolute top-0 right-0 text-xs font-bold text-gray-700 inline-flex items-center gap-1">
-                      <YellowCrescentIcon size={iconSize} />
+                      <YellowDotHalfRightIcon size={iconSize} />
                       До кінця місяця.
                     </span>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">

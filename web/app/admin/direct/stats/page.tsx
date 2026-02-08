@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
-import { YellowCrescentIcon } from "@/app/admin/direct/_components/YellowCrescentIcon";
+import { YellowDotHalfRightIcon } from "@/app/admin/direct/_components/YellowDotHalfRightIcon";
 import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
 
 type FooterBlock = {
@@ -438,7 +438,7 @@ export default function DirectStatsPage() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <YellowCrescentIcon size={20} />
+                        <YellowDotHalfRightIcon size={20} />
                         До кінця місяця
                       </span>
                     </td>
