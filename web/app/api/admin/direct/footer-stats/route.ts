@@ -54,6 +54,8 @@ type FooterStatsBlock = {
   noRebookCount?: number;
   /** Записи: скасовані (платні записи з paidServiceCancelled) */
   recordsCancelledCount?: number;
+  /** Записи: не прийшов (платні записи, paidServiceAttended === false, не скасовані) */
+  recordsNoShowCount?: number;
   turnoverToday?: number;
   // Поля для future
   /** Консультації: заплановані (майбутні) */
@@ -106,6 +108,8 @@ export type FooterTodayStats = FooterStatsBlock & {
   turnoverToday: number;
   /** Записи: скасовані (платні записи з paidServiceCancelled) */
   recordsCancelledCount: number;
+  /** Записи: не прийшов (платні записи, paidServiceAttended === false, не скасовані) */
+  recordsNoShowCount: number;
 };
 
 const emptyBlock = (): FooterStatsBlock => ({
@@ -132,6 +136,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   newClientsCount: 0,
   noRebookCount: 0,
   recordsCancelledCount: 0,
+  recordsNoShowCount: 0,
   turnoverToday: 0,
   consultationPlannedFuture: 0,
   plannedPaidSumFuture: 0,
@@ -160,6 +165,7 @@ function emptyTodayBlock(): FooterTodayStats {
     consultationRescheduledCount: 0,
     returnedClientsCount: 0,
     recordsCancelledCount: 0,
+    recordsNoShowCount: 0,
     turnoverToday: 0,
   };
 }
@@ -384,6 +390,16 @@ export async function GET(req: NextRequest) {
         }
         if (paidDay === todayKyiv) {
           t.recordsCancelledCount += 1;
+        }
+      }
+
+      // Записи: не прийшов (❌) — paidServiceAttended === false, не скасовані
+      if (paidDay && client.paidServiceAttended === false && !client.paidServiceCancelled) {
+        if (paidDay >= start && paidDay <= todayKyiv) {
+          stats.past.recordsNoShowCount = (stats.past.recordsNoShowCount || 0) + 1;
+        }
+        if (paidDay === todayKyiv) {
+          t.recordsNoShowCount += 1;
         }
       }
 

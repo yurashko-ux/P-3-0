@@ -30,6 +30,7 @@ type FooterBlock = {
   upsalesGoodsSum?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
+  recordsNoShowCount?: number;
   returnedClientsCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
@@ -355,6 +356,7 @@ export default function DirectStatsPage() {
                     { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                     { label: "Повернутий клієнт", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
                     { label: "Скасовано", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
+                    { label: "Не прийшов", icon: "❌", key: "recordsNoShowCount", unit: "шт" },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">

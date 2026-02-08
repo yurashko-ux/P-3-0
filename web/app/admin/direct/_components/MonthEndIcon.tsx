@@ -1,5 +1,5 @@
 'use client';
-// Піктограмка «До кінця місяця»: місяць що спадає (waning) без зірок + стрілка вправо зліва від місяця
+// Піктограмка «До кінця місяця»: місяць що спадає (waning) + стрілка вправо зліва від місяця
 
 export function MonthEndIcon({ size = 20, className = '' }: { size?: number; className?: string }) {
   return (
@@ -12,14 +12,13 @@ export function MonthEndIcon({ size = 20, className = '' }: { size?: number; cla
       aria-hidden
     >
       {/* Стрілка вправо зліва */}
-      <path d="M2 7l6 5-6 5V7z" fill="currentColor" />
-      {/* Waning crescent: серп (освітлена частина зліва), viewBox 12-24 для місяця */}
-      <g transform="translate(12, 0)">
-        <path
-          d="M10 6 A 6 6 0 0 0 10 18 A 6 6 0 0 1 10 6 Z"
-          fill="currentColor"
-        />
-      </g>
+      <path d="M0 6v12l6-6-6-6z" fill="currentColor" />
+      {/* Waning crescent: великий серп (освітлена частина зліва), видно місяць */}
+      <path
+        d="M14 6 A 8 8 0 0 0 14 18 A 8 8 0 0 1 14 6 Z"
+        fill="currentColor"
+        transform="translate(4, 0)"
+      />
     </svg>
   );
 }

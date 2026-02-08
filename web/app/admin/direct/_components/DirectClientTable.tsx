@@ -745,6 +745,7 @@ type FooterStatsBlock = {
   newClientsCount?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
+  recordsNoShowCount?: number;
   turnoverToday?: number;
 };
 
@@ -767,6 +768,7 @@ type FooterTodayStats = FooterStatsBlock & {
   newClientsCount?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
+  recordsNoShowCount?: number;
   turnoverToday?: number;
 };
 
@@ -3537,6 +3539,7 @@ export function DirectClientTable({
                         <span>{pastData.returnedClientsCount ?? 0}</span>
                       </span>
                       <span className="text-orange-600" title="Записи скасовані: 🚫 — {(pastData.recordsCancelledCount ?? 0)} шт.">🚫 {pastData.recordsCancelledCount ?? 0}</span>
+                      <span className="text-red-600" title="Записи: не прийшов — {(pastData.recordsNoShowCount ?? 0)} шт.">❌ {pastData.recordsNoShowCount ?? 0}</span>
                     </div>
                     {/* 3-й рядок: Фін. Рез. зліва, Клієнти справа */}
                     <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-[10px]">
@@ -3615,6 +3618,7 @@ export function DirectClientTable({
                           <span>{todayData.returnedClientsCount ?? 0}</span>
                         </span>
                         <span className="text-orange-600" title="Записи скасовані: 🚫 — {(todayData.recordsCancelledCount ?? 0)} шт.">🚫 {todayData.recordsCancelledCount ?? 0}</span>
+                        <span className="text-red-600" title="Записи: не прийшов — {(todayData.recordsNoShowCount ?? 0)} шт.">❌ {todayData.recordsNoShowCount ?? 0}</span>
                       </div>
                       {/* 3-й рядок: Фін. Рез. зліва, Клієнти справа */}
                       <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-[10px]">
