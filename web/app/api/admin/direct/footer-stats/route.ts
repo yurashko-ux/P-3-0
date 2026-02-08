@@ -52,6 +52,8 @@ type FooterStatsBlock = {
   upsalesGoodsSum?: number;
   newClientsCount?: number;
   noRebookCount?: number;
+  /** Записи: скасовані (платні записи з paidServiceCancelled) */
+  recordsCancelledCount?: number;
   turnoverToday?: number;
   // Поля для future
   /** Консультації: заплановані (майбутні) */
@@ -102,6 +104,8 @@ export type FooterTodayStats = FooterStatsBlock & {
   returnedClientsCount: number;
   /** Оборот за сьогодні: сума записів з датою сьогодні мінус скасовані/відмінені (attendance -1), грн */
   turnoverToday: number;
+  /** Записи: скасовані (платні записи з paidServiceCancelled) */
+  recordsCancelledCount: number;
 };
 
 const emptyBlock = (): FooterStatsBlock => ({
@@ -127,6 +131,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   upsalesGoodsSum: 0,
   newClientsCount: 0,
   noRebookCount: 0,
+  recordsCancelledCount: 0,
   turnoverToday: 0,
   consultationPlannedFuture: 0,
   plannedPaidSumFuture: 0,
@@ -154,6 +159,7 @@ function emptyTodayBlock(): FooterTodayStats {
     noRebookCount: 0,
     consultationRescheduledCount: 0,
     returnedClientsCount: 0,
+    recordsCancelledCount: 0,
     turnoverToday: 0,
   };
 }
@@ -369,6 +375,16 @@ export async function GET(req: NextRequest) {
       // Past: перезаписи
       if (paidDay && paidDay >= start && paidDay <= todayKyiv && (client as any).paidServiceIsRebooking === true) {
         stats.past.rebookingsCount = (stats.past.rebookingsCount || 0) + 1;
+      }
+
+      // Записи: скасовані (🚫) — paidServiceCancelled
+      if (paidDay && client.paidServiceCancelled === true) {
+        if (paidDay >= start && paidDay <= todayKyiv) {
+          stats.past.recordsCancelledCount = (stats.past.recordsCancelledCount || 0) + 1;
+        }
+        if (paidDay === todayKyiv) {
+          t.recordsCancelledCount += 1;
+        }
       }
 
       // Немає продажі (💔) — з колонки стан (state === 'too-expensive')

@@ -4,6 +4,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
+import { MonthEndIcon } from "@/app/admin/direct/_components/MonthEndIcon";
 
 type FooterBlock = {
   createdConsultations: number;
@@ -27,6 +29,7 @@ type FooterBlock = {
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   noRebookCount?: number;
+  recordsCancelledCount?: number;
   returnedClientsCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
@@ -296,7 +299,7 @@ export default function DirectStatsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="bg-base-200">
+                  <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">Консультації</td>
                   </tr>
                   {[
@@ -307,7 +310,7 @@ export default function DirectStatsPage() {
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "No-show", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
-                    { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
+                    { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
                     { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
                   ].map((row, i) => (
                     <tr key={i}>
@@ -325,6 +328,11 @@ export default function DirectStatsPage() {
                             </svg>
                             {row.label}
                           </span>
+                        ) : "iconBrokenHeart" in row && row.iconBrokenHeart ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <BrokenHeartIcon size={20} />
+                            {row.label}
+                          </span>
                         ) : (
                           <>{row.icon} {row.label}</>
                         )}
@@ -334,7 +342,7 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
-                  <tr className="bg-base-200">
+                  <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">Записи</td>
                   </tr>
                   {[
@@ -346,6 +354,8 @@ export default function DirectStatsPage() {
                     { label: "Допродажі", icon: "💅", key: "upsalesGoodsSum", unit: "тис. грн" },
                     { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                     { label: "Повернутий клієнт", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
+                    { label: "Скасовано", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
+                    { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
@@ -361,6 +371,11 @@ export default function DirectStatsPage() {
                             </svg>
                             {row.label}
                           </span>
+                        ) : "iconBrokenHeart" in row && row.iconBrokenHeart ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <BrokenHeartIcon size={20} />
+                            {row.label}
+                          </span>
                         ) : (
                           <>{row.icon} {row.label}</>
                         )}
@@ -370,7 +385,7 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
-                  <tr className="bg-base-200">
+                  <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">Фін. Рез.</td>
                   </tr>
                   <tr>
@@ -379,7 +394,7 @@ export default function DirectStatsPage() {
                     <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
                     <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
                   </tr>
-                  <tr className="bg-base-200">
+                  <tr className="bg-gray-100">
                     <td className="whitespace-nowrap">
                       <span className="font-medium text-gray-600">Клієнти:</span>
                       <span className="ml-1.5 inline-flex items-center gap-1" title="Нові">
@@ -400,7 +415,7 @@ export default function DirectStatsPage() {
                     </td>
                     <td className="text-center">—</td>
                   </tr>
-                  <tr className="bg-base-200">
+                  <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">До кінця місяця (майбутнє)</td>
                   </tr>
                   <tr>
@@ -410,13 +425,23 @@ export default function DirectStatsPage() {
                     <td className="text-center">{(footerStats.future as any).consultationPlannedFuture ?? 0} шт</td>
                   </tr>
                   <tr>
-                    <td className="whitespace-nowrap">📆 Записів: Майбутніх</td>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <MonthEndIcon size={20} />
+                        Записів: Майбутніх
+                      </span>
+                    </td>
                     <td className="text-center">—</td>
                     <td className="text-center">—</td>
                     <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
                   </tr>
                   <tr>
-                    <td className="whitespace-nowrap">📅 До кінця місяця</td>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <MonthEndIcon size={20} />
+                        До кінця місяця
+                      </span>
+                    </td>
                     <td className="text-center">—</td>
                     <td className="text-center">—</td>
                     <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>

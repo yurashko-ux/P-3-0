@@ -25,6 +25,8 @@ import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { BrokenHeartIcon } from "./BrokenHeartIcon";
+import { MonthEndIcon } from "./MonthEndIcon";
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -741,6 +743,7 @@ type FooterStatsBlock = {
   upsalesGoodsSum?: number;
   newClientsCount?: number;
   noRebookCount?: number;
+  recordsCancelledCount?: number;
   turnoverToday?: number;
 };
 
@@ -762,6 +765,7 @@ type FooterTodayStats = FooterStatsBlock & {
   upsalesGoodsSum?: number;
   newClientsCount?: number;
   noRebookCount?: number;
+  recordsCancelledCount?: number;
   turnoverToday?: number;
 };
 
@@ -3493,7 +3497,10 @@ export function DirectClientTable({
                       <span className="text-green-600" title="Реалізовані: ✅ — {pastData.consultationRealized ?? 0} шт.">✅ {pastData.consultationRealized ?? 0}</span>
                       <span className="text-red-600" title="Не прийшли: ❌ — {pastData.consultationNoShow ?? 0} шт.">❌ {pastData.consultationNoShow ?? 0}</span>
                       <span className="text-orange-600" title="Скасовані: 🚫 — {pastData.consultationCancelled ?? 0} шт.">🚫 {pastData.consultationCancelled ?? 0}</span>
-                      <span title="Немає продажі: 💔 — {pastData.noSaleCount ?? 0} шт.">💔 {pastData.noSaleCount ?? 0}</span>
+                      <span title="Немає продажі — {pastData.noSaleCount ?? 0} шт." className="inline-flex items-center gap-0.5">
+                        <BrokenHeartIcon size={12} />
+                        <span>{pastData.noSaleCount ?? 0}</span>
+                      </span>
                       <span title="Відновлена консультація: — {pastData.consultationRescheduledCount ?? 0} шт." className="inline-flex items-center gap-1">
                         <BlueCircle2Icon size={12} />
                         <span>{pastData.consultationRescheduledCount ?? 0}</span>
@@ -3524,6 +3531,11 @@ export function DirectClientTable({
                       <span title="Повернуті клієнти: — {(pastData.returnedClientsCount ?? 0)} шт." className="inline-flex items-center gap-1">
                         <BlueCircle2Icon size={12} />
                         <span>{pastData.returnedClientsCount ?? 0}</span>
+                      </span>
+                      <span className="text-orange-600" title="Записи скасовані: 🚫 — {(pastData.recordsCancelledCount ?? 0)} шт.">🚫 {pastData.recordsCancelledCount ?? 0}</span>
+                      <span title="Без продажу (записи) — {(pastData.noSaleCount ?? 0)} шт." className="inline-flex items-center gap-0.5">
+                        <BrokenHeartIcon size={12} />
+                        <span>{pastData.noSaleCount ?? 0}</span>
                       </span>
                     </div>
                     {/* 3-й рядок: Фін. Рез. зліва, Клієнти справа */}
@@ -3567,7 +3579,10 @@ export function DirectClientTable({
                         <span className="text-green-600" title="Реалізовані (прийшли): ✅ — {todayData.consultationRealized ?? 0} шт.">✅ {todayData.consultationRealized ?? 0}</span>
                         <span className="text-red-600" title="Не прийшли: ❌ — {todayData.consultationNoShow ?? 0} шт.">❌ {todayData.consultationNoShow ?? 0}</span>
                         <span className="text-orange-600" title="Скасовані: 🚫 — {todayData.consultationCancelled ?? 0} шт.">🚫 {todayData.consultationCancelled ?? 0}</span>
-                        <span title="Немає продажі (дані з колонки Стан): 💔 — {todayData.noSaleCount ?? 0} шт.">💔 {todayData.noSaleCount ?? 0}</span>
+                        <span title="Немає продажі (дані з колонки Стан) — {todayData.noSaleCount ?? 0} шт." className="inline-flex items-center gap-0.5">
+                          <BrokenHeartIcon size={12} />
+                          <span>{todayData.noSaleCount ?? 0}</span>
+                        </span>
                         <span title="Відновлена консультація (перенос дати): — {todayData.consultationRescheduledCount ?? 0} шт." className="inline-flex items-center gap-1">
                           <BlueCircle2Icon size={12} />
                           <span>{todayData.consultationRescheduledCount ?? 0}</span>
@@ -3598,6 +3613,11 @@ export function DirectClientTable({
                         <span title="Повернуті клієнти (visits ≥ 2): — {(todayData.returnedClientsCount ?? 0)} шт." className="inline-flex items-center gap-1">
                           <BlueCircle2Icon size={12} />
                           <span>{todayData.returnedClientsCount ?? 0}</span>
+                        </span>
+                        <span className="text-orange-600" title="Записи скасовані: 🚫 — {(todayData.recordsCancelledCount ?? 0)} шт.">🚫 {todayData.recordsCancelledCount ?? 0}</span>
+                        <span title="Без продажу (записи) — {(todayData.noSaleCount ?? 0)} шт." className="inline-flex items-center gap-0.5">
+                          <BrokenHeartIcon size={12} />
+                          <span>{todayData.noSaleCount ?? 0}</span>
                         </span>
                       </div>
                       {/* 3-й рядок: Фін. Рез. зліва, Клієнти справа */}
@@ -3640,11 +3660,11 @@ export function DirectClientTable({
                     <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
                       <span className="font-medium text-gray-600">Записів:</span>
                       <span title="Майбутніх (до кінця поточного місяця) тис. грн" className="inline-flex items-center gap-1">
-                        <span className="opacity-90">📆</span>
+                        <MonthEndIcon size={12} />
                         <span>{formatThousandVal(futureData.plannedPaidSumToMonthEnd ?? 0)}</span>
                       </span>
                       <span title="До кінця місяця тис. грн" className="inline-flex items-center gap-1">
-                        <span className="opacity-90">📅</span>
+                        <MonthEndIcon size={12} />
                         <span>{formatThousandVal(futureData.plannedPaidSumToMonthEnd ?? 0)}</span>
                       </span>
                       <span title="Наступного місяця тис. грн" className="inline-flex items-center gap-1">
