@@ -3638,7 +3638,7 @@ export function DirectClientTable({
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium text-gray-600">Записів:</span>
                       <span title="До кінця місяця" className="inline-flex items-center gap-1">
-                        <YellowDotIcon size={iconSize} />
+                        <YellowDotHalfRightIcon size={iconSize} />
                         <span>{formatThousandVal(futureData.plannedPaidSumToMonthEnd ?? 0)}</span>
                       </span>
                       <span title="Наступного місяця" className="inline-flex items-center gap-1">➡️ {formatThousandVal(futureData.plannedPaidSumNextMonth ?? 0)}</span>
