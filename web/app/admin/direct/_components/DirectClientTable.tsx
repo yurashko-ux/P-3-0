@@ -26,7 +26,8 @@ import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
-import { MonthEndIcon } from "./MonthEndIcon";
+import { YellowCrescentIcon } from "./YellowCrescentIcon";
+import { YellowDotIcon } from "./YellowDotIcon";
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -3627,7 +3628,7 @@ export function DirectClientTable({
                 return (
                   <div className="px-3 relative">
                     <span className="absolute top-0 right-0 text-xs font-bold text-gray-700 inline-flex items-center gap-1">
-                      <MonthEndIcon size={iconSize} />
+                      <YellowCrescentIcon size={iconSize} />
                       До кінця місяця.
                     </span>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -3637,7 +3638,7 @@ export function DirectClientTable({
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium text-gray-600">Записів:</span>
                       <span title="До кінця місяця" className="inline-flex items-center gap-1">
-                        <MonthEndIcon size={iconSize} />
+                        <YellowDotIcon size={iconSize} />
                         <span>{formatThousandVal(futureData.plannedPaidSumToMonthEnd ?? 0)}</span>
                       </span>
                       <span title="Наступного місяця" className="inline-flex items-center gap-1">➡️ {formatThousandVal(futureData.plannedPaidSumNextMonth ?? 0)}</span>

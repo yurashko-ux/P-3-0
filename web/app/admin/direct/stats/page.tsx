@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
-import { MonthEndIcon } from "@/app/admin/direct/_components/MonthEndIcon";
+import { YellowCrescentIcon } from "@/app/admin/direct/_components/YellowCrescentIcon";
+import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
 
 type FooterBlock = {
   createdConsultations: number;
@@ -426,7 +427,7 @@ export default function DirectStatsPage() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <MonthEndIcon size={20} />
+                        <YellowDotIcon size={20} />
                         Записів: Майбутніх
                       </span>
                     </td>
@@ -437,7 +438,7 @@ export default function DirectStatsPage() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <MonthEndIcon size={20} />
+                        <YellowCrescentIcon size={20} />
                         До кінця місяця
                       </span>
                     </td>
