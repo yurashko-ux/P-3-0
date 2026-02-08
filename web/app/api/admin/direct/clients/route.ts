@@ -1100,19 +1100,20 @@ export async function GET(req: NextRequest) {
 
       const applyConsultation = (arr: typeof base) => {
         let out = arr;
+        // Узгоджено з KPI/footer-stats: «консультації створені» тільки по consultationBookingDate
         if (consultCreatedMode === 'current_month') {
-          out = out.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === currentMonthKyiv);
+          out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
         } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
           const y = parseActYear(consultCreatedYear);
           const m = parseMonth(consultCreatedMonth);
-          if (y && m) out = out.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === `${y}-${m}`);
+          if (y && m) out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === `${y}-${m}`);
         }
         if (consultCreatedPreset === 'past') {
-          out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! < todayKyiv);
+          out = out.filter((c) => toKyivDay(c.consultationBookingDate) && toKyivDay(c.consultationBookingDate)! < todayKyiv);
         } else if (consultCreatedPreset === 'today') {
-          out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) === todayKyiv);
+          out = out.filter((c) => toKyivDay(c.consultationBookingDate) === todayKyiv);
         } else if (consultCreatedPreset === 'future') {
-          out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! > todayKyiv);
+          out = out.filter((c) => toKyivDay(c.consultationBookingDate) && toKyivDay(c.consultationBookingDate)! > todayKyiv);
         }
         if (consultAppointedMode === 'current_month') {
           out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
@@ -1247,14 +1248,15 @@ export async function GET(req: NextRequest) {
     if (consultHasConsultation === 'true') {
       filtered = filtered.filter((c) => c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '');
     }
+    // Узгоджено з таблицею KPI та footer-stats: фільтр «консультації створені» тільки по consultationBookingDate
     if (consultCreatedMode === 'current_month') {
-      filtered = filtered.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === currentMonthKyiv);
+      filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
     } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
       const y = parseActYear(consultCreatedYear);
       const m = parseMonth(consultCreatedMonth);
       if (y && m) {
         const target = `${y}-${m}`;
-        filtered = filtered.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === target);
+        filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === target);
       }
     }
 
