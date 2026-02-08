@@ -1,5 +1,5 @@
 'use client';
-// Піктограмка «З початку місяця»: місяць який зростає (waxing) + стрілка вправо справа від місяця
+// Піктограмка «З початку місяця»: серп місяця (waxing) + стрілка вправо (як на референс-картинці, без тла)
 
 export function MonthStartIcon({ size = 20, className = '' }: { size?: number; className?: string }) {
   return (
@@ -11,13 +11,13 @@ export function MonthStartIcon({ size = 20, className = '' }: { size?: number; c
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
-      {/* Waxing crescent: великий серп (освітлена частина справа), видно місяць */}
+      {/* Серп місяця (waxing): освітлена частина справа, опуклість зліва */}
       <path
-        d="M10 6 A 8 8 0 0 1 10 18 A 8 8 0 0 0 10 6 Z"
+        d="M14 6 A 8 8 0 0 1 14 18 A 8 8 0 0 0 14 6 Z"
         fill="currentColor"
       />
-      {/* Стрілка вправо справа від місяця */}
-      <path d="M18 6v12l6-6-6-6z" fill="currentColor" />
+      {/* Стрілка вправо — виходить з отвору серпа */}
+      <path d="M16 7v10l7-5-7-5z" fill="currentColor" />
     </svg>
   );
 }
