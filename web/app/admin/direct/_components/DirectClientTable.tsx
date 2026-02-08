@@ -3517,6 +3517,10 @@ export function DirectClientTable({
                     {/* 2-й рядок: Записи + пробіл + Клієнти */}
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium text-gray-600">Записи:</span>
+                      <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1">
+                        <YellowDotIcon size={iconSize} />
+                        <span>{formatThousandVal(pastData.plannedPaidSum ?? 0)}</span>
+                      </span>
                       <span title="Нові клієнти" className="inline-flex items-center gap-1">
                         <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#2AABEE] shrink-0" />
                         <span>{pastData.newClientsCount ?? 0}</span>
@@ -3585,6 +3589,10 @@ export function DirectClientTable({
                       {/* 2-й рядок: Записи + пробіл + Клієнти */}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="font-medium text-gray-600">Записи:</span>
+                        <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1">
+                          <YellowDotIcon size={iconSize} />
+                          <span>{formatThousandVal(todayData.plannedPaidSum ?? 0)}</span>
+                        </span>
                         <span title="Нові клієнти" className="inline-flex items-center gap-1">
                           <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#2AABEE] shrink-0" />
                           <span>{todayData.newClientsCount ?? 0}</span>
@@ -3637,6 +3645,10 @@ export function DirectClientTable({
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium text-gray-600">Записів:</span>
+                      <span title="Записів майбутніх" className="inline-flex items-center gap-1">
+                        <YellowDotIcon size={iconSize} />
+                        <span>{formatThousandVal(futureData.plannedPaidSumToMonthEnd ?? 0)}</span>
+                      </span>
                       <span title="До кінця місяця" className="inline-flex items-center gap-1">
                         <YellowDotHalfRightIcon size={iconSize} />
                         <span>{formatThousandVal(futureData.plannedPaidSumToMonthEnd ?? 0)}</span>
