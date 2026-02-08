@@ -883,8 +883,8 @@ export default function DirectPage() {
           />
         </div>
     </header>
-      {/* Контент під фіксованим хедером — pt = висота хедера, щоб перший рядок таблиці не ховався */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[52px] pb-24 px-4">
+      {/* Контент під фіксованим хедером — pt достатній, щоб перший рядок таблиці не ховався під хедер */}
+      <div className="flex-1 min-h-0 flex flex-col pt-[72px] pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
