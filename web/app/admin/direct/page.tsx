@@ -811,7 +811,7 @@ export default function DirectPage() {
           <Link href="/admin/finance-report" className="btn btn-xs btn-ghost">
             💰 Фінансовий звіт
           </Link>
-          <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost">
+          <Link href="/admin/direct/stats" className="btn btn-xs btn-ghost" target="_blank" rel="noopener noreferrer">
             📈 Статистика
           </Link>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
