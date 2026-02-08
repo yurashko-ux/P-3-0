@@ -3486,9 +3486,10 @@ export function DirectClientTable({
                 const pastData = footerStats.past;
                 return (
                   <div className="px-3 relative">
-                    <span className="absolute top-0 right-0 inline-flex items-center" title="З початку місяця">
-                      <MonthStartIcon size={14} className="text-yellow-500" />
+                    <span className="absolute top-0 left-0 inline-flex items-center shrink-0" title="З початку місяця">
+                      <MonthStartIcon size={28} className="text-yellow-500" />
                     </span>
+                    <div className="pl-9">
                     {/* 1-й рядок: Консультації */}
                     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                       <span className="text-[10px] font-medium text-gray-600">Консультації:</span>
@@ -3559,6 +3560,7 @@ export function DirectClientTable({
                           <span>{pastData.returnedClientsCount ?? 0}</span>
                         </span>
                       </div>
+                    </div>
                     </div>
                   </div>
                 );
