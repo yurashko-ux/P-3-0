@@ -13,9 +13,9 @@ export function YellowDotHalfRightIcon({ size = 20, className = '' }: { size?: n
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
-      {/* Права половина кола (вертикальний розріз по центру) */}
+      {/* Права половина кола: вертикальна лінія по центру (12,2)-(12,22) + дуга праворуч назад */}
       <path
-        d="M12 2 A 10 10 0 0 1 12 22 A 10 10 0 0 1 12 2 Z"
+        d="M 12 2 L 12 22 A 10 10 0 0 1 12 2 Z"
         fill={YELLOW}
       />
     </svg>
