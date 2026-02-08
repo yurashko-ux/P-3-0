@@ -285,7 +285,7 @@ export default function DirectStatsPage() {
         </div>
       </div>
 
-      {/* Таблиця KPI: З початку місяця / Сьогодні / До кінця місяця */}
+      {/* Таблиця KPI: ті самі дані, що й у футері Direct (API footer-stats). З початку місяця / Сьогодні / До кінця місяця */}
       <div className="card bg-base-100 shadow-sm mb-6">
         <div className="card-body p-4">
           <h2 className="text-lg font-semibold mb-3">KPI по періодах</h2>
@@ -304,6 +304,7 @@ export default function DirectStatsPage() {
                   <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">Консультації</td>
                   </tr>
+                  {/* Створено = кількість створених консультацій за період (З початку місяця / Сьогодні); ті самі значення, що в футері */}
                   {[
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },

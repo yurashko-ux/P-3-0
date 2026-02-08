@@ -271,7 +271,7 @@ export async function GET(req: NextRequest) {
       const paidSum = getPaidSum(client);
       const t = stats.today as FooterTodayStats;
 
-      // 1) Створено консультацій (по даті створення або даті запису)
+      // 1) Створено консультацій — кількість створених консультацій за період (таблиця KPI + футер)
       const consultCreatedDay = toKyivDay((client as any).consultationRecordCreatedAt || client.consultationBookingDate);
       if (consultCreatedDay) {
         addByDay(consultCreatedDay, (b) => {
