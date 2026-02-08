@@ -3560,7 +3560,6 @@ export function DirectClientTable({
                 <div className="px-3 relative">
                   {hasTodayKpi ? (
                     <div className="grid gap-0 min-h-[2rem]" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
-                      <span className="absolute top-0 right-0 text-xs font-bold text-gray-700">Сьогодні.</span>
                       {/* 1-й рядок: Консультації | Фін. Рез. */}
                       <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
                         <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
@@ -3629,9 +3628,7 @@ export function DirectClientTable({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-end">
-                      <span className="text-xs font-bold text-gray-700">Сьогодні.</span>
-                    </div>
+                    <div className="flex items-center justify-end min-h-[2rem]" />
                   )}
                 </div>
               );
