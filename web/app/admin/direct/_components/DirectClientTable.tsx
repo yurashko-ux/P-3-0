@@ -27,6 +27,7 @@ import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
 import { MonthEndIcon } from "./MonthEndIcon";
+import { MonthStartIcon } from "./MonthStartIcon";
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -3483,7 +3484,10 @@ export function DirectClientTable({
                 const pastData = footerStats.past;
                 return (
                   <div className="px-3 relative">
-                    <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700">З початку місяця.</span>
+                    <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700 inline-flex items-center gap-1">
+                      <MonthStartIcon size={12} />
+                      З початку місяця.
+                    </span>
                     {/* 1-й рядок: Консультації */}
                     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                       <span className="text-[10px] font-medium text-gray-600">Консультації:</span>
@@ -3533,10 +3537,6 @@ export function DirectClientTable({
                         <span>{pastData.returnedClientsCount ?? 0}</span>
                       </span>
                       <span className="text-orange-600" title="Записи скасовані: 🚫 — {(pastData.recordsCancelledCount ?? 0)} шт.">🚫 {pastData.recordsCancelledCount ?? 0}</span>
-                      <span title="Без продажу (записи) — {(pastData.noSaleCount ?? 0)} шт." className="inline-flex items-center gap-0.5">
-                        <BrokenHeartIcon size={12} />
-                        <span>{pastData.noSaleCount ?? 0}</span>
-                      </span>
                     </div>
                     {/* 3-й рядок: Фін. Рез. зліва, Клієнти справа */}
                     <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-[10px]">
@@ -3615,10 +3615,6 @@ export function DirectClientTable({
                           <span>{todayData.returnedClientsCount ?? 0}</span>
                         </span>
                         <span className="text-orange-600" title="Записи скасовані: 🚫 — {(todayData.recordsCancelledCount ?? 0)} шт.">🚫 {todayData.recordsCancelledCount ?? 0}</span>
-                        <span title="Без продажу (записи) — {(todayData.noSaleCount ?? 0)} шт." className="inline-flex items-center gap-0.5">
-                          <BrokenHeartIcon size={12} />
-                          <span>{todayData.noSaleCount ?? 0}</span>
-                        </span>
                       </div>
                       {/* 3-й рядок: Фін. Рез. зліва, Клієнти справа */}
                       <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-[10px]">
@@ -3652,7 +3648,10 @@ export function DirectClientTable({
                 const futureData = footerStats.future;
                 return (
                   <div className="px-3 relative">
-                    <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700">До кінця місяця.</span>
+                    <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700 inline-flex items-center gap-1">
+                      <MonthEndIcon size={12} />
+                      До кінця місяця.
+                    </span>
                     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]">
                       <span className="font-medium text-gray-600">Консультацій:</span>
                       <span title="Призначено (майбутні) ⏳ шт.">⏳ {futureData.consultationPlannedFuture ?? 0}</span>

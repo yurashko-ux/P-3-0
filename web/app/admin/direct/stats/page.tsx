@@ -308,7 +308,7 @@ export default function DirectStatsPage() {
                     { label: "Заплановано", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "В очікуванні", icon: "⏳", key: "consultationPlanned", unit: "шт", sub: true },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
-                    { label: "No-show", icon: "❌", key: "consultationNoShow", unit: "шт" },
+                    { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
                     { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
                     { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
@@ -355,7 +355,6 @@ export default function DirectStatsPage() {
                     { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                     { label: "Повернутий клієнт", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
                     { label: "Скасовано", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
-                    { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
