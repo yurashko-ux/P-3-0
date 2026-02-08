@@ -1364,13 +1364,13 @@ export function DirectClientTable({
           <div>
             {(() => {
               const headerTable = (
-                <table className="table table-xs sm:table-sm border-collapse" style={tableWidthStyle}>
+                <table className="table table-xs border-collapse" style={tableWidthStyle}>
                   {headerColgroup}
                   <thead>
-                    <tr>
-                      <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
-                  <th className="px-0 py-0.5 text-xs font-semibold text-left" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
-                    <div className="flex items-center gap-1">
+                    <tr className="leading-tight">
+                      <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
+                  <th className="px-0 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
+                    <div className="flex items-center gap-0.5">
                       <button
                         className={`hover:underline cursor-pointer text-left whitespace-nowrap ${
                           sortBy === "updatedAt" && sortOrder === "desc" 
@@ -1403,10 +1403,10 @@ export function DirectClientTable({
                     </div>
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
-                  <th className="px-0 py-0.5 text-left" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), true)} />
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), true)}>
+                  <th className="px-0 py-0 text-left" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), true)} />
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), true)}>
                     <div className="flex flex-col items-start leading-none">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5">
                         <button
                           className={`hover:underline cursor-pointer text-left ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                           onClick={() =>
@@ -1442,7 +1442,7 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.sales, true)}>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.sales, true)}>
                     <div className="flex flex-col items-start leading-none">
                       <button
                         className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1458,7 +1458,7 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-1 sm:px-1 py-0.5 text-xs font-semibold text-left"
+                    className="px-1 sm:px-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(columnWidths.days, true)}
                     title="Днів з останнього візиту (Altegio). Сортувати."
                   >
@@ -1483,7 +1483,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.inst, true)}>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.inst, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "messagesTotal" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1506,7 +1506,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-1 pr-2 sm:pl-1 sm:pr-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
+                  <th className="pl-1 pr-2 sm:pl-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1528,7 +1528,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-2 sm:pl-2 pr-1 sm:pr-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.consultation, true)}>
+                  <th className="pl-2 sm:pl-2 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.consultation, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1551,7 +1551,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1573,7 +1573,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.master, true)}>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.master, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1596,10 +1596,10 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.phone, true)}>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.phone, true)}>
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-0.5 text-xs font-semibold text-left" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
                 </tr>
                 {/* Рядок редагування розмірів */}
                 {isEditingColumnWidths && (
