@@ -3461,10 +3461,10 @@ export function DirectClientTable({
         </div>
       </div>
       
-      {/* Футер — рівно 2 рядки (Консультації+Фін.Рез, Записи+Клієнти), без переносу */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[52px] py-1 px-2 border-t border-gray-300">
+      {/* Футер — 2 рядки; колонки: З початку = Сьогодні (рівні), До кінця місяця — 50% ширини */}
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300">
         {footerStats ? (
-          <div className="grid grid-cols-3 divide-x divide-gray-300 text-xs">
+          <div className="grid divide-x divide-gray-300 text-xs" style={{ gridTemplateColumns: '2fr 2fr 1fr' }}>
             {(() => {
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
               const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
@@ -3486,9 +3486,9 @@ export function DirectClientTable({
               const renderPastBlock = () => {
                 const pastData = footerStats.past;
                 return (
-                  <div className="px-3 relative flex flex-col gap-0.5">
+                  <div className="px-3 relative flex flex-col gap-0">
                     {/* 1-й рядок: Консультації + пробіл + Фін. Рез. */}
-                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1.25rem]">
+                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                       <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                       <span title="Консультацій створено" className="inline-flex items-center gap-1">
                         <StateIcon state="consultation-booked" size={iconSize} />
@@ -3515,7 +3515,7 @@ export function DirectClientTable({
                       </span>
                     </div>
                     {/* 2-й рядок: Записи + пробіл + Клієнти */}
-                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1.25rem]">
+                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                       <span className="font-medium text-gray-600 shrink-0">Записи:</span>
                       <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1 shrink-0">
                         <YellowDotIcon size={iconSize} />
@@ -3555,12 +3555,12 @@ export function DirectClientTable({
                 );
               };
               const renderTodayBlock = () => (
-                <div className="px-3 relative flex flex-col gap-0.5">
+                <div className="px-3 relative flex flex-col gap-0">
                   {hasTodayKpi ? (
                     <>
                       <span className="absolute top-0 right-0 text-xs font-bold text-gray-700">Сьогодні.</span>
                       {/* 1-й рядок: Консультації + пробіл + Фін. Рез. */}
-                      <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1.25rem]">
+                      <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                         <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                         <span title="Консультацій створено" className="inline-flex items-center gap-1">
                           <StateIcon state="consultation-booked" size={iconSize} />
@@ -3587,7 +3587,7 @@ export function DirectClientTable({
                         </span>
                       </div>
                       {/* 2-й рядок: Записи + пробіл + Клієнти */}
-                      <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1.25rem]">
+                      <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                         <span className="font-medium text-gray-600 shrink-0">Записи:</span>
                         <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1 shrink-0">
                           <YellowDotIcon size={iconSize} />
@@ -3634,16 +3634,16 @@ export function DirectClientTable({
               const renderFutureBlock = () => {
                 const futureData = footerStats.future;
                 return (
-                  <div className="px-3 relative flex flex-col gap-0.5">
+                  <div className="px-3 relative flex flex-col gap-0">
                     <span className="absolute top-0 right-0 text-xs font-bold text-gray-700 inline-flex items-center gap-1">
                       <YellowDotHalfRightIcon size={iconSize} />
                       До кінця місяця.
                     </span>
-                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1.25rem]">
+                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                       <span className="font-medium text-gray-600 shrink-0">Консультацій:</span>
                       <span title="Призначено (майбутні)" className="shrink-0">⏳ {futureData.consultationPlannedFuture ?? 0}</span>
                     </div>
-                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1.25rem]">
+                    <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                       <span className="font-medium text-gray-600 shrink-0">Записів:</span>
                       <span title="Записів майбутніх" className="inline-flex items-center gap-1 shrink-0">
                         <YellowDotIcon size={iconSize} />
