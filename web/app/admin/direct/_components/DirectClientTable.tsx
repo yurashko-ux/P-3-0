@@ -3486,9 +3486,8 @@ export function DirectClientTable({
                 const pastData = footerStats.past;
                 return (
                   <div className="px-3 relative">
-                    <span className="absolute top-0 right-0 text-[10px] font-bold text-gray-700 inline-flex items-center gap-1">
-                      <MonthStartIcon size={12} />
-                      З початку місяця.
+                    <span className="absolute top-0 right-0 inline-flex items-center" title="З початку місяця">
+                      <MonthStartIcon size={14} className="text-yellow-500" />
                     </span>
                     {/* 1-й рядок: Консультації */}
                     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
