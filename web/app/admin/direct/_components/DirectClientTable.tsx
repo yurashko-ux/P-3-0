@@ -828,12 +828,12 @@ export function DirectClientTable({
   const bodyTableRef = useRef<HTMLTableElement | null>(null);
   const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
   
-  // Завантажуємо статистику футера (поточний місяць)
+  // Джерело даних футера — розділ Статистика (той самий API, що й таблиці KPI по періодах).
   useEffect(() => {
     const fetchFooterStats = async () => {
       try {
         setFooterStatsError(null);
-        const response = await fetch('/api/admin/direct/footer-stats');
+        const response = await fetch('/api/admin/direct/stats/periods');
         if (!response.ok) {
           setFooterStats(null);
           setFooterStatsError('Не вдалося завантажити статистику футера');

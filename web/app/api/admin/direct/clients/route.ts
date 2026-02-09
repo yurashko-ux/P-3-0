@@ -19,6 +19,7 @@ import {
   countNonAdminStaffInGroup,
   getPerMasterSumsFromGroup,
   getVisitIdAndRecordIdForBreakdown,
+  pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -326,35 +327,6 @@ export async function GET(req: NextRequest) {
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
       clients = clients.map((c) => {
-        const pickRecordCreatedAtISOFromGroup = (group: any): string | null => {
-          try {
-            const events = Array.isArray(group?.events) ? group.events : [];
-            const toTs = (e: any) => new Date(e?.receivedAt || e?.datetime || 0).getTime();
-
-            // 1) Найперша подія зі статусом create
-            let bestCreate = Infinity;
-            for (const e of events) {
-              const status = (e?.status || '').toString();
-              if (status !== 'create') continue;
-              const ts = toTs(e);
-              if (isFinite(ts) && ts < bestCreate) bestCreate = ts;
-            }
-            if (bestCreate !== Infinity) return new Date(bestCreate).toISOString();
-
-            // 2) Фолбек: найперша подія будь-якого статусу
-            let bestAny = Infinity;
-            for (const e of events) {
-              const ts = toTs(e);
-              if (isFinite(ts) && ts < bestAny) bestAny = ts;
-            }
-            if (bestAny !== Infinity) return new Date(bestAny).toISOString();
-
-            return null;
-          } catch {
-            return null;
-          }
-        };
-
         // Дораховуємо "поточний Майстер" для UI з KV (щоб збігалось з модалкою "Webhook-и").
         // Бізнес-правило для колонки "Майстер": ігноруємо адмінів/невідомих, пріоритет = paid-запис (якщо він є).
         try {

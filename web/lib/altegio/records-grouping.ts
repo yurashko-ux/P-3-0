@@ -780,3 +780,36 @@ export function groupRecordsByClientDay(events: NormalizedRecordEvent[]): Map<nu
   return result;
 }
 
+/**
+ * Повертає ISO-дату найранішого створення запису в групі (для "дата створення запису" у фільтрах і KPI).
+ * Використовується в API клієнтів та stats/periods для узгодження "Консультації створені" / "Записи створені".
+ */
+export function pickRecordCreatedAtISOFromGroup(group: RecordGroup | null | undefined): string | null {
+  if (!group) return null;
+  try {
+    const events = Array.isArray(group.events) ? group.events : [];
+    const toTs = (e: NormalizedRecordEvent) =>
+      new Date(e?.receivedAt || e?.datetime || 0).getTime();
+
+    let bestCreate = Infinity;
+    for (const e of events) {
+      const status = (e?.status || '').toString();
+      if (status !== 'create') continue;
+      const ts = toTs(e);
+      if (Number.isFinite(ts) && ts < bestCreate) bestCreate = ts;
+    }
+    if (bestCreate !== Infinity) return new Date(bestCreate).toISOString();
+
+    let bestAny = Infinity;
+    for (const e of events) {
+      const ts = toTs(e);
+      if (Number.isFinite(ts) && ts < bestAny) bestAny = ts;
+    }
+    if (bestAny !== Infinity) return new Date(bestAny).toISOString();
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+

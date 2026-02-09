@@ -84,7 +84,8 @@ export default function DirectStatsPage() {
     totalClients: number;
   }>({ loading: false, error: null, rows: [], totalClients: 0 });
 
-  const [footerStats, setFooterStats] = useState<{
+  // KPI по періодах: джерело — канонічний API статистики (футер Direct споживає той самий API).
+  const [periodStats, setPeriodStats] = useState<{
     past: FooterBlock;
     today: FooterBlock;
     future: FooterBlock;
@@ -94,12 +95,12 @@ export default function DirectStatsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/admin/direct/footer-stats", { cache: "no-store" });
+        const res = await fetch("/api/admin/direct/stats/periods", { cache: "no-store" });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        setFooterStats(data.stats);
+        setPeriodStats(data.stats);
       } catch {
-        if (!cancelled) setFooterStats(null);
+        if (!cancelled) setPeriodStats(null);
       }
     }
     void load();
@@ -286,11 +287,11 @@ export default function DirectStatsPage() {
         </div>
       </div>
 
-      {/* Таблиця KPI: ті самі дані, що й у футері Direct (API footer-stats). З початку місяця / Сьогодні / До кінця місяця */}
+      {/* Таблиця KPI: канонічне джерело даних для періодів; футер Direct споживає той самий API. */}
       <div className="card bg-base-100 shadow-sm mb-6">
         <div className="card-body p-4">
           <h2 className="text-lg font-semibold mb-3">KPI по періодах</h2>
-          {footerStats ? (
+          {periodStats ? (
             <div className="overflow-x-auto">
               <table className="table table-pin-rows table-xs">
                 <thead>
@@ -343,9 +344,9 @@ export default function DirectStatsPage() {
                           <>{row.icon} {row.label}</>
                         )}
                       </td>
-                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit)}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit)}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-100">
@@ -353,9 +354,9 @@ export default function DirectStatsPage() {
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap"><span className="mx-1" aria-hidden> </span>💰 Фін. Рез. (Оборот)</td>
-                    <td className="text-center">{formatFooterCell(footerStats.past, "turnoverToday", "тис. грн")}</td>
-                    <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
-                    <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.past, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.today, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "turnoverToday", "тис. грн")}</td>
                   </tr>
                   {[
                     { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
@@ -392,9 +393,9 @@ export default function DirectStatsPage() {
                           <>{row.icon} {row.label}</>
                         )}
                       </td>
-                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.future, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
                     </tr>
                   ))}
                   <tr>
@@ -412,10 +413,10 @@ export default function DirectStatsPage() {
                       </span>
                     </td>
                     <td className="text-center">
-                      {(footerStats.past.newClientsCount ?? 0)} / {(footerStats.past.returnedClientsCount ?? 0)} шт
+                      {(periodStats.past.newClientsCount ?? 0)} / {(periodStats.past.returnedClientsCount ?? 0)} шт
                     </td>
                     <td className="text-center">
-                      {(footerStats.today.newClientsCount ?? 0)} / {(footerStats.today.returnedClientsCount ?? 0)} шт
+                      {(periodStats.today.newClientsCount ?? 0)} / {(periodStats.today.returnedClientsCount ?? 0)} шт
                     </td>
                     <td className="text-center">—</td>
                   </tr>
@@ -431,7 +432,7 @@ export default function DirectStatsPage() {
                     </td>
                     <td className="text-center">—</td>
                     <td className="text-center">—</td>
-                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap">
@@ -442,19 +443,19 @@ export default function DirectStatsPage() {
                     </td>
                     <td className="text-center">—</td>
                     <td className="text-center">—</td>
-                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap">➡️ Наступного місяця</td>
                     <td className="text-center">—</td>
                     <td className="text-center">—</td>
-                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumNextMonth", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "plannedPaidSumNextMonth", "тис. грн")}</td>
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap">⏭️ +2 міс.</td>
                     <td className="text-center">—</td>
                     <td className="text-center">—</td>
-                    <td className="text-center">{formatFooterCell(footerStats.future, "plannedPaidSumPlus2Months", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "plannedPaidSumPlus2Months", "тис. грн")}</td>
                   </tr>
                 </tbody>
               </table>

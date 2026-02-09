@@ -1,9 +1,17 @@
-// web/app/api/admin/direct/footer-stats/route.ts
-// Футер-статистика для Direct (поточний місяць): З початку місяця | Сьогодні | До кінця місяця
+// web/app/api/admin/direct/stats/periods/route.ts
+// Канонічний API для KPI по періодах (розділ Статистика). Джерело даних: наша БД + KV.
+// Футер Direct споживає цей же API (джерело даних для футера — розділ Статистика).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
-import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { kvRead } from '@/lib/kv';
+import {
+  groupRecordsByClientDay,
+  normalizeRecordsLogItems,
+  kyivDayFromISO,
+  pickRecordCreatedAtISOFromGroup,
+} from '@/lib/altegio/records-grouping';
+import type { RecordGroup } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -33,11 +41,8 @@ type FooterStatsBlock = {
   conversion2Rate?: number;
   createdPaidSum: number;
   plannedPaidSum: number;
-  /** Відновлена консультація (перенос дати), state === 'consultation-rescheduled' */
   consultationRescheduledCount: number;
-  /** Повернуті клієнти (visits >= 2), активність у періоді */
   returnedClientsCount: number;
-  // Деталізовані поля для past (як у today)
   consultationCreated?: number;
   consultationOnlineCount?: number;
   consultationPlanned?: number;
@@ -52,64 +57,36 @@ type FooterStatsBlock = {
   upsalesGoodsSum?: number;
   newClientsCount?: number;
   noRebookCount?: number;
-  /** Записи: скасовані (платні записи з paidServiceCancelled) */
   recordsCancelledCount?: number;
-  /** Записи: не прийшов (платні записи, paidServiceAttended === false, не скасовані) */
   recordsNoShowCount?: number;
   turnoverToday?: number;
-  // Поля для future
-  /** Консультації: заплановані (майбутні) */
   consultationPlannedFuture?: number;
-  /** Записи: майбутніх (до кінця місяця включно) */
   plannedPaidSumFuture?: number;
-  /** Записи: до кінця місяця */
   plannedPaidSumToMonthEnd?: number;
-  /** Записи: наступного місяця */
   plannedPaidSumNextMonth?: number;
-  /** Записи: +2 місяці */
   plannedPaidSumPlus2Months?: number;
 };
 
-/** Додаткові KPI лише для блоку «Сьогодні» (піктограми в футері) */
-export type FooterTodayStats = FooterStatsBlock & {
-  /** Консультації: створені (дата запису = сьогодні), сума кількості */
+type FooterTodayStats = FooterStatsBlock & {
   consultationCreated: number;
-  /** Онлайн консультації за сьогодні (💻) */
   consultationOnlineCount: number;
-  /** Консультації: заплановані (сьогодні, без результату) */
   consultationPlanned: number;
-  /** Консультації: реалізовані (сьогодні, прийшов) */
   consultationRealized: number;
-  /** Консультації: не прийшов (сьогодні) */
   consultationNoShow: number;
-  /** Консультації: скасовані (сьогодні) */
   consultationCancelled: number;
-  /** Немає продажі (💔), дані з колонки стан — state === 'too-expensive' */
   noSaleCount: number;
-  /** Нові платні клієнти за сьогодні */
   newPaidClients: number;
-  /** Сума створених записів за сьогодні (грн) */
   recordsCreatedSum: number;
-  /** Сума реалізованих записів за сьогодні (грн) */
   recordsRealizedSum: number;
-  /** Кількість перезаписів (🔁) за сьогодні */
   rebookingsCount: number;
-  /** Допродажі (продукція без груп волосся) за сьогодні (грн) */
   upsalesGoodsSum: number;
-  /** Нові клієнти (голубий фон у колонці Майстер) за сьогодні */
   newClientsCount: number;
-  /** Немає перезапису (⚠️), дані з колонки стан — state === 'consultation-no-show' */
   noRebookCount: number;
-  /** Відновлена консультація (перенос дати), state === 'consultation-rescheduled' */
   consultationRescheduledCount: number;
-  /** Повернуті клієнти (visits >= 2), активність сьогодні */
   returnedClientsCount: number;
-  /** Оборот за сьогодні: сума записів з датою сьогодні мінус скасовані/відмінені (attendance -1), грн */
-  turnoverToday: number;
-  /** Записи: скасовані (платні записи з paidServiceCancelled) */
   recordsCancelledCount: number;
-  /** Записи: не прийшов (платні записи, paidServiceAttended === false, не скасовані) */
   recordsNoShowCount: number;
+  turnoverToday: number;
 };
 
 const emptyBlock = (): FooterStatsBlock => ({
@@ -186,7 +163,6 @@ const getMonthBounds = (todayKyiv: string): { start: string; end: string } => {
 };
 
 const addMonths = (monthKey: string, deltaMonths: number): string => {
-  // monthKey: YYYY-MM
   const [yStr, mStr] = monthKey.split('-');
   const y = Number(yStr);
   const m = Number(mStr);
@@ -208,7 +184,7 @@ const getNextMonthBounds = (todayKyiv: string): { start: string; end: string } =
 };
 
 const getPlus2MonthsBounds = (todayKyiv: string): { start: string; end: string } => {
-  const monthKey = todayKyiv.slice(0, 7); // YYYY-MM
+  const monthKey = todayKyiv.slice(0, 7);
   const plus2Month = addMonths(monthKey, 2);
   const [y, m] = plus2Month.split('-');
   const year = Number(y);
@@ -227,13 +203,105 @@ const getPaidSum = (client: any): number => {
   return Number.isFinite(cost) ? cost : 0;
 };
 
+/** Вибір consultation-групи: спочатку той самий день, інакше найближча в межах 24 год (як у API клієнтів). */
+function pickClosestConsultGroup(
+  groups: RecordGroup[],
+  consultationBookingDate: string | null | undefined
+): RecordGroup | null {
+  const consultDay = consultationBookingDate ? kyivDayFromISO(consultationBookingDate) : null;
+  const sameDay = consultDay
+    ? (groups.find((g) => g.groupType === 'consultation' && g.kyivDay === consultDay) || null)
+    : null;
+  if (sameDay) return sameDay;
+  if (!groups.length || !consultationBookingDate) return null;
+  const bookingTs = new Date(consultationBookingDate).getTime();
+  if (!Number.isFinite(bookingTs)) return null;
+  let best: RecordGroup | null = null;
+  let bestDiff = Infinity;
+  for (const g of groups) {
+    if (g.groupType !== 'consultation') continue;
+    const dt = g.datetime || g.receivedAt || null;
+    if (!dt) continue;
+    const ts = new Date(dt).getTime();
+    if (!Number.isFinite(ts)) continue;
+    const diff = Math.abs(ts - bookingTs);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = g;
+    }
+  }
+  if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
+  return null;
+}
+
+/** Вибір paid-групи: спочатку той самий день, інакше найближча в межах 24 год. */
+function pickClosestPaidGroup(
+  groups: RecordGroup[],
+  paidServiceDate: string | null | undefined
+): RecordGroup | null {
+  const paidDay = paidServiceDate ? kyivDayFromISO(paidServiceDate) : null;
+  const sameDay = paidDay
+    ? (groups.find((g) => g.groupType === 'paid' && g.kyivDay === paidDay) || null)
+    : null;
+  if (sameDay) return sameDay;
+  if (!groups.length || !paidServiceDate) return null;
+  const targetTs = new Date(paidServiceDate).getTime();
+  if (!Number.isFinite(targetTs)) return null;
+  let best: RecordGroup | null = null;
+  let bestDiff = Infinity;
+  for (const g of groups) {
+    if (g.groupType !== 'paid') continue;
+    const dt = g.datetime || g.receivedAt || null;
+    if (!dt) continue;
+    const ts = new Date(dt).getTime();
+    if (!Number.isFinite(ts)) continue;
+    const diff = Math.abs(ts - targetTs);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = g;
+    }
+  }
+  if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const clients = await getAllDirectClients();
+    let clients = await getAllDirectClients();
+
+    // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").
+    try {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+
+      clients = clients.map((c) => {
+        const enriched = { ...c } as typeof c & {
+          consultationRecordCreatedAt?: string | null;
+          paidServiceRecordCreatedAt?: string | null;
+        };
+        if (c.altegioClientId) {
+          const groups = groupsByClient.get(c.altegioClientId) || [];
+          const consultGroup = pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
+          const consultRecordCreatedAt = pickRecordCreatedAtISOFromGroup(consultGroup);
+          if (consultRecordCreatedAt) enriched.consultationRecordCreatedAt = consultRecordCreatedAt;
+
+          if (c.paidServiceDate) {
+            const paidGroup = pickClosestPaidGroup(groups, c.paidServiceDate);
+            const paidServiceRecordCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
+            if (paidServiceRecordCreatedAt) enriched.paidServiceRecordCreatedAt = paidServiceRecordCreatedAt;
+          }
+        }
+        return enriched;
+      });
+    } catch (err) {
+      console.warn('[direct/stats/periods] KV обогачення пропущено (не критично):', err);
+    }
 
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
     const { start, end } = getMonthBounds(todayKyiv);
@@ -271,53 +339,46 @@ export async function GET(req: NextRequest) {
       const paidSum = getPaidSum(client);
       const t = stats.today as FooterTodayStats;
 
-      // 1) Створено консультацій — кількість створених консультацій за період (таблиця KPI + футер)
+      // 1) Створено консультацій — по даті створення запису (KV) або даті запису (fallback), узгоджено з фільтром
       const consultCreatedDay = toKyivDay((client as any).consultationRecordCreatedAt || client.consultationBookingDate);
       if (consultCreatedDay) {
         addByDay(consultCreatedDay, (b) => {
           b.createdConsultations += 1;
         });
-        // Деталі для past
         if (consultCreatedDay >= start && consultCreatedDay <= todayKyiv) {
           stats.past.consultationCreated = (stats.past.consultationCreated || 0) + 1;
           if ((client as any).isOnlineConsultation === true) {
             stats.past.consultationOnlineCount = (stats.past.consultationOnlineCount || 0) + 1;
           }
         }
-        // Деталі для today
         if (consultCreatedDay === todayKyiv) {
           t.consultationCreated += 1;
           if ((client as any).isOnlineConsultation === true) t.consultationOnlineCount += 1;
         }
       }
 
-      // 2) Успішні / 3) Скасовані та не відбулися (по даті консультації) + 5 станів для сьогодні
       const consultDay = toKyivDay(client.consultationBookingDate);
       if (consultDay) {
         addByDay(consultDay, (b) => {
           if (client.consultationAttended === true) b.successfulConsultations += 1;
           else if (client.consultationCancelled || client.consultationAttended === false) b.cancelledOrNoShow += 1;
         });
-        // Деталі для past
         if (consultDay >= start && consultDay <= todayKyiv) {
           if (client.consultationCancelled) stats.past.consultationCancelled = (stats.past.consultationCancelled || 0) + 1;
           else if (client.consultationAttended === true) stats.past.consultationRealized = (stats.past.consultationRealized || 0) + 1;
           else if (client.consultationAttended === false) stats.past.consultationNoShow = (stats.past.consultationNoShow || 0) + 1;
           else stats.past.consultationPlanned = (stats.past.consultationPlanned || 0) + 1;
         }
-        // Деталі для today
         if (consultDay === todayKyiv) {
           if (client.consultationCancelled) t.consultationCancelled += 1;
           else if (client.consultationAttended === true) t.consultationRealized += 1;
           else if (client.consultationAttended === false) t.consultationNoShow += 1;
           else t.consultationPlanned += 1;
         }
-        // Future: заплановані консультації
         if (consultDay > todayKyiv && consultDay <= end) {
           stats.future.consultationPlannedFuture = (stats.future.consultationPlannedFuture || 0) + 1;
         }
 
-        // Відновлена консультація (перенос дати) — по даті консультації
         if (client.state === 'consultation-rescheduled' && consultDay) {
           addByDay(consultDay, (b) => {
             b.consultationRescheduledCount += 1;
@@ -332,7 +393,6 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 4) Продажі (нові платні клієнти) за сьогодні
       const paidDay = toKyivDay(client.paidServiceDate);
       if (isEligibleSale && paidDay) {
         addByDay(paidDay, (b) => {
@@ -340,32 +400,25 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      // 7) Сума створених записів (по даті створення платного або даті запису як fallback)
       const paidCreatedDay = toKyivDay((client as any).paidServiceRecordCreatedAt) || paidDay;
       if (paidSum > 0 && paidCreatedDay) {
         addByDay(paidCreatedDay, (b) => {
           b.createdPaidSum += paidSum;
         });
-        // Past: сума створених записів
         if (paidCreatedDay >= start && paidCreatedDay <= todayKyiv) {
           stats.past.recordsCreatedSum = (stats.past.recordsCreatedSum || 0) + paidSum;
         }
-        // Today
         if (paidCreatedDay === todayKyiv) t.recordsCreatedSum += paidSum;
       }
 
-      // 8) Сума запланованих та реалізованих записів
       if (paidSum > 0 && paidDay) {
         addByDay(paidDay, (b) => {
           b.plannedPaidSum += paidSum;
         });
-        // Past: реалізовані записи
         if (paidDay >= start && paidDay <= todayKyiv && client.paidServiceAttended === true) {
           stats.past.recordsRealizedSum = (stats.past.recordsRealizedSum || 0) + paidSum;
         }
-        // Today: реалізовані записи
         if (paidDay === todayKyiv && client.paidServiceAttended === true) t.recordsRealizedSum += paidSum;
-        // Future: записи по періодах
         if (paidDay > todayKyiv && paidDay <= end) {
           stats.future.plannedPaidSumFuture = (stats.future.plannedPaidSumFuture || 0) + paidSum;
           stats.future.plannedPaidSumToMonthEnd = (stats.future.plannedPaidSumToMonthEnd || 0) + paidSum;
@@ -376,34 +429,25 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Перезаписи (🔁)
       if (paidDay === todayKyiv && (client as any).paidServiceIsRebooking === true) t.rebookingsCount += 1;
-      // Past: перезаписи
       if (paidDay && paidDay >= start && paidDay <= todayKyiv && (client as any).paidServiceIsRebooking === true) {
         stats.past.rebookingsCount = (stats.past.rebookingsCount || 0) + 1;
       }
 
-      // Записи: скасовані (🚫) — paidServiceCancelled
       if (paidDay && client.paidServiceCancelled === true) {
         if (paidDay >= start && paidDay <= todayKyiv) {
           stats.past.recordsCancelledCount = (stats.past.recordsCancelledCount || 0) + 1;
         }
-        if (paidDay === todayKyiv) {
-          t.recordsCancelledCount += 1;
-        }
+        if (paidDay === todayKyiv) t.recordsCancelledCount += 1;
       }
 
-      // Записи: не прийшов (❌) — paidServiceAttended === false, не скасовані
       if (paidDay && client.paidServiceAttended === false && !client.paidServiceCancelled) {
         if (paidDay >= start && paidDay <= todayKyiv) {
           stats.past.recordsNoShowCount = (stats.past.recordsNoShowCount || 0) + 1;
         }
-        if (paidDay === todayKyiv) {
-          t.recordsNoShowCount += 1;
-        }
+        if (paidDay === todayKyiv) t.recordsNoShowCount += 1;
       }
 
-      // Немає продажі (💔) — з колонки стан (state === 'too-expensive')
       const isRelevantToday = consultDay === todayKyiv || paidDay === todayKyiv;
       const isRelevantPast = (consultDay && consultDay >= start && consultDay <= todayKyiv) || (paidDay && paidDay >= start && paidDay <= todayKyiv);
       if (isRelevantToday && client.state === 'too-expensive') t.noSaleCount += 1;
@@ -411,50 +455,43 @@ export async function GET(req: NextRequest) {
         stats.past.noSaleCount = (stats.past.noSaleCount || 0) + 1;
       }
 
-      // Немає перезапису (⚠️) — з колонки стан (state === 'consultation-no-show')
       if (isRelevantToday && client.state === 'consultation-no-show') t.noRebookCount += 1;
       if (isRelevantPast && client.state === 'consultation-no-show') {
         stats.past.noRebookCount = (stats.past.noRebookCount || 0) + 1;
       }
 
-      // Оборот: сума записів без скасованих/відміних (attendance -1)
       if (paidDay === todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
         t.turnoverToday += paidSum;
       }
-      // Past: оборот
       if (paidDay && paidDay >= start && paidDay <= todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
         stats.past.turnoverToday = (stats.past.turnoverToday || 0) + paidSum;
       }
 
-      // Допродажі (продукція без груп волосся)
-      const isHairCategory = (client as any).paidServiceCategory === 'hair-extension' || 
-        (typeof (client as any).paidServiceVisitBreakdown === 'object' && 
-         Array.isArray((client as any).paidServiceVisitBreakdown) &&
-         (client as any).paidServiceVisitBreakdown.some((b: any) => b?.category === 'hair-extension'));
+      const isHairCategory = (client as any).paidServiceCategory === 'hair-extension' ||
+        (typeof (client as any).paidServiceVisitBreakdown === 'object' &&
+          Array.isArray((client as any).paidServiceVisitBreakdown) &&
+          (client as any).paidServiceVisitBreakdown.some((b: any) => b?.category === 'hair-extension'));
       const goodsSum = !isHairCategory && paidSum > 0 ? paidSum : 0;
       if (paidDay === todayKyiv && goodsSum > 0) t.upsalesGoodsSum += goodsSum;
       if (paidDay && paidDay >= start && paidDay <= todayKyiv && goodsSum > 0) {
         stats.past.upsalesGoodsSum = (stats.past.upsalesGoodsSum || 0) + goodsSum;
       }
 
-      // Нові клієнти (голубий фон у колонці Майстер)
       if (visitsCount < 2) {
         if ((consultDay === todayKyiv && client.consultationAttended === true) ||
             (paidDay === todayKyiv && client.paidServiceAttended === true)) {
           newClientsIdsToday.add(client.id);
         }
-        // Past: нові клієнти
         if ((consultDay && consultDay >= start && consultDay <= todayKyiv && client.consultationAttended === true) ||
             (paidDay && paidDay >= start && paidDay <= todayKyiv && client.paidServiceAttended === true)) {
           newClientsIdsPast.add(client.id);
         }
       }
 
-      // Повернуті клієнти (visits >= 2) — унікальні за періодом
       if (visitsCount >= 2) {
         if (consultDay && consultDay >= start && consultDay <= todayKyiv) returnedClientIdsPast.add(client.id);
         if (paidDay && paidDay >= start && paidDay <= todayKyiv) returnedClientIdsPast.add(client.id);
-        if ((consultDay === todayKyiv || paidDay === todayKyiv)) returnedClientIdsToday.add(client.id);
+        if (consultDay === todayKyiv || paidDay === todayKyiv) returnedClientIdsToday.add(client.id);
         if (consultDay && consultDay > todayKyiv && consultDay <= end) returnedClientIdsFuture.add(client.id);
         if (paidDay && paidDay > todayKyiv && paidDay <= end) returnedClientIdsFuture.add(client.id);
       }
@@ -473,7 +510,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, stats });
   } catch (err) {
-    console.error('[direct/footer-stats] GET error:', err);
+    console.error('[direct/stats/periods] GET error:', err);
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       { status: 500 }
