@@ -26,11 +26,9 @@ function toKyivDay(iso: string): string {
 const curMonth = toKyivYearMonth(new Date().toISOString());
 const todayKyiv = toKyivDay(new Date().toISOString());
 
-/** Дата створення запису на консультацію (як в API: fallback на consultationBookingDate) */
+/** Дата створення запису на консультацію (тільки consultationRecordCreatedAt; не змішувати з датою консультації). */
 function getConsultCreatedAt(c: DirectClient): string | undefined {
-  const created = (c as any).consultationRecordCreatedAt as string | undefined;
-  if (created) return created;
-  return c.consultationBookingDate;
+  return (c as any).consultationRecordCreatedAt as string | undefined;
 }
 
 const YEARS = ["26", "27", "28"];
@@ -101,7 +99,7 @@ export function ConsultationFilterDropdown({
     [clients, allowedFirstNames]
   );
 
-  // «Створено» = дата створення запису (consultationRecordCreatedAt), fallback на дату запису
+  // «Створено» = тільки дата створення запису (consultationRecordCreatedAt)
   const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(getConsultCreatedAt(x)) === curMonth).length, [clients]);
   const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay(getConsultCreatedAt(x)) === todayKyiv).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);

@@ -969,8 +969,9 @@ export async function GET(req: NextRequest) {
     const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
     const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
     /** Дата створення запису на консультацію (fallback на consultationBookingDate для узгодженості з UI) */
+    // «Консультації створені» = тільки дата створення запису (consultationRecordCreatedAt), не підставляти дату консультації (booking).
     const getConsultCreatedAt = (c: DirectClient): string | null | undefined =>
-      (c as any).consultationRecordCreatedAt ?? c.consultationBookingDate;
+      (c as any).consultationRecordCreatedAt ?? undefined;
     const parseActYear = (y: string | null): string => {
       if (!y) return '';
       const n = parseInt(y, 10);

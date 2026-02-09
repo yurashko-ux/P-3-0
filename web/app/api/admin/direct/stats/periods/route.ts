@@ -339,8 +339,8 @@ export async function GET(req: NextRequest) {
       const paidSum = getPaidSum(client);
       const t = stats.today as FooterTodayStats;
 
-      // 1) Створено консультацій — по даті створення запису (KV) або даті запису (fallback), узгоджено з фільтром
-      const consultCreatedDay = toKyivDay((client as any).consultationRecordCreatedAt || client.consultationBookingDate);
+      // 1) Створено консультацій — тільки дата створення запису (consultationRecordCreatedAt з KV), не змішувати з датою консультації (booking).
+      const consultCreatedDay = toKyivDay((client as any).consultationRecordCreatedAt);
       if (consultCreatedDay) {
         addByDay(consultCreatedDay, (b) => {
           b.createdConsultations += 1;
