@@ -424,12 +424,6 @@ export default function DirectStatsPage() {
                     <td colSpan={4} className="font-medium">До кінця місяця (майбутнє)</td>
                   </tr>
                   <tr>
-                    <td className="whitespace-nowrap">⏳ Консультацій: Призначено</td>
-                    <td className="text-center">—</td>
-                    <td className="text-center">—</td>
-                    <td className="text-center">{(footerStats.future as any).consultationPlannedFuture ?? 0} шт</td>
-                  </tr>
-                  <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
                         <YellowDotIcon size={16} />
