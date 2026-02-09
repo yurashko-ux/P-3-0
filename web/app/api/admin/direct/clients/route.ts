@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = req.nextUrl;
+    const totalOnly = searchParams.get('totalOnly') === '1';
     const statusId = searchParams.get('statusId');
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
@@ -116,8 +117,13 @@ export async function GET(req: NextRequest) {
     try {
       clients = await getAllDirectClients();
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
-      // Те саме джерело, що й у Статистиці: totalCount = довжина списку getAllDirectClients() (як totalClients у stats/periods).
+      // Те саме джерело для обох екранів: totalCount = довжина списку getAllDirectClients().
       totalCount = clients.length;
+
+      // Єдине джерело для "кількість клієнтів": Статистика фетчить ?totalOnly=1 і показує той самий totalCount.
+      if (totalOnly) {
+        return NextResponse.json({ ok: true, totalCount });
+      }
 
       // #region agent log
       const withLastVisitAt = clients.filter(c => !!(c as any).lastVisitAt);

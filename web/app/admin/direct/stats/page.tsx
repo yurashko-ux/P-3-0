@@ -90,8 +90,24 @@ export default function DirectStatsPage() {
     today: FooterBlock;
     future: FooterBlock;
   } | null>(null);
-  // Кількість клієнтів з того ж джерела, що й KPI (getAllDirectClients), щоб збігалась з Direct.
-  const [periodTotalClients, setPeriodTotalClients] = useState<number | null>(null);
+  // Єдине джерело кількості клієнтів: той самий API, що й на Direct (GET /api/admin/direct/clients?totalOnly=1).
+  const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCount() {
+      try {
+        const res = await fetch("/api/admin/direct/clients?totalOnly=1", { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled || !data?.ok) return;
+        if (typeof data.totalCount === "number") setTotalClientsCount(data.totalCount);
+      } catch {
+        if (!cancelled) setTotalClientsCount(null);
+      }
+    }
+    void loadCount();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,10 +117,8 @@ export default function DirectStatsPage() {
         const data = await res.json();
         if (cancelled || !data?.ok) return;
         setPeriodStats(data.stats);
-        setPeriodTotalClients(typeof data.totalClients === "number" ? data.totalClients : null);
       } catch {
         if (!cancelled) setPeriodStats(null);
-        if (!cancelled) setPeriodTotalClients(null);
       }
     }
     void load();
@@ -272,7 +286,7 @@ export default function DirectStatsPage() {
             Статистика <span className="text-base">▲</span>
           </h1>
           <div className="text-sm text-gray-600">
-            {selectedMonth} • клієнтів: {periodTotalClients ?? mastersStats.totalClients}
+            {selectedMonth} • клієнтів: {totalClientsCount ?? mastersStats.totalClients}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm">Місяць</span>

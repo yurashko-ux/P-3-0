@@ -2,12 +2,12 @@
 
 ## Джерело цифр (уніфіковано)
 
-Обидва екрани тепер використовують **одне й те саме джерело**: довжину списку з `getAllDirectClients()`.
+Обидва екрани показують **одне й те саме число** з одного запиту.
 
 | Екран | Джерело |
 |-------|--------|
-| **Direct** (таблиця, футер "Фільтри: Консультація (N)") | `GET /api/admin/direct/clients` → `totalCount` = `clients.length` (після `getAllDirectClients()`) |
-| **Статистика** (шапка "клієнтів: N") | `GET /api/admin/direct/stats/periods` → `totalClients` = `clients.length` (після `getAllDirectClients()`); fallback на masters-stats, якщо ще не завантажено |
+| **Direct** (таблиця, футер "Фільтри: Консультація (N)") | `GET /api/admin/direct/clients` → у відповіді `totalCount` = `clients.length` |
+| **Статистика** (шапка "клієнтів: N") | `GET /api/admin/direct/clients?totalOnly=1` → у відповіді `totalCount` (той самий запит, без списку клієнтів). Fallback: mastersStats.totalClients поки не завантажилось |
 
 ## Історична причина різниці (до уніфікації)
 
