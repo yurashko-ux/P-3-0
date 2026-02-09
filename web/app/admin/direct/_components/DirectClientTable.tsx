@@ -1158,45 +1158,50 @@ export function DirectClientTable({
   }, [uniqueClients, filters.clientType]);
 
   // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, консультація сьогодні, запис сьогодні), потім за updatedAt desc. Лінія відмежування під блоком тригерних.
+  // Логіка «сьогодні» узгоджена з рядком таблиці (consultIsToday, paidIsToday) — той самий kyivDayFmt і порівняння.
   const clientsForTable = useMemo(() => {
     const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
     if (!isActiveMode) return filteredClients;
 
-    const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
-    const dateField: 'updatedAt' | 'createdAt' = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
     const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Kyiv',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
     });
-    const isDateTodayInKyiv = (dateVal: string | null | undefined): boolean => {
+    const todayKyivDay = kyivDayFmt.format(new Date());
+    const dateField: 'updatedAt' | 'createdAt' = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
+
+    const isConsultDateToday = (dateVal: string | null | undefined): boolean => {
       if (!dateVal) return false;
       try {
         const dateStr = typeof dateVal === 'string' ? dateVal.trim() : String(dateVal);
-        const isoMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-        if (isoMatch) {
-          const d = new Date(isoMatch[0]);
-          return !isNaN(d.getTime()) && kyivDayFmt.format(d) === todayKyivDayRow;
-        }
-        for (const part of dateStr.split(/\s+/)) {
-          const d = new Date(part);
-          if (!isNaN(d.getTime()) && part.match(/^\d/)) {
-            return kyivDayFmt.format(d) === todayKyivDayRow;
+        const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
+        if (!isoDateMatch) {
+          const parts = dateStr.split(/\s+/);
+          for (const part of parts) {
+            const testDate = new Date(part);
+            if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
+              return kyivDayFmt.format(testDate) === todayKyivDay;
+            }
           }
+          return false;
         }
-      } catch {}
-      const fallback = kyivDayFromISO(String(dateVal));
-      return !!fallback && fallback === todayKyivDayRow;
+        const appointmentDate = new Date(isoDateMatch[0]);
+        return !isNaN(appointmentDate.getTime()) && kyivDayFmt.format(appointmentDate) === todayKyivDay;
+      } catch {
+        return false;
+      }
     };
+
     const hasTrigger = (c: DirectClient): boolean => {
       const mainDate = c[dateField];
       if (mainDate) {
-        const mainKyivDay = kyivDayFromISO(String(mainDate));
-        if (mainKyivDay && mainKyivDay === todayKyivDayRow) return true;
+        const mainKyivDay = kyivDayFmt.format(new Date(mainDate));
+        if (mainKyivDay === todayKyivDay) return true;
       }
-      if (isDateTodayInKyiv(c.consultationBookingDate ?? undefined)) return true;
-      if (isDateTodayInKyiv(c.paidServiceDate ?? undefined)) return true;
+      if (isConsultDateToday(c.consultationBookingDate ?? undefined)) return true;
+      if (c.paidServiceDate && kyivDayFmt.format(new Date(c.paidServiceDate)) === todayKyivDay) return true;
       return false;
     };
 
