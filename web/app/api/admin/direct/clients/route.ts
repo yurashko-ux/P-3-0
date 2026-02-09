@@ -964,6 +964,7 @@ export async function GET(req: NextRequest) {
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
     const currentMonthKyiv = todayKyiv.slice(0, 7);
+    const startOfMonth = `${currentMonthKyiv}-01`;
     const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
     const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
     /** Дата створення запису на консультацію (fallback на consultationBookingDate для узгодженості з UI) */
@@ -1071,9 +1072,12 @@ export async function GET(req: NextRequest) {
 
       const applyConsultation = (arr: typeof base) => {
         let out = arr;
-        // «Консультації створені» = дата створення запису (getConsultCreatedAt)
+        // «Консультації створені» = дата створення запису; період як у Статистиці — з початку місяця до сьогодні.
         if (consultCreatedMode === 'current_month') {
-          out = out.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === currentMonthKyiv);
+          out = out.filter((c) => {
+            const day = toKyivDay(getConsultCreatedAt(c));
+            return day && day >= startOfMonth && day <= todayKyiv;
+          });
         } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
           const y = parseActYear(consultCreatedYear);
           const m = parseMonth(consultCreatedMonth);
@@ -1219,9 +1223,12 @@ export async function GET(req: NextRequest) {
     if (consultHasConsultation === 'true') {
       filtered = filtered.filter((c) => c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '');
     }
-    // «Консультації створені» = дата створення запису (getConsultCreatedAt), не дата запису
+    // «Консультації створені» = дата створення запису; період як у Статистиці — з початку місяця до сьогодні.
     if (consultCreatedMode === 'current_month') {
-      filtered = filtered.filter((c) => toYyyyMm(getConsultCreatedAt(c)) === currentMonthKyiv);
+      filtered = filtered.filter((c) => {
+        const day = toKyivDay(getConsultCreatedAt(c));
+        return day && day >= startOfMonth && day <= todayKyiv;
+      });
     } else if (consultCreatedMode === 'year_month' && consultCreatedYear && consultCreatedMonth) {
       const y = parseActYear(consultCreatedYear);
       const m = parseMonth(consultCreatedMonth);
