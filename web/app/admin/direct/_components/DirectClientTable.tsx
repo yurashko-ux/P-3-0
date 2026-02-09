@@ -3542,7 +3542,7 @@ export function DirectClientTable({
                 const pastData = footerStats.past;
                 return (
                   <div className="px-3 relative grid gap-0 min-h-[2rem]" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
-                    {/* 1-й рядок: Консультації | Фін. Рез. */}
+                    {/* 1-й рядок: Консультації */}
                     <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
                       <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                       <span title="Консультацій створено" className="inline-flex items-center gap-1">
@@ -3564,12 +3564,7 @@ export function DirectClientTable({
                         <span>{pastData.consultationRescheduledCount ?? 0}</span>
                       </span>
                     </div>
-                    <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
-                      <span className="font-bold text-gray-700">Фін. Рез.</span>
-                      <span className="inline-flex items-center gap-1" title={`Оборот: ${formatThousandVal(pastData.turnoverToday ?? 0)} тис. грн`}>
-                        <span className="opacity-90">💰</span> <span>{formatThousandVal(pastData.turnoverToday ?? 0)}</span>
-                      </span>
-                    </div>
+                    <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1" />
                     {/* 2-й рядок: Записи | Клієнти */}
                     <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
                       <span className="font-medium text-gray-600 shrink-0">Записи:</span>
@@ -3596,6 +3591,9 @@ export function DirectClientTable({
                       </span>
                       <span className="text-orange-600" title="Записи скасовані">🚫 {pastData.recordsCancelledCount ?? 0}</span>
                       <span className="text-red-600" title="Записи: не прийшов">❌ {pastData.recordsNoShowCount ?? 0}</span>
+                      <span className="font-bold text-gray-700 shrink-0" title={`Оборот: ${formatThousandVal(pastData.turnoverToday ?? 0)} тис. грн`}>
+                        <span className="opacity-90">💰</span> Фін. Рез. <span>{formatThousandVal(pastData.turnoverToday ?? 0)}</span>
+                      </span>
                     </div>
                     <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
                       <span className="font-medium text-gray-600">Клієнти:</span>
@@ -3615,7 +3613,7 @@ export function DirectClientTable({
                 <div className="px-3 relative">
                   {hasTodayKpi ? (
                     <div className="grid gap-0 min-h-[2rem]" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
-                      {/* 1-й рядок: Консультації | Фін. Рез. */}
+                      {/* 1-й рядок: Консультації */}
                       <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
                         <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                         <span title="Консультацій створено" className="inline-flex items-center gap-1">
@@ -3637,12 +3635,7 @@ export function DirectClientTable({
                           <span>{todayData.consultationRescheduledCount ?? 0}</span>
                         </span>
                       </div>
-                      <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
-                        <span className="font-bold text-gray-700">Фін. Рез.</span>
-                        <span className="inline-flex items-center gap-1" title={`Оборот: ${formatThousandVal(todayData.turnoverToday ?? 0)} тис. грн`}>
-                          <span className="opacity-90">💰</span> <span>{formatThousandVal(todayData.turnoverToday ?? 0)}</span>
-                        </span>
-                      </div>
+                      <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1" />
                       {/* 2-й рядок: Записи | Клієнти */}
                       <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
                         <span className="font-medium text-gray-600 shrink-0">Записи:</span>
@@ -3669,6 +3662,9 @@ export function DirectClientTable({
                         </span>
                         <span className="text-orange-600" title="Записи скасовані">🚫 {todayData.recordsCancelledCount ?? 0}</span>
                         <span className="text-red-600" title="Записи: не прийшов">❌ {todayData.recordsNoShowCount ?? 0}</span>
+                        <span className="font-bold text-gray-700 shrink-0" title={`Оборот: ${formatThousandVal(todayData.turnoverToday ?? 0)} тис. грн`}>
+                          <span className="opacity-90">💰</span> Фін. Рез. <span>{formatThousandVal(todayData.turnoverToday ?? 0)}</span>
+                        </span>
                       </div>
                       <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
                         <span className="font-medium text-gray-600">Клієнти:</span>

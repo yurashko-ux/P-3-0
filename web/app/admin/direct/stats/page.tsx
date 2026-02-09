@@ -121,11 +121,12 @@ export default function DirectStatsPage() {
     }
   }
 
-  function formatFooterCell(block: FooterBlock, key: string, unit: string): string {
+  function formatFooterCell(block: FooterBlock, key: string, unit: string, numberOnly?: boolean): string {
     const val = getFooterVal(block, key);
     if (unit === "тис. грн") {
       const thousands = val / 1000;
       const str = thousands % 1 === 0 ? String(Math.round(thousands)) : thousands.toFixed(1);
+      if (numberOnly) return str;
       return `${str} ${unit}`;
     }
     return `${val} ${unit}`;
@@ -308,8 +309,10 @@ export default function DirectStatsPage() {
                   {[
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
-                    { label: "Заплановано", icon: "📅", key: "consultationPlanned", unit: "шт" },
-                    { label: "В очікуванні", icon: "⏳", key: "consultationPlanned", unit: "шт", sub: true },
+                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
+                    { label: "Заплановано", icon: "📆", key: "consultationPlanned", unit: "шт" },
+                    { label: "Онлайн", icon: "💻", key: "consultationPlanned", unit: "шт" },
+                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
@@ -345,17 +348,18 @@ export default function DirectStatsPage() {
                       <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
                     </tr>
                   ))}
+                  <tr className="bg-gray-100">
+                    <td colSpan={4} className="font-medium">Записи</td>
+                  </tr>
                   <tr>
                     <td className="whitespace-nowrap"><span className="mx-1" aria-hidden> </span>💰 Фін. Рез. (Оборот)</td>
                     <td className="text-center">{formatFooterCell(footerStats.past, "turnoverToday", "тис. грн")}</td>
                     <td className="text-center">{formatFooterCell(footerStats.today, "turnoverToday", "тис. грн")}</td>
                     <td className="text-center">{formatFooterCell(footerStats.future, "turnoverToday", "тис. грн")}</td>
                   </tr>
-                  <tr className="bg-gray-100">
-                    <td colSpan={4} className="font-medium">Записи</td>
-                  </tr>
                   {[
                     { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
+                    { label: "Записів створено", icon: "📝", key: "recordsCreatedSum", unit: "тис. грн", numberOnly: true },
                     { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                     { label: "Заплановано", icon: "⏳", key: "plannedPaidSum", unit: "тис. грн" },
                     { label: "Реалізовано", icon: "✅", key: "recordsRealizedSum", unit: "тис. грн" },
@@ -389,9 +393,9 @@ export default function DirectStatsPage() {
                           <>{row.icon} {row.label}</>
                         )}
                       </td>
-                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit)}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit)}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit, "numberOnly" in row && row.numberOnly)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit, "numberOnly" in row && row.numberOnly)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit, "numberOnly" in row && row.numberOnly)}</td>
                     </tr>
                   ))}
                   <tr>
