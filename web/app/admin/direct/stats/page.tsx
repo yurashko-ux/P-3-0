@@ -310,7 +310,7 @@ export default function DirectStatsPage() {
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
-                    { label: "Заплановано", icon: "📆", key: "consultationPlanned", unit: "шт" },
+                    { label: "Заплановано", icon: "⏳", key: "consultationPlanned", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationPlanned", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
@@ -359,7 +359,6 @@ export default function DirectStatsPage() {
                   </tr>
                   {[
                     { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
-                    { label: "Записів створено", icon: "📝", key: "recordsCreatedSum", unit: "тис. грн", numberOnly: true },
                     { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                     { label: "Заплановано", icon: "⏳", key: "plannedPaidSum", unit: "тис. грн" },
                     { label: "Реалізовано", icon: "✅", key: "recordsRealizedSum", unit: "тис. грн" },
