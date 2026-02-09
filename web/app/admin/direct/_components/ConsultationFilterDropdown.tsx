@@ -100,14 +100,18 @@ export function ConsultationFilterDropdown({
   );
 
   // «Створено» = тільки дата створення запису; період як у Статистиці — з початку місяця до сьогодні (не весь календарний місяць).
-  const startOfMonth = `${curMonth}-01`;
-  const createdCurCount = useMemo(
-    () => clients.filter((x) => {
+  // Дати в useMemo, щоб завжди була актуальна «сьогодні» (без кешу модуля).
+  const createdCurCount = useMemo(() => {
+    const now = new Date().toISOString();
+    const month = toKyivYearMonth(now);
+    const start = month ? `${month}-01` : "";
+    const today = toKyivDay(now);
+    if (!start || !today) return 0;
+    return clients.filter((x) => {
       const day = toKyivDay(getConsultCreatedAt(x));
-      return day && day >= startOfMonth && day <= todayKyiv;
-    }).length,
-    [clients]
-  );
+      return day && day >= start && day <= today;
+    }).length;
+  }, [clients]);
   const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay(getConsultCreatedAt(x)) === todayKyiv).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
   const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d < todayKyiv; }).length, [clients]);
