@@ -1157,8 +1157,58 @@ export function DirectClientTable({
     });
   }, [uniqueClients, filters.clientType]);
 
-  // У активному режимі: сортування лише за updatedAt (найновіші зверху). Зелені прилипають до сірої лінії знизу.
-  const clientsForTable = filteredClients;
+  // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, консультація сьогодні, запис сьогодні), потім за updatedAt desc. Лінія відмежування під блоком тригерних.
+  const clientsForTable = useMemo(() => {
+    const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+    if (!isActiveMode) return filteredClients;
+
+    const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
+    const dateField: 'updatedAt' | 'createdAt' = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
+    const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Kyiv',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const isDateTodayInKyiv = (dateVal: string | null | undefined): boolean => {
+      if (!dateVal) return false;
+      try {
+        const dateStr = typeof dateVal === 'string' ? dateVal.trim() : String(dateVal);
+        const isoMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
+        if (isoMatch) {
+          const d = new Date(isoMatch[0]);
+          return !isNaN(d.getTime()) && kyivDayFmt.format(d) === todayKyivDayRow;
+        }
+        for (const part of dateStr.split(/\s+/)) {
+          const d = new Date(part);
+          if (!isNaN(d.getTime()) && part.match(/^\d/)) {
+            return kyivDayFmt.format(d) === todayKyivDayRow;
+          }
+        }
+      } catch {}
+      const fallback = kyivDayFromISO(String(dateVal));
+      return !!fallback && fallback === todayKyivDayRow;
+    };
+    const hasTrigger = (c: DirectClient): boolean => {
+      const mainDate = c[dateField];
+      if (mainDate) {
+        const mainKyivDay = kyivDayFromISO(String(mainDate));
+        if (mainKyivDay && mainKyivDay === todayKyivDayRow) return true;
+      }
+      if (isDateTodayInKyiv(c.consultationBookingDate ?? undefined)) return true;
+      if (isDateTodayInKyiv(c.paidServiceDate ?? undefined)) return true;
+      return false;
+    };
+
+    return [...filteredClients].sort((a, b) => {
+      const aT = hasTrigger(a);
+      const bT = hasTrigger(b);
+      if (aT !== bT) return aT ? -1 : 1;
+      const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return tB - tA;
+    });
+  }, [filteredClients, sortBy, sortOrder]);
 
   const useColgroupOnBody = filteredClients.length > 0 && measuredWidths.length === COLUMN_KEYS.length;
 
