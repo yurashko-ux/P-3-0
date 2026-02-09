@@ -392,9 +392,9 @@ export default function DirectStatsPage() {
                           <>{row.icon} {row.label}</>
                         )}
                       </td>
-                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit, "numberOnly" in row && row.numberOnly)}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit, "numberOnly" in row && row.numberOnly)}</td>
-                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit, "numberOnly" in row && row.numberOnly)}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.past, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.today, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
+                      <td className="text-center">{formatFooterCell(footerStats.future, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
                     </tr>
                   ))}
                   <tr>
