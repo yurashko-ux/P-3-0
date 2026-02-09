@@ -42,6 +42,8 @@ interface ConsultationFilterDropdownProps {
   clients: DirectClient[];
   masters?: { id: string; name: string }[];
   totalClientsCount?: number;
+  /** Якщо задано — показуємо це число біля «Поточний місяць» (те саме джерело, що й Статистика: stats/periods). */
+  consultCreatedFromStartOfMonth?: number;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -51,6 +53,7 @@ export function ConsultationFilterDropdown({
   clients,
   masters = [],
   totalClientsCount,
+  consultCreatedFromStartOfMonth,
   filters,
   onFiltersChange,
   columnLabel,
@@ -99,9 +102,8 @@ export function ConsultationFilterDropdown({
     [clients, allowedFirstNames]
   );
 
-  // «Створено» = тільки дата створення запису; період як у Статистиці — з початку місяця до сьогодні (не весь календарний місяць).
-  // Дати в useMemo, щоб завжди була актуальна «сьогодні» (без кешу модуля).
-  const createdCurCount = useMemo(() => {
+  // Число біля «Поточний місяць»: якщо передано consultCreatedFromStartOfMonth (з stats/periods) — використовуємо його (те саме, що в Статистиці).
+  const createdCurCountFallback = useMemo(() => {
     const now = new Date().toISOString();
     const month = toKyivYearMonth(now);
     const start = month ? `${month}-01` : "";
@@ -112,6 +114,7 @@ export function ConsultationFilterDropdown({
       return day && day >= start && day <= today;
     }).length;
   }, [clients]);
+  const createdCurCount = typeof consultCreatedFromStartOfMonth === "number" ? consultCreatedFromStartOfMonth : createdCurCountFallback;
   const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay(getConsultCreatedAt(x)) === todayKyiv).length, [clients]);
   const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
   const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d < todayKyiv; }).length, [clients]);
