@@ -508,7 +508,8 @@ export async function GET(req: NextRequest) {
     stats.past.conversion1Rate = consultBookedPast > 0 ? (consultAttendedPast / consultBookedPast) * 100 : 0;
     stats.past.conversion2Rate = consultAttendedPast > 0 ? (salesFromConsultPast / consultAttendedPast) * 100 : 0;
 
-    return NextResponse.json({ ok: true, stats });
+    // Єдине джерело для "кількість клієнтів" на екрані Статистика (той самий список, що й для KPI).
+    return NextResponse.json({ ok: true, stats, totalClients: clients.length });
   } catch (err) {
     console.error('[direct/stats/periods] GET error:', err);
     return NextResponse.json(

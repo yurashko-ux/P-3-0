@@ -487,6 +487,8 @@ export async function GET(req: NextRequest) {
     const mastersRows = masters.map((m) => rowsByMasterId.get(m.id)!).filter(Boolean);
     const unassignedRow = rowsByMasterId.get(unassignedId)!;
 
+    // totalClients = кількість клієнтів після фільтрів (statusId, masterId, source, search, hasAppointment).
+    // Без параметрів = усі з findMany. Щоб збігалось з Direct — там totalCount з GET /api/admin/direct/clients (COUNT(*)).
     return NextResponse.json({
       ok: true,
       month,

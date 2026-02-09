@@ -90,6 +90,8 @@ export default function DirectStatsPage() {
     today: FooterBlock;
     future: FooterBlock;
   } | null>(null);
+  // Кількість клієнтів з того ж джерела, що й KPI (getAllDirectClients), щоб збігалась з Direct.
+  const [periodTotalClients, setPeriodTotalClients] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,8 +101,10 @@ export default function DirectStatsPage() {
         const data = await res.json();
         if (cancelled || !data?.ok) return;
         setPeriodStats(data.stats);
+        setPeriodTotalClients(typeof data.totalClients === "number" ? data.totalClients : null);
       } catch {
         if (!cancelled) setPeriodStats(null);
+        if (!cancelled) setPeriodTotalClients(null);
       }
     }
     void load();
@@ -268,7 +272,7 @@ export default function DirectStatsPage() {
             Статистика <span className="text-base">▲</span>
           </h1>
           <div className="text-sm text-gray-600">
-            {selectedMonth} • клієнтів: {mastersStats.totalClients}
+            {selectedMonth} • клієнтів: {periodTotalClients ?? mastersStats.totalClients}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm">Місяць</span>
