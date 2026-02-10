@@ -50,19 +50,12 @@ export async function POST(req: NextRequest) {
     const clientIdParam = req.nextUrl.searchParams.get('clientId')?.trim();
     const singleClientMode = !!(altegioClientIdParam || clientIdParam);
 
-    const baseWhere: { altegioClientId: { not: null } | number; paidServiceDate: { not: null }; id?: string } = {
+    const baseWhere: { altegioClientId: { not: null } | string; paidServiceDate: { not: null }; id?: string } = {
       altegioClientId: { not: null },
       paidServiceDate: { not: null },
     };
     if (altegioClientIdParam) {
-      const parsed = parseInt(altegioClientIdParam, 10);
-      if (Number.isNaN(parsed)) {
-        return NextResponse.json({
-          ok: false,
-          error: `Невірний altegioClientId: "${altegioClientIdParam}". Очікується число.`,
-        }, { status: 400 });
-      }
-      baseWhere.altegioClientId = parsed;
+      baseWhere.altegioClientId = altegioClientIdParam;
     }
     if (clientIdParam) {
       baseWhere.id = clientIdParam;
