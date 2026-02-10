@@ -136,15 +136,7 @@ function DirectStatsPageContent() {
         });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        const stats = data.periodStats ?? null;
-        if (stats) {
-          console.log("[Stats] KPI Заплановано:", {
-            past: stats.past?.consultationBookedPast,
-            today: stats.today?.consultationBookedToday,
-            future: stats.future?.consultationPlannedFuture,
-          });
-        }
-        setPeriodStats(stats);
+        setPeriodStats(data.periodStats ?? null);
         setFilteredCount(typeof data.totalCount === "number" ? data.totalCount : null);
       } catch {
         if (!cancelled) {
@@ -157,7 +149,7 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, [searchParams]);
 
-  function getFooterVal(block: FooterBlock, key: string): number {
+  function getFooterVal(block: FooterBlock, key: string, column: "past" | "today" | "future"): number {
     const v = (block as Record<string, number | undefined>)[key];
     if (typeof v === "number") return v;
     // Обчислені поля: Офлайн = total − Онлайн
@@ -171,15 +163,24 @@ function DirectStatsPageContent() {
       const online = block.consultationPlannedOnlineCount ?? 0;
       return Math.max(0, planned - online);
     }
+    // Заплановано: кожна колонка має своє поле (0 є валідним, тому не використовуємо ??)
     if (key === "consultationBookedTotal") {
-      return block.consultationBookedPast ?? block.consultationBookedToday ?? block.consultationPlannedFuture ?? 0;
+      if (column === "past") return block.consultationBookedPast ?? 0;
+      if (column === "today") return block.consultationBookedToday ?? 0;
+      return block.consultationPlannedFuture ?? 0;
     }
     if (key === "consultationBookedOnlineCount") {
-      return block.consultationBookedPastOnlineCount ?? block.consultationBookedTodayOnlineCount ?? block.consultationPlannedOnlineCount ?? 0;
+      if (column === "past") return block.consultationBookedPastOnlineCount ?? 0;
+      if (column === "today") return block.consultationBookedTodayOnlineCount ?? 0;
+      return block.consultationPlannedOnlineCount ?? 0;
     }
     if (key === "consultationBookedOfflineCount") {
-      const total = block.consultationBookedPast ?? block.consultationBookedToday ?? block.consultationPlannedFuture ?? 0;
-      const online = block.consultationBookedPastOnlineCount ?? block.consultationBookedTodayOnlineCount ?? block.consultationPlannedOnlineCount ?? 0;
+      const total = column === "past" ? (block.consultationBookedPast ?? 0)
+        : column === "today" ? (block.consultationBookedToday ?? 0)
+        : (block.consultationPlannedFuture ?? 0);
+      const online = column === "past" ? (block.consultationBookedPastOnlineCount ?? 0)
+        : column === "today" ? (block.consultationBookedTodayOnlineCount ?? 0)
+        : (block.consultationPlannedOnlineCount ?? 0);
       return Math.max(0, total - online);
     }
     // Маппінг для past/future (лише базові поля)
@@ -194,8 +195,8 @@ function DirectStatsPageContent() {
     }
   }
 
-  function formatFooterCell(block: FooterBlock, key: string, unit: string, numberOnly?: boolean): string {
-    const val = getFooterVal(block, key);
+  function formatFooterCell(block: FooterBlock, key: string, unit: string, numberOnly?: boolean, column?: "past" | "today" | "future"): string {
+    const val = getFooterVal(block, key, column ?? "past");
     if (unit === "тис. грн") {
       const thousands = val / 1000;
       const str = thousands % 1 === 0 ? String(Math.round(thousands)) : thousands.toFixed(1);
@@ -416,9 +417,9 @@ function DirectStatsPageContent() {
                           <>{row.icon} {row.label}</>
                         )}
                       </td>
-                      <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit)}</td>
-                      <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit)}</td>
-                      <td className="text-center">{formatFooterCell(periodStats.future, row.key, row.unit)}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit, false, "past")}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit, false, "today")}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.future, row.key, row.unit, false, "future")}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-100">
@@ -426,9 +427,9 @@ function DirectStatsPageContent() {
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap"><span className="mx-1" aria-hidden> </span>💰 Фін. Рез. (Оборот)</td>
-                    <td className="text-center">{formatFooterCell(periodStats.past, "turnoverToday", "тис. грн")}</td>
-                    <td className="text-center">{formatFooterCell(periodStats.today, "turnoverToday", "тис. грн")}</td>
-                    <td className="text-center">{formatFooterCell(periodStats.future, "turnoverToday", "тис. грн")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.past, "turnoverToday", "тис. грн", false, "past")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.today, "turnoverToday", "тис. грн", false, "today")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "turnoverToday", "тис. грн", false, "future")}</td>
                   </tr>
                   {[
                     { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
@@ -465,9 +466,9 @@ function DirectStatsPageContent() {
                           <>{row.icon} {row.label}</>
                         )}
                       </td>
-                      <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
-                      <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
-                      <td className="text-center">{formatFooterCell(periodStats.future, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly))}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly), "past")}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly), "today")}</td>
+                      <td className="text-center">{formatFooterCell(periodStats.future, row.key, row.unit, Boolean("numberOnly" in row && row.numberOnly), "future")}</td>
                     </tr>
                   ))}
                   <tr>
