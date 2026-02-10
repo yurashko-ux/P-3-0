@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
+import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
 import { YellowDotHalfRightIcon } from "@/app/admin/direct/_components/YellowDotHalfRightIcon";
 
 type FooterBlock = {
@@ -449,6 +450,17 @@ export default function DirectStatsPage() {
                   </tr>
                   <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">До кінця місяця (майбутнє)</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <YellowDotIcon size={16} />
+                        Записів: Майбутніх
+                      </span>
+                    </td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">—</td>
+                    <td className="text-center">{formatFooterCell(periodStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap">
