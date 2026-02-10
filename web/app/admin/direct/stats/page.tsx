@@ -340,7 +340,7 @@ function DirectStatsPageContent() {
                   {/* Створено = кількість створених консультацій за період (З початку місяця / Сьогодні); ті самі значення, що в футері */}
                   {[
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
-                    { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
+                    { label: "Створено Онлайн консультацій", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Заплановано", icon: "⏳", key: "consultationPlanned", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationPlanned", unit: "шт" },
