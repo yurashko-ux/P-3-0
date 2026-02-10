@@ -838,6 +838,7 @@ export function DirectClientTable({
     const f = filters;
     const params = new URLSearchParams();
     params.set('statsOnly', '1');
+    params.set('statsFullPicture', '1'); // KPI «Заплановано» не залежить від фільтрів колонок
     if (f.statusId) params.set('statusId', f.statusId);
     if (f.masterId) params.set('masterId', f.masterId);
     if (f.source) params.set('source', f.source);

@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
+    const statsFullPicture = searchParams.get('statsFullPicture') === '1';
     const statusId = searchParams.get('statusId');
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
@@ -238,6 +239,66 @@ export async function GET(req: NextRequest) {
       const role = masterNameToRole.get(n);
       return role === 'admin' || role === 'direct-manager';
     };
+
+    // Для statsFullPicture: повний список з consultationBookingDate (KV fallback) — рядок «Заплановано» не залежить від фільтрів.
+    let clientsForBookedStatsBase: DirectClient[] = [];
+    if (statsOnly && statsFullPicture) {
+      try {
+        const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+        const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+        const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+        const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+        const todayKyiv = kyivDayFromISO(new Date().toISOString());
+        const [y, m] = todayKyiv.split('-');
+        const year = Number(y);
+        const month = Number(m);
+        const monthIdx = Math.max(0, month - 1);
+        const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const monthEnd = `${y}-${m}-${pad(lastDay)}`;
+        const nowTs = Date.now();
+        const maxFutureMs = 365 * 24 * 60 * 60 * 1000;
+        clientsForBookedStatsBase = clients.map((c) => {
+          let out = { ...c };
+          if (out.altegioClientId && !out.consultationBookingDate) {
+            const groups = groupsByClient.get(out.altegioClientId) || [];
+            const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
+            let best: any = null;
+            let bestTs = Infinity;
+            for (const g of consultGroups) {
+              const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+              if (!dt) continue;
+              const ts = new Date(dt).getTime();
+              if (!isFinite(ts)) continue;
+              const diff = ts - nowTs;
+              const groupDay = kyivDayFromISO(dt);
+              const isToday = !!groupDay && groupDay === todayKyiv;
+              const isFutureToMonthEnd = !!groupDay && groupDay > todayKyiv && groupDay <= monthEnd;
+              const isFutureWithin365Days = diff >= 0 && diff <= maxFutureMs;
+              if (!isToday && !isFutureToMonthEnd && !isFutureWithin365Days) continue;
+              if (ts < bestTs) {
+                bestTs = ts;
+                best = g;
+              }
+            }
+            if (best && isFinite(bestTs)) {
+              out = { ...out, consultationBookingDate: new Date(bestTs).toISOString() };
+            }
+          }
+          const shouldIgnoreConsult = (out.visits ?? 0) >= 2 && !out.consultationBookingDate;
+          if (shouldIgnoreConsult) {
+            out = {
+              ...out,
+              consultationBookingDate: undefined,
+              consultationDate: undefined,
+            };
+          }
+          return out;
+        });
+      } catch (err) {
+        console.warn('[direct/clients] statsFullPicture: не вдалося побудувати clientsForBookedStatsBase:', err);
+      }
+    }
 
     // Фільтрація
     if (statusId) {
@@ -1454,7 +1515,8 @@ export async function GET(req: NextRequest) {
         const lastDay = new Date(Number(y), Number(m), 0).getDate();
         return `${currentMonthKyiv}-${String(lastDay).padStart(2, '0')}`;
       })();
-      const clientsForBookedStats = clientsWithDaysSinceLastVisit.filter((c) => {
+      const sourceForBooked = statsFullPicture && clientsForBookedStatsBase.length > 0 ? clientsForBookedStatsBase : clientsWithDaysSinceLastVisit;
+      const clientsForBookedStats = sourceForBooked.filter((c) => {
         const d = toKyivDay(c.consultationBookingDate);
         return !!d && d >= startOfMonth && d <= monthEnd;
       });

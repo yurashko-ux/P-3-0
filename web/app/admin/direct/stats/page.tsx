@@ -117,15 +117,17 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  // Джерело даних для KPI — таблиця (clients API з тими ж фільтрами з URL).
+  // Джерело даних для KPI: statsFullPicture=1 — повна картина місяця без фільтрів statusId/masterId/source.
+  // Рядок «Заплановано» показує всі консультації (Минулі, Сьогодні, До кінця місяця).
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const params = new URLSearchParams();
         params.set("statsOnly", "1");
+        params.set("statsFullPicture", "1"); // KPI не залежить від фільтрів колонок
         searchParams?.forEach((value, key) => {
-          if (key !== "statsOnly") params.set(key, value);
+          if (key !== "statsOnly" && key !== "statsFullPicture") params.set(key, value);
         });
         const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, { cache: "no-store" });
         const data = await res.json();
