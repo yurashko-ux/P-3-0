@@ -21,6 +21,7 @@ import {
   getVisitIdAndRecordIdForBreakdown,
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
+import { computePeriodStats } from '@/lib/direct-period-stats';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
     const totalOnly = searchParams.get('totalOnly') === '1';
+    const statsOnly = searchParams.get('statsOnly') === '1';
     const statusId = searchParams.get('statusId');
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
@@ -1427,6 +1429,16 @@ export async function GET(req: NextRequest) {
     });
 
     console.log(`[direct/clients] GET: Returning ${filtered.length} clients after filtering and sorting`);
+
+    // Джерело даних для розділу Статистика — таблиця (той самий список з тими ж фільтрами).
+    if (statsOnly) {
+      const periodStats = computePeriodStats(filtered);
+      return NextResponse.json({
+        ok: true,
+        totalCount: filtered.length,
+        periodStats,
+      });
+    }
     
     const response = { 
       ok: true, 

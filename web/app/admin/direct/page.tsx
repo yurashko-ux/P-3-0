@@ -265,6 +265,69 @@ export default function DirectPage() {
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
+
+  // Query-рядок фільтрів для посилання на Статистику (ті самі фільтри, що й таблиця).
+  const statsFiltersQuery = useMemo(() => {
+    const f = filters;
+    const params = new URLSearchParams();
+    if (f.statusId) params.set("statusId", f.statusId);
+    if (f.masterId) params.set("masterId", f.masterId);
+    if (f.source) params.set("source", f.source);
+    if (f.search) params.set("search", f.search);
+    if (f.hasAppointment === "true") params.set("hasAppointment", "true");
+    if (f.clientType?.length) params.set("clientType", f.clientType.join(","));
+    if (f.act.mode === "current_month") params.set("actMode", "current_month");
+    else if (f.act.mode === "year_month" && f.act.year && f.act.month) {
+      params.set("actMode", "year_month");
+      params.set("actYear", f.act.year);
+      params.set("actMonth", f.act.month);
+    }
+    if (f.days) params.set("days", f.days);
+    if (f.inst?.length) params.set("inst", f.inst.join(","));
+    if (f.state?.length) params.set("state", f.state.join(","));
+    const c = f.consultation;
+    if (c.hasConsultation === true) params.set("consultHasConsultation", "true");
+    if (c.created.mode === "current_month") params.set("consultCreatedMode", "current_month");
+    else if (c.created.mode === "year_month" && c.created.year && c.created.month) {
+      params.set("consultCreatedMode", "year_month");
+      params.set("consultCreatedYear", c.created.year);
+      params.set("consultCreatedMonth", c.created.month);
+    }
+    if (c.createdPreset) params.set("consultCreatedPreset", c.createdPreset);
+    if (c.appointed.mode === "current_month") params.set("consultAppointedMode", "current_month");
+    else if (c.appointed.mode === "year_month" && c.appointed.year && c.appointed.month) {
+      params.set("consultAppointedMode", "year_month");
+      params.set("consultAppointedYear", c.appointed.year);
+      params.set("consultAppointedMonth", c.appointed.month);
+    }
+    if (c.appointedPreset) params.set("consultAppointedPreset", c.appointedPreset);
+    if (c.attendance) params.set("consultAttendance", c.attendance);
+    if (c.type) params.set("consultType", c.type);
+    if (c.masterIds?.length) params.set("consultMasters", c.masterIds.join("|"));
+    const r = f.record;
+    if (r.hasRecord === true) params.set("recordHasRecord", "true");
+    if (r.newClient === true) params.set("recordNewClient", "true");
+    if (r.created.mode === "current_month") params.set("recordCreatedMode", "current_month");
+    else if (r.created.mode === "year_month" && r.created.year && r.created.month) {
+      params.set("recordCreatedMode", "year_month");
+      params.set("recordCreatedYear", r.created.year);
+      params.set("recordCreatedMonth", r.created.month);
+    }
+    if (r.createdPreset) params.set("recordCreatedPreset", r.createdPreset);
+    if (r.appointed.mode === "current_month") params.set("recordAppointedMode", "current_month");
+    else if (r.appointed.mode === "year_month" && r.appointed.year && r.appointed.month) {
+      params.set("recordAppointedMode", "year_month");
+      params.set("recordAppointedYear", r.appointed.year);
+      params.set("recordAppointedMonth", r.appointed.month);
+    }
+    if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
+    if (r.client) params.set("recordClient", r.client);
+    if (r.sum) params.set("recordSum", r.sum);
+    if (f.master?.hands) params.set("masterHands", String(f.master.hands));
+    if (f.master?.primaryMasterIds?.length) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
+    if (f.master?.secondaryMasterIds?.length) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
+    return params.toString();
+  }, [filters]);
   
   // Функція для встановлення режиму через сортування
   const setViewMode = (mode: 'passive' | 'active') => {
@@ -811,7 +874,7 @@ export default function DirectPage() {
           <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
             💰 Фінансовий звіт
           </Link>
-          <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
+          <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
             📈 Статистика
           </Link>
           {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}

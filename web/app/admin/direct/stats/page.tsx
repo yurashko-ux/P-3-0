@@ -4,9 +4,9 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
 import { YellowDotHalfRightIcon } from "@/app/admin/direct/_components/YellowDotHalfRightIcon";
-import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
 
 type FooterBlock = {
   createdConsultations: number;
@@ -84,14 +84,16 @@ export default function DirectStatsPage() {
     totalClients: number;
   }>({ loading: false, error: null, rows: [], totalClients: 0 });
 
-  // KPI по періодах: джерело — канонічний API статистики (футер Direct споживає той самий API).
+  // KPI по періодах: джерело даних — таблиця (GET /api/admin/direct/clients з тими ж фільтрами).
   const [periodStats, setPeriodStats] = useState<{
     past: FooterBlock;
     today: FooterBlock;
     future: FooterBlock;
   } | null>(null);
-  // Єдине джерело кількості клієнтів: той самий API, що й на Direct (GET /api/admin/direct/clients?totalOnly=1).
+  // Кількість клієнтів для поточних фільтрів (з відповіді periodStats); без фільтрів — totalOnly.
+  const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     let cancelled = false;
@@ -109,21 +111,31 @@ export default function DirectStatsPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Джерело даних для KPI — таблиця (clients API з тими ж фільтрами з URL).
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/admin/direct/stats/periods", { cache: "no-store" });
+        const params = new URLSearchParams();
+        params.set("statsOnly", "1");
+        searchParams?.forEach((value, key) => {
+          if (key !== "statsOnly") params.set(key, value);
+        });
+        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, { cache: "no-store" });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        setPeriodStats(data.stats);
+        setPeriodStats(data.periodStats ?? null);
+        setFilteredCount(typeof data.totalCount === "number" ? data.totalCount : null);
       } catch {
-        if (!cancelled) setPeriodStats(null);
+        if (!cancelled) {
+          setPeriodStats(null);
+          setFilteredCount(null);
+        }
       }
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [searchParams]);
 
   function getFooterVal(block: FooterBlock, key: string): number {
     const v = (block as Record<string, number | undefined>)[key];
@@ -286,7 +298,7 @@ export default function DirectStatsPage() {
             Статистика <span className="text-base">▲</span>
           </h1>
           <div className="text-sm text-gray-600">
-            {selectedMonth} • клієнтів: {totalClientsCount ?? mastersStats.totalClients}
+            {selectedMonth} • клієнтів: {filteredCount ?? totalClientsCount ?? mastersStats.totalClients}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm">Місяць</span>
@@ -328,10 +340,7 @@ export default function DirectStatsPage() {
                   {[
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Заплановано", icon: "⏳", key: "consultationPlanned", unit: "шт" },
-                    { label: "Онлайн", icon: "💻", key: "consultationPlanned", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
@@ -440,17 +449,6 @@ export default function DirectStatsPage() {
                   </tr>
                   <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">До кінця місяця (майбутнє)</td>
-                  </tr>
-                  <tr>
-                    <td className="whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">
-                        <YellowDotIcon size={16} />
-                        Записів: Майбутніх
-                      </span>
-                    </td>
-                    <td className="text-center">—</td>
-                    <td className="text-center">—</td>
-                    <td className="text-center">{formatFooterCell(periodStats.future, "plannedPaidSumToMonthEnd", "тис. грн")}</td>
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap">
