@@ -341,7 +341,10 @@ function DirectStatsPageContent() {
                   {[
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
+                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Заплановано", icon: "⏳", key: "consultationPlanned", unit: "шт" },
+                    { label: "Онлайн", icon: "💻", key: "consultationPlanned", unit: "шт" },
+                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
