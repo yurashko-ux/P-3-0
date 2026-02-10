@@ -1600,7 +1600,6 @@ export function DirectClientTable({
                         clients={clients}
                         masters={masters}
                         totalClientsCount={totalClientsCount}
-                        consultCreatedFromStartOfMonth={footerStats?.past?.consultationCreated}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Консультація"
