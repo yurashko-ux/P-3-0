@@ -110,7 +110,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 58. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 59. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -412,6 +412,16 @@ export function AdminToolsModal({
           method: "GET" as const,
           prompt: "Введіть Altegio ID клієнта для перевірки стану:",
           isPrompt: true,
+        },
+        {
+          icon: "💰",
+          label: "Оновити breakdown для одного клієнта",
+          endpoint: "/api/admin/direct/backfill-visit-breakdown",
+          method: "POST" as const,
+          prompt: "Введіть Altegio ID клієнта (altegioClientId) для оновлення breakdown і суми:",
+          isPrompt: true,
+          successMessage: (data: any) =>
+            `✅ Backfill для одного клієнта:\n\nПричина: ${data.reason}\n${data.client ? `Клієнт: ${JSON.stringify(data.client, null, 2)}\n` : ""}${data.totalCost != null ? `Сума: ${data.totalCost} грн\n` : ""}\n${JSON.stringify(data, null, 2)}`,
         },
         {
           icon: "🔍",
@@ -1006,6 +1016,13 @@ export function AdminToolsModal({
                         handleEndpoint(
                           `${item.endpoint}?altegioClientId=${encodeURIComponent(input.trim())}`,
                           item.method
+                        );
+                      } else if (item.endpoint.includes('backfill-visit-breakdown') && item.isPrompt) {
+                        handleEndpoint(
+                          `${item.endpoint}?altegioClientId=${encodeURIComponent(input.trim())}`,
+                          item.method,
+                          undefined,
+                          item.successMessage
                         );
                       } else if (item.endpoint.includes('test-start-command')) {
                         handleEndpoint(

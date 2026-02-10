@@ -2,11 +2,17 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+// Не матчимо /api/* — API routes обробляють авторизацію самі (cookies, Bearer, secret).
 export const config = { matcher: ['/admin/:path*', '/finance-report/:path*'] };
 
 export default function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
+
+  // API routes — не застосовувати middleware, вони самі обробляють авторизацію
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next();
+  }
   const host = req.headers.get('host') || '';
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
   const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || '';

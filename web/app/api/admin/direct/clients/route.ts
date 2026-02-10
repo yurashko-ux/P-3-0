@@ -20,6 +20,7 @@ import {
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
+import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -192,6 +193,48 @@ export async function GET(req: NextRequest) {
       );
     } catch (err) {
       console.warn('[direct/clients] ⚠️ Не вдалося завантажити DirectMaster (фільтр/перезапис):', err);
+    }
+
+    // Fallback: якщо є paidServiceVisitId, але немає breakdown/totalCost — підвантажуємо з API
+    const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+    if (companyId && !Number.isNaN(companyId)) {
+      const needFallback = clients.filter(
+        (c) =>
+          c.paidServiceDate &&
+          (c as any).paidServiceVisitId != null &&
+          (typeof (c as any).paidServiceTotalCost !== 'number' ||
+            !Array.isArray((c as any).paidServiceVisitBreakdown) ||
+            (c as any).paidServiceVisitBreakdown.length === 0)
+      );
+      if (needFallback.length > 0) {
+        for (const c of needFallback) {
+          try {
+            const visitId = (c as any).paidServiceVisitId;
+            const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId);
+            if (breakdown && breakdown.length > 0) {
+              const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
+              const idx = clients.findIndex((x) => x.id === c.id);
+              if (idx >= 0) {
+                clients[idx] = {
+                  ...clients[idx],
+                  paidServiceTotalCost: totalCost,
+                  paidServiceVisitBreakdown: breakdown,
+                } as DirectClient;
+                try {
+                  await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown', {
+                    visitId,
+                    totalCost,
+                  });
+                } catch {
+                  // лишаємо в відповіді, не зберігаємо
+                }
+              }
+            }
+          } catch {
+            // ігноруємо помилку для окремого клієнта
+          }
+        }
+      }
     }
 
     // Завантажуємо відповідальних для сортування по імені (якщо потрібно)
