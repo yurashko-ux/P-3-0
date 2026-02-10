@@ -34,6 +34,10 @@ export type PeriodStatsBlock = {
   recordsNoShowCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
+  consultationBookedPast?: number;
+  consultationBookedPastOnlineCount?: number;
+  consultationBookedToday?: number;
+  consultationBookedTodayOnlineCount?: number;
   plannedPaidSumFuture?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
@@ -124,6 +128,10 @@ const emptyBlock = (): PeriodStatsBlock => ({
   recordsNoShowCount: 0,
   turnoverToday: 0,
   consultationPlannedFuture: 0,
+  consultationBookedPast: 0,
+  consultationBookedPastOnlineCount: 0,
+  consultationBookedToday: 0,
+  consultationBookedTodayOnlineCount: 0,
   plannedPaidSumFuture: 0,
   plannedPaidSumToMonthEnd: 0,
   plannedPaidSumNextMonth: 0,
@@ -134,6 +142,8 @@ type TodayStats = PeriodStatsBlock & {
   consultationCreated: number;
   consultationOnlineCount: number;
   consultationPlanned: number;
+  consultationBookedToday?: number;
+  consultationBookedTodayOnlineCount?: number;
   consultationRealized: number;
   consultationNoShow: number;
   consultationCancelled: number;
@@ -157,6 +167,8 @@ const emptyTodayBlock = (): TodayStats => ({
   consultationCreated: 0,
   consultationOnlineCount: 0,
   consultationPlanned: 0,
+  consultationBookedToday: 0,
+  consultationBookedTodayOnlineCount: 0,
   consultationRealized: 0,
   consultationNoShow: 0,
   consultationCancelled: 0,
@@ -243,6 +255,15 @@ export function computePeriodStats(clients: any[]): {
         if (client.consultationAttended === true) b.successfulConsultations += 1;
         else if (client.consultationCancelled || client.consultationAttended === false) b.cancelledOrNoShow += 1;
       });
+      const isOnline = (client as any).isOnlineConsultation === true;
+      if (consultDay >= start && consultDay < todayKyiv) {
+        stats.past.consultationBookedPast = (stats.past.consultationBookedPast || 0) + 1;
+        if (isOnline) stats.past.consultationBookedPastOnlineCount = (stats.past.consultationBookedPastOnlineCount || 0) + 1;
+      }
+      if (consultDay === todayKyiv) {
+        (t as TodayStats).consultationBookedToday = ((t as TodayStats).consultationBookedToday || 0) + 1;
+        if (isOnline) (t as TodayStats).consultationBookedTodayOnlineCount = ((t as TodayStats).consultationBookedTodayOnlineCount || 0) + 1;
+      }
       if (consultDay >= start && consultDay <= todayKyiv) {
         if (client.consultationCancelled) stats.past.consultationCancelled = (stats.past.consultationCancelled || 0) + 1;
         else if (client.consultationAttended === true) stats.past.consultationRealized = (stats.past.consultationRealized || 0) + 1;

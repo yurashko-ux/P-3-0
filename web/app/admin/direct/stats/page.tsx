@@ -37,6 +37,10 @@ type FooterBlock = {
   returnedClientsCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
+  consultationBookedPast?: number;
+  consultationBookedPastOnlineCount?: number;
+  consultationBookedToday?: number;
+  consultationBookedTodayOnlineCount?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
@@ -149,9 +153,20 @@ function DirectStatsPageContent() {
       return Math.max(0, created - online);
     }
     if (key === "consultationPlannedOfflineCount") {
-      const planned = block.consultationPlanned ?? 0;
+      const planned = block.consultationPlanned ?? block.consultationPlannedFuture ?? 0;
       const online = block.consultationPlannedOnlineCount ?? 0;
       return Math.max(0, planned - online);
+    }
+    if (key === "consultationBookedTotal") {
+      return block.consultationBookedPast ?? block.consultationBookedToday ?? block.consultationPlannedFuture ?? 0;
+    }
+    if (key === "consultationBookedOnlineCount") {
+      return block.consultationBookedPastOnlineCount ?? block.consultationBookedTodayOnlineCount ?? block.consultationPlannedOnlineCount ?? 0;
+    }
+    if (key === "consultationBookedOfflineCount") {
+      const total = block.consultationBookedPast ?? block.consultationBookedToday ?? block.consultationPlannedFuture ?? 0;
+      const online = block.consultationBookedPastOnlineCount ?? block.consultationBookedTodayOnlineCount ?? block.consultationPlannedOnlineCount ?? 0;
+      return Math.max(0, total - online);
     }
     // Маппінг для past/future (лише базові поля)
     switch (key) {
@@ -354,9 +369,9 @@ function DirectStatsPageContent() {
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationOfflineCount", unit: "шт" },
-                    { label: "Заплановано", icon: "⏳", key: "consultationPlanned", unit: "шт" },
-                    { label: "Онлайн", icon: "💻", key: "consultationPlannedOnlineCount", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationPlannedOfflineCount", unit: "шт" },
+                    { label: "Заплановано", icon: "⏳", key: "consultationBookedTotal", unit: "шт" },
+                    { label: "Онлайн", icon: "💻", key: "consultationBookedOnlineCount", unit: "шт" },
+                    { label: "Офлайн", icon: "📅", key: "consultationBookedOfflineCount", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },

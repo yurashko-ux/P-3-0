@@ -727,6 +727,10 @@ type FooterStatsBlock = {
   returnedClientsCount?: number;
   consultationPlannedFuture?: number;
   consultationPlannedOnlineCount?: number;
+  consultationBookedPast?: number;
+  consultationBookedPastOnlineCount?: number;
+  consultationBookedToday?: number;
+  consultationBookedTodayOnlineCount?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
@@ -3617,9 +3621,9 @@ export function DirectClientTable({
                       </span>
                       <span title="Онлайн консультації: 💻 — {pastData.consultationOnlineCount ?? 0} шт.">💻 {pastData.consultationOnlineCount ?? 0}</span>
                       <span title="Консультації (офлайн): 📅">📅 {((pastData.consultationCreated ?? 0) - (pastData.consultationOnlineCount ?? 0))}</span>
-                      <span title="Заплановані: ⏳">⏳ {pastData.consultationPlanned ?? 0}</span>
-                      <span title="Заплановані онлайн">💻 {pastData.consultationPlannedOnlineCount ?? 0}</span>
-                      <span title="Заплановані офлайн">📅 {Math.max(0, (pastData.consultationPlanned ?? 0) - (pastData.consultationPlannedOnlineCount ?? 0))}</span>
+                      <span title="Заброньовані (відбулись): ⏳">⏳ {pastData.consultationBookedPast ?? 0}</span>
+                      <span title="Заброньовані онлайн">💻 {pastData.consultationBookedPastOnlineCount ?? 0}</span>
+                      <span title="Заброньовані офлайн">📅 {Math.max(0, (pastData.consultationBookedPast ?? 0) - (pastData.consultationBookedPastOnlineCount ?? 0))}</span>
                       <span className="text-green-600" title="Реалізовані: ✅">✅ {pastData.consultationRealized ?? 0}</span>
                       <span className="text-red-600" title="Не прийшли: ❌">❌ {pastData.consultationNoShow ?? 0}</span>
                       <span className="text-orange-600" title="Скасовані: 🚫">🚫 {pastData.consultationCancelled ?? 0}</span>
@@ -3690,9 +3694,9 @@ export function DirectClientTable({
                         </span>
                         <span title="Онлайн консультації">💻 {todayData.consultationOnlineCount ?? 0}</span>
                         <span title="Консультації (офлайн)">📅 {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}</span>
-                        <span title="Заплановані">⏳ {todayData.consultationPlanned ?? 0}</span>
-                        <span title="Заплановані онлайн">💻 {todayData.consultationPlannedOnlineCount ?? 0}</span>
-                        <span title="Заплановані офлайн">📅 {Math.max(0, (todayData.consultationPlanned ?? 0) - (todayData.consultationPlannedOnlineCount ?? 0))}</span>
+                        <span title="Заброньовані (на сьогодні)">⏳ {todayData.consultationBookedToday ?? 0}</span>
+                        <span title="Заброньовані онлайн">💻 {todayData.consultationBookedTodayOnlineCount ?? 0}</span>
+                        <span title="Заброньовані офлайн">📅 {Math.max(0, (todayData.consultationBookedToday ?? 0) - (todayData.consultationBookedTodayOnlineCount ?? 0))}</span>
                         <span className="text-green-600" title="Реалізовані">✅ {todayData.consultationRealized ?? 0}</span>
                         <span className="text-red-600" title="Не прийшли">❌ {todayData.consultationNoShow ?? 0}</span>
                         <span className="text-orange-600" title="Скасовані">🚫 {todayData.consultationCancelled ?? 0}</span>
