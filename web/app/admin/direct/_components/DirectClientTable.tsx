@@ -3303,10 +3303,14 @@ export function DirectClientTable({
 
                                 {(() => {
                                   const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-                                  const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
-                                  const totalFromBreakdown = hasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
-                                  const displaySum = hasBreakdown && totalFromBreakdown > 0 ? totalFromBreakdown : (typeof client.paidServiceTotalCost === 'number' && client.paidServiceTotalCost > 0 ? client.paidServiceTotalCost : null);
-                                  const displayLabel = hasBreakdown && totalFromBreakdown > 0 ? 'Сума по майстрах' : 'Сума запису';
+                                  const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
+                                  const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
+                                  const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
+                                  // Breakdown може включати items з усіх записів візиту (API /visit/details), тоді як paidServiceTotalCost — тільки з платного запису. При значній розбіжності ігноруємо breakdown.
+                                  const breakdownMismatch = rawHasBreakdown && ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15);
+                                  const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
+                                  const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
+                                  const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
                                   if (displaySum != null && displaySum > 0) {
                                     return (
                                       <span
@@ -3348,8 +3352,11 @@ export function DirectClientTable({
                           //   щоб тригер masterId мав “місце в UI” для крапочки.
                           const full = (client.serviceMasterName || '').trim();
                           const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-                          // Показуємо всіх майстрів з breakdown (з KV), а не лише тих із serviceMasterName — щоб були видно ті, що «в дужках»
-                          const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate;
+                          const totalFromBreakdownM = Array.isArray(breakdown) && breakdown.length > 0 ? breakdown!.reduce((a, b) => a + b.sumUAH, 0) : 0;
+                          const ptcM = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
+                          const breakdownMismatchM = Array.isArray(breakdown) && breakdown!.length > 0 && ptcM != null && ptcM > 0 && Math.abs(totalFromBreakdownM - ptcM) > Math.max(1000, ptcM * 0.15);
+                          // Показуємо breakdown тільки якщо він узгоджений з paidServiceTotalCost (інакше API міг повернути items з усіх записів візиту)
+                          const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate && !breakdownMismatchM;
                           // Першим ставимо майстра з breakdown, чиє ім'я збігається з майстром консультації (хто продав)
                           const consultationPrimary = (client.consultationMasterName || '').trim() ? firstToken((client.consultationMasterName || '').toString().trim()).toLowerCase() : '';
                           const orderPrimary = full ? firstToken(full).toLowerCase() : '';

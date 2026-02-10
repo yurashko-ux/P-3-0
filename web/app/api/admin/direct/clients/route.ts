@@ -14,6 +14,7 @@ import {
   kyivDayFromISO,
   isAdminStaffName,
   computeServicesTotalCostUAH,
+  computeGroupTotalCostUAH,
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
@@ -749,12 +750,24 @@ export async function GET(req: NextRequest) {
         }
 
         // Дораховуємо суму поточного платного запису (грн) по paid-групі цього дня.
+        // Використовуємо computeGroupTotalCostUAH — сумуємо по кожному event окремо, щоб не втрачати
+        // однакові послуги різних майстрів (Мар'яна + Олександра = 6000 + 9600 = 15600).
         try {
-          const computed = computeServicesTotalCostUAH(currentGroup.services || []);
+          const computed = computeGroupTotalCostUAH(currentGroup);
           if (computed > 0) {
             const current = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
             if (!current || current !== computed) {
               c = { ...c, paidServiceTotalCost: computed };
+            }
+            // Якщо breakdown з БД не узгоджений з сумою (API повернув items з усіх записів візиту) — замінюємо на KV
+            const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+            const totalFromBd = Array.isArray(bd) ? bd.reduce((a, x) => a + x.sumUAH, 0) : 0;
+            if (Array.isArray(bd) && bd.length > 0 && totalFromBd > 0 && Math.abs(totalFromBd - computed) > Math.max(1000, computed * 0.15)) {
+              // Breakdown з БД не узгоджений (API міг повернути items з усіх записів візиту). Замінюємо на KV — сумуємо по подіях групи.
+              const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
+              if (kvBreakdown.length > 0) {
+                c = { ...c, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
+              }
             }
           }
         } catch (err) {
@@ -1533,6 +1546,26 @@ export async function GET(req: NextRequest) {
       });
     }
     
+    const debugBreakdown = searchParams.get('debugBreakdown') === '1';
+    const breakdownSample = debugBreakdown
+      ? filtered
+          .filter((c) => Array.isArray((c as any).paidServiceMastersBreakdown) && (c as any).paidServiceMastersBreakdown.length > 0)
+          .slice(0, 20)
+          .map((c) => {
+            const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[];
+            const totalFromBd = bd.reduce((a, x) => a + x.sumUAH, 0);
+            return {
+              instagram: c.instagramUsername,
+              firstName: c.firstName,
+              lastName: c.lastName,
+              paidServiceTotalCost: c.paidServiceTotalCost,
+              totalFromBreakdown: totalFromBd,
+              mismatch: typeof c.paidServiceTotalCost === 'number' && Math.abs(totalFromBd - c.paidServiceTotalCost) > 1000,
+              breakdown: bd,
+            };
+          })
+      : undefined;
+
     const response = { 
       ok: true, 
       clients: filtered,
@@ -1542,6 +1575,7 @@ export async function GET(req: NextRequest) {
         filters: { statusId, masterId, source },
         sortBy,
         sortOrder,
+        ...(breakdownSample && { breakdownSample }),
       } 
     };
     console.log('[direct/clients] GET: Response summary:', {

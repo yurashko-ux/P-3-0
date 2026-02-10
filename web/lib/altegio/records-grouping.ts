@@ -76,6 +76,17 @@ export type ServiceMasterHistoryItem = {
   recordedAt: string; // ISO
 };
 
+// Рахуємо суму послуг для групи (грн). Сумуємо по КОЖНОМУ event окремо, щоб не втрачати
+// однакові послуги різних майстрів (наприклад, два майстри роблять "Капсульне нарощування" — це 2× вартість).
+export function computeGroupTotalCostUAH(group: RecordGroup): number {
+  const events = Array.isArray(group?.events) ? group.events : [];
+  let total = 0;
+  for (const e of events) {
+    total += computeServicesTotalCostUAH(e.services || []);
+  }
+  return total;
+}
+
 // Рахуємо суму послуг для запису (грн) на основі services з вебхуків Altegio.
 // Бізнес-правило: використовуємо `cost * amount` і підсумовуємо по всіх послугах.
 export function computeServicesTotalCostUAH(services: any[]): number {

@@ -110,7 +110,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 57. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 58. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -684,6 +684,32 @@ export function AdminToolsModal({
           method: "GET" as const,
           successMessage: (data: any) =>
             `🔍 Знайдено ${data.found} клієнтів з адміністраторами в serviceMasterName:\n\n${data.clients?.slice(0, 20).map((c: any) => `  - ${c.instagramUsername || 'no instagram'} (Altegio ${c.altegioClientId || 'no id'}): "${c.serviceMasterName}"`).join('\n')}${data.clients?.length > 20 ? `\n... і ще ${data.clients.length - 20}` : ''}\n\n${data.note}\n\nДля застосування змін використайте кнопку "Очистити адміністраторів з колонки «Майстер»".`,
+        },
+        {
+          icon: "📊",
+          label: "Аудит сум записів (DB vs KV)",
+          endpoint: "/api/admin/direct/audit-breakdown",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            const s = data?.summary || {};
+            return (
+              `📊 Аудит сум записів\n\n` +
+              `Джерело правди — вебхуки (KV). Якщо DB (API) не збігається з KV, у UI показуємо дані з KV.\n\n` +
+              `Підсумок:\n` +
+              `  • Записів з платною датою: ${s.totalWithPaidRecord || 0}\n` +
+              `  • Є дані в KV: ${s.withKvData || 0}\n` +
+              `  • DB і KV узгоджені: ${s.dbMatchesKv || 0}\n` +
+              `  • Розбіжність (DB≠KV): ${s.mismatchedDbVsKv || 0}\n` +
+              `  • Без даних в KV: ${s.noKvData || 0}\n\n` +
+              (data?.mismatchedSample?.length
+                ? `Записи з розбіжністю (для перевірки в Altegio):\n${data.mismatchedSample
+                    .slice(0, 10)
+                    .map((r: any) => `  - ${r.fullName} (@${r.instagram}): DB=${r.fromDb?.breakdownTotal || 0} грн, KV=${r.fromKv?.totalCost || 0} грн`)
+                    .join('\n')}\n\n`
+                : '') +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
         },
         {
           icon: "🧹",
