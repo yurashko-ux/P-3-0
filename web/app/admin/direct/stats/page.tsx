@@ -19,6 +19,7 @@ type FooterBlock = {
   consultationCreated?: number;
   consultationOnlineCount?: number;
   consultationPlanned?: number;
+  consultationPlannedOnlineCount?: number;
   consultationRealized?: number;
   consultationNoShow?: number;
   consultationCancelled?: number;
@@ -141,10 +142,21 @@ function DirectStatsPageContent() {
   function getFooterVal(block: FooterBlock, key: string): number {
     const v = (block as Record<string, number | undefined>)[key];
     if (typeof v === "number") return v;
+    // Обчислені поля: Офлайн = total − Онлайн
+    if (key === "consultationOfflineCount") {
+      const created = block.consultationCreated ?? block.createdConsultations ?? 0;
+      const online = block.consultationOnlineCount ?? 0;
+      return Math.max(0, created - online);
+    }
+    if (key === "consultationPlannedOfflineCount") {
+      const planned = block.consultationPlanned ?? 0;
+      const online = block.consultationPlannedOnlineCount ?? 0;
+      return Math.max(0, planned - online);
+    }
     // Маппінг для past/future (лише базові поля)
     switch (key) {
-      case "consultationCreated": return block.createdConsultations ?? 0;
-      case "consultationRealized": return block.successfulConsultations ?? 0;
+      case "consultationCreated": return block.createdConsultations ?? block.consultationCreated ?? 0;
+      case "consultationRealized": return block.successfulConsultations ?? block.consultationRealized ?? 0;
       case "consultationCancelled": return block.consultationCancelled ?? block.cancelledOrNoShow ?? 0;
       case "newPaidClients": return block.newPaidClients ?? block.sales ?? 0;
       case "recordsCreatedSum": return block.recordsCreatedSum ?? block.createdPaidSum ?? 0;
@@ -340,11 +352,11 @@ function DirectStatsPageContent() {
                   {/* Створено = кількість створених консультацій за період (З початку місяця / Сьогодні); ті самі значення, що в футері */}
                   {[
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
-                    { label: "Створено Онлайн консультацій", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
+                    { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
+                    { label: "Офлайн", icon: "📅", key: "consultationOfflineCount", unit: "шт" },
                     { label: "Заплановано", icon: "⏳", key: "consultationPlanned", unit: "шт" },
-                    { label: "Онлайн", icon: "💻", key: "consultationPlanned", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationPlanned", unit: "шт" },
+                    { label: "Онлайн", icon: "💻", key: "consultationPlannedOnlineCount", unit: "шт" },
+                    { label: "Офлайн", icon: "📅", key: "consultationPlannedOfflineCount", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },

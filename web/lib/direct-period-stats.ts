@@ -18,6 +18,7 @@ export type PeriodStatsBlock = {
   consultationCreated?: number;
   consultationOnlineCount?: number;
   consultationPlanned?: number;
+  consultationPlannedOnlineCount?: number;
   consultationRealized?: number;
   consultationNoShow?: number;
   consultationCancelled?: number;
@@ -107,6 +108,7 @@ const emptyBlock = (): PeriodStatsBlock => ({
   consultationCreated: 0,
   consultationOnlineCount: 0,
   consultationPlanned: 0,
+  consultationPlannedOnlineCount: 0,
   consultationRealized: 0,
   consultationNoShow: 0,
   consultationCancelled: 0,
@@ -245,16 +247,23 @@ export function computePeriodStats(clients: any[]): {
         if (client.consultationCancelled) stats.past.consultationCancelled = (stats.past.consultationCancelled || 0) + 1;
         else if (client.consultationAttended === true) stats.past.consultationRealized = (stats.past.consultationRealized || 0) + 1;
         else if (client.consultationAttended === false) stats.past.consultationNoShow = (stats.past.consultationNoShow || 0) + 1;
-        else stats.past.consultationPlanned = (stats.past.consultationPlanned || 0) + 1;
+        else {
+          stats.past.consultationPlanned = (stats.past.consultationPlanned || 0) + 1;
+          if ((client as any).isOnlineConsultation === true) stats.past.consultationPlannedOnlineCount = (stats.past.consultationPlannedOnlineCount || 0) + 1;
+        }
       }
       if (consultDay === todayKyiv) {
         if (client.consultationCancelled) t.consultationCancelled += 1;
         else if (client.consultationAttended === true) t.consultationRealized += 1;
         else if (client.consultationAttended === false) t.consultationNoShow += 1;
-        else t.consultationPlanned += 1;
+        else {
+          t.consultationPlanned += 1;
+          if ((client as any).isOnlineConsultation === true) (t as PeriodStatsBlock).consultationPlannedOnlineCount = ((t as PeriodStatsBlock).consultationPlannedOnlineCount || 0) + 1;
+        }
       }
       if (consultDay > todayKyiv && consultDay <= end) {
         stats.future.consultationPlannedFuture = (stats.future.consultationPlannedFuture || 0) + 1;
+        if ((client as any).isOnlineConsultation === true) stats.future.consultationPlannedOnlineCount = (stats.future.consultationPlannedOnlineCount || 0) + 1;
       }
       if (client.state === 'consultation-rescheduled' && consultDay) {
         addByDay(consultDay, (b) => {

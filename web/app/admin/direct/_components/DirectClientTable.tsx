@@ -726,6 +726,7 @@ type FooterStatsBlock = {
   consultationRescheduledCount?: number;
   returnedClientsCount?: number;
   consultationPlannedFuture?: number;
+  consultationPlannedOnlineCount?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
@@ -3617,6 +3618,8 @@ export function DirectClientTable({
                       <span title="Онлайн консультації: 💻 — {pastData.consultationOnlineCount ?? 0} шт.">💻 {pastData.consultationOnlineCount ?? 0}</span>
                       <span title="Консультації (офлайн): 📅">📅 {((pastData.consultationCreated ?? 0) - (pastData.consultationOnlineCount ?? 0))}</span>
                       <span title="Заплановані: ⏳">⏳ {pastData.consultationPlanned ?? 0}</span>
+                      <span title="Заплановані онлайн">💻 {pastData.consultationPlannedOnlineCount ?? 0}</span>
+                      <span title="Заплановані офлайн">📅 {Math.max(0, (pastData.consultationPlanned ?? 0) - (pastData.consultationPlannedOnlineCount ?? 0))}</span>
                       <span className="text-green-600" title="Реалізовані: ✅">✅ {pastData.consultationRealized ?? 0}</span>
                       <span className="text-red-600" title="Не прийшли: ❌">❌ {pastData.consultationNoShow ?? 0}</span>
                       <span className="text-orange-600" title="Скасовані: 🚫">🚫 {pastData.consultationCancelled ?? 0}</span>
@@ -3688,6 +3691,8 @@ export function DirectClientTable({
                         <span title="Онлайн консультації">💻 {todayData.consultationOnlineCount ?? 0}</span>
                         <span title="Консультації (офлайн)">📅 {((todayData.consultationCreated ?? 0) - (todayData.consultationOnlineCount ?? 0))}</span>
                         <span title="Заплановані">⏳ {todayData.consultationPlanned ?? 0}</span>
+                        <span title="Заплановані онлайн">💻 {todayData.consultationPlannedOnlineCount ?? 0}</span>
+                        <span title="Заплановані офлайн">📅 {Math.max(0, (todayData.consultationPlanned ?? 0) - (todayData.consultationPlannedOnlineCount ?? 0))}</span>
                         <span className="text-green-600" title="Реалізовані">✅ {todayData.consultationRealized ?? 0}</span>
                         <span className="text-red-600" title="Не прийшли">❌ {todayData.consultationNoShow ?? 0}</span>
                         <span className="text-orange-600" title="Скасовані">🚫 {todayData.consultationCancelled ?? 0}</span>
@@ -3759,6 +3764,8 @@ export function DirectClientTable({
                     <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                       <span className="font-medium text-gray-600 shrink-0">Консультацій:</span>
                       <span title="Призначено (майбутні)" className="shrink-0">⏳ {futureData.consultationPlannedFuture ?? 0}</span>
+                      <span title="Майбутні онлайн">💻 {futureData.consultationPlannedOnlineCount ?? 0}</span>
+                      <span title="Майбутні офлайн">📅 {Math.max(0, (futureData.consultationPlannedFuture ?? 0) - (futureData.consultationPlannedOnlineCount ?? 0))}</span>
                     </div>
                     <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem]">
                       <span className="font-medium text-gray-600 shrink-0">Записів:</span>
