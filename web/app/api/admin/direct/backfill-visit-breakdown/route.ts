@@ -1,12 +1,12 @@
 // web/app/api/admin/direct/backfill-visit-breakdown/route.ts
-// Backfill paidServiceVisitId, paidServiceVisitBreakdown, paidServiceTotalCost з API Altegio.
-// Тільки API: visitId беремо з GET /records (за client_id + дата), breakdown — з GET /visits + /visit/details.
+// Backfill paidServiceVisitId та paidServiceVisitBreakdown з API (GET /records, GET /visits + visit/details).
+// Для клієнтів з paidServiceDate беремо visitId з GET /records за client_id + дата, викликаємо API, зберігаємо в БД.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
-import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
+import { fetchVisitBreakdownFromAPI, getVisitWithRecords, getVisitDetails } from '@/lib/altegio/visits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -96,6 +96,9 @@ export async function POST(req: NextRequest) {
     let noMatchingRecord = 0;
     let noBreakdown = 0;
     const details: Array<{ instagram: string; reason: string; visitId?: number }> = [];
+    
+    // Детальна діагностика для першого клієнта
+    let debugInfo: any = null;
 
     let singleClientResult: Record<string, unknown> | null = null;
 
@@ -203,12 +206,48 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      if (visitId == null) {
-        noMatchingRecord++;
-        continue;
-      }
-
       try {
+        // Для першого клієнта — детальна діагностика структури API
+        if (!debugInfo) {
+          try {
+            const visitData = await getVisitWithRecords(visitId, companyId);
+            let detailsData: any = null;
+            let allItems: any[] = [];
+            if (visitData && visitData.records?.length > 0) {
+              const firstRecordId = visitData.records[0]?.id;
+              if (firstRecordId) {
+                detailsData = await getVisitDetails(visitData.locationId ?? companyId, firstRecordId, visitId);
+                allItems = Array.isArray(detailsData?.items) ? detailsData.items : [];
+              }
+            }
+            // Показуємо всі items з їх ключами та значеннями для master/staff
+            const itemsDebug = allItems.slice(0, 5).map((item: any, i: number) => ({
+              index: i,
+              keys: Object.keys(item),
+              master_id: item.master_id,
+              staff_id: item.staff_id,
+              specialist_id: item.specialist_id,
+              master: item.master,
+              staff: item.staff,
+              specialist: item.specialist,
+              title: item.title,
+              cost: item.cost,
+              amount: item.amount,
+            }));
+            debugInfo = {
+              visitId,
+              companyId,
+              locationId: visitData?.locationId,
+              recordsCount: visitData?.records?.length,
+              itemsCount: allItems.length,
+              itemsDebug,
+              firstRecordStaff: visitData?.records?.[0]?.staff,
+            };
+          } catch (e) {
+            debugInfo = { error: e instanceof Error ? e.message : String(e), visitId };
+          }
+        }
+
         const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
         if (singleClientMode) {
           (singleClientResult as any).step3_breakdown = breakdown;
@@ -226,19 +265,17 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
-
         await prisma.directClient.update({
           where: { id: client.id },
           data: {
             paidServiceVisitId: visitId,
             paidServiceVisitBreakdown: breakdown as any,
-            paidServiceTotalCost: totalCost,
           },
         });
         updated++;
         if (details.length < 10) details.push({ instagram: client.instagramUsername, reason: 'updated', visitId });
         if (singleClientMode) {
+          const totalCost = breakdown?.reduce((a, b) => a + b.sumUAH, 0);
           return NextResponse.json({
             ok: true,
             ...singleClientResult,
@@ -270,7 +307,7 @@ export async function POST(req: NextRequest) {
       noMatchingRecord,
       noBreakdown,
       details,
-      note: 'Тільки API Altegio (GET /records, GET /visits, GET /visit/details). Без KV.',
+      debugInfo,
     });
   } catch (err) {
     console.error('[backfill-visit-breakdown]', err);
