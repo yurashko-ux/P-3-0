@@ -1,9 +1,10 @@
 // web/app/api/admin/direct/sync-consultation-booking-dates/route.ts
-// Endpoint для синхронізації consultationBookingDate з вебхуків (тільки для консультацій)
+// Endpoint для синхронізації consultationBookingDate: спочатку GET /records API, fallback на вебхуки (KV)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { kvRead } from '@/lib/kv';
+import { getClientRecords, isConsultationService as isConsultationFromServices } from '@/lib/altegio/records';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    console.log(`[sync-consultation-booking-dates] Found ${clientConsultationMap.size} clients with consultations`);
+    console.log(`[sync-consultation-booking-dates] Found ${clientConsultationMap.size} clients with consultations (from KV)`);
     
     // Отримуємо всіх клієнтів з Altegio ID
     const allClients = await prisma.directClient.findMany({
@@ -140,11 +141,22 @@ export async function POST(req: NextRequest) {
     
     console.log(`[sync-consultation-booking-dates] Found ${allClients.length} clients with altegioClientId`);
     
+    const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
+    const useApi = Number.isFinite(companyId) && companyId > 0;
+    if (!useApi) {
+      console.log('[sync-consultation-booking-dates] ALTEGIO_COMPANY_ID not set or invalid, using only KV');
+    }
+    
+    /** Затримка між викликами API (rate limit Altegio). */
+    const API_DELAY_MS = 250;
+    
     const results = {
       total: allClients.length,
       updated: 0,
       skipped: 0,
       errors: 0,
+      fromApi: 0,
+      fromKv: 0,
       details: [] as Array<{
         clientId: string;
         instagramUsername: string | null;
@@ -155,7 +167,7 @@ export async function POST(req: NextRequest) {
       }>,
     };
     
-    // Оновлюємо клієнтів
+    // Оновлюємо клієнтів: спочатку пробуємо API, fallback на KV
     for (const client of allClients) {
       try {
         if (!client.altegioClientId) {
@@ -163,22 +175,51 @@ export async function POST(req: NextRequest) {
           continue;
         }
         
-        // Знаходимо найновішу консультацію для цього клієнта
-        const consultations = clientConsultationMap.get(client.altegioClientId) || [];
-        if (consultations.length === 0) {
-          results.skipped++;
-          continue;
+        let latestConsultationDate: string | null = null;
+        let isOnlineConsultation: boolean | null = null;
+        let source: 'api' | 'kv' = 'kv';
+        
+        // 1) Джерело API: GET /records/{location_id}?client_id={id}
+        if (useApi) {
+          const records = await getClientRecords(companyId, client.altegioClientId);
+          const consultationRecords = records.filter((r) => r.services?.length && isConsultationFromServices(r.services).isConsultation);
+          if (consultationRecords.length > 0) {
+            // Найновіша дата візиту (як у поточній логіці по KV)
+            let best = consultationRecords[0];
+            for (const r of consultationRecords) {
+              const d = r.date ? new Date(r.date).getTime() : 0;
+              const bestD = best.date ? new Date(best.date).getTime() : 0;
+              if (d > bestD) best = r;
+            }
+            if (best.date) {
+              latestConsultationDate = best.date;
+              isOnlineConsultation = isConsultationFromServices(best.services).isOnline;
+              source = 'api';
+            }
+          }
+          await new Promise((r) => setTimeout(r, API_DELAY_MS));
         }
         
-        // Знаходимо найновішу дату консультації
-        let latestConsultationDate: string | null = null;
-        let latestConsultation: any = null;
-        
-        for (const consultation of consultations) {
-          const consultationDate = new Date(consultation.datetime);
-          if (!latestConsultationDate || new Date(latestConsultationDate) < consultationDate) {
-            latestConsultationDate = consultation.datetime;
-            latestConsultation = consultation;
+        // 2) Fallback на KV
+        if (!latestConsultationDate) {
+          const consultations = clientConsultationMap.get(client.altegioClientId) || [];
+          if (consultations.length === 0) {
+            results.skipped++;
+            continue;
+          }
+          let latestConsultation: { datetime: string; services: any[] } | null = null;
+          for (const consultation of consultations) {
+            const consultationDate = new Date(consultation.datetime);
+            if (!latestConsultation || new Date(latestConsultation.datetime) < consultationDate) {
+              latestConsultationDate = consultation.datetime;
+              latestConsultation = consultation;
+            }
+          }
+          if (latestConsultation) {
+            isOnlineConsultation = latestConsultation.services.some((s: any) => {
+              const title = (s.title || s.name || '').toLowerCase();
+              return /онлайн/i.test(title) || /online/i.test(title);
+            });
           }
         }
         
@@ -187,8 +228,10 @@ export async function POST(req: NextRequest) {
           continue;
         }
         
+        if (source === 'api') results.fromApi++;
+        else results.fromKv++;
+        
         // Перевіряємо, чи потрібно оновити
-        // Оновлюємо, якщо consultationBookingDate відсутній або якщо знайдена дата новіша
         const shouldUpdate = !client.consultationBookingDate || 
                             new Date(client.consultationBookingDate) < new Date(latestConsultationDate);
         
@@ -197,10 +240,7 @@ export async function POST(req: NextRequest) {
             where: { id: client.id },
             data: {
               consultationBookingDate: latestConsultationDate,
-              isOnlineConsultation: latestConsultation.services.some((s: any) => {
-                const title = (s.title || s.name || '').toLowerCase();
-                return /онлайн/i.test(title) || /online/i.test(title);
-              }),
+              ...(isOnlineConsultation !== null && { isOnlineConsultation }),
             },
           });
           
@@ -211,10 +251,10 @@ export async function POST(req: NextRequest) {
             altegioClientId: client.altegioClientId,
             oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
             newConsultationBookingDate: latestConsultationDate,
-            reason: client.consultationBookingDate ? 'Updated to newer date' : 'Set from webhooks',
+            reason: client.consultationBookingDate ? 'Updated to newer date' : `Set from ${source}`,
           });
           
-          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${latestConsultationDate}`);
+          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${latestConsultationDate} (${source})`);
         } else {
           results.skipped++;
         }
