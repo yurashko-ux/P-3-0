@@ -1059,37 +1059,9 @@ export async function GET(req: NextRequest) {
     // Збереження стану перед фільтрами по колонках — для clientsForBookedStats (KPI «Заплановано» показує повну картину).
     const filteredBeforeColumnFilters = [...filtered];
 
-    // База для clientsForBookedStats — БЕЗ act-фільтра (updatedAt). Час останнього апдейту запису не впливає на «Заплановано».
-    let baseForBookedStats = [...clientsWithDaysSinceLastVisit];
-    if (daysFilter === 'none') {
-      baseForBookedStats = baseForBookedStats.filter((c) => typeof (c as any).daysSinceLastVisit !== 'number' || !Number.isFinite((c as any).daysSinceLastVisit));
-    } else if (daysFilter === 'growing') {
-      baseForBookedStats = baseForBookedStats.filter((c) => {
-        const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 0 && d < 60;
-      });
-    } else if (daysFilter === 'grown') {
-      baseForBookedStats = baseForBookedStats.filter((c) => {
-        const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 60 && d < 90;
-      });
-    } else if (daysFilter === 'overgrown') {
-      baseForBookedStats = baseForBookedStats.filter((c) => {
-        const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 90;
-      });
-    }
-    if (instIds.length > 0) {
-      const instSet = new Set(instIds);
-      baseForBookedStats = baseForBookedStats.filter((c) => {
-        const id = (c as any).chatStatusId as string | undefined;
-        return id && instSet.has(id);
-      });
-    }
-    if (stateIds.length > 0) {
-      const stateSet = new Set(stateIds);
-      baseForBookedStats = baseForBookedStats.filter((c) => c.state && stateSet.has(c.state));
-    }
+    // База для clientsForBookedStats — повний список (без act, days, inst, state).
+    // Щоб KPI «Заплановано» збігався з фільтром: рахуємо всіх з консультацією в поточному місяці.
+    const baseForBookedStats = [...clientsWithDaysSinceLastVisit];
 
     const hasConsultationFilters =
       consultHasConsultation === 'true' ||
