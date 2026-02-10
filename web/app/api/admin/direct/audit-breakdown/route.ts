@@ -34,6 +34,8 @@ export async function GET(req: NextRequest) {
     const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+    const getGroupsFor = (aid: number | undefined) =>
+      aid == null ? [] : groupsByClient.get(Number(aid)) ?? groupsByClient.get(aid) ?? [];
 
     const withPaidDate = clients.filter((c) => c.paidServiceDate);
     const results: Array<{
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
     }> = [];
 
     for (const c of withPaidDate) {
-      const groups = groupsByClient.get(c.altegioClientId!) || [];
+      const groups = getGroupsFor(c.altegioClientId ?? undefined);
       const paidKyivDay = kyivDayFromISO(String(c.paidServiceDate));
       const paidGroup = groups.find((g: any) => g?.groupType === 'paid' && (g?.kyivDay || '') === paidKyivDay);
       const dbBreakdown = (c as any).paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;

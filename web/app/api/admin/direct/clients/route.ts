@@ -262,7 +262,7 @@ export async function GET(req: NextRequest) {
         clientsForBookedStatsBase = clients.map((c) => {
           let out = { ...c };
           if (out.altegioClientId && !out.consultationBookingDate) {
-            const groups = groupsByClient.get(out.altegioClientId) || [];
+            const groups = groupsByClient.get(Number(out.altegioClientId)) ?? groupsByClient.get(out.altegioClientId) ?? [];
             const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
             let best: any = null;
             let bestTs = Infinity;
@@ -387,13 +387,16 @@ export async function GET(req: NextRequest) {
       const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
       const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+      // Map використовує number-ключі; altegioClientId інколи може прийти іншим типом — fallback для пошуку.
+      const getGroupsFor = (aid: number | undefined) =>
+        aid == null ? [] : groupsByClient.get(Number(aid)) ?? groupsByClient.get(aid) ?? [];
 
       clients = clients.map((c) => {
         // Дораховуємо "поточний Майстер" для UI з KV (щоб збігалось з модалкою "Webhook-и").
         // Бізнес-правило для колонки "Майстер": ігноруємо адмінів/невідомих, пріоритет = paid-запис (якщо він є).
         try {
           if (c.altegioClientId) {
-            const groups = groupsByClient.get(c.altegioClientId) || [];
+            const groups = getGroupsFor(c.altegioClientId);
             // Якщо в БД немає consultationBookingDate, але в KV є consultation-group з датою —
             // підставляємо дату в ВІДПОВІДЬ (без запису в БД), щоб таблиця і KPI «Заплановано» показували запис.
             // Правило вибору:
@@ -603,7 +606,7 @@ export async function GET(req: NextRequest) {
         // - якщо немає жодного staffName — лишаємо як є (UI покаже "невідомо")
         try {
           if (c.altegioClientId && c.consultationBookingDate) {
-            const groups = groupsByClient.get(c.altegioClientId) || [];
+            const groups = getGroupsFor(c.altegioClientId);
             const consultDay = kyivDayFromISO(c.consultationBookingDate);
             const consultGroup =
               consultDay
@@ -710,7 +713,7 @@ export async function GET(req: NextRequest) {
         }
 
         if (!c.altegioClientId || !c.paidServiceDate) return c;
-        const groups = groupsByClient.get(c.altegioClientId) || [];
+        const groups = getGroupsFor(c.altegioClientId);
         if (!groups.length) return c;
 
         const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
@@ -719,7 +722,27 @@ export async function GET(req: NextRequest) {
         const paidKyivDay = kyivDayFromISO(c.paidServiceDate);
         if (!paidKyivDay) return c;
 
-        const currentGroup = paidGroups.find((g: any) => (g?.kyivDay || '') === paidKyivDay) || null;
+        // Шукаємо групу так само як для "Майстер" — спочатку точний kyivDay, потім найближча в межах 24 год.
+        let currentGroup = paidGroups.find((g: any) => (g?.kyivDay || '') === paidKyivDay) || null;
+        if (!currentGroup) {
+          const targetTs = new Date(c.paidServiceDate).getTime();
+          if (isFinite(targetTs)) {
+            let best: any = null;
+            let bestDiff = Infinity;
+            for (const g of paidGroups) {
+              const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+              if (!dt) continue;
+              const ts = new Date(dt).getTime();
+              if (!isFinite(ts)) continue;
+              const diff = Math.abs(ts - targetTs);
+              if (diff < bestDiff) {
+                bestDiff = diff;
+                best = g;
+              }
+            }
+            if (best && bestDiff <= 24 * 60 * 60 * 1000) currentGroup = best;
+          }
+        }
         if (!currentGroup) return c;
 
         // Attendance для "Запис" має відповідати KV-групі цього дня.
