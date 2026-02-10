@@ -1059,10 +1059,6 @@ export async function GET(req: NextRequest) {
     // Збереження стану перед фільтрами по колонках — для clientsForBookedStats (KPI «Заплановано» показує повну картину).
     const filteredBeforeColumnFilters = [...filtered];
 
-    // База для clientsForBookedStats — повний список (без act, days, inst, state).
-    // Щоб KPI «Заплановано» збігався з фільтром: рахуємо всіх з консультацією в поточному місяці.
-    const baseForBookedStats = [...clientsWithDaysSinceLastVisit];
-
     const hasConsultationFilters =
       consultHasConsultation === 'true' ||
       consultCreatedMode === 'current_month' ||
@@ -1450,22 +1446,21 @@ export async function GET(req: NextRequest) {
 
     console.log(`[direct/clients] GET: Returning ${filtered.length} clients after filtering and sorting`);
 
-    // Джерело даних для розділу Статистика — таблиця (той самий список з тими ж фільтрами).
-    // Рядок «Заплановано» показує повну картину — клієнти з консультацією в поточному місяці (без consultAppointedPreset).
+    // Статистика незалежна від фільтрів: рядок «Заплановано» показує повну картину поточного місяця.
+    // clientsForBookedStats = усі з консультацією в місяці (збігається з фільтром: Минулі 13, Сьогодні 5, Майбутні 4).
     if (statsOnly) {
       const monthEnd = (() => {
         const [y, m] = currentMonthKyiv.split('-');
         const lastDay = new Date(Number(y), Number(m), 0).getDate();
         return `${currentMonthKyiv}-${String(lastDay).padStart(2, '0')}`;
       })();
-      const clientsForBookedStats = baseForBookedStats.filter((c) => {
+      const clientsForBookedStats = clientsWithDaysSinceLastVisit.filter((c) => {
         const d = toKyivDay(c.consultationBookingDate);
         return !!d && d >= startOfMonth && d <= monthEnd;
       });
       const periodStats = computePeriodStats(filtered, { clientsForBookedStats });
       console.log('[direct/clients] statsOnly KPI Заплановано:', {
         clientsForBookedStatsCount: clientsForBookedStats.length,
-        consultationBookedPast: periodStats.past.consultationBookedPast,
         consultationBookedToday: (periodStats.today as any).consultationBookedToday,
         consultationPlannedFuture: periodStats.future.consultationPlannedFuture,
       });
