@@ -14,12 +14,9 @@ import {
   kyivDayFromISO,
   isAdminStaffName,
   computeServicesTotalCostUAH,
-  computeGroupTotalCostUAH,
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
-  getPerMasterSumsFromGroup,
-  getVisitIdAndRecordIdForBreakdown,
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
@@ -566,17 +563,10 @@ export async function GET(req: NextRequest) {
               const handsCnt = chosen ? countNonAdminStaffInGroup(chosen as any) : 0;
               const hands = chosen ? (handsCnt <= 1 ? 2 : handsCnt === 2 ? 4 : 6) as 2 | 4 | 6 : undefined;
               c = { ...c, paidServiceHands: hands };
-              // Розбиття сум по майстрах: пріоритет — breakdown з БД (з API за visit_id); fallback — KV
+              // Розбиття сум по майстрах — тільки з БД (API Altegio via webhook/backfill). Без fallback на KV.
               const dbBreakdown = (c as any).paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
               if (Array.isArray(dbBreakdown) && dbBreakdown.length > 0) {
                 c = { ...c, paidServiceMastersBreakdown: dbBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-              } else if (chosen) {
-                const targetSum = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
-                const { visitId: mainVisitId, recordId: mainRecordId } = getVisitIdAndRecordIdForBreakdown(chosen as any, targetSum ?? undefined);
-                const breakdown = getPerMasterSumsFromGroup(chosen as any, mainVisitId ?? undefined, mainRecordId ?? undefined);
-                if (breakdown.length > 0) {
-                  c = { ...c, paidServiceMastersBreakdown: breakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-                }
               }
             }
             
@@ -772,30 +762,8 @@ export async function GET(req: NextRequest) {
           console.warn('[direct/clients] ⚠️ Не вдалося нормалізувати paidServiceAttended з KV (не критично):', err);
         }
 
-        // Дораховуємо суму поточного платного запису (грн) по paid-групі цього дня.
-        // Використовуємо computeGroupTotalCostUAH — сумуємо по кожному event окремо, щоб не втрачати
-        // однакові послуги різних майстрів (Мар'яна + Олександра = 6000 + 9600 = 15600).
-        try {
-          const computed = computeGroupTotalCostUAH(currentGroup);
-          if (computed > 0) {
-            const current = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
-            if (!current || current !== computed) {
-              c = { ...c, paidServiceTotalCost: computed };
-            }
-            // Якщо breakdown з БД не узгоджений з сумою (API повернув items з усіх записів візиту) — замінюємо на KV
-            const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-            const totalFromBd = Array.isArray(bd) ? bd.reduce((a, x) => a + x.sumUAH, 0) : 0;
-            if (Array.isArray(bd) && bd.length > 0 && totalFromBd > 0 && Math.abs(totalFromBd - computed) > Math.max(1000, computed * 0.15)) {
-              // Breakdown з БД не узгоджений (API міг повернути items з усіх записів візиту). Замінюємо на KV — сумуємо по подіях групи.
-              const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
-              if (kvBreakdown.length > 0) {
-                c = { ...c, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати paidServiceTotalCost (не критично):', err);
-        }
+        // paidServiceTotalCost і paidServiceMastersBreakdown беруться ТІЛЬКИ з API Altegio (вебхук + backfill).
+        // Не перезаписуємо з KV — механізм сум побудований виключно на даних API.
 
         const events = Array.isArray(currentGroup.events) ? currentGroup.events : [];
         const createEvents = events

@@ -1274,10 +1274,12 @@ export async function POST(req: NextRequest) {
               if (directClient) {
                 const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId);
                 if (breakdown && breakdown.length > 0) {
+                  const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
                   const updated = {
                     ...directClient,
                     paidServiceVisitId: Number(visitId),
                     paidServiceVisitBreakdown: breakdown,
+                    paidServiceTotalCost: totalCost,
                     updatedAt: new Date().toISOString(),
                   };
                   await saveDirectClient(updated, 'altegio-webhook-visit-breakdown-from-api', {

@@ -3306,13 +3306,8 @@ export function DirectClientTable({
                                   const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
                                   const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
                                   const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
-                                  const spent = typeof client.spent === 'number' ? client.spent : 0;
-                                  // Breakdown може включати items з усіх записів візиту (API /visit/details). Ігноруємо breakdown, якщо:
-                                  // 1) сума breakdown не збігається з paidServiceTotalCost; 2) breakdown > 2x spent (підозріло завищений)
-                                  const breakdownMismatch =
-                                    rawHasBreakdown &&
-                                    ((ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15)) ||
-                                      (spent > 0 && totalFromBreakdown > spent * 2));
+                                  // Breakdown та paidServiceTotalCost беруться з API Altegio. При невідповідності ігноруємо breakdown.
+                                  const breakdownMismatch = rawHasBreakdown && ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15);
                                   const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
                                   const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
                                   const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
@@ -3359,12 +3354,12 @@ export function DirectClientTable({
                           const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
                           const totalFromBreakdownM = Array.isArray(breakdown) && breakdown.length > 0 ? breakdown!.reduce((a, b) => a + b.sumUAH, 0) : 0;
                           const ptcM = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
-                          const spentM = typeof client.spent === 'number' ? client.spent : 0;
                           const breakdownMismatchM =
                             Array.isArray(breakdown) &&
                             breakdown!.length > 0 &&
-                            ((ptcM != null && ptcM > 0 && Math.abs(totalFromBreakdownM - ptcM) > Math.max(1000, ptcM * 0.15)) ||
-                              (spentM > 0 && totalFromBreakdownM > spentM * 2));
+                            ptcM != null &&
+                            ptcM > 0 &&
+                            Math.abs(totalFromBreakdownM - ptcM) > Math.max(1000, ptcM * 0.15);
                           // Показуємо breakdown тільки якщо він узгоджений з paidServiceTotalCost (інакше API міг повернути items з усіх записів візиту)
                           const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate && !breakdownMismatchM;
                           // Першим ставимо майстра з breakdown, чиє ім'я збігається з майстром консультації (хто продав)
