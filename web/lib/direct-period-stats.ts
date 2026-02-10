@@ -232,6 +232,7 @@ export function computePeriodStats(clients: any[]): {
     const paidSum = getPaidSum(client);
     const t = stats.today as TodayStats;
 
+    // Блок СТВОРЕНІ (consultationRecordCreatedAt) — окремо від заброньованих. Не чіпати.
     const consultCreatedDay = toKyivDay((client as any).consultationRecordCreatedAt);
     if (consultCreatedDay) {
       addByDay(consultCreatedDay, (b) => {
@@ -249,6 +250,8 @@ export function computePeriodStats(clients: any[]): {
       }
     }
 
+    // Блок ЗАБРОНЬОВАНІ ВІЗИТИ — тільки consultationBookingDate, без consultationRecordCreatedAt.
+    // consultationBookedPast, consultationBookedToday, consultationPlannedFuture — виключно з client.consultationBookingDate та isOnlineConsultation.
     const consultDay = toKyivDay(client.consultationBookingDate);
     if (consultDay) {
       addByDay(consultDay, (b) => {
