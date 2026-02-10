@@ -1463,6 +1463,12 @@ export async function GET(req: NextRequest) {
         return !!d && d >= startOfMonth && d <= monthEnd;
       });
       const periodStats = computePeriodStats(filtered, { clientsForBookedStats });
+      console.log('[direct/clients] statsOnly KPI Заплановано:', {
+        clientsForBookedStatsCount: clientsForBookedStats.length,
+        consultationBookedPast: periodStats.past.consultationBookedPast,
+        consultationBookedToday: (periodStats.today as any).consultationBookedToday,
+        consultationPlannedFuture: periodStats.future.consultationPlannedFuture,
+      });
       return NextResponse.json({
         ok: true,
         totalCount: filtered.length,
