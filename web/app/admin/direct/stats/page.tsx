@@ -126,13 +126,25 @@ function DirectStatsPageContent() {
         const params = new URLSearchParams();
         params.set("statsOnly", "1");
         params.set("statsFullPicture", "1"); // KPI не залежить від фільтрів колонок
+        params.set("_t", String(Date.now())); // cache-busting для свіжих даних
         searchParams?.forEach((value, key) => {
-          if (key !== "statsOnly" && key !== "statsFullPicture") params.set(key, value);
+          if (key !== "statsOnly" && key !== "statsFullPicture" && key !== "_t") params.set(key, value);
         });
-        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, { cache: "no-store" });
+        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        setPeriodStats(data.periodStats ?? null);
+        const stats = data.periodStats ?? null;
+        if (stats) {
+          console.log("[Stats] KPI Заплановано:", {
+            past: stats.past?.consultationBookedPast,
+            today: stats.today?.consultationBookedToday,
+            future: stats.future?.consultationPlannedFuture,
+          });
+        }
+        setPeriodStats(stats);
         setFilteredCount(typeof data.totalCount === "number" ? data.totalCount : null);
       } catch {
         if (!cancelled) {

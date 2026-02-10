@@ -903,8 +903,11 @@ export function DirectClientTable({
     const fetchFooterStats = async () => {
       try {
         setFooterStatsError(null);
-        const url = `/api/admin/direct/clients?${footerFiltersQuery}`;
-        const response = await fetch(url);
+        const url = `/api/admin/direct/clients?${footerFiltersQuery}&_t=${Date.now()}`;
+        const response = await fetch(url, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
+        });
         if (!response.ok) {
           setFooterStats(null);
           setFooterStatsError('Не вдалося завантажити статистику футера');
