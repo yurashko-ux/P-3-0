@@ -333,18 +333,25 @@ export async function GET(req: NextRequest) {
           if (c.altegioClientId) {
             const groups = groupsByClient.get(c.altegioClientId) || [];
             // Якщо в БД немає consultationBookingDate, але в KV є consultation-group з датою —
-            // підставляємо дату в ВІДПОВІДЬ (без запису в БД), щоб таблиця показувала запис.
+            // підставляємо дату в ВІДПОВІДЬ (без запису в БД), щоб таблиця і KPI «Заплановано» показували запис.
             // Правило вибору:
             // - беремо consultation-group з валідним datetime
-            // - пріоритет: найближча майбутня (або найближча в межах 14 днів)
-            // - додатково: консультації сьогодні (kyivDay === todayKyiv), навіть якщо вже минули — для KPI «Заплановано»
-            // - якщо майбутніх і сьогоднішніх нема — не чіпаємо (не підставляємо заднім числом)
+            // - приймаємо: сьогодні (включно з уже минулими), майбутні до кінця місяця — для KPI «Сьогодні» та «До кінця місяця»
+            // - також: майбутні в межах 365 днів (fallback для консультацій поза поточним місяцем)
+            // - якщо немає підходящих — не чіпаємо (не підставляємо заднім числом)
             if (!c.consultationBookingDate) {
               try {
                 const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
-                const nowTs = Date.now();
                 const todayKyiv = kyivDayFromISO(new Date().toISOString());
-                const maxFutureMs = 14 * 24 * 60 * 60 * 1000;
+                const [y, m] = todayKyiv.split('-');
+                const year = Number(y);
+                const month = Number(m);
+                const monthIdx = Math.max(0, month - 1);
+                const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+                const pad = (n: number) => String(n).padStart(2, '0');
+                const monthEnd = `${y}-${m}-${pad(lastDay)}`;
+                const nowTs = Date.now();
+                const maxFutureMs = 365 * 24 * 60 * 60 * 1000;
                 let best: any = null;
                 let bestTs = Infinity;
                 for (const g of consultGroups) {
@@ -354,10 +361,11 @@ export async function GET(req: NextRequest) {
                   if (!isFinite(ts)) continue;
                   const diff = ts - nowTs;
                   const groupDay = kyivDayFromISO(dt);
-                  // приймаємо: майбутні в межах 14 днів, АБО консультації сьогодні (включно з уже минулими)
-                  const isFutureWithin14Days = diff >= 0 && diff <= maxFutureMs;
+                  // приймаємо: сьогодні, або майбутні до кінця місяця, або майбутні в межах 365 днів
                   const isToday = !!groupDay && groupDay === todayKyiv;
-                  if (!isFutureWithin14Days && !isToday) continue;
+                  const isFutureToMonthEnd = !!groupDay && groupDay > todayKyiv && groupDay <= monthEnd;
+                  const isFutureWithin365Days = diff >= 0 && diff <= maxFutureMs;
+                  if (!isToday && !isFutureToMonthEnd && !isFutureWithin365Days) continue;
                   if (ts < bestTs) {
                     bestTs = ts;
                     best = g;
@@ -1048,6 +1056,9 @@ export async function GET(req: NextRequest) {
     }
 
     // Фільтри по колонках (Консультація, Запис, Майстер) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них
+    // Збереження стану перед фільтрами по колонках — для clientsForBookedStats (KPI «Заплановано» показує повну картину).
+    const filteredBeforeColumnFilters = [...filtered];
+
     const hasConsultationFilters =
       consultHasConsultation === 'true' ||
       consultCreatedMode === 'current_month' ||
@@ -1436,8 +1447,18 @@ export async function GET(req: NextRequest) {
     console.log(`[direct/clients] GET: Returning ${filtered.length} clients after filtering and sorting`);
 
     // Джерело даних для розділу Статистика — таблиця (той самий список з тими ж фільтрами).
+    // Рядок «Заплановано» показує повну картину — клієнти з консультацією в поточному місяці (без consultAppointedPreset).
     if (statsOnly) {
-      const periodStats = computePeriodStats(filtered);
+      const monthEnd = (() => {
+        const [y, m] = currentMonthKyiv.split('-');
+        const lastDay = new Date(Number(y), Number(m), 0).getDate();
+        return `${currentMonthKyiv}-${String(lastDay).padStart(2, '0')}`;
+      })();
+      const clientsForBookedStats = filteredBeforeColumnFilters.filter((c) => {
+        const d = toKyivDay(c.consultationBookingDate);
+        return !!d && d >= startOfMonth && d <= monthEnd;
+      });
+      const periodStats = computePeriodStats(filtered, { clientsForBookedStats });
       return NextResponse.json({
         ok: true,
         totalCount: filtered.length,

@@ -187,11 +187,17 @@ const emptyTodayBlock = (): TodayStats => ({
   turnoverToday: 0,
 });
 
+export type ComputePeriodStatsOptions = {
+  /** Клієнти для обчислення рядка «Заплановано» — без consultAppointedPreset, щоб KPI показував повну картину. */
+  clientsForBookedStats?: any[];
+};
+
 /**
  * Обчислює KPI по періодах (past, today, future) зі списку клієнтів.
  * Клієнти мають бути вже обогачені (consultationRecordCreatedAt, paidServiceRecordCreatedAt тощо).
+ * Якщо передано clientsForBookedStats — рядок «Заплановано» рахується з нього (повна картина без фільтра preset).
  */
-export function computePeriodStats(clients: any[]): {
+export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOptions): {
   past: PeriodStatsBlock;
   today: TodayStats;
   future: PeriodStatsBlock;
@@ -410,6 +416,34 @@ export function computePeriodStats(clients: any[]): {
   stats.past.newPaidClients = stats.past.sales;
   stats.past.conversion1Rate = consultBookedPast > 0 ? (consultAttendedPast / consultBookedPast) * 100 : 0;
   stats.past.conversion2Rate = consultAttendedPast > 0 ? (salesFromConsultPast / consultAttendedPast) * 100 : 0;
+
+  // Якщо передано clientsForBookedStats — рядок «Заплановано» показує повну картину (без consultAppointedPreset).
+  if (opts?.clientsForBookedStats && opts.clientsForBookedStats !== clients) {
+    let bookedPast = 0, bookedPastOnline = 0, bookedToday = 0, bookedTodayOnline = 0, plannedFuture = 0, plannedFutureOnline = 0;
+    for (const client of opts.clientsForBookedStats) {
+      const consultDay = toKyivDay(client.consultationBookingDate);
+      if (!consultDay) continue;
+      const isOnline = (client as any).isOnlineConsultation === true;
+      if (consultDay >= start && consultDay < todayKyiv) {
+        bookedPast += 1;
+        if (isOnline) bookedPastOnline += 1;
+      }
+      if (consultDay === todayKyiv) {
+        bookedToday += 1;
+        if (isOnline) bookedTodayOnline += 1;
+      }
+      if (consultDay > todayKyiv && consultDay <= end) {
+        plannedFuture += 1;
+        if (isOnline) plannedFutureOnline += 1;
+      }
+    }
+    stats.past.consultationBookedPast = bookedPast;
+    stats.past.consultationBookedPastOnlineCount = bookedPastOnline;
+    (stats.today as TodayStats).consultationBookedToday = bookedToday;
+    (stats.today as TodayStats).consultationBookedTodayOnlineCount = bookedTodayOnline;
+    stats.future.consultationPlannedFuture = plannedFuture;
+    stats.future.consultationPlannedOnlineCount = plannedFutureOnline;
+  }
 
   return stats;
 }
