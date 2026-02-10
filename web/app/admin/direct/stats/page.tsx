@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
 import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
@@ -59,7 +59,7 @@ type MastersStatsRow = {
   goodsSum?: number;
 };
 
-export default function DirectStatsPage() {
+function DirectStatsPageContent() {
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     try {
@@ -690,5 +690,19 @@ export default function DirectStatsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DirectStatsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto px-4 py-6 flex items-center justify-center min-h-[200px]">
+          <span className="loading loading-spinner loading-lg" />
+        </div>
+      }
+    >
+      <DirectStatsPageContent />
+    </Suspense>
   );
 }
