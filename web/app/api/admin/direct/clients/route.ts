@@ -337,11 +337,14 @@ export async function GET(req: NextRequest) {
             // Правило вибору:
             // - беремо consultation-group з валідним datetime
             // - пріоритет: найближча майбутня (або найближча в межах 14 днів)
-            // - якщо майбутніх нема — не чіпаємо (не підставляємо заднім числом)
+            // - додатково: консультації сьогодні (kyivDay === todayKyiv), навіть якщо вже минули — для KPI «Заплановано»
+            // - якщо майбутніх і сьогоднішніх нема — не чіпаємо (не підставляємо заднім числом)
             if (!c.consultationBookingDate) {
               try {
                 const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
                 const nowTs = Date.now();
+                const todayKyiv = kyivDayFromISO(new Date().toISOString());
+                const maxFutureMs = 14 * 24 * 60 * 60 * 1000;
                 let best: any = null;
                 let bestTs = Infinity;
                 for (const g of consultGroups) {
@@ -350,9 +353,11 @@ export async function GET(req: NextRequest) {
                   const ts = new Date(dt).getTime();
                   if (!isFinite(ts)) continue;
                   const diff = ts - nowTs;
-                  // лише майбутні (або прямо зараз), і не далі ніж 14 днів
-                  if (diff < 0) continue;
-                  if (diff > 14 * 24 * 60 * 60 * 1000) continue;
+                  const groupDay = kyivDayFromISO(dt);
+                  // приймаємо: майбутні в межах 14 днів, АБО консультації сьогодні (включно з уже минулими)
+                  const isFutureWithin14Days = diff >= 0 && diff <= maxFutureMs;
+                  const isToday = !!groupDay && groupDay === todayKyiv;
+                  if (!isFutureWithin14Days && !isToday) continue;
                   if (ts < bestTs) {
                     bestTs = ts;
                     best = g;
