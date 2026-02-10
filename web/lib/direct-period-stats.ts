@@ -46,7 +46,11 @@ export type PeriodStatsBlock = {
 
 const toKyivDay = (iso?: string | null): string => {
   if (!iso) return '';
-  return kyivDayFromISO(String(iso));
+  const s = String(iso).trim();
+  if (!s) return '';
+  // Нормалізуємо "YYYY-MM-DD HH:mm:ss" (Altegio) до ISO для коректного парсингу
+  const normalized = /^\d{4}-\d{2}-\d{2}\s+\d/.test(s) ? s.replace(/(\d{4}-\d{2}-\d{2})\s+/, '$1T') : s;
+  return kyivDayFromISO(normalized);
 };
 
 const getMonthBounds = (todayKyiv: string): { start: string; end: string } => {

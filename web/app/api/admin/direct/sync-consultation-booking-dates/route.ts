@@ -31,7 +31,11 @@ function toISO8601(dateStr: string | null | undefined): string | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
   const s = dateStr.trim();
   if (!s) return null;
-  const d = new Date(s.replace(' ', 'T'));
+  // Нормалізуємо "YYYY-MM-DD HH:mm:ss" -> "YYYY-MM-DDTHH:mm:ss" для парсингу
+  const normalized = /^\d{4}-\d{2}-\d{2}\s+\d/.test(s)
+    ? s.replace(/(\d{4}-\d{2}-\d{2})\s+/, '$1T')
+    : s;
+  const d = new Date(normalized);
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
