@@ -369,52 +369,27 @@ export async function getVisitWithRecords(visitId: number, companyIdFallback?: n
 export type VisitBreakdownItem = { masterName: string; sumUAH: number };
 
 /**
- * Отримуємо вебхук з visit_id → викликаємо API: GET /visits/{visit_id}, потім для кожного record_id
- * GET /visit/details/{location_id}/{record_id}/{visit_id}. Агрегуємо тільки data.items (cost×amount) по master_id,
- * без payment_transactions, щоб суми відповідали позиціям послуг/товарів (як у деталях візиту в Altegio).
+ * Модель згідно з документацією Altegio:
+ * 1. Вебхук отримує visit_id.
+ * 2. GET /visits/{visitId} → location_id та список record_id (у візиті може бути кілька записів — різні майстри).
+ * 3. Для кожного record_id: GET /visit/details/{location_id}/{record_id}/{visit_id} → data.items (cost по master_id) та data.payment_transactions (amount по master_id).
+ * 4. Агрегація: по master_id підсумовуємо cost з items та amount з payment_transactions.
  */
 export async function fetchVisitBreakdownFromAPI(
   visitId: number,
   companyIdFallback: number
 ): Promise<VisitBreakdownItem[] | null> {
   try {
+    // Крок 1: GET /visits/{visit_id} — location_id та список record_id
     const visitData = await getVisitWithRecords(visitId, companyIdFallback);
     if (!visitData || !visitData.records?.length) {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId, 'visitData:', visitData ? { locationId: visitData.locationId, recordsCount: visitData.records?.length } : null);
+      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId);
       return null;
     }
     const locationId = visitData.locationId ?? companyIdFallback;
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'locationId', locationId, 'records count:', visitData.records.length);
-    
-    // Агрегація по master_id (якщо є) або по імені (якщо master_id відсутній)
-    // Це дозволяє розрізняти різних людей з однаковим іменем, але об'єднувати
-    // записи одного майстра з різними послугами
-    const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
 
-    // ВАЖЛИВО: API /visit/details повертає ВСІ items для візиту, незалежно від recordId
-    // Тому викликаємо тільки один раз для першого record, щоб уникнути дублікатів
-    const firstRecord = visitData.records[0];
-    const recordId = firstRecord?.id ?? (firstRecord as any)?.record_id;
-    if (recordId == null) {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no recordId in first record for visit', visitId);
-      return null;
-    }
-
-    const data = await getVisitDetails(
-      locationId,
-      Number(recordId),
-      visitId
-    );
-    if (!data || typeof data !== 'object') {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no data for recordId', recordId, 'visitId', visitId);
-      return null;
-    }
-
-    const items = Array.isArray(data.items) ? data.items : [];
-    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', recordId, 'items count:', items.length);
-
-    // Будуємо мапу master_id → name з усіх records візиту
-    // Бо items мають тільки master_id (число), а ім'я майстра є в records[].staff
+    // Мапа master_id → ім'я з GET /visits (data.records[].staff)
     const masterIdToName = new Map<number, string>();
     for (const rec of visitData.records) {
       const staffId = (rec as any).staff_id ?? (rec.staff as any)?.id;
@@ -423,47 +398,81 @@ export async function fetchVisitBreakdownFromAPI(
         masterIdToName.set(Number(staffId), String(staffName).trim());
       }
     }
-    console.log('[altegio/visits] masterIdToName map:', Array.from(masterIdToName.entries()));
 
-    for (const item of items) {
-      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
-      // Спочатку шукаємо ім'я в мапі по master_id, потім fallback на інші поля
-      const masterName =
-        (masterId != null ? masterIdToName.get(Number(masterId)) : null) ??
-        (item as any).master?.name ??
-        (item as any).master?.title ??
-        (item as any).staff?.name ??
-        (item as any).staff?.display_name ??
-        (item as any).item_title ??
-        'Майстер';
-      
-      console.log('[altegio/visits] item masterId:', masterId, 'masterName:', masterName, 
-        'fromMap:', masterIdToName.has(Number(masterId)));
-      const cost = Number((item as any).cost) || 0;
-      const amount = Number((item as any).amount) ?? 1;
-      const sum = Math.round(cost * amount);
-      const name = String(masterName || 'Майстер').trim();
-      
-      // Ключ: якщо є master_id — використовуємо його (різні люди з однаковим іменем = різні записи)
-      // Якщо master_id = null/0 — fallback на ім'я (щоб не втрачати дані)
-      const key = masterId != null && masterId !== 0
-        ? `id:${masterId}`
-        : `name:${name.toLowerCase()}`;
-      
+    // Агрегація по master_id (ключ id:masterId або name:... для fallback)
+    const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
+
+    const addToMaster = (
+      key: string,
+      masterName: string,
+      sumUAH: number
+    ) => {
       const existing = byMasterKey.get(key);
       if (existing) {
-        existing.sumUAH += sum;
-        if (name && name !== 'Майстер' && existing.masterName === 'Майстер') {
-          existing.masterName = name;
+        existing.sumUAH += sumUAH;
+        if (masterName && masterName !== 'Майстер' && existing.masterName === 'Майстер') {
+          existing.masterName = masterName;
         }
       } else {
-        byMasterKey.set(key, { masterName: name || 'Майстер', sumUAH: sum });
+        byMasterKey.set(key, { masterName: masterName || 'Майстер', sumUAH });
+      }
+    };
+
+    // Крок 2: для кожного record_id — GET /visit/details/{location_id}/{record_id}/{visit_id}
+    for (const rec of visitData.records) {
+      const recordId = rec.id ?? (rec as any).record_id;
+      if (recordId == null) continue;
+
+      const data = await getVisitDetails(
+        locationId,
+        Number(recordId),
+        visitId
+      );
+      if (!data || typeof data !== 'object') continue;
+
+      // data.items: позиції (послуги/товари) з master_id та cost
+      const items = Array.isArray(data.items) ? data.items : [];
+      for (const item of items) {
+        const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
+        const masterName =
+          (masterId != null ? masterIdToName.get(Number(masterId)) : null) ??
+          (item as any).master?.name ??
+          (item as any).master?.title ??
+          (item as any).staff?.name ??
+          (item as any).staff?.display_name ??
+          (item as any).item_title ??
+          'Майстер';
+        const cost = Number((item as any).cost) || 0;
+        const amount = Number((item as any).amount) ?? 1;
+        const sum = Math.round(cost * amount);
+        if (sum <= 0) continue;
+        const name = String(masterName || 'Майстер').trim();
+        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
+        addToMaster(key, name, sum);
+      }
+
+      // За документацією: оплачена сума — data.payment_transactions (amount по master_id).
+      // Для breakdown по майстрах використовуємо data.items (cost), щоб уникнути подвійного підрахунку.
+      // Якщо по майстру є тільки payment і немає items — додаємо amount.
+      const paymentTx = Array.isArray(data.payment_transactions) ? data.payment_transactions : [];
+      const masterIdsInItems = new Set(
+        items.map((i: any) => {
+          const id = (i as any).master_id ?? (i as any).staff_id;
+          return id != null && id !== 0 ? String(id) : null;
+        }).filter(Boolean)
+      );
+      for (const tx of paymentTx) {
+        const masterId = (tx as any).master_id ?? (tx as any).master?.id ?? (tx as any).staff_id;
+        if (masterId != null && masterIdsInItems.has(String(masterId))) continue;
+        const amount = Number((tx as any).amount) || 0;
+        if (amount <= 0) continue;
+        const masterName = masterId != null ? masterIdToName.get(Number(masterId)) ?? 'Майстер' : 'Майстер';
+        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${String(masterName).toLowerCase()}`;
+        addToMaster(key, String(masterName).trim(), Math.round(amount));
       }
     }
 
-    const result = Array.from(byMasterKey.values()).filter(
-      (x) => x.sumUAH > 0
-    );
+    const result = Array.from(byMasterKey.values()).filter((x) => x.sumUAH > 0);
     console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'final result:', JSON.stringify(result));
     return result.length > 0 ? result : null;
   } catch (err) {
