@@ -40,6 +40,17 @@ function isConsultationService(services: any[]): boolean {
 }
 
 /**
+ * Нормалізує дату до ISO-8601 для Prisma (Altegio API повертає "YYYY-MM-DD HH:mm:ss").
+ */
+function toISO8601(dateStr: string | null | undefined): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const s = dateStr.trim();
+  if (!s) return null;
+  const d = new Date(s.replace(' ', 'T'));
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+/**
  * POST - синхронізувати consultationBookingDate з вебхуків для консультацій
  */
 export async function POST(req: NextRequest) {
@@ -227,19 +238,26 @@ export async function POST(req: NextRequest) {
           results.skipped++;
           continue;
         }
+
+        const isoConsultationDate = toISO8601(latestConsultationDate);
+        if (!isoConsultationDate) {
+          results.errors++;
+          console.error(`[sync-consultation-booking-dates] Невалідна дата для клієнта ${client.id}: ${latestConsultationDate}`);
+          continue;
+        }
         
         if (source === 'api') results.fromApi++;
         else results.fromKv++;
         
         // Перевіряємо, чи потрібно оновити
         const shouldUpdate = !client.consultationBookingDate || 
-                            new Date(client.consultationBookingDate) < new Date(latestConsultationDate);
+                            new Date(client.consultationBookingDate) < new Date(isoConsultationDate);
         
         if (shouldUpdate) {
           await prisma.directClient.update({
             where: { id: client.id },
             data: {
-              consultationBookingDate: latestConsultationDate,
+              consultationBookingDate: isoConsultationDate,
               ...(isOnlineConsultation !== null && { isOnlineConsultation }),
             },
           });
@@ -250,11 +268,11 @@ export async function POST(req: NextRequest) {
             instagramUsername: client.instagramUsername,
             altegioClientId: client.altegioClientId,
             oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
-            newConsultationBookingDate: latestConsultationDate,
+            newConsultationBookingDate: isoConsultationDate,
             reason: client.consultationBookingDate ? 'Updated to newer date' : `Set from ${source}`,
           });
           
-          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${latestConsultationDate} (${source})`);
+          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${isoConsultationDate} (${source})`);
         } else {
           results.skipped++;
         }
