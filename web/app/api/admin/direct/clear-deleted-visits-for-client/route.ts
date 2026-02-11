@@ -78,6 +78,11 @@ export async function POST(req: NextRequest) {
     let clearedConsultation = false;
     let clearedPaid = false;
 
+    const beforePaid = {
+      paidServiceDate: client.paidServiceDate,
+      paidServiceDeletedInAltegio: (client as any).paidServiceDeletedInAltegio,
+    };
+
     // 1) Збережений paidServiceVisitId: якщо 404 — очищаємо платний блок
     const storedPaidVisitId = client.paidServiceVisitId ?? null;
     if (
@@ -177,6 +182,7 @@ export async function POST(req: NextRequest) {
         updates.paidServiceRecordId = null;
         updates.paidServiceVisitBreakdown = null;
         updates.paidServiceTotalCost = null;
+        updates.paidServiceDeletedInAltegio = true;
         clearedPaid = true;
       }
     }
@@ -205,7 +211,12 @@ export async function POST(req: NextRequest) {
     }
 
     const changed = clearedConsultation || clearedPaid;
-    let afterUpdate: { consultationBookingDate: Date | null; consultationMasterName: string | null; paidServiceDate: Date | null } | null = null;
+    let afterUpdate: {
+      consultationBookingDate: Date | null;
+      consultationMasterName: string | null;
+      paidServiceDate: Date | null;
+      paidServiceDeletedInAltegio?: boolean;
+    } | null = null;
     let duplicatesUpdated = 0;
 
     if (changed) {
@@ -236,7 +247,9 @@ export async function POST(req: NextRequest) {
           where: { id: client.id },
           data,
         });
-        // Оновлюємо всі записи з тим самим instagramUsername (дублікати), щоб у таблиці зникли дані в усіх рядках
+        // Оновлюємо всі записи з тим самим instagramUsername (дублікати), щоб у таблиці зникли дані в усіх рядках.
+        // ВАЖЛИВО: передаємо тільки ті поля, що реально очистили. Якщо очистили лише консультацію —
+        // не чіпаємо paid-поля дублікатів (у них можуть бути власні платні записи з реальними даними).
         const sameUsername = (client.instagramUsername ?? '').toString().trim();
         if (sameUsername) {
           const others = await prisma.directClient.findMany({
@@ -244,11 +257,15 @@ export async function POST(req: NextRequest) {
               id: { not: client.id },
               instagramUsername: { equals: sameUsername, mode: 'insensitive' },
             },
-            select: { id: true },
+            select: { id: true, paidServiceDate: true, paidServiceDeletedInAltegio: true },
           });
           duplicatesUpdated = others.length;
           for (const other of others) {
+            // Передаємо тільки forceData (поля які очистили), не додаємо зайвих полів
             await prisma.directClient.update({ where: { id: other.id }, data });
+            if (other.paidServiceDate != null && !clearedPaid) {
+              console.log(`[clear-deleted-visits] ℹ️ Дублікат ${other.id} мав paidServiceDate — не перезаписували (очищено лише консультацію)`);
+            }
           }
         }
         const row = await prisma.directClient.findUnique({
@@ -257,6 +274,7 @@ export async function POST(req: NextRequest) {
             consultationBookingDate: true,
             consultationMasterName: true,
             paidServiceDate: true,
+            paidServiceDeletedInAltegio: true,
           },
         });
         if (row) {
@@ -264,6 +282,7 @@ export async function POST(req: NextRequest) {
             consultationBookingDate: row.consultationBookingDate,
             consultationMasterName: row.consultationMasterName,
             paidServiceDate: row.paidServiceDate,
+            paidServiceDeletedInAltegio: row.paidServiceDeletedInAltegio ?? undefined,
           };
         }
       }
@@ -298,6 +317,12 @@ export async function POST(req: NextRequest) {
       duplicatesUpdated,
       message,
       afterUpdate: afterUpdate ?? undefined,
+      _debug: {
+        beforePaid,
+        afterPaid: afterUpdate
+          ? { paidServiceDate: afterUpdate.paidServiceDate, paidServiceDeletedInAltegio: afterUpdate.paidServiceDeletedInAltegio }
+          : undefined,
+      },
     });
   } catch (error) {
     console.error('[clear-deleted-visits-for-client] Error:', error);

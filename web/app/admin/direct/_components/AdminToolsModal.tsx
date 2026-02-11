@@ -118,7 +118,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 61. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 62. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -901,6 +901,16 @@ export function AdminToolsModal({
           successMessage: (data: any) =>
             `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nКонсультацію очищено: ${data?.clearedConsultation ? 'так' : 'ні'}\nПлатний запис очищено: ${data?.clearedPaid ? 'так' : 'ні'}\n\n${JSON.stringify(data, null, 2)}`,
         },
+        {
+          icon: "↩️",
+          label: "Скинути прапорець «Видалено в Altegio» (дозволити синхронізацію)",
+          endpoint: "/api/admin/direct/reset-deleted-in-altegio-flag",
+          method: "POST" as const,
+          isPrompt: true,
+          prompt: "Введіть Altegio Client ID (ID клієнта в Altegio):",
+          successMessage: (data: any) =>
+            `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${data?.resetType ?? 'both'}\n\nПісля цього запустіть «Синхронізувати сьогоднішні вебхуки» або «Синхронізувати дати платних записів», щоб підтягнути дані з Altegio.\n\n${JSON.stringify(data, null, 2)}`,
+        },
       ],
     },
   ];
@@ -1047,6 +1057,19 @@ export function AdminToolsModal({
                           { altegioClientId: altegioId },
                           (data) => onClearVisitsSuccess?.(data),
                           true
+                        );
+                      } else if (item.endpoint.includes('reset-deleted-in-altegio-flag')) {
+                        const altegioId = parseInt(input.trim(), 10);
+                        if (!Number.isFinite(altegioId)) {
+                          showCopyableAlert('Введіть коректний Altegio Client ID (число).');
+                          return;
+                        }
+                        handleEndpoint(
+                          item.endpoint,
+                          item.method,
+                          undefined,
+                          item.successMessage,
+                          { altegioClientId: altegioId, type: 'both' }
                         );
                       } else if (item.endpoint.includes('search-webhooks')) {
                         handleEndpoint(
