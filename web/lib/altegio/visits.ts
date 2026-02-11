@@ -2,7 +2,7 @@
 // Функції для роботи з візитами (visits) Alteg.io API
 // Візити - це завершені записи (appointments), які вже відбулися
 
-import { altegioFetch } from './client';
+import { altegioFetch, AltegioHttpError } from './client';
 
 export type Visit = {
   id: number;
@@ -358,9 +358,16 @@ export async function getVisitWithRecords(visitId: number, companyIdFallback?: n
       return null;
     }
     
-    console.log('[altegio/visits] getVisitWithRecords: visitId', visitId, 'locationId', numLocationId || 'fallback', 'records', records.length);
+    if (process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true') {
+      console.log('[altegio/visits] getVisitWithRecords: visitId', visitId, 'locationId', numLocationId || 'fallback', 'records', records.length);
+    }
     return { locationId: numLocationId || null, records, ...data };
   } catch (err) {
+    // 404 — очікувано для видалених або невалідних візитів, не засмічуємо логи як error
+    if (err instanceof AltegioHttpError && err.status === 404) {
+      console.warn('[altegio/visits] Visit not found (deleted or invalid):', visitId);
+      return null;
+    }
     console.error('[altegio/visits] getVisitWithRecords failed:', err);
     return null;
   }
@@ -381,7 +388,8 @@ export async function fetchVisitBreakdownFromAPI(
 ): Promise<VisitBreakdownItem[] | null> {
   try {
     const visitData = await getVisitWithRecords(visitId, companyIdFallback);
-    if (!visitData || !visitData.records?.length) {
+    if (!visitData) return null;
+    if (!visitData.records?.length) {
       console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no records for visit', visitId);
       return null;
     }
@@ -482,7 +490,9 @@ export async function fetchVisitBreakdownFromAPI(
     }
 
     const result = Array.from(byMasterKey.values()).filter((x) => x.sumUAH > 0);
-    console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'total', result.reduce((a, b) => a + b.sumUAH, 0), 'result:', JSON.stringify(result));
+    if (process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true') {
+      console.log('[altegio/visits] fetchVisitBreakdownFromAPI: visitId', visitId, 'total', result.reduce((a, b) => a + b.sumUAH, 0), 'result:', JSON.stringify(result));
+    }
     return result.length > 0 ? result : null;
   } catch (err) {
     console.error('[altegio/visits] fetchVisitBreakdownFromAPI failed:', err);

@@ -1,7 +1,10 @@
 // web/lib/altegio/client.ts
 // Базовий HTTP-клієнт для Alteg.io API з retry логікою та rate limiting
+// Детальні логи (URL, заголовки) виводяться тільки при DEBUG_ALTEGIO=1
 
 import { altegioUrl, altegioHeaders, ALTEGIO_ENV } from './env';
+
+const DEBUG_ALTEGIO = process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true';
 
 export type AltegioResponse<T = any> = {
   success?: boolean;
@@ -36,20 +39,22 @@ export async function altegioFetch<T = any>(
   delay = 200
 ): Promise<T> {
   let url = altegioUrl(path);
-  
-  console.log(`[altegio/client] Initial URL: ${url}, path: ${path}`);
-  
+
+  if (DEBUG_ALTEGIO) {
+    console.log(`[altegio/client] Initial URL: ${url}, path: ${path}`);
+  }
+
   // Partner ID може передаватися як query параметр або окремий заголовок
   // Для публічних програм: якщо є PARTNER_TOKEN
   // Для непублічних програм: якщо є APPLICATION_ID або PARTNER_ID (ID філії)
   const hasPartnerToken = !!ALTEGIO_ENV.PARTNER_TOKEN;
   const applicationId = ALTEGIO_ENV.APPLICATION_ID || '';
   const partnerId = ALTEGIO_ENV.PARTNER_ID || applicationId || (hasPartnerToken ? ALTEGIO_ENV.PARTNER_TOKEN : '');
-  
+
   // НЕ додаємо partner_id в query для endpoint'ів з company_id в URL
   // (бо company_id вже вказує на конкретну філію, і partner_id може конфліктувати)
   const hasCompanyIdInPath = /\/company\/\d+/.test(path);
-  
+
   // Додаємо Partner ID як query параметр тільки якщо:
   // 1. Є Partner ID
   // 2. URL не містить partner_id вже
@@ -57,11 +62,11 @@ export async function altegioFetch<T = any>(
   if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=') && !hasCompanyIdInPath) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
-    console.log(`[altegio/client] Added partner_id to URL: ${url}`);
-  } else {
+    if (DEBUG_ALTEGIO) console.log(`[altegio/client] Added partner_id to URL: ${url}`);
+  } else if (DEBUG_ALTEGIO) {
     console.log(`[altegio/client] Skipped partner_id: hasCompanyIdInPath=${hasCompanyIdInPath}, url already has partner_id=${url.includes('partner_id=')}`);
   }
-  
+
   const headers = altegioHeaders();
   // Важливо: наші заголовки (Accept, Authorization) мають пріоритет
   // options.headers може додати додаткові заголовки, але не перезаписувати обов'язкові
@@ -82,27 +87,28 @@ export async function altegioFetch<T = any>(
         await new Promise(resolve => setTimeout(resolve, delay * attempt));
       }
 
-      // Детальне логування для діагностики
-      console.log('[altegio/client] Making request:', {
-        url,
-        programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
-        urlWithParams: url.includes('partner_id') ? '✅ Partner ID in URL' : '❌ No Partner ID in URL (OK for non-public)',
-        headers: Object.keys(finalHeaders),
-        acceptHeader: finalHeaders['Accept'] || '❌ MISSING!',
-        hasAcceptHeader: !!finalHeaders['Accept'],
-        hasPartnerToken,
-        hasPartnerId: !!partnerId,
-        partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set (OK for non-public)',
-        authorizationHeader: finalHeaders['Authorization']?.substring(0, 80) + '...',
-        partnerIdHeaders: {
-          'X-Partner-ID': finalHeaders['X-Partner-ID'],
-          'Partner-ID': finalHeaders['Partner-ID'],
-          'X-Partner-Id': finalHeaders['X-Partner-Id'],
-          'X-PartnerId': finalHeaders['X-PartnerId'],
-          'Authorization': finalHeaders['Authorization']?.includes('Partner') ? 'Contains Partner ID' : 'No Partner ID in Auth',
-        },
-      });
-      
+      if (DEBUG_ALTEGIO) {
+        console.log('[altegio/client] Making request:', {
+          url,
+          programType: hasPartnerToken ? 'Public (with Partner Token)' : 'Non-public (User Token only)',
+          urlWithParams: url.includes('partner_id') ? '✅ Partner ID in URL' : '❌ No Partner ID in URL (OK for non-public)',
+          headers: Object.keys(finalHeaders),
+          acceptHeader: finalHeaders['Accept'] || '❌ MISSING!',
+          hasAcceptHeader: !!finalHeaders['Accept'],
+          hasPartnerToken,
+          hasPartnerId: !!partnerId,
+          partnerIdValue: partnerId ? partnerId.substring(0, 10) + '...' : 'not set (OK for non-public)',
+          authorizationHeader: finalHeaders['Authorization']?.substring(0, 80) + '...',
+          partnerIdHeaders: {
+            'X-Partner-ID': finalHeaders['X-Partner-ID'],
+            'Partner-ID': finalHeaders['Partner-ID'],
+            'X-Partner-Id': finalHeaders['X-Partner-Id'],
+            'X-PartnerId': finalHeaders['X-PartnerId'],
+            'Authorization': finalHeaders['Authorization']?.includes('Partner') ? 'Contains Partner ID' : 'No Partner ID in Auth',
+          },
+        });
+      }
+
       const response = await fetch(url, {
         ...options,
         headers: finalHeaders,

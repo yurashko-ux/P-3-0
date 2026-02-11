@@ -1,7 +1,9 @@
 // web/lib/altegio/env.ts
 // Окрема конфігурація для Alteg.io API (не залежить від KeyCRM)
+// Детальні логи (токени, заголовки) виводяться тільки при DEBUG_ALTEGIO=1
 
 const ALTEGIO_DEFAULT_API_URL = "https://api.alteg.io/api/v1";
+const DEBUG_ALTEGIO = process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true';
 
 export const ALTEGIO_ENV = {
   API_URL: process.env.ALTEGIO_API_URL?.trim() || ALTEGIO_DEFAULT_API_URL,
@@ -63,18 +65,19 @@ export function altegioHeaders(includeUserToken = true) {
     throw new Error("ALTEGIO_USER_TOKEN is required. Please set it in environment variables.");
   }
   
-  // Діагностика: перевіряємо наявність всіх токенів
-  console.log('[altegio/env] Token check:', {
-    hasUserToken: !!ALTEGIO_ENV.USER_TOKEN,
-    userTokenLength: ALTEGIO_ENV.USER_TOKEN?.length || 0,
-    hasPartnerToken: !!ALTEGIO_ENV.PARTNER_TOKEN,
-    partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN?.length || 0,
-    hasApplicationId: !!ALTEGIO_ENV.APPLICATION_ID,
-    applicationId: ALTEGIO_ENV.APPLICATION_ID || 'not set',
-    hasPartnerId: !!ALTEGIO_ENV.PARTNER_ID,
-    partnerId: ALTEGIO_ENV.PARTNER_ID || 'not set',
-  });
-  
+  if (DEBUG_ALTEGIO) {
+    console.log('[altegio/env] Token check:', {
+      hasUserToken: !!ALTEGIO_ENV.USER_TOKEN,
+      userTokenLength: ALTEGIO_ENV.USER_TOKEN?.length || 0,
+      hasPartnerToken: !!ALTEGIO_ENV.PARTNER_TOKEN,
+      partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN?.length || 0,
+      hasApplicationId: !!ALTEGIO_ENV.APPLICATION_ID,
+      applicationId: ALTEGIO_ENV.APPLICATION_ID || 'not set',
+      hasPartnerId: !!ALTEGIO_ENV.PARTNER_ID,
+      partnerId: ALTEGIO_ENV.PARTNER_ID || 'not set',
+    });
+  }
+
   // НЕПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token, використовуємо його разом з User Token
   // Partner Token може бути присутній і для непублічних програм
   // Якщо Partner Token не вказано, використовуємо тільки User Token
@@ -109,21 +112,23 @@ export function altegioHeaders(includeUserToken = true) {
         headers['Application-ID'] = applicationId;
       }
     }
-    
-    console.log('[altegio/env] Authorization header (with Partner Token - may be non-public):', {
-      format: 'Bearer <partner_token>, User <user_token>',
-      programType: 'Non-public (with Partner Token)',
-      partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
-      partnerId: partnerId || 'not set',
-      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
-      authorizationHeader: authHeader.substring(0, 80) + '...',
-      allHeaders: Object.keys(headers),
-      note: 'Using Partner Token with User Token (may be for non-public program)',
-    });
-    
+
+    if (DEBUG_ALTEGIO) {
+      console.log('[altegio/env] Authorization header (with Partner Token - may be non-public):', {
+        format: 'Bearer <partner_token>, User <user_token>',
+        programType: 'Non-public (with Partner Token)',
+        partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
+        partnerId: partnerId || 'not set',
+        userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+        authorizationHeader: authHeader.substring(0, 80) + '...',
+        allHeaders: Object.keys(headers),
+        note: 'Using Partner Token with User Token (may be for non-public program)',
+      });
+    }
+
     return headers;
   }
-  
+
   // Якщо Partner Token не вказано, використовуємо тільки User Token
   if (!ALTEGIO_ENV.PARTNER_TOKEN && ALTEGIO_ENV.USER_TOKEN) {
     const authHeader = `Bearer ${ALTEGIO_ENV.USER_TOKEN}`;
@@ -162,19 +167,21 @@ export function altegioHeaders(includeUserToken = true) {
       // Спробуємо формат як для публічних програм (Bearer Application ID, User Token)
       // Це найбільш вірогідний формат, який працює для непублічних програм
       headers['Authorization'] = authHeaderAsPublic;
-      
-      console.log('[altegio/env] Authorization header (Non-public program - trying public format):', {
-        format: 'Bearer <application_id>, User <user_token>',
-        programType: 'Non-public',
-        applicationId: applicationId || 'not set',
-        partnerId: partnerId || 'not set',
-        usingAsPartnerId: partnerIdToUse,
-        userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
-        authorizationHeader: authHeaderAsPublic.substring(0, 80) + '...',
-        allHeaders: Object.keys(headers),
-        note: 'Trying public program format: Bearer <application_id>, User <token>',
-      });
-    } else {
+
+      if (DEBUG_ALTEGIO) {
+        console.log('[altegio/env] Authorization header (Non-public program - trying public format):', {
+          format: 'Bearer <application_id>, User <user_token>',
+          programType: 'Non-public',
+          applicationId: applicationId || 'not set',
+          partnerId: partnerId || 'not set',
+          usingAsPartnerId: partnerIdToUse,
+          userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+          authorizationHeader: authHeaderAsPublic.substring(0, 80) + '...',
+          allHeaders: Object.keys(headers),
+          note: 'Trying public program format: Bearer <application_id>, User <token>',
+        });
+      }
+    } else if (DEBUG_ALTEGIO) {
       console.log('[altegio/env] Authorization header (Non-public program - USER_TOKEN only):', {
         format: 'Bearer <user_token>',
         programType: 'Non-public',
@@ -182,10 +189,10 @@ export function altegioHeaders(includeUserToken = true) {
         note: 'Partner ID not provided - may need ALTEGIO_PARTNER_ID (Application ID)',
       });
     }
-    
+
     return headers;
   }
-  
+
   // ПУБЛІЧНІ ПРОГРАМИ: Якщо є Partner Token - використовуємо повний формат
   // Це для публічних програм на маркетплейсі
   // Потрібен Partner Token + User Token + Partner ID в заголовках
@@ -210,17 +217,18 @@ export function altegioHeaders(includeUserToken = true) {
     }
     
     const authHeader = authParts.join(", ");
-    
-    // Логування для діагностики
-    console.log('[altegio/env] Authorization header:', {
-      format: 'Bearer <partner_token>, User <user_token>',
-      partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
-      partnerId: partnerId,
-      partnerIdLength: partnerId.length,
-      userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
-      authHeaderPreview: authHeader.substring(0, 50) + '...',
-    });
-    
+
+    if (DEBUG_ALTEGIO) {
+      console.log('[altegio/env] Authorization header:', {
+        format: 'Bearer <partner_token>, User <user_token>',
+        partnerTokenLength: ALTEGIO_ENV.PARTNER_TOKEN.length,
+        partnerId: partnerId,
+        partnerIdLength: partnerId.length,
+        userTokenLength: ALTEGIO_ENV.USER_TOKEN.length,
+        authHeaderPreview: authHeader.substring(0, 50) + '...',
+      });
+    }
+
     const headers: Record<string, string> = {
       Accept: "application/vnd.api.v2+json",
       "Content-Type": "application/json",
@@ -240,21 +248,22 @@ export function altegioHeaders(includeUserToken = true) {
       // Можливо, формат має бути: "Bearer <partner_token>, User <user_token>, Partner <partner_id>"
       // Але спочатку спробуємо стандартний формат
     }
-    
-    // Логування всіх заголовків для діагностики
-    console.log('[altegio/env] Headers with Partner ID:', {
-      authorization: authHeader.substring(0, 80) + '...',
-      partnerIdHeaders: {
-        'X-Partner-ID': headers['X-Partner-ID'],
-        'Partner-ID': headers['Partner-ID'],
-        'X-Partner-Id': headers['X-Partner-Id'],
-      },
-      allHeaderKeys: Object.keys(headers),
-    });
-    
+
+    if (DEBUG_ALTEGIO) {
+      console.log('[altegio/env] Headers with Partner ID:', {
+        authorization: authHeader.substring(0, 80) + '...',
+        partnerIdHeaders: {
+          'X-Partner-ID': headers['X-Partner-ID'],
+          'Partner-ID': headers['Partner-ID'],
+          'X-Partner-Id': headers['X-Partner-Id'],
+        },
+        allHeaderKeys: Object.keys(headers),
+      });
+    }
+
     return headers;
   }
-  
+
   // Якщо досягли сюди - немає ні Partner Token, ні User Token
   throw new Error("No valid Altegio token configured");
 }
