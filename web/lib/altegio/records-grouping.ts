@@ -585,6 +585,8 @@ function extractAttendance(e: any): number | null {
     e?.body?.data?.attendance ??
     e?.body?.data?.visit_attendance ??
     null;
+  // Документація Altegio: 2 = клієнт підтвердив запис — прирівнюємо до 1 (прийшов)
+  if (v === 2) return 1;
   if (v === 1 || v === 0 || v === -1) return v;
   return null;
 }

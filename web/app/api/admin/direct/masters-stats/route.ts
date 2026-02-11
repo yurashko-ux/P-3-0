@@ -64,7 +64,7 @@ function getAttendedEventReceivedAt(group: any): string | null {
   const events = Array.isArray(group?.events) ? group.events : [];
   const kyivDay = group?.kyivDay || '';
   const attended = events
-    .filter((e: any) => e?.attendance === 1 && e?.receivedAt && kyivDayFromISO(e.receivedAt) === kyivDay)
+    .filter((e: any) => (e?.attendance === 1 || e?.attendance === 2) && e?.receivedAt && kyivDayFromISO(e.receivedAt) === kyivDay)
     .sort((a: any, b: any) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
   return attended[0]?.receivedAt || null;
 }
@@ -98,7 +98,7 @@ function detectRebookForMonth(
   // max 1 перезапис на клієнта в межах місяця
   const paidGroups = groups.filter((g) => g?.groupType === 'paid');
   for (const attendedGroup of paidGroups) {
-    if (attendedGroup?.attendanceStatus !== 'arrived' && attendedGroup?.attendance !== 1) continue;
+    if (attendedGroup?.attendanceStatus !== 'arrived' && attendedGroup?.attendance !== 1 && attendedGroup?.attendance !== 2) continue;
     const attendedDay = attendedGroup?.kyivDay || '';
     if (!attendedDay) continue;
     if (attendedDay.slice(0, 7) !== month) continue;
@@ -394,11 +394,11 @@ export async function GET(req: NextRequest) {
 
           if (!shouldIgnoreConsult && g.groupType === 'consultation' && g.datetime) {
             ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultBooked += 1;
-            if (g.attendanceStatus === 'arrived' || g.attendance === 1) {
+            if (g.attendanceStatus === 'arrived' || g.attendance === 1 || g.attendance === 2) {
               ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').consultAttended += 1;
             }
           }
-          if (g.groupType === 'paid' && (g.attendanceStatus === 'arrived' || g.attendance === 1)) {
+          if (g.groupType === 'paid' && (g.attendanceStatus === 'arrived' || g.attendance === 1 || g.attendance === 2)) {
             ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned').paidAttended += 1;
           }
         }
@@ -447,7 +447,7 @@ export async function GET(req: NextRequest) {
 
       // Послуги / Волосся / Товар — по майстрах з paid-груп у вибраному місяці (attended)
       const paidGroupsInMonth = groups.filter(
-        (g: any) => g?.groupType === 'paid' && (g?.kyivDay || '').slice(0, 7) === month && (g?.attendanceStatus === 'arrived' || g?.attendance === 1)
+        (g: any) => g?.groupType === 'paid' && (g?.kyivDay || '').slice(0, 7) === month && (g?.attendanceStatus === 'arrived' || g?.attendance === 1 || g?.attendance === 2)
       );
       for (const g of paidGroupsInMonth) {
         const perMaster = getPerMasterCategorySumsFromGroup(g);

@@ -27,7 +27,8 @@ function isAuthorized(req: NextRequest): boolean {
 
 function attendanceUi(attendance: number | null, status: string) {
   // attendance тут вже агрегований: 1 | 0 | -1 | -2 | null
-  if (attendance === 1) return { icon: '✅', label: 'Прийшов' };
+  // 1 = прийшов, 2 = підтвердив запис (Altegio) — обидва показуємо як «Прийшов»
+  if (attendance === 1 || attendance === 2) return { icon: '✅', label: 'Прийшов' };
   if (attendance === -2 || status === 'cancelled') return { icon: '🚫', label: 'Скасовано' };
   if (attendance === -1) return { icon: '❌', label: "Не з'явився" };
   if (attendance === 0) return { icon: '⏳', label: 'Очікується' };

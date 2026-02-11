@@ -698,7 +698,7 @@ export async function GET(req: NextRequest) {
               const attStatus = String((cg as any).attendanceStatus || '');
               // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
               // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
-              if (attStatus === 'arrived' || (cg as any).attendance === 1) {
+              if (attStatus === 'arrived' || (cg as any).attendance === 1 || (cg as any).attendance === 2) {
                 c = { ...c, consultationAttended: true, consultationCancelled: false };
               } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
                 // Встановлюємо false тільки якщо в БД ще не встановлено true
@@ -830,7 +830,7 @@ export async function GET(req: NextRequest) {
         const attendedGroup =
           paidGroups.find(
             (g: any) =>
-              (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendanceStatus === 'arrived')
+              (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendance === 2 || g?.attendanceStatus === 'arrived')
           ) || null;
         if (!attendedGroup) return c;
 

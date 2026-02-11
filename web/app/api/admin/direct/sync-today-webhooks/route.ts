@@ -971,6 +971,8 @@ export async function POST(req: NextRequest) {
                       ((event.originalRecord?.data as any)?.attendance ??
                         (event.originalRecord as any)?.attendance)) ??
                     undefined;
+                  const isArrived = attendance === 1 || attendance === 2;
+                  const isNotArrived = attendance !== 1 && attendance !== 2;
                   
                   console.log(`[sync-today-webhooks] 🔍 Record event data for client ${clientId}:`, {
                     staffName,
@@ -1020,9 +1022,8 @@ export async function POST(req: NextRequest) {
                     
                     // Обробка запису на консультацію (ПЕРША консультація)
                     // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
-                    // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
-                    // Якщо клієнт прийшов (attendance === 1) - це обробляється нижче в блоці attendance === 1
-                    if ((status === 'create' || status === 'update') && !hadConsultationBefore && attendance !== 1) {
+                    // Якщо клієнт ще не прийшов (не 1/2) - встановлюємо 'consultation-booked'
+                    if ((status === 'create' || status === 'update') && !hadConsultationBefore && isNotArrived) {
                       const consultationUpdates = {
                         state: 'consultation-booked' as const,
                         consultationBookingDate: datetime,
@@ -1049,7 +1050,7 @@ export async function POST(req: NextRequest) {
                     // Якщо клієнт вже має стан consultation-booked, але дата оновилась або не була встановлена
                     else if ((status === 'create' || status === 'update') && 
                              (updated.state === 'consultation-booked' as any) && 
-                             attendance !== 1 && 
+                             isNotArrived && 
                              datetime) {
                       // Оновлюємо consultationBookingDate, якщо він відсутній або змінився
                       if (!updated.consultationBookingDate || updated.consultationBookingDate !== datetime) {
@@ -1078,7 +1079,7 @@ export async function POST(req: NextRequest) {
                     // Це fallback логіка, яка спрацьовує, якщо попередні блоки не спрацювали
                     if ((status === 'create' || status === 'update') && 
                         datetime && 
-                        attendance !== 1 &&
+                        isNotArrived &&
                         (!updated.consultationBookingDate || updated.consultationBookingDate !== datetime)) {
                       // Перевіряємо, чи не встановили consultationBookingDate в попередніх блоках
                       // Якщо ні - встановлюємо його тут
@@ -1103,7 +1104,7 @@ export async function POST(req: NextRequest) {
                       }, { touchUpdatedAt: false });
                       
                       console.log(`[sync-today-webhooks] ✅ Set consultationBookingDate (fallback) for client ${updated.id} (state: ${updated.state}, ${updated.consultationBookingDate || 'null'} -> ${datetime})`);
-                    } else if ((status === 'create' || status === 'update') && datetime && attendance !== 1 && !updated.consultationBookingDate) {
+                    } else if ((status === 'create' || status === 'update') && datetime && isNotArrived && !updated.consultationBookingDate) {
                       // ДОДАТКОВА ПЕРЕВІРКА: Якщо consultationBookingDate все ще відсутній після всіх блоків
                       // (навіть якщо він не змінився, але його взагалі немає) - встановлюємо його
                       console.log(`[sync-today-webhooks] ⚠️ consultationBookingDate is missing for client ${updated.id}, setting it now (datetime: ${datetime}, attendance: ${attendance}, state: ${updated.state})`);
@@ -1132,10 +1133,8 @@ export async function POST(req: NextRequest) {
                       console.log(`[sync-today-webhooks] ✅ Set missing consultationBookingDate for client ${updated.id} (${datetime})`);
                     }
                     // Обробка приходу клієнта на консультацію
-                    // Якщо клієнт прийшов на консультацію (attendance === 1), встановлюємо стан 'consultation'
-                    // Це може бути як перша консультація, так і оновлення з consultation-booked на consultation
-                    // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
-                    else if (attendance === 1 && !wasAdminStaff && staffName && datetime) {
+                    // Якщо клієнт прийшов на консультацію (attendance 1 або 2), встановлюємо стан 'consultation'
+                    else if (isArrived && !wasAdminStaff && staffName && datetime) {
                       // Перевіряємо, чи дата консультації вже настала
                       const consultationDate = new Date(datetime);
                       const now = new Date();
@@ -1215,7 +1214,7 @@ export async function POST(req: NextRequest) {
                         wasAdminStaff,
                         hasStaffName: !!staffName,
                         hasDatetime: !!datetime,
-                        reason: attendance !== 1 ? 'attendance !== 1' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : !datetime ? 'no datetime' : 'unknown',
+                        reason: isNotArrived ? 'attendance not 1/2' : wasAdminStaff ? 'wasAdminStaff' : !staffName ? 'no staffName' : !datetime ? 'no datetime' : 'unknown',
                       });
                     }
                   }

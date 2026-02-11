@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
         
         // Перевіряємо, чи є attendance
         const attendance = record.data?.attendance ?? record.data?.visit_attendance ?? record.attendance;
-        return attendance === 1 || attendance === -1;
+        return attendance === 1 || attendance === 2 || attendance === -1;
       })
       .sort((a, b) => {
         // Сортуємо за датою (найновіші спочатку)
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
         
         // Визначаємо нове значення consultationAttended на основі найновішого вебхука
         let newConsultationAttended: boolean | null = null;
-        if (attendance === 1) {
+        if (attendance === 1 || attendance === 2) {
           newConsultationAttended = true;
         } else if (attendance === -1) {
           newConsultationAttended = false;

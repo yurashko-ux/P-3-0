@@ -1508,7 +1508,7 @@ export default function DirectPage() {
                             message += `     - ${s.title} (${s.cost || 0} ₴)\n`;
                           });
                         }
-                        message += `   Прийшов: ${w.attendance === 1 ? '✅' : '❌'}\n`;
+                        message += `   Прийшов: ${w.attendance === 1 || w.attendance === 2 ? '✅' : '❌'}\n`;
                       } else if (w.type === 'client') {
                         message += `   Клієнт: ${w.clientName || 'немає'}\n`;
                         message += `   Custom fields: ${w.hasCustomFields ? '✅' : '❌'}\n`;

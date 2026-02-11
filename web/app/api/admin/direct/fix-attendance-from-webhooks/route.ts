@@ -173,7 +173,7 @@ export async function GET(req: NextRequest) {
             let needsUpdate = false;
             const updates: Partial<typeof client> = {};
             
-            if (attendance === 1 && client.consultationAttended !== true) {
+            if ((attendance === 1 || attendance === 2) && client.consultationAttended !== true) {
               updates.consultationAttended = true;
               needsUpdate = true;
             } else if (attendance === -1 && client.consultationAttended !== false) {
@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
             let needsUpdate = false;
             const updates: Partial<typeof client> = {};
             
-            if (attendance === 1 && client.paidServiceAttended !== true) {
+            if ((attendance === 1 || attendance === 2) && client.paidServiceAttended !== true) {
               updates.paidServiceAttended = true;
               needsUpdate = true;
             } else if (attendance === -1 && client.paidServiceAttended !== false) {

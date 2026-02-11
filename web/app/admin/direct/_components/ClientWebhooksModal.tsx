@@ -118,7 +118,8 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
 
   function getAttendanceLabel(attendance: number | null): string {
     if (attendance === null || attendance === undefined) return '-';
-    if (attendance === 1) return '✅ Прийшов';
+    // 1 = прийшов, 2 = підтвердив запис (Altegio)
+    if (attendance === 1 || attendance === 2) return '✅ Прийшов';
     if (attendance === -2) return '🚫 Скасовано';
     if (attendance === -1) return '❌ Не з\'явився';
     if (attendance === 0) return '⏳ Очікується';

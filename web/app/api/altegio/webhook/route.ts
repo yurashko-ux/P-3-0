@@ -323,6 +323,8 @@ export async function POST(req: NextRequest) {
             ? data.services[0]
             : data.service || null;
 
+          // attendance/visit_attendance потрібні для історії записів (record-history), щоб не показувати «Невідомо»
+          const attendance = (data as any).attendance ?? (data as any).visit_attendance ?? undefined;
           const recordEvent = {
             visitId: visitId, // Використовуємо правильний visit_id
             recordId: recordId, // Також зберігаємо record_id для діагностики
@@ -334,11 +336,15 @@ export async function POST(req: NextRequest) {
             clientId: data.client?.id || data.client_id,
             companyId: data.company_id,
             receivedAt: new Date().toISOString(),
+            attendance, // для normalizeRecordsLogItems / історія консультацій та записів
+            visit_attendance: (data as any).visit_attendance,
             data: {
               service: firstService || data.service,
               services: data.services, // Зберігаємо весь масив services
               staff: data.staff,
               client: data.client,
+              attendance: (data as any).attendance,
+              visit_attendance: (data as any).visit_attendance,
             },
           };
           const recordPayload = JSON.stringify(recordEvent);
@@ -375,15 +381,13 @@ export async function POST(req: NextRequest) {
                 console.log('[altegio/webhook] Visit details masters display:', mastersDisplayString);
               }
             }
-            // attendance / visit_attendance:
-            //  0   – подія ще не настала (запис існує, але не відбулася)
-            //  1   – клієнт прийшов (фактична консультація)
-            // -1   – клієнт не з'явився
-            // null/undefined – ще не відмічено
+            // attendance / visit_attendance (Altegio): -1 не прийшов, 0 очікування, 1 прийшов, 2 підтвердив запис
             const attendance =
               (data as any).attendance ??
               (data as any).visit_attendance ??
               undefined;
+            const isArrived = attendance === 1 || attendance === 2;
+            const isNotArrived = attendance !== 1 && attendance !== 2;
             const datetime = data.datetime;
             
             const consultationInfo = isConsultationService(services);
@@ -482,9 +486,9 @@ export async function POST(req: NextRequest) {
                 
                 // 2.2 Обробка запису на консультацію (ПЕРША консультація)
                 // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
-                // Якщо клієнт ще не прийшов (attendance !== 1 або undefined) - встановлюємо 'consultation-booked'
-                // Якщо клієнт прийшов (attendance === 1) - це обробляється нижче в блоці attendance === 1
-                if ((status === 'create' || status === 'update') && !hadConsultationBefore && attendance !== 1) {
+                // Якщо клієнт ще не прийшов (не 1/2) - встановлюємо 'consultation-booked'
+                // Якщо клієнт прийшов (attendance 1 або 2) - обробляється нижче
+                if ((status === 'create' || status === 'update') && !hadConsultationBefore && isNotArrived) {
                   // ВАЖЛИВО: для консультацій ЗАВЖДИ очищаємо paidServiceDate
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-booked',
@@ -546,7 +550,7 @@ export async function POST(req: NextRequest) {
                 // Якщо клієнт вже має стан consultation-booked, але дата оновилась або не була встановлена
                 else if ((status === 'create' || status === 'update') && 
                          existingClient.state === 'consultation-booked' && 
-                         attendance !== 1 && 
+                         isNotArrived && 
                          datetime) {
                   // Оновлюємо consultationBookingDate, якщо він відсутній або змінився
                   if (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime) {
@@ -577,7 +581,7 @@ export async function POST(req: NextRequest) {
                 // ВАЖЛИВО: Цей блок має спрацювати для ВСІХ консультацій, навіть якщо попередні блоки не спрацювали
                 if ((status === 'create' || status === 'update') && 
                     datetime && 
-                    attendance !== 1 &&
+                    isNotArrived &&
                     (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime)) {
                   // Перевіряємо, чи не встановили consultationBookingDate в попередніх блоках
                   // Якщо ні - встановлюємо його тут
@@ -591,12 +595,10 @@ export async function POST(req: NextRequest) {
                     updatedAt: new Date().toISOString(),
                   };
                   
-                  // Встановлюємо consultationAttended на основі attendance
-                  // ВАЖЛИВО: Якщо клієнт прийшов (attendance === 1), завжди встановлюємо consultationAttended = true
-                  // Якщо клієнт не з'явився (attendance === -1), встановлюємо false ТІЛЬКИ якщо consultationAttended ще не true
-                  if (attendance === 1) {
+                  // Встановлюємо consultationAttended на основі attendance (1 або 2 = прийшов)
+                  if (isArrived) {
                     updates.consultationAttended = true;
-                    console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in block 2.3.2 for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = ${attendance}) in block 2.3.2 for client ${existingClient.id}`);
                     
                     // lastVisitAt з дати візиту вебхука (не з Altegio API)
                     const visitIso = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
@@ -619,7 +621,7 @@ export async function POST(req: NextRequest) {
                   } else {
                     // Якщо attendance не встановлено, не встановлюємо consultationAttended (залишаємо null/undefined)
                     // Це дозволить відрізнити "не встановлено" від "не з'явився"
-                    console.log(`[altegio/webhook] Not setting consultationAttended (attendance = ${attendance}, not 1 or -1) in block 2.3.2 for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Not setting consultationAttended (attendance = ${attendance}, not 1/2 or -1) in block 2.3.2 for client ${existingClient.id}`);
                   }
                   
                   // Якщо paidServiceDate встановлений, але signedUpForPaidService = false - це помилка, очищаємо
@@ -645,7 +647,7 @@ export async function POST(req: NextRequest) {
                   if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
 
                   console.log(`[altegio/webhook] ✅ Set consultationBookingDate (fallback) for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
-                } else if ((status === 'create' || status === 'update') && datetime && attendance !== 1 && !existingClient.consultationBookingDate) {
+                } else if ((status === 'create' || status === 'update') && datetime && isNotArrived && !existingClient.consultationBookingDate) {
                   // ДОДАТКОВА ПЕРЕВІРКА: Якщо consultationBookingDate все ще відсутній після всіх блоків
                   // (навіть якщо він не змінився, але його взагалі немає) - встановлюємо його
                   console.log(`[altegio/webhook] ⚠️ consultationBookingDate is missing for client ${existingClient.id}, setting it now (datetime: ${datetime}, attendance: ${attendance}, state: ${existingClient.state})`);
@@ -657,12 +659,10 @@ export async function POST(req: NextRequest) {
                     updatedAt: new Date().toISOString(),
                   };
                   
-                  // Встановлюємо consultationAttended на основі attendance
-                  // ВАЖЛИВО: Якщо клієнт прийшов (attendance === 1), завжди встановлюємо consultationAttended = true
-                  // Якщо клієнт не з'явився (attendance === -1), встановлюємо false ТІЛЬКИ якщо consultationAttended ще не true
-                  if (attendance === 1) {
+                  // Встановлюємо consultationAttended (1 або 2 = прийшов)
+                  if (isArrived) {
                     updates.consultationAttended = true;
-                    console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = 1) in missing date block for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = ${attendance}) in missing date block for client ${existingClient.id}`);
                     
                     // lastVisitAt з дати візиту вебхука
                     const visitIsoMissing = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
@@ -684,7 +684,7 @@ export async function POST(req: NextRequest) {
                   } else {
                     // Якщо attendance не встановлено, не встановлюємо consultationAttended (залишаємо null/undefined)
                     // Це дозволить відрізнити "не встановлено" від "не з'явився"
-                    console.log(`[altegio/webhook] Not setting consultationAttended (attendance = ${attendance}, not 1 or -1) in missing date block for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Not setting consultationAttended (attendance = ${attendance}, not 1/2 or -1) in missing date block for client ${existingClient.id}`);
                   }
                   
                   const updated: typeof existingClient = {
@@ -755,12 +755,9 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 // 2.5 Обробка приходу клієнта на консультацію
-                // Якщо клієнт прийшов на консультацію (attendance === 1), НЕ переводимо стан в 'consultation'.
-                // Факт приходу показуємо ✅ у колонці дати консультації.
-                // Стан лишаємо як є (зазвичай 'consultation-booked'). Якщо раніше вже стояв 'consultation' — нормалізуємо до 'consultation-booked'.
+                // Якщо клієнт прийшов на консультацію (attendance 1 або 2), показуємо ✅ у колонці дати консультації.
                 // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
-                // ВАЖЛИВО: обробляємо навіть якщо майстер - адміністратор (wasAdminStaff), бо attendance все одно має бути встановлено
-                else if (attendance === 1 && datetime) {
+                else if (isArrived && datetime) {
                   // Перевіряємо, чи дата консультації вже настала
                   const consultationDate = new Date(datetime);
                   const now = new Date();
@@ -887,9 +884,8 @@ export async function POST(req: NextRequest) {
                     }
                   }
                 }
-                // 2.5.1 Fallback: Якщо attendance === 1, але попередній блок не спрацював (наприклад, немає staffName або майбутня дата)
-                // Все одно встановлюємо consultationAttended = true
-                else if (attendance === 1 && datetime) {
+                // 2.5.1 Fallback: Якщо клієнт прийшов (1/2), але попередній блок не спрацював — встановлюємо consultationAttended = true
+                else if (isArrived && datetime) {
                   const consultationDate = new Date(datetime);
                   const now = new Date();
                   const isPastOrToday = consultationDate <= now;
@@ -958,15 +954,12 @@ export async function POST(req: NextRequest) {
                 staffName
               );
             }
-            // attendance / visit_attendance:
-            //  0   – подія ще не настала (запис існує, але не відбулася)
-            //  1   – клієнт прийшов (фактична послуга)
-            // -1   – клієнт не з'явився
-            // null/undefined – ще не відмічено
+            // attendance / visit_attendance (Altegio): -1 не прийшов, 0 очікування, 1 прийшов, 2 підтвердив запис
             const attendance =
               (data as any).attendance ??
               (data as any).visit_attendance ??
               undefined;
+            const isArrivedPaid = attendance === 1 || attendance === 2;
             
             // Визначаємо новий стан на основі послуг (з пріоритетом: нарощування > консультація)
             const newState = determineStateFromServices(services);
@@ -1089,11 +1082,10 @@ export async function POST(req: NextRequest) {
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing, paid service) for client ${existingClient.id}`);
                   }
                   
-                  // Встановлюємо paidServiceAttended на основі attendance
-                  // Якщо attendance не встановлено (null/undefined/0), не встановлюємо paidServiceAttended (залишаємо null)
-                  if (attendance === 1) {
+                  // Встановлюємо paidServiceAttended (1 або 2 = прийшов)
+                  if (isArrivedPaid) {
                     updates.paidServiceAttended = true;
-                    console.log(`[altegio/webhook] Setting paidServiceAttended to true (attendance = 1) for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Setting paidServiceAttended to true (attendance = ${attendance}) for client ${existingClient.id}`);
                     // lastVisitAt з дати візиту вебхука (не з Altegio API)
                     const visitIsoPaid = lastVisitAtFromWebhookDatetime(data.datetime, (existingClient as any).lastVisitAt);
                     if (visitIsoPaid) updates.lastVisitAt = visitIsoPaid;
@@ -1108,7 +1100,7 @@ export async function POST(req: NextRequest) {
                   } else {
                     // Якщо attendance не встановлено, не встановлюємо paidServiceAttended (залишаємо null/undefined)
                     // Це дозволить відрізнити "не встановлено" від "не з'явився"
-                    console.log(`[altegio/webhook] Not setting paidServiceAttended (attendance = ${attendance}, not 1 or -1) for client ${existingClient.id}`);
+                    console.log(`[altegio/webhook] Not setting paidServiceAttended (attendance = ${attendance}, not 1/2 or -1) for client ${existingClient.id}`);
                   }
                   
                   // 2.6 Визначення конверсії в платну послугу після консультації
@@ -1890,8 +1882,8 @@ export async function POST(req: NextRequest) {
         }
 
         // СТВОРЕННЯ НАГАДУВАНЬ ДЛЯ DIRECT КЛІЄНТІВ
-        // Створюємо нагадування, якщо клієнт прийшов (attendance: 1)
-        if (data.attendance === 1 || data.visit_attendance === 1) {
+        // Створюємо нагадування, якщо клієнт прийшов (attendance 1 або 2)
+        if (data.attendance === 1 || data.attendance === 2 || data.visit_attendance === 1 || data.visit_attendance === 2) {
           try {
             const { getAllDirectClients } = await import('@/lib/direct-store');
             const { saveDirectReminder, getAllDirectReminders } = await import('@/lib/direct-reminders/store');
