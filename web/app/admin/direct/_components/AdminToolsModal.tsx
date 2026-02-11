@@ -889,7 +889,7 @@ export function AdminToolsModal({
           endpoint: "/api/admin/direct/clear-deleted-visits-for-client",
           method: "POST" as const,
           isPrompt: true,
-          prompt: "Введіть Instagram (наприклад @user) або повне ім'я клієнта:",
+          prompt: "Введіть Altegio Client ID (ID клієнта в Altegio):",
           successMessage: (data: any) =>
             `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nКонсультацію очищено: ${data?.clearedConsultation ? 'так' : 'ні'}\nПлатний запис очищено: ${data?.clearedPaid ? 'так' : 'ні'}\n\n${JSON.stringify(data, null, 2)}`,
         },
@@ -1014,16 +1014,29 @@ export function AdminToolsModal({
                       const input = prompt(item.prompt);
                       if (!input || !input.trim()) return;
                       
-                      if (item.endpoint.includes('diagnose-client') || item.endpoint.includes('clear-deleted-visits-for-client')) {
+                      if (item.endpoint.includes('diagnose-client')) {
                         const isInstagram = input.startsWith('@') || input.includes('_') || /^[a-z0-9._]+$/i.test(input);
                         handleEndpoint(
                           item.endpoint,
                           item.method,
                           undefined,
-                          item.successMessage,
+                          undefined,
                           isInstagram
                             ? { instagramUsername: input.replace('@', '') }
                             : { fullName: input }
+                        );
+                      } else if (item.endpoint.includes('clear-deleted-visits-for-client')) {
+                        const altegioId = parseInt(input.trim(), 10);
+                        if (!Number.isFinite(altegioId)) {
+                          showCopyableAlert('Введіть коректний Altegio Client ID (число).');
+                          return;
+                        }
+                        handleEndpoint(
+                          item.endpoint,
+                          item.method,
+                          undefined,
+                          item.successMessage,
+                          { altegioClientId: altegioId }
                         );
                       } else if (item.endpoint.includes('search-webhooks')) {
                         handleEndpoint(

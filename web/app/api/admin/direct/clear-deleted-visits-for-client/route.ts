@@ -7,8 +7,6 @@ import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
 import { getVisitWithRecords } from '@/lib/altegio/visits';
 import type { DirectClient } from '@/lib/direct-types';
 import { saveDirectClient } from '@/lib/direct-store';
-import { normalizeInstagram } from '@/lib/normalize';
-
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -30,7 +28,7 @@ function isAuthorized(req: NextRequest): boolean {
 
 /**
  * POST — перевірити візити клієнта в Altegio та очистити поля, якщо візиту немає (404).
- * Body: { clientId?: string, instagramUsername?: string, fullName?: string }
+ * Body: { altegioClientId: number }
  */
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -39,11 +37,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { clientId, instagramUsername, fullName } = body;
+    const altegioClientIdParam = body.altegioClientId;
 
-    if (!clientId && !instagramUsername && !fullName) {
+    if (altegioClientIdParam == null || altegioClientIdParam === '') {
       return NextResponse.json(
-        { ok: false, error: 'Вкажіть clientId, instagramUsername або fullName' },
+        { ok: false, error: 'Вкажіть altegioClientId (ID клієнта в Altegio)' },
         { status: 400 }
       );
     }
@@ -56,31 +54,14 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    let client = null;
-    if (clientId) {
-      client = await prisma.directClient.findUnique({
-        where: { id: String(clientId) },
-      });
-    } else if (instagramUsername) {
-      const normalized = normalizeInstagram(String(instagramUsername).replace('@', ''));
-      if (normalized) {
-        const all = await prisma.directClient.findMany({
-          where: { altegioClientId: { not: null } },
-        });
-        client = all.find((c) => normalizeInstagram(c.instagramUsername ?? '') === normalized) ?? null;
-      }
-    } else if (fullName) {
-      const nameParts = String(fullName).toLowerCase().trim().split(/\s+/);
-      const all = await prisma.directClient.findMany({
-        where: { altegioClientId: { not: null } },
-      });
-      client = all.find((c) => {
-        const fn = (c.firstName ?? '').toLowerCase();
-        const ln = (c.lastName ?? '').toLowerCase();
-        const full = [fn, ln].filter(Boolean).join(' ');
-        return nameParts.every((p: string) => full.includes(p));
-      }) ?? null;
+    const altegioId = parseInt(String(altegioClientIdParam), 10);
+    if (!Number.isFinite(altegioId)) {
+      return NextResponse.json({ ok: false, error: 'altegioClientId має бути числом' }, { status: 400 });
     }
+
+    const client = await prisma.directClient.findFirst({
+      where: { altegioClientId: altegioId },
+    });
 
     if (!client) {
       return NextResponse.json({ ok: false, error: 'Клієнта не знайдено' }, { status: 404 });
