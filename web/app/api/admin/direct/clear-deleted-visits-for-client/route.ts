@@ -201,7 +201,50 @@ export async function POST(req: NextRequest) {
     }
 
     const changed = clearedConsultation || clearedPaid;
+    let afterUpdate: { consultationBookingDate: Date | null; consultationMasterName: string | null; paidServiceDate: Date | null } | null = null;
+
     if (changed) {
+      // Єдиний запис у БД — примусовий prisma.update (без saveDirectClient), щоб гарантовано зберегти null
+      const forceData: Record<string, unknown> = {};
+      if (clearedConsultation) {
+        forceData.consultationBookingDate = null;
+        forceData.consultationAttended = null;
+        forceData.consultationMasterName = null;
+        forceData.consultationMasterId = null;
+        forceData.isOnlineConsultation = false;
+        forceData.consultationCancelled = false;
+      }
+      if (clearedPaid) {
+        forceData.paidServiceDate = null;
+        forceData.paidServiceAttended = null;
+        forceData.signedUpForPaidService = false;
+        forceData.paidServiceVisitId = null;
+        forceData.paidServiceRecordId = null;
+        forceData.paidServiceVisitBreakdown = null;
+        forceData.paidServiceTotalCost = null;
+      }
+      if (Object.keys(forceData).length > 0) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: forceData as Parameters<typeof prisma.directClient.update>[0]['data'],
+        });
+        const row = await prisma.directClient.findUnique({
+          where: { id: client.id },
+          select: {
+            consultationBookingDate: true,
+            consultationMasterName: true,
+            paidServiceDate: true,
+          },
+        });
+        if (row) {
+          afterUpdate = {
+            consultationBookingDate: row.consultationBookingDate,
+            consultationMasterName: row.consultationMasterName,
+            paidServiceDate: row.paidServiceDate,
+          };
+        }
+      }
+      // Лог у store без перезапису полів (оновлюємо тільки updatedAt для консистентності)
       const full = await prisma.directClient.findUnique({ where: { id: client.id } });
       if (full) {
         const updated = { ...full, ...updates } as typeof full;
@@ -209,28 +252,6 @@ export async function POST(req: NextRequest) {
           altegioClientId: client.altegioClientId,
           source: 'GET /visits перевірка для одного клієнта',
         }, { touchUpdatedAt: false });
-        // Примусовий запис очищених полів у БД (гарантія, що таблиця оновиться після refresh)
-        const forceData: Record<string, unknown> = {};
-        if (clearedConsultation) {
-          forceData.consultationBookingDate = null;
-          forceData.consultationAttended = null;
-          forceData.consultationMasterName = null;
-          forceData.consultationMasterId = null;
-          forceData.isOnlineConsultation = false;
-          forceData.consultationCancelled = false;
-        }
-        if (clearedPaid) {
-          forceData.paidServiceDate = null;
-          forceData.paidServiceAttended = null;
-          forceData.signedUpForPaidService = false;
-          forceData.paidServiceVisitId = null;
-          forceData.paidServiceRecordId = null;
-          forceData.paidServiceVisitBreakdown = null;
-          forceData.paidServiceTotalCost = null;
-        }
-        if (Object.keys(forceData).length > 0) {
-          await prisma.directClient.update({ where: { id: client.id }, data: forceData });
-        }
       }
     }
 
@@ -251,6 +272,7 @@ export async function POST(req: NextRequest) {
       clearedConsultation,
       clearedPaid,
       message,
+      afterUpdate: afterUpdate ?? undefined,
     });
   } catch (error) {
     console.error('[clear-deleted-visits-for-client] Error:', error);

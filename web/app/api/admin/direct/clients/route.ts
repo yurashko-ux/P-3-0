@@ -1663,7 +1663,12 @@ export async function GET(req: NextRequest) {
       clientsCount: response.clients.length,
       filters: response.debug.filters,
     });
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
   } catch (error) {
     console.error('[direct/clients] GET error:', error);
     return NextResponse.json(
