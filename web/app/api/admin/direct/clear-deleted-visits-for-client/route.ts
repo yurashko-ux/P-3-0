@@ -285,6 +285,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       clientId: client.id,
+      altegioClientId: client.altegioClientId ?? null,
       instagramUsername: client.instagramUsername ?? null,
       clearedConsultation,
       clearedPaid,

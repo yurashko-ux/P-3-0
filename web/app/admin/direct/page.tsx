@@ -262,6 +262,9 @@ export default function DirectPage() {
   const filtersRef = useRef(filters);
   const sortByRef = useRef(sortBy);
   const sortOrderRef = useRef(sortOrder);
+  // Клієнти, для яких щойно очистили візити — щоб наступний loadClients не перезаписав старий кеш
+  const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
+  const CLEARED_VISITS_GRACE_MS = 2 * 60 * 1000; // 2 хв
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
@@ -653,8 +656,38 @@ export default function DirectPage() {
           setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
           return;
         }
+        // Зливаємо з нещодавно очищеними візитами (ключ — altegioClientId, fallback — id)
+        const merged = filteredClients.map((c) => {
+          const keyByAltegio = c.altegioClientId != null ? String(c.altegioClientId) : null;
+          const entry = (keyByAltegio ? recentlyClearedVisitsRef.current.get(keyByAltegio) : undefined)
+            || recentlyClearedVisitsRef.current.get(c.id);
+          if (!entry) return c;
+          const now = Date.now();
+          const consultationStillCleared = (entry.consultationClearedAt ?? 0) > 0 && now - entry.consultationClearedAt < CLEARED_VISITS_GRACE_MS;
+          const paidStillCleared = (entry.paidClearedAt ?? 0) > 0 && now - entry.paidClearedAt < CLEARED_VISITS_GRACE_MS;
+          if (!consultationStillCleared && !paidStillCleared) return c;
+          const next = { ...c };
+          if (consultationStillCleared) {
+            next.consultationBookingDate = undefined;
+            next.consultationAttended = undefined;
+            next.consultationMasterName = undefined;
+            next.consultationMasterId = undefined;
+            next.isOnlineConsultation = false;
+            next.consultationCancelled = false;
+          }
+          if (paidStillCleared) {
+            next.paidServiceDate = undefined;
+            next.paidServiceAttended = undefined;
+            next.signedUpForPaidService = false;
+            next.paidServiceVisitId = undefined;
+            next.paidServiceRecordId = undefined;
+            next.paidServiceVisitBreakdown = undefined;
+            next.paidServiceTotalCost = undefined;
+          }
+          return next;
+        });
         console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode });
-        setClients(filteredClients);
+        setClients(merged);
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні
         
@@ -799,15 +832,27 @@ export default function DirectPage() {
 
   const handleClearVisitsSuccess = (data: {
     clientId: string;
+    altegioClientId?: number | null;
     instagramUsername?: string | null;
     clearedConsultation?: boolean;
     clearedPaid?: boolean;
   }) => {
+    const now = Date.now();
+    const entry = {
+      consultationClearedAt: data.clearedConsultation ? now : undefined,
+      paidClearedAt: data.clearedPaid ? now : undefined,
+    };
+    // Ключ — altegioClientId (стабільний, є у клієнта), fallback — наш clientId
+    const keyByAltegio = data.altegioClientId != null ? String(data.altegioClientId) : null;
+    if (keyByAltegio) recentlyClearedVisitsRef.current.set(keyByAltegio, entry);
+    recentlyClearedVisitsRef.current.set(data.clientId, entry);
     const username = (data.instagramUsername ?? '').toString().trim().toLowerCase();
     setClients((prev) =>
       prev.map((c) => {
-        const match = c.id === data.clientId || (username && (c.instagramUsername ?? '').toString().trim().toLowerCase() === username);
-        if (!match) return c;
+        const matchByAltegio = data.altegioClientId != null && c.altegioClientId === data.altegioClientId;
+        const matchById = c.id === data.clientId;
+        const matchByUsername = username && (c.instagramUsername ?? '').toString().trim().toLowerCase() === username;
+        if (!matchByAltegio && !matchById && !matchByUsername) return c;
         const next = { ...c };
         if (data.clearedConsultation) {
           next.consultationBookingDate = undefined;
