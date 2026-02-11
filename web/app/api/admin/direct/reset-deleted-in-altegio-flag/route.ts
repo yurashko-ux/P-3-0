@@ -110,8 +110,8 @@ export async function POST(req: NextRequest) {
     }
 
     const parts: string[] = [];
-    if (type === 'consultation' || type === 'both') parts.push('консультацію');
-    if (type === 'paid' || type === 'both') parts.push('платний запис');
+    if (type === 'consultation' || type === 'both') parts.push('консультації');
+    if (type === 'paid' || type === 'both') parts.push('платного запису');
 
     return NextResponse.json({
       ok: true,

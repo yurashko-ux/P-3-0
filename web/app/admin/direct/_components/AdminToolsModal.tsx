@@ -908,8 +908,10 @@ export function AdminToolsModal({
           method: "POST" as const,
           isPrompt: true,
           prompt: "Введіть Altegio Client ID (ID клієнта в Altegio):",
-          successMessage: (data: any) =>
-            `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${data?.resetType ?? 'both'}\n\nПісля цього запустіть «Синхронізувати сьогоднішні вебхуки» або «Синхронізувати дати платних записів», щоб підтягнути дані з Altegio.\n\n${JSON.stringify(data, null, 2)}`,
+          successMessage: (data: any) => {
+            const typeLabel = { paid: 'платний запис', consultation: 'консультацію', both: 'консультацію та платний запис' }[data?.resetType || 'both'] || data?.resetType;
+            return `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${typeLabel}\n\nПісля цього запустіть «Синхронізувати сьогоднішні вебхуки» або «Синхронізувати дати платних записів», щоб підтягнути дані з Altegio.\n\n${JSON.stringify(data, null, 2)}`;
+          },
         },
       ],
     },
@@ -1064,12 +1066,20 @@ export function AdminToolsModal({
                           showCopyableAlert('Введіть коректний Altegio Client ID (число).');
                           return;
                         }
+                        const typeInput = prompt('Що скинути?\n\n1 = тільки платний запис (Запис)\n2 = тільки консультацію\n3 = обидва\n\nВведіть номер (Enter = платний запис):', '1');
+                        if (typeInput === null) return; // Користувач натиснув Скасувати
+                        const typeMap: Record<string, 'paid' | 'consultation' | 'both'> = {
+                          '1': 'paid',
+                          '2': 'consultation',
+                          '3': 'both',
+                        };
+                        const resetType = typeMap[(typeInput || '1').trim()] ?? 'paid';
                         handleEndpoint(
                           item.endpoint,
                           item.method,
                           undefined,
                           item.successMessage,
-                          { altegioClientId: altegioId, type: 'both' }
+                          { altegioClientId: altegioId, type: resetType }
                         );
                       } else if (item.endpoint.includes('search-webhooks')) {
                         handleEndpoint(
