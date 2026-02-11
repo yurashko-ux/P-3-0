@@ -1,0 +1,251 @@
+// web/app/api/admin/direct/clear-deleted-visits-for-client/route.ts
+// Для одного клієнта перевіряє візити в Altegio (GET /visits) та очищає консультацію/платний запис, якщо візиту немає (404).
+
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
+import { getVisitWithRecords } from '@/lib/altegio/visits';
+import type { DirectClient } from '@/lib/direct-types';
+import { saveDirectClient } from '@/lib/direct-store';
+import { normalizeInstagram } from '@/lib/normalize';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+const CRON_SECRET = process.env.CRON_SECRET || '';
+
+function isAuthorized(req: NextRequest): boolean {
+  const adminToken = req.cookies.get('admin_token')?.value || '';
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+    const secret = req.nextUrl.searchParams.get('secret');
+    if (secret === CRON_SECRET) return true;
+  }
+  if (!ADMIN_PASS && !CRON_SECRET) return true;
+  return false;
+}
+
+/**
+ * POST — перевірити візити клієнта в Altegio та очистити поля, якщо візиту немає (404).
+ * Body: { clientId?: string, instagramUsername?: string, fullName?: string }
+ */
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { clientId, instagramUsername, fullName } = body;
+
+    if (!clientId && !instagramUsername && !fullName) {
+      return NextResponse.json(
+        { ok: false, error: 'Вкажіть clientId, instagramUsername або fullName' },
+        { status: 400 }
+      );
+    }
+
+    const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
+    if (!Number.isFinite(companyId) || companyId <= 0) {
+      return NextResponse.json({
+        ok: false,
+        error: 'ALTEGIO_COMPANY_ID не встановлено або невалідний',
+      }, { status: 400 });
+    }
+
+    let client = null;
+    if (clientId) {
+      client = await prisma.directClient.findUnique({
+        where: { id: String(clientId) },
+      });
+    } else if (instagramUsername) {
+      const normalized = normalizeInstagram(String(instagramUsername).replace('@', ''));
+      if (normalized) {
+        const all = await prisma.directClient.findMany({
+          where: { altegioClientId: { not: null } },
+        });
+        client = all.find((c) => normalizeInstagram(c.instagramUsername ?? '') === normalized) ?? null;
+      }
+    } else if (fullName) {
+      const nameParts = String(fullName).toLowerCase().trim().split(/\s+/);
+      const all = await prisma.directClient.findMany({
+        where: { altegioClientId: { not: null } },
+      });
+      client = all.find((c) => {
+        const fn = (c.firstName ?? '').toLowerCase();
+        const ln = (c.lastName ?? '').toLowerCase();
+        const full = [fn, ln].filter(Boolean).join(' ');
+        return nameParts.every((p: string) => full.includes(p));
+      }) ?? null;
+    }
+
+    if (!client) {
+      return NextResponse.json({ ok: false, error: 'Клієнта не знайдено' }, { status: 404 });
+    }
+
+    if (!client.altegioClientId) {
+      return NextResponse.json({
+        ok: false,
+        error: 'У клієнта немає altegioClientId',
+      }, { status: 400 });
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    let clearedConsultation = false;
+    let clearedPaid = false;
+
+    // 1) Збережений paidServiceVisitId: якщо 404 — очищаємо платний блок
+    const storedPaidVisitId = client.paidServiceVisitId ?? null;
+    if (
+      (client.paidServiceDate != null || client.signedUpForPaidService) &&
+      storedPaidVisitId != null &&
+      Number.isFinite(Number(storedPaidVisitId))
+    ) {
+      const storedVisitData = await getVisitWithRecords(Number(storedPaidVisitId), companyId);
+      if (storedVisitData === null) {
+        updates.paidServiceDate = null;
+        updates.paidServiceAttended = null;
+        updates.signedUpForPaidService = false;
+        updates.paidServiceVisitId = null;
+        updates.paidServiceRecordId = null;
+        updates.paidServiceVisitBreakdown = null;
+        updates.paidServiceTotalCost = null;
+        clearedPaid = true;
+      }
+    }
+
+    // 2) GET /records → перевірка visit_id для останньої консультації та платного запису
+    const records = await getClientRecords(companyId, client.altegioClientId);
+    const consultationRecords = records.filter(
+      (r) => !r.deleted && r.services?.length && isConsultationService(r.services).isConsultation
+    );
+    const paidRecords = records.filter(
+      (r) => !r.deleted && r.services?.length && !isConsultationService(r.services).isConsultation
+    );
+
+    const visitDataCache = new Map<number, Awaited<ReturnType<typeof getVisitWithRecords>>>();
+    const uniqueVisitIds = new Set<number>();
+    for (const r of consultationRecords) {
+      if (r.visit_id != null && Number.isFinite(r.visit_id)) uniqueVisitIds.add(r.visit_id);
+    }
+    for (const r of paidRecords) {
+      if (r.visit_id != null && Number.isFinite(r.visit_id)) uniqueVisitIds.add(r.visit_id);
+    }
+    for (const vid of uniqueVisitIds) {
+      const data = await getVisitWithRecords(vid, companyId);
+      visitDataCache.set(vid, data);
+    }
+
+    const consultationRecordsFiltered = consultationRecords.filter(
+      (r) => r.visit_id == null || visitDataCache.get(r.visit_id) !== null
+    );
+    const paidRecordsFiltered = paidRecords.filter(
+      (r) => r.visit_id == null || visitDataCache.get(r.visit_id) !== null
+    );
+
+    const latestConsultation =
+      consultationRecordsFiltered.length > 0
+        ? consultationRecordsFiltered.reduce((best, r) => {
+            const d = r.date ? new Date(r.date).getTime() : 0;
+            const bestD = best.date ? new Date(best.date).getTime() : 0;
+            return d > bestD ? r : best;
+          }, consultationRecordsFiltered[0])
+        : null;
+    const latestPaid =
+      paidRecordsFiltered.length > 0
+        ? paidRecordsFiltered.reduce((best, r) => {
+            const d = r.date ? new Date(r.date).getTime() : 0;
+            const bestD = best.date ? new Date(best.date).getTime() : 0;
+            return d > bestD ? r : best;
+          }, paidRecordsFiltered[0])
+        : null;
+
+    const consultationVisitId = latestConsultation?.visit_id ?? null;
+    const paidVisitId = latestPaid?.visit_id ?? null;
+    const consultVisitData = consultationVisitId != null ? (visitDataCache.get(consultationVisitId) ?? null) : null;
+    const paidVisitData =
+      paidVisitId != null
+        ? paidVisitId === consultationVisitId
+          ? consultVisitData
+          : (visitDataCache.get(paidVisitId) ?? null)
+        : null;
+
+    if (latestConsultation?.visit_id && consultVisitData === null) {
+      if (client.consultationBookingDate != null || client.consultationAttended != null) {
+        updates.consultationBookingDate = null;
+        updates.consultationAttended = null;
+        clearedConsultation = true;
+      }
+    }
+
+    if (latestPaid?.visit_id && paidVisitData === null && !clearedPaid) {
+      if (client.paidServiceDate != null || client.paidServiceAttended != null) {
+        updates.paidServiceDate = null;
+        updates.paidServiceAttended = null;
+        updates.signedUpForPaidService = false;
+        updates.paidServiceVisitId = null;
+        updates.paidServiceRecordId = null;
+        updates.paidServiceVisitBreakdown = null;
+        updates.paidServiceTotalCost = null;
+        clearedPaid = true;
+      }
+    }
+
+    if (!latestConsultation && (client.consultationBookingDate != null || client.consultationAttended != null)) {
+      updates.consultationBookingDate = null;
+      updates.consultationAttended = null;
+      clearedConsultation = true;
+    }
+
+    if (!latestPaid && (client.paidServiceDate != null || client.paidServiceAttended != null) && !clearedPaid) {
+      updates.paidServiceDate = null;
+      updates.paidServiceAttended = null;
+      updates.signedUpForPaidService = false;
+      updates.paidServiceVisitId = null;
+      updates.paidServiceRecordId = null;
+      updates.paidServiceVisitBreakdown = null;
+      updates.paidServiceTotalCost = null;
+      clearedPaid = true;
+    }
+
+    const changed = clearedConsultation || clearedPaid;
+    if (changed) {
+      const full = await prisma.directClient.findUnique({ where: { id: client.id } });
+      if (full) {
+        const updated = { ...full, ...updates } as typeof full;
+        await saveDirectClient(updated as unknown as DirectClient, 'clear-deleted-visits-for-client', {
+          altegioClientId: client.altegioClientId,
+          source: 'GET /visits перевірка для одного клієнта',
+        }, { touchUpdatedAt: false });
+      }
+    }
+
+    const parts: string[] = [];
+    if (clearedConsultation) parts.push('консультацію');
+    if (clearedPaid) parts.push('платний запис');
+    const message =
+      parts.length > 0
+        ? `Очищено: ${parts.join(', ')} (візиту немає в Altegio).`
+        : changed
+          ? 'Оновлено інші поля.'
+          : 'Нічого не змінено — візити існують у Altegio або записів немає.';
+
+    return NextResponse.json({
+      ok: true,
+      clientId: client.id,
+      instagramUsername: client.instagramUsername ?? null,
+      clearedConsultation,
+      clearedPaid,
+      message,
+    });
+  } catch (error) {
+    console.error('[clear-deleted-visits-for-client] Error:', error);
+    return NextResponse.json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }, { status: 500 });
+  }
+}

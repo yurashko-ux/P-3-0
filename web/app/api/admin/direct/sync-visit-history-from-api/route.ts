@@ -96,6 +96,10 @@ export async function POST(req: NextRequest) {
         paidServiceDate: true,
         paidServiceAttended: true,
         signedUpForPaidService: true,
+        paidServiceVisitId: true,
+        paidServiceRecordId: true,
+        paidServiceVisitBreakdown: true,
+        paidServiceTotalCost: true,
       },
     });
 
@@ -108,8 +112,22 @@ export async function POST(req: NextRequest) {
       paidUpdated: 0,
       consultationCleared: 0,
       paidCleared: 0,
+      paidClearedByStoredVisitId: 0,
       ms: 0,
     };
+
+    const debugMode = req.nextUrl.searchParams.get('debug') === '1';
+    const debugClients: Array<{
+      id: string;
+      instagramUsername: string | null;
+      recordsCount: number;
+      consultationCount: number;
+      paidCount: number;
+      visitIdsChecked: number[];
+      visitResults: Record<number, 'ok' | '404'>;
+      storedPaidVisitId?: number | null;
+      storedPaidVisitResult?: 'ok' | '404';
+    }> = [];
 
     const start = Date.now();
 
@@ -118,6 +136,34 @@ export async function POST(req: NextRequest) {
         if (!client.altegioClientId) {
           stats.skipped++;
           continue;
+        }
+
+        const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+        let changed = false;
+        let storedPaidVisitResult: 'ok' | '404' | undefined;
+
+        // Перевірка збереженого paidServiceVisitId: якщо візиту немає в Altegio (404) — очищаємо платний блок
+        const storedPaidVisitId = client.paidServiceVisitId ?? null;
+        if (
+          (client.paidServiceDate != null || client.signedUpForPaidService) &&
+          storedPaidVisitId != null &&
+          Number.isFinite(Number(storedPaidVisitId))
+        ) {
+          const storedVisitData = await getVisitWithRecords(Number(storedPaidVisitId), companyId);
+          await new Promise((r) => setTimeout(r, delayMs));
+          storedPaidVisitResult = storedVisitData === null ? '404' : 'ok';
+          if (storedVisitData === null) {
+            updates.paidServiceDate = null;
+            updates.paidServiceAttended = null;
+            updates.signedUpForPaidService = false;
+            updates.paidServiceVisitId = null;
+            updates.paidServiceRecordId = null;
+            updates.paidServiceVisitBreakdown = null;
+            updates.paidServiceTotalCost = null;
+            changed = true;
+            stats.paidCleared++;
+            stats.paidClearedByStoredVisitId++;
+          }
         }
 
         const records = await getClientRecords(companyId, client.altegioClientId);
@@ -130,44 +176,57 @@ export async function POST(req: NextRequest) {
           (r) => !r.deleted && r.services?.length && !isConsultationService(r.services).isConsultation
         );
 
-        // Найновіша консультація за датою візиту
+        // Збираємо унікальні visit_id з записів і перевіряємо GET /visits; кеш результатів для подальшого використання
+        type VisitData = Awaited<ReturnType<typeof getVisitWithRecords>>;
+        const visitDataCache = new Map<number, VisitData>();
+        const uniqueVisitIds = new Set<number>();
+        for (const r of consultationRecords) {
+          if (r.visit_id != null && Number.isFinite(r.visit_id)) uniqueVisitIds.add(r.visit_id);
+        }
+        for (const r of paidRecords) {
+          if (r.visit_id != null && Number.isFinite(r.visit_id)) uniqueVisitIds.add(r.visit_id);
+        }
+        for (const vid of uniqueVisitIds) {
+          const data = await getVisitWithRecords(vid, companyId);
+          await new Promise((r) => setTimeout(r, delayMs));
+          visitDataCache.set(vid, data);
+        }
+
+        // Фільтруємо записи: тільки ті, чий visit_id існує в Altegio (або visit_id відсутній)
+        const consultationRecordsFiltered = consultationRecords.filter(
+          (r) => r.visit_id == null || visitDataCache.get(r.visit_id) !== null
+        );
+        const paidRecordsFiltered = paidRecords.filter(
+          (r) => r.visit_id == null || visitDataCache.get(r.visit_id) !== null
+        );
+
+        // Найновіша консультація та найновіший платний запис (тільки з існуючих у Altegio)
         let latestConsultation: typeof records[0] | null = null;
-        if (consultationRecords.length > 0) {
-          latestConsultation = consultationRecords.reduce((best, r) => {
+        if (consultationRecordsFiltered.length > 0) {
+          latestConsultation = consultationRecordsFiltered.reduce((best, r) => {
             const d = r.date ? new Date(r.date).getTime() : 0;
             const bestD = best.date ? new Date(best.date).getTime() : 0;
             return d > bestD ? r : best;
-          }, consultationRecords[0]);
+          }, consultationRecordsFiltered[0]);
         }
-
-        // Найновіший платний запис
         let latestPaid: typeof records[0] | null = null;
-        if (paidRecords.length > 0) {
-          latestPaid = paidRecords.reduce((best, r) => {
+        if (paidRecordsFiltered.length > 0) {
+          latestPaid = paidRecordsFiltered.reduce((best, r) => {
             const d = r.date ? new Date(r.date).getTime() : 0;
             const bestD = best.date ? new Date(best.date).getTime() : 0;
             return d > bestD ? r : best;
-          }, paidRecords[0]);
+          }, paidRecordsFiltered[0]);
         }
 
-        const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-        let changed = false;
-
-        // Звірка через GET /visits/{visit_id}: при 404 (візит не існує в Altegio) очищаємо відповідний блок
         const consultationVisitId = latestConsultation?.visit_id ?? null;
         const paidVisitId = latestPaid?.visit_id ?? null;
-        let consultVisitData: Awaited<ReturnType<typeof getVisitWithRecords>> = null;
-        if (consultationVisitId) {
-          consultVisitData = await getVisitWithRecords(consultationVisitId, companyId);
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-        let paidVisitData: Awaited<ReturnType<typeof getVisitWithRecords>> = null;
-        if (paidVisitId && paidVisitId !== consultationVisitId) {
-          paidVisitData = await getVisitWithRecords(paidVisitId, companyId);
-          await new Promise((r) => setTimeout(r, delayMs));
-        } else if (paidVisitId === consultationVisitId) {
-          paidVisitData = consultVisitData;
-        }
+        const consultVisitData: VisitData = consultationVisitId != null ? (visitDataCache.get(consultationVisitId) ?? null) : null;
+        const paidVisitData: VisitData =
+          paidVisitId != null
+            ? paidVisitId === consultationVisitId
+              ? consultVisitData
+              : (visitDataCache.get(paidVisitId) ?? null)
+            : null;
 
         // Консультація: дата з GET /records, статус та існування — з GET /visits/{visit_id}
         if (latestConsultation?.visit_id && consultVisitData === null) {
@@ -224,6 +283,10 @@ export async function POST(req: NextRequest) {
             updates.paidServiceDate = null;
             updates.paidServiceAttended = null;
             updates.signedUpForPaidService = false;
+            updates.paidServiceVisitId = null;
+            updates.paidServiceRecordId = null;
+            updates.paidServiceVisitBreakdown = null;
+            updates.paidServiceTotalCost = null;
             changed = true;
             stats.paidCleared++;
           }
@@ -263,9 +326,32 @@ export async function POST(req: NextRequest) {
             updates.paidServiceDate = null;
             updates.paidServiceAttended = null;
             updates.signedUpForPaidService = false;
+            updates.paidServiceVisitId = null;
+            updates.paidServiceRecordId = null;
+            updates.paidServiceVisitBreakdown = null;
+            updates.paidServiceTotalCost = null;
             changed = true;
             stats.paidCleared++;
           }
+        }
+
+        if (debugMode) {
+          const visitIdsChecked = Array.from(uniqueVisitIds);
+          const visitResults: Record<number, 'ok' | '404'> = {};
+          for (const vid of visitIdsChecked) {
+            visitResults[vid] = visitDataCache.get(vid) !== null ? 'ok' : '404';
+          }
+          debugClients.push({
+            id: client.id,
+            instagramUsername: client.instagramUsername ?? null,
+            recordsCount: records.length,
+            consultationCount: consultationRecords.length,
+            paidCount: paidRecords.length,
+            visitIdsChecked,
+            visitResults,
+            storedPaidVisitId: storedPaidVisitId ?? undefined,
+            storedPaidVisitResult,
+          });
         }
 
         if (changed) {
@@ -290,11 +376,15 @@ export async function POST(req: NextRequest) {
     stats.ms = Date.now() - start;
     console.log(`[sync-visit-history-from-api] Done: updated=${stats.updated}, skipped=${stats.skipped}, errors=${stats.errors}, ms=${stats.ms}`);
 
-    return NextResponse.json({
+    const responsePayload: Record<string, unknown> = {
       ok: true,
-      message: `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}). Пропущено: ${stats.skipped}, помилок: ${stats.errors}.`,
+      message: `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}, з них за збереженим visit_id: ${stats.paidClearedByStoredVisitId}). Пропущено: ${stats.skipped}, помилок: ${stats.errors}.`,
       stats,
-    });
+    };
+    if (debugMode && debugClients.length > 0) {
+      responsePayload.debugClients = debugClients;
+    }
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error('[sync-visit-history-from-api] Error:', error);
     return NextResponse.json({

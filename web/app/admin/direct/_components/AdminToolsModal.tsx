@@ -110,7 +110,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 60. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 61. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -883,6 +883,16 @@ export function AdminToolsModal({
             );
           },
         },
+        {
+          icon: "🧹",
+          label: "Перевірити візити в Altegio та очистити видалені (для одного клієнта)",
+          endpoint: "/api/admin/direct/clear-deleted-visits-for-client",
+          method: "POST" as const,
+          isPrompt: true,
+          prompt: "Введіть Instagram (наприклад @user) або повне ім'я клієнта:",
+          successMessage: (data: any) =>
+            `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nКонсультацію очищено: ${data?.clearedConsultation ? 'так' : 'ні'}\nПлатний запис очищено: ${data?.clearedPaid ? 'так' : 'ні'}\n\n${JSON.stringify(data, null, 2)}`,
+        },
       ],
     },
   ];
@@ -1004,13 +1014,13 @@ export function AdminToolsModal({
                       const input = prompt(item.prompt);
                       if (!input || !input.trim()) return;
                       
-                      if (item.endpoint.includes('diagnose-client')) {
+                      if (item.endpoint.includes('diagnose-client') || item.endpoint.includes('clear-deleted-visits-for-client')) {
                         const isInstagram = input.startsWith('@') || input.includes('_') || /^[a-z0-9._]+$/i.test(input);
                         handleEndpoint(
                           item.endpoint,
                           item.method,
                           undefined,
-                          undefined,
+                          item.successMessage,
                           isInstagram
                             ? { instagramUsername: input.replace('@', '') }
                             : { fullName: input }
