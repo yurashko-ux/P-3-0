@@ -1270,11 +1270,30 @@ export async function GET(req: NextRequest) {
           out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! > todayKyiv);
         }
         if (consultAppointedMode === 'current_month') {
-          out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
+          // Якщо «Не з'явилась» — виключаємо майбутні (дата <= сьогодні)
+          const excludeFuture = consultAttendance === 'no_show';
+          out = out.filter((c) => {
+            if (toYyyyMm(c.consultationBookingDate) !== currentMonthKyiv) return false;
+            if (excludeFuture) {
+              const day = toKyivDay(c.consultationBookingDate);
+              return !!day && day <= todayKyiv;
+            }
+            return true;
+          });
         } else if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
           const y = parseActYear(consultAppointedYear);
           const m = parseMonth(consultAppointedMonth);
-          if (y && m) out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === `${y}-${m}`);
+          if (y && m) {
+            const excludeFuture = consultAttendance === 'no_show';
+            out = out.filter((c) => {
+              if (toYyyyMm(c.consultationBookingDate) !== `${y}-${m}`) return false;
+              if (excludeFuture) {
+                const day = toKyivDay(c.consultationBookingDate);
+                return !!day && day <= todayKyiv;
+              }
+              return true;
+            });
+          }
         }
         if (consultAppointedPreset === 'past') {
           out = out.filter((c) => toKyivDay(c.consultationBookingDate) && toKyivDay(c.consultationBookingDate) < todayKyiv);
@@ -1425,13 +1444,29 @@ export async function GET(req: NextRequest) {
     }
 
     if (consultAppointedMode === 'current_month') {
-      filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
+      const excludeFuture = consultAttendance === 'no_show';
+      filtered = filtered.filter((c) => {
+        if (toYyyyMm(c.consultationBookingDate) !== currentMonthKyiv) return false;
+        if (excludeFuture) {
+          const day = toKyivDay(c.consultationBookingDate);
+          return !!day && day <= todayKyiv;
+        }
+        return true;
+      });
     } else if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
       const y = parseActYear(consultAppointedYear);
       const m = parseMonth(consultAppointedMonth);
       if (y && m) {
         const target = `${y}-${m}`;
-        filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === target);
+        const excludeFuture = consultAttendance === 'no_show';
+        filtered = filtered.filter((c) => {
+          if (toYyyyMm(c.consultationBookingDate) !== target) return false;
+          if (excludeFuture) {
+            const day = toKyivDay(c.consultationBookingDate);
+            return !!day && day <= todayKyiv;
+          }
+          return true;
+        });
       }
     }
 
