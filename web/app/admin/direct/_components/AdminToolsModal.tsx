@@ -42,7 +42,8 @@ export function AdminToolsModal({
     confirmMessage?: string,
     successMessage?: (data: any) => string,
     body?: any,
-    onSuccess?: (data: any) => void
+    onSuccess?: (data: any) => void,
+    skipLoadDataAfterSuccess?: boolean
   ) => {
     if (confirmMessage && !confirm(confirmMessage)) {
       return;
@@ -65,7 +66,9 @@ export function AdminToolsModal({
           ? successMessage(data)
           : `✅ Операція завершена!\n\n${JSON.stringify(data, null, 2)}`;
         showCopyableAlert(message);
-        await loadData();
+        if (!skipLoadDataAfterSuccess) {
+          await loadData();
+        }
       } else {
         showCopyableAlert(`❌ Помилка: ${data.error || "Невідома помилка"}\n\n${JSON.stringify(data, null, 2)}`);
       }
@@ -1042,7 +1045,8 @@ export function AdminToolsModal({
                           undefined,
                           item.successMessage,
                           { altegioClientId: altegioId },
-                          (data) => onClearVisitsSuccess?.(data)
+                          (data) => onClearVisitsSuccess?.(data),
+                          true
                         );
                       } else if (item.endpoint.includes('search-webhooks')) {
                         handleEndpoint(
