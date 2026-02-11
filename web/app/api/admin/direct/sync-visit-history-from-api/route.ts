@@ -43,6 +43,13 @@ function isArrived(attendance: number | null): boolean {
   return attendance === 1 || attendance === 2;
 }
 
+/** Нормалізує дату з БД (Date або string) до ISO рядка для порівняння. */
+function toISOStringOrNull(d: Date | string | null | undefined): string | null {
+  if (d == null) return null;
+  const t = d instanceof Date ? d : new Date(d);
+  return Number.isFinite(t.getTime()) ? t.toISOString() : null;
+}
+
 /** Витягує attendance з об'єкта візиту GET /visits (data.attendance або data.records[0]). */
 function attendanceFromVisit(visit: unknown): number | null {
   if (!visit || typeof visit !== 'object') return null;
@@ -175,7 +182,7 @@ export async function POST(req: NextRequest) {
             const attendanceConsult = attendanceFromVisit(consultVisitData) ?? latestConsultation.attendance ?? null;
             const newAttended = isArrived(attendanceConsult);
             if (
-              client.consultationBookingDate !== isoDate ||
+              toISOStringOrNull(client.consultationBookingDate) !== isoDate ||
               client.consultationAttended !== newAttended
             ) {
               updates.consultationBookingDate = isoDate;
@@ -191,7 +198,7 @@ export async function POST(req: NextRequest) {
           if (isoDate) {
             const newAttended = isArrived(latestConsultation.attendance ?? null);
             if (
-              client.consultationBookingDate !== isoDate ||
+              toISOStringOrNull(client.consultationBookingDate) !== isoDate ||
               client.consultationAttended !== newAttended
             ) {
               updates.consultationBookingDate = isoDate;
@@ -225,7 +232,7 @@ export async function POST(req: NextRequest) {
             const attendancePaid = attendanceFromVisit(paidVisitData) ?? latestPaid.attendance ?? null;
             const newAttended = isArrived(attendancePaid);
             if (
-              client.paidServiceDate !== isoDate ||
+              toISOStringOrNull(client.paidServiceDate) !== isoDate ||
               client.paidServiceAttended !== newAttended
             ) {
               updates.paidServiceDate = isoDate;
@@ -240,7 +247,7 @@ export async function POST(req: NextRequest) {
           if (isoDate) {
             const newAttended = isArrived(latestPaid.attendance ?? null);
             if (
-              client.paidServiceDate !== isoDate ||
+              toISOStringOrNull(client.paidServiceDate) !== isoDate ||
               client.paidServiceAttended !== newAttended
             ) {
               updates.paidServiceDate = isoDate;
