@@ -54,8 +54,15 @@ function normalizeRecord(raw: any): ClientRecord {
   const createDate = raw?.create_date ?? raw?.created_at ?? raw?.createdAt ?? null;
   const visitId = raw?.visit_id ?? raw?.visitId ?? null;
   const lastChange = raw?.last_change_date ?? raw?.last_change ?? raw?.updated_at ?? null;
-  const att = raw?.attendance ?? raw?.visit_attendance ?? null;
-  const attendance = att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
+  const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.visit_status ?? raw?.status ?? null;
+  let attendance: number | null =
+    att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
+  if (attendance === null && typeof att === 'string') {
+    const s = String(att).toLowerCase().replace(/-/g, '_');
+    if (s === 'arrived' || s === 'confirmed') attendance = 1;
+    else if (s === 'no_show' || s === 'noshow' || s === 'absent') attendance = -1;
+    else if (s === 'pending' || s === 'waiting') attendance = 0;
+  }
   const deleted = raw?.deleted === true || raw?.deleted === 1;
   let services = raw?.services ?? raw?.data?.services ?? [];
   if (!Array.isArray(services)) services = [];
