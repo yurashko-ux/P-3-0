@@ -202,9 +202,10 @@ export async function POST(req: NextRequest) {
 
     const changed = clearedConsultation || clearedPaid;
     let afterUpdate: { consultationBookingDate: Date | null; consultationMasterName: string | null; paidServiceDate: Date | null } | null = null;
+    let duplicatesUpdated = 0;
 
     if (changed) {
-      // Єдиний запис у БД — примусовий prisma.update (без saveDirectClient), щоб гарантовано зберегти null
+      // Примусовий prisma.update, щоб гарантовано зберегти null
       const forceData: Record<string, unknown> = {};
       if (clearedConsultation) {
         forceData.consultationBookingDate = null;
@@ -224,10 +225,26 @@ export async function POST(req: NextRequest) {
         forceData.paidServiceTotalCost = null;
       }
       if (Object.keys(forceData).length > 0) {
+        const data = forceData as Parameters<typeof prisma.directClient.update>[0]['data'];
         await prisma.directClient.update({
           where: { id: client.id },
-          data: forceData as Parameters<typeof prisma.directClient.update>[0]['data'],
+          data,
         });
+        // Оновлюємо всі записи з тим самим instagramUsername (дублікати), щоб у таблиці зникли дані в усіх рядках
+        const sameUsername = (client.instagramUsername ?? '').toString().trim();
+        if (sameUsername) {
+          const others = await prisma.directClient.findMany({
+            where: {
+              id: { not: client.id },
+              instagramUsername: { equals: sameUsername, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          duplicatesUpdated = others.length;
+          for (const other of others) {
+            await prisma.directClient.update({ where: { id: other.id }, data });
+          }
+        }
         const row = await prisma.directClient.findUnique({
           where: { id: client.id },
           select: {
@@ -271,6 +288,7 @@ export async function POST(req: NextRequest) {
       instagramUsername: client.instagramUsername ?? null,
       clearedConsultation,
       clearedPaid,
+      duplicatesUpdated,
       message,
       afterUpdate: afterUpdate ?? undefined,
     });
