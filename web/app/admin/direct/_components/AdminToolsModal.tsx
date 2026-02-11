@@ -1035,7 +1035,7 @@ export function AdminToolsModal({
                         .then(res => parseJsonOrText(res))
                         .then(previewData => {
                           if (previewData.ok) {
-                            const count = previewData.stats?.toDelete || 0;
+                            const count = (previewData as { stats?: { toDelete?: number } }).stats?.toDelete ?? 0;
                             if (count === 0) {
                               alert('✅ Немає клієнтів для видалення');
                               setIsLoading(false);
