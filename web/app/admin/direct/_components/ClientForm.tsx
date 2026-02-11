@@ -69,7 +69,7 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
                 type="button"
                 className="btn btn-sm btn-ghost"
                 title="Скопіювати"
-                disabled={client.altegioClientId == null || client.altegioClientId === ""}
+                disabled={client.altegioClientId == null}
                 onClick={async () => {
                   const value = String(client.altegioClientId ?? "");
                   if (value && typeof navigator?.clipboard?.writeText === "function") {
