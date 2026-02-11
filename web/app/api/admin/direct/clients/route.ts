@@ -296,7 +296,7 @@ export async function GET(req: NextRequest) {
     if (statsOnly && statsFullPicture) {
       try {
         const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-        const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+        const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
         const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
         const groupsByClient = groupRecordsByClientDay(normalizedEvents);
         const todayKyiv = kyivDayFromISO(new Date().toISOString());
@@ -434,7 +434,7 @@ export async function GET(req: NextRequest) {
     // - атрибуція: майстер = перший receivedAt у attended-групі (exclude admin/unknown)
     try {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
       const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
       // Map використовує number-ключі; altegioClientId інколи може прийти іншим типом — fallback для пошуку.
@@ -1278,13 +1278,14 @@ export async function GET(req: NextRequest) {
           out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! > todayKyiv);
         }
         if (consultAppointedMode === 'current_month') {
-          // Якщо «Не з'явилась» — лише минулі (дата < сьогодні). Сьогодні й майбутні виключаємо.
-          const excludeTodayAndFuture = consultAttendance === 'no_show';
+          // Якщо «Не з'явилась» — минулі + сьогодні (day <= todayKyiv). Майбутні виключаємо.
+          // Сьогодні включаємо, бо consultationAttended === false — це явний no-show з вебхука, не «Очікується».
+          const excludeFuture = consultAttendance === 'no_show';
           out = out.filter((c) => {
             if (toYyyyMm(c.consultationBookingDate) !== currentMonthKyiv) return false;
-            if (excludeTodayAndFuture) {
+            if (excludeFuture) {
               const day = toKyivDay(c.consultationBookingDate);
-              return !!day && day < todayKyiv;
+              return !!day && day <= todayKyiv;
             }
             return true;
           });
@@ -1292,12 +1293,12 @@ export async function GET(req: NextRequest) {
           const y = parseActYear(consultAppointedYear);
           const m = parseMonth(consultAppointedMonth);
           if (y && m) {
-            const excludeTodayAndFuture = consultAttendance === 'no_show';
+            const excludeFuture = consultAttendance === 'no_show';
             out = out.filter((c) => {
               if (toYyyyMm(c.consultationBookingDate) !== `${y}-${m}`) return false;
-              if (excludeTodayAndFuture) {
+              if (excludeFuture) {
                 const day = toKyivDay(c.consultationBookingDate);
-                return !!day && day < todayKyiv;
+                return !!day && day <= todayKyiv;
               }
               return true;
             });
@@ -1312,11 +1313,11 @@ export async function GET(req: NextRequest) {
         }
         if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
         else if (consultAttendance === 'no_show') {
-          // «Не з'явилась» — лише для консультацій, що вже відбулися (дата < сьогодні). Сьогодні й майбутні виключаємо.
+          // «Не з'явилась» — минулі + сьогодні (day <= todayKyiv). Майбутні виключаємо.
           out = out.filter((c) => {
             if (c.consultationAttended !== false || c.consultationCancelled) return false;
             const day = toKyivDay(c.consultationBookingDate);
-            return !!day && day < todayKyiv;
+            return !!day && day <= todayKyiv;
           });
         }
         else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
@@ -1452,12 +1453,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (consultAppointedMode === 'current_month') {
-      const excludeTodayAndFuture = consultAttendance === 'no_show';
+      const excludeFuture = consultAttendance === 'no_show';
       filtered = filtered.filter((c) => {
         if (toYyyyMm(c.consultationBookingDate) !== currentMonthKyiv) return false;
-        if (excludeTodayAndFuture) {
+        if (excludeFuture) {
           const day = toKyivDay(c.consultationBookingDate);
-          return !!day && day < todayKyiv;
+          return !!day && day <= todayKyiv;
         }
         return true;
       });
@@ -1466,12 +1467,12 @@ export async function GET(req: NextRequest) {
       const m = parseMonth(consultAppointedMonth);
       if (y && m) {
         const target = `${y}-${m}`;
-        const excludeTodayAndFuture = consultAttendance === 'no_show';
+        const excludeFuture = consultAttendance === 'no_show';
         filtered = filtered.filter((c) => {
           if (toYyyyMm(c.consultationBookingDate) !== target) return false;
-          if (excludeTodayAndFuture) {
+          if (excludeFuture) {
             const day = toKyivDay(c.consultationBookingDate);
-            return !!day && day < todayKyiv;
+            return !!day && day <= todayKyiv;
           }
           return true;
         });
@@ -1495,11 +1496,11 @@ export async function GET(req: NextRequest) {
     if (consultAttendance === 'attended') {
       filtered = filtered.filter((c) => c.consultationAttended === true);
     } else if (consultAttendance === 'no_show') {
-      // «Не з'явилась» — лише для консультацій, що вже відбулися (дата < сьогодні). Сьогодні й майбутні виключаємо.
+      // «Не з'явилась» — минулі + сьогодні (day <= todayKyiv). Майбутні виключаємо.
       filtered = filtered.filter((c) => {
         if (c.consultationAttended !== false || c.consultationCancelled) return false;
         const day = toKyivDay(c.consultationBookingDate);
-        return !!day && day < todayKyiv;
+        return !!day && day <= todayKyiv;
       });
     } else if (consultAttendance === 'cancelled') {
       filtered = filtered.filter((c) => !!c.consultationCancelled);
