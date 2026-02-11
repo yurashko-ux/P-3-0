@@ -70,6 +70,8 @@ export async function altegioFetch<T = any>(
   const headers = altegioHeaders();
   // Важливо: наші заголовки (Accept, Authorization) мають пріоритет
   // options.headers може додати додаткові заголовки, але не перезаписувати обов'язкові
+  // Accept: application/vnd.api.v2+json — використовується для v1 endpoints (GET /visits/{id}, GET /records).
+  // Документація Altegio використовує цей заголовок у curl-прикладах, v1 API його підтримує.
   const finalHeaders = {
     ...headers,
     ...options.headers,

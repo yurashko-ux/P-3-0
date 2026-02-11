@@ -39,11 +39,6 @@ function toISO8601(dateStr: string | null | undefined): string | null {
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
-/** 1 або 2 = прийшов (Altegio). */
-function isArrived(attendance: number | null): boolean {
-  return attendance === 1 || attendance === 2;
-}
-
 /** Нормалізує дату з БД (Date або string) до ISO рядка для порівняння. */
 function toISOStringOrNull(d: Date | string | null | undefined): string | null {
   if (d == null) return null;
@@ -51,14 +46,37 @@ function toISOStringOrNull(d: Date | string | null | undefined): string | null {
   return Number.isFinite(t.getTime()) ? t.toISOString() : null;
 }
 
-/** Витягує attendance з об'єкта візиту GET /visits (data.attendance або data.records[0]). */
+/**
+ * Витягує attendance з об'єкта візиту GET /visits/{id}.
+ * API повертає data.attendance та records[].attendance (число).
+ * Коди: 1/2 = прийшов, 0 = очікування, -1 = не з'явився.
+ * Fallback: рядкові статуси (arrived, no_show, pending).
+ */
 function attendanceFromVisit(visit: unknown): number | null {
   if (!visit || typeof visit !== 'object') return null;
   const v = visit as Record<string, unknown>;
-  const att = v.attendance ?? v.visit_attendance ?? (Array.isArray(v.records) && v.records[0] && typeof v.records[0] === 'object'
-    ? ((v.records[0] as Record<string, unknown>).attendance ?? (v.records[0] as Record<string, unknown>).visit_attendance)
-    : undefined);
+  let att: unknown =
+    v.attendance ??
+    v.visit_attendance ??
+    v.visit_status ??
+    v.status;
+  if (att == null && Array.isArray(v.records)) {
+    for (const rec of v.records) {
+      if (rec && typeof rec === 'object') {
+        const r = rec as Record<string, unknown>;
+        att = r.attendance ?? r.visit_attendance ?? r.visit_status ?? r.status;
+        if (att != null) break;
+      }
+    }
+  }
   if (att === 1 || att === 0 || att === -1 || att === 2) return Number(att);
+  // Рядкові статуси Altegio: arrived, no_show, no-show, pending, confirmed, cancelled
+  if (typeof att === 'string') {
+    const s = (att as string).toLowerCase().replace(/-/g, '_');
+    if (s === 'arrived' || s === 'confirmed') return 1;
+    if (s === 'no_show' || s === 'noshow' || s === 'absent') return -1;
+    if (s === 'pending' || s === 'waiting') return 0;
+  }
   return null;
 }
 
@@ -133,6 +151,9 @@ export async function POST(req: NextRequest) {
       visitResults: Record<number, 'ok' | '404'>;
       storedPaidVisitId?: number | null;
       storedPaidVisitResult?: 'ok' | '404';
+      /** Якщо attendance не знайдено — сирі ключі об'єкта візиту для діагностики структури API */
+      consultationVisitKeysWhenAttendanceNull?: string[];
+      paidVisitKeysWhenAttendanceNull?: string[];
     }> = [];
 
     const start = Date.now();
@@ -251,13 +272,19 @@ export async function POST(req: NextRequest) {
           const isoDate = toISO8601(latestConsultation.date);
           if (isoDate) {
             const attendanceConsult = attendanceFromVisit(consultVisitData) ?? latestConsultation.attendance ?? null;
-            const newAttended = isArrived(attendanceConsult);
-            if (
-              toISOStringOrNull(client.consultationBookingDate) !== isoDate ||
-              client.consultationAttended !== newAttended
-            ) {
+            // Оновлюємо consultationAttended ТІЛЬКИ при явному значенні (1/2=прийшов, 0/-1=не прийшов). null — не перезаписуємо.
+            const newAttended =
+              attendanceConsult === 1 || attendanceConsult === 2
+                ? true
+                : attendanceConsult === 0 || attendanceConsult === -1
+                  ? false
+                  : undefined;
+            const dateChanged = toISOStringOrNull(client.consultationBookingDate) !== isoDate;
+            const attendanceChanged =
+              newAttended !== undefined && client.consultationAttended !== newAttended;
+            if (dateChanged || attendanceChanged) {
               updates.consultationBookingDate = isoDate;
-              updates.consultationAttended = newAttended;
+              if (newAttended !== undefined) updates.consultationAttended = newAttended;
               updates.isOnlineConsultation = isConsultationService(latestConsultation.services).isOnline;
               updates.consultationDeletedInAltegio = false; // Нова актуальна консультація з API
               changed = true;
@@ -268,13 +295,15 @@ export async function POST(req: NextRequest) {
           // Запис є в GET /records, але без visit_id — оновлюємо з record.attendance
           const isoDate = toISO8601(latestConsultation.date);
           if (isoDate) {
-            const newAttended = isArrived(latestConsultation.attendance ?? null);
-            if (
-              toISOStringOrNull(client.consultationBookingDate) !== isoDate ||
-              client.consultationAttended !== newAttended
-            ) {
+            const recAtt = latestConsultation.attendance ?? null;
+            const newAttended =
+              recAtt === 1 || recAtt === 2 ? true : recAtt === 0 || recAtt === -1 ? false : undefined;
+            const dateChanged = toISOStringOrNull(client.consultationBookingDate) !== isoDate;
+            const attendanceChanged =
+              newAttended !== undefined && client.consultationAttended !== newAttended;
+            if (dateChanged || attendanceChanged) {
               updates.consultationBookingDate = isoDate;
-              updates.consultationAttended = newAttended;
+              if (newAttended !== undefined) updates.consultationAttended = newAttended;
               updates.isOnlineConsultation = isConsultationService(latestConsultation.services).isOnline;
               updates.consultationDeletedInAltegio = false;
               changed = true;
@@ -313,13 +342,18 @@ export async function POST(req: NextRequest) {
           const isoDate = toISO8601(latestPaid.date);
           if (isoDate) {
             const attendancePaid = attendanceFromVisit(paidVisitData) ?? latestPaid.attendance ?? null;
-            const newAttended = isArrived(attendancePaid);
-            if (
-              toISOStringOrNull(client.paidServiceDate) !== isoDate ||
-              client.paidServiceAttended !== newAttended
-            ) {
+            const newAttended =
+              attendancePaid === 1 || attendancePaid === 2
+                ? true
+                : attendancePaid === 0 || attendancePaid === -1
+                  ? false
+                  : undefined;
+            const dateChanged = toISOStringOrNull(client.paidServiceDate) !== isoDate;
+            const attendanceChanged =
+              newAttended !== undefined && client.paidServiceAttended !== newAttended;
+            if (dateChanged || attendanceChanged) {
               updates.paidServiceDate = isoDate;
-              updates.paidServiceAttended = newAttended;
+              if (newAttended !== undefined) updates.paidServiceAttended = newAttended;
               updates.signedUpForPaidService = true;
               updates.paidServiceDeletedInAltegio = false;
               changed = true;
@@ -329,13 +363,15 @@ export async function POST(req: NextRequest) {
         } else if (latestPaid?.date && !paidVisitId) {
           const isoDate = toISO8601(latestPaid.date);
           if (isoDate) {
-            const newAttended = isArrived(latestPaid.attendance ?? null);
-            if (
-              toISOStringOrNull(client.paidServiceDate) !== isoDate ||
-              client.paidServiceAttended !== newAttended
-            ) {
+            const recAtt = latestPaid.attendance ?? null;
+            const newAttended =
+              recAtt === 1 || recAtt === 2 ? true : recAtt === 0 || recAtt === -1 ? false : undefined;
+            const dateChanged = toISOStringOrNull(client.paidServiceDate) !== isoDate;
+            const attendanceChanged =
+              newAttended !== undefined && client.paidServiceAttended !== newAttended;
+            if (dateChanged || attendanceChanged) {
               updates.paidServiceDate = isoDate;
-              updates.paidServiceAttended = newAttended;
+              if (newAttended !== undefined) updates.paidServiceAttended = newAttended;
               updates.signedUpForPaidService = true;
               updates.paidServiceDeletedInAltegio = false;
               changed = true;
@@ -363,7 +399,9 @@ export async function POST(req: NextRequest) {
           for (const vid of visitIdsChecked) {
             visitResults[vid] = visitDataCache.get(vid) !== null ? 'ok' : '404';
           }
-          debugClients.push({
+          const consultAtt = consultVisitData ? attendanceFromVisit(consultVisitData) : null;
+          const paidAtt = paidVisitData ? attendanceFromVisit(paidVisitData) : null;
+          const entry: (typeof debugClients)[number] = {
             id: client.id,
             instagramUsername: client.instagramUsername ?? null,
             recordsCount: records.length,
@@ -373,7 +411,14 @@ export async function POST(req: NextRequest) {
             visitResults,
             storedPaidVisitId: storedPaidVisitId ?? undefined,
             storedPaidVisitResult,
-          });
+          };
+          if (consultVisitData && consultAtt === null && typeof consultVisitData === 'object') {
+            entry.consultationVisitKeysWhenAttendanceNull = Object.keys(consultVisitData as Record<string, unknown>);
+          }
+          if (paidVisitData && paidAtt === null && typeof paidVisitData === 'object') {
+            entry.paidVisitKeysWhenAttendanceNull = Object.keys(paidVisitData as Record<string, unknown>);
+          }
+          debugClients.push(entry);
         }
 
         if (changed) {

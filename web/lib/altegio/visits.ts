@@ -405,8 +405,18 @@ export async function getVisitAttendance(visitId: number): Promise<number | null
 }
 
 /**
- * Крок 1 з документації Altegio: GET /visits/{visit_id} — отримуємо location_id та список record_id (записів) у візиті.
- * В одному візиті може бути кілька записів (різні майстри). Кожен record містить id, staff_id, staff (name/title), services, goods_transactions.
+ * GET /visits/{visit_id} — отримуємо деталі візиту з Altegio API.
+ *
+ * Формат відповіді (GET https://api.alteg.io/api/v1/visits/{visit_id}):
+ * { "success": true, "data": { "attendance": 1, "datetime": "...", "records": [...] } }
+ *
+ * Коди attendance (data.attendance або records[].attendance/visit_attendance):
+ * - 1 — клієнт прийшов (послуги надані)
+ * - 2 — клієнт підтвердив візит
+ * - 0 — очікування (запис створено, клієнт ще не прийшов)
+ * - -1 — клієнт не з'явився
+ *
+ * В одному візиті може бути кілька записів (records). Кожен record містить id, staff_id, staff, services.
  */
 export async function getVisitWithRecords(visitId: number, companyIdFallback?: number): Promise<{
   locationId: number | null;
