@@ -272,7 +272,7 @@ export async function POST(req: NextRequest) {
           const full = await prisma.directClient.findUnique({ where: { id: client.id } });
           if (full) {
             const updated = { ...full, ...updates } as typeof full;
-            await saveDirectClient(updated as DirectClient, 'sync-visit-history-from-api', {
+            await saveDirectClient(updated as unknown as DirectClient, 'sync-visit-history-from-api', {
               altegioClientId: client.altegioClientId,
               source: 'Altegio GET /records + GET /visits/{visit_id}',
             }, { touchUpdatedAt: false });
