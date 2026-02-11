@@ -330,12 +330,12 @@ export function formatMastersDisplay(
 }
 
 /**
- * Крок 1: GET /visits/{visit_id} — отримуємо location_id та список record_id (записів) у візиті.
- * В одному візиті може бути кілька записів (різні майстри).
+ * Крок 1 з документації Altegio: GET /visits/{visit_id} — отримуємо location_id та список record_id (записів) у візиті.
+ * В одному візиті може бути кілька записів (різні майстри). Кожен record містить id, staff_id, staff (name/title), services, goods_transactions.
  */
 export async function getVisitWithRecords(visitId: number, companyIdFallback?: number): Promise<{
   locationId: number | null;
-  records: Array<{ id: number; staff_id?: number; staff?: { name?: string; display_name?: string }; services?: any[]; goods_transactions?: any[] }>;
+  records: Array<{ id: number; staff_id?: number; staff?: { name?: string; title?: string }; services?: any[]; goods_transactions?: any[] }>;
   [key: string]: any;
 } | null> {
   try {
@@ -369,10 +369,11 @@ export async function getVisitWithRecords(visitId: number, companyIdFallback?: n
 export type VisitBreakdownItem = { masterName: string; sumUAH: number };
 
 /**
- * Модель згідно з документацією Altegio:
- * 1. GET /visits/{visitId} → location_id та список record_id.
- * 2. GET /visit/details/{location_id}/{record_id}/{visit_id} — один виклик достатній: API Altegio повертає всі items візиту в кожній відповіді, тому виклик для кожного record давав подвійний підрахунок (12 → 24 тис.).
- * 3. Агрегація по master_id з data.items (та payment_transactions лише де немає items).
+ * Деталізація візиту по майстрах згідно з документацією Altegio.
+ * Крок 1: GET /visits/{visit_id} → location_id та список record_id (data.records з staff_id, staff).
+ * Крок 2: для кожного record_id виклик GET /visit/details/{location_id}/{record_id}/{visit_id} → data.items (master_id, cost), data.payment_transactions (master_id, amount).
+ * Агрегація по master_id; імена майстрів тільки з data.records[].staff (staff.title, staff.name).
+ * Дедуплікація items за item.id або master_id+item_title+cost+amount, щоб уникнути подвоєння, якщо API повертає однакові items для кожного record.
  */
 export async function fetchVisitBreakdownFromAPI(
   visitId: number,
@@ -385,43 +386,22 @@ export async function fetchVisitBreakdownFromAPI(
       return null;
     }
     const locationId = visitData.locationId ?? companyIdFallback;
-    const firstRecord = visitData.records[0];
-    const recordId = firstRecord?.id ?? (firstRecord as any)?.record_id;
-    if (recordId == null) {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no recordId for visit', visitId);
-      return null;
-    }
 
-    // Один виклик: API повертає повний список items візиту незалежно від record_id — уникнення подвоєння суми.
-    const data = await getVisitDetails(locationId, Number(recordId), visitId);
-    if (!data || typeof data !== 'object') {
-      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: no data for recordId', recordId, 'visitId', visitId);
-      return null;
-    }
-
+    // Імена майстрів тільки з GET /visits data.records[].staff (документація: staff_id та інформація про майстра; GET /transactions згадує master.title)
     const masterIdToName = new Map<number, string>();
     for (const rec of visitData.records) {
       const staff = (rec as any).staff;
       const staffId = (rec as any).staff_id ?? staff?.id;
-      const staffName =
-        staff?.name ?? staff?.display_name ?? staff?.full_name ?? (staff?.first_name && staff?.last_name ? `${staff.first_name} ${staff.last_name}`.trim() : null);
-      if (staffId != null && staffName) masterIdToName.set(Number(staffId), String(staffName).trim());
-    }
-
-    function itemMasterName(item: any): string | null {
-      const masterId = item?.master_id ?? item?.master?.id ?? item?.staff_id ?? item?.specialist_id;
-      const fromMap = masterId != null ? masterIdToName.get(Number(masterId)) : null;
-      if (fromMap) return fromMap;
-      const master = item?.master ?? item?.staff ?? item?.specialist;
-      if (master && typeof master === 'object') {
-        const n = master.name ?? master.display_name ?? master.full_name ?? master.title ?? (master.first_name && master.last_name ? `${master.first_name} ${master.last_name}`.trim() : null);
-        if (n && typeof n === 'string') return n.trim();
+      const staffName = staff?.title ?? staff?.name;
+      if (staffId != null && staffName && typeof staffName === 'string') {
+        masterIdToName.set(Number(staffId), String(staffName).trim());
       }
-      return item?.staff_title ?? item?.staff_name ?? item?.item_title ?? null;
     }
 
     const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
+    const masterIdsFromItems = new Set<string>();
     let pendingSum = 0;
+    const seenItemKeys = new Set<string>();
 
     const addToMaster = (key: string, masterName: string, sumUAH: number) => {
       const existing = byMasterKey.get(key);
@@ -432,40 +412,56 @@ export async function fetchVisitBreakdownFromAPI(
       }
     };
 
-    const items = Array.isArray(data.items) ? data.items : [];
-    for (const item of items) {
-      const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
-      const name = itemMasterName(item);
-      const cost = Number((item as any).cost) || 0;
-      const amount = Number((item as any).amount) ?? 1;
-      const sum = Math.round(cost * amount);
-      if (sum <= 0) continue;
-      if (name) {
-        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
-        addToMaster(key, name, sum);
-      } else {
-        pendingSum += sum;
-      }
-    }
+    // Крок 2: для кожного record_id — GET /visit/details
+    for (const rec of visitData.records) {
+      const recordId = rec.id ?? (rec as any).record_id;
+      if (recordId == null) continue;
 
-    const paymentTx = Array.isArray(data.payment_transactions) ? data.payment_transactions : [];
-    const masterIdsInItems = new Set(
-      items.map((i: any) => {
-        const id = (i as any).master_id ?? (i as any).staff_id;
-        return id != null && id !== 0 ? String(id) : null;
-      }).filter(Boolean)
-    );
-    for (const tx of paymentTx) {
-      const masterId = (tx as any).master_id ?? (tx as any).master?.id ?? (tx as any).staff_id;
-      if (masterId != null && masterIdsInItems.has(String(masterId))) continue;
-      const amount = Number((tx as any).amount) || 0;
-      if (amount <= 0) continue;
-      const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
-      if (name) {
-        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
-        addToMaster(key, name, Math.round(amount));
-      } else {
-        pendingSum += Math.round(amount);
+      const data = await getVisitDetails(locationId, Number(recordId), visitId);
+      if (!data || typeof data !== 'object') continue;
+
+      const items = Array.isArray(data.items) ? data.items : [];
+      for (const item of items) {
+        const masterId = (item as any).master_id;
+        const cost = Number((item as any).cost) || 0;
+        const amount = Number((item as any).amount) ?? 1;
+        const sum = Math.round(cost * amount);
+        if (sum <= 0) continue;
+
+        const itemId = (item as any).id;
+        const itemTitle = (item as any).item_title ?? '';
+        const dedupeKey =
+          itemId != null && itemId !== ''
+            ? `id:${itemId}`
+            : `${masterId ?? 'n'}:${itemTitle}:${cost}:${amount}`;
+        if (seenItemKeys.has(dedupeKey)) continue;
+        seenItemKeys.add(dedupeKey);
+
+        if (masterId != null && masterId !== 0) masterIdsFromItems.add(String(masterId));
+
+        const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
+        if (name) {
+          const key = `id:${masterId}`;
+          addToMaster(key, name, sum);
+        } else {
+          pendingSum += sum;
+        }
+      }
+
+      const paymentTx = Array.isArray(data.payment_transactions) ? data.payment_transactions : [];
+      for (const tx of paymentTx) {
+        const masterId = (tx as any).master_id;
+        if (masterId != null && masterIdsFromItems.has(String(masterId))) continue;
+        const amount = Number((tx as any).amount) || 0;
+        if (amount <= 0) continue;
+
+        const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
+        if (name) {
+          const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
+          addToMaster(key, name, Math.round(amount));
+        } else {
+          pendingSum += Math.round(amount);
+        }
       }
     }
 
@@ -478,8 +474,8 @@ export async function fetchVisitBreakdownFromAPI(
         }
       } else if (visitData.records.length > 0) {
         const firstRec = visitData.records[0];
-        const staffName = firstRec.staff?.name ?? firstRec.staff?.display_name ?? (firstRec as any).staff?.full_name;
-        if (staffName) {
+        const staffName = (firstRec as any).staff?.title ?? (firstRec as any).staff?.name;
+        if (staffName && typeof staffName === 'string') {
           addToMaster(`name:${String(staffName).toLowerCase()}`, String(staffName).trim(), pendingSum);
         }
       }
