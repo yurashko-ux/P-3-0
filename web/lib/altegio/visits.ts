@@ -2,7 +2,7 @@
 // Функції для роботи з візитами (visits) Alteg.io API
 // Візити - це завершені записи (appointments), які вже відбулися
 
-import { altegioFetch, AltegioHttpError } from './client';
+import { altegioFetch } from './client';
 
 export type Visit = {
   id: number;
@@ -363,8 +363,10 @@ export async function getVisitWithRecords(visitId: number, companyIdFallback?: n
     }
     return { locationId: numLocationId || null, records, ...data };
   } catch (err) {
-    // 404 — очікувано для видалених або невалідних візитів, не засмічуємо логи як error
-    if (err instanceof AltegioHttpError && err.status === 404) {
+    // 404 — очікувано для видалених або невалідних візитів, не засмічуємо логи як error.
+    // Перевіряємо status за значенням, бо після бандлингу instanceof може не спрацювати.
+    const status = (err as { status?: number })?.status;
+    if (status === 404) {
       console.warn('[altegio/visits] Visit not found (deleted or invalid):', visitId);
       return null;
     }
