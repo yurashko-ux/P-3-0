@@ -6,6 +6,17 @@
 import { useState } from "react";
 import Link from "next/link";
 
+/** Безпечно парсить відповідь: при plain text (напр. "An error occurred...") не падає, повертає { ok: false, error } */
+async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: string; [k: string]: unknown }> {
+  const text = await res.text();
+  if (!text?.trim()) return { ok: false, error: `HTTP ${res.status}` };
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, error: text };
+  }
+}
+
 interface AdminToolsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -56,10 +67,10 @@ export function AdminToolsModal({
         options.headers = { 'Content-Type': 'application/json' };
         options.body = JSON.stringify(body);
       }
-      
+
       const res = await fetch(endpoint, options);
-      const data = await res.json();
-      
+      const data = await parseJsonOrText(res);
+
       if (data.ok) {
         onSuccess?.(data);
         const message = successMessage
@@ -100,8 +111,8 @@ export function AdminToolsModal({
       }
       
       const res = await fetch(endpoint, options);
-      const data = await res.json();
-      
+      const data = await parseJsonOrText(res);
+
       if (data.ok) {
         const message = successMessage
           ? successMessage(data)
@@ -1021,7 +1032,7 @@ export function AdminToolsModal({
                     if (item.isPreviewFirst) {
                       setIsLoading(true);
                       fetch(item.endpoint)
-                        .then(res => res.json())
+                        .then(res => parseJsonOrText(res))
                         .then(previewData => {
                           if (previewData.ok) {
                             const count = previewData.stats?.toDelete || 0;
