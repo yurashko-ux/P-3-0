@@ -17,6 +17,8 @@ interface AdminToolsModalProps {
   setIsManyChatWebhooksModalOpen?: (open: boolean) => void;
   setIsTelegramMessagesModalOpen?: (open: boolean) => void;
   onActivateColumnWidthEdit?: () => void;
+  /** Викликається після успішного очищення візитів — оновлює клієнта в state, щоб таблиця одразу показала порожню консультацію */
+  onClearVisitsSuccess?: (data: { clientId: string; instagramUsername?: string | null; clearedConsultation?: boolean; clearedPaid?: boolean }) => void;
 }
 
 export function AdminToolsModal({
@@ -30,6 +32,7 @@ export function AdminToolsModal({
   setIsManyChatWebhooksModalOpen,
   setIsTelegramMessagesModalOpen,
   onActivateColumnWidthEdit,
+  onClearVisitsSuccess,
 }: AdminToolsModalProps) {
   if (!isOpen) return null;
 
@@ -38,7 +41,8 @@ export function AdminToolsModal({
     method: "GET" | "POST" = "POST",
     confirmMessage?: string,
     successMessage?: (data: any) => string,
-    body?: any
+    body?: any,
+    onSuccess?: (data: any) => void
   ) => {
     if (confirmMessage && !confirm(confirmMessage)) {
       return;
@@ -56,6 +60,7 @@ export function AdminToolsModal({
       const data = await res.json();
       
       if (data.ok) {
+        onSuccess?.(data);
         const message = successMessage
           ? successMessage(data)
           : `✅ Операція завершена!\n\n${JSON.stringify(data, null, 2)}`;
@@ -1036,7 +1041,8 @@ export function AdminToolsModal({
                           item.method,
                           undefined,
                           item.successMessage,
-                          { altegioClientId: altegioId }
+                          { altegioClientId: altegioId },
+                          (data) => onClearVisitsSuccess?.(data)
                         );
                       } else if (item.endpoint.includes('search-webhooks')) {
                         handleEndpoint(

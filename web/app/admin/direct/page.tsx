@@ -797,6 +797,40 @@ export default function DirectPage() {
     await loadData();
   };
 
+  const handleClearVisitsSuccess = (data: {
+    clientId: string;
+    instagramUsername?: string | null;
+    clearedConsultation?: boolean;
+    clearedPaid?: boolean;
+  }) => {
+    const username = (data.instagramUsername ?? '').toString().trim().toLowerCase();
+    setClients((prev) =>
+      prev.map((c) => {
+        const match = c.id === data.clientId || (username && (c.instagramUsername ?? '').toString().trim().toLowerCase() === username);
+        if (!match) return c;
+        const next = { ...c };
+        if (data.clearedConsultation) {
+          next.consultationBookingDate = undefined;
+          next.consultationAttended = undefined;
+          next.consultationMasterName = undefined;
+          next.consultationMasterId = undefined;
+          next.isOnlineConsultation = false;
+          next.consultationCancelled = false;
+        }
+        if (data.clearedPaid) {
+          next.paidServiceDate = undefined;
+          next.paidServiceAttended = undefined;
+          next.signedUpForPaidService = false;
+          next.paidServiceVisitId = undefined;
+          next.paidServiceRecordId = undefined;
+          next.paidServiceVisitBreakdown = undefined;
+          next.paidServiceTotalCost = undefined;
+        }
+        return next;
+      })
+    );
+  };
+
   const tableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
@@ -2452,6 +2486,7 @@ export default function DirectPage() {
         setIsWebhooksModalOpen={setIsWebhooksModalOpen}
         setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
         setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
+        onClearVisitsSuccess={handleClearVisitsSuccess}
       />
 
       {/* Управління статусами та відповідальними */}
