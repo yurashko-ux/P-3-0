@@ -1247,6 +1247,10 @@ export async function GET(req: NextRequest) {
 
       const applyConsultation = (arr: typeof base) => {
         let out = arr;
+        // «Є консультація»: тільки клієнти з consultationBookingDate (активний запис, без consultationDeletedInAltegio)
+        if (consultHasConsultation === 'true') {
+          out = out.filter((c) => c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '');
+        }
         // «Консультації створені» = дата створення запису; період як у Статистиці — з початку місяця до сьогодні.
         if (consultCreatedMode === 'current_month') {
           out = out.filter((c) => {
