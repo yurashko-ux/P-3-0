@@ -234,11 +234,37 @@ export async function GET(req: NextRequest) {
           paidServiceRecordCreatedAt?: string | null;
         };
         if (c.altegioClientId) {
-          // Пріоритет: БД (consultationRecordCreatedAt) > KV (fallback для старих даних)
           const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
-          const consultGroup = pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
-          const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(consultGroup);
+          const consultDay = c.consultationBookingDate ? kyivDayFromISO(String(c.consultationBookingDate)) : null;
+          const consultGroup = consultDay
+            ? (groups.find((g: any) => g?.groupType === 'consultation' && (g?.kyivDay || '') === consultDay) ?? null)
+            : null;
+
+          // Пріоритет: БД (consultationRecordCreatedAt) > KV (fallback для старих даних)
+          const pickClosest = () => consultGroup ?? pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
+          const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(pickClosest());
           enriched.consultationRecordCreatedAt = (c as any).consultationRecordCreatedAt || kvConsultCreatedAt || undefined;
+
+          // Обогащення attendance з KV (узгодження з clients/route та фільтром «Прийшла»).
+          // Використовуємо ТІЛЬКИ consultGroup (exact day) — не fallback, щоб не застосовувати
+          // no-show від іншого дня до поточної консультації.
+          if (consultGroup) {
+            const attStatus = String((consultGroup as any).attendanceStatus || '');
+            if (attStatus === 'arrived' || (consultGroup as any).attendance === 1 || (consultGroup as any).attendance === 2) {
+              enriched.consultationAttended = true;
+              enriched.consultationCancelled = false;
+            } else if (attStatus === 'no-show' || (consultGroup as any).attendance === -1) {
+              if ((c as any).consultationAttended !== true) {
+                enriched.consultationAttended = false;
+                enriched.consultationCancelled = false;
+              }
+            } else if (attStatus === 'cancelled' || (consultGroup as any).attendance === -2) {
+              if ((c as any).consultationAttended !== true) {
+                enriched.consultationAttended = null;
+                enriched.consultationCancelled = true;
+              }
+            }
+          }
 
           if (c.paidServiceDate) {
             const paidGroup = pickClosestPaidGroup(groups, c.paidServiceDate);

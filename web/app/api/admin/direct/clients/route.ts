@@ -698,26 +698,34 @@ export async function GET(req: NextRequest) {
 
             const cg = pickClosestConsultGroup();
             if (cg) {
-              const attStatus = String((cg as any).attendanceStatus || '');
-              // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
-              // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
-              if (attStatus === 'arrived' || (cg as any).attendance === 1 || (cg as any).attendance === 2) {
-                c = { ...c, consultationAttended: true, consultationCancelled: false };
-              } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
-                // Встановлюємо false тільки якщо в БД ще не встановлено true
-                if ((c as any).consultationAttended !== true) {
-                  c = { ...c, consultationAttended: false, consultationCancelled: false };
+              // ВАЖЛИВО: Оновлюємо attendance ТІЛЬКИ з групи ТОГО САМОГО ДНЯ, що consultationBookingDate.
+              // Якщо consultGroup === null, pickClosestConsultGroup може повернути групу іншого дня (fallback до 24 год).
+              // Тоді attStatus (no-show) від минулої консультації був би застосований до поточної — і «Очікується»
+              // потрапляв би у фільтр «Не з'явилась». Тому перезаписуємо attendance тільки з consultGroup (exact match).
+              if (cg !== consultGroup) {
+                // cg — це fallback-група іншого дня; не торкаємося consultationAttended
+              } else {
+                const attStatus = String((cg as any).attendanceStatus || '');
+                // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
+                // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
+                if (attStatus === 'arrived' || (cg as any).attendance === 1 || (cg as any).attendance === 2) {
+                  c = { ...c, consultationAttended: true, consultationCancelled: false };
+                } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
+                  // Встановлюємо false тільки якщо в БД ще не встановлено true
+                  if ((c as any).consultationAttended !== true) {
+                    c = { ...c, consultationAttended: false, consultationCancelled: false };
+                  }
+                } else if (attStatus === 'cancelled' || (cg as any).attendance === -2) {
+                  // Встановлюємо null тільки якщо в БД ще не встановлено true
+                  if ((c as any).consultationAttended !== true) {
+                    c = { ...c, consultationAttended: null, consultationCancelled: true };
+                  } else {
+                    c = { ...c, consultationCancelled: false };
+                  }
                 }
-              } else if (attStatus === 'cancelled' || (cg as any).attendance === -2) {
-                // Встановлюємо null тільки якщо в БД ще не встановлено true
-                if ((c as any).consultationAttended !== true) {
-                  c = { ...c, consultationAttended: null, consultationCancelled: true };
-                } else {
-                  c = { ...c, consultationCancelled: false };
-                }
+                // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
+                // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
               }
-              // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
-              // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
             }
             // Якщо групу не знайдено - також НЕ змінюємо значення з БД
             // Це дозволяє зберегти встановлені раніше значення для старих записів
