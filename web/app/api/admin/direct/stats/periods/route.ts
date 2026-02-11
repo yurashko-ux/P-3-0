@@ -56,6 +56,7 @@ type FooterStatsBlock = {
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   newClientsCount?: number;
+  newLeadsCount?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
@@ -81,6 +82,7 @@ type FooterTodayStats = FooterStatsBlock & {
   rebookingsCount: number;
   upsalesGoodsSum: number;
   newClientsCount: number;
+  newLeadsCount: number;
   noRebookCount: number;
   consultationRescheduledCount: number;
   returnedClientsCount: number;
@@ -111,6 +113,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   rebookingsCount: 0,
   upsalesGoodsSum: 0,
   newClientsCount: 0,
+  newLeadsCount: 0,
   noRebookCount: 0,
   recordsCancelledCount: 0,
   recordsNoShowCount: 0,
@@ -319,6 +322,8 @@ export async function GET(req: NextRequest) {
     let salesFromConsultPast = 0;
     const newClientsIdsToday = new Set<string>();
     const newClientsIdsPast = new Set<string>();
+    const newLeadsIdsToday = new Set<string>();
+    const newLeadsIdsPast = new Set<string>();
     const returnedClientIdsPast = new Set<string>();
     const returnedClientIdsToday = new Set<string>();
     const returnedClientIdsFuture = new Set<string>();
@@ -336,6 +341,12 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
+      const isLead = !client.altegioClientId;
+      const createdAtDay = toKyivDay((client as any).createdAt);
+      if (isLead && createdAtDay) {
+        if (createdAtDay === todayKyiv) newLeadsIdsToday.add(client.id);
+        if (createdAtDay >= start && createdAtDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+      }
       totalSpentAll += typeof client.spent === 'number' ? client.spent : 0;
       const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
       const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
@@ -503,6 +514,8 @@ export async function GET(req: NextRequest) {
 
     (stats.today as FooterTodayStats).newClientsCount = newClientsIdsToday.size;
     stats.past.newClientsCount = newClientsIdsPast.size;
+    (stats.today as FooterTodayStats).newLeadsCount = newLeadsIdsToday.size;
+    stats.past.newLeadsCount = newLeadsIdsPast.size;
     stats.past.returnedClientsCount = returnedClientIdsPast.size;
     (stats.today as FooterTodayStats).returnedClientsCount = returnedClientIdsToday.size;
     stats.future.returnedClientsCount = returnedClientIdsFuture.size;

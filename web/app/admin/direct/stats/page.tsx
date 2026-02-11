@@ -27,6 +27,7 @@ type FooterBlock = {
   noSaleCount?: number;
   newPaidClients?: number;
   newClientsCount?: number;
+  newLeadsCount?: number;
   recordsCreatedSum?: number;
   recordsRealizedSum?: number;
   rebookingsCount?: number;
@@ -424,6 +425,17 @@ function DirectStatsPageContent() {
                   ))}
                   <tr className="bg-gray-100">
                     <td colSpan={4} className="font-medium">Записи</td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="rounded-full bg-[#3b82f6] w-2 h-2 inline-block" />
+                        Нові Ліди
+                      </span>
+                    </td>
+                    <td className="text-center">{formatFooterCell(periodStats.past, "newLeadsCount", "шт", true, "past")}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.today, "newLeadsCount", "шт", true, "today")}</td>
+                    <td className="text-center">—</td>
                   </tr>
                   <tr>
                     <td className="whitespace-nowrap"><span className="mx-1" aria-hidden> </span>💰 Фін. Рез. (Оборот)</td>
