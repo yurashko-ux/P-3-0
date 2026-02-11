@@ -29,6 +29,7 @@ export type PeriodStatsBlock = {
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   newClientsCount?: number;
+  newLeadsCount?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
@@ -127,6 +128,7 @@ const emptyBlock = (): PeriodStatsBlock => ({
   rebookingsCount: 0,
   upsalesGoodsSum: 0,
   newClientsCount: 0,
+  newLeadsCount: 0,
   noRebookCount: 0,
   recordsCancelledCount: 0,
   recordsNoShowCount: 0,
@@ -158,6 +160,7 @@ type TodayStats = PeriodStatsBlock & {
   rebookingsCount: number;
   upsalesGoodsSum: number;
   newClientsCount: number;
+  newLeadsCount: number;
   noRebookCount: number;
   consultationRescheduledCount: number;
   returnedClientsCount: number;
@@ -183,6 +186,7 @@ const emptyTodayBlock = (): TodayStats => ({
   rebookingsCount: 0,
   upsalesGoodsSum: 0,
   newClientsCount: 0,
+  newLeadsCount: 0,
   noRebookCount: 0,
   consultationRescheduledCount: 0,
   returnedClientsCount: 0,
@@ -222,6 +226,8 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
   let salesFromConsultPast = 0;
   const newClientsIdsToday = new Set<string>();
   const newClientsIdsPast = new Set<string>();
+  const newLeadsIdsToday = new Set<string>();
+  const newLeadsIdsPast = new Set<string>();
   const returnedClientIdsPast = new Set<string>();
   const returnedClientIdsToday = new Set<string>();
   const returnedClientIdsFuture = new Set<string>();
@@ -238,6 +244,12 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
 
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
+    const isLead = !client.altegioClientId;
+    const createdAtDay = toKyivDay((client as any).createdAt);
+    if (isLead && createdAtDay) {
+      if (createdAtDay === todayKyiv) newLeadsIdsToday.add(client.id);
+      if (createdAtDay >= start && createdAtDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+    }
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
     const paidSum = getPaidSum(client);
     const t = stats.today as TodayStats;
@@ -413,6 +425,8 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
 
   stats.today.newClientsCount = newClientsIdsToday.size;
   stats.past.newClientsCount = newClientsIdsPast.size;
+  stats.today.newLeadsCount = newLeadsIdsToday.size;
+  stats.past.newLeadsCount = newLeadsIdsPast.size;
   stats.past.returnedClientsCount = returnedClientIdsPast.size;
   stats.today.returnedClientsCount = returnedClientIdsToday.size;
   stats.future.returnedClientsCount = returnedClientIdsFuture.size;

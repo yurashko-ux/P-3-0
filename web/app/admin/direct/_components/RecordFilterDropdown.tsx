@@ -214,11 +214,11 @@ export function RecordFilterDropdown({
                 <button
                   type="button"
                   onClick={() => setNewClient(newClient === true ? null : true)}
-                  title="Прийшли на консультацію і мають запис на платну послугу (голубий фон у колонці Майстер)"
-                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${newClient === true ? "bg-blue-50 text-blue-700" : "text-gray-700"}`}
+                  title="Прийшли на консультацію і мають запис на платну послугу (жовтий фон у колонці Майстер)"
+                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${newClient === true ? "bg-yellow-50 text-yellow-800" : "text-gray-700"}`}
                 >
                   <span className="flex items-center gap-2">
-                    <span className={`inline-block w-3 h-3 rounded border ${newClient === true ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"}`}>
+                    <span className={`inline-block w-3 h-3 rounded border ${newClient === true ? "bg-[#EAB308] border-[#EAB308]" : "border-gray-400 bg-white"}`}>
                       {newClient === true && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12"><path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                     </span>
                     <span>Новий клієнт</span>

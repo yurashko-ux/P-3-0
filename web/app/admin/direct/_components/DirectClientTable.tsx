@@ -748,6 +748,7 @@ type FooterStatsBlock = {
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   newClientsCount?: number;
+  newLeadsCount?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
@@ -771,6 +772,7 @@ type FooterTodayStats = FooterStatsBlock & {
   rebookingsCount?: number;
   upsalesGoodsSum?: number;
   newClientsCount?: number;
+  newLeadsCount?: number;
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
@@ -3391,7 +3393,7 @@ export function DirectClientTable({
                           const shouldHighlightMaster =
                             client.consultationAttended === true && Boolean(client.paidServiceDate);
                           const highlightClass = shouldHighlightMaster
-                            ? 'rounded-full px-2 py-0.5 bg-[#2AABEE] text-white'
+                            ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900'
                             : '';
 
                           const secondaryFull = ((client as any).serviceSecondaryMasterName || '').trim();
@@ -3414,7 +3416,7 @@ export function DirectClientTable({
                                 {sorted.map((b, index) => {
                                   const thousands = Math.round(b.sumUAH / 1000);
                                   const isFirst = index === 0;
-                                  const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#2AABEE] text-white' : '';
+                                  const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900' : '';
                                   return (
                                     <span key={`${b.masterName}-${b.sumUAH}`} className={rowClass ? `block text-left ${rowClass}` : 'block text-left'}>
                                       {shortPersonName(b.masterName)} ({thousands})
@@ -3674,7 +3676,7 @@ export function DirectClientTable({
                         <span>{formatThousandVal(pastData.plannedPaidSum ?? 0)}</span>
                       </span>
                       <span title="Нові клієнти" className="inline-flex items-center gap-1 shrink-0">
-                        <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#2AABEE] shrink-0" />
+                        <YellowDotIcon size={iconSize} />
                         <span>{pastData.newClientsCount ?? 0}</span>
                       </span>
                       <span title="Записів створено" className="inline-flex items-center gap-1">📋 {formatThousandVal(pastData.recordsCreatedSum ?? 0)}</span>
@@ -3697,9 +3699,14 @@ export function DirectClientTable({
                       </span>
                     </div>
                     <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
+                      <span className="font-medium text-gray-600">Ліди:</span>
+                      <span title="Нові ліди (без Altegio ID)" className="inline-flex items-center gap-1">
+                        <span className="inline-block w-3 h-3 rounded-full bg-[#3b82f6] shrink-0" />
+                        <span>{pastData.newLeadsCount ?? 0}</span>
+                      </span>
                       <span className="font-medium text-gray-600">Клієнти:</span>
                       <span title="Нові клієнти" className="inline-flex items-center gap-1">
-                        <span className="inline-block w-3 h-3 rounded-full bg-[#2AABEE] shrink-0" />
+                        <YellowDotIcon size={iconSize} />
                         <span>{pastData.newClientsCount ?? 0}</span>
                       </span>
                       <span title="Повернуті клієнти" className="inline-flex items-center gap-1">
@@ -3747,7 +3754,7 @@ export function DirectClientTable({
                           <span>{formatThousandVal(todayData.plannedPaidSum ?? 0)}</span>
                         </span>
                         <span title="Нові клієнти" className="inline-flex items-center gap-1 shrink-0">
-                          <span className="inline-block w-3.5 h-3.5 rounded-full bg-[#2AABEE] shrink-0" />
+                          <YellowDotIcon size={iconSize} />
                           <span>{todayData.newClientsCount ?? 0}</span>
                         </span>
                         <span title="Записів створено" className="inline-flex items-center gap-1">📋 {formatThousandVal(todayData.recordsCreatedSum ?? 0)}</span>
@@ -3770,9 +3777,14 @@ export function DirectClientTable({
                         </span>
                       </div>
                       <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
+                        <span className="font-medium text-gray-600">Ліди:</span>
+                        <span title="Нові ліди (без Altegio ID)" className="inline-flex items-center gap-1">
+                          <span className="inline-block w-3 h-3 rounded-full bg-[#3b82f6] shrink-0" />
+                          <span>{todayData.newLeadsCount ?? 0}</span>
+                        </span>
                         <span className="font-medium text-gray-600">Клієнти:</span>
                         <span title="Нові клієнти" className="inline-flex items-center gap-1">
-                          <span className="inline-block w-3 h-3 rounded-full bg-[#2AABEE] shrink-0" />
+                          <YellowDotIcon size={iconSize} />
                           <span>{todayData.newClientsCount ?? 0}</span>
                         </span>
                         <span title="Повернуті клієнти" className="inline-flex items-center gap-1">
