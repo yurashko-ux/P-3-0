@@ -141,6 +141,7 @@ function emptyTodayBlock(): FooterTodayStats {
     rebookingsCount: 0,
     upsalesGoodsSum: 0,
     newClientsCount: 0,
+    newLeadsCount: 0,
     noRebookCount: 0,
     consultationRescheduledCount: 0,
     returnedClientsCount: 0,
@@ -276,12 +277,16 @@ export async function GET(req: NextRequest) {
   try {
     let clients = await getAllDirectClients();
 
+    const todayKyiv = kyivDayFromISO(new Date().toISOString());
+    const { start, end } = getMonthBounds(todayKyiv);
+
     // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").
+    let groupsByClient: Map<number, RecordGroup[]> = new Map();
     try {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
       const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+      groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
       clients = clients.map((c) => {
         const enriched = { ...c } as typeof c & {
@@ -289,7 +294,7 @@ export async function GET(req: NextRequest) {
           paidServiceRecordCreatedAt?: string | null;
         };
         if (c.altegioClientId) {
-          const groups = groupsByClient.get(c.altegioClientId) || [];
+          const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
           const consultGroup = pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
           const consultRecordCreatedAt = pickRecordCreatedAtISOFromGroup(consultGroup);
           if (consultRecordCreatedAt) enriched.consultationRecordCreatedAt = consultRecordCreatedAt;
@@ -306,8 +311,6 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/stats/periods] KV обогачення пропущено (не критично):', err);
     }
 
-    const todayKyiv = kyivDayFromISO(new Date().toISOString());
-    const { start, end } = getMonthBounds(todayKyiv);
     const nextMonthBounds = getNextMonthBounds(todayKyiv);
     const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);
 
@@ -353,22 +356,13 @@ export async function GET(req: NextRequest) {
       const paidSum = getPaidSum(client);
       const t = stats.today as FooterTodayStats;
 
-      // 1) Створено консультацій — тільки дата створення запису (consultationRecordCreatedAt з KV), не змішувати з датою консультації (booking).
+      // 1) Створено консультацій — рахується безпосередньо з KV (див. блок після циклу), щоб врахувати всі записи, а не лише по клієнтах.
       const consultCreatedDay = toKyivDay((client as any).consultationRecordCreatedAt);
-      if (consultCreatedDay) {
-        addByDay(consultCreatedDay, (b) => {
-          b.createdConsultations += 1;
-        });
+      if (consultCreatedDay && (client as any).isOnlineConsultation === true) {
         if (consultCreatedDay >= start && consultCreatedDay <= todayKyiv) {
-          stats.past.consultationCreated = (stats.past.consultationCreated || 0) + 1;
-          if ((client as any).isOnlineConsultation === true) {
-            stats.past.consultationOnlineCount = (stats.past.consultationOnlineCount || 0) + 1;
-          }
+          stats.past.consultationOnlineCount = (stats.past.consultationOnlineCount || 0) + 1;
         }
-        if (consultCreatedDay === todayKyiv) {
-          t.consultationCreated += 1;
-          if ((client as any).isOnlineConsultation === true) t.consultationOnlineCount += 1;
-        }
+        if (consultCreatedDay === todayKyiv) t.consultationOnlineCount += 1;
       }
 
       const consultDay = toKyivDay(client.consultationBookingDate);
@@ -511,6 +505,36 @@ export async function GET(req: NextRequest) {
         if (paidDay && paidDay > todayKyiv && paidDay <= end) returnedClientIdsFuture.add(client.id);
       }
     }
+
+    // Прямий підрахунок "Створено" з KV — рахуємо кількість ЗАПИСІВ консультацій, створених сьогодні/за місяць, а не клієнтів.
+    let consultationCreatedPast = 0;
+    let consultationCreatedToday = 0;
+    for (const [, groups] of groupsByClient) {
+      for (const g of groups) {
+        if (g.groupType !== 'consultation') continue;
+        const createdAt = pickRecordCreatedAtISOFromGroup(g);
+        const day = toKyivDay(createdAt);
+        if (!day) continue;
+        addByDay(day, (b) => {
+          b.createdConsultations += 1;
+        });
+        if (day >= start && day <= todayKyiv) consultationCreatedPast += 1;
+        if (day === todayKyiv) consultationCreatedToday += 1;
+      }
+    }
+    // Fallback: клієнти з consultationBookingDate = сьогодні, але без consultationRecordCreatedAt у KV
+    // (вебхук ще не прийшов або не збережений) — додаємо до "Створено сьогодні", щоб не занижувати.
+    let fallbackConsultCreatedToday = 0;
+    for (const c of clients) {
+      if (!c.altegioClientId) continue; // тільки клієнти з Altegio (не ліди)
+      const bookDay = toKyivDay(c.consultationBookingDate);
+      if (bookDay !== todayKyiv) continue;
+      const hasFromKv = Boolean((c as any).consultationRecordCreatedAt);
+      if (!hasFromKv) fallbackConsultCreatedToday += 1;
+    }
+    consultationCreatedToday = Math.max(consultationCreatedToday, fallbackConsultCreatedToday);
+    stats.past.consultationCreated = consultationCreatedPast;
+    (stats.today as FooterTodayStats).consultationCreated = consultationCreatedToday;
 
     (stats.today as FooterTodayStats).newClientsCount = newClientsIdsToday.size;
     stats.past.newClientsCount = newClientsIdsPast.size;
