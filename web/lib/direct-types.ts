@@ -31,6 +31,7 @@ export type DirectClient = {
   paidServiceCancelled?: boolean; // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   paidServiceTotalCost?: number; // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
   paidServiceVisitId?: number; // ID візиту в Altegio (для breakdown з API)
+  paidServiceRecordId?: number; // ID запису в візиті (для breakdown тільки по цьому record)
   paidServiceVisitBreakdown?: { masterName: string; sumUAH: number }[]; // Розбиття сум по майстрах з API
   signupAdmin?: string; // Хто записав (ім'я адміна)
   comment?: string; // Коментар/нотатки

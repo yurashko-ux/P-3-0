@@ -53,6 +53,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const path = await import('path');
+    const debugLogPath = path.join(process.cwd(), '.debug-agent.log');
+    try {
+      const fs = await import('fs/promises');
+      await fs.appendFile(debugLogPath, JSON.stringify({ location: 'clients/route.ts:GET:entry', message: 'GET /api/admin/direct/clients called', timestamp: Date.now() }) + '\n');
+    } catch (_) {}
     const { searchParams } = req.nextUrl;
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
@@ -210,7 +216,8 @@ export async function GET(req: NextRequest) {
         for (const c of needFallback) {
           try {
             const visitId = (c as any).paidServiceVisitId;
-            const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId);
+            const recordId = (c as any).paidServiceRecordId;
+            const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId, recordId != null ? Number(recordId) : undefined);
             if (breakdown && breakdown.length > 0) {
               const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
               const idx = clients.findIndex((x) => x.id === c.id);
@@ -861,6 +868,40 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.warn('[direct/clients] ⚠️ Не вдалося обчислити "Перезапис" (не критично):', err);
     }
+
+    // #region agent log
+    try {
+      const withVisitId = clients.filter((c) => (c as any).paidServiceVisitId != null);
+      const visitIdToCount = new Map<number, number>();
+      let totalSumFromBreakdown = 0;
+      let totalSpent = 0;
+      const withPaidDate = clients.filter((c) => c.paidServiceDate);
+      for (const c of withPaidDate) {
+        const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+        const sumBd = Array.isArray(bd) && bd.length > 0 ? bd.reduce((a, x) => a + x.sumUAH, 0) : (typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : 0);
+        totalSumFromBreakdown += sumBd;
+        totalSpent += typeof c.spent === 'number' ? c.spent : 0;
+        const vid = (c as any).paidServiceVisitId as number | undefined;
+        if (vid != null) {
+          visitIdToCount.set(vid, (visitIdToCount.get(vid) ?? 0) + 1);
+        }
+      }
+      const duplicateVisitIds = Array.from(visitIdToCount.entries()).filter(([, n]) => n > 1).slice(0, 15);
+      const sampleClient = withPaidDate.find((c) => (c as any).paidServiceMastersBreakdown?.length > 0);
+      const sample = sampleClient ? {
+        id: sampleClient.id,
+        instagram: sampleClient.instagramUsername,
+        paidServiceVisitId: (sampleClient as any).paidServiceVisitId,
+        paidServiceTotalCost: (sampleClient as any).paidServiceTotalCost,
+        sumBreakdown: Array.isArray((sampleClient as any).paidServiceMastersBreakdown) ? (sampleClient as any).paidServiceMastersBreakdown.reduce((a: number, x: any) => a + (x?.sumUAH ?? 0), 0) : 0,
+        spent: sampleClient.spent,
+      } : null;
+      const payload = { location: 'clients/route.ts:visit-sum-debug', message: 'Visit sum vs spent aggregate', data: { totalSumFromBreakdown, totalSpent, withPaidDateCount: withPaidDate.length, duplicateVisitIds: Object.fromEntries(duplicateVisitIds), sample }, timestamp: Date.now(), hypothesisId: 'H1' };
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+      const fs = await import('fs/promises');
+      await fs.appendFile(debugLogPath, JSON.stringify(payload) + '\n').catch(() => {});
+    } catch (_) {}
+    // #endregion
 
     // Отримуємо останні 5 станів для всіх клієнтів одним оптимізованим запитом
     const clientIds = clients.map(c => c.id);

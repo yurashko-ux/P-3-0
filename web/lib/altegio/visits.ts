@@ -1,8 +1,86 @@
 // web/lib/altegio/visits.ts
 // Функції для роботи з візитами (visits) Alteg.io API
 // Візити - це завершені записи (appointments), які вже відбулися
+// Джерело даних: тільки API Altegio (ніяких даних з KV).
 
 import { altegioFetch } from './client';
+
+/** Нормалізація відповіді API: підтримка response.data або response, різні варіанти ключів */
+function normalizeVisitResponse(raw: any): any {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw.data ?? raw;
+  if (!data || typeof data !== 'object') return null;
+  return data;
+}
+
+/** Витягуємо масив records з відповіді GET /visits/{id} (різні варіанти ключів API) */
+function getRecordsFromVisitData(data: any): any[] {
+  if (!data || typeof data !== 'object') return [];
+  const arr = data.records ?? data.visit_records ?? data.appointments ?? data.items;
+  return Array.isArray(arr) ? arr : [];
+}
+
+/** Витягуємо location_id / company_id з відповіді GET /visits/{id} */
+function getLocationIdFromVisitData(data: any): number | null {
+  if (!data || typeof data !== 'object') return null;
+  const v = data.location_id ?? data.company_id ?? data.locationId ?? data.salon_id;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Витягуємо id запису з об'єкта record (API може повертати id або record_id) */
+function getRecordId(rec: any): number | null {
+  if (!rec || typeof rec !== 'object') return null;
+  const v = rec.id ?? rec.record_id;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Витягуємо масив items з відповіді GET /visit/details (різні варіанти ключів API) */
+function getItemsFromDetailsData(data: any): any[] {
+  if (!data || typeof data !== 'object') return [];
+  const arr = data.items ?? data.visit_items ?? data.services ?? data.transactions;
+  return Array.isArray(arr) ? arr : [];
+}
+
+/** Витягуємо масив payment_transactions з відповіді GET /visit/details */
+function getPaymentTransactionsFromDetailsData(data: any): any[] {
+  if (!data || typeof data !== 'object') return [];
+  const arr = data.payment_transactions ?? data.payments ?? data.transactions;
+  return Array.isArray(arr) ? arr : [];
+}
+
+/** Нормалізація поля item: cost (або price), amount (або quantity), master_id (або masterId, staff_id) */
+function getItemCost(item: any): number {
+  const v = item?.cost ?? item?.price ?? item?.sum ?? item?.total;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+function getItemAmount(item: any): number {
+  const v = item?.amount ?? item?.quantity ?? item?.count ?? 1;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+function getItemMasterId(item: any): number | null {
+  const v = item?.master_id ?? item?.masterId ?? item?.staff_id ?? item?.staffId;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getTxMasterId(tx: any): number | null {
+  const v = tx?.master_id ?? tx?.masterId ?? tx?.staff_id ?? tx?.staffId;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function getTxAmount(tx: any): number {
+  const v = tx?.amount ?? tx?.sum ?? tx?.total;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 export type Visit = {
   id: number;
@@ -243,15 +321,12 @@ export async function getVisitDetails(
 ): Promise<any> {
   try {
     const url = `/visit/details/${companyId}/${recordId}/${visitId}`;
-    console.log(`[altegio/visits] Getting visit details: ${url}`);
-    const response = await altegioFetch<any>(url);
-    
-    // Згідно з документацією, response має структуру:
-    // { success: true, data: { items: [...], payment_transactions: [...], ... } }
-    if (response && typeof response === 'object' && 'data' in response) {
-      return response.data;
+    if (process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true') {
+      console.log(`[altegio/visits] Getting visit details: ${url}`);
     }
-    return response;
+    const response = await altegioFetch<any>(url);
+    // Нормалізація: API може повертати { data: { items, payment_transactions } } або { items, payment_transactions }
+    return normalizeVisitResponse(response) ?? response;
   } catch (err) {
     console.error(`[altegio/visits] Failed to get visit details:`, err);
     throw err;
@@ -341,27 +416,26 @@ export async function getVisitWithRecords(visitId: number, companyIdFallback?: n
   try {
     const url = `/visits/${visitId}`;
     const response = await altegioFetch<any>(url);
-    const data = response?.data ?? response;
-    if (!data || typeof data !== 'object') {
+    const data = normalizeVisitResponse(response);
+    if (!data) {
       console.warn('[altegio/visits] getVisitWithRecords: no data in response for visit', visitId);
       return null;
     }
-    const records = Array.isArray(data.records) ? data.records : [];
-    const locationId =
-      data.location_id ?? data.company_id ?? data.locationId ?? companyIdFallback ?? null;
+    const records = getRecordsFromVisitData(data);
+    const locationId = getLocationIdFromVisitData(data) ?? companyIdFallback ?? null;
     const numLocationId =
-      typeof locationId === 'number' ? locationId : Number(locationId);
-    
+      locationId !== null && Number.isFinite(Number(locationId)) ? Number(locationId) : null;
+
     // Дозволяємо продовжити навіть без locationId, якщо є records
-    if ((!numLocationId || Number.isNaN(numLocationId)) && records.length === 0) {
+    if ((numLocationId == null || !Number.isFinite(numLocationId)) && records.length === 0) {
       console.warn('[altegio/visits] getVisitWithRecords: no location_id and no records for visit', visitId);
       return null;
     }
-    
+
     if (process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true') {
-      console.log('[altegio/visits] getVisitWithRecords: visitId', visitId, 'locationId', numLocationId || 'fallback', 'records', records.length);
+      console.log('[altegio/visits] getVisitWithRecords: visitId', visitId, 'locationId', numLocationId ?? 'fallback', 'records', records.length);
     }
-    return { locationId: numLocationId || null, records, ...data };
+    return { locationId: numLocationId ?? null, records, ...data };
   } catch (err) {
     // 404 — очікувано для видалених або невалідних візитів, не засмічуємо логи як error.
     // Перевіряємо status за значенням, бо після бандлингу instanceof може не спрацювати.
@@ -383,10 +457,12 @@ export type VisitBreakdownItem = { masterName: string; sumUAH: number };
  * Крок 2: для кожного record_id виклик GET /visit/details/{location_id}/{record_id}/{visit_id} → data.items (master_id, cost), data.payment_transactions (master_id, amount).
  * Агрегація по master_id; імена майстрів тільки з data.records[].staff (staff.title, staff.name).
  * Дедуплікація items за item.id або master_id+item_title+cost+amount, щоб уникнути подвоєння, якщо API повертає однакові items для кожного record.
+ * Якщо передано recordId — рахуємо тільки цей запис (один record у візиті), щоб сума відповідала платній послузі клієнта, а не всьому візиту.
  */
 export async function fetchVisitBreakdownFromAPI(
   visitId: number,
-  companyIdFallback: number
+  companyIdFallback: number,
+  onlyRecordId?: number
 ): Promise<VisitBreakdownItem[] | null> {
   try {
     const visitData = await getVisitWithRecords(visitId, companyIdFallback);
@@ -397,15 +473,25 @@ export async function fetchVisitBreakdownFromAPI(
     }
     const locationId = visitData.locationId ?? companyIdFallback;
 
-    // Імена майстрів тільки з GET /visits data.records[].staff (документація: staff_id та інформація про майстра; GET /transactions згадує master.title)
+    // Імена майстрів тільки з GET /visits data.records[].staff (API: staff_id, staff.title / staff.name)
     const masterIdToName = new Map<number, string>();
     for (const rec of visitData.records) {
       const staff = (rec as any).staff;
-      const staffId = (rec as any).staff_id ?? staff?.id;
-      const staffName = staff?.title ?? staff?.name;
-      if (staffId != null && staffName && typeof staffName === 'string') {
+      const staffId = (rec as any).staff_id ?? staff?.id ?? (rec as any).master_id;
+      const staffName = staff?.title ?? staff?.name ?? (rec as any).master_name;
+      if (staffId != null && staffName != null && String(staffName).trim()) {
         masterIdToName.set(Number(staffId), String(staffName).trim());
       }
+    }
+
+    // Якщо вказано onlyRecordId — обробляємо тільки цей запис (сума по одному record, не по всьому візиту)
+    const recordsToProcess =
+      onlyRecordId != null
+        ? visitData.records.filter((rec) => getRecordId(rec) === onlyRecordId)
+        : visitData.records;
+    if (onlyRecordId != null && recordsToProcess.length === 0) {
+      console.warn('[altegio/visits] fetchVisitBreakdownFromAPI: recordId', onlyRecordId, 'not found in visit', visitId);
+      return null;
     }
 
     const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
@@ -422,24 +508,25 @@ export async function fetchVisitBreakdownFromAPI(
       }
     };
 
-    // Крок 2: для кожного record_id — GET /visit/details
-    for (const rec of visitData.records) {
-      const recordId = rec.id ?? (rec as any).record_id;
+    // Крок 2: для кожного record_id — GET /visit/details (тільки API, без KV)
+    for (const rec of recordsToProcess) {
+      const recordId = getRecordId(rec);
       if (recordId == null) continue;
 
-      const data = await getVisitDetails(locationId, Number(recordId), visitId);
-      if (!data || typeof data !== 'object') continue;
+      const rawDetails = await getVisitDetails(locationId, recordId, visitId);
+      const detailsData = rawDetails && typeof rawDetails === 'object' ? rawDetails : null;
+      if (!detailsData) continue;
 
-      const items = Array.isArray(data.items) ? data.items : [];
+      const items = getItemsFromDetailsData(detailsData);
       for (const item of items) {
-        const masterId = (item as any).master_id;
-        const cost = Number((item as any).cost) || 0;
-        const amount = Number((item as any).amount) ?? 1;
+        const cost = getItemCost(item);
+        const amount = getItemAmount(item);
         const sum = Math.round(cost * amount);
         if (sum <= 0) continue;
 
-        const itemId = (item as any).id;
-        const itemTitle = (item as any).item_title ?? '';
+        const masterId = getItemMasterId(item);
+        const itemId = item?.id ?? item?.item_id;
+        const itemTitle = item?.item_title ?? item?.title ?? item?.name ?? '';
         const dedupeKey =
           itemId != null && itemId !== ''
             ? `id:${itemId}`
@@ -451,26 +538,25 @@ export async function fetchVisitBreakdownFromAPI(
 
         const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
         if (name) {
-          const key = `id:${masterId}`;
-          addToMaster(key, name, sum);
+          addToMaster(`id:${masterId}`, name, sum);
         } else {
           pendingSum += sum;
         }
       }
 
-      const paymentTx = Array.isArray(data.payment_transactions) ? data.payment_transactions : [];
+      const paymentTx = getPaymentTransactionsFromDetailsData(detailsData);
       for (const tx of paymentTx) {
-        const masterId = (tx as any).master_id;
-        if (masterId != null && masterIdsFromItems.has(String(masterId))) continue;
-        const amount = Number((tx as any).amount) || 0;
+        const txMasterId = getTxMasterId(tx);
+        if (txMasterId != null && masterIdsFromItems.has(String(txMasterId))) continue;
+        const amount = Math.round(getTxAmount(tx));
         if (amount <= 0) continue;
 
-        const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
+        const name = txMasterId != null ? masterIdToName.get(Number(txMasterId)) ?? null : null;
         if (name) {
-          const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
-          addToMaster(key, name, Math.round(amount));
+          const key = txMasterId != null && txMasterId !== 0 ? `id:${txMasterId}` : `name:${String(name).toLowerCase()}`;
+          addToMaster(key, name, amount);
         } else {
-          pendingSum += Math.round(amount);
+          pendingSum += amount;
         }
       }
     }

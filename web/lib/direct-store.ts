@@ -35,6 +35,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     paidServiceCancelled: dbClient.paidServiceCancelled ?? false,
     paidServiceTotalCost: dbClient.paidServiceTotalCost ?? undefined,
     paidServiceVisitId: dbClient.paidServiceVisitId ?? undefined,
+    paidServiceRecordId: dbClient.paidServiceRecordId ?? undefined,
     paidServiceVisitBreakdown: Array.isArray(dbClient.paidServiceVisitBreakdown)
       ? (dbClient.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[])
       : typeof dbClient.paidServiceVisitBreakdown === 'string'
@@ -101,6 +102,7 @@ function directClientToPrisma(client: DirectClient) {
     paidServiceCancelled: client.paidServiceCancelled ?? false,
     paidServiceTotalCost: client.paidServiceTotalCost ?? null,
     paidServiceVisitId: client.paidServiceVisitId ?? null,
+    paidServiceRecordId: client.paidServiceRecordId ?? null,
     paidServiceVisitBreakdown: Array.isArray(client.paidServiceVisitBreakdown)
       ? (client.paidServiceVisitBreakdown as any)
       : null,

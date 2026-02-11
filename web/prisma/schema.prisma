@@ -57,6 +57,7 @@ model DirectClient {
   paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   paidServiceTotalCost   Int?      // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
   paidServiceVisitId     Int?      // ID візиту в Altegio (для breakdown з API)
+  paidServiceRecordId   Int?      // ID запису в візиті (для breakdown тільки по цьому record)
   paidServiceVisitBreakdown Json?  // Розбиття сум по майстрах з API: [{ masterName, sumUAH }]
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки

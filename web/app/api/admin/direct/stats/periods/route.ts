@@ -322,6 +322,8 @@ export async function GET(req: NextRequest) {
     const returnedClientIdsPast = new Set<string>();
     const returnedClientIdsToday = new Set<string>();
     const returnedClientIdsFuture = new Set<string>();
+    let totalSpentAll = 0;
+    let clientsWithPaidInPast = 0;
 
     const addByDay = (day: string, apply: (block: FooterStatsBlock) => void) => {
       if (!day || day < start || day > end) return;
@@ -334,6 +336,7 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
+      totalSpentAll += typeof client.spent === 'number' ? client.spent : 0;
       const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
       const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
       const paidSum = getPaidSum(client);
@@ -412,6 +415,7 @@ export async function GET(req: NextRequest) {
       }
 
       if (paidSum > 0 && paidDay) {
+        if (paidDay >= start && paidDay <= todayKyiv) clientsWithPaidInPast += 1;
         addByDay(paidDay, (b) => {
           b.plannedPaidSum += paidSum;
         });
@@ -507,6 +511,17 @@ export async function GET(req: NextRequest) {
 
     stats.past.conversion1Rate = consultBookedPast > 0 ? (consultAttendedPast / consultBookedPast) * 100 : 0;
     stats.past.conversion2Rate = consultAttendedPast > 0 ? (salesFromConsultPast / consultAttendedPast) * 100 : 0;
+
+    // #region agent log
+    try {
+      const payload = { location: 'stats/periods/route.ts:recordsRealizedSum-debug', message: 'recordsRealizedSum vs totalSpent', data: { recordsRealizedSum: stats.past.recordsRealizedSum, totalSpentAll, clientsWithPaidInPast, totalClients: clients.length }, timestamp: Date.now(), hypothesisId: 'H3' };
+      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const logPath = path.join(process.cwd(), '.debug-agent.log');
+      await fs.appendFile(logPath, JSON.stringify(payload) + '\n').catch(() => {});
+    } catch (_) {}
+    // #endregion
 
     // Єдине джерело для "кількість клієнтів" на екрані Статистика (той самий список, що й для KPI).
     return NextResponse.json({ ok: true, stats, totalClients: clients.length });

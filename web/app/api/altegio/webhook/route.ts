@@ -1272,12 +1272,18 @@ export async function POST(req: NextRequest) {
               const { getDirectClientByAltegioId, saveDirectClient } = await import('@/lib/direct-store');
               const directClient = await getDirectClientByAltegioId(Number(altegioClientId));
               if (directClient) {
-                const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId);
+                // recordId: рахуємо breakdown тільки для цього запису, щоб сума відповідала платній послузі клієнта, а не всьому візиту
+                const breakdown = await fetchVisitBreakdownFromAPI(
+                  Number(visitId),
+                  companyId,
+                  recordId != null ? Number(recordId) : undefined
+                );
                 if (breakdown && breakdown.length > 0) {
                   const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
                   const updated = {
                     ...directClient,
                     paidServiceVisitId: Number(visitId),
+                    paidServiceRecordId: recordId != null ? Number(recordId) : undefined,
                     paidServiceVisitBreakdown: breakdown,
                     paidServiceTotalCost: totalCost,
                     updatedAt: new Date().toISOString(),
