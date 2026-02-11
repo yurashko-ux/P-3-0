@@ -53,6 +53,7 @@ model DirectClient {
   visitDate              DateTime? // Дата візиту в салон
   signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
   paidServiceDate        DateTime? // Дата запису на платну послугу
+  paidServiceRecordCreatedAt DateTime? // Коли створено запис на платну послугу в Altegio (webhook status=create)
   paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   paidServiceDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), платний блок очищено — не перезаписувати з вебхуків/sync
@@ -65,6 +66,7 @@ model DirectClient {
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt          DateTime? // Останнє повідомлення
   consultationBookingDate DateTime? // Дата запису на консультацію
+  consultationRecordCreatedAt DateTime? // Коли створено запис на консультацію в Altegio (webhook status=create)
   consultationAttended   Boolean?  // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
   consultationCancelled  Boolean   @default(false) // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
   consultationDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), консультацію очищено — не перезаписувати з вебхуків/sync
@@ -115,6 +117,8 @@ model DirectClient {
   @@index([firstContactDate])
   @@index([createdAt])
   @@index([consultationBookingDate])
+  @@index([consultationRecordCreatedAt])
+  @@index([paidServiceRecordCreatedAt])
   @@index([consultationAttended])
   @@index([consultationMasterId])
   @@index([serviceMasterAltegioStaffId])

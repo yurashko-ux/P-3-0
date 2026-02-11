@@ -356,6 +356,9 @@ export async function POST(req: NextRequest) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }
 
+        // Час отримання вебхука — для consultationRecordCreatedAt / paidServiceRecordCreatedAt
+        const recordReceivedAtIso = new Date().toISOString();
+
         // ОБРОБКА КОНСУЛЬТАЦІЙ (consultation-booked, consultation-rescheduled, consultation-no-show, consultation)
         if (data.client && data.client.id && Array.isArray(data.services) && data.services.length > 0) {
           try {
@@ -502,6 +505,7 @@ export async function POST(req: NextRequest) {
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
+                  if (status === 'create') (updates as any).consultationRecordCreatedAt = recordReceivedAtIso;
                   
                   // Якщо paidServiceDate встановлений, але signedUpForPaidService = false - це помилка, очищаємо
                   if (existingClient.paidServiceDate && !existingClient.signedUpForPaidService) {
@@ -564,6 +568,7 @@ export async function POST(req: NextRequest) {
                       consultationDeletedInAltegio: false,
                       updatedAt: new Date().toISOString(),
                     };
+                    if (status === 'create') (updates as any).consultationRecordCreatedAt = recordReceivedAtIso;
                     
                     const updated: typeof existingClient = {
                       ...existingClient,
@@ -600,7 +605,8 @@ export async function POST(req: NextRequest) {
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
-                  
+                  if (status === 'create') (updates as any).consultationRecordCreatedAt = recordReceivedAtIso;
+
                   // Встановлюємо consultationAttended на основі attendance (1 або 2 = прийшов)
                   if (isArrived) {
                     updates.consultationAttended = true;
@@ -665,7 +671,8 @@ export async function POST(req: NextRequest) {
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
                   };
-                  
+                  if (status === 'create') (updates as any).consultationRecordCreatedAt = recordReceivedAtIso;
+
                   // Встановлюємо consultationAttended (1 або 2 = прийшов)
                   if (isArrived) {
                     updates.consultationAttended = true;
@@ -1087,12 +1094,14 @@ export async function POST(req: NextRequest) {
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
                     (updates as any).paidServiceDeletedInAltegio = false;
+                    if (status === 'create') (updates as any).paidServiceRecordCreatedAt = recordReceivedAtIso;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (future, paid service) for client ${existingClient.id}`);
                   } else if (!existingClient.paidServiceDate || new Date(existingClient.paidServiceDate) < appointmentDate) {
                     // Для минулих дат встановлюємо тільки якщо paidServiceDate не встановлено або новіша
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
                     (updates as any).paidServiceDeletedInAltegio = false;
+                    if (status === 'create') (updates as any).paidServiceRecordCreatedAt = recordReceivedAtIso;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing, paid service) for client ${existingClient.id}`);
                   }
                   
