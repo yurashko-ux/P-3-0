@@ -401,36 +401,51 @@ export async function fetchVisitBreakdownFromAPI(
 
     const masterIdToName = new Map<number, string>();
     for (const rec of visitData.records) {
-      const staffId = (rec as any).staff_id ?? (rec.staff as any)?.id;
-      const staffName = rec.staff?.name ?? rec.staff?.display_name;
+      const staff = (rec as any).staff;
+      const staffId = (rec as any).staff_id ?? staff?.id;
+      const staffName =
+        staff?.name ?? staff?.display_name ?? staff?.full_name ?? (staff?.first_name && staff?.last_name ? `${staff.first_name} ${staff.last_name}`.trim() : null);
       if (staffId != null && staffName) masterIdToName.set(Number(staffId), String(staffName).trim());
     }
 
+    function itemMasterName(item: any): string | null {
+      const masterId = item?.master_id ?? item?.master?.id ?? item?.staff_id ?? item?.specialist_id;
+      const fromMap = masterId != null ? masterIdToName.get(Number(masterId)) : null;
+      if (fromMap) return fromMap;
+      const master = item?.master ?? item?.staff ?? item?.specialist;
+      if (master && typeof master === 'object') {
+        const n = master.name ?? master.display_name ?? master.full_name ?? master.title ?? (master.first_name && master.last_name ? `${master.first_name} ${master.last_name}`.trim() : null);
+        if (n && typeof n === 'string') return n.trim();
+      }
+      return item?.staff_title ?? item?.staff_name ?? item?.item_title ?? null;
+    }
+
     const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
-    const UNKNOWN_LABEL = 'Невідомий';
+    let pendingSum = 0;
+
     const addToMaster = (key: string, masterName: string, sumUAH: number) => {
       const existing = byMasterKey.get(key);
       if (existing) {
         existing.sumUAH += sumUAH;
-        if (masterName && masterName !== UNKNOWN_LABEL && existing.masterName === UNKNOWN_LABEL) existing.masterName = masterName;
       } else {
-        byMasterKey.set(key, { masterName: masterName || UNKNOWN_LABEL, sumUAH });
+        byMasterKey.set(key, { masterName, sumUAH });
       }
     };
 
     const items = Array.isArray(data.items) ? data.items : [];
     for (const item of items) {
       const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
-      const masterName =
-        (masterId != null ? masterIdToName.get(Number(masterId)) : null) ??
-        (item as any).master?.name ?? (item as any).master?.title ?? (item as any).staff?.name ?? (item as any).staff?.display_name ?? (item as any).item_title ?? UNKNOWN_LABEL;
+      const name = itemMasterName(item);
       const cost = Number((item as any).cost) || 0;
       const amount = Number((item as any).amount) ?? 1;
       const sum = Math.round(cost * amount);
       if (sum <= 0) continue;
-      const name = String(masterName || UNKNOWN_LABEL).trim();
-      const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
-      addToMaster(key, name, sum);
+      if (name) {
+        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
+        addToMaster(key, name, sum);
+      } else {
+        pendingSum += sum;
+      }
     }
 
     const paymentTx = Array.isArray(data.payment_transactions) ? data.payment_transactions : [];
@@ -445,9 +460,29 @@ export async function fetchVisitBreakdownFromAPI(
       if (masterId != null && masterIdsInItems.has(String(masterId))) continue;
       const amount = Number((tx as any).amount) || 0;
       if (amount <= 0) continue;
-        const masterName = masterId != null ? masterIdToName.get(Number(masterId)) ?? UNKNOWN_LABEL : UNKNOWN_LABEL;
-        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${String(masterName).toLowerCase()}`;
-        addToMaster(key, String(masterName).trim(), Math.round(amount));
+      const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
+      if (name) {
+        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
+        addToMaster(key, name, Math.round(amount));
+      } else {
+        pendingSum += Math.round(amount);
+      }
+    }
+
+    if (pendingSum > 0) {
+      if (byMasterKey.size > 0) {
+        const firstKey = byMasterKey.keys().next().value;
+        if (firstKey) {
+          const first = byMasterKey.get(firstKey)!;
+          first.sumUAH += pendingSum;
+        }
+      } else if (visitData.records.length > 0) {
+        const firstRec = visitData.records[0];
+        const staffName = firstRec.staff?.name ?? firstRec.staff?.display_name ?? (firstRec as any).staff?.full_name;
+        if (staffName) {
+          addToMaster(`name:${String(staffName).toLowerCase()}`, String(staffName).trim(), pendingSum);
+        }
+      }
     }
 
     const result = Array.from(byMasterKey.values()).filter((x) => x.sumUAH > 0);
